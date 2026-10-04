@@ -40,6 +40,7 @@ const questOwned = (state) => [DOGTAG, MEDALLION, ...FRAGMENTS].map((id) => [id,
 
 module.exports = {
     id: 327,
+    questItems: [DOGTAG, MEDALLION, ...FRAGMENTS],
     name: 'Reclaim The Land',
     npcs: [PETER, IRIS, ASHLEY],
     startNpcs: [PETER],

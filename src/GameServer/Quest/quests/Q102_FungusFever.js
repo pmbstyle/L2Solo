@@ -14,6 +14,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 102,
+  questItems: [964, 965, 966, 1130, 1131, 1132, 1133, 1134, 746],
   name: "Fungus Fever",
   npcs: [A, C, ...N],
   startNpcs: [A],

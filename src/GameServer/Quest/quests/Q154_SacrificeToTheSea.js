@@ -12,6 +12,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 154,
+  questItems: [1032, 1033, 1034],
   name: "Sacrifice to the Sea",
   npcs: [R, C, L],
   startNpcs: [R],

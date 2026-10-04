@@ -6,6 +6,7 @@ const A = 7362,
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 161,
+  questItems: [1036, 1037],
   name: "Fruit of the Mothertree",
   npcs: [A, T],
   startNpcs: [A],

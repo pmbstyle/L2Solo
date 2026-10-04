@@ -13,6 +13,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 168,
+  questItems: [1153, 1154, 1155, 1156, 1157],
   name: "Deliver Supplies",
   npcs: [J, R, K, H],
   startNpcs: [J],

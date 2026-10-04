@@ -65,6 +65,7 @@ async function consume(quest, state, itemIds) {
 
 module.exports = {
   id: 402,
+  questItems: [1162, 1163, 1164, 1165, 1166, 1167, 1168, 1169, 1170, 1171, 1172, 1173, 1174, 1175, 1176, 1177, 1178, 1179],
   name: 'Path to Knight',
   npcs: [SIR_KLAUS, SIR_ARON, SIR_COLLIN, SIR_KYLE, SIR_DRYSTAN, SIR_JEREMY, SIR_HEROD, HINEN, ROSHEEK],
   startNpcs: [SIR_KLAUS],

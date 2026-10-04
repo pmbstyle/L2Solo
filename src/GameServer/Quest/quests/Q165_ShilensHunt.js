@@ -8,6 +8,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 165,
+  questItems: [1160],
   name: "Shilen's Hunt",
   npcs: [N],
   startNpcs: [N],

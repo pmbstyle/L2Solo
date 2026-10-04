@@ -6,6 +6,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 156,
+  questItems: [1022, 1023],
   name: "Millennium Love",
   npcs: [L, B],
   startNpcs: [L],

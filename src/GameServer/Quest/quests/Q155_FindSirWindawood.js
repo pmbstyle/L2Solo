@@ -6,6 +6,7 @@ const A = 7042,
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 155,
+  questItems: [1019],
   name: "Find Sir Windawood",
   npcs: [A, W],
   startNpcs: [A],

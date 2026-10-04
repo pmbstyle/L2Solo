@@ -95,6 +95,7 @@ const ownedSpawn = (state, selfId) => (World.npc?.spawns || []).find((npc) =>
 
 module.exports = {
     id: 334,
+    questItems: [3678, 3679, 3680, 3681, 3682, 3684, 3685, 3686, 3687, 3688, 3689, 3690, 3691],
     name: 'The Wishing Potion',
     npcs: [MATILD, TORAI, RUPINA, WISDOM_CHEST],
     startNpcs: [MATILD],

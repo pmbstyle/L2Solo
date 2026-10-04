@@ -8,6 +8,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 169,
+  questItems: [1030, 1031],
   name: "Offspring of Nightmares",
   npcs: [V],
   startNpcs: [V],

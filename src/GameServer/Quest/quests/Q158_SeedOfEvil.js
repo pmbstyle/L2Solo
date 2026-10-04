@@ -7,6 +7,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 158,
+  questItems: [1025],
   name: "Seed of Evil",
   npcs: [N],
   startNpcs: [N],

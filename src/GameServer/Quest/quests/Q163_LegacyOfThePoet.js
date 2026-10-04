@@ -7,6 +7,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 163,
+  questItems: [1038, 1039, 1040, 1041],
   name: "Legacy of the Poet",
   npcs: [S],
   startNpcs: [S],

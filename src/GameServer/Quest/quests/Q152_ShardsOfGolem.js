@@ -12,6 +12,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 152,
+  questItems: [1008, 1009, 1010, 1011],
   name: "Shards of Golem",
   npcs: [H, A],
   startNpcs: [H],

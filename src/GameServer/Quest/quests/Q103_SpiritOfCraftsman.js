@@ -19,6 +19,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 103,
+  questItems: [968, 969, 970, 1107, 971, 972, 973, 974],
   name: "Spirit of Craftsman",
   npcs: [K, C, H],
   startNpcs: [K],

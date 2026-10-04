@@ -9,6 +9,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 159,
+  questItems: [1035, 1071, 1072],
   name: "Protect the Water Source",
   npcs: [A],
   startNpcs: [A],

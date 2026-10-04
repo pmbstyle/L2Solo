@@ -17,6 +17,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 104,
+  questItems: [748, 1135, 1136, 1137],
   name: "Spirit of Mirrors",
   npcs: [G, A, J, K],
   startNpcs: [G],

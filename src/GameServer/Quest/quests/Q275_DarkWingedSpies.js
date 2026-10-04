@@ -31,6 +31,7 @@ const eligible = (actor) => Number(actor.fetchRace()) === ORC && Number(actor.fe
 
 module.exports = {
     id: 275,
+    questItems: [1478, 1479],
     name: 'Dark Winged Spies',
     npcs: [TANTUS],
     startNpcs: [TANTUS],

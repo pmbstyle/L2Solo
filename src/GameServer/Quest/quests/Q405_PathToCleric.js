@@ -49,6 +49,7 @@ async function replace(state, remove, give, condition) {
 
 module.exports = {
   id: 405,
+  questItems: [1191, 1192, 1193, 1194, 1195, 1196, 1197, 1198, 1199, 1200],
   name: "Path to Cleric",
   npcs: [ZIGAUNT, GALLINT, VIVYAN, SIMPLON, PRAGA, LIONEL],
   startNpcs: [ZIGAUNT],

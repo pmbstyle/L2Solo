@@ -6,6 +6,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 151,
+  questItems: [703, 704],
   name: "Cure for Fever Disease",
   npcs: [E, Y],
   startNpcs: [E],

@@ -18,6 +18,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 153,
+  questItems: [1012, 1013, 1014, 1015, 1016, 1017, 1018],
   name: "Deliver Goods",
   npcs: [A, J, S, R],
   startNpcs: [A],

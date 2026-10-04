@@ -42,6 +42,7 @@ const OWNERS = { [SABRIN]: { loot: STOLEN_BEER, who: 'Sabrin' }, [XABER]: { loot
 
 module.exports = {
     id: 364,
+    questItems: [4321, 4323, 4324],
     name: 'Jovial Accordion',
     npcs: [BARBADO, SWAN, SABRIN, XABER, CLOTH_CHEST, BEER_CHEST],
     startNpcs: [BARBADO],

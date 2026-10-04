@@ -33,6 +33,7 @@ function count(state, selfId) {
 
 module.exports = {
   id: 409,
+  questItems: [1231, 1232, 1233, 1234, 1236, 1275],
   name: "Path to Elven Oracle",
   npcs: [MANUEL, ALLANA, PERRIN],
   startNpcs: [MANUEL],

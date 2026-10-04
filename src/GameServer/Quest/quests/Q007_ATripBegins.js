@@ -24,6 +24,7 @@ function hasRecommendation(state) {
 
 module.exports = {
   id: 7,
+  questItems: [7572],
   name: "A Trip Begins",
   npcs: [MIRABEL, ARIEL, ASTERIOS],
   startNpcs: [MIRABEL],

@@ -79,6 +79,7 @@ function bandFor(level) {
 
 module.exports = {
     id: 422,
+    questItems: QUEST_ITEMS,
     name: 'Repent Your Sins',
     npcs: [BLACK_JUDGE, KATARI, PIOTUR, CASIAN, JOAN, PUSHKIN],
     startNpcs: [BLACK_JUDGE],

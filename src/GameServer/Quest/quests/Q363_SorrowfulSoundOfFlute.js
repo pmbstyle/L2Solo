@@ -31,6 +31,7 @@ const PROP_EVENTS = { clothes: CLOTHES, flute: FLUTE, beer: BLACK_BEER };
 
 module.exports = {
     id: 363,
+    questItems: [4319],
     name: 'Sorrowful Sound of Flute',
     npcs: [NANARIN, BARBADO, ...ADVISERS],
     startNpcs: [NANARIN],

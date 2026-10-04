@@ -11,6 +11,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 162,
+  questItems: [1158, 1159],
   name: "Curse of the Underground Fortress",
   npcs: [U],
   startNpcs: [U],

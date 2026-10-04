@@ -24,6 +24,7 @@ function service() {
 
 module.exports = {
   id: 1,
+  questItems: [687, 688, 1079, 1080],
   name: "Letters of Love",
   npcs: [DARIN, ROXXY, BAULRO],
   startNpcs: [DARIN],

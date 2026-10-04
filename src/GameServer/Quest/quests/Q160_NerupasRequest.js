@@ -11,6 +11,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 160,
+  questItems: [1026, 1027, 1028, 1029],
   name: "Nerupa's Request",
   npcs: [N, U, C, J],
   startNpcs: [N],

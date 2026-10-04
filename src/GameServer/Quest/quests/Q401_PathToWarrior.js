@@ -47,6 +47,7 @@ async function collect(state, selfId, needed, chance = 1) {
 
 module.exports = {
   id: 401,
+  questItems: [1138, 1139, 1140, 1141, 1142, 1143, 1144],
   name: 'Path to Warrior',
   npcs: [AURON, SIMPLON],
   startNpcs: [AURON],

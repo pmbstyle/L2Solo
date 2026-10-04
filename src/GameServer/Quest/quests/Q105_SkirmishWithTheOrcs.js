@@ -13,6 +13,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 105,
+  questItems: [1836, 1837, 1838, 1839, 1840, 1841, 1842, 1843, 1844, 1845],
   name: "Skirmish with the Orcs",
   npcs: [K],
   startNpcs: [K],

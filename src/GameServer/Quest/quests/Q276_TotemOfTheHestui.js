@@ -41,6 +41,7 @@ function spirit(parasites, roll) {
 
 module.exports = {
     id: 276,
+    questItems: [1480, 1481],
     name: 'Totem of the Hestui',
     npcs: [TANAPI],
     startNpcs: [TANAPI],

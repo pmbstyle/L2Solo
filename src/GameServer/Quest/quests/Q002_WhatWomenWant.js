@@ -24,6 +24,7 @@ function startLink() {
 
 module.exports = {
   id: 2,
+  questItems: [1092, 1093, 1094, 689, 693],
   name: "What Women Want",
   npcs: [ARUJIEN, MIRABEL, HERBIEL, GREENIS],
   startNpcs: [ARUJIEN],

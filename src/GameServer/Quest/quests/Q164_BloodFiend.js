@@ -6,6 +6,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 164,
+  questItems: [1044],
   name: "Blood Fiend",
   npcs: [N],
   startNpcs: [N],

@@ -58,6 +58,7 @@ function hasAllGems(state) {
 
 module.exports = {
   id: 408,
+  questItems: [1218, 1219, 1220, 1221, 1222, 1223, 1224, 1225, 1226, 1227, 1228, 1229, 1272, 1273, 1274],
   name: "Path to Elven Wizard",
   npcs: [ROSELLA, GREENIS, THALIA, NORTHWIND],
   startNpcs: [ROSELLA],

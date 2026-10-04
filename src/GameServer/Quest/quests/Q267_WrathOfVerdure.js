@@ -30,6 +30,7 @@ const eligible = (actor) => Number(actor.fetchRace()) === ELF && Number(actor.fe
 
 module.exports = {
     id: 267,
+    questItems: [1335],
     name: 'Wrath of Verdure',
     npcs: [BREMEC],
     startNpcs: [BREMEC],

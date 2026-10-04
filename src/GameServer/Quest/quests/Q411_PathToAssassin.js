@@ -5,7 +5,7 @@ const service=()=>invoke("GameServer/Quest/QuestService");
 const page=(title,text,action="")=>`<html><body>${title}:<br>${text}<br><br>${action}</body></html>`;
 const count=(state,id)=>state.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount()||0;
 module.exports={
-  id:411,name:"Path to Assassin",npcs:[TRISKEL,ARKENIA,LEIKAN],startNpcs:[TRISKEL],killNpcs:[MOONSTONE_BEAST,CALPICO],
+  id:411,questItems:[1245,1246,1247,1248,1249,1250,1251],name:"Path to Assassin",npcs:[TRISKEL,ARKENIA,LEIKAN],startNpcs:[TRISKEL],killNpcs:[MOONSTONE_BEAST,CALPICO],
   eventNpc:(event)=>({start:TRISKEL,arkenia:ARKENIA,leikan:LEIKAN})[event]??null,
   async onEvent(state,event){const quest=service(),actor=state.session.actor;
     if(event==="start"&&!state.isStarted()&&!state.isCompleted()){if(Number(actor.fetchClassId())!==31||Number(actor.fetchLevel())<19||count(state,IRON_HEART))return null;await state.setState("started");await state.set("cond",1);await quest.giveItem(state.session,SHILENS_CALL,1);state.playSound(ACCEPT);return page("Triskel","Take Shilen's Call to Arkenia.");}

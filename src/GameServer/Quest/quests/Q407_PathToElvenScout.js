@@ -38,6 +38,7 @@ function tornLetterCount(state) {
 
 module.exports = {
   id: 407,
+  questItems: [1207, 1208, 1209, 1210, 1211, 1212, 1213, 1214, 1215, 1216, 1293],
   name: "Path to Elven Scout",
   npcs: [REISA, BABENCO, MORETTI, PRIAS],
   startNpcs: [REISA],

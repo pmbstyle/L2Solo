@@ -17,6 +17,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 108,
+  questItems: [1559, 1560, 1561, 1562, 1563, 1564, 1565, 1566, 1567, 1568, 1569, 1570, 1571],
   name: "Jumble Tumble Diamond Fuss",
   npcs: [G, R, M, A, B, MA, T],
   startNpcs: [G],

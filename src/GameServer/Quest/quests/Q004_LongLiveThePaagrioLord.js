@@ -41,6 +41,7 @@ async function takeAll(state, itemId) {
 
 module.exports = {
   id: 4,
+  questItems: [1541, 1542, 1543, 1544, 1545, 1546],
   name: "Long Live the Pa'agrio Lord!",
   npcs: [NAKUSIN, ...GIFTS.keys()],
   startNpcs: [NAKUSIN],

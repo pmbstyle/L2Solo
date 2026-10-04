@@ -25,6 +25,7 @@ function has(s, id) {
 }
 module.exports = (c) => ({
   id: c.id,
+  questItems: [O1, O2, O3, H, P, N],
   name: c.name,
   npcs: [G, T, S, D],
   startNpcs: [G],

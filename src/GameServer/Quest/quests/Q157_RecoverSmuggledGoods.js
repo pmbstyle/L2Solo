@@ -7,6 +7,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(O)?.fetchAmount() || 0;
 module.exports = {
   id: 157,
+  questItems: [1024],
   name: "Recover Smuggled Goods",
   npcs: [W],
   startNpcs: [W],

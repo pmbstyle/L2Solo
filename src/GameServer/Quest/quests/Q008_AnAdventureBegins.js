@@ -24,6 +24,7 @@ function hasNote(state) {
 
 module.exports = {
   id: 8,
+  questItems: [7573],
   name: "An Adventure Begins",
   npcs: [JASMINE, ROSELYN, HARNE],
   startNpcs: [JASMINE],

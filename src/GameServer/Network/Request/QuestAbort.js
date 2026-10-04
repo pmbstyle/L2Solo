@@ -12,7 +12,7 @@ function questAbort(session, buffer) {
         const state = session.questStates?.get(questId);
         if (state?.isStarted()) {
             if (state.quest.onAbort) await state.quest.onAbort(state);
-            else await state.exit(true);
+            else await invoke('GameServer/Quest/QuestStep').abandon(state, state.quest.questItems);
         }
         session.dataSendToMe(ServerResponse.questList(QuestService.active(session)));
     }).catch((error) => {

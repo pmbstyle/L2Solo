@@ -7,7 +7,7 @@ const page = (title, text, action = "") => `<html><body>${title}:<br>${text}<br>
 const count = (state, id) => state.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 
 module.exports = {
-  id: 410, name: "Path to Palus Knight", npcs: [VIRGIL, KALINTA], startNpcs: [VIRGIL], killNpcs: [LYCANTHROPE, POISON_SPIDER, ARACHNID_TRACKER],
+  id: 410, questItems: [1237, 1238, 1239, 1240, 1241, 1242, 1243], name: "Path to Palus Knight", npcs: [VIRGIL, KALINTA], startNpcs: [VIRGIL], killNpcs: [LYCANTHROPE, POISON_SPIDER, ARACHNID_TRACKER],
   eventNpc: (event) => ({ start: VIRGIL, skulls: VIRGIL, morte: KALINTA, coffin: KALINTA })[event] ?? null,
   async onEvent(state, event) {
     const quest = service(), actor = state.session.actor;

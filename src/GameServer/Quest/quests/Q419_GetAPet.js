@@ -17,7 +17,7 @@ function quizPage(state) {
     return page(question.text + question.answers.map((answer, i) => link(`answer_${index}_${question.id}_${i}`, answer.text)).join('<br>'));
 }
 module.exports = {
-    id: 419, name: 'Get a Pet', npcs: [MARTIN, ...Object.keys(tutors).map(Number)], startNpcs: [MARTIN], killNpcs: mobs.flat(),
+    id: 419, questItems: [3417, 3418, 3419, 3420, 3421, 3422, 3423, 3424, 3425, 3426, 3427], name: 'Get a Pet', npcs: [MARTIN, ...Object.keys(tutors).map(Number)], startNpcs: [MARTIN], killNpcs: mobs.flat(),
     canTalk: state => state.isStarted() || state.session.actor.fetchLevel() >= 15,
     eventNpc: event => event.startsWith('learn_') ? Number(event.slice(6)) : ['start', 'proof', 'quiz'].includes(event) || /^answer_\d+_\d+_\d+$/.test(event) ? MARTIN : null,
     async onTalk(state, npc) {

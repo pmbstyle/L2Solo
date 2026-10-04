@@ -51,6 +51,7 @@ function ownedChest(state) {
 
 module.exports = {
     id: 340,
+    questItems: [4258],
     name: 'Subjugation of Lizardmen',
     npcs: [WEISZ, ADONIUS, LEVIAN, CHEST],
     startNpcs: [WEISZ],

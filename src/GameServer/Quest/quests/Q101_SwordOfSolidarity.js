@@ -17,6 +17,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 101,
+  questItems: [739, 740, 741],
   name: "Sword of Solidarity",
   npcs: [R, A],
   startNpcs: [R],

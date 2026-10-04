@@ -15,6 +15,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 106,
+  questItems: [984, 985, 986, 987, 988],
   name: "Forgotten Truth",
   npcs: [T, K],
   startNpcs: [T],

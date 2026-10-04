@@ -39,6 +39,7 @@ async function collect(state, selfId, needed, chance) {
 
 module.exports = {
   id: 406,
+  questItems: [1202, 1203, 1205, 1206, 1276],
   name: "Path to Elven Knight",
   npcs: [SORIUS, KLUTO],
   startNpcs: [SORIUS],

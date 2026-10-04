@@ -6,6 +6,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
     s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 170,
+  questItems: [1046],
   name: "Dangerous Seduction",
   npcs: [N],
   startNpcs: [N],

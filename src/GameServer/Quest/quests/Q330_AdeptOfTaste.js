@@ -66,6 +66,7 @@ const questOwned = (state) => Array.from({ length: 32 }, (_, i) => 1420 + i)
 
 module.exports = {
     id: 330,
+    questItems: [1420, 1421, 1422, 1423, 1424, 1425, 1426, 1427, 1428, 1429, 1430, 1431, 1432, 1433, 1434, 1435, 1436, 1437, 1438, 1439, 1440, 1441, 1442, 1443, 1444, 1445, 1446, 1447, 1448, 1449, 1450, 1451],
     name: 'Adept Of Taste',
     npcs: [MIRIEN, JONAS, SONIA, JAYCUBS, PANOS, GLYVKAS, ROLANT],
     startNpcs: [MIRIEN],

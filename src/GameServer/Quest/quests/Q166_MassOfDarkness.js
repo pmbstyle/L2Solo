@@ -13,6 +13,7 @@ const n = (s, id) =>
   s.session.actor.backpack.fetchItemFromSelfId(id)?.fetchAmount() || 0;
 module.exports = {
   id: 166,
+  questItems: [1088, 1089, 1090, 1091],
   name: "Mass of Darkness",
   npcs: [U, I, D, T],
   startNpcs: [U],

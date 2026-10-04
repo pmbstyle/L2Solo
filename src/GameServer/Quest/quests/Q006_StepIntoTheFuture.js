@@ -24,6 +24,7 @@ function hasLetter(state) {
 
 module.exports = {
   id: 6,
+  questItems: [7571],
   name: "Step into the Future",
   npcs: [ROXXY, BAULRO, SIR_COLLIN],
   startNpcs: [ROXXY],

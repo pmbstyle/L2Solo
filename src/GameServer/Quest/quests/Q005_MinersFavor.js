@@ -52,6 +52,7 @@ async function grantSupply(state, itemId) {
 
 module.exports = {
   id: 5,
+  questItems: [1547, 1548, 1549, 1550, 1551, 1552],
   name: "Miner's Favor",
   npcs: [BOLTER, SHARI, GARITA, REED, BRUNON],
   startNpcs: [BOLTER],

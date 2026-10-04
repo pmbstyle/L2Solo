@@ -10,6 +10,7 @@ const p = (t, x, a = "") =>
   `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 107,
+  questItems: [1553, 1554, 1555, 1557, 1556, 1558],
   name: "Merciless Punishment",
   npcs: [H, P],
   startNpcs: [H],

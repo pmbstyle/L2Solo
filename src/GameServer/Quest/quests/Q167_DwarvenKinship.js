@@ -7,6 +7,7 @@ const Q = () => invoke("GameServer/Quest/QuestService"),
   p = (t, x, a = "") => `<html><body>${t}:<br>${x}<br><br>${a}</body></html>`;
 module.exports = {
   id: 167,
+  questItems: [1076, 1106],
   name: "Dwarven Kinship",
   npcs: [C, H, N],
   startNpcs: [C],

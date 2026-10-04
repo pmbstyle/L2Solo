@@ -55,6 +55,7 @@ async function collectBones(state, chance) {
 
 module.exports = {
   id: 403,
+  questItems: [1180, 1181, 1182, 1183, 1184, 1185, 1186, 1187, 1188, 1189],
   name: 'Path to Rogue',
   npcs: [BEZIQUE, NETI],
   startNpcs: [BEZIQUE],

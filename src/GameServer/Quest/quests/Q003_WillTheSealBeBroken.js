@@ -31,6 +31,7 @@ async function collect(state, itemId) {
 
 module.exports = {
   id: 3,
+  questItems: [1081, 1082, 1083],
   name: "Will the Seal be Broken?",
   npcs: [TALLOTH],
   startNpcs: [TALLOTH],

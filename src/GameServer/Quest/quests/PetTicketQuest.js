@@ -16,6 +16,7 @@ const A = "ItemSound.quest_accept",
 module.exports = function create(config) {
   return {
     id: config.id,
+    questItems: [config.fragment, config.map],
     name: config.name,
     npcs: [config.startNpc, config.partnerNpc],
     startNpcs: [config.startNpc],

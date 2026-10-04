@@ -26,6 +26,7 @@ function has(s, id) {
 }
 module.exports = {
   id: 45,
+  questItems: [ORDER1, ORDER2, ORDER3, HILT, POWDER, NECKLACE],
   name: "To Talking Island",
   npcs: [GALLADUCCI, GENTLER, SANDRA, DUSTIN],
   startNpcs: [GALLADUCCI],
