@@ -8,6 +8,7 @@ function npcTalk(session, npc) {
     session.activeWarehouse = null;
     session.activePetExchange = null;
     session.activeWeaponSA = null;
+    session.activeCrystallization = null;
     session.activeNpcTalk = {
         selfId: npc.fetchSelfId(),
         objectId: npc.fetchId(),
@@ -18,6 +19,11 @@ function npcTalk(session, npc) {
     const ClanHallNpc = require('../../ClanHall/Npc');
     if (ClanHallNpc.handles(npc.fetchSelfId())) {
         ClanHallNpc.render(session).catch(error => utils.infoWarn('ClanHall', 'NPC dialog failed: %s', error.message));
+        return;
+    }
+
+    if (Number(npc.fetchSelfId()) === require('../GiranCrystallizationStation').npcId) {
+        invoke('GameServer/Items/CrystallizationStationService').menu(session);
         return;
     }
 

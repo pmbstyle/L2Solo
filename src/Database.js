@@ -5153,12 +5153,16 @@ const Database = {
         }, 'item:combine'));
     },
 
-    crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount, coldState = null }) {
+    crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount, coldState = null, expectedEnchant = null, validate }) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
-            if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0) throw new Error('crystallize source changed');
+            validate?.();
+            if (!Number.isSafeInteger(crystalAmount) || crystalAmount <= 0 || crystalAmount > 2147483647) throw new Error('invalid crystal amount');
+            const source = one('SELECT id, selfId, amount, equipped, enchant FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
+            if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0
+                || (expectedEnchant !== null && Number(source.enchant || 0) !== Number(expectedEnchant))) throw new Error('crystallize source changed');
             const target = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, crystalId]);
             const amount = Number(target?.amount || 0) + Number(crystalAmount);
+            if (!Number.isSafeInteger(amount) || amount > 2147483647) throw new Error('crystal stack is full');
             let id = Number(target?.id || 0);
             write('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
             if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [amount, id, characterId]);
