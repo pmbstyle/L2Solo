@@ -945,9 +945,99 @@ function summonDamage(fighter, mob, rng) {
     ));
 }
 
+// One cold bot action, shared by the solo and the party fight: servitor,
+// charge expiry, potion, heal, song, charge preparation, then a skill or a
+// normal attack on the mob. `allies` are the heal and song targets (only the
+// bot itself when solo), `party` switches the class policy to party mode and
+// heal help events go to `help` when given. Returns null when the action was
+// not an attack, otherwise { skill, damage } for the caller's kill
+// bookkeeping. A killing blow lets a living necromancer among the allies
+// raise a servitor from the corpse.
+function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false, help = null }) {
+    fighter.now = at;
+    if (ensureColdSummon(fighter, at, fighter.cooldowns)) return null;
+    expireCharges(fighter, at);
+    if (startColdPotion(fighter, time)) {
+        fighter.readyAt += 250;
+        return null;
+    }
+    const heal = chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter);
+    if (heal) {
+        const events = applyAllyHeal(fighter, allies, heal);
+        if (help) for (const event of events) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
+        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(heal.skill.mp || 0));
+        fighter.cooldowns[heal.skill.selfId] = at + Math.max(0, Number(heal.skill.reuse || 0));
+        fighter.skillUses += 1;
+        fighter.heals += 1;
+        fighter.readyAt += actionDelayMs(fighter.profile, heal.skill);
+        return null;
+    }
+    const music = chooseMusicAction(fighter, allies, at);
+    if (music) {
+        applyMusicAction(fighter, music, at);
+        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - music.cost);
+        fighter.cooldowns[music.skill.selfId] = at + Math.max(0, Number(music.skill.reuse || 0));
+        fighter.skillUses += 1;
+        fighter.musicUses += 1;
+        fighter.readyAt += actionDelayMs(fighter.profile, music.skill);
+        return null;
+    }
+    const chargeSkill = chooseChargeSkill(fighter.profile, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges,
+        { hp: fighter.vitals.hp, mob, party, summon: fighter.summon });
+    if (chargeSkill) {
+        const semantic = C4SkillRules.resolve(chargeSkill);
+        addCharges(fighter, 1, semantic.maxCharges, at);
+        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(chargeSkill.mp || 0));
+        fighter.cooldowns[chargeSkill.selfId] = at + Math.max(0, Number(chargeSkill.reuse || 0));
+        fighter.skillUses += 1;
+        fighter.readyAt += actionDelayMs(fighter.profile, chargeSkill);
+        return null;
+    }
+
+    fighter.shotActions += 1;
+    const profile = fighter.profile;
+    const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
+        { mob, party, summon: fighter.summon });
+    const skill = selected?.skill || null;
+    let damage = 0;
+    if (selected?.magic) {
+        const magicCritical = rng() < clamp(profile.critical / 1000, 0, 0.25);
+        const semantic = C4SkillRules.resolve(selected.skill);
+        damage = Formulas.calcMagicDamage(profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
+            * coldMagicTargetModifier(mob, semantic);
+    } else if (hitSucceeds(profile.accur, mob.evasion, rng)) {
+        const critical = Formulas.rollCritical(profile.critical, rng);
+        const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
+        damage = Formulas.calcPhysicalDamage(profile.pAtk, profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical })
+            * coldPhysicalTargetModifier(profile, mob, semantic, at);
+    }
+    if (skill) {
+        const semantic = C4SkillRules.resolve(skill);
+        const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
+        if (requiredCharges > 0) damage *= 0.8 + (0.201 * fighter.charges);
+        consumeCharges(fighter, semantic.requires?.charges);
+        if (Number(semantic.chargeOnUse) > 0) {
+            addCharges(fighter, semantic.chargeOnUse, semantic.maxCharges, at);
+        }
+        fighter.vitals.mp = Math.max(0, fighter.vitals.mp - Number(skill.mp || 0));
+        fighter.cooldowns[skill.selfId] = at + Math.max(0, Number(skill.reuse || 0));
+        fighter.skillUses += 1;
+    }
+    fighter.readyAt += actionDelayMs(profile, skill);
+    if (mobHp - Math.max(0, damage) <= 0) {
+        const necromancer = allies.find((ally) => (
+            ally.vitals.hp > 0
+            && BotRoles.isNecromancer(ally.profile?.classId)
+            && !ally.summon
+        ));
+        if (necromancer) startColdCorpseSummon(necromancer, at, necromancer.cooldowns);
+    }
+    return { skill, damage };
+}
+
 function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now(), fightLimitMs = 12000, maxActions = 48 }) {
     const fightState = mutableCombatState(state);
-    let bot = botCombatStats(fightState, timestamp);
+    const bot = botCombatStats(fightState, timestamp);
     const encounterKey = PveEncounter.key([state], spot, targetNpcId);
     const pending = PveEncounter.read(state.stats?.pveEncounter, encounterKey, timestamp);
     const mob = pending?.mob || ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId,
@@ -976,35 +1066,33 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         maxHp: bot.maxHp,
         maxMp: bot.maxMp
     };
+    const chargeState = coldChargeState(state, timestamp);
     const soloFighter = {
         state: fightState,
         profile: bot,
         role: BotRoles.combatRoleFor(fightState),
         vitals,
-        readyAt: 0,
-        summonReadyAt: Number.POSITIVE_INFINITY,
+        cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
+        readyAt: Number(pending?.botReadyAt || 0),
+        shotActions: 0,
+        skillUses: 0,
+        heals: 0,
+        musicUses: 0,
+        charges: chargeState.charges,
+        chargeExpiresAt: chargeState.chargeExpiresAt,
         summonUses: 0,
         summonActions: 0,
-        now: timestamp,
+        summonReadyAt: Number.POSITIVE_INFINITY,
         potionsUsed: 0,
-        potionHot: null
+        potionHot: null,
+        now: timestamp
     };
-    let botReadyAt = Number(pending?.botReadyAt || 0);
+    const allies = [soloFighter];
     let mobReadyAt = Number(pending?.mobReadyAt || 0);
     let time = 0;
     let mobHp = pending?.hp ?? mob.maxHp;
     let actions = 0;
-    let skillUses = 0;
-    let shotActions = 0;
-    let heals = 0;
-    let musicUses = 0;
-    let summonUses = 0;
-    let summonActions = 0;
     let overhitContext = null;
-    const chargeState = coldChargeState(state, timestamp);
-    let charges = chargeState.charges;
-    let chargeExpiresAt = chargeState.chargeExpiresAt;
-    const cooldowns = { ...(state.stats?.coldCombat?.cooldowns || {}) };
 
     // A resolve contains only a handful of fights, and a fight itself is
     // bounded by time and actions. This is deliberately cheaper than a live
@@ -1013,9 +1101,9 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         const summonReadyAt = soloFighter.summon?.active
             ? Number(soloFighter.summonReadyAt)
             : Number.POSITIVE_INFINITY;
-        const summonActs = summonReadyAt <= botReadyAt && summonReadyAt <= mobReadyAt;
-        const botActs = !summonActs && botReadyAt <= mobReadyAt;
-        time = summonActs ? summonReadyAt : botActs ? botReadyAt : mobReadyAt;
+        const summonActs = summonReadyAt <= soloFighter.readyAt && summonReadyAt <= mobReadyAt;
+        const botActs = !summonActs && soloFighter.readyAt <= mobReadyAt;
+        time = summonActs ? summonReadyAt : botActs ? soloFighter.readyAt : mobReadyAt;
         if (time >= fightLimitMs) {
             time = fightLimitMs;
             break;
@@ -1033,117 +1121,31 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
                 continue;
             }
             mobHp -= summonDamage(soloFighter, mob, rng);
-            summonActions += 1;
             soloFighter.summonActions += 1;
             soloFighter.summonReadyAt = time + summonAttackDelay(soloFighter.summon);
             if (mobHp <= 0) break;
         }
         else if (botActs) {
-            soloFighter.now = timestamp + time;
-            soloFighter.readyAt = botReadyAt;
-            const summonedNow = ensureColdSummon(soloFighter, timestamp + time, cooldowns);
-            summonUses = Number(soloFighter.summonUses || 0);
-            if (summonedNow) {
-                botReadyAt = soloFighter.readyAt;
-                continue;
-            }
-            const heldCharges = { charges, chargeExpiresAt };
-            expireCharges(heldCharges, timestamp + time);
-            charges = heldCharges.charges;
-            chargeExpiresAt = heldCharges.chargeExpiresAt;
-            if (startColdPotion(soloFighter, time)) {
-                botReadyAt += 250;
-                continue;
-            }
-            const heal = chooseHeal(bot, [soloFighter], vitals.mp, cooldowns, timestamp + time, soloFighter);
-            if (heal) {
-                applyAllyHeal(soloFighter, [soloFighter], heal);
-                vitals.mp = Math.max(0, vitals.mp - Number(heal.skill.mp || 0));
-                cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
-                skillUses += 1;
-                heals += 1;
-                botReadyAt += actionDelayMs(bot, heal.skill);
-                continue;
-            }
-            const music = chooseMusicAction(soloFighter, [soloFighter], timestamp + time);
-            if (music) {
-                applyMusicAction(soloFighter, music, timestamp + time);
-                bot = soloFighter.profile;
-                vitals.mp = Math.max(0, vitals.mp - music.cost);
-                cooldowns[music.skill.selfId] = timestamp + time + Math.max(0, Number(music.skill.reuse || 0));
-                skillUses += 1;
-                musicUses += 1;
-                botReadyAt += actionDelayMs(bot, music.skill);
-                continue;
-            }
-            const chargeSkill = chooseChargeSkill(bot, vitals.mp, cooldowns, timestamp + time, charges, {hp:vitals.hp,mob,summon:soloFighter.summon});
-            if (chargeSkill) {
-                const semantic = C4SkillRules.resolve(chargeSkill);
-                const nextCharges = { charges, chargeExpiresAt };
-                addCharges(nextCharges, 1, semantic.maxCharges, timestamp + time);
-                charges = nextCharges.charges;
-                chargeExpiresAt = nextCharges.chargeExpiresAt;
-                vitals.mp = Math.max(0, vitals.mp - Number(chargeSkill.mp || 0));
-                cooldowns[chargeSkill.selfId] = timestamp + time + Math.max(0, Number(chargeSkill.reuse || 0));
-                skillUses += 1;
-                botReadyAt += actionDelayMs(bot, chargeSkill);
-                continue;
-            }
-            shotActions += 1;
-            const selected = chooseSkill(bot, vitals.hp, vitals.mp, cooldowns, timestamp + time, charges, rng, {mob,summon:soloFighter.summon});
-            const skill = selected?.skill || null;
-            const magic = selected?.magic === true;
-            let damage = 0;
-            if (magic) {
-                const magicCritical = rng() < clamp(bot.critical / 1000, 0, 0.25);
-                const semantic = C4SkillRules.resolve(selected.skill);
-                damage = Formulas.calcMagicDamage(bot.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
-                    * coldMagicTargetModifier(mob, semantic);
-            } else if (hitSucceeds(bot.accur, mob.evasion, rng)) {
-                const critical = Formulas.rollCritical(bot.critical, rng);
-                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
-                damage = Formulas.calcPhysicalDamage(bot.pAtk, bot.equipment.pAtkRnd, mob.pDef, selected?.power || 0, { critical })
-                    * coldPhysicalTargetModifier(bot, mob, semantic, timestamp + time);
-            }
-            if (skill) {
-                const semantic = C4SkillRules.resolve(skill);
-                const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
-                if (requiredCharges > 0) damage *= 0.8 + (0.201 * charges);
-                const nextCharges = { charges, chargeExpiresAt };
-                consumeCharges(nextCharges, semantic.requires?.charges);
-                if (Number(semantic.chargeOnUse) > 0) {
-                    addCharges(nextCharges, semantic.chargeOnUse, semantic.maxCharges, timestamp + time);
-                }
-                charges = nextCharges.charges;
-                chargeExpiresAt = nextCharges.chargeExpiresAt;
-                vitals.mp = Math.max(0, vitals.mp - Number(skill.mp || 0));
-                cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
-                skillUses += 1;
-            }
+            const hit = coldBotTurn(soloFighter, { allies, mob, mobHp, at: timestamp + time, time, rng });
+            if (!hit) continue;
             const targetHpBeforeHit = mobHp;
-            mobHp -= Math.max(0, damage);
+            mobHp -= Math.max(0, hit.damage);
             if (mobHp <= 0) {
                 overhitContext = invoke('GameServer/Progression/OverhitReward').contextForHit({
                     attacker: { characterId: state.characterId },
-                    skill,
+                    skill: hit.skill,
                     targetHpBeforeHit,
                     targetMaxHp: mob.maxHp,
-                    finalDamage: damage,
+                    finalDamage: hit.damage,
                     encounterId: mob.selfId || targetNpcId,
                     timestamp: timestamp + time
                 });
-            }
-            botReadyAt += actionDelayMs(bot, skill);
-            if (mobHp <= 0) {
-                soloFighter.readyAt = botReadyAt;
-                startColdCorpseSummon(soloFighter, timestamp + time, cooldowns);
-                summonUses = Number(soloFighter.summonUses || 0);
                 break;
             }
-        } else if (hitSucceeds(mob.accur, bot.evasion, rng)) {
+        } else if (hitSucceeds(mob.accur, soloFighter.profile.evasion, rng)) {
             const critical = Formulas.rollCritical(mob.critical, rng);
-            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, bot.pDef, { critical })
-                * coldNpcWeaponModifier(mob, bot, timestamp + time);
+            const damage = Formulas.calcMeleeDamage(mob.pAtk, mob.pAtkRnd, soloFighter.profile.pDef, { critical })
+                * coldNpcWeaponModifier(mob, soloFighter.profile, timestamp + time);
             vitals.hp -= Math.max(0, damage);
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         } else {
@@ -1161,7 +1163,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         return {
             won: false,
             encounter: !died ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
-                botReadyAt: Math.max(0, botReadyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time)
+                botReadyAt: Math.max(0, soloFighter.readyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time)
             }) : null,
             died,
             hp: Math.max(0, Math.round(vitals.hp)),
@@ -1172,13 +1174,15 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             sp: 0,
             adena: 0,
             loot: [],
-            cooldowns,
-            charges: died ? 0 : charges,
-            chargeExpiresAt: died ? null : chargeExpiresAt,
+            cooldowns: soloFighter.cooldowns,
+            charges: died ? 0 : soloFighter.charges,
+            chargeExpiresAt: died ? null : soloFighter.chargeExpiresAt,
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
-            debug: { actions, durationMs: time, skillUses, shotActions, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
+            debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
+                musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
+                potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: !died }
         };
     }
 
@@ -1213,18 +1217,19 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         mp: Math.max(0, Math.round(vitals.mp)),
         maxMp: Math.max(1, Math.round(vitals.maxMp)),
         exp: Math.round(overhit.adjustedExp * expMultiplier * rates.exp
-            * ColdCombatProfile.statMultiplier(bot, 'expMul', timestamp)),
+            * ColdCombatProfile.statMultiplier(soloFighter.profile, 'expMul', timestamp)),
         sp: Math.round(rewards.sp * expMultiplier * rates.sp),
         adena,
         loot,
-        cooldowns,
-        charges,
-        chargeExpiresAt,
+        cooldowns: soloFighter.cooldowns,
+        charges: soloFighter.charges,
+        chargeExpiresAt: soloFighter.chargeExpiresAt,
         effects: soloFighter.profile.effects,
         inventory: fightState.inventory,
         summon: soloFighter.summon || null,
-        debug: { actions, durationMs: time, skillUses, shotActions, heals, musicUses, summonUses, summonActions, potionsUsed: soloFighter.potionsUsed,
-            mobSelfId: mob.selfId || null, timedOut: false, overhit }
+        debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
+            musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
+            potionsUsed: soloFighter.potionsUsed, mobSelfId: mob.selfId || null, timedOut: false, overhit }
     };
 }
 
@@ -1397,97 +1402,21 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         }
         else if (botActs) {
             next.actions += 1;
-            expireCharges(next, timestamp + time);
-            next.now = timestamp + time;
-            const summonedNow = ensureColdSummon(next, timestamp + time, next.cooldowns);
-            if (summonedNow) continue;
-            if (startColdPotion(next, time)) {
-                next.readyAt += 250;
-                continue;
-            }
-            const heal = chooseHeal(next.profile, fighters, next.vitals.mp, next.cooldowns, timestamp + time, next);
-            if (heal) {
-                for (const event of applyAllyHeal(next, fighters, heal)) help.set(`${event.sourceId}:${event.targetId}:${event.type}`, event);
-                next.vitals.mp = Math.max(0, next.vitals.mp - Number(heal.skill.mp || 0));
-                next.cooldowns[heal.skill.selfId] = timestamp + time + Math.max(0, Number(heal.skill.reuse || 0));
-                next.skillUses += 1;
-                next.heals += 1;
-                next.readyAt += actionDelayMs(next.profile, heal.skill);
-                continue;
-            }
-
-            const music = chooseMusicAction(next, fighters, timestamp + time);
-            if (music) {
-                applyMusicAction(next, music, timestamp + time);
-                next.vitals.mp = Math.max(0, next.vitals.mp - music.cost);
-                next.cooldowns[music.skill.selfId] = timestamp + time + Math.max(0, Number(music.skill.reuse || 0));
-                next.skillUses += 1;
-                next.musicUses += 1;
-                next.readyAt += actionDelayMs(next.profile, music.skill);
-                continue;
-            }
-
-            const chargeSkill = chooseChargeSkill(next.profile, next.vitals.mp, next.cooldowns, timestamp + time, next.charges, {hp:next.vitals.hp,mob,party:true,summon:next.summon});
-            if (chargeSkill) {
-                const semantic = C4SkillRules.resolve(chargeSkill);
-                addCharges(next, 1, semantic.maxCharges, timestamp + time);
-                next.vitals.mp = Math.max(0, next.vitals.mp - Number(chargeSkill.mp || 0));
-                next.cooldowns[chargeSkill.selfId] = timestamp + time + Math.max(0, Number(chargeSkill.reuse || 0));
-                next.skillUses += 1;
-                next.readyAt += actionDelayMs(next.profile, chargeSkill);
-                continue;
-            }
-            next.shotActions += 1;
-            const selected = chooseSkill(next.profile, next.vitals.hp, next.vitals.mp, next.cooldowns, timestamp + time, next.charges, rng, {mob,party:true,summon:next.summon});
-            const skill = selected?.skill || null;
-            let damage = 0;
-            if (selected?.magic) {
-                const magicCritical = rng() < clamp(next.profile.critical / 1000, 0, 0.25);
-                const semantic = C4SkillRules.resolve(selected.skill);
-                damage = Formulas.calcMagicDamage(next.profile.mAtk, Math.max(1, selected.power), mob.mDef, { magicCritical })
-                    * coldMagicTargetModifier(mob, semantic);
-            } else if (hitSucceeds(next.profile.accur, mob.evasion, rng)) {
-                const semantic = selected?.skill ? C4SkillRules.resolve(selected.skill) : {};
-                damage = Formulas.calcPhysicalDamage(next.profile.pAtk, next.profile.equipment.pAtkRnd, mob.pDef, selected?.power || 0, {
-                    critical: Formulas.rollCritical(next.profile.critical, rng)
-                }) * coldPhysicalTargetModifier(next.profile, mob, semantic, timestamp + time);
-            }
-            if (skill) {
-                const semantic = C4SkillRules.resolve(skill);
-                const requiredCharges = Math.max(0, Number(semantic.requires?.charges) || 0);
-                if (requiredCharges > 0) damage *= 0.8 + (0.201 * next.charges);
-                consumeCharges(next, semantic.requires?.charges);
-                if (Number(semantic.chargeOnUse) > 0) {
-                    addCharges(next, semantic.chargeOnUse, semantic.maxCharges, timestamp + time);
-                }
-                next.vitals.mp = Math.max(0, next.vitals.mp - Number(skill.mp || 0));
-                next.cooldowns[skill.selfId] = timestamp + time + Math.max(0, Number(skill.reuse || 0));
-                next.skillUses += 1;
-            }
+            const hit = coldBotTurn(next, { allies: fighters, mob, mobHp, at: timestamp + time, time, rng, party: true, help });
+            if (!hit) continue;
             const targetHpBeforeHit = mobHp;
-            mobHp -= Math.max(0, damage);
+            mobHp -= Math.max(0, hit.damage);
             if (mobHp <= 0) {
                 overhitContext = invoke('GameServer/Progression/OverhitReward').contextForHit({
                     attacker: { characterId: next.state.characterId },
-                    skill,
+                    skill: hit.skill,
                     targetHpBeforeHit,
                     targetMaxHp: mob.maxHp,
-                    finalDamage: damage,
+                    finalDamage: hit.damage,
                     encounterId: mob.selfId || targetNpcId,
                     timestamp: timestamp + time
                 });
-            }
-            next.readyAt += actionDelayMs(next.profile, skill);
-            if (mobHp <= 0) {
                 rescued(next);
-                const necromancer = fighters.find((fighter) => (
-                    fighter.vitals.hp > 0
-                    && BotRoles.isNecromancer(fighter.profile?.classId)
-                    && !fighter.summon
-                ));
-                if (necromancer) {
-                    startColdCorpseSummon(necromancer, timestamp + time, necromancer.cooldowns);
-                }
                 break;
             }
         } else {
