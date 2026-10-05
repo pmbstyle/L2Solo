@@ -55,7 +55,10 @@ module.exports = async function changeClass(session, parts) {
         return { ok: false, reason: 'level', requiredLevel: preflight.requiredLevel };
     }
 
-    const result = await ClassTransfer.transfer(session, targetClassId);
+    // Both entry points share the character's quest queue so a simultaneous
+    // level-only transfer cannot race a hand-in of the three trial marks.
+    const result = await invoke('GameServer/Quest/QuestService').mutate(session,
+        () => ClassTransfer.transfer(session, targetClassId));
     if (!result.ok) {
         if (result.reason === 'level') {
             html(session, `<html><body>Class Transfer:<br>You must be at least level <font color="LEVEL">${result.requiredLevel}</font> to perform this class transfer.</body></html>`);

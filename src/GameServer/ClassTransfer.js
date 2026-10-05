@@ -58,17 +58,7 @@ async function transfer(session, targetClassId, options = {}) {
     actor.setClassId(check.targetClassId);
     try {
         await Database.updateCharacterClassId(actor.fetchId(), check.targetClassId);
-        await actor.skillset.awardSkills(actor.fetchId(), check.targetClassId, currentLevel);
-        CalculateStats(session, actor);
-        actor.fillupVitals();
-
-        session.dataSendToMeAndOthers?.(ServerResponse.socialAction(actor.fetchId(), 15), actor);
-        session.dataSendToMe?.(ServerResponse.skillsList(actor.skillset.fetchSkills()));
-        await invoke('GameServer/Shortcuts').refreshSkills(session, actor);
-        session.dataSendToMe?.(ServerResponse.exStorageMaxCount(actor));
-        session.dataSendToMe?.(ServerResponse.userInfo(actor));
-        session.dataSendToMe?.(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));
-        session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+        await refresh(session);
         return { ok: true, targetClassId: check.targetClassId, requiredLevel: check.requiredLevel };
     } catch (error) {
         actor.setClassId(check.currentClassId);
@@ -78,4 +68,19 @@ async function transfer(session, targetClassId, options = {}) {
     }
 }
 
-module.exports = { eligibility, transfer, statusParams };
+async function refresh(session, { restoreVitals = true, celebrate = true } = {}) {
+    const actor = session.actor;
+    await actor.skillset.awardSkills(actor.fetchId(), actor.fetchClassId(), actor.fetchLevel());
+    CalculateStats(session, actor);
+    if (restoreVitals) actor.fillupVitals();
+
+    if (celebrate) session.dataSendToMeAndOthers?.(ServerResponse.socialAction(actor.fetchId(), 15), actor);
+    session.dataSendToMe?.(ServerResponse.skillsList(actor.skillset.fetchSkills()));
+    await invoke('GameServer/Shortcuts').refreshSkills(session, actor);
+    session.dataSendToMe?.(ServerResponse.exStorageMaxCount(actor));
+    session.dataSendToMe?.(ServerResponse.userInfo(actor));
+    session.dataSendToMe?.(ServerResponse.statusUpdate(actor.fetchId(), statusParams(actor)));
+    session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
+}
+
+module.exports = { eligibility, transfer, statusParams, refresh };

@@ -140,11 +140,13 @@ async function observe() {
     ShopPlaces._resetForTests();
     const outsidePlazas = {
         // A town without a captured plaza: its centre, as the cold sell store asks.
-        orenWithCentre: point(ListingService.marketLocation({ name: 'Oren', center: { locX: 82960, locY: 53177, locZ: -1496 } }, { state: { characterId: 1, loc: { locX: 5, locY: 6, locZ: 7 } } })),
+        // changed: Oren and Aden have the author's captured squares (2fa4508b);
+        // Heine and Gludin have none.
+        heineWithCentre: point(ListingService.marketLocation({ name: 'Heine', center: { locX: 82960, locY: 53177, locZ: -1496 } }, { state: { characterId: 1, loc: { locX: 5, locY: 6, locZ: 7 } } })),
         // The AFK shop asks with no centre: the bot's own place.
-        orenNoCentre: point(ListingService.marketLocation({ name: 'Oren' }, { state: { characterId: 1, loc: { locX: 5, locY: 6, locZ: 7 } } })),
+        heineNoCentre: point(ListingService.marketLocation({ name: 'Heine' }, { state: { characterId: 1, loc: { locX: 5, locY: 6, locZ: 7 } } })),
         // The restored-shop migration passes the shop row as the place.
-        restoredShop: point(ListingService.marketLocation({ name: 'Aden' }, { state: { characterId: 1, loc: { locX: 147450, locY: 26741, locZ: -2204, town: 'Aden' } } }))
+        restoredShop: point(ListingService.marketLocation({ name: 'Gludin' }, { state: { characterId: 1, loc: { locX: 147450, locY: 26741, locZ: -2204, town: 'Gludin' } } }))
     };
     return {
         towns,
@@ -494,9 +496,220 @@ const EXPECTED = {
                 closed_again: [115434, -178666, -921]
             },
             staticBlocks: ["MineSupplies", "Angel"]
+        },
+        // new: the author's five captured squares (2fa4508b).
+        Oren: {
+            area: [
+                "............",
+                "............",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                ".....#####..",
+                ".....#####..",
+                ".....#####..",
+                ".....#####..",
+                "............",
+                "............"
+            ],
+            fill: {
+                placed: [
+                    [82400, 53660, -1495],
+                    [82360, 53660, -1493],
+                    [82400, 53620, -1493],
+                    [82400, 53700, -1490],
+                    [82440, 53660, -1490],
+                    [82360, 53620, -1491]
+                ],
+                total: 448,
+                taken: 438,
+                full: null,
+                reused: [82400, 53700, -1490]
+            },
+            occupants: {
+                none: [82400, 53660, -1495],
+                afk_shop: [82360, 53660, -1493],
+                crafter_other_town: [82400, 53660, -1495],
+                crafter_loc_from_state: [82360, 53660, -1493],
+                self_crafter: [82400, 53660, -1495],
+                crafting_same_town: [82360, 53660, -1493],
+                hunting_on_point: [82400, 53660, -1495],
+                off_grid_shop: [82360, 53660, -1493],
+                closed_again: [82400, 53660, -1495]
+            },
+            staticBlocks: ["StayTun3d", "BarterKing", "Puffy", "NastyDream"]
+        },
+        "Hunter's Village": {
+            area: [
+                "............",
+                "............",
+                "....##......",
+                "...####.....",
+                "..######....",
+                "..#######...",
+                "..########..",
+                "..#######...",
+                "...####.....",
+                "....##......",
+                "............",
+                "............"
+            ],
+            fill: {
+                placed: [
+                    [116605, 76152, -2712],
+                    [116605, 76192, -2714],
+                    [116565, 76152, -2717],
+                    [116565, 76192, -2712],
+                    [116645, 76152, -2714],
+                    [116645, 76192, -2716]
+                ],
+                total: 616,
+                taken: 616,
+                full: null,
+                reused: [116565, 76192, -2712]
+            },
+            occupants: {
+                none: [116605, 76152, -2712],
+                afk_shop: [116605, 76192, -2714],
+                crafter_other_town: [116605, 76152, -2712],
+                crafter_loc_from_state: [116605, 76192, -2714],
+                self_crafter: [116605, 76152, -2712],
+                crafting_same_town: [116605, 76192, -2714],
+                hunting_on_point: [116605, 76152, -2712],
+                off_grid_shop: [116565, 76152, -2717],
+                closed_again: [116605, 76152, -2712]
+            },
+            staticBlocks: []
+        },
+        Aden: {
+            area: [
+                "............",
+                "............",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                "..########..",
+                "............",
+                "............"
+            ],
+            fill: {
+                placed: [
+                    [147467, 26969, -2202],
+                    [147467, 26929, -2200],
+                    [147427, 26969, -2200],
+                    [147427, 26929, -2205],
+                    [147507, 26969, -2204],
+                    [147507, 26929, -2202]
+                ],
+                total: 495,
+                taken: 495,
+                full: null,
+                reused: [147427, 26929, -2205]
+            },
+            occupants: {
+                none: [147467, 26969, -2202],
+                afk_shop: [147467, 26929, -2200],
+                crafter_other_town: [147467, 26969, -2202],
+                crafter_loc_from_state: [147467, 26929, -2200],
+                self_crafter: [147467, 26969, -2202],
+                crafting_same_town: [147467, 26929, -2200],
+                hunting_on_point: [147467, 26969, -2202],
+                off_grid_shop: [147467, 26929, -2200],
+                closed_again: [147467, 26969, -2202]
+            },
+            staticBlocks: []
+        },
+        Rune: {
+            area: [
+                "............",
+                "............",
+                "............",
+                "..#########.",
+                "..#########.",
+                "..#########.",
+                "..#########.",
+                ".##########.",
+                "....#######.",
+                "............",
+                "............",
+                "............"
+            ],
+            fill: {
+                placed: [
+                    [44183, -48017, -802],
+                    [44143, -48017, -800],
+                    [44183, -48057, -800],
+                    [44143, -48057, -798],
+                    [44183, -47977, -797],
+                    [44143, -47977, -802]
+                ],
+                total: 412,
+                taken: 412,
+                full: null,
+                reused: [44143, -48057, -798]
+            },
+            occupants: {
+                none: [44183, -48017, -802],
+                afk_shop: [44143, -48017, -800],
+                crafter_other_town: [44183, -48017, -802],
+                crafter_loc_from_state: [44143, -48017, -800],
+                self_crafter: [44183, -48017, -802],
+                crafting_same_town: [44143, -48017, -800],
+                hunting_on_point: [44183, -48017, -802],
+                off_grid_shop: [44143, -48017, -800],
+                closed_again: [44183, -48017, -802]
+            },
+            staticBlocks: []
+        },
+        Goddard: {
+            area: [
+                "............",
+                "............",
+                ".....##.....",
+                "....####....",
+                "...######...",
+                "..###..###..",
+                "..##....##..",
+                ".###....##..",
+                ".........##.",
+                "..........#.",
+                "............",
+                "............"
+            ],
+            fill: {
+                placed: [
+                    [147759, -56129, -2781],
+                    [147719, -56129, -2779],
+                    [147799, -56129, -2776],
+                    [147679, -56129, -2777],
+                    [147759, -56169, -2779],
+                    [147719, -56169, -2777]
+                ],
+                total: 453,
+                taken: 453,
+                full: null,
+                reused: [147679, -56129, -2777]
+            },
+            occupants: {
+                none: [147759, -56129, -2781],
+                afk_shop: [147719, -56129, -2779],
+                crafter_other_town: [147759, -56129, -2781],
+                crafter_loc_from_state: [147719, -56129, -2779],
+                self_crafter: [147759, -56129, -2781],
+                crafting_same_town: [147719, -56129, -2779],
+                hunting_on_point: [147759, -56129, -2781],
+                off_grid_shop: [147719, -56129, -2779],
+                closed_again: [147759, -56129, -2781]
+            },
+            staticBlocks: []
         }
     },
-    outsidePlazas: { orenWithCentre: [82960, 53177, -1496], orenNoCentre: [5, 6, 7], restoredShop: [147450, 26741, -2204] },
+    outsidePlazas: { heineWithCentre: [82960, 53177, -1496], heineNoCentre: [5, 6, 7], restoredShop: [147450, 26741, -2204] },
     fullReason: "plaza_full:Dion",
     giranEdges: [
         "80910,148000 starter:kept orphan:kept stall:no",

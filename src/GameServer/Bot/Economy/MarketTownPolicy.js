@@ -72,7 +72,7 @@ function targetTownForItems(state, items = []) {
 
 // Where a bot opens its shop (б7, Q6, user 2026-10-05): one weighted roll
 // (PriceDecision.chooseByWeight) at the decision to open, over the towns
-// with shop places, by the value
+// where bots open shops (ShopPlaces.SHOP_TOWNS), by the value
 // the shop would see there less the trip: each item's listed value (price x
 // count) times the share of its counter's buyers in that town
 // (MarketCounters.townDemand), minus the bot's round trip to the town. A
@@ -81,7 +81,7 @@ function targetTownForItems(state, items = []) {
 // with karma opens in Floran. O(items x towns), at an opening only.
 function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), rollKey = null } = {}) {
     if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
-    const towns = Object.keys(ShopPlaces.PLAZAS);
+    const towns = ShopPlaces.SHOP_TOWNS;
     const values = new Map(towns.map((town) => [town, 0]));
     for (const item of items) {
         const worth = Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.count) || 1);

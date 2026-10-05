@@ -5336,7 +5336,51 @@ const Database = {
             return { currentFeed, remaining:food.amount-1 };
         }, 'pet:mount-food'));
     },
-    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null) {
+    exchangeDimensionalDiamond(characterId, itemId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const recipe = require('../data/Items/dimensional_diamond_exchanges.json').recipes.find(row => row.itemId === itemId);
+            if (!recipe) throw new Error('Invalid dimensional diamond exchange');
+            const diamonds = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 7562 AND equipped = 0 ORDER BY id', [characterId]);
+            if (diamonds.reduce((sum, item) => sum + item.amount, 0) < recipe.cost) throw new Error('Not enough dimensional diamonds');
+            const template = require('./GameServer/DataCache').items.find(item => item.selfId === itemId);
+            if (!template?.etc.stackable) throw new Error('Missing teleport scroll template');
+            const changed = new Set();
+            let remaining = recipe.cost;
+            for (const item of diamonds) {
+                const used = Math.min(remaining, item.amount);
+                if (!used) break;
+                remaining -= used;
+                changed.add(item.id);
+                if (used === item.amount) write('DELETE FROM items WHERE id = ?', [item.id]);
+                else write('UPDATE items SET amount = ? WHERE id = ?', [item.amount - used, item.id]);
+            }
+            const scroll = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id LIMIT 1', [characterId, itemId]);
+            if (scroll) { write('UPDATE items SET amount = amount + 1 WHERE id = ?', [scroll.id]); changed.add(scroll.id); }
+            else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, 1, ?)', [itemId, template.template.name, characterId]).insertId));
+            return [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
+        }, 'quest:diamond-exchange'));
+    },
+    completeSecondProfession(characterId, expectedClassId, targetClassId) {
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const route = require('../data/Templates/second_profession_trials.json').find(row => row.classId === targetClassId);
+            const character = one('SELECT classId, level, race FROM characters WHERE id = ?', [characterId]);
+            if (!route || character?.classId !== expectedClassId || character.level < 40 || character.race !== route.race
+                || !require('./GameServer/ClassProgression').secondProfMap[expectedClassId]?.includes(targetClassId)) {
+                throw new Error('Second profession is not available');
+            }
+            const changed = [];
+            for (const selfId of route.marks) {
+                const mark = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 AND amount >= 1 ORDER BY id LIMIT 1', [characterId, selfId]);
+                if (!mark) throw new Error('Required profession marks missing');
+                if (mark.amount === 1) write('DELETE FROM items WHERE id = ? AND characterId = ?', [mark.id, characterId]);
+                else write('UPDATE items SET amount = amount - 1 WHERE id = ? AND characterId = ?', [mark.id, characterId]);
+                changed.push({ id: mark.id, amount: mark.amount - 1 });
+            }
+            write('UPDATE characters SET classId = ? WHERE id = ? AND classId = ?', [targetClassId, characterId, expectedClassId]);
+            return changed;
+        }, 'quest:second-profession'));
+    },
+    applyQuestStep(characterId, questId, expected, next, takes, gives, experience = null, beginner = null, pk = null, removeRecipes = []) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             if (!require('./GameServer/Quest/QuestRegistry').entries.some(e => e.id === questId && e.status === 'active')) throw new Error('Unsupported quest');
             const row = one('SELECT state, variables FROM character_quests WHERE characterId = ? AND questId = ?', [characterId, questId]);
@@ -5344,7 +5388,10 @@ const Database = {
             if ((row?.state || 'created') !== expected.state || JSON.stringify(current) !== JSON.stringify(expected.variables)) throw new Error('Quest step changed');
             const changed = new Set();
             for (const take of takes) {
-                const items = all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 ORDER BY id', [characterId, take.selfId]);
+                // Only the owning trial may retire its currently wielded quest weapon.
+                const trialWeapon = { 212: 3027, 218: 3026, 224: 3028, 229: 3029 }[questId];
+                const equipmentFilter = take.selfId === trialWeapon ? '' : 'AND equipped = 0';
+                const items = all(`SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ${equipmentFilter} ORDER BY id`, [characterId, take.selfId]);
                 if (!Number.isSafeInteger(take.amount) || take.amount < 1 || items.reduce((sum, item) => sum + item.amount, 0) < take.amount) throw new Error('Required quest items missing');
                 let remaining = take.amount;
                 for (const item of items) {
@@ -5361,6 +5408,11 @@ const Database = {
                 const item = give.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, give.selfId]) : null;
                 if (item) { write('UPDATE items SET amount = ? WHERE id = ?', [item.amount + give.amount, item.id]); changed.add(item.id); }
                 else changed.add(Number(write('INSERT INTO items(selfId, name, amount, characterId) VALUES (?, ?, ?, ?)', [give.selfId, give.name, give.amount, characterId]).insertId));
+            }
+            for (const recipeId of removeRecipes) {
+                const allowed = { 216: [315, 316], 221: [314] }[questId] || [];
+                if (!allowed.includes(recipeId)) throw new Error('Unsupported quest recipe');
+                write('DELETE FROM character_recipes WHERE characterId = ? AND recipeId = ?', [characterId, recipeId]);
             }
             write(UPSERT_CHARACTER_QUEST, [characterId, questId, next.state, JSON.stringify(next.variables)]);
             const rows = [...changed].map(id => one('SELECT * FROM items WHERE id = ? AND characterId = ?', [id, characterId]) || { id, amount: 0 });
@@ -5655,12 +5707,16 @@ const Database = {
         }, 'item:combine'));
     },
 
-    crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount, coldState = null }) {
+    crystallizeInventoryItem(characterId, { sourceId, sourceSelfId, crystalId, crystalName, crystalAmount, coldState = null, expectedEnchant = null, validate }) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
-            if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0) throw new Error('crystallize source changed');
+            validate?.();
+            if (!Number.isSafeInteger(crystalAmount) || crystalAmount <= 0 || crystalAmount > 2147483647) throw new Error('invalid crystal amount');
+            const source = one('SELECT id, selfId, amount, equipped, enchant FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
+            if (!source || Number(source.selfId) !== Number(sourceSelfId) || Number(source.amount) !== 1 || Number(source.equipped) !== 0
+                || (expectedEnchant !== null && Number(source.enchant || 0) !== Number(expectedEnchant))) throw new Error('crystallize source changed');
             const target = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, crystalId]);
             const amount = Number(target?.amount || 0) + Number(crystalAmount);
+            if (!Number.isSafeInteger(amount) || amount > 2147483647) throw new Error('crystal stack is full');
             let id = Number(target?.id || 0);
             write('DELETE FROM items WHERE id = ? AND characterId = ?', [sourceId, characterId]);
             if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [amount, id, characterId]);

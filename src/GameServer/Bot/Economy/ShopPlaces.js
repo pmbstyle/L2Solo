@@ -3,8 +3,8 @@
 //
 // Each row is a trading square captured in-game. Places are the points of a
 // square grid, SPACING apart, inside the square and at least `margin` from its
-// edge (and `clearance` from a hole such as Giran's central column). The table
-// is built once, on the first placement: the height of every place comes from
+// edge (and `clearance` from a hole such as Giran's central column). A town's
+// table is built once, on its first use: the height of every place comes from
 // geodata, and a place a hot bot cannot stand on is left out.
 //
 // Free places are kept in a min-heap of place numbers. Places are numbered from
@@ -86,8 +86,8 @@ const PLAZAS = Object.freeze({
         travelCenter: Object.freeze({ locX: -44600, locY: -112400, locZ: -240 })
     }),
     // Floran, the town where a PK trades (design 5.8). The author's square
-    // captured in-game, data as is (FLORAN_MARKET_PLAZA, commit e77e0540,
-    // origin/develop 733b65e1): outline, corner heights, stall padding.
+    // captured in-game, data as is (FLORAN_MARKET_PLAZA, commit e77e0540):
+    // outline including the central inset, corner heights, stall padding.
     'Floran Village': Object.freeze({
         boundary: Object.freeze([
             [16933, 169872], [16777, 170253], [17382, 170559],
@@ -105,8 +105,67 @@ const PLAZAS = Object.freeze({
         margin: 55,
         locZ: -920,
         travelCenter: Object.freeze({ locX: 115440, locY: -178580, locZ: -920 })
+    }),
+    // The author's five squares captured in-game (commit 2fa4508b), data as
+    // is: outline, stall padding, captured centre and ground level. He
+    // recorded them for later market routing; bots do not open shops here yet
+    // (botShops: false, SHOP_TOWNS), the places only take part in occupancy.
+    // Oren: the concave inset stays outside the trading area.
+    Oren: Object.freeze({
+        boundary: Object.freeze([
+            [82942, 53245], [82946, 54161], [82181, 54163],
+            [82175, 53746], [81669, 53745], [81665, 53287]
+        ]),
+        margin: 55,
+        locZ: -1496,
+        botShops: false
+    }),
+    // Hunter's Village: heights vary across the square.
+    "Hunter's Village": Object.freeze({
+        boundary: Object.freeze([
+            [117437, 76275], [116628, 75417], [116157, 75751],
+            [115910, 76188], [116395, 76915]
+        ]),
+        margin: 55,
+        center: Object.freeze({ locX: 116505, locY: 76109, locZ: -2717 }),
+        locZ: -2717,
+        botShops: false
+    }),
+    // Aden: the lower trading square, not the higher respawn terrace.
+    Aden: Object.freeze({
+        boundary: Object.freeze([
+            [146732, 26595], [146738, 27305], [148167, 27309], [148173, 26594]
+        ]),
+        margin: 55,
+        center: Object.freeze({ locX: 147453, locY: 26951, locZ: -2205 }),
+        locZ: -2205,
+        botShops: false
+    }),
+    // Rune: the slanted edges of the measured footprint.
+    Rune: Object.freeze({
+        boundary: Object.freeze([
+            [43248, -47812], [43329, -48311], [44978, -48312], [45006, -47721]
+        ]),
+        margin: 55,
+        center: Object.freeze({ locX: 44140, locY: -48039, locZ: -797 }),
+        locZ: -797,
+        botShops: false
+    }),
+    // Goddard, including the concave upper edge.
+    Goddard: Object.freeze({
+        boundary: Object.freeze([
+            [148750, -55483], [148257, -55709], [147976, -56081],
+            [147411, -56052], [147174, -55712], [146704, -55743],
+            [146855, -56198], [147622, -56624], [147789, -56569], [148642, -56101]
+        ]),
+        margin: 55,
+        locZ: -2781,
+        botShops: false
     })
 });
+
+// The towns where a bot may open its shop (MarketTownPolicy.shopTown).
+const SHOP_TOWNS = Object.freeze(Object.keys(PLAZAS).filter((town) => PLAZAS[town].botShops !== false));
 
 function boundsOf(boundary) {
     let minX = Infinity; let maxX = -Infinity; let minY = Infinity; let maxY = -Infinity;
@@ -342,21 +401,25 @@ function staticMerchants() {
     return Object.entries(configs).filter(([, store]) => store && hasPlaza(store.town));
 }
 
-function ensureBuilt() {
-    if (towns) return;
-    towns = new Map(Object.keys(PLAZAS).map((town) => [town, buildTown(town)]));
+// A town's table, built on its first use: a town nobody places a store in
+// costs nothing.
+function ensureBuilt(town) {
+    if (!towns) towns = new Map();
+    if (towns.has(town)) return towns.get(town);
+    const data = buildTown(town);
+    towns.set(town, data);
     // Owners recorded before the build (life states, AFK shops) block now.
-    for (const record of occupants.values()) block(record);
-    for (const [name, store] of staticMerchants()) occupy(`static:${name}`, store.town, store);
+    for (const record of occupants.values()) if (record.town === town) block(record);
+    for (const [name, store] of staticMerchants()) if (store.town === town) occupy(`static:${name}`, store.town, store);
+    return data;
 }
 
 // The free place nearest the fill centre, now held by `owner`, or null when
 // the town has no captured square or its square is full.
 function take(town, owner) {
     if (!hasPlaza(town)) return null;
-    ensureBuilt();
+    const data = ensureBuilt(town);
     release(owner);
-    const data = towns.get(town);
     while (data.heap.length) {
         const place = heapPop(data.heap);
         data.inHeap[place] = 0;
@@ -371,15 +434,13 @@ function take(town, owner) {
 // Every place of a town in fill order (inspection and tests).
 function places(town) {
     if (!hasPlaza(town)) return [];
-    ensureBuilt();
-    const data = towns.get(town);
+    const data = ensureBuilt(town);
     return Array.from(data.xs, (locX, index) => ({ locX, locY: data.ys[index], locZ: data.zs[index] }));
 }
 
 function freeCount(town) {
     if (!hasPlaza(town)) return 0;
-    ensureBuilt();
-    const data = towns.get(town);
+    const data = ensureBuilt(town);
     let free = 0;
     for (let place = 0; place < data.blockers.length; place++) if (data.blockers[place] === 0) free++;
     return free;
@@ -428,6 +489,7 @@ function _resetForTests() {
 module.exports = {
     SPACING,
     PLAZAS,
+    SHOP_TOWNS,
     afkOwner,
     fillCenter,
     freeCount,
