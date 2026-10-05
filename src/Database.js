@@ -3069,12 +3069,16 @@ const Database = {
     },
 
     // The board deals of the last day, oldest first: the market counters
-    // replay them at start (MarketCounters.load).
+    // replay them at start (MarketCounters.load). Only the board's own deals
+    // (the rows AfkTrade settlements write, the ones MarketCounters.deal
+    // counts live); a private or configured merchant store writes the same
+    // wts/wtb channels with its own source.
     fetchRecentBoardDeals({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000 } = {}) {
         const since = Number(timestamp) - Math.max(1, Math.min(MARKET_TRADE_RETENTION_MS, Number(rangeMs) || 86400000));
         return readHistory(() => History.all(`SELECT selfId, unitPrice, quantity, occurredAt, sellerCharacterId,
             buyerCharacterId, town FROM market_trades
-            WHERE occurredAt >= ? AND channel IN ('bot_wts', 'player_wts', 'wts', 'wtb') AND unitPrice > 0
+            WHERE occurredAt >= ? AND unitPrice > 0
+                AND sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
             ORDER BY occurredAt ASC, id ASC`, [since]), 'market:recent-board-deals');
     },
 
