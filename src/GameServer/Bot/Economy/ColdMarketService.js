@@ -6,6 +6,8 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const OfferOrder = require('./OfferOrder');
+const OfferQuery = require('./OfferQuery');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 
@@ -76,13 +78,25 @@ function finishBlockedPurchase(state, goal, reason) {
     ));
 }
 
-// Buys one unit of a found offer for a cold bot: a board record through
-// AfkTradeService (one deal transaction), otherwise an NPC or a configured
-// city merchant. No goal or travel change; an NPC purchase records the bot
-// as shopping unless options.keepActivity (a purchase made for it where it
-// hunts).
+// What the bot learns from its own purchase on the board (group E follow-up:
+// the buy side learns): the deal's price is evidence of the item's price.
+function learnPurchase(state, selfId, price) {
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const book = PriceBelief.readBook(state.stats);
+    const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
+    if (!MarketPricing.learnDeal(book, selfId, ctx, price)) return state;
+    return { ...state, stats: { ...(state.stats || {}), priceBeliefs: PriceBelief.writeBook(book) } };
+}
+
+// Buys `options.qty` (one by default) of a found offer for a cold bot: a
+// board record through AfkTradeService (one deal transaction), otherwise an
+// NPC or a configured city merchant. No goal or travel change; an NPC
+// purchase records the bot as shopping unless options.keepActivity (a
+// purchase made for it where it hunts).
 function buyOffer(state, offer, options = {}) {
-    const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
+    const qty = Math.max(1, Math.floor(Number(options.qty) || 1));
+    const blocker = LifeState.marketPurchaseBlocker(state, offer, qty);
     if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -90,14 +104,15 @@ function buyOffer(state, offer, options = {}) {
             state.characterId,
             offer.store,
             offer.selfId,
-            1,
-            { lineId: offer.lineId, expectedPrice: offer.price, coldState: state }
+            qty,
+            { lineId: offer.lineId, expectedPrice: offer.price, coldState: state, autoEquip: options.autoEquip }
         ).then((trade) => {
             const done = AfkTrade.committedTrade(trade, state.characterId);
             if (!done.committed) throw new Error('cold_state_sync_failed');
-            // A buyer that went hot keeps its row: the job goes on with its own state.
-            const buyer = done.state || state;
-            MarketTelemetry.purchase(offer, 1, {
+            // A buyer that went hot keeps its row: the job goes on with its own
+            // state. A cold buyer learns the deal's price (the buy side learns).
+            const buyer = done.state ? learnPurchase(done.state, offer.selfId, offer.price) : state;
+            MarketTelemetry.purchase(offer, qty, {
                 buyerCharacterId: buyer.characterId,
                 buyerName: buyer.name,
                 town: buyer.currentRegion
@@ -108,28 +123,147 @@ function buyOffer(state, offer, options = {}) {
             return { purchased: false, reason: 'offer_changed' };
         });
     }
-    if (!MarketOpportunity.reserve(offer, 1)) return Promise.resolve({ purchased: false, reason: 'offer_changed' });
-    return LifeState.applyMarketPurchase(state, offer, 1, options).then((updated) => {
+    if (!MarketOpportunity.reserve(offer, qty)) return Promise.resolve({ purchased: false, reason: 'offer_changed' });
+    return LifeState.applyMarketPurchase(state, offer, qty, options).then((updated) => {
         if (!updated) {
-            MarketOpportunity.release(offer, 1);
+            MarketOpportunity.release(offer, qty);
             return { purchased: false, reason: 'persist_failed' };
         }
-        MarketTelemetry.purchase(offer, 1, {
+        MarketTelemetry.purchase(offer, qty, {
             buyerCharacterId: updated.characterId,
             buyerName: updated.name,
             town: updated.currentRegion
         });
         return { state: updated, purchased: true, offer, sellerState: null };
     }).catch((err) => {
-        MarketOpportunity.release(offer, 1);
+        MarketOpportunity.release(offer, qty);
         utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);
         return { purchased: false, reason: 'purchase_failed' };
     });
 }
 
+// What sells an item at a fixed price in each town: the NPC shops and the
+// configured city merchants (their stock never runs out for a cold bot, as
+// the author's cold NPC restock had it).
+function staticOffers(selfId) {
+    return [...MarketOpportunity.npcOffersAll(selfId),
+        ...invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(selfId)];
+}
+
+// The one purchase path of a cold bot (б5, D1, user 2026-10-05): every
+// board purchase is a trip to the seller's town. planPurchase picks the town
+// (OfferQuery.cheapestTown over the board and the NPC shops, the bot's round
+// trip included; none to the town it is shopping in); acquire buys there at
+// once when the bot stands in it, else leaves it an errand and starts the
+// author's market trip (GoalExecutor.beginMarketTravel); on arrival
+// tryPurchase buys the errand (buyHere). One trip per purchase.
+function planPurchase(state, selfId, amount, { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
+    timestamp = Date.now() } = {}) {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
+    const origin = OfferOrder.farmingOrigin(state, (spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId));
+    const trip = OfferOrder.tripCost(state, { origin, timestamp });
+    const plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
+        amount, money, maxPrice, towns, excludeOwner: state?.characterId,
+        npcOffers: npc ? staticOffers(selfId) : [],
+        cost: (town) => (town === here ? 0 : trip ? trip(town) : 0)
+    });
+    return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money } : null;
+}
+
+// Buys a plan in the town the bot stands in: each board line one deal, then
+// the NPC for the rest (also the units of a line that changed meanwhile),
+// within the plan's money. Returns { state, units, spent, hot }.
+async function buyHere(state, plan) {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    let current = state;
+    let units = 0;
+    let spent = 0;
+    for (const entry of plan.lines || []) {
+        const offer = AfkTrade.offerOf(entry.line, plan.town);
+        if (!offer || Number(offer.price) !== Number(entry.price)) continue;
+        const bought = await buyOffer(current, offer, { qty: entry.count, autoEquip: false });
+        if (!bought.purchased) continue;
+        if (LifeState.hotRow(current.characterId)) return { state: current, units: units + entry.count, spent, hot: true };
+        current = bought.state;
+        units += entry.count;
+        spent += entry.count * entry.price;
+    }
+    const npcPrice = Number(plan.npcPrice || 0);
+    const money = Math.min(Number.isFinite(plan.money) ? plan.money - spent : Infinity, Number(current.adena || 0));
+    const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
+    if (rest > 0) {
+        const npc = { sourceType: 'npc', sourceId: 0, selfId: plan.selfId, town: plan.town, price: npcPrice,
+            count: Infinity, available: true };
+        const bought = await buyOffer(current, npc, { qty: rest, keepActivity: true });
+        if (bought.purchased) {
+            current = bought.state;
+            units += rest;
+            spent += rest * npcPrice;
+        }
+    }
+    return { state: current, units, spent, hot: false };
+}
+
+function errandGoal(errand) {
+    return { type: 'market_errand', status: 'active', target: { itemId: errand.selfId, amount: errand.amount },
+        plan: { expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose } };
+}
+
+// A cold bot needs `amount` of an item for `purpose` (a shot restock, a
+// crafter's input, a clan order...): it buys where it stands when that town
+// is the cheapest with the trip, else it keeps an errand and goes there.
+// Returns { state, bought, units, traveling, plan }; `persist` false leaves
+// the state unsaved (a caller that saves it). A bot in a party keeps the
+// errand: its party's market break takes it there (NeedsEvaluator).
+async function acquire(state, selfId, amount, options = {}) {
+    const plan = planPurchase(state, selfId, amount, options);
+    if (!plan) return { state, bought: false, units: 0, traveling: false, plan: null };
+    if (state.activity === 'shopping' && plan.town === state.currentRegion) {
+        const bought = await buyHere(state, plan);
+        return { state: bought.state, bought: bought.units > 0, units: bought.units, traveling: false, plan, hot: bought.hot };
+    }
+    const errand = { selfId: Number(selfId), amount: Number(amount), town: plan.town, money: Number.isFinite(plan.money) ? plan.money : null,
+        maxPrice: Number.isFinite(options.maxPrice) ? options.maxPrice : null, purpose: options.purpose || 'supply',
+        at: Number(options.timestamp || Date.now()) };
+    const withErrand = { ...state, stats: { ...(state.stats || {}), marketErrand: errand } };
+    const from = state.activity === 'shopping' ? { ...withErrand, activity: 'hunting' } : withErrand;
+    const travel = state.party?.partyId || state.partyId ? null : GoalExecutor.beginMarketTravel(from, errandGoal(errand));
+    if (travel && state.activity === 'shopping') travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
+    const next = travel || withErrand;
+    if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan };
+    const saved = await LifeState.upsertState(next, travel ? `market_errand_${errand.purpose}` : 'market_errand_kept');
+    return { state: saved || next, bought: false, units: 0, traveling: !!travel && !!saved, plan };
+}
+
+// On arrival: the errand of the town the bot stands in, bought there (the
+// plan made again for this town, as the board stands now). Returns null
+// without one.
+async function buyErrand(state) {
+    const errand = state?.stats?.marketErrand;
+    if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
+    const plan = planPurchase(state, errand.selfId, errand.amount, { towns: [errand.town],
+        money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity });
+    const bought = plan ? await buyHere(state, plan) : { state, units: 0, hot: false };
+    if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
+    const cleared = { ...bought.state, stats: { ...(bought.state.stats || {}), marketErrand: null } };
+    const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
+    await GoalState.clear(state.characterId, 'completed').catch(() => null);
+    return { state: saved || cleared, purchased: bought.units > 0, units: bought.units,
+        reason: bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer' };
+}
+
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
+        if (state.stats?.marketErrand?.town === state.currentRegion) return buyErrand(state);
+        if (goal?.type === 'market_errand' && state.stats?.marketErrand) {
+            // The errand's town is another one: the bot goes on there.
+            return acquire({ ...state }, state.stats.marketErrand.selfId, state.stats.marketErrand.amount, {
+                money: state.stats.marketErrand.money ?? Infinity, maxPrice: state.stats.marketErrand.maxPrice ?? Infinity,
+                purpose: state.stats.marketErrand.purpose, towns: [state.stats.marketErrand.town] })
+                .then((result) => ({ state: result.state, purchased: result.bought, reason: 'market_errand_town' }));
+        }
         const expectedBenefit = goal?.plan?.expectedBenefit;
         const activeGearPurchase = goal?.type === 'upgrade_gear'
             && (!expectedBenefit || ['market_search_for_weapon', 'market_search_for_gear'].includes(expectedBenefit));
@@ -201,7 +335,11 @@ const ColdMarketService = {
             return GoalState.clear(state.characterId, 'completed').then(() => bought);
         });
     },
-    buyOffer
+    buyOffer,
+    planPurchase,
+    buyHere,
+    acquire,
+    errandGoal
 };
 
 ColdMarketService.RETRY_DELAY_MS = RETRY_DELAY_MS;

@@ -114,6 +114,19 @@ function disposition(book, item, ctx, { town = null, room = 1, rollKey }) {
         answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count } : null };
 }
 
+// The bot's own deal of an item at `price` (a purchase on the board, group E
+// follow-up: the buy side learns): the price is evidence, the deal one of
+// its own. False when nothing prices the item.
+function learnDeal(book, selfId, ctx, price) {
+    if (!(Number(price) > 0)) return false;
+    const belief = PriceBelief.ensure(book, selfId, ctx);
+    if (!belief) return false;
+    PriceBelief.learn(belief, [[Math.log(Number(price)), 1]]);
+    PriceBelief.ownDeals(belief, 1);
+    PriceBelief.touch(book, belief, ctx);
+    return true;
+}
+
 // The bid of a buy ad for `units` worth `worth` a unit to the buyer, at most
 // `cap` a unit: the same belief, the mirrored decision. null: no bid gains.
 function bid(book, selfId, ctx, { units = 1, worth, cap, rollKey }) {
@@ -196,4 +209,4 @@ function look(state, lines, ctx) {
     return { book, reprices, withdrawals };
 }
 
-module.exports = { traderContext, priceForSale, adopt, bestAnswer, disposition, bid, lookChance, look };
+module.exports = { traderContext, priceForSale, adopt, bestAnswer, disposition, bid, learnDeal, lookChance, look };

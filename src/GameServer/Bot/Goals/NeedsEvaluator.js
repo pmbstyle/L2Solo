@@ -11,6 +11,9 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 
 const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
+// An errand (a supply the bot hunts with, an input of its craft) goes before
+// a material purchase (82) and the voluntary sale (74), after recovery (90).
+const ERRAND_PRIORITY = 83;
 const NPC_GEAR_PRIORITY = {
     weapon: 88,
     armor: 87,
@@ -352,6 +355,21 @@ function evaluate(state = {}, options = {}) {
         // A material the bot can already pay for is a funded purchase like the
         // gear above: the voluntary sale below waits for it (E9, 2026-10-03).
         if (marketMaterial) fundedPurchasePriority = Math.max(fundedPurchasePriority || 0, 82);
+    }
+
+    // An errand another job planned (ColdMarketService.acquire: a shot
+    // restock, a crafter's input, a clan order): a purchase in its town. A
+    // bot in a party gets there by its party's market break.
+    const errand = state.stats?.marketErrand;
+    if (errand?.town && Number(errand.selfId) > 0) {
+        candidates.push({
+            type: 'market_errand',
+            priority: ERRAND_PRIORITY,
+            target: { itemId: Number(errand.selfId), amount: Number(errand.amount || 1) },
+            plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
+            blockers: [],
+            nextReviewAt: timestamp + 10 * 60 * 1000
+        });
     }
 
     const inventoryCleanup = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });

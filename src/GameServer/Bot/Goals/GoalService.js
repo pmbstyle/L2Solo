@@ -14,15 +14,19 @@ function reviewSpot(state, explicitSpot = null, existingGoal = null) {
         : null;
 }
 
+// A goal served at the market: a sale, a material or gear purchase, an errand.
+function isMarketGoal(goal) {
+    return ['sell_inventory', 'buy_craft_material', 'market_errand'].includes(goal?.type)
+        || ['market_search_for_weapon', 'market_search_for_gear'].includes(goal?.plan?.expectedBenefit);
+}
+
 function reviewDecision(state, existing, options, timestamp) {
     const candidates = NeedsEvaluator.evaluate(state, {
         spot: reviewSpot(state, options.spot, existing?.current),
         now: timestamp
     });
-    const marketCandidate = candidates.find((candidate) => candidate?.type === 'sell_inventory' || candidate?.type === 'buy_craft_material'
-        || ['market_search_for_weapon', 'market_search_for_gear'].includes(candidate?.plan?.expectedBenefit));
-    const activeMarketGoal = existing?.current?.type === 'sell_inventory' || existing?.current?.type === 'buy_craft_material'
-        || ['market_search_for_weapon', 'market_search_for_gear'].includes(existing?.current?.plan?.expectedBenefit);
+    const marketCandidate = candidates.find(isMarketGoal);
+    const activeMarketGoal = isMarketGoal(existing?.current);
     if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
         && !marketCandidate && !activeMarketGoal) return { result: existing, unchanged: true, goal: null, candidates };
 

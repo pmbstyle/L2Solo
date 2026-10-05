@@ -28,9 +28,11 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     const buyingGear = goal.type === 'upgrade_gear'
         && ['market_search_for_weapon', 'market_search_for_gear'].includes(goal.plan?.expectedBenefit);
     const buyingMaterial = goal.type === 'buy_craft_material' && goal.plan?.expectedBenefit === 'market_buy_craft_material';
+    // An errand: a purchase another job planned in its town (ColdMarketService.acquire).
+    const buyingErrand = goal.type === 'market_errand' && !!goal.plan?.marketTown;
     const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
     const forcedInventoryCleanup = sellingInventory && !!(goal.target?.cleanupReason || goal.plan?.cleanupReason);
-    if (!buyingGear && !buyingMaterial && !sellingInventory) return null;
+    if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory) return null;
     if (invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
@@ -43,7 +45,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
     const trip = (destination, shopTown = null) => ColdTrip.toTown(state, {
-        reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
+        reason: buyingGear || buyingMaterial || buyingErrand ? goal.plan.expectedBenefit : 'market_sale_inventory',
         from,
         to: { ...destination.center },
         townName: destination.name,

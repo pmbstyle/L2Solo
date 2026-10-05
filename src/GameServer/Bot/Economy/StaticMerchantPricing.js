@@ -55,4 +55,27 @@ function priceFor(store, line) {
     return Math.min(price, ceiling);
 }
 
-module.exports = { BUYBACK_RATIO, cheapestPurchase, priceFor };
+// The configured city merchants selling an item, by town: [{ town, price,
+// sourceName }] (the shots' sellers: NPC shops do not sell them). A static
+// table read once per rate; a purchase trip weighs them as the NPC.
+let sellers = null;
+let sellersRate = null;
+function sellersOf(selfId) {
+    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+    if (!sellers || sellersRate !== rate) {
+        sellers = new Map();
+        sellersRate = rate;
+        for (const [name, store] of Object.entries(MerchantStoreConfigs)) {
+            if (store?.storeType !== 1 || !store.town) continue;
+            for (const line of store.items || []) {
+                if (!(Number(line.count ?? 1) > 0)) continue;
+                const id = Number(line.selfId);
+                if (!sellers.has(id)) sellers.set(id, []);
+                sellers.get(id).push({ town: store.town, price: configuredPrice(line), sourceName: name });
+            }
+        }
+    }
+    return sellers.get(Number(selfId)) || [];
+}
+
+module.exports = { BUYBACK_RATIO, cheapestPurchase, priceFor, sellersOf };

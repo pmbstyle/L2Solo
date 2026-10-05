@@ -173,4 +173,24 @@ Config.coldHonestTravel = false;
     assert.deepStrictEqual([filled.lines.length, filled.npc, filled.units, filled.cost], [1, 5, 15, 90]);
 }
 
-console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers and the cheapest town passed');
+// 6. An errand (ColdMarketService.acquire) is a market goal: the author's
+// market trip takes the bot to its town (a party member by its party's
+// market break), where the purchase is made on arrival.
+{
+    const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+    const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
+    const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+    const errand = { selfId: 1463, amount: 2000, town: 'Dion', money: 50000, maxPrice: null, purpose: 'shots', at: 1 };
+    const state = { ...hunter({ stats: { marketErrand: errand } }), phase: 'cold', activity: 'hunting', accountName: 'bot_990001',
+        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } };
+    const goal = NeedsEvaluator.evaluate(state, { now: 1000 }).find((candidate) => candidate.type === 'market_errand');
+    assert(goal, 'the errand is a goal');
+    assert.strictEqual(goal.plan.marketTown, 'Dion');
+    assert.strictEqual(goal.target.itemId, 1463);
+    const travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
+    assert.strictEqual(travel.stats.travel.townName, 'Dion');
+    assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
+    assert.deepStrictEqual(ColdMarketService.errandGoal(errand).plan.marketTown, 'Dion');
+}
+
+console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town and errands passed');

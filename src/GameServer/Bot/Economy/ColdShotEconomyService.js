@@ -10,6 +10,8 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = require('./MarketDemandIndex');
+// The one purchase path (a trip to the seller's town), loaded on use.
+const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
 
 const SHOT_RECIPE_IDS = [20, 21, 22, 23, 24, 317, 318, 319, 320, 321,
     323, 324, 325, 326, 327];
@@ -201,41 +203,20 @@ async function reviewDemand(state, now) {
             shotDemand: { itemId: plan.selfId, amount: missing, maxSpend, at: now }
         } }, 'shot_market_demand') || state;
     }
-    // The purchase follows the one restock rule of hot and cold bots.
-    const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice,
-        offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: state.characterId }) });
-    let bought = false;
-    let boughtAmount = 0;
-    let spent = 0;
-    for (const line of restock.shops) {
-        try {
-            const trade = await AfkTrade.buyFromShop(state.characterId, line.offer.store, plan.selfId, line.amount,
-                { lineId: line.offer.lineId, expectedPrice: line.price, coldState: state });
-            boughtAmount += line.amount;
-            spent += line.cost;
-            if (trade.coldState) {
-                state = trade.coldState;
-                bought = true;
-            }
-        } catch (_) {
-            // The NPC sells what a failed line did not (ShotStock.npcRestockAmount).
-        }
-    }
-    const npcAmount = ShotStock.npcRestockAmount(restock, boughtAmount, spent);
-    if (npcAmount > 0) {
-        const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-            selfId: plan.selfId, name: plan.name, amount: npcAmount, unitPrice: staticPrice, coldState: state
-        });
-        if (purchase.ok) {
-            state = debitAdena(state, Number(purchase.spent || npcAmount * staticPrice));
-            const refreshed = await acceptMutation(purchase, state, 'shot_static_inventory');
-            return await persist({ ...refreshed, stats: { ...(refreshed.stats || {}), shotDemand: null } },
-                'shot_static_purchase') || refreshed;
-        }
-    }
-    if (!bought) return state;
-    return await persist({ ...state, stats: { ...(state.stats || {}), shotDemand: null } },
-        'shot_market_purchase') || state;
+    // The restock (user Q1 A): one trip to the town where the whole amount
+    // costs the least with the trip, the board's lines there first, the NPC
+    // there as one more offer (ColdMarketService.acquire); the amount and the
+    // money follow the one restock rule of hot and cold bots (restockPlan).
+    // A bot with an errand waiting goes on that one first.
+    if (state.stats?.marketErrand) return state;
+    const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice });
+    if (!restock.needed || restock.amount <= 0) return state;
+    const result = await ColdMarket().acquire(state, plan.selfId, restock.targetAmount - restock.currentAmount, {
+        money: Math.max(0, restock.adena - restock.reserve - restock.potionCost), purpose: 'shots', timestamp: now
+    });
+    if (!result.bought || result.hot) return result.state;
+    return await persist({ ...result.state, stats: { ...(result.state.stats || {}), shotDemand: null } },
+        'shot_market_purchase') || result.state;
 }
 
 function recipeTarget(state, index = null, knownRecipeIds = []) {
@@ -266,8 +247,7 @@ async function obtainRecipe(state, recipe, now) {
         } }, 'shot_recipe_demand') || state;
     }
     const affordableOffer = () => AfkTrade.offers(itemId, AfkTrade.SELL, { characterId: state.characterId })
-        .filter((entry) => Number(entry.price) > 0 && Number(entry.price) <= maxSpend && Number(entry.count) > 0)
-        .sort((a, b) => a.price - b.price)[0];
+        .find((entry) => Number(entry.price) > 0 && Number(entry.price) <= maxSpend && Number(entry.count) > 0);
     let offer = affordableOffer();
     if (!offer) {
         const holder = ((await marketSnapshot(now)).recipeHolders.get(itemId) || [])
@@ -282,10 +262,11 @@ async function obtainRecipe(state, recipe, now) {
     }
     if (!offer) return state;
     try {
-        const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, itemId, 1,
-            { lineId: offer.lineId, expectedPrice: Number(offer.price), coldState: state });
-        if (!trade.coldState) return state;
-        const learned = await LifeState.learnCraftableRecipes(trade.coldState) || trade.coldState;
+        // The recipe is bought in its seller's town: a trip, or here (one purchase path).
+        const bought = await ColdMarket().acquire(state, itemId, 1, { maxPrice: maxSpend, npc: false, purpose: 'recipe',
+            timestamp: now });
+        if (!bought.bought || bought.hot) return bought.state;
+        const learned = await LifeState.learnCraftableRecipes(bought.state) || bought.state;
         if (!(learned.stats?.lastRecipeBookLearning?.learned || [])
             .some((entry) => Number(entry.recipeId) === Number(recipe.recipeId))) return learned;
         const acquired = await persist({ ...learned, stats: {
@@ -422,13 +403,6 @@ async function acceptMutation(result, fallback, reason) {
     return persist(await LifeState.refreshInventory(fallback) || fallback, reason);
 }
 
-function debitAdena(state, amount) {
-    const balance = Math.max(0, Number(state.adena || 0) - Number(amount || 0));
-    return { ...state, adena: balance, inventory: { ...(state.inventory || {}), 57: {
-        ...(state.inventory?.['57'] || {}), selfId: 57, amount: balance
-    } } };
-}
-
 function consumeMaterials(state, materials) {
     const inventory = { ...(state.inventory || {}) };
     for (const material of materials || []) {
@@ -440,98 +414,61 @@ function consumeMaterials(state, materials) {
     return { ...state, inventory };
 }
 
-async function buyMaterial(state, selfId, amount, npcPrice, index, maxPrice = npcPrice) {
-    let missing = amount - availableMaterial(state, selfId);
-    if (missing <= 0) return state;
-    const offers = AfkTrade.offers(selfId, AfkTrade.SELL, { characterId: state.characterId })
-        .filter((offer) => Number(offer.price) > 0 && Number(offer.price) <= maxPrice && Number(offer.count) > 0)
-        .sort((a, b) => a.price - b.price).slice(0, 4);
-    for (const offer of offers) {
-        if (missing <= 0) break;
-        const count = Math.min(missing, Number(offer.count));
-        try {
-            const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, selfId, count,
-                { lineId: offer.lineId, expectedPrice: Number(offer.price), coldState: state });
-            if (!trade.coldState) break;
-            state = trade.coldState;
-            missing -= count;
-        } catch (_) { /* The NPC offer remains a bounded fallback. */ }
-    }
-    if (missing > 0) {
-        if (!Number.isFinite(npcPrice) || npcPrice > maxPrice) return null;
-        const template = index.itemTemplates.get(selfId);
-        const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-            selfId, name: template?.template?.name || `Item ${selfId}`, amount: missing, unitPrice: npcPrice, coldState: state
-        });
-        if (!purchase.ok) return null;
-        state = debitAdena(state, Number(purchase.spent || missing * npcPrice));
-        state = await acceptMutation(purchase, state, 'shot_material_purchase');
-    }
-    return state;
+// Buys what is missing of a craft input on the one purchase path
+// (ColdMarketService.acquire): here when this town is the cheapest with the
+// trip, else an errand and a trip, and the craft waits. Returns { state,
+// ready }: ready once the bot holds the amount.
+async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true) {
+    const missing = amount - availableMaterial(state, selfId);
+    if (missing <= 0) return { state, ready: true };
+    const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input' });
+    return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
 }
 
+// The crystals of a shot craft: the bot's own, else bought on the board, or a
+// piece of gear bought (or crafted from bought inputs) and crystallized; each
+// purchase on the one purchase path. Returns { state, ready }.
 async function obtainCrystals(state, candidate, batches) {
     const needed = candidate.requiredCrystals * batches;
-    if (availableMaterial(state, candidate.crystalId) >= needed) return state;
+    if (availableMaterial(state, candidate.crystalId) >= needed) return { state, ready: true };
     const gear = candidate.gear;
-    if (!gear) return null;
-    if (gear.source === 'crystals') {
-        const offer = AfkTrade.offers(candidate.crystalId, AfkTrade.SELL, { characterId: state.characterId })
-            .find(row => Number(row.sourceId) === gear.ownerId && Number(row.price) === gear.price
-                && Number(row.count) >= needed - availableMaterial(state, candidate.crystalId));
-        if (!offer) return null;
-        const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, candidate.crystalId,
-            needed - availableMaterial(state, candidate.crystalId),
-            { lineId: offer.lineId, expectedPrice: gear.price, coldState: state, autoEquip: false });
-        return trade.coldState || null;
-    }
+    if (!gear) return { state, ready: false };
+    if (gear.source === 'crystals') return buyMaterial(state, candidate.crystalId, needed, gear.price, false);
     const [skill] = await Database.fetchSkill(state.characterId, 248);
-    if (Number(skill?.level || 0) < CRYSTAL_SKILL_LEVEL[candidate.rank]) return null;
+    if (Number(skill?.level || 0) < CRYSTAL_SKILL_LEVEL[candidate.rank]) return { state, ready: false };
     const ownedRows = await Database.fetchItems(state.characterId);
     const ownedRowIds = new Set(ownedRows.map(item => Number(item.id)));
     if (gear.source === 'craft') {
         for (const input of gear.inputs) {
-            const next = await buyMaterial(state, input.selfId, input.amount, input.npcPrice, catalog(), input.maxPrice);
-            if (!next) return null;
-            state = next;
+            const next = await buyMaterial(state, input.selfId, input.amount, input.maxPrice);
+            if (!next.ready) return next;
+            state = next.state;
         }
         const materials = materialRows(await Database.fetchItems(state.characterId), gear.recipe);
-        if (!materials || Number(state.vitals?.mp || 0) < Number(gear.recipe.mpCost)) return null;
+        if (!materials || Number(state.vitals?.mp || 0) < Number(gear.recipe.mpCost)) return { state, ready: false };
         const mp = Number(state.vitals.mp) - Number(gear.recipe.mpCost);
         const template = catalog().itemTemplates.get(gear.selfId);
         const result = await Database.craftInventoryItems(state.characterId, { materials, coldState: state, mp,
             product: { selfId: gear.selfId, name: template.template.name, amount: 1, stackable: false, slot: template.etc.slot } });
         state = await acceptMutation(result, { ...consumeMaterials(state, gear.recipe.materials),
             vitals: { ...state.vitals, mp } }, 'shot_scrap_crafted');
-    } else if (gear.source === 'afk') {
-        const offer = AfkTrade.offers(gear.selfId, AfkTrade.SELL, { characterId: state.characterId })
-            .find(row => Number(row.sourceId) === gear.ownerId && Number(row.price) === gear.price
-                && Number(row.count) > 0 && !Number(row.storeItem?.enchant || 0));
-        if (!offer) return null;
-        const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, gear.selfId, 1,
-            { lineId: offer.lineId, expectedPrice: gear.price, coldState: state, autoEquip: false });
-        if (!trade.coldState) return null;
-        state = trade.coldState;
-    } else if (gear.source === 'npc') {
-        const template = catalog().itemTemplates.get(gear.selfId);
-        const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-            selfId: gear.selfId, name: template?.template?.name || `Item ${gear.selfId}`,
-            amount: 1, unitPrice: gear.price, stackable: false, slot: Number(template?.etc?.slot || 0), coldState: state
-        });
-        if (!purchase.ok) return null;
-        state = await acceptMutation(purchase, debitAdena(state, purchase.spent || gear.price), 'shot_scrap_purchase');
+    } else if (gear.source === 'afk' || gear.source === 'npc') {
+        const bought = await ColdMarket().acquire(state, gear.selfId, 1, { maxPrice: gear.price, npc: gear.source === 'npc',
+            purpose: 'craft_input' });
+        if (!bought.bought || bought.hot) return { state: bought.state, ready: false };
+        state = bought.state;
     }
     const row = (await Database.fetchItems(state.characterId)).find(item =>
         (gear.source === 'owned' || !ownedRowIds.has(Number(item.id))) && Number(item.selfId) === gear.selfId
             && Number(item.amount) === 1 && !item.equipped && !Number(item.enchant || 0));
-    if (!row) return null;
+    if (!row) return { state, ready: false };
     const crystal = catalog().itemTemplates.get(candidate.crystalId);
     const result = await Database.crystallizeInventoryItem(state.characterId, {
         sourceId: Number(row.id), sourceSelfId: gear.selfId, crystalId: candidate.crystalId,
         crystalName: crystal?.template?.name || '', crystalAmount: gear.crystals, coldState: state
     });
     state = consumeMaterials(state, [{ selfId: gear.selfId, amount: 1 }]);
-    return acceptMutation(result, state, 'shot_crystallized');
+    return { state: await acceptMutation(result, state, 'shot_crystallized'), ready: true };
 }
 
 function materialRows(items, recipe) {
@@ -566,10 +503,11 @@ async function craft(state, candidate, index, now) {
         Math.floor(Math.max(0, Number(state.adena || 0) - fixedCash - 10000)
             / (candidate.orePrice * orePerBatch + crystalCashPerBatch)));
     if (batches <= 0) return state;
-    state = await obtainCrystals(state, candidate, batches);
-    if (!state) return null;
-    state = await buyMaterial(state, Number(candidate.ore.selfId), orePerBatch * batches, candidate.orePrice, index);
-    if (!state) return null;
+    const crystals = await obtainCrystals(state, candidate, batches);
+    if (!crystals.ready) return crystals.state;
+    const ore = await buyMaterial(crystals.state, Number(candidate.ore.selfId), orePerBatch * batches, candidate.orePrice);
+    if (!ore.ready) return ore.state;
+    state = ore.state;
     const batchRecipe = { ...candidate.recipe, materials: candidate.recipe.materials.map((material) => ({
         ...material, amount: Number(material.amount) * batches
     })) };
@@ -611,6 +549,8 @@ async function review(state, now = Date.now()) {
     try {
         state = await reviewDemand(state, now);
         noteBuyer(state);
+        // Gone for its restock, or another errand waits: no craft now.
+        if (state.activity === 'traveling' || state.stats?.marketErrand) return { state };
         if (!CraftShopService.isServiceCrafter(state) || state.party?.partyId || state.partyId
             || CraftShopService.craftLevelFor(state) < 2 || state.stats?.craftStationId
             || (state.stats?.equipmentPlan?.strategy === 'craft'

@@ -29,9 +29,19 @@ const original = {
     upsertState: LifeState.upsertState,
     refreshInventory: LifeState.refreshInventory,
     learnCraftableRecipes: LifeState.learnCraftableRecipes,
+    applyMarketPurchase: LifeState.applyMarketPurchase,
     record: LifeEvents.record,
     reconcile: BotAfkMarketService.reconcile
 };
+
+// A record on the board in memory (its owner is mocked away).
+function boardLine(id, ownerId, town, selfId, count, price) {
+    AfkTrade.refreshRecord({ id, ownerId, ownerName: `Owner${ownerId}`, ownerAccount: `bot_${ownerId}`, kind: 'sell_ad',
+        storeType: AfkTrade.SELL, status: 'active', town, title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+        appearance: {}, lines: [{ id: id * 10, selfId, name: `Item ${selfId}`, count, price, enchant: 0 }] });
+}
+const GIRAN = { locX: 83396, locY: 147904, locZ: -3400 };
+const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 
 (async () => {
     const now = Date.now();
@@ -48,15 +58,20 @@ const original = {
     Database.fetchCharacterRecipes = async () => [{ recipeId: 20, type: 'dwarven' }];
     Database.fetchSkill = async () => [{ level: 3 }];
     Database.fetchItems = async () => rows.map((row) => ({ ...row }));
-    Database.purchaseNpcInventoryItem = async (_id, item) => {
-        assert.strictEqual(item.selfId, 1785);
-        assert.strictEqual(item.amount, 21);
-        assert.strictEqual(item.unitPrice, 550);
-        rows[0].amount -= item.amount * item.unitPrice;
+    // Every purchase is made in its seller's town (group C): the crafter
+    // stands in Giran, where the helmet is listed and the NPC sells Soul Ore
+    // at 550, so it buys both there.
+    LifeState.applyMarketPurchase = async (buyer, offer, qty) => {
+        assert.strictEqual(offer.selfId, 1785);
+        assert.strictEqual(qty, 21);
+        assert.strictEqual(offer.price, 550);
+        rows[0].amount -= qty * offer.price;
         rows.push({ id: 12, selfId: 1785, name: 'Soul Ore', amount: 21, equipped: false });
         history.push('ore');
-        return { ok: true };
+        return { ...buyer, adena: rows[0].amount, inventory: { ...buyer.inventory,
+            1785: { selfId: 1785, name: 'Soul Ore', amount: 21 } } };
     };
+    boardLine(970001, 200, 'Giran', 45, 1, 22324);
     Database.crystallizeInventoryItem = async (_id, item) => {
         assert.strictEqual(item.sourceId, 10);
         assert.strictEqual(item.crystalId, 1458);
@@ -100,8 +115,8 @@ const original = {
     };
     LifeEvents.record = async () => null;
 
-    const state = { characterId: 100, name: 'Dwarf', phase: 'cold', activity: 'hunting',
-        classId: 57, level: 60, adena: 1000000, vitals: { mp: 1000 },
+    const state = { characterId: 100, name: 'Dwarf', phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
+        loc: { ...GIRAN }, classId: 57, level: 60, adena: 1000000, vitals: { mp: 1000 },
         inventory: { '1463': { selfId: 1463, amount: 1000, name: 'Soulshot: D-grade' },
             '129': { selfId: 129, amount: 1, name: 'Sword of Revolution', equipped: true, slot: 7 } },
         stats: { classId: 57 } };
@@ -133,6 +148,7 @@ const original = {
         assert.strictEqual(seller.characterId, 200);
         assert.strictEqual(goal.type, 'sell_inventory');
         recipeListed = true;
+        boardLine(970002, 200, 'Giran', 3033, 1, 480000);
         return { state: seller, changed: true };
     };
     LifeState.learnCraftableRecipes = async (buyer) => ({ ...buyer, inventory: {
@@ -183,25 +199,30 @@ const original = {
     // S3): the shop cheaper than the NPC first, the NPC for the rest, keeping its reserve
     // max(500, 30 x 250, 10%) = 7,500 of 51,000 and the cost of its potion restock
     // (survival first): 8 Healing Potions at 660 = 5,280. D shots cost 100 at the NPC at x10.
-    const fighter = { characterId: 430, name: 'Fighter', phase: 'cold', activity: 'hunting', level: 30, adena: 51000,
+    // It restocks in one trip to the town where the whole amount costs the
+    // least with the trip (group C, user Q1 A): standing in Gludio, where a
+    // line sells 300 at 60 and the merchant sells the rest at 100, it buys there.
+    const fighter = { characterId: 430, name: 'Fighter', phase: 'cold', activity: 'shopping', currentRegion: 'Gludio',
+        loc: { ...GLUDIO }, level: 30, adena: 51000,
         inventory: { '1463': { selfId: 1463, amount: 200 }, '129': { selfId: 129, amount: 1, equipped: true, slot: 7 } },
         stats: { classId: 0 } };
     const coldBuys = [];
-    AfkTrade.offers = (selfId) => selfId === 1463 ? [{ store: 'shop', price: 60, count: 300 }] : [];
+    boardLine(970003, 500, 'Gludio', 1463, 300, 60);
     AfkTrade.buyFromShop = async (_id, _store, selfId, amount, options) => {
         coldBuys.push(['shop', amount, options.expectedPrice]);
         const before = options.coldState;
         return { coldState: { ...before, adena: before.adena - amount * options.expectedPrice, inventory: { ...before.inventory,
             '1463': { selfId, amount: before.inventory['1463'].amount + amount } } } };
     };
-    Database.purchaseNpcInventoryItem = async (_id, item) => {
-        coldBuys.push(['npc', item.amount, item.unitPrice]);
-        return { ok: true, spent: item.amount * item.unitPrice };
+    LifeState.applyMarketPurchase = async (buyer, offer, qty) => {
+        coldBuys.push(['npc', qty, offer.price]);
+        return { ...buyer, adena: buyer.adena - qty * offer.price, inventory: { ...buyer.inventory,
+            '1463': { selfId: 1463, amount: Number(buyer.inventory['1463']?.amount || 0) + qty } } };
     };
     LifeState.refreshInventory = async (refreshed) => refreshed;
     const restocked = (await Service.review(fighter, procurementAt + 2000)).state;
     assert.deepStrictEqual(coldBuys, [['shop', 300, 60], ['npc', 202, 100]],
-        'a cold bot below 1000 shots buys from the cheaper shop, then the NPC');
+        'a cold bot below 1000 shots buys from the cheaper line, then the merchant, in its town');
     assert.strictEqual(restocked.adena, 12800, 'the cold restock keeps the consumables reserve and the potions money');
     assert.strictEqual(restocked.stats.shotDemand, null);
     // A shop line that fails at purchase leaves its shots and money to the NPC (E31):
@@ -211,6 +232,17 @@ const original = {
     const afterFailedShop = (await Service.review({ ...fighter, characterId: 431 }, procurementAt + 3000)).state;
     assert.deepStrictEqual(coldBuys, [['npc', 382, 100]], 'a cold bot whose shop failed buys its restock from the NPC');
     assert.strictEqual(afterFailedShop.adena, 51000 - 38200);
+    // Out on its spot, it does not buy from afar: it keeps an errand and goes.
+    coldBuys.length = 0;
+    const hunter = { ...fighter, characterId: 432, activity: 'hunting', currentRegion: 'Gludio',
+        loc: { locX: -14000, locY: 130000, locZ: -3000 } };
+    const errand = (await Service.review(hunter, procurementAt + 4000)).state;
+    assert.deepStrictEqual(coldBuys, [], 'nothing is bought from afar');
+    assert.strictEqual(errand.activity, 'traveling', 'it travels to buy');
+    assert.strictEqual(errand.stats.marketErrand.purpose, 'shots');
+    assert.strictEqual(errand.stats.travel.townName, errand.stats.marketErrand.town);
+    assert(['Gludio', 'Gludin', 'Dion'].includes(errand.stats.marketErrand.town), errand.stats.marketErrand.town);
+    AfkTrade._resetForTests();
     console.log('Cold shot economy buys scrap, crystallizes and crafts a demanded batch');
 })().finally(() => {
     for (const [key, value] of Object.entries(original)) {
