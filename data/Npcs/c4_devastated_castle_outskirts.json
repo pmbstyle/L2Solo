@@ -1,0 +1,490 @@
+[
+  {
+    "selfId": 974,
+    "template": {
+      "kind": "Monster",
+      "name": "Spiteful Soul Leader",
+      "title": "",
+      "level": 65,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1077,
+      "pAtkRnd": 5,
+      "pDef": 418,
+      "mAtk": 619,
+      "mDef": 340,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3465,
+      "maxMp": 1319,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 16,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 946,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.786272189349,
+      "sp": 1094
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1001,
+    "template": {
+      "kind": "Monster",
+      "name": "Wretched Archer",
+      "title": "",
+      "level": 55,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1639,
+      "pAtkRnd": 5,
+      "pDef": 292,
+      "mAtk": 360,
+      "mDef": 261,
+      "accur": -3,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2643,
+      "maxMp": 987,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 282,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.935867768595,
+      "sp": 473
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1002,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Scout",
+      "title": "",
+      "level": 56,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 679,
+      "pAtkRnd": 5,
+      "pDef": 301,
+      "mAtk": 382,
+      "mDef": 269,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2724,
+      "maxMp": 1019,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 28.5
+    },
+    "equipment": {
+      "weapon": 242,
+      "shield": 2496,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.646364795918,
+      "sp": 424
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1003,
+    "template": {
+      "kind": "Monster",
+      "name": "Grave Lich",
+      "title": "",
+      "level": 57,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 675,
+      "pAtkRnd": 30,
+      "pDef": 374,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.454293628809,
+      "sp": 393
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1007,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Guard",
+      "title": "",
+      "level": 61,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 992,
+      "pAtkRnd": 30,
+      "pDef": 344,
+      "mAtk": 505,
+      "mDef": 307,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3137,
+      "maxMp": 1184,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.570545552271,
+      "sp": 514
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1008,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Archer",
+      "title": "",
+      "level": 62,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 2308,
+      "pAtkRnd": 5,
+      "pDef": 353,
+      "mAtk": 532,
+      "mDef": 315,
+      "accur": -3,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3219,
+      "maxMp": 1217,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 286,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.943548387097,
+      "sp": 666
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1009,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Trooper",
+      "title": "",
+      "level": 63,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1267,
+      "pAtkRnd": 10,
+      "pDef": 362,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": -3,
+      "atkSpd": 237,
+      "castSpd": 216,
+      "atkRadius": 80
+    },
+    "speed": {
+      "walk": 55,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 301,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.007054673721,
+      "sp": 719
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1010,
+    "template": {
+      "kind": "Monster",
+      "name": "Doom Warrior",
+      "title": "",
+      "level": 64,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 993,
+      "pAtkRnd": 10,
+      "pDef": 371,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 0,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 71,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "doom_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.5576171875,
+      "sp": 584
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

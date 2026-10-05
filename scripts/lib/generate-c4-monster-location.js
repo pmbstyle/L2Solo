@@ -127,10 +127,17 @@ function generateC4MonsterLocation(config) {
     const sourceLabels = config.sourceLabels || (config.sourceLabel ? [config.sourceLabel] : []);
     const sourceLabelSet = new Set(sourceLabels);
     const sourcePrefixes = config.sourcePrefixes || [];
-    const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
+    const sourceRows = tuples('sql/spawnlist.sql').filter((row) =>
         (sourceLabelSet.has(row[1]) || sourcePrefixes.some((prefix) => String(row[1]).startsWith(prefix)))
         && npcRowsById.get(Number(row[3]))?.[11] === 'L2Monster'
     );
+    // Monsters of a shared source label that the old datapack or another slice
+    // already spawns stay out of this slice; every listed id must be in the label.
+    const skippedMobIds = [...(config.skippedMobIds || [])].sort((a, b) => a - b);
+    const skippedMobIdSet = new Set(skippedMobIds);
+    assertExact([...new Set(sourceRows.map((row) => Number(row[3])))].filter((id) => skippedMobIdSet.has(id))
+        .sort((a, b) => a - b), skippedMobIds, 'skipped monster ids');
+    const spawnRows = sourceRows.filter((row) => !skippedMobIdSet.has(Number(row[3])));
     if (spawnRows.length !== config.spawnRows) {
         throw new Error(`Expected ${config.spawnRows} ${config.displayName} monster spawns, found ${spawnRows.length}`);
     }
