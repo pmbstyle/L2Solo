@@ -86,26 +86,19 @@ function weaponRankFromActor(actor) {
     return 'none';
 }
 
-function weaponRankFromRows(rows = []) {
-    const equippedWeapon = rows.find((row) => {
-        if (Number(row.equipped) !== 1 && row.equipped !== true) return false;
-        return WEAPON_SLOTS.has(Number(row.slot || 0));
-    });
-    return equippedWeapon ? itemRank(equippedWeapon.selfId) : 'none';
-}
-
 function isEquipped(item) {
     return item?.equipped === true || Number(item?.equipped) === 1 || Number(item?.equippedCount || 0) > 0;
 }
 
-// The weapon equipped in a bot's inventory summary (the cold state), or null.
-function equippedWeaponInState(state) {
-    const inventory = state?.inventory || {};
-    for (const key in inventory) {
-        const item = inventory[key];
-        if (isEquipped(item) && WEAPON_SLOTS.has(Number(item.slot || 0))) return item;
+// The equipped weapon among a bot's items, database rows or the cold inventory
+// summary, or null. With two equipped weapons the lowest item id wins.
+function equippedWeapon(items) {
+    let weapon = null;
+    for (const item of Object.values(items || {})) {
+        if (!isEquipped(item) || !WEAPON_SLOTS.has(Number(item.slot || 0))) continue;
+        if (!weapon || Number(item.selfId) < Number(weapon.selfId)) weapon = item;
     }
-    return null;
+    return weapon;
 }
 
 // A bot's shot from its cold state, as hot auto shots load it (planFor): its
@@ -113,7 +106,7 @@ function equippedWeaponInState(state) {
 // per charge (perAction, the weapon's count as hot charges it; 0 without a
 // weapon, so no shot loads).
 function planForState(state) {
-    const weapon = equippedWeaponInState(state);
+    const weapon = equippedWeapon(state?.inventory);
     const plan = planFor({
         classId: Number(state?.stats?.classId || state?.classId || 0),
         rank: weapon ? itemRank(weapon.selfId) : 'none'
@@ -204,9 +197,10 @@ function enableAutoShot(actor) {
 }
 
 function planForRows(rows, classId) {
+    const weapon = equippedWeapon(rows);
     return planFor({
         classId,
-        rank: weaponRankFromRows(rows || [])
+        rank: weapon ? itemRank(weapon.selfId) : 'none'
     });
 }
 

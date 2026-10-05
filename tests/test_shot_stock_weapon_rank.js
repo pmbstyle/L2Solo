@@ -7,11 +7,12 @@ DataCache.init();
 const Database = invoke('Database');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 
-// U30: the shot a bot loads comes from its equipped weapon's grade, found by two
-// near-copies: weaponRankFromRows (item rows from the database; planForRows, used by
-// ensureCharacterStock for new characters and seeded cold bots) and
-// equippedWeaponInState (the cold inventory summary; planForState). These checks pin
-// what each does today, including where they differ, before any unification.
+// U30: the shot a bot loads comes from its equipped weapon's grade, found by one
+// function (ShotStock equippedWeapon) for database item rows (planForRows, used by
+// ensureCharacterStock for new characters and seeded cold bots) and for the cold
+// inventory summary (planForState). An item is equipped when its flag is set or its
+// equippedCount is above 0; with two equipped weapons the lowest item id wins
+// (user, 2026-10-05).
 
 const SWORD_D = 129; // Sword of Revolution, one-handed (slot 7), D grade, 3 shots per charge
 const CLAYMORE_D = 70; // two-handed (slot 14), D grade
@@ -31,12 +32,12 @@ assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 0, slot: 7 }]), 1835, 
 assert.strictEqual(rowsShot([{ selfId: SHIELD, equipped: 1, slot: 8 }]), 1835, 'a shield is not a weapon');
 assert.strictEqual(rowsShot([{ selfId: BONE_STAFF_D, equipped: 1, slot: 14 }], MYSTIC), 2510, 'a mystic loads spiritshots');
 assert.strictEqual(rowsShot([]), 1835);
-// Difference 1: rows ignore equippedCount (database rows never carry it).
-assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 0, equippedCount: 1, slot: 7 }]), 1835,
-    'rows: equippedCount without the equipped flag is not equipped');
-// Difference 2: with two equipped weapons the first row wins.
-assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 1, slot: 7 }, { selfId: FLAMBERGE_C, equipped: 1, slot: 14 }]), 1463,
-    'rows: the first equipped weapon row wins');
+// equippedCount alone counts as equipped, as in the cold state.
+assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 0, equippedCount: 1, slot: 7 }]), 1463,
+    'rows: equippedCount alone counts as equipped');
+// With two equipped weapons the lowest item id wins, whatever the row order.
+assert.strictEqual(rowsShot([{ selfId: SWORD_D, equipped: 1, slot: 7 }, { selfId: FLAMBERGE_C, equipped: 1, slot: 14 }]), 1464,
+    'rows: the equipped weapon with the lowest item id wins');
 
 // State: the same, plus how many shots the weapon takes per charge.
 const equippedSword = stateShot({ [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: true, equippedCount: 1, slot: 7 } });
@@ -48,10 +49,10 @@ assert.deepStrictEqual([unequipped.selfId, unequipped.perAction], [1835, 0], 'no
 assert.strictEqual(stateShot({ [SHIELD]: { selfId: SHIELD, amount: 1, equipped: true, slot: 8 } }).selfId, 1835);
 assert.strictEqual(ShotStock.planForState({ classId: MYSTIC, inventory: { [BONE_STAFF_D]:
     { selfId: BONE_STAFF_D, equipped: true, slot: 14 } } }).selfId, 2510, 'classId from the state when stats has none');
-// Difference 1: the state counts equippedCount even without the equipped flag.
+// equippedCount alone counts as equipped.
 assert.strictEqual(stateShot({ [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: false, equippedCount: 1, slot: 7 } }).selfId, 1463,
     'state: equippedCount alone counts as equipped');
-// Difference 2: with two equipped weapons the lowest item id wins (object key order).
+// With two equipped weapons the lowest item id wins.
 assert.strictEqual(stateShot({
     [SWORD_D]: { selfId: SWORD_D, amount: 1, equipped: true, slot: 7 },
     [FLAMBERGE_C]: { selfId: FLAMBERGE_C, amount: 1, equipped: true, slot: 14 }
@@ -69,7 +70,7 @@ const original = { fetchItems: Database.fetchItems, setItem: Database.setItem, u
     inserted.length = 0;
     Database.fetchItems = async () => [{ id: 1, selfId: SWORD_D, amount: 1, equipped: 0, equippedCount: 1, slot: 7 }];
     await ShotStock.ensureCharacterStock(100, { classId: FIGHTER, targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT });
-    assert.deepStrictEqual(inserted, [[1835, 1000]], 'rows caller ignores equippedCount');
+    assert.deepStrictEqual(inserted, [[1463, 1000]], 'the rows caller counts equippedCount as the state does');
     console.log('Shot stock weapon grade checks passed');
 })().finally(() => Object.assign(Database, original)).catch((error) => {
     console.error(error);
