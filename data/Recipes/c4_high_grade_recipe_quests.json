@@ -1,0 +1,775 @@
+[
+  {
+    "quest": 358,
+    "script": "358_IllegitimateChildOfAGoddess",
+    "name": "Illegitimate Child Of A Goddess",
+    "startNpc": 7862,
+    "minLevel": 63,
+    "drops": [
+      {
+        "selfId": 5868,
+        "name": "Snake Scale",
+        "chanceByMonster": { "672": 12, "673": 12 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 7862,
+        "give": [
+          { "selfId": 5868, "name": "Snake Scale", "count": 108 }
+        ],
+        "outcomes": [
+          {
+            "chance": 100,
+            "items": [
+              { "selfId": 6329, "name": "Recipe: Sealed Phoenix Necklace(70%)", "count": 1 },
+              { "selfId": 6331, "name": "Recipe: Sealed Phoenix Earring(70%)", "count": 1 },
+              { "selfId": 6333, "name": "Recipe: Sealed Phoenix Ring(70%)", "count": 1 },
+              { "selfId": 6335, "name": "Recipe: Sealed Majestic Necklace(70%)", "count": 1 },
+              { "selfId": 6337, "name": "Recipe: Sealed Majestic Earring(70%)", "count": 1 },
+              { "selfId": 6339, "name": "Recipe: Sealed Majestic Ring(70%)", "count": 1 },
+              { "selfId": 5364, "name": "Recipe: Sealed Dark Crystal Shield(60%)", "count": 1 },
+              { "selfId": 5366, "name": "Recipe: Sealed Shield of Nightmare(60%)", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 372,
+    "script": "372_LegacyOfInsolence",
+    "name": "Legacy of Insolence",
+    "startNpc": 7844,
+    "minLevel": 59,
+    "drops": [
+      {
+        "selfId": 5966,
+        "name": "Ancient Red Papyrus",
+        "chanceByMonster": { "817": 35, "821": 40, "825": 45 }
+      },
+      {
+        "selfId": 5967,
+        "name": "Ancient Blue Papyrus",
+        "chanceByMonster": { "829": 40 }
+      },
+      {
+        "selfId": 5968,
+        "name": "Ancient Black Papyrus",
+        "chanceByMonster": { "1069": 25 }
+      },
+      {
+        "selfId": 5969,
+        "name": "Ancient White Papyrus",
+        "chanceByMonster": { "1062": 25, "1063": 25 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 7844,
+        "option": "Dark Crystal",
+        "give": [
+          { "selfId": 5989, "name": "Blueprint: Tower of Insolence,1st Floor", "count": 1 },
+          { "selfId": 5990, "name": "Blueprint: Tower of Insolence,2nd Floor", "count": 1 },
+          { "selfId": 5991, "name": "Blueprint: Tower of Insolence,3rd Floor", "count": 1 },
+          { "selfId": 5992, "name": "Blueprint: Tower of Insolence,4th Floor", "count": 1 },
+          { "selfId": 5993, "name": "Blueprint: Tower of Insolence,5th Floor", "count": 1 },
+          { "selfId": 5994, "name": "Blueprint: Tower of Insolence,6th Floor", "count": 1 },
+          { "selfId": 5995, "name": "Blueprint: Tower of Insolence,7th Floor", "count": 1 },
+          { "selfId": 5996, "name": "Blueprint: Tower of Insolence,8th Floor", "count": 1 },
+          { "selfId": 5997, "name": "Blueprint: Tower of Insolence,9th Floor", "count": 1 },
+          { "selfId": 5998, "name": "Blueprint: Tower of Insolence,10th Floor", "count": 1 },
+          { "selfId": 5999, "name": "Blueprint: Tower of Insolence,11th Floor", "count": 1 },
+          { "selfId": 6000, "name": "Blueprint: Tower of Insolence,12th Floor", "count": 1 },
+          { "selfId": 6001, "name": "Blueprint: Tower of Insolence,13th Floor", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 1,
+            "items": [
+              { "selfId": 5368, "name": "Recipe: Sealed Dark Crystal Boots(60%)", "count": 1 },
+              { "selfId": 5392, "name": "Recipe: Sealed Dark Crystal Gloves(60%)", "count": 1 },
+              { "selfId": 5426, "name": "Recipe: Sealed Dark Crystal Helmet(60%)", "count": 1 },
+              { "selfId": 5525, "name": "Sealed Dark Crystal Helmet Design", "count": 1 },
+              { "selfId": 5508, "name": "Sealed Dark Crystal Gloves Design", "count": 1 },
+              { "selfId": 5496, "name": "Sealed Dark Crystal Boots Lining", "count": 1 }
+            ]
+          },
+          { "chance": 2, "adena": 4000 },
+          {
+            "chance": 2,
+            "items": [
+              { "selfId": 5368, "name": "Recipe: Sealed Dark Crystal Boots(60%)", "count": 1 },
+              { "selfId": 5392, "name": "Recipe: Sealed Dark Crystal Gloves(60%)", "count": 1 },
+              { "selfId": 5426, "name": "Recipe: Sealed Dark Crystal Helmet(60%)", "count": 1 },
+              { "selfId": 5525, "name": "Sealed Dark Crystal Helmet Design", "count": 1 },
+              { "selfId": 5508, "name": "Sealed Dark Crystal Gloves Design", "count": 1 },
+              { "selfId": 5496, "name": "Sealed Dark Crystal Boots Lining", "count": 1 }
+            ],
+            "pick": 2
+          },
+          {
+            "chance": 95,
+            "items": [
+              { "selfId": 5368, "name": "Recipe: Sealed Dark Crystal Boots(60%)", "count": 1 },
+              { "selfId": 5392, "name": "Recipe: Sealed Dark Crystal Gloves(60%)", "count": 1 },
+              { "selfId": 5426, "name": "Recipe: Sealed Dark Crystal Helmet(60%)", "count": 1 },
+              { "selfId": 5525, "name": "Sealed Dark Crystal Helmet Design", "count": 1 },
+              { "selfId": 5508, "name": "Sealed Dark Crystal Gloves Design", "count": 1 },
+              { "selfId": 5496, "name": "Sealed Dark Crystal Boots Lining", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      },
+      {
+        "npc": 7844,
+        "option": "Tallum",
+        "give": [
+          { "selfId": 5989, "name": "Blueprint: Tower of Insolence,1st Floor", "count": 1 },
+          { "selfId": 5990, "name": "Blueprint: Tower of Insolence,2nd Floor", "count": 1 },
+          { "selfId": 5991, "name": "Blueprint: Tower of Insolence,3rd Floor", "count": 1 },
+          { "selfId": 5992, "name": "Blueprint: Tower of Insolence,4th Floor", "count": 1 },
+          { "selfId": 5993, "name": "Blueprint: Tower of Insolence,5th Floor", "count": 1 },
+          { "selfId": 5994, "name": "Blueprint: Tower of Insolence,6th Floor", "count": 1 },
+          { "selfId": 5995, "name": "Blueprint: Tower of Insolence,7th Floor", "count": 1 },
+          { "selfId": 5996, "name": "Blueprint: Tower of Insolence,8th Floor", "count": 1 },
+          { "selfId": 5997, "name": "Blueprint: Tower of Insolence,9th Floor", "count": 1 },
+          { "selfId": 5998, "name": "Blueprint: Tower of Insolence,10th Floor", "count": 1 },
+          { "selfId": 5999, "name": "Blueprint: Tower of Insolence,11th Floor", "count": 1 },
+          { "selfId": 6000, "name": "Blueprint: Tower of Insolence,12th Floor", "count": 1 },
+          { "selfId": 6001, "name": "Blueprint: Tower of Insolence,13th Floor", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 1,
+            "items": [
+              { "selfId": 5370, "name": "Recipe: Sealed Tallum Boots(60%)", "count": 1 },
+              { "selfId": 5394, "name": "Recipe: Sealed Tallum Gloves(60%)", "count": 1 },
+              { "selfId": 5428, "name": "Recipe: Sealed Tallum Helmet(60%)", "count": 1 },
+              { "selfId": 5526, "name": "Sealed Tallum Helm Design", "count": 1 },
+              { "selfId": 5509, "name": "Sealed Tallum Gloves Design", "count": 1 },
+              { "selfId": 5497, "name": "Sealed Tallum Boots Lining", "count": 1 }
+            ]
+          },
+          { "chance": 2, "adena": 4000 },
+          {
+            "chance": 2,
+            "items": [
+              { "selfId": 5370, "name": "Recipe: Sealed Tallum Boots(60%)", "count": 1 },
+              { "selfId": 5394, "name": "Recipe: Sealed Tallum Gloves(60%)", "count": 1 },
+              { "selfId": 5428, "name": "Recipe: Sealed Tallum Helmet(60%)", "count": 1 },
+              { "selfId": 5526, "name": "Sealed Tallum Helm Design", "count": 1 },
+              { "selfId": 5509, "name": "Sealed Tallum Gloves Design", "count": 1 },
+              { "selfId": 5497, "name": "Sealed Tallum Boots Lining", "count": 1 }
+            ],
+            "pick": 2
+          },
+          {
+            "chance": 95,
+            "items": [
+              { "selfId": 5370, "name": "Recipe: Sealed Tallum Boots(60%)", "count": 1 },
+              { "selfId": 5394, "name": "Recipe: Sealed Tallum Gloves(60%)", "count": 1 },
+              { "selfId": 5428, "name": "Recipe: Sealed Tallum Helmet(60%)", "count": 1 },
+              { "selfId": 5526, "name": "Sealed Tallum Helm Design", "count": 1 },
+              { "selfId": 5509, "name": "Sealed Tallum Gloves Design", "count": 1 },
+              { "selfId": 5497, "name": "Sealed Tallum Boots Lining", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      },
+      {
+        "npc": 7844,
+        "option": "Nightmare",
+        "give": [
+          { "selfId": 5989, "name": "Blueprint: Tower of Insolence,1st Floor", "count": 1 },
+          { "selfId": 5990, "name": "Blueprint: Tower of Insolence,2nd Floor", "count": 1 },
+          { "selfId": 5991, "name": "Blueprint: Tower of Insolence,3rd Floor", "count": 1 },
+          { "selfId": 5992, "name": "Blueprint: Tower of Insolence,4th Floor", "count": 1 },
+          { "selfId": 5993, "name": "Blueprint: Tower of Insolence,5th Floor", "count": 1 },
+          { "selfId": 5994, "name": "Blueprint: Tower of Insolence,6th Floor", "count": 1 },
+          { "selfId": 5995, "name": "Blueprint: Tower of Insolence,7th Floor", "count": 1 },
+          { "selfId": 5996, "name": "Blueprint: Tower of Insolence,8th Floor", "count": 1 },
+          { "selfId": 5997, "name": "Blueprint: Tower of Insolence,9th Floor", "count": 1 },
+          { "selfId": 5998, "name": "Blueprint: Tower of Insolence,10th Floor", "count": 1 },
+          { "selfId": 5999, "name": "Blueprint: Tower of Insolence,11th Floor", "count": 1 },
+          { "selfId": 6000, "name": "Blueprint: Tower of Insolence,12th Floor", "count": 1 },
+          { "selfId": 6001, "name": "Blueprint: Tower of Insolence,13th Floor", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 1,
+            "items": [
+              { "selfId": 5380, "name": "Recipe: Sealed Boots of Nightmare(60%)", "count": 1 },
+              { "selfId": 5404, "name": "Recipe: Sealed Gauntlets of Nightmare(60%)", "count": 1 },
+              { "selfId": 5430, "name": "Recipe: Sealed Helm of Nightmare(60%)", "count": 1 },
+              { "selfId": 5527, "name": "Sealed Helm of Nightmare Design", "count": 1 },
+              { "selfId": 5514, "name": "Sealed Gauntlets of Nightmare Design", "count": 1 },
+              { "selfId": 5502, "name": "Sealed Boots of Nightmare Lining", "count": 1 }
+            ]
+          },
+          { "chance": 2, "adena": 4000 },
+          {
+            "chance": 2,
+            "items": [
+              { "selfId": 5380, "name": "Recipe: Sealed Boots of Nightmare(60%)", "count": 1 },
+              { "selfId": 5404, "name": "Recipe: Sealed Gauntlets of Nightmare(60%)", "count": 1 },
+              { "selfId": 5430, "name": "Recipe: Sealed Helm of Nightmare(60%)", "count": 1 },
+              { "selfId": 5527, "name": "Sealed Helm of Nightmare Design", "count": 1 },
+              { "selfId": 5514, "name": "Sealed Gauntlets of Nightmare Design", "count": 1 },
+              { "selfId": 5502, "name": "Sealed Boots of Nightmare Lining", "count": 1 }
+            ],
+            "pick": 2
+          },
+          {
+            "chance": 95,
+            "items": [
+              { "selfId": 5380, "name": "Recipe: Sealed Boots of Nightmare(60%)", "count": 1 },
+              { "selfId": 5404, "name": "Recipe: Sealed Gauntlets of Nightmare(60%)", "count": 1 },
+              { "selfId": 5430, "name": "Recipe: Sealed Helm of Nightmare(60%)", "count": 1 },
+              { "selfId": 5527, "name": "Sealed Helm of Nightmare Design", "count": 1 },
+              { "selfId": 5514, "name": "Sealed Gauntlets of Nightmare Design", "count": 1 },
+              { "selfId": 5502, "name": "Sealed Boots of Nightmare Lining", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      },
+      {
+        "npc": 7844,
+        "option": "Majestic",
+        "give": [
+          { "selfId": 5989, "name": "Blueprint: Tower of Insolence,1st Floor", "count": 1 },
+          { "selfId": 5990, "name": "Blueprint: Tower of Insolence,2nd Floor", "count": 1 },
+          { "selfId": 5991, "name": "Blueprint: Tower of Insolence,3rd Floor", "count": 1 },
+          { "selfId": 5992, "name": "Blueprint: Tower of Insolence,4th Floor", "count": 1 },
+          { "selfId": 5993, "name": "Blueprint: Tower of Insolence,5th Floor", "count": 1 },
+          { "selfId": 5994, "name": "Blueprint: Tower of Insolence,6th Floor", "count": 1 },
+          { "selfId": 5995, "name": "Blueprint: Tower of Insolence,7th Floor", "count": 1 },
+          { "selfId": 5996, "name": "Blueprint: Tower of Insolence,8th Floor", "count": 1 },
+          { "selfId": 5997, "name": "Blueprint: Tower of Insolence,9th Floor", "count": 1 },
+          { "selfId": 5998, "name": "Blueprint: Tower of Insolence,10th Floor", "count": 1 },
+          { "selfId": 5999, "name": "Blueprint: Tower of Insolence,11th Floor", "count": 1 },
+          { "selfId": 6000, "name": "Blueprint: Tower of Insolence,12th Floor", "count": 1 },
+          { "selfId": 6001, "name": "Blueprint: Tower of Insolence,13th Floor", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 1,
+            "items": [
+              { "selfId": 5382, "name": "Recipe: Sealed Majestic Boots(60%)", "count": 1 },
+              { "selfId": 5406, "name": "Recipe: Sealed Majestic Gauntlets(60%)", "count": 1 },
+              { "selfId": 5432, "name": "Recipe: Sealed Majestic Circlet (60%)", "count": 1 },
+              { "selfId": 5528, "name": "Sealed Majestic Circlet Design", "count": 1 },
+              { "selfId": 5515, "name": "Sealed Majestic Gauntlets Design", "count": 1 },
+              { "selfId": 5503, "name": "Sealed Majestic Boots Lining", "count": 1 }
+            ]
+          },
+          { "chance": 2, "adena": 4000 },
+          {
+            "chance": 2,
+            "items": [
+              { "selfId": 5382, "name": "Recipe: Sealed Majestic Boots(60%)", "count": 1 },
+              { "selfId": 5406, "name": "Recipe: Sealed Majestic Gauntlets(60%)", "count": 1 },
+              { "selfId": 5432, "name": "Recipe: Sealed Majestic Circlet (60%)", "count": 1 },
+              { "selfId": 5528, "name": "Sealed Majestic Circlet Design", "count": 1 },
+              { "selfId": 5515, "name": "Sealed Majestic Gauntlets Design", "count": 1 },
+              { "selfId": 5503, "name": "Sealed Majestic Boots Lining", "count": 1 }
+            ],
+            "pick": 2
+          },
+          {
+            "chance": 95,
+            "items": [
+              { "selfId": 5382, "name": "Recipe: Sealed Majestic Boots(60%)", "count": 1 },
+              { "selfId": 5406, "name": "Recipe: Sealed Majestic Gauntlets(60%)", "count": 1 },
+              { "selfId": 5432, "name": "Recipe: Sealed Majestic Circlet (60%)", "count": 1 },
+              { "selfId": 5528, "name": "Sealed Majestic Circlet Design", "count": 1 },
+              { "selfId": 5515, "name": "Sealed Majestic Gauntlets Design", "count": 1 },
+              { "selfId": 5503, "name": "Sealed Majestic Boots Lining", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 375,
+    "script": "375_WhisperOfDreams2",
+    "name": "Whisper of Dreams, part 2",
+    "startNpc": 7515,
+    "minLevel": 60,
+    "requires": [
+      { "selfId": 5887, "name": "Mysterious Stone", "count": 1 }
+    ],
+    "drops": [
+      {
+        "selfId": 5889,
+        "name": "Cave Howler Skull",
+        "chanceByMonster": { "624": 100 }
+      },
+      {
+        "selfId": 5888,
+        "name": "Karik Horn",
+        "chanceByMonster": { "629": 100 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 7515,
+        "give": [
+          { "selfId": 5889, "name": "Cave Howler Skull", "count": 100 },
+          { "selfId": 5888, "name": "Karik Horn", "count": 100 }
+        ],
+        "outcomes": [
+          {
+            "chance": 100,
+            "items": [
+              { "selfId": 5348, "name": "Recipe: Sealed Dark Crystal Robe(60%)", "count": 1 },
+              { "selfId": 5350, "name": "Recipe: Sealed Robe of Nightmare(60%)", "count": 1 },
+              { "selfId": 5352, "name": "Recipe: Sealed Majestic Robe(60%)", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 376,
+    "script": "376_GiantsExploration1",
+    "name": "Giants Exploration Part1",
+    "startNpc": 8147,
+    "minLevel": 51,
+    "drops": [
+      {
+        "selfId": 5944,
+        "name": "Ancient Parchment",
+        "chanceByMonster": { "647": 15, "648": 15, "649": 15, "650": 15 }
+      },
+      {
+        "selfId": 5890,
+        "name": "Mysterious Book",
+        "chanceByMonster": { "647": 5, "648": 5, "649": 5, "650": 5 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5937, "name": "Book: Giants Medical Science,Chapter 1", "count": 1 },
+          { "selfId": 5938, "name": "Book: Giants Medical Science,Chapter 2", "count": 1 },
+          { "selfId": 5939, "name": "Book: Giants Medical Science,Chapter 3", "count": 1 },
+          { "selfId": 5940, "name": "Book: Giants Medical Science,Chapter 4", "count": 1 },
+          { "selfId": 5941, "name": "Book: Giants Medical Science,Chapter 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5346, "name": "Recipe: Sealed Tallum Tunic(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5354, "name": "Recipe: Sealed Tallum Stockings(60%)", "count": 1 }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5932, "name": "Handbook: Giants Architecture,Chapter 1", "count": 1 },
+          { "selfId": 5933, "name": "Handbook: Giants Architecture,Chapter 2", "count": 1 },
+          { "selfId": 5934, "name": "Handbook: Giants Architecture,Chapter 3", "count": 1 },
+          { "selfId": 5935, "name": "Handbook: Giants Architecture,Chapter 4", "count": 1 },
+          { "selfId": 5936, "name": "Handbook: Giants Architecture,Chapter 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5332, "name": "Recipe: Sealed Dark Crystal Leather Armor(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5334, "name": "Recipe: Sealed Tallum Leather Armor(60%)", "count": 1 }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5922, "name": "Blueprint: Giants Golem 1", "count": 1 },
+          { "selfId": 5923, "name": "Blueprint: Giants Golem 2", "count": 1 },
+          { "selfId": 5924, "name": "Blueprint: Giants Golem 3", "count": 1 },
+          { "selfId": 5925, "name": "Blueprint: Giants Golem 4", "count": 1 },
+          { "selfId": 5926, "name": "Blueprint: Giants Golem 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5416, "name": "Recipe: Sealed Dark Crystal Breastplate(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5418, "name": "Recipe: Sealed Tallum Plate Armor(60%)", "count": 1 }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5927, "name": "Book: Basics of Giants Magic,Chapter 1", "count": 1 },
+          { "selfId": 5928, "name": "Book: Basics of Giants Magic,Chapter 2", "count": 1 },
+          { "selfId": 5929, "name": "Book: Basics of Giants Magic,Chapter 3", "count": 1 },
+          { "selfId": 5930, "name": "Book: Basics of Giants Magic,Chapter 4", "count": 1 },
+          { "selfId": 5931, "name": "Book: Basics of Giants Magic,Chapter 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5424, "name": "Recipe: Sealed Dark Crystal Gaiters(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 50,
+            "items": [
+              { "selfId": 5340, "name": "Recipe: Sealed Dark Crystal Leggings(60%)", "count": 1 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 377,
+    "script": "377_GiantsExploration2",
+    "name": "Exploration of Giants Cave, part 2",
+    "startNpc": 8147,
+    "minLevel": 57,
+    "requires": [
+      { "selfId": 5892, "name": "Ancient Language Dictionary: Intermediate Level", "count": 1 }
+    ],
+    "drops": [
+      {
+        "selfId": 5955,
+        "name": "Ancient Titan Book",
+        "chanceByMonster": { "654": 15, "656": 15, "657": 15, "658": 15 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5945, "name": "Book: Giants Science & Technology,Chapter 1", "count": 1 },
+          { "selfId": 5946, "name": "Book: Giants Science & Technology,Chapter 2", "count": 1 },
+          { "selfId": 5947, "name": "Book: Giants Science & Technology,Chapter 3", "count": 1 },
+          { "selfId": 5948, "name": "Book: Giants Science & Technology,Chapter 4", "count": 1 },
+          { "selfId": 5949, "name": "Book: Giants Science & Technology,Chapter 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 49,
+            "items": [
+              { "selfId": 5336, "name": "Recipe: Sealed Leather Armor of Nightmare(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 51,
+            "items": [
+              { "selfId": 5338, "name": "Recipe: Sealed Majestic Leather Armor(60%)", "count": 1 }
+            ]
+          }
+        ]
+      },
+      {
+        "npc": 8147,
+        "give": [
+          { "selfId": 5950, "name": "Almanac: Titan Culture,Chapter 1", "count": 1 },
+          { "selfId": 5951, "name": "Almanac: Titan Culture,Chapter 2", "count": 1 },
+          { "selfId": 5952, "name": "Almanac: Titan Culture,Chapter 3", "count": 1 },
+          { "selfId": 5953, "name": "Almanac: Titan Culture,Chapter 4", "count": 1 },
+          { "selfId": 5954, "name": "Almanac: Titan Culture,Chapter 5", "count": 1 }
+        ],
+        "outcomes": [
+          {
+            "chance": 49,
+            "items": [
+              { "selfId": 5422, "name": "Recipe: Sealed Majestic Plate Armor(60%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 51,
+            "items": [
+              { "selfId": 5420, "name": "Recipe: Sealed Armor of Nightmare(60%)", "count": 1 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 617,
+    "script": "617_GatherTheFlames",
+    "name": "Gather The Flames",
+    "startNpc": 8539,
+    "minLevel": 74,
+    "drops": [
+      {
+        "selfId": 7264,
+        "name": "Torch",
+        "chanceByMonster": { "1376": 48, "1377": 48, "1378": 49, "1379": 59, "1380": 49, "1381": 51, "1382": 60, "1383": 51, "1384": 64, "1385": 52, "1386": 52, "1387": 53, "1388": 53, "1389": 55, "1390": 56, "1391": 55, "1392": 56, "1393": 58, "1394": 51, "1395": 56, "1652": 49, "1653": 51, "1654": 52, "1655": 53, "1656": 69, "1657": 57 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8539,
+        "give": [
+          { "selfId": 7264, "name": "Torch", "count": 1000 }
+        ],
+        "outcomes": [
+          {
+            "chance": 100,
+            "items": [
+              { "selfId": 6881, "name": "Recipe: Forgotten Blade (60%)", "count": 1 },
+              { "selfId": 6883, "name": "Recipe: Basalt Battlehammer (60%)", "count": 1 },
+              { "selfId": 6885, "name": "Recipe: Imperial Staff (60%)", "count": 1 },
+              { "selfId": 6887, "name": "Recipe: Angel Slayer (60%)", "count": 1 },
+              { "selfId": 6891, "name": "Recipe: Dragon Hunter Axe (60%)", "count": 1 },
+              { "selfId": 6893, "name": "Recipe: Saint Spear (60%)", "count": 1 },
+              { "selfId": 6895, "name": "Recipe: Demon Splinter (60%)", "count": 1 },
+              { "selfId": 6897, "name": "Recipe: Heavens Divider (60%)", "count": 1 },
+              { "selfId": 6899, "name": "Recipe: Arcana Mace (60%)", "count": 1 },
+              { "selfId": 7580, "name": "Recipe: Draconic Bow (60%)", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 619,
+    "script": "619_RelicsOfTheOldEmpire",
+    "name": "Relics of the Old Empire",
+    "startNpc": 8538,
+    "minLevel": 74,
+    "drops": [
+      {
+        "selfId": 7254,
+        "name": "Broken Relic Part",
+        "chanceByMonster": { "1396": 100, "1397": 100, "1398": 100, "1399": 100, "1400": 100, "1401": 100, "1402": 100, "1403": 100, "1404": 100, "1405": 100, "1406": 100, "1407": 100, "1408": 100, "1409": 100, "1410": 100, "1411": 100, "1412": 100, "1413": 100, "1414": 100, "1415": 100, "1416": 100, "1417": 100, "1418": 100, "1419": 100, "1420": 100, "1421": 100, "1422": 100, "1423": 100, "1424": 100, "1425": 100, "1426": 100, "1427": 100, "1428": 100, "1429": 100, "1430": 100, "1431": 100, "1432": 100, "1433": 100, "1434": 100, "1798": 100, "1799": 100, "1800": 100, "12955": 100, "12956": 100, "12957": 100, "12958": 100, "12959": 100, "12960": 100, "12961": 100, "12962": 100, "12963": 100, "12964": 100, "12965": 100, "12966": 100, "12967": 100, "12968": 100, "12969": 100, "12970": 100, "12971": 100, "12972": 100, "12973": 100, "12974": 100, "12975": 100, "12976": 100, "12977": 100, "12978": 100, "12979": 100, "12980": 100, "12981": 100, "12982": 100, "12983": 100, "12984": 100, "12985": 100, "12986": 100, "12987": 100, "12988": 100, "12989": 100, "12990": 100, "12991": 100, "12992": 100, "12993": 100, "12994": 100, "12995": 100, "12996": 100, "12997": 100, "12998": 100, "12999": 100, "13000": 100, "13001": 100, "13002": 100, "13003": 100, "13004": 100, "13005": 100, "13006": 100, "13007": 100, "13008": 100, "13009": 100, "13010": 100, "13011": 100, "13012": 100, "13013": 100, "13014": 100, "13015": 100, "13016": 100, "13017": 100, "13018": 100, "13019": 100, "13020": 100, "13021": 100, "13022": 100, "13023": 100, "13024": 100, "13025": 100, "13026": 100, "13027": 100, "13028": 100, "13029": 100, "13030": 100, "13031": 100, "13032": 100, "13033": 100, "13034": 100, "13035": 100, "13036": 100, "13037": 100, "13038": 100, "13039": 100, "13040": 100, "13041": 100, "13042": 100, "13043": 100, "13044": 100, "13045": 100, "13046": 100, "13047": 100, "13048": 100, "13049": 100, "13050": 100, "13051": 100, "13052": 100, "13053": 100, "13054": 100, "13055": 100, "13056": 100, "13057": 100, "13058": 100, "13059": 100, "13060": 100, "13061": 100, "13062": 100, "13063": 100, "13064": 100, "13065": 100, "13066": 100, "13067": 100, "13068": 100, "13069": 100, "13070": 100, "13071": 100, "13072": 100, "13073": 100, "13074": 100, "13075": 100, "13076": 100, "13077": 100, "13078": 100, "13079": 100, "13080": 100, "13081": 100, "13082": 100, "13083": 100, "13084": 100, "13085": 100, "13086": 100, "13087": 100, "13088": 100, "13089": 100, "13090": 100, "13091": 100 }
+      },
+      {
+        "selfId": 7075,
+        "name": "Entrance Pass to the Sepulcher",
+        "chanceByMonster": { "1396": 5, "1397": 5, "1398": 5, "1399": 5, "1400": 5, "1401": 5, "1402": 5, "1403": 5, "1404": 5, "1405": 5, "1406": 5, "1407": 5, "1408": 5, "1409": 5, "1410": 5, "1411": 5, "1412": 5, "1413": 5, "1414": 5, "1415": 5, "1416": 5, "1417": 5, "1418": 5, "1419": 5, "1420": 5, "1421": 5, "1422": 5, "1423": 5, "1424": 5, "1425": 5, "1426": 5, "1427": 5, "1428": 5, "1429": 5, "1430": 5, "1431": 5, "1432": 5, "1433": 5, "1434": 5, "1798": 5, "1799": 5, "1800": 5, "12955": 5, "12956": 5, "12957": 5, "12958": 5, "12959": 5, "12960": 5, "12961": 5, "12962": 5, "12963": 5, "12964": 5, "12965": 5, "12966": 5, "12967": 5, "12968": 5, "12969": 5, "12970": 5, "12971": 5, "12972": 5, "12973": 5, "12974": 5, "12975": 5, "12976": 5, "12977": 5, "12978": 5, "12979": 5, "12980": 5, "12981": 5, "12982": 5, "12983": 5, "12984": 5, "12985": 5, "12986": 5, "12987": 5, "12988": 5, "12989": 5, "12990": 5, "12991": 5, "12992": 5, "12993": 5, "12994": 5, "12995": 5, "12996": 5, "12997": 5, "12998": 5, "12999": 5, "13000": 5, "13001": 5, "13002": 5, "13003": 5, "13004": 5, "13005": 5, "13006": 5, "13007": 5, "13008": 5, "13009": 5, "13010": 5, "13011": 5, "13012": 5, "13013": 5, "13014": 5, "13015": 5, "13016": 5, "13017": 5, "13018": 5, "13019": 5, "13020": 5, "13021": 5, "13022": 5, "13023": 5, "13024": 5, "13025": 5, "13026": 5, "13027": 5, "13028": 5, "13029": 5, "13030": 5, "13031": 5, "13032": 5, "13033": 5, "13034": 5, "13035": 5, "13036": 5, "13037": 5, "13038": 5, "13039": 5, "13040": 5, "13041": 5, "13042": 5, "13043": 5, "13044": 5, "13045": 5, "13046": 5, "13047": 5, "13048": 5, "13049": 5, "13050": 5, "13051": 5, "13052": 5, "13053": 5, "13054": 5, "13055": 5, "13056": 5, "13057": 5, "13058": 5, "13059": 5, "13060": 5, "13061": 5, "13062": 5, "13063": 5, "13064": 5, "13065": 5, "13066": 5, "13067": 5, "13068": 5, "13069": 5, "13070": 5, "13071": 5, "13072": 5, "13073": 5, "13074": 5, "13075": 5, "13076": 5, "13077": 5, "13078": 5, "13079": 5, "13080": 5, "13081": 5, "13082": 5, "13083": 5, "13084": 5, "13085": 5, "13086": 5, "13087": 5, "13088": 5, "13089": 5, "13090": 5, "13091": 5 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8538,
+        "give": [
+          { "selfId": 7254, "name": "Broken Relic Part", "count": 1000 }
+        ],
+        "outcomes": [
+          {
+            "chance": 100,
+            "items": [
+              { "selfId": 6881, "name": "Recipe: Forgotten Blade (60%)", "count": 1 },
+              { "selfId": 6883, "name": "Recipe: Basalt Battlehammer (60%)", "count": 1 },
+              { "selfId": 6885, "name": "Recipe: Imperial Staff (60%)", "count": 1 },
+              { "selfId": 6887, "name": "Recipe: Angel Slayer (60%)", "count": 1 },
+              { "selfId": 6891, "name": "Recipe: Dragon Hunter Axe (60%)", "count": 1 },
+              { "selfId": 6893, "name": "Recipe: Saint Spear (60%)", "count": 1 },
+              { "selfId": 6895, "name": "Recipe: Demon Splinter (60%)", "count": 1 },
+              { "selfId": 6897, "name": "Recipe: Heavens Divider (60%)", "count": 1 },
+              { "selfId": 6899, "name": "Recipe: Arcana Mace (60%)", "count": 1 },
+              { "selfId": 7580, "name": "Recipe: Draconic Bow (60%)", "count": 1 }
+            ],
+            "pick": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 620,
+    "script": "620_FourGoblets",
+    "name": "Four Goblets",
+    "startNpc": 8453,
+    "minLevel": 74,
+    "drops": [
+      {
+        "selfId": 7255,
+        "name": "Sealed Box",
+        "chanceByMonster": { "12955": 30, "12956": 30, "12957": 30, "12958": 30, "12959": 30, "12960": 30, "12961": 30, "12962": 30, "12963": 30, "12964": 30, "12965": 30, "12966": 30, "12967": 30, "12968": 30, "12969": 30, "12970": 30, "12971": 30, "12972": 30, "12973": 30, "12974": 30, "12975": 30, "12976": 30, "12977": 30, "12978": 30, "12979": 30, "12980": 30, "12981": 30, "12982": 30, "12983": 30, "12984": 30, "12985": 30, "12986": 30, "12987": 30, "12988": 30, "12989": 30, "12990": 30, "12991": 30, "12992": 30, "12993": 30, "12994": 30, "12995": 30, "12996": 30, "12997": 30, "12998": 30, "12999": 30, "13000": 30, "13001": 30, "13002": 30, "13003": 30, "13004": 30, "13005": 30, "13006": 30, "13007": 30, "13008": 30, "13009": 30, "13010": 30, "13011": 30, "13012": 30, "13013": 30, "13014": 30, "13015": 30, "13016": 30, "13017": 30, "13018": 30, "13019": 30, "13020": 30, "13021": 30, "13022": 30, "13023": 30, "13024": 30, "13025": 30, "13026": 30, "13027": 30, "13028": 30, "13029": 30, "13030": 30, "13031": 30, "13032": 30, "13033": 30, "13034": 30, "13035": 30, "13036": 30, "13037": 30, "13038": 30, "13039": 30, "13040": 30, "13041": 30, "13042": 30, "13043": 30, "13044": 30, "13045": 30, "13046": 30, "13047": 30, "13048": 30, "13049": 30, "13050": 30, "13051": 30, "13052": 30, "13053": 30, "13054": 30, "13055": 30, "13056": 30, "13057": 30, "13058": 30, "13059": 30, "13060": 30, "13061": 30, "13062": 30, "13063": 30, "13064": 30, "13065": 30, "13066": 30, "13067": 30, "13068": 30, "13069": 30, "13070": 30, "13071": 30, "13072": 30, "13073": 30, "13074": 30, "13075": 30, "13076": 30, "13077": 30, "13078": 30, "13079": 30, "13080": 30, "13081": 30, "13082": 30, "13083": 30, "13084": 30, "13085": 30, "13086": 30, "13087": 30, "13088": 30, "13089": 30, "13090": 30 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8454,
+        "give": [
+          { "selfId": 7254, "name": "Broken Relic Part", "count": 1000 }
+        ],
+        "outcomes": [
+          {
+            "chance": 100,
+            "items": [
+              { "selfId": 6881, "name": "Recipe: Forgotten Blade (60%)", "count": 1 },
+              { "selfId": 6883, "name": "Recipe: Basalt Battlehammer (60%)", "count": 1 },
+              { "selfId": 6885, "name": "Recipe: Imperial Staff (60%)", "count": 1 },
+              { "selfId": 6887, "name": "Recipe: Angel Slayer (60%)", "count": 1 },
+              { "selfId": 6891, "name": "Recipe: Dragon Hunter Axe (60%)", "count": 1 },
+              { "selfId": 6893, "name": "Recipe: Saint Spear (60%)", "count": 1 },
+              { "selfId": 6895, "name": "Recipe: Demon Splinter (60%)", "count": 1 },
+              { "selfId": 6897, "name": "Recipe: Heavens Divider (60%)", "count": 1 },
+              { "selfId": 6899, "name": "Recipe: Arcana Mace (60%)", "count": 1 },
+              { "selfId": 7580, "name": "Recipe: Draconic Bow (60%)", "count": 1 }
+            ],
+            "choose": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 621,
+    "script": "621_EggDelivery",
+    "name": "Egg Delivery",
+    "startNpc": 8521,
+    "minLevel": 68,
+    "maxLevel": 73,
+    "exchanges": [
+      {
+        "npc": 8521,
+        "give": [
+          { "selfId": 7196, "name": "Fee of Boiled Egg", "count": 5 }
+        ],
+        "outcomes": [
+          {
+            "chance": 10,
+            "items": [
+              { "selfId": 6847, "name": "Recipe: Sealed Tateossian Earring (70%)", "count": 1 },
+              { "selfId": 6849, "name": "Recipe: Sealed Tateossian Ring(70%)", "count": 1 },
+              { "selfId": 6851, "name": "Recipe: Sealed Tateossian Necklace(70%)", "count": 1 }
+            ],
+            "pick": 1
+          },
+          {
+            "chance": 90,
+            "adena": 18800,
+            "items": [
+              { "selfId": 734, "name": "Haste Potion", "count": 1 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 622,
+    "script": "622_DeliveryOfSpecialLiquor",
+    "name": "Delivery of special liquor",
+    "startNpc": 8521,
+    "minLevel": 68,
+    "exchanges": [
+      {
+        "npc": 8521,
+        "give": [
+          { "selfId": 7198, "name": "Fee of Special Drink", "count": 5 }
+        ],
+        "outcomes": [
+          {
+            "chance": 10,
+            "items": [
+              { "selfId": 6847, "name": "Recipe: Sealed Tateossian Earring (70%)", "count": 1 },
+              { "selfId": 6849, "name": "Recipe: Sealed Tateossian Ring(70%)", "count": 1 },
+              { "selfId": 6851, "name": "Recipe: Sealed Tateossian Necklace(70%)", "count": 1 }
+            ],
+            "pick": 1
+          },
+          {
+            "chance": 90,
+            "adena": 18800,
+            "items": [
+              { "selfId": 734, "name": "Haste Potion", "count": 1 }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "quest": 623,
+    "script": "623_TheFinestFood",
+    "name": "The Finest Food",
+    "startNpc": 8521,
+    "minLevel": 71,
+    "drops": [
+      {
+        "selfId": 7200,
+        "name": "Buffalo Meat",
+        "chanceByMonster": { "1315": 99 }
+      },
+      {
+        "selfId": 7199,
+        "name": "Leaf of Flava",
+        "chanceByMonster": { "1316": 99 }
+      },
+      {
+        "selfId": 7201,
+        "name": "Antelope Horn",
+        "chanceByMonster": { "1318": 99 }
+      }
+    ],
+    "exchanges": [
+      {
+        "npc": 8521,
+        "give": [
+          { "selfId": 7199, "name": "Leaf of Flava", "count": 100 },
+          { "selfId": 7200, "name": "Buffalo Meat", "count": 100 },
+          { "selfId": 7201, "name": "Antelope Horn", "count": 100 }
+        ],
+        "outcomes": [
+          {
+            "chance": 12,
+            "adena": 25000,
+            "items": [
+              { "selfId": 6849, "name": "Recipe: Sealed Tateossian Ring(70%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 12,
+            "adena": 65000,
+            "items": [
+              { "selfId": 6847, "name": "Recipe: Sealed Tateossian Earring (70%)", "count": 1 }
+            ]
+          },
+          {
+            "chance": 10,
+            "adena": 25000,
+            "items": [
+              { "selfId": 6851, "name": "Recipe: Sealed Tateossian Necklace(70%)", "count": 1 }
+            ]
+          },
+          { "chance": 66, "adena": 73000, "exp": 230000, "sp": 18250 }
+        ]
+      }
+    ]
+  }
+]

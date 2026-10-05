@@ -593,6 +593,7 @@ const tests = [
     'tests/test_c4_raid_bosses.js',
     'tests/test_c4_recipe_scrolls.js',
     'tests/test_c4_high_grade_drops.js',
+    'tests/test_c4_high_grade_recipe_quests.js',
     'tests/test_raid_boss_curse.js',
     'tests/test_raid_boss_minions.js',
     'tests/test_raid_boss_respawn_persistence.js',
