@@ -102,10 +102,12 @@ function assertLisvusRevision() {
 }
 
 function itemTemplate(source) {
+    const kind = itemKind(source);
     return {
         selfId: source.id,
         template: {
-            kind: itemKind(source), name: source.name, class1: 4, class2: 0,
+            // Recipes share the client item type 5 ("other item") of the recipe templates in others.json.
+            kind, name: source.name, class1: 4, class2: kind === 'Other.Recipe' ? 5 : 0,
             mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
         },
         etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }

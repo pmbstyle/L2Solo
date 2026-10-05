@@ -36,7 +36,7 @@ recipeScrolls.forEach((scroll) => {
 assert.deepStrictEqual(recipeScrolls.find((item) => item.selfId === 4936), {
     selfId: 4936,
     template: {
-        kind: 'Other.Recipe', name: 'Recipe: Avadon Shield (60%)', class1: 4, class2: 0, mass: 30, price: 10900
+        kind: 'Other.Recipe', name: 'Recipe: Avadon Shield (60%)', class1: 4, class2: 5, mass: 30, price: 10900
     },
     etc: { stackable: true, consumable: false }
 }, 'a representative scroll must keep the exact Lisvus weight and price');

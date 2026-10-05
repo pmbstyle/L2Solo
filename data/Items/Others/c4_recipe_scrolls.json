@@ -5,7 +5,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Avadon Shield (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 10900
     },
@@ -20,7 +20,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Adamantite Ring (70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 8080
     },
@@ -35,7 +35,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Adamantite Necklace (70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16160
     },
@@ -50,7 +50,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Breastplate (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 41600
     },
@@ -65,7 +65,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Boots of Silence (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -80,7 +80,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Guardian's Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -95,7 +95,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Avadon Gaiters (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 26000
     },
@@ -110,7 +110,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Leather Shirt (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 31200
     },
@@ -125,7 +125,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Leather Gaiters (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 19460
     },
@@ -140,7 +140,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Avadon Leather Armor (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 45600
     },
@@ -155,7 +155,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Tunic of Zubei (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 31200
     },
@@ -170,7 +170,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Stockings of Zubei (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 19460
     },
@@ -185,7 +185,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Avadon Circlet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 15560
     },
@@ -200,7 +200,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Avadon Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 10380
     },
@@ -215,7 +215,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Chain Gloves of Silence (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -230,7 +230,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Guardian's Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -245,7 +245,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Gloves of Blessing (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 10380
     },
@@ -260,7 +260,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Boots of Blessing (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -275,7 +275,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Gauntlets (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 10380
     },
@@ -290,7 +290,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Shield (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 10900
     },
@@ -305,7 +305,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Zubei's Helmet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 15560
     },
@@ -320,7 +320,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Great Sword (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -335,7 +335,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Heavy War Axe (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -350,7 +350,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Keshanberk (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -365,7 +365,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sword of Valhalla (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -380,7 +380,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Hell Knife (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -395,7 +395,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Arthro Nail (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -410,7 +410,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Dark Elven Long Bow (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 173600
     },
@@ -425,7 +425,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Great Axe (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -440,7 +440,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Earring of Black Ore (70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 18480
     },
@@ -455,7 +455,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Ring of Black Ore (70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 12320
     },
@@ -470,7 +470,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Implosion Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -485,7 +485,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Paradia Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -500,7 +500,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Elemental Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -515,7 +515,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Boots of Grace (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -530,7 +530,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blue Wolf Breastplate (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 64400
     },
@@ -545,7 +545,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Doom Plate Armor (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 94200
     },
@@ -560,7 +560,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blue Wolf Tunic (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 48200
     },
@@ -575,7 +575,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Tunic of Doom (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 48200
     },
@@ -590,7 +590,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blue Wolf Stockings (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 30200
     },
@@ -605,7 +605,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Stockings of Doom (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 30200
     },
@@ -620,7 +620,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Doom Helmet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 24200
     },
@@ -635,7 +635,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blue Wolf Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -650,7 +650,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Doom Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -665,7 +665,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Elemental Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -680,7 +680,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Gloves of Grace (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -695,7 +695,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Implosion Gauntlets (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -710,7 +710,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Paradia Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -725,7 +725,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blue Wolf Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -740,7 +740,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Doom Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 16080
     },
@@ -755,7 +755,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Deadman's Glory (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 262000
     },
@@ -770,7 +770,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Staff of Evil Spirits (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 262000
     },
@@ -785,7 +785,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Bellion Cestus (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 262000
     },
@@ -800,7 +800,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Bow of Peril (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 262000
     },
@@ -815,7 +815,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Pata (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -830,7 +830,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Leather Armor(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 69400
     },
@@ -845,7 +845,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Leather Armor(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 101600
     },
@@ -860,7 +860,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Leather Armor of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 154600
     },
@@ -875,7 +875,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Leather Armor(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 154600
     },
@@ -890,7 +890,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Leggings(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 43400
     },
@@ -905,7 +905,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Tunic(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 69400
     },
@@ -920,7 +920,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Robe(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 101600
     },
@@ -935,7 +935,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Robe of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 154600
     },
@@ -950,7 +950,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Robe(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 154600
     },
@@ -965,7 +965,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Stockings(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 43400
     },
@@ -980,7 +980,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Shield(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 24400
     },
@@ -995,7 +995,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Shield of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 37000
     },
@@ -1010,7 +1010,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Boots(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 23200
     },
@@ -1025,7 +1025,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Boots(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 23200
     },
@@ -1040,7 +1040,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Boots of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 35200
     },
@@ -1055,7 +1055,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Boots(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 35200
     },
@@ -1070,7 +1070,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Gloves(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 23200
     },
@@ -1085,7 +1085,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Gloves(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 23200
     },
@@ -1100,7 +1100,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Gauntlets of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 35200
     },
@@ -1115,7 +1115,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Gauntlets(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 35200
     },
@@ -1130,7 +1130,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Breastplate(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 92600
     },
@@ -1145,7 +1145,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Plate Armor(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 135400
     },
@@ -1160,7 +1160,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Armor of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 206000
     },
@@ -1175,7 +1175,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Plate Armor(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 206000
     },
@@ -1190,7 +1190,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Gaiters(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 57800
     },
@@ -1205,7 +1205,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Dark Crystal Helmet(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 34800
     },
@@ -1220,7 +1220,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tallum Helmet(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 34800
     },
@@ -1235,7 +1235,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Helm of Nightmare(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 52800
     },
@@ -1250,7 +1250,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Majestic Circlet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 52800
     },
@@ -1265,7 +1265,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Meteor Shower(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 366000
     },
@@ -1280,7 +1280,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Meteor Shower(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1295,7 +1295,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Elysian(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1310,7 +1310,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Carnage Bow(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1325,7 +1325,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Bloody Orchid(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1340,7 +1340,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Blood Tornado(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1355,7 +1355,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Halberd(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 366000
     },
@@ -1370,7 +1370,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Halberd(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1385,7 +1385,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Dasparion's Staff(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1400,7 +1400,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Dark Legion's Edge(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1415,7 +1415,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Elemental Sword(60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 366000
     },
@@ -1430,7 +1430,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Elemental Sword(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1445,7 +1445,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Tallum Blade(100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 0
     },
@@ -1460,7 +1460,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tateossian Earring (70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 74000
     },
@@ -1475,7 +1475,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tateossian Ring(70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 49400
     },
@@ -1490,7 +1490,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Tateossian Necklace(70%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 98800
     },
@@ -1505,7 +1505,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Breastplate (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 286000
     },
@@ -1520,7 +1520,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Gaiters (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 179200
     },
@@ -1535,7 +1535,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Gauntlets (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1550,7 +1550,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1565,7 +1565,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Shield (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 75200
     },
@@ -1580,7 +1580,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Imperial Crusader Helmet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 107400
     },
@@ -1595,7 +1595,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Draconic Leather Armor (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 348000
     },
@@ -1610,7 +1610,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Draconic Leather Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1625,7 +1625,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Draconic Leather Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1640,7 +1640,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Draconic Leather Helmet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 107400
     },
@@ -1655,7 +1655,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Major Arcana Robe (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 348000
     },
@@ -1670,7 +1670,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Major Arcana Gloves (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1685,7 +1685,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Major Arcana Boots (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 71600
     },
@@ -1700,7 +1700,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Sealed Major Arcana Circlet (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 107400
     },
@@ -1715,7 +1715,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Forgotten Blade (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1730,7 +1730,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Basalt Battlehammer (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1745,7 +1745,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Basalt Battlehammer (100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1760,7 +1760,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Imperial Staff (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1775,7 +1775,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Angel Slayer (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1790,7 +1790,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Shining Bow (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1805,7 +1805,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Shining Bow (100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1820,7 +1820,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Dragon Hunter Axe (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1835,7 +1835,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Dragon Hunter Axe (100%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1850,7 +1850,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Saint Spear (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1865,7 +1865,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Demon Splinter (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1880,7 +1880,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Heavens Divider (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1895,7 +1895,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Arcana Mace (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
@@ -1910,7 +1910,7 @@
       "kind": "Other.Recipe",
       "name": "Recipe: Draconic Bow (60%)",
       "class1": 4,
-      "class2": 0,
+      "class2": 5,
       "mass": 30,
       "price": 976000
     },
