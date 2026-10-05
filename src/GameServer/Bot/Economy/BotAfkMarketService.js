@@ -459,7 +459,7 @@ async function reconcileSellShop(state, goal) {
         if (!published.shop) return { state, changed: false, reason: published.reason };
         shop = published.shop;
     }
-    const ads = await listSellAds(ownerId, state, sale.listings, shop);
+    const ads = await listSellAds(ownerId, state, sale.listings, shop, inventory);
     if (shop === stock && !ads.listed) {
         rememberInventory(ownerId, state);
         return { state, changed: false };
@@ -553,7 +553,7 @@ async function listOnBoard(state, options = {}) {
             }
         }
     }
-    const ads = await listSellAds(ownerId, state, sale.listings, shop);
+    const ads = await listSellAds(ownerId, state, sale.listings, shop, inventory);
     listed += ads.listed;
     return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason, shopTown,
         priceBeliefs: sale.book ? PriceBelief.writeBook(sale.book) : null };
@@ -561,14 +561,15 @@ async function listOnBoard(state, options = {}) {
 
 // One sell ad per listing the shop has no line for, while the bot has ad
 // slots left (BoardRules.BOT_RECORDS); an item it already advertises keeps
-// its ad. All in one move from the bag.
-async function listSellAds(ownerId, state, listings, shop) {
+// its ad. All in one move from the bag. `inventory`: the bag the caller read
+// for this review; a shop published since took only items of its own lines,
+// which no ad takes (a row that changed meanwhile refuses the move).
+async function listSellAds(ownerId, state, listings, shop, inventory) {
     const records = AfkTrade.ownerRecords(ownerId);
     const advertised = new Set(linesOf(records.filter((record) => record.kind === 'sell_ad')).map((line) => Number(line.selfId)));
     const inShop = new Set(linesOf(shop ? [shop] : []).map((line) => Number(line.selfId)));
     const free = Math.max(0, BoardRules.BOT_RECORDS.sell_ad - records.filter((record) => record.kind === 'sell_ad').length);
     if (!free) return { listed: 0, reason: 'board_cap_reached' };
-    const inventory = await Database.fetchItems(ownerId);
     const configs = [];
     for (const listing of listings || []) {
         if (configs.length >= free) break;
