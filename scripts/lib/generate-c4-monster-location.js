@@ -94,11 +94,26 @@ function assertExact(actual, expected, label) {
     }
 }
 
-module.exports = function generateC4MonsterLocation(config) {
+function assertLisvusRevision() {
     const lisvusRevision = execFileSync('git', ['-C', vendorRepo, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     if (lisvusRevision !== expectedLisvusRevision) {
         throw new Error(`Expected Lisvus ${expectedLisvusRevision}, found ${lisvusRevision}`);
     }
+}
+
+function itemTemplate(source) {
+    return {
+        selfId: source.id,
+        template: {
+            kind: itemKind(source), name: source.name, class1: 4, class2: 0,
+            mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
+        },
+        etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }
+    };
+}
+
+function generateC4MonsterLocation(config) {
+    assertLisvusRevision();
 
     const filename = `${config.slug}.json`;
     const mobIds = [...config.mobIds].sort((a, b) => a - b);
@@ -251,14 +266,7 @@ module.exports = function generateC4MonsterLocation(config) {
     if (missingSourceItems.some((source) => source.type === 'Weapon')) {
         throw new Error(`Unsupported weapon dependencies: ${missingSourceItems.filter((source) => source.type === 'Weapon').map((source) => source.id).join(', ')}`);
     }
-    const missingItems = missingSourceItems.map((source) => ({
-        selfId: source.id,
-        template: {
-            kind: itemKind(source), name: source.name, class1: 4, class2: 0,
-            mass: Number(source.sets.get('weight') || 0), price: Number(source.sets.get('price') || 0)
-        },
-        etc: { stackable: source.sets.get('is_stackable') === 'true', consumable: false }
-    }));
+    const missingItems = missingSourceItems.map(itemTemplate);
     assertExact(missingItems.map((item) => item.selfId), config.missingItemIds, 'item dependencies');
 
     writeJson(`data/Npcs/${filename}`, npcs);
@@ -278,4 +286,12 @@ module.exports = function generateC4MonsterLocation(config) {
         skillTemplates: config.skillTemplates?.length || 0,
         items: missingItems.length
     };
-};
+}
+
+module.exports = generateC4MonsterLocation;
+module.exports.assertLisvusRevision = assertLisvusRevision;
+module.exports.loadedItems = loadedItems;
+module.exports.vendorItems = vendorItems;
+module.exports.itemTemplate = itemTemplate;
+module.exports.assertExact = assertExact;
+module.exports.writeJson = writeJson;

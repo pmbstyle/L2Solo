@@ -1,0 +1,1922 @@
+[
+  {
+    "selfId": 4936,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Shield (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10900
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4938,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Adamantite Ring (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 8080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4939,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Adamantite Necklace (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16160
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4940,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Breastplate (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 41600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4942,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Boots of Silence (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4943,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Guardian's Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4945,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Gaiters (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 26000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4946,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Leather Shirt (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 31200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4947,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Leather Gaiters (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 19460
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4948,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Leather Armor (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 45600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4949,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Tunic of Zubei (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 31200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4950,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Stockings of Zubei (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 19460
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4952,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Circlet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 15560
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4953,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Avadon Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10380
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4954,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Chain Gloves of Silence (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4955,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Guardian's Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4956,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Gloves of Blessing (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10380
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4957,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Boots of Blessing (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4960,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Gauntlets (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10380
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4961,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Shield (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 10900
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4962,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Zubei's Helmet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 15560
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4963,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Great Sword (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4964,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Heavy War Axe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4966,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Keshanberk (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4967,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sword of Valhalla (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4969,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Hell Knife (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4970,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Arthro Nail (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4971,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dark Elven Long Bow (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 173600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4972,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Great Axe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4973,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Earring of Black Ore (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 18480
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4974,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Ring of Black Ore (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 12320
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4976,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Implosion Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4977,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Paradia Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4978,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elemental Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4979,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Boots of Grace (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4981,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Breastplate (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 64400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4983,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Doom Plate Armor (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 94200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4986,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Tunic (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 48200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4987,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Tunic of Doom (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 48200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4988,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Stockings (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 30200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4989,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Stockings of Doom (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 30200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4991,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Doom Helmet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 24200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4992,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4993,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Doom Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4994,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elemental Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4995,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Gloves of Grace (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4996,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Implosion Gauntlets (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4997,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Paradia Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4998,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blue Wolf Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4999,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Doom Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 16080
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5002,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Deadman's Glory (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5004,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Staff of Evil Spirits (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5006,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Bellion Cestus (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5007,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Bow of Peril (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 262000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5008,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Pata (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5332,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Leather Armor(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 69400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5334,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Leather Armor(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 101600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5336,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Leather Armor of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 154600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5338,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Leather Armor(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 154600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5340,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Leggings(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 43400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5346,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Tunic(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 69400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5348,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Robe(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 101600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5350,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Robe of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 154600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5352,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Robe(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 154600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5354,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Stockings(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 43400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5364,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Shield(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 24400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5366,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Shield of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 37000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5368,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Boots(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 23200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5370,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Boots(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 23200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5380,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Boots of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 35200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5382,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Boots(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 35200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5392,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Gloves(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 23200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5394,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Gloves(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 23200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5404,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Gauntlets of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 35200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5406,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Gauntlets(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 35200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5416,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Breastplate(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 92600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5418,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Plate Armor(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 135400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5420,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Armor of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 206000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5422,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Plate Armor(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 206000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5424,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Gaiters(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 57800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5426,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Dark Crystal Helmet(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 34800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5428,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tallum Helmet(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 34800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5430,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Helm of Nightmare(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 52800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5432,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Majestic Circlet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 52800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5438,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Meteor Shower(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5439,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Meteor Shower(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5441,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elysian(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5445,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Carnage Bow(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5447,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Bloody Orchid(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5453,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Blood Tornado(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5458,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Halberd(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5459,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Halberd(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5461,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dasparion's Staff(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5465,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dark Legion's Edge(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5468,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elemental Sword(60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 366000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5469,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Elemental Sword(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5471,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Tallum Blade(100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 0
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6847,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tateossian Earring (70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 74000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6849,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tateossian Ring(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 49400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6851,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Tateossian Necklace(70%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 98800
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6853,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Breastplate (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 286000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6855,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Gaiters (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 179200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6857,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Gauntlets (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6859,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6861,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Shield (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 75200
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6863,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Imperial Crusader Helmet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 107400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6865,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Draconic Leather Armor (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 348000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6867,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Draconic Leather Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6869,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Draconic Leather Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6871,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Draconic Leather Helmet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 107400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6873,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Major Arcana Robe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 348000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6875,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Major Arcana Gloves (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6877,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Major Arcana Boots (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 71600
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6879,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Sealed Major Arcana Circlet (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 107400
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6881,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Forgotten Blade (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6883,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Basalt Battlehammer (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6884,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Basalt Battlehammer (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6885,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Imperial Staff (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6887,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Angel Slayer (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6889,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Shining Bow (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6890,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Shining Bow (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6891,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dragon Hunter Axe (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6892,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Dragon Hunter Axe (100%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6893,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Saint Spear (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6895,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Demon Splinter (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6897,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Heavens Divider (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 6899,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Arcana Mace (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7580,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Draconic Bow (60%)",
+      "class1": 4,
+      "class2": 0,
+      "mass": 30,
+      "price": 976000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

@@ -579,6 +579,7 @@ const tests = [
     'tests/test_c4_catacomb_of_the_forbidden_path.js',
     'tests/test_c4_low_level_raid_bosses.js',
     'tests/test_c4_raid_bosses.js',
+    'tests/test_c4_recipe_scrolls.js',
     'tests/test_raid_boss_curse.js',
     'tests/test_raid_boss_minions.js',
     'tests/test_raid_boss_respawn_persistence.js',

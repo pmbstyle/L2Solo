@@ -217,7 +217,8 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_low_level_raid_bosses'),
             ...validateModel(path + 'Items/Others/c4_raid_bosses'),
             ...validateModel(path + 'Items/Others/c4_quest_298_380_items'),
-            ...validateModel(path + 'Items/Others/c4_quest_334_items')
+            ...validateModel(path + 'Items/Others/c4_quest_334_items'),
+            ...validateModel(path + 'Items/Others/c4_recipe_scrolls')
         ];
 
         DataCache.skills = invoke('GameServer/Skills/C4SkillRules').expandSourcedLevels([
