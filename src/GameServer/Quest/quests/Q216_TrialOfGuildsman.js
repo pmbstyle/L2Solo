@@ -76,7 +76,8 @@ const quest = {
         if (skill.fetchSelfId?.() !== 254 || s.session.actor.fetchClassId() !== 54 || s.getInt('cond') !== 5
             || s.getInt('pinter') !== 1 || !H.has(s, [[3122, 1], [3135, 1]])) return;
         const actual = NpcIndex.find(World, npc.fetchId());
-        if (actual !== npc || npc.isDead() || !quest.skillNpcs.includes(npc.fetchSelfId())) return;
+        if (actual !== npc || npc.isDead() || !quest.skillNpcs.includes(npc.fetchSelfId())
+            || !npc.model?.spoil?.spoiled || npc.model.spoil.spoilerId !== s.session.actor.fetchId()) return;
         const receipts = seen.get(npc) || new Set(), owner = s.session.actor.fetchId();
         if (receipts.has(owner)) return;
         const amount = invoke('GameServer/Quest/QuestService').questDropAmount(5, 70, H.count(s, 3136));
