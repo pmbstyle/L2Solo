@@ -162,6 +162,7 @@ function open(state, options = {}) {
     // the records. The bot then goes back to its hunt.
     return invoke('GameServer/Bot/Economy/BotAfkMarketService').listOnBoard(marketState, options).then((board) => {
         const boardState = board.state || marketState;
+        if (board.shopTown) return travelToShopTown(boardState, board, timestamp);
         if (!board.listed) {
             return BotWarehouse.depositCold(boardState).then((warehouse) => ({
                 state: deferSellRetry(warehouse.state || boardState),
@@ -194,6 +195,24 @@ function open(state, options = {}) {
     });
     }));
     });
+}
+
+// The bot's shop opens in another town than the one it sold in (its one
+// roll, MarketTownPolicy.openingTown): it travels there with its lines and
+// keeps its way back to its spot; the visit there opens the shop. When it
+// cannot travel, its lines wait in the bag for the next visit.
+function travelToShopTown(state, board, timestamp) {
+    const stats = { ...(state.stats || {}), shopTown: state.stats?.shopTown || { town: board.shopTown, at: timestamp } };
+    if (board.priceBeliefs) stats.priceBeliefs = board.priceBeliefs;
+    const goal = { type: 'sell_inventory', status: 'active',
+        plan: { expectedBenefit: 'market_sale_inventory', marketTown: board.shopTown } };
+    const travel = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);
+    if (travel) travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
+    const next = travel || GoalExecutor.finishMarketVisit({ ...state, stats }, timestamp, { recoverMissingReturn: true })
+        || { ...state, stats };
+    return LifeState.upsertState(next, travel ? 'cold_market_shop_town_trip' : 'cold_market_shop_town_unreached')
+        .then((saved) => ({ state: saved || next, listed: board.listed > 0, itemCount: board.listed,
+            reason: travel ? 'shop_town_trip' : 'shop_town_unreached', shopTown: board.shopTown }));
 }
 
 // A merchant without a stall: the board replaced the stalls (step 3.3), and

@@ -35,13 +35,14 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
-    const town = sellingInventory
-        ? marketTown(MarketTownPolicy.targetTownForSale(state))
-        : marketTown(goal.plan?.marketTown || 'Giran');
+    // A sale goes where its goal says (the town the shop opens in), else to
+    // the sale town; a new decision of the shop town travels with the bot.
+    const sale = sellingInventory && !goal.plan?.marketTown ? MarketTownPolicy.saleTown(state, timestamp) : null;
+    const town = marketTown(sale?.town || goal.plan?.marketTown || 'Giran');
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
-    const trip = (destination) => ColdTrip.toTown(state, {
+    const trip = (destination, shopTown = null) => ColdTrip.toTown(state, {
         reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
         from,
         to: { ...destination.center },
@@ -50,9 +51,10 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
         arrivalActivity: 'shopping',
         arrivalEvent: 'arrived_town'
     }, timestamp, {
-        marketReturn: { loc: from, regionName: state.currentRegion || null, spotId: state.spotId || null }
+        marketReturn: { loc: from, regionName: state.currentRegion || null, spotId: state.spotId || null },
+        ...(shopTown ? { shopTown } : {})
     });
-    const travel = trip(town);
+    const travel = trip(town, sale?.shopTown);
     if (travel || !sellingInventory) return travel;
     // A bot that cannot pay the gatekeeper to its sale town sells in the town
     // its Scroll of Escape reaches, as a player short of Adena would.
@@ -130,7 +132,7 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
         arrivalEvent: spotBackoff ? 'arrived_hunting_ground' : 'returned_to_spot',
         ...(spotBackoff ? { cause: 'death_pressure' } : {}),
         clearMarketReturn: true
-    }, timestamp, { extraStats: clanReturn ? {} : { partyMarketReturn: null } });
+    }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
 module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };

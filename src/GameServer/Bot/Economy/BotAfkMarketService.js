@@ -71,7 +71,13 @@ function canTradeRemotely(state, goal) {
         if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
         return !!BuyStoreService.bidFor(budgetState, goal);
     }
-    return true;
+    // Opening a shop needs the seller in its town (user, 2026-10-05): only a
+    // bot that has its shop sells from afar.
+    return hasShop(state.characterId);
+}
+
+function hasShop(characterId) {
+    return Number(AfkTrade.findOwnerProjection(characterId)?.shop?.storeType) === AfkTrade.SELL;
 }
 
 // A buy order stands through a goal without a trade side, such as a rest,
@@ -390,24 +396,24 @@ async function withdrawBuyAds(ownerId, selfId = null, state = null) {
     return { state: current, changed: withdrawn > 0, withdrawn: withdrawn > 0 && withdrawn === ads.length };
 }
 
-// The sell side of a review: the bot's shop (the author's AFK sell shop).
-// It changes when the bag changed, the shop's town moved or a line is no
-// longer a lot; the prices of its lines are the bot's own look (attention,
-// MarketPricing.look), not a fixed review period.
+// The sell side of a review: the bot's shop (the author's AFK sell shop),
+// reviewed from afar once it stands. It changes when the bag changed or a
+// line is no longer a lot, and never moves (N51, E46); what is listed past
+// its lines goes to sell ads, which need no trip. The prices of its lines
+// are the bot's own look (attention, MarketPricing.look), not a fixed review
+// period. A bot without a shop opens one in town (listOnBoard).
 async function reconcileSellShop(state, goal) {
     const ownerId = Number(state.characterId);
-    const shop = AfkTrade.findOwnerProjection(ownerId)?.shop;
-    const stock = Number(shop?.storeType) === AfkTrade.SELL ? shop : null;
+    const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
+    const stock = Number(current?.storeType) === AfkTrade.SELL ? current : null;
     const persistentSellGoal = stock && !desiredSide(goal)
         ? { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } }
         : goal;
     const side = desiredSide(persistentSellGoal);
     if (side !== AfkTrade.SELL || !canTradeRemotely(state, persistentSellGoal)) return { state, changed: false };
     const signature = stockSignature(state);
-    const existingTown = stock ? MarketTownPolicy.targetTownForItems(state, stock.lines) : null;
     const review = reviewedInventory.get(ownerId);
-    if (stock && review?.signature === signature && stock.town === existingTown
-        && stock.lines.every(viableSellLine)) return { state, changed: false };
+    if (review?.signature === signature && stock.lines.every(viableSellLine)) return { state, changed: false };
     const [characters, inventory] = await Promise.all([
         Database.execute(['SELECT * FROM characters WHERE id = ? LIMIT 1', [ownerId]], 'bot-afk:owner'),
         Database.fetchItems(ownerId)
@@ -416,22 +422,36 @@ async function reconcileSellShop(state, goal) {
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
     const sale = sellLines(state, stock, inventory);
     const lines = sale.lines;
-    const town = MarketTownPolicy.targetTownForItems(state, lines);
-    if (!lines.length && stock) {
+    if (!lines.length) {
         await AfkTrade.stop(ownerId);
         rememberInventory(ownerId, LifeState.snapshot(ownerId) || state);
         return { state: LifeState.snapshot(ownerId) || state, changed: true, withdrawn: true };
     }
-    if (!lines.length || (stock?.town === town && sameSellOrder(stock, lines))) {
+    let shop = stock;
+    if (sameSellLines(stock, lines)) {
+        if (!sameSellOrder(stock, lines)) shop = await repriceSellLines(ownerId, stock, lines) || stock;
+    } else {
+        const published = await publishSellShop(ownerId, state, stock, lines, stock.town, row, inventory);
+        if (!published.shop) return { state, changed: false, reason: published.reason };
+        shop = published.shop;
+    }
+    const ads = await listSellAds(ownerId, state, sale.listings, shop);
+    if (shop === stock && !ads.listed) {
         rememberInventory(ownerId, state);
         return { state, changed: false };
     }
-    if (stock?.town === town && sameSellLines(stock, lines)) {
-        return finishPublish(ownerId, state, await repriceSellLines(ownerId, stock, lines));
-    }
-    const published = await publishSellShop(ownerId, state, stock, lines, town, row, inventory);
-    if (!published.shop) return { state, changed: false, reason: published.reason };
-    return finishPublish(ownerId, state, published.shop);
+    return finishPublish(ownerId, await keepBeliefs(state, sale.book), shop);
+}
+
+// The bot keeps its beliefs of what it listed from afar, as at a market
+// visit, so the sales that follow are learned (group E follow-up).
+async function keepBeliefs(state, book) {
+    const written = book ? PriceBelief.writeBook(book) : null;
+    if (!written) return state;
+    const current = LifeState.snapshot(state.characterId) || state;
+    if (current.phase !== 'cold') return current;
+    return await LifeState.upsertState({ ...current, stats: { ...(current.stats || {}), priceBeliefs: written } },
+        'board_remote_listing_beliefs') || current;
 }
 
 // A deal or another move changed the record after the review read it: the
@@ -470,7 +490,11 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
 // bot in a market town lists what the listing policy would put on a stall.
 // Its shop takes up to MAX_LINES lines (kept lines first, as a review keeps
 // them); each listing past the shop becomes a sell ad, up to the bot's cap;
-// what fits nowhere stays in the bag. Returns { state, listed, reason }.
+// what fits nowhere stays in the bag. A shop stands where it was opened; a
+// new one opens in the town the bot chose for it (MarketTownPolicy.openingTown,
+// one roll): when that is another town, its lines wait in the bag and
+// shopTown names the town to travel to. Returns { state, listed, reason,
+// shopTown, priceBeliefs }.
 async function listOnBoard(state, options = {}) {
     const ownerId = Number(state.characterId);
     const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
@@ -485,9 +509,14 @@ async function listOnBoard(state, options = {}) {
     let listed = 0;
     let reason = null;
     let shop = stock;
-    if (sale.lines.length) {
-        const town = MarketTownPolicy.targetTownForItems(state, sale.lines);
-        if (stock?.town === town && sameSellOrder(stock, sale.lines)) {
+    let shopTown = null;
+    const town = sale.lines.length ? stock?.town || MarketTownPolicy.openingTown(state, sale.lines, options.now).town : null;
+    if (town && !stock && town !== state.currentRegion) {
+        // The shop opens in its own town: the bot goes there with its lines.
+        shopTown = town;
+        shop = { lines: sale.lines };
+    } else if (town) {
+        if (stock && sameSellOrder(stock, sale.lines)) {
             listed += sale.lines.length;
         } else {
             const published = await publishSellShop(ownerId, state, stock, sale.lines, town, row, inventory);
@@ -509,7 +538,7 @@ async function listOnBoard(state, options = {}) {
             utils.infoWarn('BotMarket', 'board matching failed for %s: %s', state.name, error.message);
         }
     }
-    return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason,
+    return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason, shopTown,
         priceBeliefs: sale.book ? PriceBelief.writeBook(sale.book) : null };
 }
 

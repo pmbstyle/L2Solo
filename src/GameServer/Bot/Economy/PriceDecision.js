@@ -227,6 +227,24 @@ function chooseByValue(options, rollKey) {
     return valid[valid.length - 1];
 }
 
+// One roll among options [{ action, value }] in proportion to their values
+// (a weighted roll, Q6: variety over the best one): a value at or below 0
+// weighs nothing but every option keeps a floor, together TendencyRoll.MIN
+// of the whole weight, so none is impossible. null without a finite option.
+function chooseByWeight(options, rollKey) {
+    const valid = options.filter((option) => Number.isFinite(option.value));
+    if (!valid.length) return null;
+    let total = 0;
+    for (const option of valid) total += Math.max(0, option.value);
+    const floor = total > 0 ? TendencyRoll.MIN * total / valid.length : 1;
+    let left = TendencyRoll.roll(...rollKey) * (total + floor * valid.length);
+    for (const option of valid) {
+        left -= Math.max(0, option.value) + floor;
+        if (left <= 0) return option;
+    }
+    return valid[valid.length - 1];
+}
+
 // Which candidates take `slots` board slots: a weighted roll by their gain
 // over the NPC, one after another without repeats. candidates: [{ gain }].
 function chooseSlots(candidates, slots, seed) {
@@ -249,4 +267,4 @@ function chooseSlots(candidates, slots, seed) {
 }
 
 module.exports = { GRID, NEAR_BEST, PERCEPTION, valueOfMoney, traderOf, phi, saleUtility, purchaseCost, marketFor,
-    chooseAsk, chooseBid, chooseByValue, chooseSlots };
+    chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

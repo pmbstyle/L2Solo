@@ -55,4 +55,52 @@ Config.coldHonestTravel = false;
     assert.strictEqual(Karma.townFor(0, 'Giran'), 'Giran');
 }
 
-console.log('Board trips: trip cost and karma towns passed');
+// 3. The shop town (б7, Q6): one weighted roll over the towns with shop
+// places, by the item's buyers there less the trip; the author's grade table
+// seeds it while its counter has no deals.
+{
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+    const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
+    const SABER = 123;
+    const flatTrip = () => 1000;
+    const tally = (items, state = hunter(), runs = 400) => {
+        const counts = new Map();
+        for (let run = 0; run < runs; run++) {
+            const town = MarketTownPolicy.shopTown(state, items, { tripCost: flatTrip, timestamp: 5000, rollKey: ['t', run] });
+            counts.set(town, (counts.get(town) || 0) + 1);
+        }
+        return counts;
+    };
+    MarketCounters.reset();
+    const seed = MarketTownPolicy.targetTownForItems(hunter(), [{ selfId: SABER }]);
+    const seeded = tally([{ selfId: SABER, price: 50000, count: 1 }]);
+    assert(seeded.get(seed) >= 380, `the seed town takes the roll (${seed}: ${seeded.get(seed)})`);
+    // Buyers of 'gear d': three in Giran for each one in Gludio.
+    for (let deal = 0; deal < 40; deal++) MarketCounters.deal(SABER, 50000, 1, 1000 + deal, 7, deal % 4 ? 'Giran' : 'Gludio');
+    const rolled = tally([{ selfId: SABER, price: 50000, count: 1 }]);
+    const giran = rolled.get('Giran') || 0;
+    const gludio = rolled.get('Gludio') || 0;
+    assert(giran > 2 * gludio && gludio > 50, `in proportion to the buyers: Giran ${giran}, Gludio ${gludio}`);
+    assert(400 - giran - gludio < 30, 'a town without buyers keeps only a small chance');
+    // A trip that costs more than the shop would see there leaves it nothing.
+    const farGiran = MarketTownPolicy.shopTown(hunter(), [{ selfId: SABER, price: 50000, count: 1 }],
+        { tripCost: (name) => (name === 'Giran' ? 1e9 : 0), timestamp: 5000, rollKey: ['far'] });
+    assert.notStrictEqual(farGiran, 'Giran');
+    assert.strictEqual(MarketTownPolicy.shopTown(hunter({ stats: { karma: 1 } }), [{ selfId: SABER, price: 1, count: 1 }]),
+        Karma.TOWN_NAME, 'a PK opens in Floran');
+    // The decision is made once: a bot that chose keeps its town.
+    const chose = hunter({ stats: { shopTown: { town: 'Dion', at: 1 } } });
+    assert.deepStrictEqual(MarketTownPolicy.openingTown(chose, [{ selfId: SABER, price: 50000, count: 1 }]),
+        { town: 'Dion', shopTown: null });
+    const fresh = MarketTownPolicy.openingTown(hunter(), [{ selfId: SABER, price: 50000, count: 1 }], 7000);
+    assert.deepStrictEqual(fresh.shopTown, { town: fresh.town, at: 7000 }, 'a new decision is returned to keep');
+    // The weighted roll: zero-valued options together keep TendencyRoll.MIN.
+    const options = [{ action: 'a', value: 100 }, { action: 'b', value: 0 }, { action: 'c', value: -5 }];
+    let others = 0;
+    for (let run = 0; run < 2000; run++) if (PriceDecision.chooseByWeight(options, ['w', run]).action !== 'a') others += 1;
+    assert(others > 10 && others < 90, `the floor is small and never zero (${others} of 2000)`);
+    MarketCounters.reset();
+}
+
+console.log('Board trips: trip cost, karma towns and the shop town passed');

@@ -71,12 +71,13 @@ async function run() {
         count: 21, price: 100, rank: 'none' }] });
     const sellGoal = { type: 'sell_inventory', status: 'active',
         plan: { expectedBenefit: 'market_sale_inventory' } };
-    assert.strictEqual(BotAfkMarket.canTradeRemotely(hunting, sellGoal), true);
-    const opened = await BotAfkMarket.reconcile(hunting, sellGoal);
-    assert.strictEqual(opened.changed, true);
-    assert.strictEqual(opened.state.activity, 'hunting');
-    assert.deepStrictEqual(opened.state.loc, hunting.loc);
-    assert.strictEqual(opened.state.timing.nextResolveAt, hunting.timing.nextResolveAt);
+    // A shop opens at a market visit in the town the bot chose (group C);
+    // from then on the bot reviews it from afar.
+    assert.strictEqual(BotAfkMarket.canTradeRemotely(hunting, sellGoal), false, 'no shop is opened from afar');
+    await BotAfkMarket.listOnBoard({ ...hunting, activity: 'shopping',
+        stats: { ...hunting.stats, shopTown: { town: 'Talking Island', at: 1 } } });
+    const opened = { state: LifeState.snapshot(ownerId), shop: AfkTrade.findOwnerProjection(ownerId).shop };
+    assert.strictEqual(BotAfkMarket.canTradeRemotely(opened.state, sellGoal), true);
     assert.strictEqual(opened.shop.storeType, AfkTrade.SELL);
     assert.strictEqual(Number(opened.shop.expiresAt), 0, 'the shop has no deadline: it closes by events (the board)');
     assert.strictEqual(opened.shop.town, 'Talking Island');
@@ -422,8 +423,9 @@ async function run() {
         await Database.updateItemAmount(lotOwnerId, lotStockId, 20);
         const accumulated = await LifeState.syncExternalInventory(lotOwnerId,
             'test_lot_accumulated', LifeState.snapshot(lotOwnerId));
-        const bulk = await BotAfkMarket.reconcile(accumulated, sellGoal);
-        assert.strictEqual(bulk.changed, true);
+        await BotAfkMarket.listOnBoard({ ...accumulated, activity: 'shopping',
+            stats: { ...accumulated.stats, shopTown: { town: 'Talking Island', at: 1 } } });
+        const bulk = { shop: AfkTrade.findOwnerProjection(lotOwnerId).shop };
         assert.strictEqual(bulk.shop.lines[0].count, 20);
         assert.strictEqual(bulk.shop.lines[0].price, 1000);
         await AfkTrade.buyFromShop(customerId,

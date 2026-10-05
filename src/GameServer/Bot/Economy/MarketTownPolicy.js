@@ -70,14 +70,67 @@ function targetTownForItems(state, items = []) {
     return 'Giran';
 }
 
-function targetTownForSale(state) {
-    // Static buyer stores are the dependable Adena path for harvested
-    // resources. Prefer the city that is actually bidding on this inventory;
-    // equipment left after that sale may still open a normal private store
-    // there. Without this, no-grade local markets can strand materials in a
-    // town with no buyer.
+// Where a bot opens its shop (б7, Q6, user 2026-10-05): one weighted roll
+// (PriceDecision.chooseByWeight) at the decision to open, over the towns
+// with shop places, by the value
+// the shop would see there less the trip: each item's listed value (price x
+// count) times the share of its counter's buyers in that town
+// (MarketCounters.townDemand), minus the bot's round trip to the town. A
+// counter with no deals yet takes the author's grade table
+// (targetTownForItems) as its whole share: the seed of a young world. A bot
+// with karma opens in Floran. O(items x towns), at an opening only.
+function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), rollKey = null } = {}) {
+    if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
+    const towns = Object.keys(ShopPlaces.PLAZAS);
+    const values = new Map(towns.map((town) => [town, 0]));
+    for (const item of items) {
+        const worth = Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.count) || 1);
+        if (!(worth > 0)) continue;
+        const demand = MarketCounters.townDemand(MarketCounters.counterOf(item.selfId), timestamp);
+        let total = 0;
+        for (const entry of demand) total += entry.perHour;
+        if (!(total > 0)) {
+            const seed = targetTownForItems(state, [item]);
+            if (values.has(seed)) values.set(seed, values.get(seed) + worth);
+            continue;
+        }
+        for (const entry of demand) {
+            if (values.has(entry.town)) values.set(entry.town, values.get(entry.town) + worth * entry.perHour / total);
+        }
+    }
+    const trip = tripCost || OfferOrder.tripCost(state, {
+        origin: OfferOrder.farmingOrigin(state, (spotId) => SpotService.findById(spotId)), timestamp
+    });
+    const options = towns.map((town) => ({ action: town, value: values.get(town) - (trip ? trip(town) : 0) }));
+    const chosen = invoke('GameServer/Bot/Economy/PriceDecision').chooseByWeight(options,
+        rollKey || ['shop_town', Number(state?.characterId || 0), timestamp]);
+    return chosen?.action || targetTownForItems(state, items);
+}
+
+// The town a bot without a shop opens one in: the decision it already made
+// (stats.shopTown, kept until it is back on its spot) or a new roll
+// (shopTown). Returns { town, shopTown } with shopTown the decision to keep
+// when one was made now.
+function openingTown(state, items, timestamp = Date.now()) {
+    if (state?.stats?.shopTown?.town) return { town: state.stats.shopTown.town, shopTown: null };
+    const town = shopTown(state, items, { timestamp });
+    return { town, shopTown: { town, at: timestamp } };
+}
+
+// Where a bot's sale trip goes: the town of a buyer bidding on its bag (the
+// static and buy-ad buyers, until step 3.6); else the town of its shop, which
+// never moves (N51, E46); else the town its shop will open in (openingTown).
+function saleTown(state, timestamp = Date.now()) {
+    if (Karma.closesTowns(state?.stats?.karma)) return { town: Karma.TOWN_NAME, shopTown: null };
     const buyerTown = DynamicBuyerService.bestTownFor(state)?.town || StaticBuyerService.bestTownFor(state)?.town;
-    return buyerTown || targetTownForItems(state, ItemDisposition.saleCandidates(state));
+    if (buyerTown) return { town: buyerTown, shopTown: null };
+    const shop = invoke('GameServer/AfkTrade/AfkTradeService').findOwnerProjection(state?.characterId)?.shop;
+    if (shop?.town) return { town: shop.town, shopTown: null };
+    return openingTown(state, ItemDisposition.saleCandidates(state), timestamp);
+}
+
+function targetTownForSale(state) {
+    return saleTown(state).town;
 }
 
 module.exports = {
@@ -86,6 +139,9 @@ module.exports = {
     dGradeMarketFor,
     marketTown,
     nearestNoGradeMarket,
+    openingTown,
+    saleTown,
+    shopTown,
     targetTownForItems,
     targetTownForSale
 };

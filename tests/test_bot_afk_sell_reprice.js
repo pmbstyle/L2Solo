@@ -64,9 +64,13 @@ async function run() {
         stats: { generatedCold: true }, timing: {}
     }, 'test_bot_afk_reprice_hunting');
 
+    // A shop opens at a market visit, in the town the bot chose (group C).
     policy(100);
-    const opened = await BotAfkMarket.reconcile(hunting, sellGoal);
-    assert.strictEqual(opened.shop.lines[0].price, 100);
+    assert.strictEqual(BotAfkMarket.canTradeRemotely(hunting, sellGoal), false, 'no shop is opened from afar');
+    await BotAfkMarket.listOnBoard({ ...hunting, activity: 'shopping',
+        stats: { ...hunting.stats, shopTown: { town: 'Talking Island', at: 1 } } });
+    assert.strictEqual(AfkTrade.findOwnerProjection(ownerId).shop.lines[0].price, 100);
+    assert.strictEqual(AfkTrade.findOwnerProjection(ownerId).shop.town, 'Talking Island');
 
     policy(100);
     assert.strictEqual((await review(ownerId)).changed, false, 'an unchanged shop is not republished');

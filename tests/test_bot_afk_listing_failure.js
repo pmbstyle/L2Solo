@@ -59,8 +59,11 @@ async function run() {
         MarketCounters.deal(VARNISH, 2000, 20, clock - (20 - deal) * 60000, 1);
     }
 
-    const opened = await BotAfkMarket.reconcile(hunting, sellGoal);
-    assert.strictEqual(opened.changed, true, 'the bot opens an AFK sell shop');
+    // The shop opens at a market visit, in the town the bot chose (group C).
+    await BotAfkMarket.listOnBoard({ ...hunting, activity: 'shopping',
+        stats: { ...hunting.stats, shopTown: { town: hunting.currentRegion, at: 1 } } }, { now: clock });
+    const opened = { shop: AfkTrade.findOwnerProjection(ownerId)?.shop };
+    assert(opened.shop, 'the bot opens an AFK sell shop');
     const listed = (opened.shop.lines || []).map((line) => [Number(line.selfId), Number(line.price)]);
     assert(listed.length, 'it lists what is worth more on the board than at the NPC');
     for (const minutes of [5, 20, 25, 45, 120, 600]) {
