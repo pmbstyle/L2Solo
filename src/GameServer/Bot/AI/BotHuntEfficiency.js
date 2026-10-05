@@ -65,9 +65,7 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, kills = 
     return rows;
 }
 
-// The uptime clock: the start of the server process, the same in its
-// worker threads. Time before it was downtime.
-const SERVER_STARTED_AT = Date.now() - process.uptime() * 1000;
+const { SERVER_STARTED_AT } = require('../Population/Uptime');
 
 // Time on the spot against all time (E36): the round time each record
 // schedules against the uptime that really passed until the next record,

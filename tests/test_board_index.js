@@ -46,6 +46,24 @@ assert.deepStrictEqual(row, [12, 'sell_ad', SELL, 5, 'Oren', 1, [[40, 1864, 0, 3
 assert.deepStrictEqual(recordOf(row), { id: 12, kind: 'sell_ad', storeType: SELL, ownerId: 5, town: 'Oren', botOwned: true,
     lines: [{ lineId: 40, selfId: 1864, enchant: 0, count: 3, price: 9 }] });
 
+// An owner's lines and the open sell lines of a group (the market counters).
+{
+    const grouped = new BoardIndex({ groupOf: (selfId) => (selfId < 100 ? 'low' : 'high') });
+    grouped.put({ id: 1, ownerId: 3, storeType: SELL, town: 'Giran', lines: [{ lineId: 1, selfId: 7, count: 2, price: 5 },
+        { lineId: 2, selfId: 200, count: 1, price: 9 }] });
+    grouped.put({ id: 2, ownerId: 3, storeType: BUY, town: 'Giran', lines: [{ lineId: 3, selfId: 8, count: 1, price: 4 }] });
+    grouped.put({ id: 3, ownerId: 4, storeType: SELL, town: 'Dion', lines: [{ lineId: 4, selfId: 9, count: 1, price: 6 }] });
+    assert.deepStrictEqual(grouped.ownerLines(3).map((line) => line.lineId).sort(), [1, 2, 3]);
+    assert.deepStrictEqual([grouped.linesIn('low'), grouped.linesIn('high')], [2, 1], 'sell lines only, by group');
+    grouped.put({ id: 1, ownerId: 3, storeType: SELL, town: 'Giran', lines: [{ lineId: 2, selfId: 200, count: 1, price: 8 }] });
+    assert.deepStrictEqual([grouped.linesIn('low'), grouped.linesIn('high')], [1, 1], 'a replaced record counts anew');
+    grouped.remove(2);
+    grouped.remove(1);
+    assert.deepStrictEqual(grouped.ownerLines(3), []);
+    assert.strictEqual(grouped.owners.has(3), false, 'an owner without records leaves the index');
+    assert.deepStrictEqual([grouped.linesIn('low'), grouped.linesIn('high')], [1, 0]);
+}
+
 // Upkeep at the expected board size: 6.8k records of up to 3 lines over 300
 // items in 16 towns; a change costs a few microseconds.
 {

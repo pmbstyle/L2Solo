@@ -92,16 +92,31 @@ function offerFields(line, town = null) {
 }
 
 class BoardIndex {
-    constructor() {
+    // groupOf(selfId): the group of an item whose open sell lines are counted
+    // (the market counters, MarketCounters.counterOf); none by default.
+    constructor({ groupOf = null } = {}) {
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
         this.sides = new Map([[SELL, new Map()], [BUY, new Map()]]);
         // record id -> its indexed lines
         this.records = new Map();
+        // owner id -> its record ids
+        this.owners = new Map();
+        this.groupOf = groupOf;
+        // group -> open sell lines
+        this.groupLines = new Map();
     }
 
     clear() {
         this.sides.forEach((items) => items.clear());
         this.records.clear();
+        this.owners.clear();
+        this.groupLines.clear();
+    }
+
+    countGroup(line, step) {
+        if (!this.groupOf || line.storeType !== SELL) return;
+        const group = this.groupOf(line.selfId);
+        this.groupLines.set(group, (this.groupLines.get(group) || 0) + step);
     }
 
     // record: { id, kind, storeType, ownerId, town, botOwned, lines: [{ lineId,
@@ -145,8 +160,13 @@ class BoardIndex {
             insert(item.all, line);
             insert(town, line);
             indexed.push(line);
+            this.countGroup(line, 1);
         }
-        if (indexed.length) this.records.set(id, indexed);
+        if (!indexed.length) return;
+        this.records.set(id, indexed);
+        const ownerId = Number(record.ownerId);
+        if (!this.owners.has(ownerId)) this.owners.set(ownerId, new Set());
+        this.owners.get(ownerId).add(id);
     }
 
     remove(recordId) {
@@ -154,7 +174,11 @@ class BoardIndex {
         const indexed = this.records.get(id);
         if (!indexed) return;
         this.records.delete(id);
+        const owned = this.owners.get(indexed[0].ownerId);
+        owned?.delete(id);
+        if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
+            this.countGroup(line, -1);
             const items = this.sides.get(line.storeType);
             const item = items.get(line.selfId);
             if (!item) continue;
@@ -227,6 +251,18 @@ class BoardIndex {
 
     get size() {
         return this.records.size;
+    }
+
+    // The lines of an owner's records with stock, as indexed: O(its lines).
+    ownerLines(ownerId) {
+        const lines = [];
+        for (const id of this.owners.get(Number(ownerId)) || []) lines.push(...this.records.get(id));
+        return lines;
+    }
+
+    // The open sell lines of a group (see groupOf).
+    linesIn(group) {
+        return this.groupLines.get(group) || 0;
     }
 
     // A worker's index follows its 'board' table (TableMirror.watch): every

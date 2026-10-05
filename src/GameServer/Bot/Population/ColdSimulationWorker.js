@@ -109,8 +109,12 @@ let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror();
 // The board's offers, built from the main thread's 'board' table as it changes.
-const boardIndex = new BoardIndex();
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
 tables.watch('board', boardIndex.follower());
+// The market counters come from the main thread's 'market' table.
+MarketCounters.useTable(() => tables.rows('market'));
+MarketCounters.useSpots(() => planningSpots);
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
 }

@@ -25,7 +25,9 @@ const entriesById = new Map();
 const entriesByOwner = new Map();
 const pendingMatchContinuations = new Set();
 let matchGeneration = 0;
-const board = new BoardIndex();
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
+MarketCounters.publish(TableChannel.shared);
 // The board goes to the planning workers as the 'board' table (ColdTableChannel):
 // a record with stock is one row (BoardIndex.rowOf), its key the record id;
 // each worker builds the same index from it.
@@ -583,6 +585,7 @@ async function settleOwners(ownerIds = []) {
 }
 
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
+    MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount);
     syncOnlineInventory(result.shop.ownerId, result.ownerInventory);
     syncOnlineInventory(counterpartyId, result.counterpartyInventory);
     await settleOwners(result.settlementOwners);
@@ -762,6 +765,7 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
             if (['afk_trade_shop_changed', 'afk_trade_offer_changed', 'afk_trade_budget_changed'].includes(error.message)) break;
             throw error;
         }
+        MarketCounters.deal(trade.line?.selfId, trade.line?.price, trade.amount);
         // Records only: what each owner gets is in its bag (a player, a hot
         // actor) or waits on the board for a cold bot's next save.
         syncOnlineInventory(seller.ownerId, trade.sellerInventory);
@@ -1027,6 +1031,14 @@ async function init() {
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
+    // The market counters learn the last day of deals again (group E).
+    MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
+    try {
+        MarketCounters.reset();
+        MarketCounters.load(await Database.fetchRecentBoardDeals());
+    } catch (error) {
+        utils.infoWarn('AfkTrade', 'market counters start empty: %s', error.message);
+    }
     startTimers();
     return shops.length;
 }

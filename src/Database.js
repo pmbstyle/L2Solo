@@ -3068,6 +3068,16 @@ const Database = {
             GROUP BY selfId`, [since]), 'market:buyer-activity');
     },
 
+    // The board deals of the last day, oldest first: the market counters
+    // replay them at start (MarketCounters.load).
+    fetchRecentBoardDeals({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000 } = {}) {
+        const since = Number(timestamp) - Math.max(1, Math.min(MARKET_TRADE_RETENTION_MS, Number(rangeMs) || 86400000));
+        return readHistory(() => History.all(`SELECT selfId, unitPrice, quantity, occurredAt
+            FROM market_trades
+            WHERE occurredAt >= ? AND channel IN ('bot_wts', 'player_wts', 'wts', 'wtb') AND unitPrice > 0
+            ORDER BY occurredAt ASC, id ASC`, [since]), 'market:recent-board-deals');
+    },
+
     fetchMarketTradeHistory(selfId, { timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, bucketMs = 60 * 60 * 1000 } = {}) {
         const itemId = Math.floor(Number(selfId || 0));
         if (!Number.isSafeInteger(itemId) || itemId <= 0) return Promise.reject(new Error('invalid_market_item'));
