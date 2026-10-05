@@ -1059,6 +1059,7 @@ const RULES = {
     4137: { skillType: DAMAGE, trait: 'water', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 1, castRange: 500, effectRange: 1000 },
     4138: { skillType: DAMAGE, trait: 'magic', target: 'corpse_mob', sourceTarget: 'area', radius: 200, ssBoost: 1, castRange: 900, effectRange: 1400, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95] },
     4139: { skillType: DAMAGE, trait: 'fire', target: 'enemy', sourceTarget: 'aura', radius: 150, ssBoost: 1 },
+    4163: { skillType: EFFECT, trait: 'buff', effect: 'npc_self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { reflectDam: 20 } },
     4230: { skillType: DAMAGE, trait: 'physical', target: 'enemy', ssBoost: 1, castRange: 2500, effectRange: 3000 },
     4259: { skillType: EFFECT, trait: 'poison', effect: 'toxic_smoke', effectType: 'debuff', target: 'enemy', sourceTarget: 'area', radius: 200, ssBoost: 1, baseLandRate: 80, levelDepend: 1, magicLevelByLevel: [10, 20, 30, 40, 50, 60, 70, 75, 80, 85, 90, 95], castRangeByLevel: [500, 600, 600, 750, 750, 750, 750, 750, 750, 750, 750, 750], effectRange: 1000, dot: { count: 10, intervalMs: 3000, damageByLevel: [12, 18, 24, 31, 38, 44, 48, 48, 50, 50, 51, 51] } },
     4378: { skillType: EFFECT, trait: 'buff', effect: 'self_damage_shield', effectType: 'buff', target: 'self', ssBoost: 0, baseLandRate: 100, stats: { reflectDam: 20 } },
