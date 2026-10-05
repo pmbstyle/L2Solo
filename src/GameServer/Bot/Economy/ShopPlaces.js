@@ -85,16 +85,18 @@ const PLAZAS = Object.freeze({
         locZ: -240,
         travelCenter: Object.freeze({ locX: -44600, locY: -112400, locZ: -240 })
     }),
-    // Floran, the town where a PK trades (design 5.8): built from geodata, not
-    // captured in-game. A 40-unit probe of heights and standable points
-    // (ActivationPlacement) around the village centre found one level open
-    // square east of the central obstacle, z -3504 throughout; the outline is
-    // that square's standable block.
+    // Floran, the town where a PK trades (design 5.8). The author's square
+    // captured in-game, data as is (FLORAN_MARKET_PLAZA, commit e77e0540,
+    // origin/develop 733b65e1): outline, corner heights, stall padding.
     'Floran Village': Object.freeze({
-        boundary: rect(17660, 18140, 170030, 170510),
+        boundary: Object.freeze([
+            [16933, 169872], [16777, 170253], [17382, 170559],
+            [18255, 170501], [18309, 170202], [17899, 170030],
+            [17672, 170355], [17402, 170300], [17518, 169837]
+        ]),
+        boundaryHeights: Object.freeze([-3495, -3498, -3502, -3499, -3496, -3499, -3508, -3507, -3501]),
         margin: 55,
-        locZ: -3504,
-        travelCenter: Object.freeze({ locX: 17900, locY: 170270, locZ: -3504 })
+        locZ: -3501
     }),
     'Dwarven Village': Object.freeze({
         boundary: Object.freeze([
