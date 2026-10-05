@@ -9,6 +9,8 @@ const REMOVED = Symbol('removed');
 // its rows; the main thread reports each changed or removed row, which costs
 // one Map write. flush() turns the changes of each table into one new version
 // and posts it, in pages limited by size, to every attached worker.
+// Event-driven tables schedule that same flush once per burst, before the
+// next event-loop turn; passive tables can share it but never schedule it.
 //
 // No acknowledgements: a MessagePort keeps the order. A worker that sees a
 // gap asks for the whole table (resync); a worker with a new epoch (a
@@ -22,12 +24,14 @@ class ColdTableChannel {
     constructor() {
         this.tables = new Map();
         this.targets = new Map();
+        this.eventFlushQueued = false;
         this.stats = { flushes: 0, pages: 0, rows: 0, fulls: 0, resyncs: 0, skipped: 0, failedPosts: 0, retries: 0, suspendedFlushes: 0 };
     }
 
     // key(row) gives a row's key; allRows() gives every current row.
-    register(name, { key, allRows }) {
-        this.tables.set(String(name), { name: String(name), key, allRows, version: 0, pending: new Map(), changedUnseen: false });
+    register(name, { key, allRows, eventDriven = false }) {
+        this.tables.set(String(name), { name: String(name), key, allRows, eventDriven,
+            version: 0, pending: new Map(), changedUnseen: false });
     }
 
     // change: a row, or { key, removed: true } for a removed row. With no
@@ -42,6 +46,13 @@ class ColdTableChannel {
         }
         if (change.removed === true) table.pending.set(change.key, REMOVED);
         else table.pending.set(table.key(change), change);
+        if (table.eventDriven && !this.eventFlushQueued) {
+            this.eventFlushQueued = true;
+            queueMicrotask(() => {
+                this.eventFlushQueued = false;
+                this.flush();
+            });
+        }
         return true;
     }
 

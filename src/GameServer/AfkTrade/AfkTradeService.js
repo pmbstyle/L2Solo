@@ -30,6 +30,7 @@ MarketCounters.publish(TableChannel.shared);
 // a record with stock is one row (BoardIndex.rowOf), its key the record id;
 // each worker builds the same index from it.
 TableChannel.shared.register('board', {
+    eventDriven: true,
     key: (row) => row[0],
     allRows: () => boardRows()
 });

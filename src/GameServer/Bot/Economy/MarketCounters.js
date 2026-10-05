@@ -312,6 +312,7 @@ function firstPrice(selfId, timestamp = Date.now()) {
 function publish(tableChannel) {
     channel = tableChannel;
     channel.register('market', {
+        eventDriven: true,
         key: (row) => row[0],
         allRows: () => [
             ...[...counters].map(([key, value]) => counterRow(key, value)),
