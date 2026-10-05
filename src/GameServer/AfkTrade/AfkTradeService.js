@@ -23,8 +23,6 @@ const projectionsByOwner = new Map();
 const projectionsByCell = new Map();
 const entriesById = new Map();
 const entriesByOwner = new Map();
-const pendingMatchContinuations = new Set();
-let matchGeneration = 0;
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 MarketCounters.publish(TableChannel.shared);
@@ -698,7 +696,7 @@ async function leave(ownerId) {
     return result;
 }
 
-async function repriceBot(ownerId, lineId, price, expectedRevision = null, quantity = null, options = {}) {
+async function repriceBot(ownerId, lineId, price, expectedRevision = null, quantity = null) {
     const current = ownerEntries(ownerId).find((entry) => (entryStore(entry)?.items || [])
         .some((line) => Number(line.afkTradeLineId) === Number(lineId)));
     if (!entryStore(current)?.botOwned) throw new Error('bot_afk_trade_unavailable');
@@ -710,95 +708,7 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
     invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId,
         invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId));
     refreshRecord(result.shop);
-    if (options.match !== false) await matchAfkOrders(ownerId);
     return entriesById.get(Number(result.shop?.id))?.shop || null;
-}
-
-// The best line on the other side that crosses an own line's price: the same
-// item and enchant, another owner, a bot on at least one side. The other
-// side's list is sorted best price first, so the walk stops at the first
-// line whose price no longer crosses.
-function crossingOffer(ownStore, line, ownerId) {
-    const selling = ownStore.storeType === SELL;
-    const price = Number(line.price);
-    const enchant = Number(line.enchant || 0);
-    for (const other of board.list(line.selfId, selling ? BUY : SELL)) {
-        if (selling ? other.price < price : other.price > price) return null;
-        if (other.ownerId === Number(ownerId) || other.enchant !== enchant) continue;
-        if (!ownStore.botOwned && !other.botOwned) continue;
-        const offer = offerOf(other);
-        if (offer) return offer;
-    }
-    return null;
-}
-
-async function matchAfkOrders(ownerId, maxTrades = 64) {
-    const batchLimit = Math.max(1, Math.min(64, Math.floor(Number(maxTrades) || 64)));
-    const trades = [];
-    for (let attempt = 0; attempt < batchLimit; attempt++) {
-        // Every record of the owner (its shop and its ads) meets the board.
-        let pair = null;
-        for (const own of ownerEntries(ownerId)) {
-            const ownStore = entryStore(own);
-            for (const line of ownStore?.items || []) {
-                const offer = crossingOffer(ownStore, line, ownerId);
-                if (offer) { pair = { ownStore, line, offer }; break; }
-            }
-            if (pair) break;
-        }
-        if (!pair) break;
-        const ownStore = pair.ownStore;
-        const selling = ownStore.storeType === SELL;
-        const seller = selling ? ownStore : pair.offer.store;
-        const buyer = selling ? pair.offer.store : ownStore;
-        const sellLine = selling ? pair.line : pair.offer.storeItem;
-        const buyLine = selling ? pair.offer.storeItem : pair.line;
-        let trade;
-        try {
-            trade = await Database.matchAfkTradeShops({
-                sellerId: seller.ownerId, buyerId: buyer.ownerId,
-                sellShopId: seller.shopId, buyShopId: buyer.shopId,
-                sellLineId: sellLine.afkTradeLineId, buyLineId: buyLine.afkTradeLineId,
-                sellRevision: seller.revision, buyRevision: buyer.revision,
-                amount: Math.min(Number(sellLine.count), Number(buyLine.count))
-            });
-        } catch (error) {
-            if (['afk_trade_shop_changed', 'afk_trade_offer_changed', 'afk_trade_budget_changed'].includes(error.message)) break;
-            throw error;
-        }
-        MarketCounters.deal(trade.line?.selfId, trade.line?.price, trade.amount, Date.now(), seller.ownerId, seller.town || null);
-        // Records only: what each owner gets is in its bag (a player, a hot
-        // actor) or waits on the board for a cold bot's next save.
-        syncOnlineInventory(seller.ownerId, trade.sellerInventory);
-        syncOnlineInventory(buyer.ownerId, trade.buyerInventory);
-        await settleOwners(trade.settlementOwners);
-        refreshRecord(trade.sellerShop);
-        refreshRecord(trade.buyerShop);
-        await notifyCommitted({ shop: trade.sellerShop, eventId: trade.sellerEventId,
-            line: trade.line, amount: trade.amount, totalPrice: trade.totalPrice }, 'sale');
-        await notifyCommitted({ shop: trade.buyerShop, eventId: trade.buyerEventId,
-            line: trade.line, amount: trade.amount, totalPrice: trade.totalPrice }, 'purchase');
-        trades.push(trade);
-        const lotPolicy = invoke('GameServer/Bot/Economy/MarketLotPolicy');
-        if (trade.sellerShop.ownerAccount?.startsWith('bot_') && kindOf(trade.sellerShop) === 'shop'
-            && trade.sellerShop.lines.some(line => Number(line.count) > 0
-                && lotPolicy.shot(line) && !lotPolicy.viable(line))) {
-            await invoke('GameServer/Bot/Economy/BotAfkMarketService').pruneResourceLots(trade.sellerShop.ownerId);
-        }
-    }
-    if (trades.length >= batchLimit && !pendingMatchContinuations.has(Number(ownerId))) {
-        const owner = Number(ownerId);
-        const generation = matchGeneration;
-        pendingMatchContinuations.add(owner);
-        setImmediate(() => {
-            pendingMatchContinuations.delete(owner);
-            if (generation !== matchGeneration) return;
-            matchAfkOrders(owner, batchLimit).catch((error) => {
-                utils.infoWarn('AfkTrade', 'continued matching failed for %d: %s', owner, error.message);
-            });
-        });
-    }
-    return { matched: trades.length > 0, trades };
 }
 
 // A failed publish or relocation leaves the owner's shop as it was: its place
@@ -882,24 +792,9 @@ async function activate(session, store) {
         session.dataSendToMeAndOthers?.(ServerResponse.sitAndStand(actor), actor);
         session.dataSendToOthers?.(ServerResponse.charInfo(actor), actor);
         spawnProjection(created.shop);
-        let matched = null;
-        try {
-            matched = await matchAfkOrders(actor.fetchId());
-        } catch (error) {
-            utils.infoWarn('AfkTrade', 'initial bot matching failed for %s: %s', actor.fetchName(), error.message);
-        }
-        if (matched?.matched) {
-            utils.infoSuccess(
-                'AfkTrade',
-                'matched player shop %s trades=%d items=%d adena=%d',
-                actor.fetchName(), matched.trades.length,
-                matched.trades.reduce((sum, trade) => sum + Number(trade.amount || 0), 0),
-                matched.trades.reduce((sum, trade) => sum + Number(trade.totalPrice || 0), 0)
-            );
-        }
-        commandMessage(session, findOwnerProjection(actor.fetchId())
-            ? 'AFK trade is active. Use .afkstop to close it remotely.'
-            : 'AFK trade was filled immediately by bot demand.');
+        // A deal needs someone in the town (design 4.4, 4.6, E45): bots who
+        // want this shop's lines travel to it, nothing crosses from afar.
+        commandMessage(session, 'AFK trade is active. Use .afkstop to close it remotely.');
         return true;
     } catch (error) {
         utils.infoWarn('AfkTrade', 'failed to activate shop for %s: %s', actor.fetchName(), error.message);
@@ -1068,36 +963,6 @@ function settlePending() {
     return owners.length ? settleOwners(owners) : Promise.resolve();
 }
 
-async function matchBotDemand() {
-    const ready = await invoke('GameServer/Bot/Population/BotLifeState').init();
-    if (!ready) return { matched: false, shops: 0, trades: 0, itemCount: 0, adena: 0 };
-
-    const summaries = [];
-    for (const ownerId of [...entriesByOwner.keys()]) {
-        const peer = await matchAfkOrders(ownerId);
-        if (peer.matched) summaries.push({
-            trades: peer.trades,
-            itemCount: peer.trades.reduce((sum, trade) => sum + Number(trade.amount || 0), 0),
-            adena: peer.trades.reduce((sum, trade) => sum + Number(trade.totalPrice || 0), 0)
-        });
-    }
-    const result = {
-        matched: summaries.length > 0,
-        shops: summaries.length,
-        trades: summaries.reduce((sum, summary) => sum + Number(summary.trades?.length || 0), 0),
-        itemCount: summaries.reduce((sum, summary) => sum + Number(summary.itemCount || 0), 0),
-        adena: summaries.reduce((sum, summary) => sum + Number(summary.adena || 0), 0)
-    };
-    if (result.matched) {
-        utils.infoSuccess(
-            'AfkTrade',
-            'matched restored shops=%d trades=%d items=%d adena=%d',
-            result.shops, result.trades, result.itemCount, result.adena
-        );
-    }
-    return result;
-}
-
 module.exports = {
     BUY,
     SELL,
@@ -1116,8 +981,6 @@ module.exports = {
     findProjection,
     init,
     leave,
-    matchBotDemand,
-    matchAfkOrders,
     offers,
     openBotRecords,
     ownerRecords,
@@ -1133,8 +996,6 @@ module.exports = {
     settlePending,
     stop,
     _resetForTests() {
-        matchGeneration += 1;
-        pendingMatchContinuations.clear();
         [...projectionsByOwner.keys()].forEach(removeProjection);
         clearBoard();
     }

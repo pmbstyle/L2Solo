@@ -1,7 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -131,13 +130,23 @@ async function settleLine(sellerState, line, town, options = {}) {
     };
 }
 
-async function sellToBestBuyer(state, town = state?.currentRegion) {
+// The buy ads a bot chose to answer (MarketListingPolicy.evaluate: the side
+// that acts travels, E45). options.now: the decision point.
+function answers(state, options = {}) {
+    return invoke('GameServer/Bot/Economy/MarketListingPolicy').evaluate(state, { ...options, unlimited: true }).answers;
+}
+
+// A bot in a town sells into the buy ads there it chose to answer: one deal
+// per ad on the board, from its bag, the escrow paying it at once.
+async function sellToBestBuyer(state, town = state?.currentRegion, options = {}) {
     let seller = state;
     const sales = [];
-    const peerMarketLines = ItemDisposition.saleCandidates(state, { limit: 20 })
-        .filter((line) => !ItemDisposition.isNpcOnlyItem(line));
-    for (const line of peerMarketLines) {
-        const result = await settleLine(seller, line, town);
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    for (const answer of answers(state, options)) {
+        if (answer.line.town !== town) continue;
+        const offer = AfkTrade.offerOf(answer.line, town);
+        if (!offer) continue;
+        const result = await settleLine(seller, answer.item, town, { offer, maxQty: answer.count });
         seller = result.state || seller;
         if (result.sold) sales.push(result);
         // The bot went hot: its bag is the actor's now.
@@ -152,20 +161,19 @@ async function sellToBestBuyer(state, town = state?.currentRegion) {
     };
 }
 
-function bestTownFor(state) {
-    const candidates = ItemDisposition.saleCandidates(state, { limit: 20 })
-        .filter((item) => !ItemDisposition.isNpcOnlyItem(item));
-    const towns = [...new Set(candidates.flatMap((item) => MarketOpportunity.findBuyOffers(item.selfId, {
-        sellerCharacterId: state.characterId
-    }).map((offer) => offer.town)).filter(Boolean))];
-    return towns.map((town) => {
-        const value = candidates.reduce((sum, item) => {
-            const offer = MarketOpportunity.bestBuyOffer(item.selfId, { town, sellerCharacterId: state.characterId });
-            return sum + (offer ? Math.min(Number(item.count), Number(offer.count)) * Number(offer.price) : 0);
-        }, 0);
-        return { town, value };
-    }).filter((entry) => entry.value > 0)
-        .sort((left, right) => right.value - left.value || left.town.localeCompare(right.town))[0] || null;
+// The town of the buy ads a bot chose to answer that pay it most: where its
+// sale trip goes (the side that acts travels, E45). { town, value } or null.
+function bestTownFor(state, options = {}) {
+    const value = new Map();
+    for (const answer of answers(state, options)) {
+        const town = answer.line.town;
+        if (town) value.set(town, (value.get(town) || 0) + answer.line.price * answer.count);
+    }
+    let best = null;
+    for (const [town, total] of value) {
+        if (!best || total > best.value || (total === best.value && town.localeCompare(best.town) < 0)) best = { town, value: total };
+    }
+    return best;
 }
 
 module.exports = {

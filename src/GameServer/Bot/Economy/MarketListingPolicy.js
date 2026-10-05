@@ -87,14 +87,17 @@ const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 
 // The bot's sale at a market visit or a review (group E): the author's hard
 // rules first; every other item goes by one expected-value decision (the
-// board at its best ask, the NPC buy-back now, or keeping it), one roll; the
+// board at its best ask, the NPC buy-back now, a buy ad answered in its town,
+// or keeping it), one roll; the
 // items for the board compete for its free slots by their gain over the NPC,
 // one weighted roll. A line the bot already has keeps its slot and its price
 // (its own look reprices it or takes it back, MarketPricing.look). options: now
 // (the decision point), slots (board slots), kept (selfId -> price of its
 // lines), stored (selfId -> units in the warehouse), plus traderContext's.
-// Returns { candidates, decisions, listings, npc, warehouse, book } with the
-// bot's beliefs (book) holding what it listed.
+// Returns { candidates, decisions, listings, npc, warehouse, answers, book }
+// with the bot's beliefs (book) holding what it listed; answers are the buy
+// ads it chose to sell into ({ item, line, count }: the bot sells there when
+// it is in the ad's town, the side that acts travels).
 function evaluate(state, options = {}) {
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true });
     const ctx = traderContext(state, options);
@@ -122,7 +125,7 @@ function evaluate(state, options = {}) {
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
         const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action, reason: 'expected_value', item,
-            priced: chosen.priced, gain: chosen.gain };
+            priced: chosen.priced, gain: chosen.gain, answer: chosen.answer };
         decisions.push(decision);
         if (decision.action === 'list') forBoard.push(decision);
     }
@@ -147,6 +150,8 @@ function evaluate(state, options = {}) {
             npcPrice: NpcSellRules.npcBuyPrice(decision.item.basePrice)
         })),
         warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item),
+        answers: decisions.filter((decision) => decision.action === 'ad')
+            .map((decision) => ({ item: decision.item, line: decision.answer.line, count: decision.answer.count })),
         book
     };
 }

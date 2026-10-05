@@ -294,10 +294,10 @@ function sessionFor(accountId, row, items) {
         lines: [{ objectId: matchObject, selfId: 1463, name: 'Soulshot: D-grade', count: 1000, price: 1, stackable: true }] });
     await AfkTrade.publishBot(orderOwner, { ...placement, storeType: AfkTrade.BUY, title: 'WTB shots',
         lines: [{ selfId: 1463, name: 'Soulshot: D-grade', count: 501, price: 1, stackable: true }] });
-    assert.strictEqual((await AfkTrade.matchAfkOrders(orderOwner)).trades.length, 1);
-    assert(!AfkTrade.findOwnerProjection(botId), 'automatic order matching must also remove small shot remainders');
-    assert.strictEqual((await Database.fetchItems(botId)).filter(row => row.selfId === 1463)
-        .reduce((sum, row) => sum + row.amount, 0), 499);
+    // A crossing buy ad and sell line make no deal by themselves: someone
+    // must come to the town (E45).
+    assert(AfkTrade.findOwnerProjection(botId), 'the shop stands');
+    assert.strictEqual(AfkTrade.ownerRecords(orderOwner).length, 1, 'the buy ad stands');
     await AfkTrade._resetForTests();
     await Database.close();
     clean();

@@ -11,8 +11,7 @@ const Database = invoke('Database');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const BuyStore = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 DataCache.init();
 
@@ -30,11 +29,13 @@ async function run() {
     Database.updateCharacterVitals = async () => {};
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
-    ItemDisposition.saleCandidates = () => [
-        { selfId: 1864, name: 'Stem', count: 10, price: 50, kind: 'Other.Material' },
-        { selfId: 1865, name: 'Varnish', count: 10, price: 50, kind: 'Other.Material' }
-    ];
-    MarketOpportunity.bestBuyOffer = (selfId) => ({ selfId, price: 60, count: 10, sourceType: 'afk_player_buy_store',
+    // The bot chose to answer two buy ads in Giran (the side that acts travels).
+    const line = (selfId) => ({ selfId, town: 'Giran', price: 60, count: 10 });
+    ListingPolicy.evaluate = () => ({ answers: [
+        { item: { selfId: 1864, name: 'Stem', count: 10, price: 50, kind: 'Other.Material' }, line: line(1864), count: 10 },
+        { item: { selfId: 1865, name: 'Varnish', count: 10, price: 50, kind: 'Other.Material' }, line: line(1865), count: 10 }
+    ] });
+    AfkTrade.offerOf = (answered) => ({ selfId: answered.selfId, price: 60, count: 10, sourceType: 'afk_player_buy_store',
         store: { id: 7, ownerId: 9002 } });
     const sales = [];
     AfkTrade.sellToShop = (characterId, store, selfId) => {

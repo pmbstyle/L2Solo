@@ -1,5 +1,5 @@
 // The N0 money check on the board (step 3.3): over a run of board moves and
-// deals (shop, ads, a player's purchase, a bot-to-bot match, a deal on a bot
+// deals (shop, ads, a player's purchase, a seller's answer to a buy ad, a deal on a bot
 // the worker leases and the worker's commit, an expiry, the leave rule), the
 // economy journal's flows per item equal the change of everything held:
 // bags, sell lines, escrow and settlements. Nothing appears or vanishes
@@ -98,8 +98,10 @@ async function run() {
     const shop = await AfkTrade.publishBot(seller, { storeType: 1, title: 'Stems', town: 'Giran', locX: 81000, locY: 148000, locZ: -3466,
         appearance: {}, lines: [await stemLine(seller, 30, 120)] });
     await AfkTrade.buyFromShop(player, AfkTrade.recordStore(shop.id), 1864, 5);
-    await AfkTrade.publishBot(buyer, ad('buy_ad', [{ selfId: 1864, name: 'Stem', count: 20, price: 150, stackable: true }]));
-    await AfkTrade.matchAfkOrders(buyer);
+    const buyAd = await AfkTrade.publishBot(buyer, ad('buy_ad', [{ selfId: 1864, name: 'Stem', count: 20, price: 150, stackable: true }]));
+    // The seller answers the buy ad in its town (the side that acts travels, E45).
+    const answer = await stemLine(seller, 20, 150);
+    await AfkTrade.sellToShop(seller, AfkTrade.recordStore(buyAd.id), 1864, 20, { objectId: answer.objectId });
     await AfkTrade.publishBot(seller, ad('sell_ad', [await stemLine(seller, 10, 90)]));
     const leasedAd = await AfkTrade.publishBot(leased, ad('sell_ad', [await stemLine(leased, 20, 100)]));
     const claim = await Owner.claim(LifeState.cachedState(leased), { timestamp: Date.now(), leaseMs: 30000 });

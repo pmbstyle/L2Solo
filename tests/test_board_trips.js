@@ -103,4 +103,41 @@ Config.coldHonestTravel = false;
     MarketCounters.reset();
 }
 
-console.log('Board trips: trip cost, karma towns and the shop town passed');
+// 4. A buy ad is answered by the side that acts (E45, user Q3 C): a seller
+// chooses it in its sale decision when the ad's price less its trip there
+// beats listing, the NPC and keeping; it sells only in the ad's town.
+{
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const World = invoke('GameServer/World/World');
+    World.user = { sessions: [], revision: 0 };
+    const STEM = 1864;
+    AfkTrade.refreshRecord({ id: 995001, ownerId: 995000, ownerName: 'Wanted', ownerAccount: 'bot_995000', kind: 'buy_ad',
+        storeType: AfkTrade.BUY, status: 'active', town: 'Dion', title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+        appearance: {}, lines: [{ id: 9950011, selfId: STEM, name: 'Stem', count: 40, price: 900, enchant: 0 }] });
+    const seller = (activity, loc, region) => ({ characterId: 995100, accountName: 'bot_995100', name: 'Stems', level: 30,
+        phase: 'cold', activity, currentRegion: region, adena: 20000, loc: { ...loc },
+        inventory: { [STEM]: { selfId: STEM, name: 'Stem', amount: 30, kind: 'Other.Material', rank: 'none' } },
+        stats: { generatedCold: true }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } });
+    const inDion = seller('shopping', town('Dion'), 'Dion');
+    const ctx = ListingPolicy.traderContext(inDion, {});
+    const answer = MarketPricing.bestAnswer(STEM, ctx, { units: 30 });
+    assert.strictEqual(answer.line.town, 'Dion');
+    assert.strictEqual(answer.count, 30);
+    assert.strictEqual(answer.net, 900 * 30, 'no trip to the town the bot stands in');
+    let chosen = 0;
+    for (let run = 0; run < 20; run++) {
+        const market = ListingPolicy.evaluate(inDion, { now: 1000 + run, ...{} });
+        if (market.answers.some((entry) => entry.line.town === 'Dion' && entry.count === 30)) chosen += 1;
+    }
+    assert(chosen >= 18, `a generous ad in the bot's own town is answered (${chosen} of 20)`);
+    // Far away the trip is part of the price: a long trip at a high hour
+    // leaves nothing to answer it for.
+    const far = seller('hunting', { locX: -80000, locY: 240000, locZ: -3000 }, 'Talking Island');
+    const farCtx = { ...ListingPolicy.traderContext(far, {}), travel: () => 900 * 30 };
+    assert.strictEqual(MarketPricing.bestAnswer(STEM, farCtx, { units: 30 }).net, 0);
+    AfkTrade._resetForTests();
+}
+
+console.log('Board trips: trip cost, karma towns, the shop town and buy-ad answers passed');

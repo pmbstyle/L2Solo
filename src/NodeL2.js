@@ -115,9 +115,6 @@ Database.init(() => {
         });
 
         BotManager.init();
-        AfkTrade.matchBotDemand().catch((error) => {
-            utils.infoWarn('AfkTrade', 'restored shop matching failed: %s', error.message);
-        });
         WorldObserver.init();
         DevConsole.init();
         if (process.env.L2NODE_HOT_LOAD_TEST === '1') {

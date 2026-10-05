@@ -80,8 +80,10 @@ async function run() {
             locX: 83396, locY: 147904, locZ: -3400,
             lines: [{ objectId: Number(row.id), selfId: VARNISH, name: 'Varnish', count: 20, price: 100, enchant: 0, slot: 0,
                 stackable: true }] }]);
-        const matched = await AfkTrade.matchAfkOrders(seller.id);
-        const trades = matched?.trades?.length || 0;
+        // The base code crossed them at once (AfkTradeService.matchAfkOrders).
+        const matched = AfkTrade.matchAfkOrders ? await AfkTrade.matchAfkOrders(seller.id) : null;
+        const trades = (matched?.trades?.length || 0)
+            + (AfkTrade.ownerRecords(buyer.id).length === 1 && AfkTrade.ownerRecords(seller.id).length === 1 ? 0 : 1);
         assert.strictEqual(trades, 0, `E45: ${trades} deal(s) between Giran and Dion with no trip`);
     });
 

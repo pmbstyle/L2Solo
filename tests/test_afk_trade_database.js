@@ -192,12 +192,8 @@ function amountOf(rows, selfId) {
         storeType: 3, town: 'Dion', locX: 16308, locY: 143760, locZ: -2888,
         lines: [{ selfId: 1001, name: 'Test Material', count: 1, price: 20, stackable: true }]
     });
-    await assert.rejects(Database.matchAfkTradeShops({
-        sellerId: ownerId, buyerId: customerId,
-        sellShopId: playerSale.shop.id, buyShopId: playerBuy.shop.id,
-        sellLineId: playerSale.shop.lines[0].id, buyLineId: playerBuy.shop.lines[0].id,
-        amount: 1
-    }), /afk_trade_shop_changed/, 'two player shops must not settle remotely across towns');
+    // Records never settle against each other from afar (E45): no such move exists.
+    assert.strictEqual(Database.matchAfkTradeShops, undefined);
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId))[0].lines[0].count, 1);
     assert.strictEqual((await Database.fetchAfkTradeShops(customerId))[0].escrowAdena, 20);
     await Database.closeAfkTradeShop(ownerId);

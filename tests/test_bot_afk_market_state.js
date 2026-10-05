@@ -212,11 +212,13 @@ async function run() {
         locY: 143760, locZ: -2888, storeType: AfkTrade.SELL, title: 'Varnish',
         lines: [{ objectId: sellerStockId, selfId: 1865, name: 'Varnish',
             count: 1, price: 150, stackable: true }] });
-    const peerMatch = await AfkTrade.matchAfkOrders(sellerId);
-    assert.strictEqual(peerMatch.trades.length, 1,
-        'a bot AFK ask in Dion must fill a crossed bid in Giran');
+    // A bot's ask in Dion and a bid in Giran cross, but nobody travelled:
+    // both stand (E45). The buyer that comes to Dion buys in person.
+    assert.strictEqual((await Database.fetchAfkTradeShops(sellerId)).length, 1, 'the ask in Dion stands');
+    assert.strictEqual((await Database.fetchAfkTradeShops(buyerId)).length, 1, 'the bid in Giran stands');
+    await AfkTrade.stop(buyerId);
+    await AfkTrade.buyFromShop(buyerId, AfkTrade.findOwnerProjection(sellerId).actor.fetchPrivateStore(), 1865, 1);
     assert.strictEqual((await Database.fetchAfkTradeShops(sellerId)).length, 0);
-    assert.strictEqual((await Database.fetchAfkTradeShops(buyerId)).length, 0);
     assert.strictEqual(amount(await Database.fetchItems(sellerId), 57), 150);
     assert.strictEqual(amount(await Database.fetchItems(buyerId), 57), 50);
     assert.strictEqual(amount(await Database.fetchItems(buyerId), 1865), 1);
@@ -226,26 +228,6 @@ async function run() {
     ]);
     assert.deepStrictEqual(crossTownTrade, [{ town: 'Dion', unitPrice: 150 }],
         'the trade journal must record the seller town and executed ask');
-    const secondVarnishId = Number((await Database.setItem(sellerId, { selfId: 1865,
-        name: 'Varnish', amount: 1, enchant: 0, equipped: false, slot: 0 })).insertId);
-    const stemId = Number((await Database.setItem(sellerId, { selfId: 1864,
-        name: 'Stem', amount: 1, enchant: 0, equipped: false, slot: 0 })).insertId);
-    await Database.setItem(buyerId, { selfId: 57, name: 'Adena', amount: 400,
-        enchant: 0, equipped: false, slot: 0 });
-    await AfkTrade.publishBot(buyerId, { ...stall, storeType: AfkTrade.BUY, title: 'WTB materials',
-        lines: [{ selfId: 1865, name: 'Varnish', count: 1, price: 200, stackable: true },
-            { selfId: 1864, name: 'Stem', count: 1, price: 200, stackable: true }] });
-    await AfkTrade.publishBot(sellerId, { ...stall, storeType: AfkTrade.SELL, title: 'Materials',
-        lines: [{ objectId: secondVarnishId, selfId: 1865, name: 'Varnish',
-            count: 1, price: 150, stackable: true },
-        { objectId: stemId, selfId: 1864, name: 'Stem', count: 1, price: 150, stackable: true }] });
-    assert.strictEqual((await AfkTrade.matchAfkOrders(sellerId, 1)).trades.length, 1);
-    for (let attempt = 0; attempt < 50 && AfkTrade.findOwnerProjection(sellerId); attempt++) {
-        await new Promise((resolve) => setImmediate(resolve));
-    }
-    assert.strictEqual(AfkTrade.findOwnerProjection(sellerId), null,
-        'bounded matching must continue on the next event-loop turn');
-    assert.strictEqual(amount(await Database.fetchItems(buyerId), 1864), 1);
 
     await Database.createAccount('bot_afk_fallback', 'pw');
     const fallbackId = Number((await Database.createCharacter('bot_afk_fallback', character('FallbackSeller'))).insertId);

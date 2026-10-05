@@ -6,7 +6,7 @@
 // The caller's thread supplies the board index, the NPC shops selling an item
 // and the trader's trip cost; the counters and first prices are read from
 // MarketCounters in either thread.
-const { SELL } = require('../../AfkTrade/BoardIndex');
+const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const OfferOrder = require('./OfferOrder');
 const TendencyRoll = require('../AI/TendencyRoll');
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
@@ -23,6 +23,8 @@ function traderContext(state, deps = {}) {
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
     const trip = OfferOrder.tripCost(state, { origin, timestamp });
     const trader = PriceDecision.traderOf(deps.persona, { hour, adena });
+    // The bot's own trip to a town: none to the town it is shopping in.
+    const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
     return {
         characterId: Number(state?.characterId || 0),
         understanding: trader.understanding,
@@ -32,8 +34,24 @@ function traderContext(state, deps = {}) {
         timestamp,
         board: deps.board || null,
         npcOffersFor: deps.npcOffersFor || (() => []),
-        tripCost: trip || null
+        tripCost: trip || null,
+        travel: (town) => (town && town === here ? 0 : trip ? trip(town) : 0)
     };
+}
+
+// The best buy ad to answer with `units` of an item (E45, user Q3 C: the side
+// that acts travels): of the best ad of each town, the one that pays most
+// for what it takes less the bot's trip there. { line, count, net } or null.
+function bestAnswer(selfId, ctx, { units = 1, enchant = 0 } = {}) {
+    let best = null;
+    for (const line of ctx.board ? ctx.board.heads(selfId, BUY, {
+        excludeOwner: ctx.characterId, accept: (candidate) => candidate.enchant === Number(enchant || 0)
+    }) : []) {
+        const count = Math.min(Math.max(1, Number(units) || 1), line.count);
+        const net = line.price * count - ctx.travel(line.town);
+        if (!best || net > best.net) best = { line, count, net };
+    }
+    return best;
 }
 
 // The ask for `units` of an item listed in `town`: { belief, ask, market }.
@@ -64,14 +82,16 @@ function adopt(book, belief, ctx, price) {
 }
 
 // What to do with `units` of an item the bot may sell (hold / board /
-// warehouse / NPC): one roll between the NPC buy-back now and the best use
-// of keeping it: the board at its best ask when it brings more Adena than
-// the NPC (the gain the board's slots compete by), else keeping it for a
-// later sale at its own value after one more buyer's wait (nothing while
-// nobody buys its kind), possible only with room where it keeps it. Values
-// per unit, by the bot's utility: a sale under its own value is a loss.
-// Returns { action: 'list' | 'npc' | 'keep', priced, gain } with gain the
-// board's Adena over the NPC for all units; 'list' still needs a slot.
+// warehouse / NPC / a buy ad): one roll between the NPC buy-back now, the
+// best buy ad on the board answered in its town (its price less the bot's
+// trip there, E45) and the best use of keeping it: the board at its best ask
+// when it brings more Adena than the NPC (the gain the board's slots compete
+// by), else keeping it for a later sale at its own value after one more
+// buyer's wait (nothing while nobody buys its kind), possible only with room
+// where it keeps it. Values per unit, by the bot's utility: a sale under its
+// own value is a loss. Returns { action: 'list' | 'npc' | 'keep' | 'ad',
+// priced, gain, answer } with gain the board's Adena over the NPC for all
+// units ('list' still needs a slot) and answer the ad ({ line, count }).
 function disposition(book, item, ctx, { town = null, room = 1, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(book, item.selfId, ctx, { town, units, rollKey: [...rollKey, 'ask'] });
@@ -84,8 +104,14 @@ function disposition(book, item, ctx, { town = null, room = 1, rollKey }) {
         const later = market.buyersPerHour > 0 ? Math.exp(-ctx.trader.wait / market.buyersPerHour) : 0;
         options.push({ action: 'keep', value: Math.exp(belief.mu) * later });
     }
+    const answer = bestAnswer(item.selfId, ctx, { units, enchant: item.enchant });
+    if (answer && answer.net > 0) {
+        options.push({ action: 'ad', value: PriceDecision.saleUtility(answer.net / answer.count, Math.exp(belief.mu),
+            ctx.trader.caution) });
+    }
     const chosen = PriceDecision.chooseByValue(options, rollKey);
-    return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0 };
+    return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0,
+        answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count } : null };
 }
 
 // The bid of a buy ad for `units` worth `worth` a unit to the buyer, at most
@@ -170,4 +196,4 @@ function look(state, lines, ctx) {
     return { book, reprices, withdrawals };
 }
 
-module.exports = { traderContext, priceForSale, adopt, disposition, bid, lookChance, look };
+module.exports = { traderContext, priceForSale, adopt, bestAnswer, disposition, bid, lookChance, look };
