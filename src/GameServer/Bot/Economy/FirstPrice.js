@@ -154,13 +154,28 @@ function craftPrice(id, item, options, depth) {
         crafterLevel: level, source: 'craft' };
 }
 
+// The gear that breaks into each crystal, with its crystal count: crystal
+// selfId -> [{ gear, crystals }], static data built once.
+let gearByCrystal = null;
+function crystalSources(id) {
+    if (!gearByCrystal) {
+        gearByCrystal = new Map();
+        for (const gear of DataCache.items) {
+            const crystals = Number(gear?.etc?.cristals || 0);
+            const crystalId = CRYSTAL_IDS[String(gear?.etc?.rank || '').toUpperCase()];
+            if (!(crystals > 0) || !crystalId) continue;
+            if (!gearByCrystal.has(crystalId)) gearByCrystal.set(crystalId, []);
+            gearByCrystal.get(crystalId).push({ gear, crystals });
+        }
+    }
+    return gearByCrystal.get(id) || null;
+}
+
 function crystalPrice(id, item, options) {
-    const grade = Object.keys(CRYSTAL_IDS).find((key) => CRYSTAL_IDS[key] === id);
-    if (!grade) return null;
+    const sources = crystalSources(id);
+    if (!sources) return null;
     let best = null;
-    for (const gear of DataCache.items) {
-        const crystals = Number(gear?.etc?.cristals || 0);
-        if (!(crystals > 0) || String(gear.etc.rank || '').toUpperCase() !== grade) continue;
+    for (const { gear, crystals } of sources) {
         const drop = dropPrice(Number(gear.selfId), gear, options.spots, options.timestamp);
         if (!drop) continue;
         const unit = drop.price / crystals;
