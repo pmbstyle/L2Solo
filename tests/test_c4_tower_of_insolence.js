@@ -12,4 +12,4 @@ assertC4MonsterLocation({
     importedSkillRows:242,sourceSkillRows:242,
     combatSkills:{812:[4040],813:[4157,4160],815:[4072],816:[4033,4092,4067],817:[4155,4160,4118],818:[4032],819:[],820:[4072,4092,4032],821:[4100,4119,4047],822:[4046,4039],823:[4073],824:[4073],825:[4078,4069,4118],826:[4040],827:[4072,4032],828:[4046,4073,4066],829:[4033,4092,4073],830:[4033,4092,4073],831:[4072,4090,4232],977:[4087],980:[4073],983:[4073],1061:[4072,4090,4032],1062:[4033,4092,4073],1064:[4040],1065:[4073],1066:[4100,4039,4118],1067:[4033,4032],1069:[4073],1070:[4033,4092,4032],1072:[4158,4160,4102],1075:[4073],1078:[4072],1081:[4118]}
 });
-assertMonsterEmptyBeforeSlice({slug:'c4_tower_of_insolence',displayName:'Tower of Insolence',padding:0,zPadding:0,box:{minX:112049,maxX:117139,minY:13280,maxY:18562,minZ:-3644,maxZ:7992}});
+assertMonsterEmptyBeforeSlice({slug:'c4_tower_of_insolence',displayName:'Tower of Insolence',ignoreSlugs:['c4_tower_of_insolence_lower_floors'],padding:0,zPadding:0,box:{minX:112049,maxX:117139,minY:13280,maxY:18562,minZ:-3644,maxZ:7992}});

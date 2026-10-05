@@ -1,0 +1,246 @@
+[
+  {
+    "selfId": 809,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghost of the Tower",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 860,
+      "pAtkRnd": 30,
+      "pDef": 368,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 157
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 30.81,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.123611111111,
+      "sp": 351
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 810,
+    "template": {
+      "kind": "Monster",
+      "name": "Seer of Hallate",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 946,
+      "pAtkRnd": 30,
+      "pDef": 335,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 30.81,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "hallate_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.123611111111,
+      "sp": 351
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 811,
+    "template": {
+      "kind": "Monster",
+      "name": "Ghastly Warrior",
+      "title": "",
+      "level": 61,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 717,
+      "pAtkRnd": 30,
+      "pDef": 416,
+      "mAtk": 505,
+      "mDef": 307,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 23,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 3137,
+      "maxMp": 1184,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.281644719162,
+      "sp": 419
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 814,
+    "template": {
+      "kind": "Monster",
+      "name": "Blader of Despair",
+      "title": "",
+      "level": 62,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1212,
+      "pAtkRnd": 10,
+      "pDef": 353,
+      "mAtk": 532,
+      "mDef": 315,
+      "accur": 0,
+      "atkSpd": 237,
+      "castSpd": 216,
+      "atkRadius": 80
+    },
+    "speed": {
+      "walk": 66,
+      "run": 157
+    },
+    "vitals": {
+      "maxHp": 3219,
+      "maxMp": 1217,
+      "revHp": 35.55,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 79,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.28459937565,
+      "sp": 440
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

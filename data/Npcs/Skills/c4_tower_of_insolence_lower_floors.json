@@ -1,0 +1,152 @@
+[
+  {
+    "npcId": 809,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 809,
+    "skillId": 4304,
+    "level": 1
+  },
+  {
+    "npcId": 809,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 809,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 809,
+    "skillId": 4285,
+    "level": 4
+  },
+  {
+    "npcId": 809,
+    "skillId": 4158,
+    "level": 6
+  },
+  {
+    "npcId": 809,
+    "skillId": 4160,
+    "level": 6
+  },
+  {
+    "npcId": 809,
+    "skillId": 4098,
+    "level": 6
+  },
+  {
+    "npcId": 810,
+    "skillId": 4291,
+    "level": 1
+  },
+  {
+    "npcId": 810,
+    "skillId": 4304,
+    "level": 1
+  },
+  {
+    "npcId": 810,
+    "skillId": 4281,
+    "level": 2
+  },
+  {
+    "npcId": 810,
+    "skillId": 4046,
+    "level": 6
+  },
+  {
+    "npcId": 810,
+    "skillId": 4098,
+    "level": 6
+  },
+  {
+    "npcId": 810,
+    "skillId": 4088,
+    "level": 6
+  },
+  {
+    "npcId": 810,
+    "skillId": 4002,
+    "level": 6
+  },
+  {
+    "npcId": 810,
+    "skillId": 4094,
+    "level": 6
+  },
+  {
+    "npcId": 811,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 811,
+    "skillId": 4304,
+    "level": 1
+  },
+  {
+    "npcId": 811,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 811,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 811,
+    "skillId": 4072,
+    "level": 6
+  },
+  {
+    "npcId": 811,
+    "skillId": 4092,
+    "level": 1
+  },
+  {
+    "npcId": 811,
+    "skillId": 4032,
+    "level": 6
+  },
+  {
+    "npcId": 814,
+    "skillId": 4290,
+    "level": 1
+  },
+  {
+    "npcId": 814,
+    "skillId": 4304,
+    "level": 1
+  },
+  {
+    "npcId": 814,
+    "skillId": 4275,
+    "level": 3
+  },
+  {
+    "npcId": 814,
+    "skillId": 4278,
+    "level": 1
+  },
+  {
+    "npcId": 814,
+    "skillId": 4033,
+    "level": 6
+  },
+  {
+    "npcId": 814,
+    "skillId": 4091,
+    "level": 1
+  },
+  {
+    "npcId": 814,
+    "skillId": 4032,
+    "level": 6
+  }
+]
