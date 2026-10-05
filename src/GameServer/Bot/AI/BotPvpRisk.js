@@ -37,15 +37,16 @@ function isCombatAlly(botSession, otherSession, threat) {
 // A visible gap is worth the author's dispute margin: 3 levels at 1.25 each.
 const VISIBLE_GAP = 3 * 1.25;
 
-// Seeing a PK: the PK side by what a player sees (his look, the people with
-// him, the bot's fear of him; Social/VisibleStrength) against this bot alone.
+// Seeing a PK: the PK side by what a player sees (his look, the people and
+// summons with him, the bot's fear of him; Social/VisibleStrength) against
+// this bot and its own summon.
 // The bot's own HP, MP, role and allies keep the author's terms below.
 function evaluate(context = {}) {
     const hpRatio = Math.max(0, Math.min(1, Number(context.hpRatio) || 0));
     const mpRatio = Math.max(0, Math.min(1, Number(context.mpRatio) || 0));
     const allies = Math.max(0, Number(context.allies) || 0);
     const reasons = [];
-    const visible = Visible.canWin({ own: { look: context.ownLook, people: 1 },
+    const visible = Visible.canWin({ own: { look: context.ownLook, people: Math.max(1, Number(context.ownPeople) || 1) },
         other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1) },
         traits: context.traits, fear: context.fear || 0 });
     let score = (visible.verdict === 'stronger' ? VISIBLE_GAP : visible.fight ? 0 : -VISIBLE_GAP) + allies * 1.4;
@@ -162,10 +163,13 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
         empathy: voice.trait(session, 'empathy') };
     const avoidsPvp = Visible.avoidsPvp(traits);
     const own = [session.actor, ...allies.map(member => member.actor)];
+    // A summon or pet is one more person on its owner's side; one's own counts as fresh.
+    const pets = actors => actors.reduce((sum, actor) => sum + Visible.actorPeople(actor) - 1, 0);
+    const enemies = [...opponents.values()];
     const verdict = Visible.canWin({
-        own: { look: Visible.best(own.map(Visible.actorLook)), people: own.length,
-            strength: own.reduce((sum, actor) => sum + condition(actor), 0) },
-        other: { look: Visible.best([...opponents.values()].map(Visible.actorLook)), people: opponents.size },
+        own: { look: Visible.best(own.map(Visible.actorLook)), people: own.length + pets(own),
+            strength: own.reduce((sum, actor) => sum + condition(actor), 0) + pets(own) },
+        other: { look: Visible.best(enemies.map(Visible.actorLook)), people: enemies.length + pets(enemies) },
         traits, fear: fearOf(session.actor, threats) });
     const fight = !avoidsPvp && verdict.fight;
     return {
@@ -184,8 +188,9 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
 // What a hunter sees of a PK, for evaluate().
 function sighting(session, pk, now = Date.now()) {
     const opponents = [...opponentsOf(session, [pk]).values()];
-    return { ownLook: Visible.actorLook(session.actor), threatLook: Visible.best(opponents.map(Visible.actorLook)),
-        threatPeople: opponents.length, traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
+    return { ownLook: Visible.actorLook(session.actor), ownPeople: Visible.actorPeople(session.actor),
+        threatLook: Visible.best(opponents.map(Visible.actorLook)),
+        threatPeople: opponents.reduce((sum, actor) => sum + Visible.actorPeople(actor), 0), traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
         fear: fearOf(session.actor, [pk], now) };
 }
 

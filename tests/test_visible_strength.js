@@ -45,6 +45,16 @@ assert.strictEqual(V.actorLook(actor).weapon, 3, 'no rescan without a gear chang
 backpack.unequipPaperdoll(7);
 assert.deepStrictEqual(V.actorLook(actor), { weapon: 0, glow: 0, body: 2 }, 'a gear change drops the cached look');
 
+// A summon or pet is one more visible person on its owner's side.
+assert.strictEqual(V.actorPeople({}), 1);
+assert.strictEqual(V.actorPeople({ summon: { isDead: () => false } }), 2);
+assert.strictEqual(V.actorPeople({ summon: { isDead: () => true } }), 1, 'a dead summon is not company');
+assert.strictEqual(V.actorPeople({ pet: { state: { fetchDead: () => false } } }), 2);
+const servitor = expiresAt => ({ stats: { coldCombat: { summon: { active: true, expiresAt } } } });
+assert.strictEqual(V.statePeople(servitor(2000), 1000), 2);
+assert.strictEqual(V.statePeople(servitor(500), 1000), 1, 'an expired servitor is gone');
+assert.strictEqual(V.statePeople({ stats: {} }, 1000), 1);
+
 // Own condition is exact; the other side is assumed fresh.
 assert.strictEqual(V.condition(1, 1, 1, false, true), 1);
 assert.strictEqual(V.condition(1, 0, 1, false, false), 1, 'no CP pool is not a weakness');

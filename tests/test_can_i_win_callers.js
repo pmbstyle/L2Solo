@@ -35,6 +35,8 @@ assert.deepStrictEqual([dispute(solo(40, { look: D }), solo(40, { look: C })).ac
     ['avoid', 'outmatched'], 'a visibly higher grade outmatches');
 assert.strictEqual(dispute(solo(40, { look: C }), solo(44, { look: D })).action, 'yield', 'a visibly lower grade does not');
 assert.strictEqual(dispute(solo(40), { level: 40, size: 2, partyId: 'p' }).reason, 'outmatched', 'a pair outmatches a solo of the same look');
+assert.strictEqual(dispute(solo(40), solo(40, { people: 2 })).reason, 'outmatched', 'a solo with a summon outmatches a solo of the same look');
+assert.strictEqual(dispute(solo(40, { people: 2 }), solo(40, { people: 2 })).action, 'yield', 'summons on both sides even out');
 // U26: an even look falls to the author's defense threshold by traits.
 const wary = { traits: { ...calm.traits, caution: 0.8, assertiveness: 0.3 } };
 assert.strictEqual(dispute(solo(40), solo(40), wary).reason, 'outmatched', 'the cautious feel outmatched by an even look');
@@ -55,6 +57,9 @@ assert.strictEqual(dispute(solo(40), solo(40), calm, { ready: true, personal: { 
     states[2] = cold(2, 44);
     assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'yield' },
         'cold refresh: four hidden levels above look even');
+    states[2] = { ...cold(2, 40), stats: { coldCombat: { summon: { active: true, expiresAt: Date.now() + 60000 } } } };
+    assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'avoid' },
+        'cold refresh: his servitor is one more person');
 }
 
 // ---- 2. Cold PvP start (the opening side may refuse).
@@ -87,6 +92,11 @@ assert.strictEqual(coldStart(coldState(11, { inventory: weapon('d') }), coldStat
     'pvp_outmatched', 'cold: a visibly higher grade refuses even the assertive');
 assert(coldStart(coldState(11, { inventory: weapon('c') }), coldState(12, { inventory: weapon('d') }), timid).started,
     'cold: a visibly lower grade is attacked even by the cautious');
+{
+    const withServitor = id => { const s = coldState(id); s.stats.coldCombat.summon = { active: true, expiresAt: at + 60000 }; return s; };
+    assert.strictEqual(coldStart(coldState(11), withServitor(12), bold).reason, 'pvp_outmatched', 'cold: his servitor is one more person');
+    assert(coldStart(withServitor(11), coldState(12), timid).started, 'cold: my servitor is one more person');
+}
 
 // ---- 3. Hot defense decision.
 let nextId = 3100000;
@@ -131,6 +141,10 @@ assert.strictEqual(defense({ ...fresh, ...armed('c') }, {}, { caution: 0.9, asse
 assert.strictEqual(defense(fresh, armed('c'), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: a visibly higher grade flees');
 assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',
     'defense: a visibly lower grade is fought even by the cautious');
+const pet = () => ({ summon: { isDead: () => false } });
+assert.strictEqual(defense(fresh, pet(), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: his summon is one more person');
+assert.strictEqual(defense({ ...fresh, ...pet() }, {}, { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',
+    'defense: my summon is one more person');
 {
     const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
     const MemoryPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
@@ -160,6 +174,7 @@ assert.strictEqual(sighting({ threatPeople: 2 }).action, 'flee', 'sighting: a PK
 assert.strictEqual(sighting({ traits: { caution: 0.8, assertiveness: 0.3 } }).action, 'flee', 'sighting: the cautious flee an even look');
 assert.strictEqual(sighting({ fear: 0.2 }).action, 'flee', 'sighting: fear of him');
 assert.deepStrictEqual(sighting().reasons, ['visible:even']);
+assert.strictEqual(sighting({ ownPeople: 2, threatPeople: 2 }).action, 'fight', 'sighting: summons on both sides even out');
 {
     // What HuntingState passes: the hunter's look, the PK's look and people, traits, fear.
     const own = hotSession(hotActor(armed('d')), { caution: 0.8, assertiveness: 0.3 });
@@ -170,6 +185,10 @@ assert.deepStrictEqual(sighting().reasons, ['visible:even']);
     const seen = Risk.sighting(own, pk);
     assert.deepStrictEqual([seen.ownLook.weapon, seen.threatLook.weapon, seen.threatPeople, seen.traits.caution, seen.fear], [1, 2, 1, 0.8, 0]);
     assert.strictEqual(sighting(seen).action, 'flee');
+    pk.summon = { isDead: () => false };
+    own.actor.summon = { isDead: () => false };
+    const both = Risk.sighting(own, pk);
+    assert.deepStrictEqual([both.ownPeople, both.threatPeople], [2, 2], 'sighting: each side\'s summon is seen');
 }
 
 // One pair, one verdict: a visibly equal pair is decided by traits in all four places.

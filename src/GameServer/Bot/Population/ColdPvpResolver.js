@@ -23,14 +23,16 @@ function allowed(sides) {
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
-function canOpen(fighters, openingSide, traits, fear) {
+function canOpen(fighters, openingSide, traits, fear, timestamp) {
     const own = fighters.filter(f => f.side === openingSide), other = fighters.filter(f => f.side !== openingSide);
     const condition = f => Visible.condition(f.vitals.hp / f.vitals.maxHp, f.profile.maxCp > 0 ? f.cp / f.profile.maxCp : 0,
         f.vitals.mp / f.vitals.maxMp, Roles.shouldRestForMana(f.state), f.profile.maxCp > 0);
+    // A servitor is one more person; one's own counts as fresh.
+    const pets = side => side.reduce((sum, f) => sum + Visible.statePeople(f.state, timestamp) - 1, 0);
     return Visible.canWin({
-        own: { look: Visible.best(own.map(f => Visible.stateLook(f.state))), people: own.length,
-            strength: own.reduce((sum, f) => sum + condition(f), 0) },
-        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length },
+        own: { look: Visible.best(own.map(f => Visible.stateLook(f.state))), people: own.length + pets(own),
+            strength: own.reduce((sum, f) => sum + condition(f), 0) + pets(own) },
+        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length + pets(other) },
         traits, fear }).fight;
 }
 
@@ -57,7 +59,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         }));
     // Resource retaliation opens on side 1; an independent grievance opens on side 0.
     // Can I win? The opener knows its own side exactly, the other only by look (U26).
-    if (!step?.resuming && !canOpen(fighters, openingSide, personaFor(sides[openingSide].principal)?.traits, fear)) {
+    if (!step?.resuming && !canOpen(fighters, openingSide, personaFor(sides[openingSide].principal)?.traits, fear, timestamp)) {
         return { started: false, reason: 'pvp_outmatched' };
     }
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;

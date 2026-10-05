@@ -57,8 +57,8 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
             accepted: rng() < clamp(0.15 + b.sociability * 0.35 + b.empathy * 0.15 + ba.warmth * 0.3 - ba.hostility * 0.5, 0, 0.85) };
     }
     // Can I win? Only by what a player sees: gear look and people (U26).
-    const outmatched = !Visible.canWin({ own: { look: actor.look, people: actor.size },
-        other: { look: peer.look, people: peer.size }, traits: a, fear: ab.fear }).fight;
+    const outmatched = !Visible.canWin({ own: { look: actor.look, people: actor.people ?? actor.size },
+        other: { look: peer.look, people: peer.people ?? peer.size }, traits: a, fear: ab.fear }).fight;
     const retreat = clamp(a.caution * (outmatched ? 0.65 : 0.15) + ab.fear * 0.4 + hostile * a.caution * 0.2, 0, 0.85);
     if (rng() < retreatChance(retreat, Config.pvpAggression)) return { action: 'avoid', pvpIntent: false, reason: outmatched ? 'outmatched' : 'avoid_conflict' };
     const contest = clamp(shortage * (0.3 + a.ambition * 0.35 + a.assertiveness * 0.4

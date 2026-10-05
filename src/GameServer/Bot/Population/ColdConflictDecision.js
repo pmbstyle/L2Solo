@@ -38,7 +38,8 @@ function refresh(event, { life, parties, memory, personaFor }, timestamp) {
             return { reason: 'invalid_decision_rolls' };
         }
         let index = 0;
-        const look = side => ({ ...side.participant, look: Visible.best(side.members.map(Visible.stateLook)) });
+        const look = side => ({ ...side.participant, look: Visible.best(side.members.map(Visible.stateLook)),
+            people: side.members.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0) });
         decision = Policy.decide({ pressure: event.pressure, actor: look(a), peer: look(b),
             actorPersona: personaFor(a.state), peerPersona: personaFor(b.state),
             towardPeer: ab, towardActor: ba, rng: () => rolls[index++] });

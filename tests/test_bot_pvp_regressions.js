@@ -235,7 +235,8 @@ Potions.tryUseInCombat = () => false;
     Chat.reset();
 }
 {
-    const { bot, own, enemy } = setup(); enemy.rank = 'c'; // U26: visibly stronger, not a hidden level
+    // U26: visibly stronger (not a hidden level); his own summon matches the bot's.
+    const { bot, own, enemy } = setup(); enemy.rank = 'c'; enemy.summon = { isDead: () => false };
     const summon = actor(nextId++, { level: 10, x: 400, controlMode: 'attack', attackTargetId: 12345, hits: true, moving: true });
     summon.fetchOwnerId = () => bot.id;
     summon.fetchKind = () => 'Summon';

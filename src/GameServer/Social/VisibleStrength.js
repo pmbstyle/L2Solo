@@ -81,6 +81,18 @@ function stateLook(state) {
     return result;
 }
 
+// A summon or pet is seen next to its owner: one more person on that side.
+function actorPeople(actor) {
+    const pets = new Set([actor?.summon, actor?.pet].filter(pet => pet && !pet.isDead?.() && !pet.state?.fetchDead?.()));
+    return 1 + pets.size;
+}
+
+// A cold state: its servitor while the summon lasts (BackgroundResolver.persistedSummon).
+function statePeople(state, timestamp) {
+    const summon = state?.stats?.coldCombat?.summon;
+    return 1 + (summon?.active && Number(summon.expiresAt || 0) > timestamp ? 1 : 0);
+}
+
 // The author's resource factor (BotPvpRisk.combatStrength): HP with a quarter
 // of CP, and MP for casters.
 function resources(hpRatio, cpRatio, mpRatio, manaDependent) {
@@ -130,5 +142,5 @@ function canWin({ own, other, traits, fear: fearOf = 0 }) {
         ratio: Math.round(ratio * 100) / 100, required: need };
 }
 
-module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, resources, condition,
+module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, resources, condition,
     fear, avoidsPvp, required, canWin };

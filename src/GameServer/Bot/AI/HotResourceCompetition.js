@@ -120,7 +120,8 @@ function beforeAttack(session, mob, now = Date.now(), rng = Math.random) {
         && threats().alive(n) && n.fetchHp() > 0 && Math.abs(n.fetchLocZ() - session.actor.fetchLocZ()) < 500).length);
     const unit = s => ({ partyId: s.party?.partyId, size: s.sessions.length,
         level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length,
-        look: Visible.best(s.sessions.map(m => Visible.actorLook(m.actor))) });
+        look: Visible.best(s.sessions.map(m => Visible.actorLook(m.actor))),
+        people: s.sessions.reduce((sum, m) => sum + Visible.actorPeople(m.actor), 0) });
     const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
     const outcome = Policy.decide({ pressure: (all.length / supply), actor: unit(a), peer: unit(b),
         towardPeer: ab, towardActor: ba, actorPersona: Voice.profile(session), peerPersona: Voice.profile(claimant.session), rng });
