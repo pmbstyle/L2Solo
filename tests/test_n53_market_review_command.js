@@ -12,6 +12,7 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const { ColdSimulationCoordinator } = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdTableChannel } = invoke('GameServer/Bot/Population/ColdTableChannel');
+const WriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 
 // The main authority boundary uses the real DB, cache, native AFK apply and
 // command transport. Only its outbound worker and player actor are fixtures;
@@ -111,6 +112,97 @@ async function refused(command, reason) {
     assert.strictEqual(result.marketDeferred, true);
     if (reason) assert.strictEqual(result.reason, reason);
     assert.deepStrictEqual(await persisted(), before, 'refusal changes neither physical state nor line metadata');
+}
+
+function characterFlushBarrier(id) {
+    let arrived;
+    let release;
+    let held = false;
+    const entered = new Promise(resolve => { arrived = resolve; });
+    const gate = new Promise(resolve => { release = resolve; });
+    Database.registerCharacterWriteFlush(characterId => {
+        if (Number(characterId) !== id || held) return WriteQueue.flushCharacter(characterId);
+        held = true;
+        arrived();
+        return gate.then(() => WriteQueue.flushCharacter(characterId));
+    });
+    return { entered, release, restore: () => Database.registerCharacterWriteFlush(WriteQueue.flushCharacter) };
+}
+
+async function reviewAcrossFlush(mutate, { withdrawal = false, refusal = null } = {}) {
+    const bot = await trader({ leased: false });
+    // Publication put stock in escrow. Align the native lifecycle row with
+    // the resulting physical bag before leasing it for this race fixture.
+    const inventory = LifeState.inventorySummaryFromItems(await Database.fetchItems(bot.id));
+    assert(await LifeState.upsertState({ ...LifeState.snapshot(bot.id), inventory }, 'n53_escrow_seed'));
+    const claimed = await Owner.claimBatch([LifeState.snapshot(bot.id)], { allowLifecycle: true, leaseMs: 120000 });
+    assert.strictEqual(claimed.grants.length, 1);
+    const command = request(bot);
+    if (withdrawal) command.market = { reprices: [], updates: [], withdrawals: [{
+        recordId: bot.shop.id, lineId: bot.shop.lines[0].id, expectedRevision: bot.shop.revision,
+        previousPricing: clone(bot.shop.lines[0].pricing) }] };
+    const barrier = characterFlushBarrier(bot.id);
+    const state = LifeState.snapshot(bot.id);
+    WriteQueue.vitals(bot.id, state.vitals.hp, state.vitals.maxHp, state.vitals.mp, state.vitals.maxMp);
+    let pending;
+    try {
+        pending = rpc(command);
+        await barrier.entered;
+        assert(coordinator.commandInflight.has(bot.id), 'native precheck passed before the real flush await');
+        const rows = await Database.execute(['SELECT * FROM afk_trade_lines WHERE id = ?', [bot.shop.lines[0].id]]);
+        assert.strictEqual(rows[0].pricingSeenCounter, 0, 'no line mutation before the controlled await');
+        await mutate(bot, command);
+        const before = await persisted();
+        barrier.release();
+        const result = await pending;
+        const after = await persisted();
+        if (refusal) {
+            assert.deepStrictEqual(after, before,
+                'changed authority refuses before any metadata, stock, escrow, inventory or lifecycle/cache write');
+            assert.strictEqual(result.ok, false);
+            assert.strictEqual(result.marketDeferred, true);
+            assert.strictEqual(result.reason, refusal);
+        } else {
+            assert.strictEqual(result.ok, true, result.reason);
+            assert.strictEqual(result.marketDeferred, false);
+            const oldLine = before.afk_trade_lines.find(line => line.id === bot.shop.lines[0].id);
+            const newLine = after.afk_trade_lines.find(line => line.id === oldLine.id);
+            assert.strictEqual(newLine.pricingSeenCounter, 7, 'same authority applies after the real flush');
+            after.afk_trade_lines = after.afk_trade_lines.map(line => line.id === oldLine.id ? {
+                ...line, pricingSeenCounter: oldLine.pricingSeenCounter, pricingSeenItem: oldLine.pricingSeenItem,
+                pricingRival: oldLine.pricingRival, updatedAt: oldLine.updatedAt
+            } : line);
+            assert.deepStrictEqual(after, before, 'same authority writes only the chosen line observation columns');
+        }
+    } finally {
+        barrier.release();
+        if (pending) await pending.catch(() => null);
+        barrier.restore();
+        coordinator.fencedBots.delete(bot.id);
+        coordinator.population = null;
+        coordinator.ready = false;
+    }
+}
+
+async function fenceHandoffWhileCommandWaits(bot) {
+    coordinator.ready = true;
+    const before = sent.length;
+    const fencePending = coordinator.fenceBot(bot.id, 50);
+    const message = sent.slice(before).find(row => row.type === 'fence');
+    assert(message, 'native fence command reached the worker boundary');
+    await coordinator.onMessage(Protocol.envelope('fence_ack', coordinator.workerEpoch,
+        { ok: true, characterId: bot.id }, message.msgId));
+    const fence = await fencePending;
+    assert.strictEqual(fence.ok, true, JSON.stringify(fence));
+    assert(coordinator.commandInflight.has(bot.id), 'bounded fence wait ended with the command still awaiting flush');
+    const handoff = await Owner.handoffToMain(LifeState.snapshot(bot.id), { allowLifecycle: true });
+    assert.strictEqual(handoff.ok, true, JSON.stringify(handoff));
+    assert(await LifeState.upsertState({ ...LifeState.snapshot(bot.id), phase: 'hot' }, 'n53_hot_after_native_handoff'));
+    assert.strictEqual(LifeState.snapshot(bot.id).phase, 'hot');
+    assert.strictEqual(LifeState.snapshot(bot.id).activity, 'hunting', 'fixture does not change activity to get authority');
+    const durable = (await Database.execute(['SELECT phase, simulationOwner FROM bot_life_state WHERE characterId = ?', [bot.id]]))[0];
+    assert.strictEqual(durable.phase, 'hot');
+    assert.strictEqual(durable.simulationOwner, Owner.LEGACY_OWNER_ID);
 }
 
 async function run() {
@@ -220,11 +312,33 @@ async function run() {
         assert.deepStrictEqual(await persisted(), before,
             'native apply preserves foreign escrow, stock, inventory and line memory');
     });
+    await check('unchanged authority survives a real character write flush', () => reviewAcrossFlush(async () => {}));
+    await check('native owner handoff and new lease during await refuse the old review', () => reviewAcrossFlush(async (bot, command) => {
+        const handoff = await Owner.handoffToMain(LifeState.snapshot(bot.id), { allowLifecycle: true });
+        assert.strictEqual(handoff.ok, true);
+        const claim = await Owner.claimBatch([LifeState.snapshot(bot.id)], { allowLifecycle: true, leaseMs: 120000 });
+        assert.strictEqual(claim.grants.length, 1);
+        assert.notStrictEqual(LifeState.snapshot(bot.id).simulation.leaseId, command.state.simulation.leaseId);
+        assert(LifeState.snapshot(bot.id).simulation.revision > command.state.simulation.revision);
+    }, { refusal: 'stale_market_review' }));
+    await check('fence gained during await refuses before line writes', () =>
+        reviewAcrossFlush(async bot => { coordinator.fencedBots.add(bot.id); }, { refusal: 'hot_handoff_fenced' }));
+    await check('native visibility gained during await refuses before line writes', () => reviewAcrossFlush(async bot => {
+        const loc = LifeState.snapshot(bot.id).loc;
+        coordinator.population = { realPlayerSessions: () => [{ actor: {
+            fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ
+        } }] };
+        assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), true);
+    }, { refusal: 'hot_handoff_fenced' }));
+    await check('native bounded fence and hot handoff refuse a waiting physical withdrawal', () =>
+        reviewAcrossFlush(fenceHandoffWhileCommandWaits, { withdrawal: true, refusal: 'stale_market_review' }));
     if (failures.length) throw new Error(`${failures.length} N53 authority contracts failed: ${failures.join('; ')}`);
-    console.log('N53 native market authority command: six focused contracts passed');
+    console.log('N53 native market authority command: six baseline and five await authority groups passed');
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    Database.registerCharacterWriteFlush(WriteQueue.flushCharacter);
+    await WriteQueue.flushAll();
     AfkTrade._resetForTests();
     await Database.close();
     if (directory) fs.rmSync(directory, { recursive: true, force: true });
