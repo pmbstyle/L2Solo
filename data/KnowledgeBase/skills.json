@@ -39168,10 +39168,12 @@
       "spoilOnHit": false,
       "ssBoost": 0,
       "stackFamily": "DmgShield",
-      "stackOrder": 5,
+      "stackOrder": 20,
       "staticHitTime": false,
       "staticReuse": false,
-      "stats": {},
+      "stats": {
+        "reflectDam": 20
+      },
       "stopAtFullHp": false,
       "target": "self",
       "teleportWhereType": null,
