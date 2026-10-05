@@ -13,6 +13,9 @@ const { ColdSimulationCoordinator } = invoke('GameServer/Bot/Population/ColdSimu
 const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdTableChannel } = invoke('GameServer/Bot/Population/ColdTableChannel');
 const WriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
+const World = invoke('GameServer/World/World');
+const ActorModel = invoke('GameServer/Model/Actor');
+const Population = invoke('GameServer/Bot/Population/PopulationService');
 
 // The main authority boundary uses the real DB, cache, native AFK apply and
 // command transport. Only its outbound worker and player actor are fixtures;
@@ -23,6 +26,7 @@ let sequence = 0;
 let directory;
 let coordinator;
 const sent = [];
+const players = new Set();
 const pricing = { price: 100, seenCounter: 0, seenItem: 0, rival: 90, worth: 0, seenFills: 0 };
 
 async function check(name, work) {
@@ -37,6 +41,22 @@ async function character() {
         race: 0, classId: 0, sex: 0, face: 0, hair: 0, hairColor: 0, maxHp: 100, maxMp: 100,
         locX: 83000, locY: 148000, locZ: -3400 })).insertId);
     return { id, account };
+}
+
+function playerAt(loc) {
+    const accountId = `player_n53_visible_${++sequence}`;
+    const session = { accountId, fetchAccountId() { return this.accountId; }, dataSendToMe() {} };
+    session.actor = new ActorModel({ id: 8000000 + sequence, username: accountId, isOnline: false, clanId: 0, ...loc });
+    session.actor.session = session;
+    World.insertUser(session);
+    session.actor.setIsOnline(true);
+    players.add(session);
+    return session;
+}
+
+function removePlayer(session) {
+    World.removeUser(session);
+    players.delete(session);
 }
 
 async function trader({ hot = false, leased = true } = {}) {
@@ -178,6 +198,7 @@ async function reviewAcrossFlush(mutate, { withdrawal = false, refusal = null } 
         barrier.release();
         if (pending) await pending.catch(() => null);
         barrier.restore();
+        for (const player of players) removePlayer(player);
         coordinator.fencedBots.delete(bot.id);
         coordinator.population = null;
         coordinator.ready = false;
@@ -214,7 +235,7 @@ async function run() {
     Database.init();
     assert(Database.isReady());
     DataCache.init();
-    invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
+    World.user = { sessions: [], revision: 0 };
     await LifeState.init();
     coordinator = new ColdSimulationCoordinator({ tableChannel: new ColdTableChannel() });
     coordinator.workerEpoch = 'n53-native-command';
@@ -269,15 +290,13 @@ async function run() {
         coordinator.fencedBots.add(bot.id);
         try { await refused(request(bot), 'hot_handoff_fenced'); }
         finally { coordinator.fencedBots.delete(bot.id); }
-        const loc = LifeState.snapshot(bot.id).loc;
-        coordinator.population = { realPlayerSessions: () => [{ actor: {
-            fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ
-        } }] };
+        const player = playerAt(LifeState.snapshot(bot.id).loc);
+        coordinator.population = Population;
         try {
             assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), true,
                 'the native visibility policy recognizes the adjacent human fixture');
             await refused(request(bot), 'hot_handoff_fenced');
-        } finally { coordinator.population = null; }
+        } finally { removePlayer(player); coordinator.population = null; }
         const uncached = await character();
         const row = (await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [bot.id]]))[0];
         row.characterId = uncached.id;
@@ -312,7 +331,15 @@ async function run() {
         assert.deepStrictEqual(await persisted(), before,
             'native apply preserves foreign escrow, stock, inventory and line memory');
     });
-    await check('unchanged authority survives a real character write flush', () => reviewAcrossFlush(async () => {}));
+    await check('unchanged authority survives a real character write flush', () => reviewAcrossFlush(async bot => {
+        const loc = LifeState.snapshot(bot.id).loc;
+        const player = playerAt(loc);
+        coordinator.population = Population;
+        assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), true);
+        player.actor.setLocXYZ({ ...loc, locX: loc.locX + 20000 });
+        assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), false,
+            'post-flush query uses the indexed player departure, not an old visibility boolean');
+    }));
     await check('native owner handoff and new lease during await refuse the old review', () => reviewAcrossFlush(async (bot, command) => {
         const handoff = await Owner.handoffToMain(LifeState.snapshot(bot.id), { allowLifecycle: true });
         assert.strictEqual(handoff.ok, true);
@@ -325,9 +352,10 @@ async function run() {
         reviewAcrossFlush(async bot => { coordinator.fencedBots.add(bot.id); }, { refusal: 'hot_handoff_fenced' }));
     await check('native visibility gained during await refuses before line writes', () => reviewAcrossFlush(async bot => {
         const loc = LifeState.snapshot(bot.id).loc;
-        coordinator.population = { realPlayerSessions: () => [{ actor: {
-            fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ
-        } }] };
+        const player = playerAt({ ...loc, locX: loc.locX + 20000 });
+        coordinator.population = Population;
+        assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), false);
+        player.actor.setLocXYZ(loc);
         assert.strictEqual(coordinator.visibleToRealPlayer(LifeState.snapshot(bot.id)), true);
     }, { refusal: 'hot_handoff_fenced' }));
     await check('native bounded fence and hot handoff refuse a waiting physical withdrawal', () =>
@@ -337,6 +365,7 @@ async function run() {
 }
 
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    for (const player of players) removePlayer(player);
     Database.registerCharacterWriteFlush(WriteQueue.flushCharacter);
     await WriteQueue.flushAll();
     AfkTrade._resetForTests();
