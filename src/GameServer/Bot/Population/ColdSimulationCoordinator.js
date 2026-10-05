@@ -1521,17 +1521,23 @@ class ColdSimulationCoordinator {
         this.commandTail = this.commandTail.then(async () => {
             const results = [];
             for (const request of requests) {
+                const marketReview = request.kind === 'market_review';
                 this.counters.commands += 1;
                 try {
                     const state = LifeState.cachedState(request.characterId) || request.state;
                     const id = Number(request.characterId);
                     Metrics.recordColdOwnerLegacyDeferred(`command_${String(state?.activity || 'unknown')}`);
                     if (this.fencedBots.has(id) || state?.phase !== 'cold') {
-                        results.push({ ok: false, characterId: id, reason: 'hot_handoff_fenced', state });
+                        results.push({ ok: false, characterId: id, reason: 'hot_handoff_fenced',
+                            ...(marketReview ? { marketDeferred: true, marketCommandId: request.commandId,
+                                context: request.context || {},
+                                ...(state?.phase !== 'cold' ? { state } : {}) } : { state }) });
                         continue;
                     }
                     let result;
-                    const operation = Promise.resolve(this.population?.executeWorkerLifecycleCommand?.(state, request));
+                    const operation = marketReview
+                        ? this.executeMarketReviewCommand(request)
+                        : Promise.resolve(this.population?.executeWorkerLifecycleCommand?.(state, request));
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally { this.commandInflight.delete(id); }
                     const nextState = result?.state || LifeState.cachedState(request.characterId) || state;
@@ -1542,16 +1548,66 @@ class ColdSimulationCoordinator {
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
                             Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
                         state: nextState,
-                        context: this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
+                        ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: request.commandId } : {}),
+                        context: marketReview ? request.context || {}
+                            : this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
                     });
                 } catch (error) {
                     this.counters.commandErrors += 1;
-                    results.push({ ok: false, characterId: request.characterId, reason: error?.message || 'command_error', retryAfterMs: 5000 });
+                    results.push({ ok: false, characterId: request.characterId, reason: error?.message || 'command_error', retryAfterMs: 5000,
+                        ...(marketReview ? { state: LifeState.cachedState(request.characterId) || request.state,
+                            context: request.context || {}, marketDeferred: true, marketCommandId: request.commandId } : {}) });
                 }
                 await new Promise((resolve) => setImmediate(resolve));
             }
+            for (const result of results) {
+                if (result.marketCommandId === undefined) continue;
+                if (this.fencedBots.has(Number(result.characterId))) delete result.state;
+                else result.state = LifeState.cachedState(result.characterId) || result.state;
+            }
             this.postCollections('command_ack', { results }, message.msgId);
         }).catch((error) => this.recordError(error));
+    }
+
+    async executeMarketReviewCommand(request) {
+        const id = Number(request.characterId);
+        const state = LifeState.cachedState(id);
+        if (!state || state.phase !== 'cold' || this.fencedBots.has(id) || this.visibleToRealPlayer(state)) {
+            return { ok: false, state, reason: 'hot_handoff_fenced', marketDeferred: true };
+        }
+        const current = state.simulation || {};
+        const proposed = request.state?.simulation || {};
+        if (Number(request.state?.characterId) !== id || current.ownerId !== proposed.ownerId
+            || Number(current.revision || 0) !== Number(proposed.revision || 0)
+            || (current.leaseId || null) !== (proposed.leaseId || null)) {
+            return { ok: false, state, reason: 'stale_market_review', marketDeferred: true };
+        }
+        const market = request.market;
+        if (typeof request.commandId !== 'string' || !request.commandId || request.commandId.length > 160
+            || !market || !['updates', 'reprices', 'withdrawals'].every((key) =>
+            Array.isArray(market[key]) && market[key].length <= Protocol.MAX_BATCH)) {
+            return { ok: false, state, reason: 'invalid_market_review', marketDeferred: true };
+        }
+        const coldAuthority = { ownerId: current.ownerId, revision: Number(current.revision || 0),
+            leaseId: current.leaseId || null };
+        const canCommitReview = () => {
+            const latest = LifeState.cachedState(id);
+            const simulation = latest?.simulation || {};
+            return latest?.phase === 'cold' && !this.fencedBots.has(id) && !this.visibleToRealPlayer(latest)
+                && simulation.ownerId === coldAuthority.ownerId
+                && Number(simulation.revision || 0) === coldAuthority.revision
+                && (simulation.leaseId || null) === coldAuthority.leaseId;
+        };
+        let applied;
+        try {
+            applied = await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(id, market,
+                { coldAuthority, canCommitReview });
+        } catch (error) {
+            if (!['stale_market_review', 'hot_handoff_fenced'].includes(error.message)) throw error;
+            return { ok: false, state: LifeState.cachedState(id) || state, reason: error.message, marketDeferred: true };
+        }
+        return { ok: true, state: LifeState.cachedState(id) || state, reason: 'market_reviewed',
+            marketDeferred: !(applied.updated || applied.changed) };
     }
 
     async withEconomyState(state, work) {

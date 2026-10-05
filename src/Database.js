@@ -3739,10 +3739,23 @@ const Database = {
     // (skipped: [{ lineId, reason }]); the others go on. Returns { shops (the
     // records after the moves), skipped, ownerInventory, coldLifeRows } as
     // repriceAfkTradeShop does.
-    repriceBoardLines(ownerId, reprices = [], { withdrawals = [], updates = [] } = {}) {
+    repriceBoardLines(ownerId, reprices = [], { withdrawals = [], updates = [],
+        coldAuthority = null, canCommitReview = null } = {}) {
         const characterId = Number(ownerId);
         if (!characterId) return Promise.reject(new Error('invalid_afk_trade_price'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            // The flush can outlive a fence or a handoff. Check authority in
+            // this transaction before metadata, quote or escrow writes.
+            if (coldAuthority) {
+                const life = one(`SELECT phase, simulationOwner, simulationRevision, simulationLeaseId
+                    FROM bot_life_state WHERE characterId = ?`, [characterId]);
+                if (!life || life.phase !== 'cold' || life.simulationOwner !== coldAuthority.ownerId
+                    || Number(life.simulationRevision) !== coldAuthority.revision
+                    || (life.simulationLeaseId || null) !== coldAuthority.leaseId) {
+                    throw new Error('stale_market_review');
+                }
+            }
+            if (canCommitReview && canCommitReview() !== true) throw new Error('hot_handoff_fenced');
             const shops = new Map();
             const skipped = [];
             const changedIds = [];
