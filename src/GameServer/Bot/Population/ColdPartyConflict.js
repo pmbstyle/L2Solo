@@ -4,7 +4,6 @@ const EncounterBudget = require('./PvpEncounterBudget');
 // Main-process execution of one bounded encounter (at most two C4 parties).
 // Membership alone never makes a bot an aggressor or creates a memory edge.
 const { seeded } = require('./ColdCompetitionMonitor');
-const clamp = (n, low = 0, high = 1) => Math.max(low, Math.min(high, n));
 const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 
 const { reaction, select } = require('../../Social/ConflictParticipationPolicy');
@@ -63,19 +62,31 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
     const opener = revenge ? 0 : 1;
-    const fear = () => Visible.fear(memory.assess({ id: sides[opener].principal.characterId },
-        { id: sides[1 - opener].principal.characterId }, {}, now()));
+    // Side index's fear of the other side's principal (interaction memory).
+    const fear = index => Visible.fear(memory.assess({ id: sides[index].principal.characterId },
+        { id: sides[1 - index].principal.characterId }, {}, now()));
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
-            rng, personaFor, step, openingSide: opener, fear: resume ? 0 : fear() }) : null;
+            rng, personaFor, step, openingSide: opener, fear: resume ? 0 : fear(opener) }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
     const involved = side => side.members.filter(s => s.characterId === side.principal.characterId || roles.get(s.characterId) === 'support');
-    const power = side => {
-        const supporters = involved(side);
-        return supporters.reduce((sum, s) => sum + Number(s.level || 1), 0) / supporters.length + Math.log2(supporters.length) * 4;
+    // Who gives way without a fight: each principal asks the visible verdict (U26)
+    // for the people actually involved. One side willing and the other not: the
+    // willing side pushes with the author's bound 0.9 (or 0.1); both or neither
+    // willing: the author's even coin flip.
+    const willing = index => {
+        const own = involved(sides[index]), other = involved(sides[1 - index]);
+        const people = list => list.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0);
+        return Visible.canWin({ own: { look: Visible.best(own.map(Visible.stateLook)), people: people(own) },
+            other: { look: Visible.best(other.map(Visible.stateLook)), people: people(other) },
+            traits: personaFor(sides[index].principal)?.traits, fear: fear(index) }).fight;
     };
-    const displaced = !deescalated && rng() < clamp(0.5 + (power(sides[0]) - power(sides[1])) / 40, 0.1, 0.9);
+    const pushChance = () => {
+        const first = willing(0), second = willing(1);
+        return first === second ? 0.5 : first ? 0.9 : 0.1;
+    };
+    const displaced = !deescalated && rng() < (pvp?.started ? 0.5 : pushChance());
     const losingIndex = pvp?.started ? pvp.losingSide : displaced ? 1 : 0;
     const outcome = pvp?.started ? `pvp_${pvp.outcome}` : deescalated ? 'deescalated' : displaced ? 'displaced' : 'held_ground';
     const encounter = pvp?.ongoing ? EncounterBudget.extend({ key: event.key, startedAt: resume?.startedAt || timestamp,

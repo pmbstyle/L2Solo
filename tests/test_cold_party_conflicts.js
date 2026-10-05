@@ -65,6 +65,7 @@ async function run() {
     assert.strictEqual(Party.find('party-1').stats.coldCompetition.conflictUntil, at + 180000);
     assert.strictEqual(state(4).stats.coldCompetition.conflictUntil, at + 180000);
     assert.deepStrictEqual(first.affectedIds, [4]);
+    assert.strictEqual(first.outcome, 'displaced', 'a party of three pushes a solo off the spot');
     assert.strictEqual(first.memoryEvents, 3, 'a nearby recovering teammate can support the dispute without invalidating the roster');
     assert.strictEqual(state(4).timing.nextResolveAt, at + 60000 + WAIT_MS);
     assert.strictEqual(Party.find('party-1').nextResolveAt, at + 45000);
@@ -73,10 +74,13 @@ async function run() {
     assert.strictEqual((await Conflict.apply({ ...base, event: firstEvent })).ok, false, 'duplicate delivery cannot repeat the episode');
 
     await createParty([6, 7, 8]);
-    const soloParty = await apply(5, 6);
+    // U26: the party of three is willing and the solo is not, so the solo pushes it off
+    // only on a roll under 0.1 (the old level + log2 size rule gave 0.34).
+    const soloParty = await apply(5, 6, { rng: () => 0.05 });
     assert(soloParty.ok, JSON.stringify(soloParty));
     assert.strictEqual(soloParty.matchup, 'solo_vs_party');
     assert.deepStrictEqual(soloParty.affectedIds, [6, 7, 8]);
+    assert.strictEqual(soloParty.outcome, 'displaced', 'a solo pushes a party of three off on a roll under 0.1');
     const pausedParty = Party.find('party-6'), pausedMembers = [6, 7, 8].map(state);
     assert.strictEqual(pausedParty.nextResolveAt, at + 45000 + WAIT_MS);
     assert(pausedMembers.every(s => s.timing.nextResolveAt === pausedParty.nextResolveAt));
@@ -125,6 +129,8 @@ async function run() {
     const bystander = await apply(31, 33, { rng: () => 0.95 });
     assert(bystander.ok, JSON.stringify(bystander));
     assert.strictEqual(bystander.outcome, 'held_ground');
+    const evenPair = await apply(62, 63, { rng: () => 0.45 });
+    assert.strictEqual(evenPair.outcome, 'displaced', 'two equal solos: a coin flip (chance 0.5)');
     assert.strictEqual(bystander.participants.find(p => p.id === 32).role, 'stand_aside');
     assert.strictEqual(bystander.memoryEvents, 1);
     assert.deepStrictEqual(Memory.snapshot(33).relations.map(r => r.targetId), [31]);
