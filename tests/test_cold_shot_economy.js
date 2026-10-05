@@ -61,15 +61,14 @@ const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
     // Every purchase is made in its seller's town (group C): the crafter
     // stands in Giran, where the helmet is listed and the NPC sells Soul Ore
     // at 550, so it buys both there.
-    LifeState.applyMarketPurchase = async (buyer, offer, qty) => {
-        assert.strictEqual(offer.selfId, 1785);
-        assert.strictEqual(qty, 21);
-        assert.strictEqual(offer.price, 550);
-        rows[0].amount -= qty * offer.price;
+    Database.purchaseNpcInventoryItem = async (_id, item) => {
+        assert.strictEqual(item.selfId, 1785);
+        assert.strictEqual(item.amount, 21);
+        assert.strictEqual(item.unitPrice, 550);
+        rows[0].amount -= item.amount * item.unitPrice;
         rows.push({ id: 12, selfId: 1785, name: 'Soul Ore', amount: 21, equipped: false });
         history.push('ore');
-        return { ...buyer, adena: rows[0].amount, inventory: { ...buyer.inventory,
-            1785: { selfId: 1785, name: 'Soul Ore', amount: 21 } } };
+        return { ok: true };
     };
     boardLine(970001, 200, 'Giran', 45, 1, 22324);
     Database.crystallizeInventoryItem = async (_id, item) => {
@@ -214,10 +213,9 @@ const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
         return { coldState: { ...before, adena: before.adena - amount * options.expectedPrice, inventory: { ...before.inventory,
             '1463': { selfId, amount: before.inventory['1463'].amount + amount } } } };
     };
-    LifeState.applyMarketPurchase = async (buyer, offer, qty) => {
-        coldBuys.push(['npc', qty, offer.price]);
-        return { ...buyer, adena: buyer.adena - qty * offer.price, inventory: { ...buyer.inventory,
-            '1463': { selfId: 1463, amount: Number(buyer.inventory['1463']?.amount || 0) + qty } } };
+    Database.purchaseNpcInventoryItem = async (_id, item) => {
+        coldBuys.push(['npc', item.amount, item.unitPrice]);
+        return { ok: true, spent: item.amount * item.unitPrice };
     };
     LifeState.refreshInventory = async (refreshed) => refreshed;
     const restocked = (await Service.review(fighter, procurementAt + 2000)).state;

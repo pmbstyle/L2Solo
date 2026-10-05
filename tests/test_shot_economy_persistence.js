@@ -14,7 +14,11 @@ const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const dbPath = path.join(process.cwd(), 'tmp', 'test-shot-economy-persistence.sqlite');
 const originalCraft = DB.craftInventoryItems;
 let sequence = 0;
-async function bot({ classId = 57, mp = 1000, shots = 1000, recipe = true, money = 1000000 } = {}) {
+// Every purchase is made in its seller's town (group C): a shot buyer shops in
+// Dion, where the merchant sells D shots; a crafter in Giran, where the NPC
+// sells its scrap and ore cheapest.
+const TOWNS = { Dion: { locX: 15631, locY: 142885, locZ: -2704 }, Giran: { locX: 83396, locY: 147904, locZ: -3400 } };
+async function bot({ classId = 57, mp = 1000, shots = 1000, recipe = true, money = 1000000, town = 'Dion' } = {}) {
     const name = `Economy${++sequence}`;
     const accountName = `bot_economy_${sequence}`;
     await DB.createAccount(accountName, 'test');
@@ -27,11 +31,11 @@ async function bot({ classId = 57, mp = 1000, shots = 1000, recipe = true, money
     }
     if (recipe) await DB.setCharacterRecipe(characterId, 20, 'dwarven');
     await DB.setSkill({ selfId: 248, name: 'Crystallize', level: 3, passive: true }, characterId);
-    return Life.upsertState({ characterId, accountName, name, phase: 'cold', activity: 'hunting',
-        classId, level: 60, adena: money, currentRegion: 'Giran',
+    return Life.upsertState({ characterId, accountName, name, phase: 'cold', activity: 'shopping',
+        classId, level: 60, adena: money, currentRegion: town,
         inventory: Life.inventorySummaryFromItems(await DB.fetchItems(characterId)),
         vitals: { hp: 1000, maxHp: 1000, mp, maxMp: 1000 },
-        loc: { locX: 81100, locY: 148000, locZ: -3466 },
+        loc: { ...TOWNS[town] },
         persona: { primaryDrive: 'adventure' }, stats: { classId, generatedCold: true } }, 'economy_test');
 }
 async function balances(id) {
@@ -70,14 +74,14 @@ async function run() {
     assert.strictEqual((await balances(empty.characterId)).life.adena, stableWallet);
 
     await demand();
-    const tired = await bot({ mp: 0 });
+    const tired = await bot({ mp: 0, town: 'Giran' });
     const before = JSON.stringify(await DB.fetchItems(tired.characterId));
     Shots._resetForTests();
     const noMp = await Coordinator.withEconomyState(tired, state => Shots.review(state));
     assert(!noMp.crafted);
     assert.strictEqual(JSON.stringify(await DB.fetchItems(tired.characterId)), before, 'zero MP cannot trigger a scrap purchase');
 
-    const crafter = await bot();
+    const crafter = await bot({ town: 'Giran' });
     Shots._resetForTests();
     DB.craftInventoryItems = async () => { throw new Error('injected craft failure'); };
     const failed = await Coordinator.withEconomyState(crafter, state => Shots.review(state));
@@ -104,7 +108,7 @@ async function run() {
     await balances(buyer.characterId);
     await balances(crafter.characterId);
 
-    const missingRecipe = await bot({ recipe: false });
+    const missingRecipe = await bot({ recipe: false, town: 'Giran' });
     await demand(); Shots._resetForTests();
     const waiting = await Coordinator.withEconomyState(missingRecipe, state => Shots.review(state));
     assert(waiting.state.stats.shotRecipeDemand, 'missing scroll creates market demand');

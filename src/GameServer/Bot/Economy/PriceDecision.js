@@ -238,16 +238,25 @@ function chooseByValue(options, rollKey) {
 // One roll among options [{ action, value }] in proportion to their values
 // (a weighted roll, Q6: variety over the best one): a value at or below 0
 // weighs nothing but every option keeps a floor, together TendencyRoll.MIN
-// of the whole weight, so none is impossible. null without a finite option.
+// of the whole weight, so none is impossible. When no value is above 0 (all
+// are losses), the weights are how much less each loses than the worst.
+// null without a finite option.
 function chooseByWeight(options, rollKey) {
     const valid = options.filter((option) => Number.isFinite(option.value));
     if (!valid.length) return null;
+    let positive = 0;
+    let worst = Infinity;
+    for (const option of valid) {
+        positive += Math.max(0, option.value);
+        worst = Math.min(worst, option.value);
+    }
+    const weightOf = (option) => (positive > 0 ? Math.max(0, option.value) : option.value - worst);
     let total = 0;
-    for (const option of valid) total += Math.max(0, option.value);
+    for (const option of valid) total += weightOf(option);
     const floor = total > 0 ? TendencyRoll.MIN * total / valid.length : 1;
     let left = TendencyRoll.roll(...rollKey) * (total + floor * valid.length);
     for (const option of valid) {
-        left -= Math.max(0, option.value) + floor;
+        left -= weightOf(option) + floor;
         if (left <= 0) return option;
     }
     return valid[valid.length - 1];

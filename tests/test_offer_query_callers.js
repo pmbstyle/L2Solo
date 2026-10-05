@@ -68,17 +68,19 @@ function picked(offer) {
     AfkTrade._resetForTests();
 }
 
-// C11 (ShotStock.restockTarget): a hot shot trip goes to a seller standing in
-// the town; an ad has no one to walk to, the bot's own shop and the excluded
-// sellers are skipped.
+// C11 (ShotStock.restockTarget): a hot shot trip goes to the best seller in
+// the town, an ad by record at its place (D6, group C); the bot's own shop
+// and the excluded sellers are skipped.
 {
     const actor = { fetchId: () => 991301, classId: 0 };
     record(991302, { kind: 'sell_ad', lines: [{ selfId: SOULSHOT, count: 500, price: 5 }] });
     record(991301, { kind: 'shop', lines: [{ selfId: SOULSHOT, count: 500, price: 4 }] });
     record(991303, { kind: 'shop', lines: [{ selfId: SOULSHOT, count: 500, price: 6 }] });
     record(991304, { kind: 'shop', lines: [{ selfId: SOULSHOT, count: 500, price: 6 }] });
-    assert.strictEqual(ShotStock.restockTarget(actor, 'Giran')?.sourceId, 991303, 'C11: the cheapest stall, not an ad');
-    assert.strictEqual(ShotStock.restockTarget(actor, 'Giran', [991303])?.sourceId, 991304, 'C11: excluded skipped');
+    const ad = ShotStock.restockTarget(actor, 'Giran');
+    assert.deepStrictEqual([ad?.sourceId, ad?.actorId, ad?.recordId > 0], [991302, null, true], 'C11: the cheapest, an ad by record');
+    assert.strictEqual(ShotStock.restockTarget(actor, 'Giran', [991302])?.sourceId, 991303, 'C11: then the cheapest stall');
+    assert.strictEqual(ShotStock.restockTarget(actor, 'Giran', [991302, 991303])?.sourceId, 991304, 'C11: excluded skipped');
     assert.strictEqual(ShotStock.restockTarget(actor, 'Dion'), null, 'C11: only the town');
     AfkTrade._resetForTests();
 }

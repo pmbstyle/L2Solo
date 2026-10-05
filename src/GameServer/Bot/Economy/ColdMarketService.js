@@ -8,6 +8,7 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
@@ -202,16 +203,34 @@ async function buyHere(state, plan) {
     const money = Math.min(Number.isFinite(plan.money) ? plan.money - spent : Infinity, Number(current.adena || 0));
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (rest > 0) {
-        const npc = { sourceType: 'npc', sourceId: 0, selfId: plan.selfId, town: plan.town, price: npcPrice,
-            count: Infinity, available: true };
-        const bought = await buyOffer(current, npc, { qty: rest, keepActivity: true });
-        if (bought.purchased) {
-            current = bought.state;
+        const bought = await buyNpcStack(current, plan.selfId, rest, npcPrice);
+        if (bought) {
+            current = bought;
             units += rest;
             spent += rest * npcPrice;
         }
     }
     return { state: current, units, spent, hot: false };
+}
+
+// The NPC part of a stack purchase, the author's fenced cold write
+// (Database.purchaseNpcInventoryItem, as his cold shot restock made it): the
+// bag and the wallet in one transaction, the cold state following. null when
+// refused.
+async function buyNpcStack(state, selfId, amount, unitPrice) {
+    const Database = invoke('Database');
+    const name = ItemTemplateIndex.find(invoke('GameServer/DataCache').items, Number(selfId))?.template?.name || `Item ${selfId}`;
+    const purchase = await Database.purchaseNpcInventoryItem(state.characterId, { selfId, name, amount, unitPrice, coldState: state });
+    if (!purchase?.ok) return null;
+    MarketTelemetry.purchase({ sourceType: 'npc', selfId, price: unitPrice }, amount, {
+        buyerCharacterId: state.characterId, buyerName: state.name, town: state.currentRegion
+    });
+    if (purchase.coldLifeRow) return LifeState.acceptLifecycleRow(purchase.coldLifeRow);
+    const balance = Math.max(0, Number(state.adena || 0) - Number(purchase.spent ?? amount * unitPrice));
+    const paid = { ...state, adena: balance, inventory: { ...(state.inventory || {}),
+        57: { ...(state.inventory?.['57'] || {}), selfId: 57, amount: balance } } };
+    const refreshed = await LifeState.refreshInventory(paid) || paid;
+    return await LifeState.upsertState(refreshed, 'market_npc_stack') || refreshed;
 }
 
 // The bot's errand while it still stands (ERRAND_MS), else null.

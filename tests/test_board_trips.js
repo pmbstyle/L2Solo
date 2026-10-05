@@ -272,8 +272,9 @@ Config.coldHonestTravel = false;
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const GoalState = invoke('GameServer/Bot/Goals/GoalState');
     const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-    const kept = { upsertState: LifeState.upsertState, applyMarketPurchase: LifeState.applyMarketPurchase,
-        clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop };
+    const Database = invoke('Database');
+    const kept = { upsertState: LifeState.upsertState, refreshInventory: LifeState.refreshInventory,
+        clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
     const buys = [];
     try {
         LifeState.upsertState = async (state) => state;
@@ -282,9 +283,10 @@ Config.coldHonestTravel = false;
             buys.push(['line', amount, options.expectedPrice]);
             return { coldState: { ...options.coldState, adena: options.coldState.adena - amount * options.expectedPrice } };
         };
-        LifeState.applyMarketPurchase = async (state, offer, qty) => {
-            buys.push(['merchant', qty, offer.price]);
-            return { ...state, adena: state.adena - qty * offer.price };
+        LifeState.refreshInventory = async (state) => state;
+        Database.purchaseNpcInventoryItem = async (_id, item) => {
+            buys.push(['merchant', item.amount, item.unitPrice]);
+            return { ok: true, spent: item.amount * item.unitPrice };
         };
         const merchant = invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(1463)
             .find((seller) => seller.town === 'Dion').price;
@@ -301,7 +303,8 @@ Config.coldHonestTravel = false;
         assert.strictEqual(result.state.stats.marketErrand, null, 'the errand is done');
         assert.strictEqual(result.state.stats.lastErrand.units, 2000);
     } finally {
-        Object.assign(LifeState, { upsertState: kept.upsertState, applyMarketPurchase: kept.applyMarketPurchase });
+        Object.assign(LifeState, { upsertState: kept.upsertState, refreshInventory: kept.refreshInventory });
+        Database.purchaseNpcInventoryItem = kept.npc;
         GoalState.clear = kept.clear;
         AfkTrade.buyFromShop = kept.buyFromShop;
         AfkTrade._resetForTests();
