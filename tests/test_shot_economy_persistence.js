@@ -98,9 +98,14 @@ async function run() {
     assert(success.crafted, JSON.stringify(success));
     assert(success.state.stats.shotCraft.amount > 0);
     await balances(crafter.characterId);
-    const goal = { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } };
-    const listing = await BotMarket.reconcile(success.state, goal);
-    assert(listing.shop?.lines.some(line => Number(line.selfId) === 1463), 'crafted shots must be listed for real funded demand');
+    // Demand for shots is their deals on the board (group E): buyers took
+    // D shots near the crafter's price over the last hour. A shop opens at a
+    // market visit in the town the bot chose (group C): here, Giran.
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    for (let deal = 0; deal < 20; deal++) MarketCounters.deal(1463, 90, 500, Date.now() - (20 - deal) * 180000, 999999);
+    await BotMarket.listOnBoard({ ...success.state, stats: { ...success.state.stats, shopTown: { town: 'Giran', at: Date.now() } } });
+    const shop = Afk.findOwnerProjection(crafter.characterId)?.shop;
+    assert(shop?.lines.some(line => Number(line.selfId) === 1463), 'crafted shots must be listed for real funded demand');
     const buyer = await demand();
     Shots._resetForTests();
     const purchase = await Coordinator.withEconomyState(buyer, state => Shots.review(state));
@@ -117,9 +122,15 @@ async function run() {
         'neither recipes nor recipe knowledge may appear from procurement');
 
     // A real scroll in a seller's inventory must be the source of knowledge.
+    // The seller has put it on the board (its own sale decides that, group E;
+    // a bot without a shop lists nothing from afar, group C).
     const seller = await bot({ classId: 0, recipe: false });
     await DB.setItem(seller.characterId, { selfId: 1804, name: 'Recipe: Soulshot: D-Grade', amount: 1 });
     await Life.syncExternalInventory(seller.characterId, 'test_recipe_drop', seller);
+    const scroll = (await DB.fetchItems(seller.characterId)).find(row => row.selfId === 1804);
+    await Afk.openBotRecords(seller.characterId, 'sell_ad', [{ storeType: Afk.SELL, title: 'Recipe', town: 'Dion', ...TOWNS.Dion,
+        lines: [{ objectId: Number(scroll.id), selfId: 1804, name: scroll.name, count: 1, price: 30000,
+            enchant: 0, slot: 0, stackable: false }] }]);
     const recipeBuyer = await bot({ recipe: false });
     await demand(); Shots._resetForTests();
     const learned = await Coordinator.withEconomyState(recipeBuyer, state => Shots.review(state));
