@@ -84,7 +84,7 @@ function distribution(c, memory, reverse) {
     const decisions = [];
     for (let seed = 0; seed < SAMPLES; seed++) {
         const result = decide({ pressure: 3, actor, peer, actorPersona, peerPersona, towardPeer, towardActor,
-            rng: seeded(`repeat:${seed}`) });
+            rng: seeded(`repeat:${seed}`), key: `repeat:${seed}` }); // U26: each sample its own can-I-win roll
         counts[result.action]++;
         counts.accepted += Number(result.accepted === true);
         counts.pvpIntent += Number(result.pvpIntent === true);
