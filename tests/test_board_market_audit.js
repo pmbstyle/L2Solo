@@ -73,6 +73,7 @@ async function run() {
     DataCache.init();
     invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
     await LifeState.init();
+    await AfkTrade.init();
 
     await check('stale replacement must check record identities', async () => {
         const owner = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }]);
@@ -208,8 +209,10 @@ async function run() {
         const sale = await AfkTrade.publishBot(owner, await sellAd(owner));
         const line = sale.lines[0];
         const review = { reprices: [{ recordId: sale.id, lineId: line.id, selfId: line.selfId,
-            price: 80, expectedRevision: sale.revision }],
-        withdrawals: [{ recordId: sale.id, lineId: line.id, expectedRevision: sale.revision }] };
+            price: 80, expectedRevision: sale.revision, previousPricing: line.pricing,
+            pricing: { ...line.pricing, price: 80 } }],
+        withdrawals: [{ recordId: sale.id, lineId: line.id, expectedRevision: sale.revision,
+            previousPricing: line.pricing }] };
         await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(sale.id), 1864, 3);
         const result = await BotMarket.applyReview(owner, review);
         const after = (await Database.fetchAfkTradeShops(owner))[0];
@@ -226,7 +229,9 @@ async function run() {
         const second = await AfkTrade.publishBot(owner, { kind: 'sell_ad', storeType: 1, town: 'Giran',
             lines: [{ objectId: stock.id, selfId: 1865, name: 'Varnish', count: 10, price: 100, stackable: true }] });
         const move = (record, price) => ({ recordId: record.id, lineId: record.lines[0].id,
-            expectedRevision: record.revision, price });
+            selfId: record.lines[0].selfId, expectedRevision: record.revision, price,
+            previousPricing: record.lines[0].pricing,
+            ...(price ? { pricing: { ...record.lines[0].pricing, price } } : {}) });
         const old = move(first, 80);
         await AfkTrade.repriceBot(owner, first.lines[0].id, 110, first.revision);
         const result = await BotMarket.applyReview(owner, { reprices: [old, move(second, 90)], withdrawals: [old] });
@@ -242,6 +247,35 @@ async function run() {
         assert.strictEqual((await BotMarket.applyReview(owner, { withdrawals: [move(fresh)] })).changed, 0);
     });
 
+    await check('held-price observation fences an obsolete withdrawal', async () => {
+        const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 20 }]);
+        const record = await AfkTrade.publishBot(owner, await sellAd(owner));
+        const line = record.lines[0];
+        const stale = { recordId: record.id, lineId: line.id, selfId: line.selfId,
+            expectedRevision: record.revision, previousPricing: line.pricing };
+        const freshPricing = { ...line.pricing, seenCounter: line.pricing.seenCounter + 10 };
+        const held = await BotMarket.applyReview(owner, { updates: [{ ...stale, pricing: freshPricing }] });
+        assert.strictEqual(held.updated, 1);
+        const fresh = (await Database.fetchAfkTradeShops(owner))[0];
+        assert.strictEqual(fresh.revision, record.revision, 'metadata checkpoint keeps native quote usable');
+        assert.deepStrictEqual(fresh.lines[0].pricing, freshPricing);
+        assert.strictEqual((await BotMarket.applyReview(owner, { reprices: [{ ...stale, price: 80 }] })).changed, 0,
+            'missing new pricing cannot bypass the consumed previousPricing fence');
+        assert.strictEqual((await BotMarket.applyReview(owner, { reprices: [{ recordId: record.id,
+            lineId: line.id, selfId: line.selfId, expectedRevision: record.revision, price: 80,
+            pricing: { ...freshPricing, price: 80 } }] })).changed, 0,
+        'a worker reprice without previousPricing waits for a fresh review');
+        assert.strictEqual((await BotMarket.applyReview(owner, { withdrawals: [stale] })).changed, 0,
+            'a consumed pricing snapshot cannot withdraw the freshly held quote');
+        const remaining = (await Database.fetchAfkTradeShops(owner))[0];
+        assert.strictEqual(remaining.id, record.id);
+        assert.deepStrictEqual(remaining.lines[0].pricing, freshPricing);
+        assert.strictEqual(await bag(owner, 1864) + remaining.lines[0].count, 20);
+        assert.strictEqual((await BotMarket.applyReview(owner, { withdrawals: [{ ...stale,
+            previousPricing: freshPricing }] })).changed, 1, 'fresh withdrawal still returns the stock');
+        assert.strictEqual(await bag(owner, 1864), 20);
+    });
+
     await check('one snapshot can reprice and withdraw several shop lines', async () => {
         const owner = await bot([1864, 1865, 1872].map(selfId => ({ selfId, name: `Item ${selfId}`, amount: 20 })));
         const stock = await Database.fetchItems(owner);
@@ -251,7 +285,8 @@ async function run() {
         assert.strictEqual(recordOf(row).revision, shop.revision);
         assert.strictEqual(recordOf(row.slice(0, 7)).revision, null, 'old board rows remain readable');
         const moves = AfkTrade.boardIndex().ownerLines(owner).map(line => ({ recordId: line.recordId,
-            lineId: line.lineId, expectedRevision: line.revision, price: 90 }));
+            lineId: line.lineId, selfId: line.selfId, expectedRevision: line.revision, price: 90,
+            previousPricing: line.pricing, pricing: { ...line.pricing, price: 90 } }));
         assert(moves.every(move => move.expectedRevision === shop.revision));
         const result = await BotMarket.applyReview(owner, { reprices: moves.slice(0, 2), withdrawals: moves.slice(2) });
         assert.strictEqual(result.changed, 3);
@@ -275,59 +310,163 @@ async function run() {
         let proposal;
         try {
             PriceDecision.chooseAsk = belief => belief.selfId === 1864 ? { price: 90 } : { npc: true };
-            TendencyRoll.roll = () => 0;
+            TendencyRoll.roll = (key, ...parts) => {
+                assert.notStrictEqual(key, 'look', 'counter events replace attention rolls');
+                return roll(key, ...parts);
+            };
+            await Database.recordMarketTrade({ eventKey: `audit-worker:${owner}`, selfId: 1864,
+                quantity: 1, unitPrice: 100, sourceType: 'afk_player_store', channel: 'player_wts',
+                sellerCharacterId: 999, buyerCharacterId: 998, town: 'Giran' });
+            MarketCounters.reset();
+            MarketCounters.load(await Database.fetchRecentBoardDeals());
             proposal = MarketPricing.look({ stats: {}, activity: 'resting' }, AfkTrade.boardIndex().ownerLines(owner), {
                 characterId: owner, timestamp: Date.now(), understanding: 0.5, hour: 1000, adena: 1000,
-                trader: {}, board: AfkTrade.boardIndex(), npcOffersFor: () => []
+                trader: {}, board: AfkTrade.boardIndex(), npcOffersFor: () => [], knowledgeEnabled: false,
+                marketTrades: {}
             });
         } finally { PriceDecision.chooseAsk = choose; TendencyRoll.roll = roll; }
         assert(proposal);
         assert.strictEqual(proposal.reprices.length, 1);
         assert.strictEqual(proposal.withdrawals.length, 1);
         assert([...proposal.reprices, ...proposal.withdrawals].every(move => move.recordId === shop.id
-            && move.expectedRevision === shop.revision));
+            && move.expectedRevision === shop.revision && move.previousPricing));
         assert.strictEqual((await BotMarket.applyReview(owner, proposal)).changed, 2);
         const after = (await Database.fetchAfkTradeShops(owner))[0];
         assert.deepStrictEqual(after.lines.map(line => [line.selfId, line.price, line.count]), [[1864, 90, 10]]);
         assert.strictEqual(await bag(owner, 1865), 20);
     });
 
-    await check('restart replay must retain unseen own sale evidence', async () => {
-        const owner = 555001;
-        const timestamp = Date.now() - 48 * 3600000;
+    await check('all counter buyers count without dilution by ten competing lines', async () => {
+        const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 1000 }]);
+        const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }]);
+        const shop = await AfkTrade.publishBot(owner, { ...(await sellAd(owner, 500)), kind: 'shop' });
+        const sameCounter = MarketCounters.counterOf(1864);
+        assert.strictEqual(MarketCounters.counterOf(1865), sameCounter);
+        await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(shop.id), 1864, 1);
+        for (let index = 0; index < 9; index++) await Database.recordMarketTrade({
+            eventKey: `audit-passed:${owner}:${index}`, selfId: 1865, unitPrice: 100, quantity: 1,
+            sourceType: 'afk_player_store', channel: 'player_wts', sellerCharacterId: 999,
+            buyerCharacterId: 998, town: 'Giran'
+        });
         MarketCounters.reset();
-        const rows = Array.from({ length: 100 }, (_, index) => ({
-            selfId: 1864, unitPrice: 100, quantity: 1, occurredAt: timestamp - (100 - index) * 60000,
-            sellerCharacterId: 999, buyerCharacterId: 998, town: 'Giran'
-        }));
-        MarketCounters.load(rows);
-        const ctx = { characterId: owner, understanding: 0.5, timestamp,
-            board: new BoardIndex({ groupOf: MarketCounters.counterOf }) };
-        const book = PriceBelief.readBook({});
-        const belief = PriceBelief.ensure(book, 1864, ctx);
-        belief.ask = 100;
-        const saved = PriceBelief.writeBook(book);
-        rows.push({ ...rows[0], sellerCharacterId: owner, occurredAt: timestamp + 1000 });
-        MarketCounters.deal(1864, 100, 1, timestamp + 1000, owner, 'Giran', 998);
-        const liveBook = PriceBelief.readBook({ priceBeliefs: saved });
-        const live = PriceBelief.lookObservations(liveBook, liveBook.beliefs.get(1864), ctx, { ask: 100, lines: 1 });
-        assert.strictEqual(live.sales, 1, 'the running process sees the own sale');
-        for (const [index, row] of rows.entries()) {
-            await Database.recordMarketTrade({ ...row, eventKey: `audit-replay:${index}`, channel: 'bot_wts',
-                sourceType: 'afk_bot_store' });
-        }
-        await Database.recordMarketTrade({ eventKey: 'audit-replay:recent', channel: 'bot_wts',
-            sourceType: 'afk_bot_store', selfId: 1865, unitPrice: 100, quantity: 1, occurredAt: Date.now(), town: 'Giran' });
-        const replay = (await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }))
-            .filter(row => Number(row.selfId) === 1864);
-        assert.strictEqual(replay.length, MarketCounters.REPLAY_DEALS, 'the real DB query truncates this older item');
+        MarketCounters.load(await Database.fetchRecentBoardDeals());
+        const line = AfkTrade.boardIndex().ownerLines(owner)[0];
+        const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
+        board.put({ id: shop.id, ownerId: owner, storeType: AfkTrade.SELL, lines: [line] });
+        for (let index = 0; index < 9; index++) board.put({ id: 900000 + index, ownerId: 900000 + index,
+            storeType: AfkTrade.SELL, lines: [{ lineId: 900000 + index, selfId: 1865, count: 100, price: 100 }] });
+        assert.strictEqual(board.linesIn(sameCounter), 10);
+        const ctx = { characterId: owner, timestamp: Date.now(), understanding: 0.5, knowledgeEnabled: false,
+            marketTrades: {}, trader: {}, board, npcOffersFor: () => [] };
+        assert.strictEqual(MarketCounters.counter(sameCounter, ctx.timestamp).deals - line.pricing.seenCounter, 10);
+        const observations = PriceBelief.lineObservations(line, PriceBelief.prior(1864, ctx), ctx);
+        assert.deepStrictEqual(observations.map(observation => observation[1]), [1, 9],
+            'one exact fill and nine same-counter buyers passed, despite ten open lines');
+        const consumed = { ...line, pricing: MarketPricing.lineState(1864, ctx, { price: line.price, fills: line.fills }) };
+        assert.notStrictEqual(MarketCounters.counterOf(1463), sameCounter);
+        await Database.recordMarketTrade({ eventKey: `audit-other-counter:${owner}`, selfId: 1463,
+            unitPrice: 30, quantity: 100, sourceType: 'afk_player_store', channel: 'player_wts',
+            sellerCharacterId: 999, buyerCharacterId: 998, town: 'Giran' });
         MarketCounters.reset();
-        MarketCounters.load(replay);
-        const restored = PriceBelief.readBook({ priceBeliefs: saved });
-        const after = PriceBelief.lookObservations(restored, restored.beliefs.get(1864), ctx, { ask: 100, lines: 1 });
-        console.log(JSON.stringify({ case: 'restart evidence', storedSeenItem: saved.b[0][10],
-            replayDeals: MarketCounters.itemDeals(1864).deals, liveSales: live.sales, restoredSales: after.sales }));
-        assert.strictEqual(after.sales, live.sales, 'bounded replay reset the cursor of a persisted belief');
+        MarketCounters.load(await Database.fetchRecentBoardDeals());
+        assert.deepStrictEqual(PriceBelief.lineObservations(consumed, PriceBelief.prior(1864, ctx), ctx), [],
+            'another counter creates no passed buyer for this line');
+        assert.strictEqual(MarketPricing.look({ stats: {}, activity: 'resting' }, [consumed], ctx), null);
+        assert.strictEqual(await bag(owner, 1864) + 499 + await bag(buyer, 1864), 1000);
+        assert.strictEqual(await bag(owner, 57) + await bag(buyer, 57), 10000);
+    });
+
+    await check('technical stock replacement preserves standing quote observations', async () => {
+        const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 1000 },
+            { selfId: 1865, name: 'Varnish', amount: 1000 }]);
+        const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }]);
+        const shop = await AfkTrade.publishBot(owner, { ...(await sellAd(owner, 500)), kind: 'shop' });
+        await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(shop.id), 1864, 1);
+        const before = (await Database.fetchAfkTradeShops(owner))[0].lines[0];
+        assert.strictEqual(before.fills, 1);
+        const ctx = { characterId: owner, timestamp: Date.now(), board: AfkTrade.boardIndex() };
+        const freshStem = MarketPricing.lineState(1864, ctx, { price: 100 });
+        const freshVarnish = MarketPricing.lineState(1865, ctx, { price: 100 });
+        const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+        const evaluate = ListingPolicy.evaluate;
+        try {
+            ListingPolicy.evaluate = (_state, options) => {
+                assert.strictEqual(options.kept.get(1864), 100);
+                const listings = [
+                    { selfId: 1864, name: 'Stem', count: 999, price: 100, pricing: freshStem },
+                    { selfId: 1865, name: 'Varnish', count: 500, price: 100, pricing: freshVarnish }
+                ];
+                return { listings, decisions: listings.map(item => ({ action: 'list', item })) };
+            };
+            const result = await BotMarket.reconcile(LifeState.cachedState(owner), {
+                type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' }
+            });
+            assert(result.changed, 'native publication replaced the stock');
+        } finally { ListingPolicy.evaluate = evaluate; }
+        const after = (await Database.fetchAfkTradeShops(owner))[0];
+        const stem = after.lines.find(line => Number(line.selfId) === 1864);
+        const varnish = after.lines.find(line => Number(line.selfId) === 1865);
+        assert.notStrictEqual(stem.id, before.id, 'the physical line was replaced');
+        assert.strictEqual(stem.count, 999, 'bag top-up joined the kept quote');
+        assert.strictEqual(stem.fills, 1, 'logical continuity retained its exact fill');
+        assert.deepStrictEqual(stem.pricing, before.pricing, 'a kept quote does not reset unconsumed observations');
+        assert.notDeepStrictEqual(stem.pricing, freshStem, 'fresh listing state would have forgotten its counter event');
+        assert.strictEqual(varnish.fills, 0, 'a genuinely new line starts with no fill history');
+        assert.deepStrictEqual(varnish.pricing, freshVarnish);
+        assert.strictEqual(await bag(owner, 1864) + stem.count + await bag(buyer, 1864), 1000);
+        assert.strictEqual(await bag(owner, 1865) + varnish.count, 1000);
+    });
+
+    await check('exact line fill survives tail eviction and retained-price restart', async () => {
+        const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 1000 }]);
+        const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }]);
+        const sale = await AfkTrade.publishBot(owner, { ...(await sellAd(owner, 500)), kind: 'shop' });
+        await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(sale.id), 1864, 1);
+        for (let index = 0; index < 40; index++) await Database.recordMarketTrade({
+            eventKey: `audit-line-tail:${owner}:${index}`, selfId: 1864, unitPrice: 100, quantity: 1,
+            sourceType: 'afk_player_store', channel: 'player_wts', sellerCharacterId: 999,
+            buyerCharacterId: 998, town: 'Giran'
+        });
+        MarketCounters.reset();
+        MarketCounters.load(await Database.fetchRecentBoardDeals());
+        assert(!MarketCounters.itemDeals(1864).sellers.includes(owner), 'bounded tail no longer contains its own fill');
+        const lines = AfkTrade.boardIndex().ownerLines(owner);
+        assert.strictEqual(lines[0].fills, 1);
+        assert.strictEqual(lines[0].pricing.seenFills, 0);
+        const ctx = { characterId: owner, understanding: 0.5, timestamp: Date.now(), knowledgeEnabled: false,
+            marketTrades: {}, trader: {}, hour: 1000, adena: 1000, board: AfkTrade.boardIndex(), npcOffersFor: () => [] };
+        const observations = PriceBelief.lineObservations(lines[0], PriceBelief.prior(1864, ctx), ctx);
+        assert.strictEqual(observations[0][1], 1, 'exact own fill remains positive evidence without a price tail');
+        const choose = PriceDecision.chooseAsk;
+        let proposal;
+        try {
+            PriceDecision.chooseAsk = (_belief, _market, _trader, _key, current) => ({ price: current, npc: false });
+            proposal = MarketPricing.look({ stats: {}, activity: 'resting' }, lines, ctx);
+        } finally { PriceDecision.chooseAsk = choose; }
+        assert.strictEqual(proposal.updates.length, 1, 'retained price checkpoints its new evidence');
+        assert.strictEqual(proposal.reprices.length, 0);
+        const result = await BotMarket.applyReview(owner, proposal);
+        assert.strictEqual(result.updated, 1);
+        const after = (await Database.fetchAfkTradeShops(owner))[0];
+        assert.strictEqual(after.lines[0].pricing.seenFills, 1);
+        assert.strictEqual(after.lines[0].price, 100);
+        assert.strictEqual(after.lines[0].count, 499);
+        assert.strictEqual((await BotMarket.applyReview(owner, proposal)).updated, 0, 'same observation patch applies once');
+        const savedStats = JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [owner]]))[0].statsJson);
+        assert(!Object.hasOwn(savedStats, 'priceBeliefs'));
+        AfkTrade._resetForTests();
+        await Database.close();
+        Database.init();
+        await LifeState.init();
+        await AfkTrade.init();
+        const restored = AfkTrade.boardIndex().ownerLines(owner);
+        assert.strictEqual(restored[0].fills, 1);
+        assert.deepStrictEqual(restored[0].pricing, after.lines[0].pricing);
+        assert.strictEqual(MarketPricing.look({ stats: {}, activity: 'resting' }, restored,
+            { ...ctx, board: AfkTrade.boardIndex(), timestamp: Date.now() }), null, 'restart does not learn consumed evidence again');
+        assert.strictEqual(await bag(buyer, 1864), 1);
+        console.log(JSON.stringify({ case: 'line restart evidence', fills: restored[0].fills,
+            seenFills: restored[0].pricing.seenFills, linePrice: restored[0].price, remaining: restored[0].count }));
     });
 
     // The successful retry remains paid after reopening; no duplicate money.

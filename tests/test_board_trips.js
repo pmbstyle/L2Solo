@@ -216,26 +216,17 @@ Config.coldHonestTravel = false;
     AfkTrade._resetForTests();
 }
 
-// 8. One system for sell lines and buy ads (group E follow-up): the buy
-// ad's bid is kept in the bot's beliefs, and its own look learns from its
-// fills (sellers accept the bid: the price is no higher) and from the
-// sellers that sold to others (it is higher), then bids again.
+// 8. Sell lines and buy ads share one stateless review. A buy ad keeps its
+// worth and exact fills in the line; fills say the bid is no higher and
+// sellers of the same counter who went elsewhere say it is higher.
 {
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
     const { BoardIndex, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
     const STEM = 1864;
     const me = 997001;
-    const lookAt = (state, board, timestamp, lines) => {
-        const ctx = MarketPricing.traderContext(state, { board, persona: { traits: {}, understanding: 0.5 },
-            npcOffersFor: () => [], timestamp });
-        for (let tick = 0; tick < 50; tick++) {
-            const looked = MarketPricing.look(state, lines, { ...ctx, timestamp: timestamp + tick });
-            if (looked) return looked;
-        }
-        return null;
-    };
     const run = (dealsBy) => {
         MarketCounters.reset();
         const t0 = 1800000000000;
@@ -243,23 +234,43 @@ Config.coldHonestTravel = false;
         const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
         const state = { characterId: me, level: 30, adena: 50000, activity: 'resting', loc: { ...SPOT }, inventory: {}, stats: {} };
         const ctx = MarketPricing.traderContext(state, { board, persona: { traits: {}, understanding: 0.5 }, npcOffersFor: () => [],
-            timestamp: t0 + 100 });
-        const book = PriceBelief.readBook({});
-        const chosen = MarketPricing.bid(book, STEM, ctx, { units: 20, worth: 400, cap: 400, rollKey: ['b'] });
+            timestamp: t0 + 100, knowledgeEnabled: false });
+        const chosen = MarketPricing.bid(STEM, ctx, { units: 20, worth: 400, cap: 400, rollKey: ['b'] });
         assert(chosen, 'a bid');
-        assert.strictEqual(book.beliefs.get(STEM).worth, 400, 'the bid is kept with its worth');
-        const before = book.beliefs.get(STEM).mu;
+        assert.strictEqual(chosen.pricing.worth, 400, 'the line carries the authored worth');
         board.put({ id: 1, kind: 'buy_ad', storeType: BUY, ownerId: me, town: 'Giran', botOwned: true,
-            lines: [{ lineId: 10, selfId: STEM, count: 20, price: chosen.price }] });
+            revision: 1, lines: [{ lineId: 10, selfId: STEM, count: dealsBy === me ? 8 : 20,
+                price: chosen.price, fills: dealsBy === me ? 6 : 0, pricing: chosen.pricing }] });
         for (let deal = 0; deal < 6; deal++) MarketCounters.deal(STEM, chosen.price, 2, t0 + 200 + deal, 9, 'Giran', dealsBy);
-        const looked = lookAt({ ...state, stats: { priceBeliefs: PriceBelief.writeBook(book) } }, board, t0 + 4000000,
-            board.ownerLines(me));
-        assert(looked, 'it looked');
-        return { before, after: looked.book.beliefs.get(STEM).mu };
+        const reviewCtx = { ...ctx, timestamp: t0 + 4000000 };
+        const publicPrior = PriceBelief.prior(STEM, reviewCtx);
+        const before = publicPrior.mu;
+        const observations = PriceBelief.lineObservations(board.ownerLines(me)[0], publicPrior, reviewCtx);
+        assert.strictEqual(observations.length, 1);
+        assert.strictEqual(observations[0][1], 6, 'six transactions supply six observations despite twelve units');
+        const direction = dealsBy === me ? -1 : 1;
+        assert(Math.abs(observations[0][0] - (Math.log(chosen.price) + direction * 0.5 * PriceBelief.sigma(publicPrior))) < 1e-12,
+            'BUY own fills observe below the bid, passed sellers observe above it');
+        const chooseBid = PriceDecision.chooseBid;
+        let after;
+        let looked;
+        try {
+            PriceDecision.chooseBid = (belief, market, trader, options, ...rest) => {
+                after = belief.mu;
+                assert.strictEqual(options.worth, 400, 'review retains worth despite its public prior moving');
+                return chooseBid(belief, market, trader, options, ...rest);
+            };
+            looked = MarketPricing.look(state, board.ownerLines(me), reviewCtx);
+        } finally { PriceDecision.chooseBid = chooseBid; }
+        assert(looked, 'a counter event reviewed the line');
+        assert(Number.isFinite(after), 'shared bid decision received the observed prior');
+        return { before, after, price: chosen.price };
     };
     const filled = run(me);
     assert(filled.after < filled.before, `its fills say the price is no higher (${filled.before} -> ${filled.after})`);
     const passed = run(5);
+    assert.strictEqual(passed.before, filled.before, 'the mirror comparison starts from the same fresh public prior');
+    assert.strictEqual(passed.price, filled.price, 'the mirror comparison uses the same standing bid');
     assert(passed.after > filled.after, 'sellers selling to others say it is higher');
     MarketCounters.reset();
 }
