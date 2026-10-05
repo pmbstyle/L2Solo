@@ -86,16 +86,31 @@ async function run() {
     assert.deepStrictEqual(sold, [ANIMAL_BONE],
         'a hot sale to an AFK buy order must skip reserved craft materials and pet-locked items');
 
-    // The buyer search of a shopping or companion bot weighs the same items.
-    const asked = [];
-    MarketOpportunity.findBuyOffers = (selfId) => {
-        asked.push(selfId);
-        return [{ sourceType: 'afk_bot_buy_store', price: 100, count: 50, selfId,
-            projection: { actor: { fetchId: () => 940001 } } }];
+    // The bot sells what its decision chose for the record, no more.
+    const limited = [];
+    AfkTrade.sellToShop = async (_sellerId, _store, selfId, qty) => {
+        limited.push([selfId, qty]);
+        return { totalPrice: qty * 100 };
     };
-    const best = TradeService.findAfkBuyerForActor(bot, { name: 'Gludio' }, state);
-    assert.deepStrictEqual(asked, [ANIMAL_BONE], 'the AFK buyer search must weigh only sellable items');
-    assert.strictEqual(best.score, 20 * 100);
+    await ShoppingState.sellAndRestock({ shoppingTarget: { actorId: 940001, sale: { [ANIMAL_BONE]: 5 } }, coldLifeState: state },
+        bot, null, { say() {} });
+    assert.deepStrictEqual(limited, [[ANIMAL_BONE, 5]], 'the decided units only');
+
+    // The buyer search of a shopping or companion bot weighs the same items,
+    // by the cold bots' sale decision: buy ads in Gludio for all three, the
+    // reserved varnish and the pet-locked stems paying the most.
+    [[VARNISH, 10000], [STEM, 10000], [ANIMAL_BONE, 3000]].forEach(([selfId, price], index) => AfkTrade.refreshRecord({
+        id: 941001 + index, ownerId: 941000 + index, ownerName: 'Buyer', ownerAccount: `bot_${941000 + index}`, kind: 'buy_ad',
+        storeType: AfkTrade.BUY, status: 'active', town: 'Gludio', title: '', revision: 1, expiresAt: 0,
+        locX: 1, locY: 2, locZ: 3, appearance: {},
+        lines: [{ id: 9410010 + index, selfId, name: `Item ${selfId}`, count: 50, price, enchant: 0 }] }));
+    try {
+        const best = TradeService.findAfkBuyerForActor(bot, { name: 'Gludio' }, state);
+        assert.deepStrictEqual(best?.sale, { [ANIMAL_BONE]: 20 }, 'the AFK buyer search must weigh only sellable items');
+        assert.strictEqual(best.score, 20 * 3000);
+    } finally {
+        AfkTrade._resetForTests();
+    }
 
 }
 

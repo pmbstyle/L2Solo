@@ -217,7 +217,8 @@ function companionTownErrand(session, bot, player, BotAI) {
     if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
         return {
             kind: 'sell_resources',
-            target: invoke('GameServer/Bot/Economy/MarketOpportunity').offerTarget(afkBuyer.offer, town.name)
+            target: { ...invoke('GameServer/Bot/Economy/MarketOpportunity').offerTarget(afkBuyer.offer, town.name),
+                sale: afkBuyer.sale }
         };
     }
     if (buyer) {

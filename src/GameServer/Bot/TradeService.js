@@ -227,24 +227,36 @@ function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelf
     });
 }
 
-// The board's buy record in this town that pays most for the actor's
-// sellable items, as { offer, score }, or null: a buy shop, whose stall the
-// hot bot walks to, or a buy ad, answered by record at its place (D6, E45:
-// the seller in the ad's town sells into it; MarketOpportunity.offerTarget).
+// The board's buy record in this town a hot bot sells into, as { offer,
+// score, sale }, or null: the buy ads it chose to answer by the cold bots'
+// one sale decision (MarketListingPolicy.evaluate, MarketPricing.disposition:
+// an ad against the NPC, the board and keeping the item), over the items it
+// may sell (its reservations kept); of those in this town, the record that
+// pays most. sale: selfId -> the units decided for that record. A buy shop's
+// stall is walked to; a buy ad is answered by record at its place (D6, E45).
 function findAfkBuyerForActor(actor, town, state = null) {
-    const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+    const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const items = sellableActorItems(actor, state);
+    if (!items.length) return null;
+    const seller = ListingPolicy.actorState({ actor, coldLifeState: state });
+    seller.inventory = { ...LifeState.inventorySummaryFromItems(items),
+        ...(seller.inventory['57'] ? { 57: seller.inventory['57'] } : {}) };
+    const records = new Map();
+    for (const answer of ListingPolicy.evaluate(seller, { unlimited: true }).answers) {
+        if (answer.line.town !== town?.name) continue;
+        const record = records.get(answer.line.recordId) || { line: answer.line, score: 0, sale: {} };
+        record.score += answer.line.price * answer.count;
+        record.sale[answer.line.selfId] = (record.sale[answer.line.selfId] || 0) + answer.count;
+        records.set(answer.line.recordId, record);
+    }
     let best = null;
-    sellableActorItems(actor, state).forEach((item) => {
-        const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
-            town: town?.name,
-            sellerCharacterId: actor.fetchId()
-        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
-        if (!offer) return;
-        const qty = Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0));
-        if (qty <= 0) return;
-        const score = qty * Number(offer.price || 0);
-        if (!best || score > best.score) best = { offer, score };
-    });
+    for (const record of records.values()) {
+        if (best && record.score <= best.score) continue;
+        const offer = AfkTrade.offerOf(record.line, town.name);
+        if (offer) best = { offer, score: record.score, sale: record.sale };
+    }
     return best;
 }
 

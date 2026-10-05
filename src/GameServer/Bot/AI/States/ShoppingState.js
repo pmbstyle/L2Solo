@@ -38,9 +38,12 @@ function findStoreSession(actorId) {
         || null;
 }
 
-async function sellInventoryToAfk(bot, store, coldState = null) {
+// sale: selfId -> units, what the bot decided to sell into this record
+// (TradeService.findAfkBuyerForActor); without it, every line it can fill.
+async function sellInventoryToAfk(bot, store, coldState = null, sale = null) {
     const sold = [];
     let state = coldState;
+    const left = sale ? new Map(Object.entries(sale).map(([selfId, units]) => [Number(selfId), Number(units)])) : null;
     const candidates = TradeService.sellableActorItems(bot, coldState).map((item) => ({
         objectId: Number(item.fetchId?.()),
         selfId: Number(item.fetchSelfId?.()),
@@ -50,7 +53,9 @@ async function sellInventoryToAfk(bot, store, coldState = null) {
         const currentStore = invoke('GameServer/AfkTrade/AfkTradeService').recordStore(store?.shopId) || store;
         const line = currentStore.items?.find((entry) => Number(entry.selfId) === item.selfId && Number(entry.count) > 0);
         if (!line) continue;
-        const qty = Math.min(item.amount, Number(line.count));
+        const qty = Math.min(item.amount, Number(line.count), left ? Number(left.get(item.selfId) || 0) : Infinity);
+        if (qty <= 0) continue;
+        if (left) left.set(item.selfId, left.get(item.selfId) - qty);
         const result = await invoke('GameServer/AfkTrade/AfkTradeService').sellToShop(
             bot.fetchId(), currentStore, item.selfId, qty,
             { objectId: item.objectId, expectedPrice: line.price, coldState: state }
@@ -308,7 +313,7 @@ module.exports = {
             const afkBuyer = TradeService.findAfkBuyerForActor(bot, closestTown, session.coldLifeState);
 
             if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
-                session.shoppingTarget = MarketOpportunity.offerTarget(afkBuyer.offer, closestTown.name);
+                session.shoppingTarget = { ...MarketOpportunity.offerTarget(afkBuyer.offer, closestTown.name), sale: afkBuyer.sale };
                 TownChatter.say(session, BotAI, 'buyer-selected', Speech.lines('town.buyer-selected', { merchant: session.shoppingTarget.name, town: session.shoppingTarget.town }));
             } else if (buyer) {
                 session.shoppingTarget = {
@@ -675,7 +680,7 @@ module.exports = {
             if (store && store.storeType === 3) {
                 try {
                     const result = store.afkTrade === true
-                        ? await sellInventoryToAfk(bot, store, session.coldLifeState)
+                        ? await sellInventoryToAfk(bot, store, session.coldLifeState, session.shoppingTarget.sale || null)
                         : await TradeService.sellInventoryToStore(bot, store, {
                         buyerActor: buyer,
                         state: session.coldLifeState
