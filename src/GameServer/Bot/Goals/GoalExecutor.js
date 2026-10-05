@@ -1,6 +1,5 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
-const Karma = invoke('GameServer/Karma');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
@@ -21,8 +20,9 @@ function marketTown(name = 'Giran') {
         || null;
 }
 
+// A bot with karma travels only to Floran: ColdTrip.townPlan refuses the
+// other towns.
 function beginMarketTravel(state, goal, timestamp = Date.now()) {
-    if (Karma.closesTowns(state?.stats?.karma)) return null;
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     if (BotErrands.busyWith(state, MARKET_TRIP_BUSY_FLAGS)) return null;
     const buyingGear = goal.type === 'upgrade_gear'

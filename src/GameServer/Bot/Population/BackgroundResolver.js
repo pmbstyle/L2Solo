@@ -1594,7 +1594,8 @@ const BackgroundResolver = {
         }
 
         if (state.activity === 'traveling' && Karma.closesTowns(state.stats?.karma)
-            && !['hunting', 'grouped'].includes(state.stats?.travel?.arrivalActivity)) {
+            && !['hunting', 'grouped'].includes(state.stats?.travel?.arrivalActivity)
+            && state.stats?.travel?.townName !== Karma.TOWN_NAME) {
             return { patch: { activity: 'hunting', stats: { ...state.stats, travel: null } },
                 events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 nextResolveAt: timestamp + 1000, debug: { reason: 'karma_blocks_town' } };

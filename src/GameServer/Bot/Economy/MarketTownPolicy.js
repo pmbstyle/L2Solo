@@ -5,6 +5,7 @@ const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreSer
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const OfferOrder = require('./OfferOrder');
+const Karma = require('../../Karma');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 
@@ -48,6 +49,8 @@ function dGradeMarketFor(state = {}) {
 }
 
 function targetTownForItems(state, items = []) {
+    // A bot with karma trades in Floran (design 5.8, E48).
+    if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
     const ranks = items.map(rankOf);
     const hasHigherGrade = ranks.some((rank) => ['c', 'b', 'a', 's'].includes(rank));
     const hasDGrade = ranks.includes('d');

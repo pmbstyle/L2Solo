@@ -64,10 +64,16 @@ function begin(state, travel, timestamp, durationMs, extraStats = {}) {
 // How a bot reaches the town at `to`: it starts in the town a Scroll of Escape
 // lands in (TravelRoutes.landingTown); in it already, it walks to the
 // gatekeeper; otherwise it reads a scroll, or walks there without one. Then
-// the gatekeeper route to the destination town. Null without a route.
+// the gatekeeper route to the destination town. Null without a route. A bot
+// with karma enters no town but Floran, on foot (design 5.6-5.8, E48).
 function townPlan(state, to) {
     const from = state.loc || {};
-    const { start, gate, route } = TravelRoutes.between(from, to);
+    const { start, destination, gate, route } = TravelRoutes.between(from, to);
+    if (Karma.closesTowns(state.stats?.karma)) {
+        if (destination?.name !== Karma.TOWN_NAME) return null;
+        return { route: { fee: 0, hops: 0 }, scroll: false, method: 'walk',
+            durationMs: honest() ? runMs(from, to) : authorWalkMs(from, to) };
+    }
     if (!route) return null;
     const inStart = distance(from, start) <= TOWN_RADIUS;
     const scroll = !inStart && TripPayment.hasColdScroll(state);

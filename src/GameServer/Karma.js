@@ -27,4 +27,11 @@ function closesTowns(karma) {
     return Number(karma) > 0;
 }
 
-module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, pkKillKarma, karmaLostForExperience, closesTowns };
+// Floran is the town where a PK trades without a fight (design 5.8): for a
+// character with karma "the town" of a trip, a shop or an ad is Floran.
+const TOWN_NAME = 'Floran Village';
+function townFor(karma, town) {
+    return closesTowns(karma) ? TOWN_NAME : town;
+}
+
+module.exports = { MIN_KARMA, MAX_KARMA, XP_DIVIDER, TOWN_NAME, pkKillKarma, karmaLostForExperience, closesTowns, townFor };
