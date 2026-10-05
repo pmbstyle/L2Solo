@@ -210,16 +210,25 @@ async function run() {
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(completedGoal.reason, 'no_purchase_goal', 'a completed market goal must not buy its item again during a batch visit');
-    const otherTownGoal = await ColdMarketService.tryPurchase(state, {
+    // Town trips are paid (N2, user 2026-10-04): the bot shopping in Giran walks
+    // to the Giran gatekeeper and pays the hop to the requested town.
+    const fundedInGiran = { ...state, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
+    const otherTownGoal = await ColdMarketService.tryPurchase(fundedInGiran, {
         ...goal,
         status: 'active',
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Dion' }
     });
     assert.strictEqual(otherTownGoal.reason, 'market_destination_corrected', 'a stale journey must continue to the requested town');
     assert.strictEqual(otherTownGoal.state.stats.travel.townName, 'Dion');
+    assert.strictEqual(otherTownGoal.state.adena, 100000 - 8100, 'the corrected journey pays the Giran to Dion gatekeeper');
+    const shortOfFee = await ColdMarketService.tryPurchase({ ...fundedInGiran, adena: 1000, inventory: state.inventory }, {
+        ...goal, status: 'active', plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Dion' }
+    });
+    assert.strictEqual(shortOfFee.reason, 'different_market_town', 'a buyer short of the gatekeeper fee stays (N2)');
     const returnPoint = { loc: { locX: 100, locY: 200, locZ: 0 }, regionName: 'Field' };
     const corrected = await ColdMarketService.tryPurchase({
-        ...state, stats: { ...state.stats, marketReturn: returnPoint }
+        ...fundedInGiran, stats: { ...state.stats, marketReturn: returnPoint }
     }, { ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Goddard' } });
     assert.strictEqual(corrected.state.stats.travel.townName, 'Goddard');
     assert.deepStrictEqual(corrected.state.stats.marketReturn, returnPoint,
