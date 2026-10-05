@@ -145,7 +145,7 @@ for (const [spotId, seed, team, expected] of PARTY) {
 // Fights per party resolve follow the solo window rule: a solo bot fights at
 // most once per 12-second window, and a party over the same elapsed time gets
 // at least as many fights (here exactly one per window, at density 3 and
-// cohesion 1), however long the time between resolves. Every won fight rolls
+// cohesion 1), within one resolve interval. Every won fight rolls
 // its drop: the drop roll is replaced by one fixed item per kill, so each win
 // must bring exactly one item to some member.
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
@@ -155,7 +155,7 @@ BackgroundDropResolver.rollRewardsForFight = () => ({
     items: [{ selfId: 1867, amount: 1 }]
 });
 try {
-    for (const elapsedMs of [60000, 120000, 180000]) {
+    for (const elapsedMs of [60000, 120000]) {
         const windows = Math.floor(elapsedMs / 12000);
         let soloWins = 0;
         for (let window = 0; window < windows; window++) {
@@ -187,5 +187,19 @@ try {
 } finally {
     BackgroundDropResolver.rollRewardsForFight = rollRewardsForFight;
 }
+
+// The windows of one party resolve are counted from at most the longest
+// resolve interval (135 s, 11 windows): a party does not catch up on a long
+// gap such as a server stop, as a solo bot does not.
+const gapWins = [135000, 8 * 3600000].map((elapsedMs) => BackgroundPartyResolver.resolve({
+    party: { partyId: 'pin', cohesion: 1, risk: 0, roleCoverage: {} },
+    members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => member(91 + index, classId, level, 'pin_orcs')),
+    spot: orcs,
+    elapsedMs,
+    rng: seeded(21),
+    timestamp: TIMESTAMP
+}).debug.wins);
+assert.strictEqual(gapWins[0], 11, 'party must win one fight per window over 135 s');
+assert.strictEqual(gapWins[1], gapWins[0], 'an 8 h gap must give the same fight count as 135 s');
 
 console.log('test_cold_kill_rewards: ok');

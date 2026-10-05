@@ -11,6 +11,10 @@ const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const ColdRaidEncounter = require('./ColdRaidEncounter');
 
 const RAID_RESOLVE_INTERVAL_MS = 15000;
+// A hunting party resolves again 45-135 s after a fight.
+const PARTY_RESOLVE_MIN_MS = 45000;
+const PARTY_RESOLVE_SPREAD_MS = 90000;
+const PARTY_RESOLVE_MAX_MS = PARTY_RESOLVE_MIN_MS + PARTY_RESOLVE_SPREAD_MS;
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -31,7 +35,9 @@ function memberVitals(state) {
 }
 
 function estimateFightCount({ party, members, spot, elapsedMs }) {
-    const baseWindows = Math.max(1, Math.floor(elapsedMs / 12000));
+    // Windows are counted from at most the longest resolve interval: like a
+    // solo bot, a party does not catch up on a long gap such as a server stop.
+    const baseWindows = Math.max(1, Math.floor(Math.min(elapsedMs, PARTY_RESOLVE_MAX_MS) / 12000));
     const densityFactor = clamp(Number(spot.density || 1) / 3, 0.7, 2.2);
     const cohesionFactor = clamp(Number(party.cohesion || 0.65), 0.35, 1.15);
 
@@ -465,7 +471,7 @@ const BackgroundPartyResolver = {
                     // combat. Keep an active boss on that cadence so a remote
                     // raid does not spend most of its lifetime sleeping
                     // between otherwise continuous combat rounds.
-                    nextResolveAt: timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : 45000 + Math.round(rng() * 90000)),
+                    nextResolveAt: timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : PARTY_RESOLVE_MIN_MS + Math.round(rng() * PARTY_RESOLVE_SPREAD_MS)),
                     debug: {
                         partyId: party.partyId,
                         fights,
@@ -646,7 +652,7 @@ const BackgroundPartyResolver = {
             },
             nextResolveAt: raidFailed || raidDefeated
                 ? null
-                : partyRestUntil || timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : 45000 + Math.round(rng() * 90000)),
+                : partyRestUntil || timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : PARTY_RESOLVE_MIN_MS + Math.round(rng() * PARTY_RESOLVE_SPREAD_MS)),
             debug: {
                 fights,
                 attemptedFights,
