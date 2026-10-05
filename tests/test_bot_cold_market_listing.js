@@ -163,10 +163,13 @@ async function run() {
         [1, 1864],
         'low-grade starter gear and materials must remain eligible for cleanup after level ten'
     );
+    // No market for it (no deal, no buyer): its best outcome is the NPC now
+    // (group E: one expected-value decision, one roll).
     assert.strictEqual(
-        MarketListingPolicy.classify(starterMobLootState, starterMobLootCandidates.find((item) => item.selfId === 1)).action,
+        MarketListingPolicy.evaluate(starterMobLootState, { now: 1000, persona: null }).decisions
+            .find((decision) => decision.item.selfId === 1).action,
         'npc',
-        'low-grade starter gear must be routed to the NPC shop rather than retained or warehoused'
+        'low-grade gear nobody buys goes to the NPC shop rather than retained or warehoused'
     );
     assert.deepStrictEqual(
         ItemDisposition.npcLiquidationCandidates(starterMobLootState).map((item) => item.selfId).sort((a, b) => a - b),

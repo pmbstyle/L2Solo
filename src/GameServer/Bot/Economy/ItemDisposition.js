@@ -51,10 +51,11 @@ function priceFor(state, item, template) {
     if (String(template?.template?.kind || '') === 'Other.Shot'
         && Number(crafted?.productId) === Number(item.selfId)
         && Number(crafted?.unitPrice || 0) > 0) return Number(crafted.unitPrice);
+    // A nominal value of the bag's item (sorting, lot sizes, summaries); a
+    // board line's ask is the bot's belief (MarketListingPolicy.evaluate).
     const seed = (Number(state.characterId || 0) * 31) + (Number(item.selfId || 0) * 17);
     const percent = 70 + (Math.abs(seed) % 21);
-    const adjustment = Math.max(50, Math.min(100, Number(state?.stats?.marketPricing?.[Number(item.selfId)]?.percent || 100)));
-    return BotMarketPricing.priceAt({ ...item, basePrice, enchant: saleEnchant(item) }, percent * adjustment / 10000);
+    return BotMarketPricing.priceAt({ ...item, basePrice, enchant: saleEnchant(item) }, percent / 100);
 }
 
 function saleEnchant(item) {
@@ -484,11 +485,9 @@ function saleCandidates(state, options = {}) {
             basePrice: base
         }];
     }).sort((a, b) => {
-        const recipePriority = options.recipeFirst
-            ? Number(isMarketRecipeItem(b)) - Number(isMarketRecipeItem(a)) : 0;
         const craftedShotId = Number(state?.stats?.shotCraft?.productId || 0);
         const craftedPriority = Number(b.selfId === craftedShotId) - Number(a.selfId === craftedShotId);
-        return craftedPriority || recipePriority || b.price - a.price || a.selfId - b.selfId;
+        return craftedPriority || b.price - a.price || a.selfId - b.selfId;
     }).slice(0, limit);
 }
 
@@ -502,7 +501,6 @@ function npcLiquidationCandidates(state, options = {}) {
         unlimited: true,
         allowPreTradeCleanup: options.allowPreTradeCleanup === true
     }).filter((item) => {
-        if (isMarketRecipeItem(item)) return false;
         if (isClanProgressionItem(item)) return false;
         const gear = String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
         const lowGradeGear = gear && gradeIndex(item.rank) < gradeIndex('c');

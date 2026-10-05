@@ -49,8 +49,4 @@ function priceAt(item, ratio) {
     return Math.max(1, Math.floor(referencePrice(item) * ratio));
 }
 
-function listingFloor(item) {
-    return priceAt(item, 0.60);
-}
-
-module.exports = { npcPrice, referencePrice, priceAt, listingFloor, useNpcOfferSnapshot };
+module.exports = { npcPrice, referencePrice, priceAt, useNpcOfferSnapshot };

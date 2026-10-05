@@ -15,6 +15,7 @@ const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity')
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const Negotiation = invoke('GameServer/Bot/Economy/BotNegotiationService');
 const World = invoke('GameServer/World/World');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-afk-market-state.sqlite');
@@ -295,21 +296,31 @@ async function run() {
     });
     assert.strictEqual(amount(await Database.fetchItems(surplusOwnerId), 45), 1,
         'the equipped helmet remains with the bot while its duplicate is for sale');
-    const originalBuyerActivity = Database.fetchMarketBuyerActivity;
+    // Group E: buyers of its kind on the board keep the line worth more than
+    // the NPC; with none at all its best outcome is no board line.
     try {
-        MarketBuyerActivity._resetForTests();
-        Database.fetchMarketBuyerActivity = () => Promise.resolve([{ selfId: 45, buyers: 2 }]);
+        for (let deal = 0; deal < 12; deal++) MarketCounters.deal(45, 23000, 1, Date.now() - (12 - deal) * 5 * 60 * 1000, 999);
         const retained = await BotAfkMarket.reconcile(LifeState.snapshot(surplusOwnerId), null);
         assert.strictEqual(retained.changed, false,
-            'a recent buyer with room in the book should keep a persistent gear listing');
+            'buyers of its kind keep a persistent gear listing at its price');
         assert(AfkTrade.findOwnerProjection(surplusOwnerId));
     } finally {
-        Database.fetchMarketBuyerActivity = originalBuyerActivity;
-        MarketBuyerActivity._resetForTests();
+        MarketCounters.reset();
         BotAfkMarket._resetForTests();
     }
-    const retired = await BotAfkMarket.reconcile(LifeState.snapshot(surplusOwnerId), null);
-    assert.strictEqual(retired.withdrawn, true, 'obsolete gear offer must be withdrawn');
+    // Nobody buys its kind any more: the main review keeps the line; the
+    // bot's own look finds the NPC its best outcome and takes it back.
+    const kept = await BotAfkMarket.reconcile(LifeState.snapshot(surplusOwnerId), null);
+    assert.strictEqual(kept.changed, false, 'the main review does not decide a kept line');
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const board = AfkTrade.boardIndex();
+    const lookCtx = { ...ListingPolicy.traderContext(LifeState.snapshot(surplusOwnerId), {}), timestamp: Date.now() };
+    const look = MarketPricing.look({ ...LifeState.snapshot(surplusOwnerId), activity: 'resting' },
+        board.ownerLines(surplusOwnerId), lookCtx);
+    assert(look, 'a resting bot looks at its lines');
+    assert.deepStrictEqual(look.withdrawals.map((line) => line.selfId), [45], 'nobody buys it: the NPC is its best outcome');
+    const retired = await BotAfkMarket.applyReview(surplusOwnerId, look);
+    assert.strictEqual(retired.changed, 1, 'a gear offer nobody buys is withdrawn');
     assert.strictEqual(AfkTrade.findOwnerProjection(surplusOwnerId), null);
     assert.strictEqual(amount(await Database.fetchItems(surplusOwnerId), 45), 2,
         'withdrawal must return the item from escrow');
@@ -526,34 +537,22 @@ async function run() {
     await AfkTrade.publishBot(recipeSellerId, { storeType: AfkTrade.SELL, title: 'Materials',
         town: 'Giran', locX: 81100, locY: 148000, locZ: -3466,
         appearance: { model: character('RecipeSeller') }, lines: materialRows });
-    const recipeShop = await BotAfkMarket.reconcile(LifeState.snapshot(recipeSellerId), sellGoal);
-    assert.strictEqual(recipeShop.changed, true,
-        'funded recipe demand should refresh a full three-line AFK shop');
-    assert(recipeShop.shop.lines.some((line) => Number(line.selfId) === 3033),
-        'the demanded recipe must take one slot while displaced materials return to inventory');
-    await Database.setItem(recipeSellerId, { selfId: 2511, name: 'Spiritshot: C-grade',
-        amount: 1000, equipped: false, slot: 0 });
-    const shotSeller = await LifeState.syncExternalInventory(recipeSellerId,
-        'test_shots_crafted', LifeState.snapshot(recipeSellerId));
-    await LifeState.upsertState({ ...shotSeller, stats: { ...shotSeller.stats,
-        shotCraft: { productId: 2511, amount: 1000, at: Date.now() }
-    } }, 'shot_seller_ready');
-    const shotBuyer = LifeState.snapshot(recipeBuyerId);
-    await LifeState.upsertState({ ...shotBuyer, stats: { ...shotBuyer.stats,
-        shotDemand: { itemId: 2511, amount: 1000, maxSpend: 1000000, at: Date.now() }
-    } }, 'shot_buyer_ready');
-    const shotShop = await BotAfkMarket.reconcile(LifeState.snapshot(recipeSellerId), sellGoal);
-    assert(shotShop.shop.lines.some((line) => Number(line.selfId) === 2511),
-        'funded crafted shots must take a slot in a full AFK shop');
-    assert(shotShop.shop.lines.some((line) => Number(line.selfId) === 3033),
-        'a shot listing must retain the funded recipe listing');
-    await Database.setItem(recipeSellerId, { selfId: 3032, name: 'Recipe: Spiritshot D',
-        amount: 1, equipped: false, slot: 0 });
-    await LifeState.syncExternalInventory(recipeSellerId,
-        'test_d_recipe_drop', LifeState.snapshot(recipeSellerId));
-    const scarceRecipeShop = await BotAfkMarket.reconcile(LifeState.snapshot(recipeSellerId), sellGoal);
-    assert(scarceRecipeShop.shop.lines.some((line) => Number(line.selfId) === 3032),
-        'a scarce D-grade shot recipe must enter a full shop without an explicit buyer');
+    // Recipes come first no more (group E): items take the shop's lines by
+    // their gain over the NPC. The materials sell at their price on the
+    // board; the recipe nobody trades is worth no line and stays in the bag.
+    try {
+        for (let deal = 0; deal < 30; deal++) {
+            for (const row of materialRows) MarketCounters.deal(row.selfId, 100000, 10, Date.now() - (30 - deal) * 60000, 999);
+        }
+        await BotAfkMarket.reconcile(LifeState.snapshot(recipeSellerId), sellGoal);
+        const shopLines = AfkTrade.findOwnerProjection(recipeSellerId).shop.lines.filter((line) => Number(line.count) > 0);
+        assert(shopLines.length && !shopLines.some((line) => Number(line.selfId) === 3033), 'the recipe takes no line first');
+        assert.strictEqual(amount(await Database.fetchItems(recipeSellerId), 3033), 1, 'the recipe nobody trades stays in the bag');
+        assert(!AfkTrade.ownerRecords(recipeSellerId).some((record) => (record.lines || [])
+            .some((line) => Number(line.selfId) === 3033)), 'nor in a sell ad');
+    } finally {
+        MarketCounters.reset();
+    }
     await AfkTrade._resetForTests();
     BotAfkMarket._resetForTests();
     console.log('Bot AFK market state checks passed');

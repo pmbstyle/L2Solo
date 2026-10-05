@@ -49,25 +49,12 @@ assert.strictEqual(signal.amount, 1000);
 assert.strictEqual(signal.budget, 90000);
 assert.strictEqual(signal.source, 'shots');
 
+// A shot lot and a shot recipe are the market's like any item (group E):
+// no floor to match, no demand count to fill; the expected value decides.
 const shotLot = { selfId: 1463, name: 'Soulshot: D-grade', kind: 'Other.Shot',
     count: 10000, price: 90, basePrice: 10 };
-const shotCompetition = count => new Map([[1463, [{ characterId: 301, count, price: 60 }]]]);
-const remainderDecision = MarketListingPolicy.classify(dwarf, shotLot, {
-    now, states: [buyer], signals: [signal], supplyByItem: shotCompetition(78)
-});
-assert.strictEqual(remainderDecision.action, 'list', 'a tiny floor-priced remainder must not block funded shot demand');
-assert.strictEqual(remainderDecision.listCount, 922, 'list only the demand not covered by existing supply');
-assert.strictEqual(MarketListingPolicy.listingPrice(shotLot, remainderDecision), 60,
-    'match the permitted floor instead of requiring an impossible undercut');
-assert.notStrictEqual(MarketListingPolicy.classify(dwarf, shotLot, {
-    now, states: [buyer], signals: [signal], supplyByItem: shotCompetition(1000)
-}).action, 'list', 'fully supplied demand must still stop additional shot listings');
-assert.notStrictEqual(MarketListingPolicy.classify(dwarf, shotLot, {
-    now, states: [buyer], signals: [{ ...signal, budget: 60 * 78 }], supplyByItem: shotCompetition(78)
-}).action, 'list', 'unfunded demand cannot justify matching the floor');
-assert.strictEqual(MarketListingPolicy.listingPrice(shotLot, { market: remainderDecision.market }), null,
-    'matching the floor requires an active-demand decision');
-
+assert.strictEqual(MarketListingPolicy.classify(dwarf, shotLot).action, 'market');
+assert.strictEqual(MarketListingPolicy.listingPrice, undefined, 'no listing floor');
 const recipeSeller = { characterId: 201, name: 'LootSeller', level: 50, classId: 28,
     adena: 100000, stats: {}, inventory: { '1805': {
         selfId: 1805, name: 'Recipe: Soulshot: C-Grade', amount: 1, kind: 'Other.Recipe'
@@ -76,14 +63,7 @@ const recipeItem = ItemDisposition.saleCandidates(recipeSeller, { unlimited: tru
     .find((item) => item.selfId === 1805);
 assert(recipeItem, 'a non-crafter holding a shot recipe should be able to sell it');
 assert.strictEqual(recipeItem.rank, 'c', 'C-grade shot recipes belong in Giran');
-const recipeBuyer = { characterId: 202, name: 'DwarfBuyer', adena: 10000000,
-    stats: { shotRecipeDemand: { itemId: 1805, amount: 1, maxSpend: 1000000, at: now } } };
-const recipeDemand = MarketDemandIndex.demandSignal(recipeBuyer, 1805, now);
-const recipeDecision = MarketListingPolicy.classify(recipeSeller, recipeItem, {
-    now, states: [recipeBuyer], signals: [recipeDemand], supplyByItem: new Map()
-});
-assert.strictEqual(recipeDecision.action, 'list',
-    'funded shot-recipe demand should turn an owned recipe into an actual listing');
+assert.strictEqual(MarketListingPolicy.classify(recipeSeller, recipeItem).action, 'market');
 
 const index = {
     itemTemplates: new Map(DataCache.items.map((item) => [Number(item.selfId), item])),

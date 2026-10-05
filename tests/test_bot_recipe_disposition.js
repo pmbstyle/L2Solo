@@ -71,9 +71,8 @@ async function run() {
         MarketTownPolicy.dGradeMarketFor(craftState));
     assert.strictEqual(MarketTownPolicy.targetTownForItems(craftState, [{ ...dMarketItem, selfId: 2298,
         rank: 'c' }]), 'Giran');
-    assert.strictEqual(MarketListingPolicy.classify(craftState, dMarketItem, {
-        states: [], signals: [], supplyByItem: new Map()
-    }).action, 'list', 'one scarce D-grade recipe should be offered without existing demand');
+    assert.strictEqual(MarketListingPolicy.classify(craftState, dMarketItem).action, 'market',
+        'a D-grade recipe is a market item like any other: no scarce-recipe listing, no recipe-only rule (group E)');
     assert.strictEqual(
         ItemDisposition.recipeDisposition(craftState, craftState.inventory[2250], []).action,
         'npc',

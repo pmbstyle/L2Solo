@@ -37,15 +37,14 @@ try {
         const item = pricingItem(439);
         assert.strictEqual(goal.target.adena, Pricing.referencePrice(item), `${rate}: gear estimates must use the market reference`);
         assert.strictEqual(goal.plan.priceSource, 'reference');
+        // The bid is the mirror of an ask on the bot's belief (group E): an
+        // estimate prices nothing, the item is worth the belief's centre.
         const bid = BuyStore.bidFor(rich, goal);
-        assert(bid.price >= Listings.listingFloor(item), `${rate}: a funded bid must overlap the seller's permitted range`);
+        assert(bid && bid.price > 0 && bid.price <= rich.adena, `${rate}: a funded buyer bids`);
 
         const npcItem = pricingItem(178);
         const npcPrice = Math.min(...Market.npcOffersAll(178).map((offer) => offer.price));
         assert.strictEqual(Pricing.npcPrice(npcItem), npcPrice);
-        const ask = Listings.listingPrice({ ...npcItem, price: 3394700 }, {});
-        assert(ask < npcPrice, `${rate}: a stale Bone Staff ask must undercut available NPC stock`);
-        assert(ask >= npcItem.basePrice * 0.5, 'private asks must remain above NPC liquidation value');
         const preferred = Disposition.priceFor(rich, npcItem, template(178));
         assert(preferred < npcPrice, 'the initial sale valuation must also account for NPC alternatives');
     }
@@ -61,14 +60,17 @@ try {
         target: { ...goal.target, adena: 379000 },
         plan: { estimatedCost: 379000, marketTown: null }
     };
+    // The saved CorinCloud estimate says nothing of the price: his bid follows
+    // his own belief of the item (its prior: the board, the first price).
     const bid = BuyStore.bidFor(state, legacyGoal);
-    // The shared operating reserve rounds its 10% up (PurchaseFunding), one adena below the old floor.
-    assert.strictEqual(bid.price, 2779692, 'the saved CorinCloud estimate must no longer cap his bid at 379000');
-    assert(bid.price >= Listings.listingFloor(pricingItem(439)));
-    assert(bid.price * bid.count <= state.adena - Math.floor(state.adena * 0.1));
-    assert.strictEqual(BuyStore.bidFor({ ...state, adena: 2000000 }, goal), null,
-        'a buyer below the seller floor must return to earning rather than open an unfillable WTB');
-    assert.strictEqual(BuyStore.bidFor(state, { ...goal, plan: { ...goal.plan, reserve: 1000000 } }), null,
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const belief = PriceBelief.prior(439, { ...Listings.traderContext(state, {}), timestamp: Date.now() });
+    assert(bid.price <= Math.ceil(Math.exp(belief.mu)), 'he bids at most what the item is worth to him');
+    assert(bid.price * bid.count <= state.adena - Math.ceil(state.adena * 0.1), 'the operating reserve stays');
+    const poorer = BuyStore.bidFor({ ...state, adena: 2000000 }, goal);
+    assert(!poorer || poorer.price <= 2000000 - 200000, 'no seller floor: a poorer buyer bids only what it can spend');
+    const reserved = BuyStore.bidFor(state, { ...goal, plan: { ...goal.plan, reserve: 1000000 } });
+    assert(!reserved || reserved.price * reserved.count <= state.adena - 1000000,
         'a purchase plan reserve must not be spent to fund a store');
 
     const quotedState = { ...state, stats: { ...state.stats, equipmentPlan: {
@@ -77,7 +79,7 @@ try {
     const quotedGoal = goalFor(quotedState);
     assert.strictEqual(quotedGoal.target.adena, 2500000, 'a concrete offer must not be multiplied by the rate again');
     assert.strictEqual(quotedGoal.plan.priceSource, 'offer');
-    assert.strictEqual(BuyStore.bidFor(state, quotedGoal).price, 2500000, 'WTB must respect a concrete offer limit');
+    assert(BuyStore.bidFor(state, quotedGoal).price <= 2500000, 'WTB must respect a concrete offer limit');
 
     const originalOffers = AfkTrade.offers;
     // A kill is worth the bot's measured income per kill (its hour value),
@@ -110,8 +112,8 @@ try {
         assert.strictEqual(wanted.target.itemId, 2068, 'a fresh craft plan must notice a cheaper AFK component');
         assert.strictEqual(wanted.plan.marketTown, 'Giran');
         assert.strictEqual(wanted.plan.priceSource, 'offer');
-        assert.strictEqual(BuyStore.bidFor(materialBuyer, wanted).price, ask,
-            'a reviewed AFK ask may exceed the generic material price cap');
+        const materialBid = BuyStore.bidFor(materialBuyer, wanted);
+        assert(materialBid.price > 0 && materialBid.price <= ask, 'a reviewed AFK ask is what the material is worth: the bid stays at or under it');
         // The decided hour value (N0b/G8) replaces the author's level x 25 x rate:
         // a bot that measurably earns a tenth per kill finds the same ask too expensive.
         assert.strictEqual(materialGoal(withIncome({ ...materialBuyer,
@@ -141,7 +143,6 @@ try {
 
     const enchanted = { ...pricingItem(178), enchant: 3 };
     assert.strictEqual(Pricing.npcPrice(enchanted), Infinity, 'ordinary NPC stock must not cap enchanted gear');
-    assert.strictEqual(Listings.listingFloor(enchanted), 2454000);
     const inventoryState = { ...state, stats: {}, inventory: { 178: {
         selfId: 178, amount: 2, equipped: true, equippedCount: 1, enchant: null,
         instances: [{ equipped: true, enchant: 0 }, { equipped: false, enchant: 3 }]
@@ -152,16 +153,11 @@ try {
     assert.strictEqual(Pricing.npcPrice(candidate), Infinity);
     assert(candidate.price > Pricing.npcPrice(pricingItem(178)));
 
-    // Rechecking a persisted pre-fix ask must classify demand at the corrected
-    // price, otherwise the old overprice still makes its actual buyer invisible.
+    // Gear the NPC also sells is the market's like any other: the NPC price is
+    // one more offer the buyers weigh, not a clamp (group E).
     const npcItem = pricingItem(178);
-    const buyer = { characterId: 2, adena: 900000, stats: {
-        equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 178 } }
-    } };
-    const decision = Listings.classify(state, {
-        ...npcItem, price: 3394700, count: 1, kind: 'Weapon.Blunt', rank: 'd'
-    }, { states: [buyer], now: 1000 });
-    assert.strictEqual(decision.action, 'list', 'NPC-aware repricing must make funded demand visible for old stores');
+    const decision = Listings.classify(state, { ...npcItem, price: 3394700, count: 1, kind: 'Weapon.Blunt', rank: 'd' });
+    assert.strictEqual(decision.action, 'market');
 
     DataCache.npcSpawns = [];
     assert.strictEqual(Pricing.npcPrice(npcItem), Infinity, 'unspawned catalog shops are not available alternatives');

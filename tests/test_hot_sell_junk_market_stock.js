@@ -85,6 +85,17 @@ const originals = {
 };
 
 async function run() {
+    // A world with a market (group E): materials and D recipes trade on the
+    // board, so the bot keeps them for it; with no buyer of its kind at all
+    // an item's best outcome would be the NPC.
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    MarketCounters.reset();
+    for (let deal = 0; deal < 40; deal++) {
+        const at = Date.now() - (40 - deal) * 60000;
+        MarketCounters.deal(ANIMAL_BONE, 2000, 5, at, 1);
+        MarketCounters.deal(D_RECIPE, 60000, 1, at, 1);
+        MarketCounters.deal(ENCHANT_ARMOR_D, 150000, 1, at, 1);
+    }
     Database.deleteItem = () => Promise.resolve();
     Database.updateItemAmount = () => Promise.resolve();
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);

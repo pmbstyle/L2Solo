@@ -9,12 +9,9 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
-const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
-const DEFAULT_LISTING_MS = 20 * 60 * 1000;
-const SPECULATIVE_LISTING_MS = 5 * 60 * 1000;
 const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
 
 function marketTown(name) {
@@ -97,7 +94,7 @@ function open(state, options = {}) {
         if (!options.forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
         // Cleanup may bypass the travel delay, but must not open another WTS.
         // Learn recipes first, as the sale path does: a learnable one is not junk.
-        return MarketBuyerActivity.refresh().then(() => LifeState.learnCraftableRecipes(state))
+        return LifeState.learnCraftableRecipes(state)
             .then((learnedState) => preTradeNpcCleanup(learnedState || state, options.forcedCleanup, timestamp)).then((cleanup) => (
             BotWarehouse.depositCold({
                 ...cleanup.state,
@@ -112,9 +109,12 @@ function open(state, options = {}) {
             marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
         }
     });
-    return MarketBuyerActivity.refresh().then(() => ColdSafeEnchantService.enchantSafe(state, options))
+    return ColdSafeEnchantService.enchantSafe(state, options)
         .then((enchantResult) => LifeState.learnCraftableRecipes(enchantResult.state || state))
-        .then((preparedState) => {
+        .then((preparedState) => storedAmounts(preparedState || state).then((stored) => ({ preparedState, stored })))
+        .then(({ preparedState, stored }) => {
+    // The warehouse room of each item, and one decision point for the visit.
+    options = { ...options, stored, now: timestamp };
     state = preparedState || state;
     const forcedCleanup = options.forcedCleanup || null;
     if (forcedCleanup && !ItemDisposition.isTradeEligible(state)) {
@@ -173,9 +173,12 @@ function open(state, options = {}) {
                 market
             }));
         }
-        MarketTelemetry.listingOpened({ speculative: items.every((item) => item.marketReason === 'speculative_demand') });
+        MarketTelemetry.listingOpened({ speculative: false });
         return BotWarehouse.depositCold(boardState).then((warehouse) => {
-            const stored = deferSellRetry(warehouse.state || boardState);
+            const deposited = warehouse.state || boardState;
+            // The bot keeps its beliefs of what it listed (group E).
+            const stored = deferSellRetry(board.priceBeliefs
+                ? { ...deposited, stats: { ...(deposited.stats || {}), priceBeliefs: board.priceBeliefs } } : deposited);
             const returning = GoalExecutor.finishMarketVisit(stored, timestamp, { recoverMissingReturn: true }) || stored;
             return LifeState.upsertState(returning, 'cold_market_board_listing').then((saved) => ({
                 state: saved || returning,
@@ -210,31 +213,20 @@ function resolve(state, timestamp = Date.now()) {
     });
 }
 
-function pricingAfterReview(state, store, timestamp, expired = false) {
-    const pricing = { ...(state.stats?.marketPricing || {}) };
-    for (const item of store.items || []) {
-        if (Number(item.count || 0) <= 0) continue;
-        const speculativeFailed = item.marketReason === 'speculative_demand'
-            && (expired || Number(item.marketExpiresAt || store.expiresAt || Infinity) <= timestamp);
-        if (!expired && !speculativeFailed) continue;
-        const previous = pricing[item.selfId] || {};
-        pricing[item.selfId] = {
-            ...previous,
-            percent: Math.max(50, Number(previous.percent || 100) - 5),
-            lastAdjustedAt: timestamp,
-            ...(speculativeFailed ? { speculativeFailedAt: timestamp, failedSpeculativePrice: Number(item.price) } : {})
-        };
-    }
-    return pricing;
+// What the bot keeps in its warehouse, by item: its room to keep more.
+function storedAmounts(state) {
+    if (!state?.characterId) return Promise.resolve(new Map());
+    return invoke('Database').fetchWarehouseItems(state.characterId).then((rows) => {
+        const stored = new Map();
+        for (const row of rows || []) stored.set(Number(row.selfId), Number(stored.get(Number(row.selfId)) || 0) + Number(row.amount || 0));
+        return stored;
+    }).catch(() => new Map());
 }
 
 module.exports = {
-    DEFAULT_LISTING_MS,
-    SPECULATIVE_LISTING_MS,
     SELL_RETRY_DELAY_MS,
     marketStoreTitle,
     marketLocation,
-    pricingAfterReview,
     targetMarketTownName,
     townCenter,
     open,

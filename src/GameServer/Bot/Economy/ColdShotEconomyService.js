@@ -10,7 +10,6 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = require('./MarketDemandIndex');
-const MarketListingPolicy = require('./MarketListingPolicy');
 
 const SHOT_RECIPE_IDS = [20, 21, 22, 23, 24, 317, 318, 319, 320, 321,
     323, 324, 325, 326, 327];
@@ -386,10 +385,11 @@ function craftCandidate(state, recipe, index) {
     const competingPrice = Number(index.shotMinPrice?.get(Number(recipe.productId)) || Infinity);
     const preferred = Math.max(1, Math.min(Math.floor(staticPrice * 0.9),
         Number.isFinite(competingPrice) ? Math.floor(competingPrice * 0.98) : Infinity));
-    const salePrice = MarketListingPolicy.listingPrice({ selfId: recipe.productId,
-        price: preferred, basePrice: Number(output.template?.price || 0) },
-    { market: { supply: { minimumPrice: competingPrice } } });
-    if (!salePrice || salePrice >= staticPrice) return null;
+    // What the crafter expects to sell at: under the competition and the
+    // NPC shop, never below one Adena (no listing floor, group E).
+    const npcShot = Number(index.npcPrice.get(Number(recipe.productId)) || Infinity);
+    const salePrice = Math.max(1, Math.min(preferred, Number.isFinite(npcShot) ? Math.floor(npcShot * 0.98) : Infinity));
+    if (salePrice >= staticPrice) return null;
     const demand = Math.max(0, fundedDemand(index, recipe.productId, salePrice, state.characterId)
         - Number(index.shotSupply.get(Number(recipe.productId)) || 0)
         - Number(index.unlistedSupply?.get(Number(recipe.productId)) || 0));

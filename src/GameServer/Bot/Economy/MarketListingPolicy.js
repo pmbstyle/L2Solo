@@ -1,18 +1,17 @@
 const LotPolicy = require('./MarketLotPolicy');
+const BoardRules = require('../../AfkTrade/BoardRules');
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
-const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
-const EMPTY_SUPPLY = new Map();
-const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
-const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
+const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
+const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
-const SPECULATIVE_GEAR_MIN_BASE_PRICE = 10000;
-const SPECULATIVE_SUPPLY_LIMIT = 1;
-const MIN_LISTING_BASE_PERCENT = 60;
 const NPC_SURPLUS_GEAR_MAX_BASE_PRICE = 50000;
 
 let newbieItemSource = null;
@@ -35,24 +34,18 @@ function allowsLowGradeMarket() {
     return ['x1', 'x10'].includes(ProgressionRates.profile().preset);
 }
 
-function listOrWarehouse(item, decision) {
-    const price = listingPrice(item, decision);
-    if (price !== null && LotPolicy.viable({ ...item, count: decision.listCount ?? item.count, price })) return decision;
-    return surplusGearDecision(item, 'non_competitive_floor', decision.market);
-}
-
-function surplusGearDecision(item, reason, market) {
-    // The warehouse does not take recipes and NPC liquidation skips market
-    // recipes: an unlisted one stays in the bag, where a crafter's recipe
-    // request finds its holder.
-    if (ItemDisposition.isMarketRecipeItem(item)) return { action: 'keep', reason, market };
+function surplusGearDecision(item, reason) {
     const ordinary = item.npcComparable !== false && Number(item.enchant || 0) <= 0;
     const common = isGear(item) && ordinary
         && Number(item.basePrice || 0) <= NPC_SURPLUS_GEAR_MAX_BASE_PRICE;
-    return { action: common ? 'npc' : 'warehouse', reason, market };
+    return { action: common ? 'npc' : 'warehouse', reason };
 }
 
-function classify(state, item, options = {}) {
+// The author's hard rules for what never enters the board: an invalid item,
+// a lot too small to list, NPC-only junk, the starter kit, low-grade gear at
+// high rates, cheap C+ gear. Anything else is the market's: { action:
+// 'market' }, priced and placed by the one expected-value decision.
+function classify(state, item) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
@@ -72,163 +65,79 @@ function classify(state, item, options = {}) {
     if (isGear(item) && !lowGradeGear && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
         return surplusGearDecision(item, 'low_value_gear');
     }
-
-    const marketOptions = {
-        ...options,
-        excludeCharacterId: state.characterId
-    };
-    const supply = MarketDemandIndex.supplyFor(item.selfId, marketOptions);
-    const unitPrice = listingPrice(item, { market: { supply } }) ?? listingFloor(item);
-    const market = {
-        supply,
-        demand: MarketDemandIndex.demandFor(item.selfId, { ...marketOptions, unitPrice })
-    };
-    if (isGear(item)) {
-        const buyers = Math.max(0, Number(options.buyerActivity?.get?.(Number(item.selfId))
-            ?? options.buyerActivity?.[Number(item.selfId)]
-            ?? MarketBuyerActivity.count(item.selfId)) || 0);
-        const competitiveUnits = supply.offers.reduce((units, offer) => units + (
-            Number(offer.price || 0) <= Math.ceil(unitPrice * 1.05)
-                ? Math.max(0, Number(offer.count || 0)) : 0
-        ), 0);
-        market.recentBuyers = buyers;
-        market.competitiveUnits = competitiveUnits;
-    }
-    const fundedUnits = Math.max(0, Number(market.demand.fundedUnits || 0));
-    if (ItemDisposition.isMarketRecipeItem(item) && fundedUnits > market.supply.units) {
-        return listOrWarehouse(item, {
-            action: 'list', reason: 'active_demand',
-            listCount: Math.min(Number(item.count), fundedUnits - market.supply.units), market
-        });
-    }
-    if (ItemDisposition.isMarketRecipeItem(item) && market.supply.units < SPECULATIVE_SUPPLY_LIMIT) {
-        return listOrWarehouse(item, {
-            action: 'list', reason: 'scarce_recipe',
-            listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units), market
-        });
-    }
-    if (ItemDisposition.isMarketRecipeItem(item)) return surplusGearDecision(item, 'recipe_supplied', market);
-    if (isGear(item) && fundedUnits <= market.supply.units && market.recentBuyers > 0) {
-        const available = Math.max(0, market.recentBuyers - market.competitiveUnits);
-        if (available > 0) return listOrWarehouse(item, {
-            action: 'list', reason: 'recent_buyer_activity',
-            listCount: Math.min(Number(item.count), available), market
-        });
-        return surplusGearDecision(item, 'market_oversupply', market);
-    }
-    if (LotPolicy.material(item) && fundedUnits <= market.supply.units) {
-        // Keep a small useful shelf for players even before explicit bot demand.
-        // Existing supply is global; every new seller must share this allowance.
-        const recentBuyers = Number(options.buyerActivity?.get?.(Number(item.selfId))
-            ?? MarketBuyerActivity.count(item.selfId)) || 0;
-        const sellerLimit = Math.max(2, Math.min(4, recentBuyers));
-        const units = Math.max(0, 200 - market.supply.units);
-        const count = Math.min(Number(item.count), units);
-        if (market.supply.sellers < sellerLimit && count > 0
-            && LotPolicy.viable({ ...item, count, price: unitPrice })) {
-            return listOrWarehouse(item, { action: 'list', reason: 'material_liquidity', listCount: count, market });
-        }
-        return { action: 'warehouse', reason: 'material_oversupply', market };
-    }
-    if (market.demand.bots <= 0 && Number(market.demand.afkOrders || 0) <= 0) {
-        if (lowGradeGear) return surplusGearDecision(item, 'low_grade_no_funded_demand', market);
-        return surplusGearDecision(item, 'no_demand', market);
-    }
-    const actionableUnits = fundedUnits;
-    if (actionableUnits > 0) {
-        const availableUnits = Math.max(0, actionableUnits - market.supply.units);
-        if (availableUnits <= 0) return surplusGearDecision(item, 'saturated', market);
-        return listOrWarehouse(item, {
-            action: 'list',
-            reason: 'active_demand',
-            listCount: Math.min(Number(item.count), availableUnits),
-            market
-        });
-    }
-
-    if (market.demand.readyBots > 0) {
-        if (lowGradeGear) return surplusGearDecision(item, 'low_grade_no_funded_demand', market);
-        return { action: 'warehouse', reason: 'unfunded_demand', market };
-    }
-    if (lowGradeGear) {
-        return surplusGearDecision(item, 'low_grade_no_funded_demand', market);
-    }
-    const speculative = isGear(item)
-        && Number(item.basePrice || 0) >= SPECULATIVE_GEAR_MIN_BASE_PRICE
-        && market.supply.units < SPECULATIVE_SUPPLY_LIMIT;
-    if (speculative) {
-        const failed = state.stats?.marketPricing?.[Number(item.selfId)];
-        if (Number(failed?.speculativeFailedAt || 0) > 0) {
-            return { action: 'warehouse', reason: 'speculative_already_tried', market };
-        }
-        return listOrWarehouse(item, {
-            action: 'list',
-            reason: 'speculative_demand',
-            listCount: Math.min(Number(item.count), SPECULATIVE_SUPPLY_LIMIT - market.supply.units),
-            market
-        });
-    }
-    if (market.supply.units >= SPECULATIVE_SUPPLY_LIMIT) {
-        return surplusGearDecision(item, 'saturated', market);
-    }
-    return { action: 'warehouse', reason: 'latent_demand', market };
+    return { action: 'market', reason: 'market' };
 }
 
-function listingFloor(item) {
-    const basePrice = Math.max(0, Number(item?.basePrice || 0));
-    if (basePrice <= 0) return 1;
-    return BotMarketPricing.listingFloor(item);
+// What the bot's thread knows for pricing on the main thread: its persona,
+// the board index, the NPC shops and the spots for its trips. options may
+// replace any (tests, offline digests).
+function traderContext(state, options = {}) {
+    return MarketPricing.traderContext(state, {
+        timestamp: Number(options.now) || Date.now(),
+        persona: options.persona ?? invoke('GameServer/Bot/AI/BotPersona').of(state),
+        board: options.board ?? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
+        npcOffersFor: options.npcOffersFor
+            || ((selfId) => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId)),
+        findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId))
+    });
 }
 
-function listingPrice(item, decision) {
-    const preferred = Math.max(1, Math.floor(Number(item.price || 0)));
-    const minimum = listingFloor(item);
-    const competition = Math.min(Number(decision?.market?.supply?.minimumPrice || Infinity), BotMarketPricing.npcPrice(item));
-    if (!Number.isFinite(competition) || competition <= 0) return Math.max(minimum, preferred);
-    const competitivePrice = Math.floor(competition * 0.98);
-    if (minimum > competitivePrice) {
-        // A finite cheap shot remainder cannot satisfy all funded demand.
-        // Let other sellers meet the rest at the floor instead of requiring
-        // an impossible undercut. Unlimited NPC stock remains a hard cap.
-        const market = decision?.market;
-        if (String(item.kind || '').startsWith('Other.Shot')
-            && decision.reason === 'active_demand'
-            && Number(market?.demand?.unitPrice) >= minimum
-            && Number(market?.demand?.fundedUnits) > Number(market?.supply?.units || 0)
-            && minimum < BotMarketPricing.npcPrice(item)) return minimum;
-        return null;
-    }
-    return Math.max(minimum, Math.min(preferred, competitivePrice));
-}
+// Board slots of a bot (user, 2026-10-05): 3 shop lines + 5 sell ads.
+const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 
+// The bot's sale at a market visit or a review (group E): the author's hard
+// rules first; every other item goes by one expected-value decision (the
+// board at its best ask, the NPC buy-back now, or keeping it), one roll; the
+// items for the board compete for its free slots by their gain over the NPC,
+// one weighted roll. A line the bot already has keeps its slot and its price
+// (its own look reprices it or takes it back, MarketReview). options: now
+// (the decision point), slots (board slots), kept (selfId -> price of its
+// lines), stored (selfId -> units in the warehouse), plus traderContext's.
+// Returns { candidates, decisions, listings, npc, warehouse, book } with the
+// bot's beliefs (book) holding what it listed.
 function evaluate(state, options = {}) {
-    const marketCandidates = ItemDisposition.saleCandidates(state, options);
-    const npcCandidates = ItemDisposition.saleCandidates(state, {
-        ...options,
-        onlyNpc: true,
-        unlimited: true
-    });
-    const marketIds = new Set(marketCandidates.map((item) => Number(item.selfId)));
-    const candidates = [
-        ...marketCandidates,
-        ...npcCandidates.filter((item) => !marketIds.has(Number(item.selfId)))
-    ];
-    const states = options.states || LifeState.allStates(5000);
-    const supplyByItem = options.supplyByItem || EMPTY_SUPPLY;
-    const signalsByItem = options.signalsByItem || MarketDemandIndex.indexSignals(states, Number(options.now) || Date.now());
-    const decisions = candidates.map((item) => {
-        const decision = classify(state, item, { ...options, states, supplyByItem,
-            signals: options.signals || signalsByItem.get(Number(item.selfId)) || [] });
-        return {
-            ...decision,
-            item: decision.action === 'list' ? {
-                ...item,
-                count: Math.max(1, Math.min(Number(item.count), Number(decision.listCount || item.count))),
-                price: listingPrice(item, decision),
-                marketReason: decision.reason
-            } : item
-        };
-    });
+    const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true });
+    const ctx = traderContext(state, options);
+    const book = PriceBelief.readBook(state.stats);
+    const decisionPoint = Number(options.now) || ctx.timestamp;
+    const kept = options.kept || new Map();
+    const decisions = [];
+    const forBoard = [];
+    let keptLines = 0;
+    for (const item of candidates) {
+        const hard = classify(state, item);
+        if (hard.action !== 'market') {
+            decisions.push({ ...hard, item });
+            continue;
+        }
+        if (kept.has(Number(item.selfId))) {
+            decisions.push({ action: 'list', reason: 'kept_line', item: { ...item, price: kept.get(Number(item.selfId)),
+                marketReason: 'kept_line' } });
+            keptLines += 1;
+            continue;
+        }
+        const town = MarketTownPolicy.targetTownForItems(state, [item]);
+        const chosen = MarketPricing.disposition(book, item, ctx, {
+            town, room: roomFor(item, options.stored),
+            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
+        });
+        const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action, reason: 'expected_value', item,
+            priced: chosen.priced, gain: chosen.gain };
+        decisions.push(decision);
+        if (decision.action === 'list') forBoard.push(decision);
+    }
+    const slots = Math.max(0, Math.floor(Number(options.slots ?? BOARD_SLOTS)) - keptLines);
+    const chosen = new Set(PriceDecision.chooseSlots(forBoard, slots, `slots:${ctx.characterId}:${decisionPoint}`));
+    for (const decision of forBoard) {
+        if (chosen.has(decision)) {
+            const price = decision.priced.ask.price;
+            decision.item = { ...decision.item, price, marketReason: 'expected_value' };
+            MarketPricing.adopt(book, decision.priced.belief, ctx, price);
+            continue;
+        }
+        decision.action = 'warehouse';
+        decision.reason = 'no_board_slot';
+    }
     return {
         candidates,
         decisions,
@@ -237,8 +146,17 @@ function evaluate(state, options = {}) {
             ...decision.item,
             npcPrice: NpcSellRules.npcBuyPrice(decision.item.basePrice)
         })),
-        warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item)
+        warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item),
+        book
     };
+}
+
+// Room to keep an item: gear keeps two copies in the warehouse
+// (BotWarehouseService), anything else has room.
+function roomFor(item, stored) {
+    if (!isGear(item) || !stored) return 1;
+    const kept = Number(stored.get?.(Number(item.selfId)) ?? stored[Number(item.selfId)] ?? 0);
+    return Math.max(0, Math.min(1, (BotWarehouse.MAX_GEAR_COPIES_PER_TYPE - kept) / Math.max(1, Number(item.count) || 1)));
 }
 
 // A bot in the world seen by the cold rules: its saved life state with the
@@ -271,16 +189,13 @@ function npcSaleForActor(session) {
 }
 
 module.exports = {
+    BOARD_SLOTS,
     MARKET_GEAR_MIN_BASE_PRICE,
-    MIN_LISTING_BASE_PERCENT,
-    SPECULATIVE_GEAR_MIN_BASE_PRICE,
-    SPECULATIVE_SUPPLY_LIMIT,
     allowsLowGradeMarket,
     classify,
     evaluate,
     isGear,
-    listingFloor,
-    listingPrice,
+    traderContext,
     actorState,
     npcSaleForActor,
     starterItemIds

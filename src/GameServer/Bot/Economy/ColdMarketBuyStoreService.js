@@ -1,7 +1,6 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
-const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -23,26 +22,31 @@ function bidFor(state, goal) {
     // `state.adena` already holds the order's escrow (callers add it).
     const reserve = Math.max(Number(goal.plan?.reserve || 0), PurchaseFunding.operatingReserve(state));
     const spendable = Math.max(0, adena - reserve);
-    const pricingItem = { selfId, basePrice };
-    const fairPrice = BotMarketPricing.priceAt(pricingItem, 0.85);
     // Older generic equipment goals stored the unscaled template value as
-    // their budget. Revalue those estimates; keep concrete offer limits.
+    // their budget: like a reference estimate, it says nothing of the price.
     const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource
         && !goal.plan?.marketTown && Number(goal.target.adena) === basePrice
         && Number(goal.plan?.estimatedCost) === basePrice;
     const referenceEstimate = goal.plan?.priceSource === 'reference' || legacyEstimate;
-    const requestedPrice = referenceEstimate ? fairPrice
-        : Math.max(0, Number(goal.target.adena || goal.plan?.estimatedCost || 0));
-    const reviewedMaterialOffer = goal.type === 'buy_craft_material'
-        && goal.plan?.priceSource === 'offer' && requestedPrice > 0
-        && ['afk_bot_store', 'afk_player_store'].includes(goal.plan?.sourceType);
-    const price = Math.floor(Math.min(reviewedMaterialOffer ? requestedPrice : fairPrice,
-        requestedPrice || fairPrice, spendable));
-    if (price < BotMarketPricing.listingFloor(pricingItem)) return null;
-
+    const requestedPrice = referenceEstimate ? 0 : Math.max(0, Number(goal.target.adena || goal.plan?.estimatedCost || 0));
     const requestedCount = goal.type === 'buy_craft_material'
         ? Math.max(1, Math.floor(Number(goal.target.amount) || 1))
         : 1;
+    // The bid (group E): the bot's belief of the item and the mirror of its
+    // ask; the item is worth its plan's price to it, or its own belief's
+    // centre when the plan only estimated; never more than it can spend.
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
+    const book = PriceBelief.readBook(state.stats);
+    const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
+    if (!belief) return null;
+    const worth = requestedPrice > 0 ? requestedPrice : Math.exp(belief.mu);
+    const cap = Math.floor(Math.min(worth, spendable / requestedCount));
+    const chosen = MarketPricing.bid(book, selfId, ctx, { units: requestedCount, worth, cap,
+        rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
+    if (!chosen) return null;
+    const price = Math.floor(chosen.price);
     const count = Math.min(requestedCount, Math.floor(spendable / price));
     if (count <= 0) return null;
     return {

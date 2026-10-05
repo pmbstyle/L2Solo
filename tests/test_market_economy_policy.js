@@ -3,11 +3,10 @@ require('../src/Global');
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
-const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Shots = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 const Policy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const Lot = invoke('GameServer/Bot/Economy/MarketLotPolicy');
-const originalStates = Life.allStates, originalOffers = Afk.offers;
+const originalStates = Life.allStates;
 (async () => {
     assert(!Lot.viable({ selfId: 1865, count: 3, price: 100000000 }), 'inflated prices cannot admit three cheap resources');
     assert(Lot.viable({ selfId: 1804, count: 1, price: 40000 }), 'a single recipe is useful stock');
@@ -15,15 +14,12 @@ const originalStates = Life.allStates, originalOffers = Afk.offers;
         assert(!Lot.viable({ selfId, count: 499, price: 1000000 }), 'shots need a useful batch regardless of price');
         assert(Lot.viable({ selfId, count: 500, price: 60 }), '500 shots is a valid batch');
     }
+    // A viable material lot is the market's: no fixed shelf of 200 units and
+    // no seller limit; each seller's expected value decides (group E).
     const material = { selfId: 1865, kind: 'Other.Material', count: 100, price: 1400, basePrice: 200 };
     const state = { characterId: 1, level: 40, stats: {} };
-    Afk.offers = () => [];
-    const options = { states: [], signals: [], supplyByItem: new Map(), buyerActivity: new Map() };
-    assert.strictEqual(Policy.classify(state, material, options).action, 'list', 'retain bounded resource liquidity before bot demand');
-    options.supplyByItem.set(1865, [{ characterId: 2, count: 100, price: 1400 }, { characterId: 3, count: 100, price: 1400 }]);
-    assert.strictEqual(Policy.classify(state, material, options).action, 'warehouse', 'a third speculative seller must accumulate stock');
-    options.signals = [{ characterId: 4, amount: 1000, budget: 2000000, ready: true }];
-    assert.strictEqual(Policy.classify(state, material, options).action, 'list', 'new funded demand reopens a saturated resource market');
+    assert.strictEqual(Policy.classify(state, material).action, 'market');
+    assert.strictEqual(Policy.classify(state, { ...material, count: 3 }).action, 'warehouse', 'a lot too small to list');
 
     let scans = 0;
     const now = Date.now();
@@ -45,7 +41,7 @@ const originalStates = Life.allStates, originalOffers = Afk.offers;
     assert.strictEqual(scans, 1, 'one cache serves the whole background pass');
     await Shots.marketSnapshot(now + 31000);
     assert.strictEqual(scans, 2);
-    console.log('Market lots, bounded speculative supply, funded production and cooperative cached snapshot passed');
+    console.log('Market lots, material lots for the market, funded production and cooperative cached snapshot passed');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
-    Life.allStates = originalStates; Afk.offers = originalOffers; Shots._resetForTests();
+    Life.allStates = originalStates; Shots._resetForTests();
 });
