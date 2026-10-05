@@ -31,6 +31,18 @@ for (let next = 0; next < 4; next++) {
 assert.deepStrictEqual(taken, [990303, 990301, 990302, 990304], 'equal-price bot asks must keep their listing order');
 AfkTrade._resetForTests();
 
+// Buy records keep the board's order too: the bid, then the record (not the
+// owner's id, a second tie-break the buy side used to have).
+const bid = (ownerId, price) => AfkTrade.refreshRecord({
+    id: ++recordId, ownerId, ownerName: `Buyer${ownerId}`, ownerAccount: `bot_${ownerId}`, kind: 'buy_ad',
+    storeType: 3, status: 'active', town: 'Giran', title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+    lines: [{ id: recordId, selfId: ITEM, name: 'Varnish', count: 5, price }]
+});
+[bid(990402, 50), bid(990401, 50), bid(990403, 60)];
+assert.deepStrictEqual(MarketOpportunity.findBuyOffers(ITEM).map((offer) => offer.sourceId), [990403, 990402, 990401],
+    'the best bid first, equal bids in listing order');
+AfkTrade._resetForTests();
+
 // Hot bots sort live private stores with the same key.
 const World = invoke('GameServer/World/World');
 const originalUser = World.user;

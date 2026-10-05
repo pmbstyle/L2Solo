@@ -217,15 +217,13 @@ function bestOffer(selfId, options = {}) {
     });
 }
 
-// The buy records of the board (escrow held): the budget-backed buy stores
-// whose money stayed in the wallet are gone (E24).
+// The buy records of the board (escrow held), best first in the board's own
+// order (BoardIndex.compareLines: the bid, a player before a bot, the record):
+// the budget-backed buy stores whose money stayed in the wallet are gone (E24).
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
     return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })
-        .filter((offer) => offer.available)
-        .sort((left, right) => right.price - left.price
-            || Number(right.playerPriority === true) - Number(left.playerPriority === true)
-            || left.sourceId - right.sourceId);
+        .filter((offer) => offer.available);
 }
 
 function bestBuyOffer(selfId, options = {}) {
