@@ -546,6 +546,8 @@ const tests = [
     'tests/test_equipment_slots.js',
     'tests/test_fall_damage.js',
     'tests/test_gatekeeper_teleports.js',
+    'tests/test_travel_routes.js',
+    'tests/test_trip_payment.js',
     'tests/test_c4_cruma_tower_teleports.js',
     'tests/test_geodata_bootstrap.js',
     'tests/test_geodata_regions.js',

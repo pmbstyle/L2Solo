@@ -41,7 +41,9 @@ function hunter(flag) {
     return {
         characterId: 7001, name: 'Probe', accountName: 'bot_probe', phase: 'cold', activity: 'hunting',
         level: 40, spotId: 'home', currentRegion: 'Gludio', loc: { locX: 1000, locY: 2000, locZ: -3000 },
-        vitals: { hp: 500, maxHp: 500, mp: 100, maxMp: 100 }, inventory: {}, stats
+        vitals: { hp: 500, maxHp: 500, mp: 100, maxMp: 100 }, stats,
+        // Town trips are paid (N2): a free hunter can afford one.
+        adena: 1000000, inventory: { 57: { selfId: 57, amount: 1000000 }, 736: { selfId: 736, amount: 2 } }
     };
 }
 
@@ -66,7 +68,7 @@ const copies = {
     kernelLifecycle: (state) => lifecycleKind(state) === 'command',
     coldClanHallVisit: (state) => !ColdVisit.eligible(state),
     mammonTrip: (state) => Mammon.beginTravel({
-        ...state, inventory: { 6674: { selfId: 6674, amount: 1 } }
+        ...state, inventory: { ...state.inventory, 6674: { selfId: 6674, amount: 1 } }
     }, now) === null,
     marketTrip: (state) => GoalExecutor.beginMarketTravel(state, sellGoal, now) === null,
     clanPartyRescue: (state) => !ClanPartyRescue.eligible(state, objective),

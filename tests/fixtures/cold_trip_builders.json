@@ -1,10 +1,10 @@
 {
   "market_sell": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 492200,
     "wallet": {
-      "57": 500000,
-      "736": 3
+      "57": 492200,
+      "736": 2
     },
     "timing": {
       "activityStartedAt": 1000000,
@@ -27,6 +27,10 @@
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
       "method": "soe_gatekeeper",
+      "paid": {
+        "scroll": 736,
+        "fee": 7800
+      },
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -45,10 +49,10 @@
   },
   "market_buy": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 491900,
     "wallet": {
-      "57": 500000,
-      "736": 3
+      "57": 491900,
+      "736": 2
     },
     "timing": {
       "activityStartedAt": 1000000,
@@ -71,6 +75,10 @@
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
       "method": "soe_gatekeeper",
+      "paid": {
+        "scroll": 736,
+        "fee": 8100
+      },
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -136,10 +144,10 @@
   },
   "craft_dual": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 491900,
     "wallet": {
-      "57": 500000,
-      "736": 3
+      "57": 491900,
+      "736": 2
     },
     "timing": {
       "activityStartedAt": 1000000,
@@ -163,6 +171,10 @@
       "reason": "dual_sword_combine",
       "stationId": "blacksmith_pushkin",
       "method": "soe_gatekeeper",
+      "paid": {
+        "scroll": 736,
+        "fee": 8100
+      },
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -181,7 +193,7 @@
   },
   "craft_dual_return": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 491900,
     "wallet": {
       "57": 0,
       "736": 0
@@ -292,10 +304,10 @@
   },
   "mammon": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 491900,
     "wallet": {
-      "57": 500000,
-      "736": 3
+      "57": 491900,
+      "736": 2
     },
     "timing": {
       "activityStartedAt": 1000000,
@@ -318,6 +330,10 @@
       "reason": "mammon_unseal",
       "stationId": "Blacksmith of Mammon",
       "method": "soe_gatekeeper",
+      "paid": {
+        "scroll": 736,
+        "fee": 8100
+      },
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -336,10 +352,10 @@
   },
   "mammon_return": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 491900,
     "wallet": {
-      "57": 500000,
-      "736": 3
+      "57": 491900,
+      "736": 2
     },
     "timing": {
       "activityStartedAt": 1000000,

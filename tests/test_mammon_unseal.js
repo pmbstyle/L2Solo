@@ -93,7 +93,10 @@ async function run() {
     assert.strictEqual(boots.fetchSelfId(),5777);
     assert(boots.fetchEquipped(),'bot equips unsealed boots through the native equipment path');
     await Database.setItem(id,{selfId:6674,name:'Sealed Imperial Crusader Breastplate',amount:1,slot:15});
-    const cold = {...session.coldLifeState,inventory:{6674:{selfId:6674,amount:1}},loc:{locX:1000,locY:2000,locZ:-3000}};
+    // A field of Giran's region: the trip reads a Scroll of Escape and pays no
+    // gatekeeper (N2); the character's 123 Adena stay untouched.
+    const cold = {...session.coldLifeState,inventory:{6674:{selfId:6674,amount:1},736:{selfId:736,amount:1}},
+        loc:{locX:90000,locY:148000,locZ:-3400}};
     const trip = Bot.beginTravel(cold,1000);
     assert(trip && trip.stats.travel.arrivalAt===26000);
     // Karma keeps the bot from the Giran trip: any karma above 0 blocks it;

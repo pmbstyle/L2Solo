@@ -14,6 +14,9 @@ const state = {
     activity: 'hunting',
     currentRegion: 'Dion',
     loc: { locX: 15631, locY: 142885, locZ: -2704 },
+    // Town trips are paid (N2, user 2026-10-04): a Scroll of Escape and the gatekeeper fee.
+    adena: 100000,
+    inventory: { 57: { selfId: 57, amount: 100000 }, 736: { selfId: 736, amount: 3 } },
     stats: {},
     vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 }
 };

@@ -6,6 +6,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
+const TravelRoutes = invoke('GameServer/Bot/Travel/TravelRoutes');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
@@ -40,17 +41,23 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
-    return ColdTrip.toTown(state, {
+    const trip = (destination) => ColdTrip.toTown(state, {
         reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
         from,
-        to: { ...town.center },
-        townName: town.name,
+        to: { ...destination.center },
+        townName: destination.name,
         viaTown: nearestTown.name,
         arrivalActivity: 'shopping',
         arrivalEvent: 'arrived_town'
     }, timestamp, {
         marketReturn: { loc: from, regionName: state.currentRegion || null, spotId: state.spotId || null }
     });
+    const travel = trip(town);
+    if (travel || !sellingInventory) return travel;
+    // A bot that cannot pay the gatekeeper to its sale town sells in the town
+    // its Scroll of Escape reaches, as a player short of Adena would.
+    const local = marketTown(TravelRoutes.landingTown(from).name);
+    return local && local.name !== town.name ? trip(local) : null;
 }
 
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {

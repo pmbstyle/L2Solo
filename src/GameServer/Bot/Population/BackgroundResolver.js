@@ -252,11 +252,11 @@ function resolveTravel(state, timestamp = Date.now()) {
     if (!travel?.to || !travel?.arrivalAt) return null;
     const isLegacyGiranMarketTrip = travel.townName === 'Giran'
         && ['market_sale_inventory', 'market_search_for_weapon', 'market_search_for_gear'].includes(travel.reason)
-        && travel.method !== 'soe_gatekeeper';
+        && !['soe_gatekeeper', 'walk_gatekeeper'].includes(travel.method);
     // Cold bots model the native SoE/gatekeeper sequence as a short transit,
     // not a visible straight-line cross-continent walk.  They remain at the
     // origin while casting/transiting and appear only at the destination.
-    const nativeTransit = ['soe_gatekeeper', 'gatekeeper_spot'].includes(travel.method)
+    const nativeTransit = ['soe_gatekeeper', 'gatekeeper_spot', 'walk_gatekeeper'].includes(travel.method)
         // Routes persisted before native cold travel had no method.  Treat the
         // known long-distance lifecycle reasons as native too, so a restart
         // does not leave old craft/market travellers visibly map-walking.
@@ -289,6 +289,8 @@ function resolveTravel(state, timestamp = Date.now()) {
             type: travel.arrivalEvent || (arrivalActivity === 'crafting' ? 'arrived_craft_station' : 'arrived_town'),
             summary: travel.method === 'walk'
                 ? `${state.name || 'Bot'} reached ${travel.regionName || 'the hunting area'} on foot`
+                : travel.method === 'walk_gatekeeper'
+                ? `${state.name || 'Bot'} walked to ${travel.viaTown || 'town'} without a Scroll of Escape and reached ${travel.townName || 'town'}`
                 : arrivalActivity === 'shopping'
                 ? `${state.name || 'Bot'} used SoE via ${travel.viaTown || 'town'} and reached ${travel.townName || 'town'} to shop`
                 : arrivalActivity === 'crafting'

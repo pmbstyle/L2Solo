@@ -146,7 +146,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
             }
         }
     );
-    if (travel === 'deferred') {
+    if (travel === 'deferred' || travel === 'unpaid') {
         TownTravel.clearCombatTrip(session);
         session.companionShopping = undefined;
         session.shoppingTarget = undefined;
@@ -154,7 +154,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         session.supplyErrandHidden = false;
         session.dataSendToOthers?.(ServerResponse.charInfo(bot), bot);
         session.dataSendToOthers?.(ServerResponse.relationChanged(bot), bot);
-        return { ok: false, reason: 'unsafe_combat_state' };
+        return { ok: false, reason: travel === 'unpaid' ? 'no_travel_fare' : 'unsafe_combat_state' };
     }
     if (travel === 'escape') {
         session.supplyErrandPhase = 'cold';

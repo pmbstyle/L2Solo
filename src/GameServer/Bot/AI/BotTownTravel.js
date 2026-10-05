@@ -4,9 +4,10 @@ const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const Karma = invoke('GameServer/Karma');
+const TripPayment = invoke('GameServer/Bot/Travel/TripPayment');
 
 const SOE_SKILL_ID = 2013;
-const SOE_CAST_MS = 20000;
+const SOE_CAST_MS = TripPayment.SCROLL_CAST_MS;
 const SOE_DISTANCE = 2500;
 
 function distance2d(bot, target) {
@@ -144,18 +145,29 @@ function request(session, bot, BotAI, reason, options = {}) {
     if (Karma.closesTowns(bot.fetchKarma?.())) return 'deferred';
 
     const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+    const alreadyInTown = TownTransitPolicy.townAt(bot) === town.name;
+    const wantsScroll = !alreadyInTown && (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE);
+    // The scroll is spent and the gatekeeper paid into another town, as for a
+    // player (TripPayment). Without a scroll the bot walks; a trip that must
+    // be made by scroll (a hidden supply errand) is refused instead.
+    const fare = { scroll: true, fee: options.destinationTown
+        ? TripPayment.fee({ locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
+            { locX: town.x, locY: town.y, locZ: town.z }) ?? 0
+        : 0 };
+    const affordable = wantsScroll && TripPayment.hasActorScroll(bot) && fare.fee <= TripPayment.actorAdena(bot);
+    if (wantsScroll && !affordable && options.forceScrollOfEscape === true) return 'unpaid';
+    const usesScroll = wantsScroll && affordable;
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
-    const alreadyInTown = TownTransitPolicy.townAt(bot) === town.name;
-    const usesScroll = !alreadyInTown && (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE);
     if (options.announce !== false) {
         TownChatter.say(session, BotAI, 'town-trip-start', Speech.lines('town.town-trip-start', { town: town.name }));
     }
     session.pendingTownTrip = undefined;
 
     if (usesScroll) {
+        TripPayment.payActor(session, bot, fare);
         beginEscape(session, bot, town, options);
         return 'escape';
     }

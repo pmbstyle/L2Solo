@@ -393,6 +393,15 @@ function syncInventorySummary(characterId, inventory, reason = null) {
     return Database.syncInventorySummary(characterId, inventory, reason);
 }
 
+// A town trip is paid when it starts (a Scroll of Escape, a gatekeeper fee:
+// ColdTrip.toTown debits the stored inventory); its items follow the first
+// time the trip is written.
+function syncNewTripPayment(state, previous) {
+    const travel = state?.stats?.travel;
+    if (!travel?.paid || Number(previous?.stats?.travel?.startedAt) === Number(travel.startedAt)) return Promise.resolve();
+    return syncInventorySummary(state.characterId, state.inventory || {}, 'trip_payment');
+}
+
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     const targetNpcId = Number(debug?.targetNpcId || 0);
     if (targetNpcId <= 0) return null;
@@ -2973,6 +2982,7 @@ const BotLifeState = {
         if (!state?.characterId) return Promise.resolve(null);
         if (require('./RaidSoloBoundary').stale(state)) state = require('./RaidSoloBoundary').clear(state);
         const timestamp = now();
+        const cached = cache.get(Number(state.characterId));
         const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
         // `grouped` and party-route travel are not valid solo lifecycle
         // states. Every detachment reason must return them to an actionable
@@ -3002,7 +3012,7 @@ const BotLifeState = {
                 timestamp,
                 allowParty: true,
                 allowLifecycle: true
-            }).then((result) => {
+            }).then((result) => (result?.ok ? syncNewTripPayment(nextState, cached).then(() => result) : result)).then((result) => {
                 if (!result?.ok) {
                     utils.infoWarn('BotLife', 'failed owner handoff while removing %s from party: %s', state.name, result?.reason || 'unknown');
                     return null;
@@ -3022,7 +3032,7 @@ const BotLifeState = {
                 return null;
             });
         }
-        return save(row).then(() => {
+        return save(row).then(() => syncNewTripPayment(nextState, cached)).then(() => {
             const snapshot = normalize(row);
             cache.set(snapshot.characterId, snapshot);
             // Without this transition snapshot the worker retains the old
@@ -3529,11 +3539,14 @@ const BotLifeState = {
         const characterId = Number(nextState.characterId);
         const previous = pendingWrites.get(characterId) || Promise.resolve();
         const ready = initialized ? Promise.resolve(true) : this.init();
+        let paidTrip = null;
         const next = previous.then(() => ready).then((isReady) => {
             if (!isReady) {
                 throw new Error('state table unavailable');
             }
-            const protectedState = preserveClanOwnedEquipmentState(nextState, reason, cache.get(characterId));
+            const cached = cache.get(characterId);
+            const protectedState = preserveClanOwnedEquipmentState(nextState, reason, cached);
+            paidTrip = () => syncNewTripPayment(protectedState, cached);
             const row = rowFromState(protectedState);
             return save(row, { releaseHot: options.releaseHot === true }).then(() => row);
         }).then((row) => Database.updateCharacterLocation(row.characterId, {
@@ -3542,6 +3555,7 @@ const BotLifeState = {
             locZ: row.locZ
         }).then(() => row)).then((row) => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp).then(() => row))
             .then((row) => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp).then(() => row))
+            .then((row) => paidTrip().then(() => row))
             .then((row) => {
                 const snapshot = normalize(row);
                 cache.set(characterId, snapshot);

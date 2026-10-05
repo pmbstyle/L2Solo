@@ -939,7 +939,9 @@ const travel = ColdCraftingService.beginTravel({
     level: mage.level,
     activity: 'hunting',
     loc: { locX: 0, locY: 0, locZ: 0 },
-    inventory: readyInventory,
+    // The trip is paid (N2): a Scroll of Escape and the gatekeeper fee.
+    adena: 1000000,
+    inventory: { ...readyInventory, 57: { selfId: 57, amount: 1000000 }, 736: { selfId: 736, amount: 1 } },
     stats: { equipmentPlan: { status: 'active', strategy: 'craft', recipeId: target.recipe.recipeId } }
 }, 1000);
 assert.strictEqual(travel.stats.travel.stationId, station.id, 'ready materials must route the bot to the station that publishes its recipe');
@@ -973,7 +975,8 @@ assert.strictEqual(componentPlan.requiresParty, false, 'a ready component must g
 assert(ColdCraftingService.beginTravel({
     level: 20,
     activity: 'hunting',
-    inventory: atubaWithCokesIngredients,
+    adena: 1000000,
+    inventory: { ...atubaWithCokesIngredients, 57: { selfId: 57, amount: 1000000 } },
     stats: { equipmentPlan: componentPlan }
 }, 1000), 'a component-ready plan must still travel to its crafting station');
 const resourceStationRecipeIds = new Set(CraftShopService.stationRecipes(
