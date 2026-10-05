@@ -109,6 +109,11 @@ assert(PriceDecision.chooseAsk(believed, npcShop, needy, ['s']).price < PriceDec
 const rolled = new Set(Array.from({ length: 40 }, (_, at) => PriceDecision.chooseAsk(believed, market(), needy, ['r', at]).price));
 assert(rolled.size >= 2 && rolled.size <= 4, `a few near-best asks (${[...rolled]})`);
 
+// A standing ask stays while it is among the near-best; a far one is replaced.
+const fresh1 = PriceDecision.chooseAsk(believed, market(), needy, ['r', 1]);
+assert.strictEqual(PriceDecision.chooseAsk(believed, market(), needy, ['r', 2], fresh1.price).price, fresh1.price);
+assert.notStrictEqual(PriceDecision.chooseAsk(believed, market(), needy, ['r', 2], 5000).price, 5000);
+
 // Disposition and slots: one roll, never 0 or 1; slots by gain, no repeats.
 const picks = { npc: 0, list: 0 };
 for (let at = 0; at < 2000; at++) picks[PriceDecision.chooseByValue([{ action: 'npc', value: 10 }, { action: 'list', value: 100 }], ['d', at]).action] += 1;

@@ -141,33 +141,43 @@ function nearBest(candidates, rollKey) {
 // The ask: { price, value, money, npc } with npc true when the NPC buy-back
 // now is worth more than any ask (price is then the buy-back). value is the
 // bot's utility per unit, money the Adena per unit discounted by the wait.
-function chooseAsk(belief, market, trader, rollKey) {
+// `current`: the line's ask now; it stands while it is still among the
+// near-best ones (the roll is for a new ask, not for a jitter of the old).
+function chooseAsk(belief, market, trader, rollKey, current = 0) {
     const width = PriceBelief.sigma(belief);
     const reference = Math.exp(belief.mu);
     const centre = belief.mu + (trader.assertiveness - 0.5) * width;
     let alternative = market.npcLanded;
     for (const rival of market.rivals) alternative = Math.min(alternative, rival.landed);
     const deals = Math.ceil(market.units / market.lot);
-    const candidates = [];
-    for (const z of GRID) {
-        const price = Math.max(1, Math.round(Math.exp(belief.mu + z * width)));
-        if (price <= market.buyback || candidates.some((candidate) => candidate.price === price)) continue;
+    const valueAt = (price) => {
         const wants = 1 - phi((Math.log(price) - centre) / width);
         const landed = price + market.ownTrip;
         const chosen = Number.isFinite(alternative) ? 1 - phi(Math.log(landed / alternative) / PERCEPTION) : 1;
         const rate = market.buyersPerHour * wants * Math.max(0.01, chosen);
-        if (!(rate > 0)) continue;
+        if (!(rate > 0)) return null;
         let ahead = 0;
         for (const rival of market.rivals) if (rival.landed < landed) ahead += rival.units;
         const wait = (deals + 1) / 2 / rate + ahead / (market.lot * market.buyersPerHour);
         const discount = Math.exp(-trader.wait * wait);
-        candidates.push({ price, value: saleUtility(price, reference, trader.caution) * discount, money: price * discount });
+        return { price, value: saleUtility(price, reference, trader.caution) * discount, money: price * discount };
+    };
+    const candidates = [];
+    for (const z of GRID) {
+        const price = Math.max(1, Math.round(Math.exp(belief.mu + z * width)));
+        if (price <= market.buyback || candidates.some((candidate) => candidate.price === price)) continue;
+        const candidate = valueAt(price);
+        if (candidate) candidates.push(candidate);
     }
     const npcValue = saleUtility(market.buyback, reference, trader.caution);
-    const best = candidates.length ? nearBest(candidates, rollKey) : null;
-    if (!best || Math.max(...candidates.map((candidate) => candidate.value)) <= npcValue) {
+    let bestValue = -Infinity;
+    for (const candidate of candidates) bestValue = Math.max(bestValue, candidate.value);
+    if (!candidates.length || bestValue <= npcValue) {
         return { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue };
     }
+    const standing = current > market.buyback ? valueAt(current) : null;
+    if (standing && standing.value >= bestValue - NEAR_BEST * Math.abs(bestValue)) return { ...standing, npc: false, npcValue };
+    const best = nearBest(candidates, rollKey);
     return { price: best.price, value: best.value, money: best.money, npc: false, npcValue };
 }
 

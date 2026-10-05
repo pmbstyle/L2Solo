@@ -155,7 +155,8 @@ function look(state, lines, ctx) {
             board: ctx.board, ownerId: ctx.characterId, town: line.town, units: line.count, tripCost: ctx.tripCost,
             npcOffers: ctx.npcOffersFor(line.selfId), timestamp: ctx.timestamp
         });
-        const chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, ['ask', ctx.characterId, line.selfId, book.looks]);
+        const chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, ['ask', ctx.characterId, line.selfId, book.looks],
+            line.price);
         if (chosen.npc) {
             withdrawals.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId });
             continue;
