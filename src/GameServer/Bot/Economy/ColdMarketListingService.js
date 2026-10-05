@@ -179,9 +179,7 @@ function open(state, options = {}) {
         MarketTelemetry.listingOpened({ speculative: false });
         return BotWarehouse.depositCold(boardState).then((warehouse) => {
             const deposited = warehouse.state || boardState;
-            // The bot keeps its beliefs of what it listed (group E).
-            const stored = deferSellRetry(board.priceBeliefs
-                ? { ...deposited, stats: { ...(deposited.stats || {}), priceBeliefs: board.priceBeliefs } } : deposited);
+            const stored = deferSellRetry(deposited);
             const returning = GoalExecutor.finishMarketVisit(stored, timestamp, { recoverMissingReturn: true }) || stored;
             return LifeState.upsertState(returning, 'cold_market_board_listing').then((saved) => ({
                 state: saved || returning,
@@ -205,7 +203,6 @@ function open(state, options = {}) {
 // cannot travel, its lines wait in the bag for the next visit.
 function travelToShopTown(state, board, timestamp) {
     const stats = { ...(state.stats || {}), shopTown: state.stats?.shopTown || { town: board.shopTown, at: timestamp } };
-    if (board.priceBeliefs) stats.priceBeliefs = board.priceBeliefs;
     const goal = { type: 'sell_inventory', status: 'active',
         plan: { expectedBenefit: 'market_sale_inventory', marketTown: board.shopTown } };
     const travel = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);

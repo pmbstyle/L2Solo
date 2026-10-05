@@ -6,7 +6,6 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 
@@ -101,16 +100,15 @@ assert.deepStrictEqual(again.listings.map((item) => [item.selfId, item.price]), 
 const other = MarketListingPolicy.evaluate(state, options({ now: now + 1 }));
 assert(other.listings.some((item, at) => item.selfId !== sale.listings[at]?.selfId || item.price !== sale.listings[at].price)
     || other.listings.length !== sale.listings.length, 'another decision point rolls anew');
-// The listed items' beliefs are kept, with the ask and the market seen now.
-const book = sale.book;
+// Only selected lines carry their current quote and public event cursors.
+assert.strictEqual('book' in sale, false, 'no personal item book is returned');
 for (const listing of sale.listings) {
-    const belief = book.beliefs.get(listing.selfId);
-    assert(belief, 'a listed item keeps its belief');
-    assert.strictEqual(belief.ask, listing.price);
-    assert.strictEqual(belief.seenItem, MarketCounters.itemDeals(listing.selfId).deals);
+    assert(listing.pricing, 'a listed item carries line-local pricing');
+    assert.strictEqual(listing.pricing.price, listing.price);
+    assert.strictEqual(listing.pricing.seenItem, MarketCounters.itemDeals(listing.selfId).deals);
+    assert.strictEqual(listing.pricing.seenCounter, MarketCounters.counter(MarketCounters.counterOf(listing.selfId), now).deals);
+    assert.strictEqual(listing.pricing.seenFills, 0);
 }
-assert.strictEqual(book.beliefs.size, MarketListingPolicy.BOARD_SLOTS, 'only listed items are touched');
-assert(PriceBelief.writeBook(book).b.length === book.beliefs.size);
 
 // A line the bot has keeps its slot and its price; the free slots go by the roll.
 const kept = new Map([[items[0], 4321], [items[1], 4322]]);

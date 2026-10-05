@@ -39,12 +39,14 @@ function bidFor(state, goal) {
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
     const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
-    const book = PriceBelief.readBook(state.stats);
-    const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
-    if (!belief) return null;
-    const worth = requestedPrice > 0 ? requestedPrice : Math.exp(belief.mu);
+    let worth = requestedPrice;
+    if (!(worth > 0)) {
+        const belief = PriceBelief.prior(selfId, ctx);
+        if (!belief) return null;
+        worth = Math.exp(belief.mu);
+    }
     const cap = Math.floor(Math.min(worth, spendable));
-    const chosen = MarketPricing.bid(book, selfId, ctx, { units: requestedCount, worth, cap,
+    const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
         rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
     if (!chosen) return null;
     const price = Math.floor(chosen.price);
@@ -57,8 +59,7 @@ function bidFor(state, goal) {
         rank: template.etc?.rank || 'none',
         price,
         count,
-        // The bot's beliefs with the bid kept: its buy ad's look reviews it.
-        book
+        pricing: chosen.pricing
     };
 }
 

@@ -835,7 +835,19 @@ const tests = [
     'tests/test_offer_query_callers.js',
     'tests/test_player_safe_preferred_parties.js',
     'tests/test_price_belief_decision.js',
-    'tests/test_knowledge_learning.js'
+    'tests/test_knowledge_learning.js',
+    'tests/test_n79_price_prior.js',
+    'tests/test_n79_price_line_review.js',
+    'tests/test_n79_board_price_state.js',
+    'tests/test_n79_market_adapters.js',
+    'tests/test_n79_worker_review_transport.js',
+    'tests/test_board_index_counter_owners.js',
+    'tests/test_board_review_events.js',
+    'tests/test_n53_table_event_delivery.js',
+    'tests/test_n53_worker_ack_ordering.js',
+    'tests/test_n53_market_review_command.js',
+    'tests/test_character_location_index.js',
+    'tests/test_n62_visibility_index.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -875,9 +887,25 @@ const optionalGeodataTests = new Set([
     'tests/test_pathfinding_worker_pool.js'
 ]);
 const geodataOnly = process.argv.includes('--geodata');
-// Disposable recovery and group F fixtures use the default configuration.
+// Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
     'tests/test_knowledge_learning.js',
+    'tests/test_n79_price_prior.js',
+    'tests/test_n79_price_line_review.js',
+    'tests/test_n79_board_price_state.js',
+    'tests/test_n79_market_adapters.js',
+    'tests/test_n79_worker_review_transport.js',
+    'tests/test_board_index_counter_owners.js',
+    'tests/test_board_review_events.js',
+    'tests/test_n53_table_event_delivery.js',
+    'tests/test_n53_worker_ack_ordering.js',
+    'tests/test_n53_market_review_command.js',
+    'tests/test_character_location_index.js',
+    'tests/test_n62_visibility_index.js',
+    'tests/test_board_market_audit.js',
+    'tests/test_board_trips.js',
+    'tests/test_market_restart_cursors.js',
+    'tests/test_price_belief_decision.js',
     'tests/test_group_f_player_pricing.js',
     'tests/test_group_f_bot_routing.js',
     'tests/test_group_f_companion_board_line.js',

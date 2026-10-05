@@ -82,17 +82,6 @@ function finishBlockedPurchase(state, goal, reason) {
     ));
 }
 
-// What the bot learns from its own purchase on the board (group E follow-up:
-// the buy side learns): the deal's price is evidence of the item's price.
-function learnPurchase(state, selfId, price) {
-    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
-    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
-    const book = PriceBelief.readBook(state.stats);
-    const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
-    if (!MarketPricing.learnDeal(book, selfId, ctx, price)) return state;
-    return { ...state, stats: { ...(state.stats || {}), priceBeliefs: PriceBelief.writeBook(book) } };
-}
-
 // Buys `options.qty` (one by default) of a found offer for a cold bot: a
 // board record through AfkTradeService (one deal transaction), otherwise an
 // NPC or a configured city merchant. No goal or travel change; an NPC
@@ -114,9 +103,8 @@ function buyOffer(state, offer, options = {}) {
         ).then((trade) => {
             const done = AfkTrade.committedTrade(trade, state.characterId);
             if (!done.committed) throw new Error('cold_state_sync_failed');
-            // A buyer that went hot keeps its row: the job goes on with its own
-            // state. A cold buyer learns the deal's price (the buy side learns).
-            const buyer = done.state ? learnPurchase(done.state, offer.selfId, offer.price) : state;
+            // Native commit includes the buyer's experience exactly once.
+            const buyer = done.state || state;
             MarketTelemetry.purchase(offer, qty, {
                 buyerCharacterId: buyer.characterId,
                 buyerName: buyer.name,

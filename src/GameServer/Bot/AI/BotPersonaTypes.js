@@ -159,7 +159,7 @@ function talents(traits) {
 // Market understanding (N45): how exactly a bot reads prices and demand, one
 // number from 0 to 1, fixed at creation: its wealth motive, speculation and
 // caution, plus one roll of its own (+-0.15). The error of its price guess
-// is 3% + 17% x (1 - understanding) (PriceBelief).
+// starts at 3% + 17% x (1 - understanding), then uses shared learning.
 function understanding(drive, traits, inclinations, characterId) {
     const TendencyRoll = require('./TendencyRoll');
     const centre = 0.35 * (drive === 'wealth' ? 1 : 0) + 0.45 * Number(inclinations?.speculation || 0)

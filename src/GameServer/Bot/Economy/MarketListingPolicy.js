@@ -5,7 +5,6 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
-const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
@@ -70,7 +69,8 @@ function traderContext(state, options = {}) {
         board: options.board ?? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
         npcOffersFor: options.npcOffersFor
             || ((selfId) => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId)),
-        findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId))
+        findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId)),
+        knowledgeEnabled: options.knowledgeEnabled
     });
 }
 
@@ -86,14 +86,13 @@ const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 // (its own look reprices it or takes it back, MarketPricing.look). options: now
 // (the decision point), slots (board slots), kept (selfId -> price of its
 // lines), stored (selfId -> units in the warehouse), plus traderContext's.
-// Returns { candidates, decisions, listings, npc, warehouse, answers, book }
-// with the bot's beliefs (book) holding what it listed; answers are the buy
+// Returns { candidates, decisions, listings, npc, warehouse, answers };
+// selected listings carry their line pricing state. Answers are the buy
 // ads it chose to sell into ({ item, line, count }: the bot sells there when
 // it is in the ad's town, the side that acts travels).
 function evaluate(state, options = {}) {
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true });
     const ctx = traderContext(state, options);
-    const book = PriceBelief.readBook(state.stats);
     const decisionPoint = Number(options.now) || ctx.timestamp;
     const kept = options.kept || new Map();
     const decisions = [];
@@ -116,7 +115,7 @@ function evaluate(state, options = {}) {
             continue;
         }
         const town = MarketTownPolicy.targetTownForItems(state, [item]);
-        const chosen = MarketPricing.disposition(book, item, ctx, {
+        const chosen = MarketPricing.disposition(item, ctx, {
             town, room: roomFor(item, options.stored), smallLot,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
@@ -131,8 +130,8 @@ function evaluate(state, options = {}) {
     for (const decision of forBoard) {
         if (chosen.has(decision)) {
             const price = decision.priced.ask.price;
-            decision.item = { ...decision.item, price, marketReason: 'expected_value' };
-            MarketPricing.adopt(book, decision.priced.belief, ctx, price);
+            decision.item = { ...decision.item, price, marketReason: 'expected_value',
+                pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL }) };
             continue;
         }
         decision.action = 'warehouse';
@@ -148,8 +147,7 @@ function evaluate(state, options = {}) {
         })),
         warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item),
         answers: decisions.filter((decision) => decision.action === 'ad')
-            .map((decision) => ({ item: decision.item, line: decision.answer.line, count: decision.answer.count })),
-        book
+            .map((decision) => ({ item: decision.item, line: decision.answer.line, count: decision.answer.count }))
     };
 }
 

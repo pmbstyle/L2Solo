@@ -4,7 +4,6 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
-const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
@@ -188,7 +187,7 @@ function stateWithEscrow(state, stock) {
 // sale decision (MarketListingPolicy.evaluate) on its bag and its shop: a kept
 // line keeps its price (the bot's own look reprices it, MarketPricing.look); a new
 // one is listed at the bot's ask. Shots fill the shop first, as the author's
-// review placed them. Returns { lines, listed, listings, book }.
+// review placed them. Returns { lines, listed, listings }.
 function sellLines(state, stock, inventory, evaluateOptions = {}) {
     const existing = stock?.storeType === AfkTrade.SELL
         ? stock.lines.filter((line) => Number(line.count) > 0).map((line) => ({
@@ -200,7 +199,9 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
             enchant: Number(line.enchant || 0),
             slot: Number(line.slot || 0),
             stackable: Number(line.stackable) === 1,
-            petData: line.petData || null
+            petData: line.petData || null,
+            fills: Number(line.fills || 0),
+            pricing: line.pricing
         })) : [];
     const classified = evaluateOptions.decided || decide(state, stock, existing, evaluateOptions);
     const listings = classified.listings;
@@ -245,7 +246,8 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
                 enchant: Number(row.enchant || 0),
                 slot: Number(row.slot || 0),
                 stackable,
-                petData: row.petData || null
+                petData: row.petData || null,
+                pricing: listing.pricing
             });
             remaining.set(Number(listing.selfId), Number(remaining.get(Number(listing.selfId))) - count);
             break;
@@ -255,7 +257,7 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
     listings.filter((item) => priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
     existing.filter((line) => !priorityMarketItems.has(line.selfId)).forEach(keepExisting);
     listings.filter((item) => !priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
-    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings, book: classified.book };
+    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings };
 }
 
 // The sale decision (MarketListingPolicy.evaluate) over the bot's bag and its
@@ -280,8 +282,7 @@ function saleDecision(state, options = {}) {
     return decide(state, stock, existing, options);
 }
 
-// The bot's buy ad lines for its goal, with the beliefs that keep its bid
-// (lines.book, saved when the ad is published).
+// The bot's buy ad lines carry the quote, its authored worth and cursors.
 function buyLines(state, goal) {
     const bid = BuyStoreService.bidFor(state, goal);
     if (!bid) return [];
@@ -293,9 +294,9 @@ function buyLines(state, goal) {
         price: Number(bid.price),
         enchant: 0,
         slot: Number(item?.etc?.slot || 0),
-        stackable: item?.etc?.stackable === true
+        stackable: item?.etc?.stackable === true,
+        pricing: bid.pricing
     }];
-    lines.book = bid.book;
     return lines;
 }
 
@@ -373,7 +374,7 @@ async function reconcileBuyAds(state, goal, candidates) {
         if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
         throw error;
     }
-    return finishPublish(ownerId, await keepBeliefs(state, wanted.book), shop);
+    return finishPublish(ownerId, state, shop);
 }
 
 // One buy ad per wanted item, in the town the item trades in. An ad stands
@@ -408,7 +409,7 @@ async function openBuyAd(state, goal) {
         }
         throw error;
     }
-    const saved = await keepBeliefs(LifeState.snapshot(ownerId) || state, wanted.book);
+    const saved = LifeState.snapshot(ownerId) || state;
     rememberInventory(ownerId, saved);
     return { state: saved, opened: !!store, item: wanted[0], store };
 }
@@ -435,7 +436,7 @@ async function withdrawBuyAds(ownerId, selfId = null, state = null) {
 // reviewed from afar once it stands. It changes when the bag changed or a
 // line is no longer a lot, and never moves (N51, E46); what is listed past
 // its lines goes to sell ads, which need no trip. The prices of its lines
-// are the bot's own look (attention, MarketPricing.look), not a fixed review
+// come from the bot's event review (MarketPricing.look), not a fixed review
 // period. A bot without a shop opens one in town (listOnBoard).
 async function reconcileSellShop(state, goal) {
     const ownerId = Number(state.characterId);
@@ -475,18 +476,7 @@ async function reconcileSellShop(state, goal) {
         rememberInventory(ownerId, state);
         return { state, changed: false };
     }
-    return finishPublish(ownerId, await keepBeliefs(state, sale.book), shop);
-}
-
-// The bot keeps its beliefs of what it listed from afar, as at a market
-// visit, so the sales that follow are learned (group E follow-up).
-async function keepBeliefs(state, book) {
-    const written = book ? PriceBelief.writeBook(book) : null;
-    if (!written) return state;
-    const current = LifeState.snapshot(state.characterId) || state;
-    if (current.phase !== 'cold') return current;
-    return await LifeState.upsertState({ ...current, stats: { ...(current.stats || {}), priceBeliefs: written } },
-        'board_remote_listing_beliefs') || current;
+    return finishPublish(ownerId, state, shop);
 }
 
 // A deal or another move changed the record after the review read it: the
@@ -529,7 +519,7 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
 // new one opens in the town the bot chose for it (MarketTownPolicy.openingTown,
 // one roll): when that is another town, its lines wait in the bag and
 // shopTown names the town to travel to. Returns { state, listed, reason,
-// shopTown, priceBeliefs }.
+// shopTown }.
 async function listOnBoard(state, options = {}) {
     const ownerId = Number(state.characterId);
     const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
@@ -566,8 +556,7 @@ async function listOnBoard(state, options = {}) {
     }
     const ads = await listSellAds(ownerId, state, sale.listings, shop, inventory);
     listed += ads.listed;
-    return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason, shopTown,
-        priceBeliefs: sale.book ? PriceBelief.writeBook(sale.book) : null };
+    return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason, shopTown };
 }
 
 // One sell ad per listing the shop has no line for, while the bot has ad
@@ -594,7 +583,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory) {
             objectId: Number(row.id), selfId, name: row.name || listing.name,
             count: Math.min(Number(row.amount), Math.max(1, Number(listing.count) || 1)),
             price: Number(listing.price), enchant: Number(row.enchant || 0), slot: Number(row.slot || 0),
-            stackable, petData: row.petData || null
+            stackable, petData: row.petData || null, pricing: listing.pricing
         };
         if (!viableSellLine(line)) continue;
         const town = MarketTownPolicy.shopTown(state, [line]);

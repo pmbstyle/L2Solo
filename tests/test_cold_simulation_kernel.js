@@ -1241,8 +1241,9 @@ function state(characterId = 1, overrides = {}) {
     const marketMessages = [];
     const marketKernel = new ColdSimulationKernel({
         resolveSolo: resolver,
-        projectResolve: async (current) => ({ state: { ...current, stats: { ...current.stats, priceBeliefs: { t: 1 } } },
-            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }], withdrawals: [] } }),
+        projectResolve: async (current) => ({ state: current,
+            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }], withdrawals: [],
+                updates: [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }] } }),
         emit: (type, payload) => marketMessages.push({ type, payload }),
         now: () => now
     });
@@ -1255,7 +1256,9 @@ function state(characterId = 1, overrides = {}) {
     marketKernel.flush(null, true);
     const marketProposal = marketMessages.find((entry) => entry.type === 'proposal_batch').payload.proposals[0];
     assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }]);
-    assert.deepStrictEqual(marketProposal.nextState.stats.priceBeliefs, { t: 1 }, 'the beliefs ride in the state');
+    assert.deepStrictEqual(marketProposal.market.updates, [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }],
+        'unchanged quotes carry their observation checkpoint');
+    assert.strictEqual(marketProposal.nextState.stats.priceBeliefs, undefined, 'line knowledge does not ride in bot stats');
 
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {
