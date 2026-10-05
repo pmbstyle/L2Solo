@@ -54,6 +54,12 @@ async function consume(session, data) {
     const store = trade && trade.store;
     const adminShop = session.activeAdminShop;
 
+    // A shop on the board trades only through the board (PrivateStoreBuy):
+    // its window's store is a projection of the record (E43).
+    if (store?.afkTrade === true) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
     if (store && store.storeType === 1) {
         try {
             if (store.repricing === true || Number(trade.revision || 1) !== Number(store.revision || 1)) {

@@ -52,6 +52,12 @@ async function consumeMerchant(session, list, { native = false } = {}) {
     const trade = session.activeMerchantTrade;
     const store = trade && trade.store;
 
+    // A shop on the board trades only through the board (PrivateStoreSell):
+    // its window's store is a projection of the record (E43).
+    if (store?.afkTrade === true) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
     if (!store || store.storeType !== 3) {
         return sellToNpcShop(session, list);
     }
