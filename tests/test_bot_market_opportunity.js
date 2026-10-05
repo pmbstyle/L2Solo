@@ -23,20 +23,22 @@ try {
         }
     }] };
 
+    // A player's live store trades face to face (E14): a hot bot sees it, a
+    // cold buyer does not.
     const offers = MarketOpportunity.findOffers(2, { town: 'Giran' });
-    assert(offers.some((offer) => offer.sourceType === 'private_store'));
+    assert(!offers.some((offer) => offer.sourceType === 'private_store'), 'a cold buyer never buys from a live player store');
     assert(offers.some((offer) => offer.sourceType === 'npc'), 'Giran NPC shop should remain a valid source');
-    assert.strictEqual(MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 999 }), null);
-    assert.strictEqual(MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 1000 }).sourceName, 'PlayerSeller');
+    const hot = MarketOpportunity.hotOffers(2, { town: 'Giran' });
+    assert(hot.some((offer) => offer.sourceType === 'private_store' && offer.sourceName === 'PlayerSeller'));
 
-    const reserved = MarketOpportunity.bestOffer(2, { town: 'Giran', budget: 1000 });
+    const reserved = hot.find((offer) => offer.sourceType === 'private_store');
     assert.strictEqual(MarketOpportunity.reserve(reserved), true);
     assert.strictEqual(playerStore.items[0].count, 1);
     MarketOpportunity.release(reserved);
     assert.strictEqual(playerStore.items[0].count, 2);
 
     playerStore.items[0].count = 0;
-    assert(!MarketOpportunity.findOffers(2, { town: 'Giran' }).some((offer) => offer.sourceType === 'private_store'));
+    assert(!MarketOpportunity.hotOffers(2, { town: 'Giran' }).some((offer) => offer.sourceType === 'private_store'));
 
     playerStore.items[0].count = 1;
     World.user.sessions[0].accountId = 'bot_islandmats';

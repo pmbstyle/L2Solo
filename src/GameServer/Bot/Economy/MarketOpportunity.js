@@ -198,12 +198,15 @@ function resetColdStores() {
     coldStoreIndexHydrated = false;
 }
 
-// What a cold bot can buy: board records, live private stores and NPC shops.
+// What a cold bot can buy without meeting anyone: board records, NPC shops
+// and the configured city merchants. A player's or a bot's live private
+// store trades face to face only (E14, E22): a cold bot never buys from it
+// remotely.
 function sellOfferCandidates(selfId, options = {}) {
     const town = options.town || null;
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
-        ...privateOffers(selfId, town),
+        ...privateOffers(selfId, town).filter((offer) => offer.sellerKind === 'fixed'),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available);
 }
