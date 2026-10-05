@@ -59,8 +59,51 @@ Efficiency.resetLevelBands();
 const notDropped = DataCache.items.find((item) => Number(item.template?.price) > 0 && !dropIds.has(Number(item.selfId))
     && !(DataCache.npcRewards.find((entry) => Number(entry.selfId) === 40)?.rewards || [])
         .some((group) => (group.items || []).some((entry) => Number(entry.selfId) === Number(item.selfId))));
-assert.strictEqual(FirstPrice.firstPrice(notDropped.selfId, { spots }), null, 'no hunting source (crafted, NPC, quest): no first price yet');
 assert.strictEqual(FirstPrice.firstPrice(57, { spots }), null, 'adena has no price');
 
+// No hunting source (group E): crafted = materials + labour; a crystal from
+// the cheapest gear per crystal; a no-grade shot at the NPC price; anything
+// else at the NPC buy-back. Inside the NPC walls.
+const Recipes = invoke('GameServer/Items/C4RecipeItems');
+const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+const CraftShop = invoke('GameServer/Bot/Economy/CraftShopService');
+const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
+const shotD = Recipes.resolveByProductId(1463);
+const crafted = FirstPrice.firstPrice(1463, { spots });
+assert.strictEqual(crafted.source, 'craft', 'a crafted product nobody drops');
+const unitOf = (selfId) => {
+    const npc = BotMarketPricing.npcPrice({ selfId });
+    return Number.isFinite(npc) ? npc : FirstPrice.firstPrice(selfId, { spots }).price;
+};
+const materials = shotD.materials.reduce((sum, m) => sum + m.amount * unitOf(m.selfId), 0);
+near(crafted.materials, materials / shotD.productCount, 'materials at the NPC price, else at their own first price');
+const crafterLevel = [...Array(80).keys()].map((i) => i + 1)
+    .find((level) => CraftShop.craftLevelFor({ classId: level >= 40 ? 57 : level >= 20 ? 56 : 53, level }) >= shotD.level);
+assert.strictEqual(crafted.crafterLevel, crafterLevel, 'the lowest dwarf able to craft it');
+const restMs = Resolver.estimateRestMs({ level: crafterLevel, stats: { classId: crafterLevel >= 40 ? 57 : crafterLevel >= 20 ? 56 : 53 } },
+    { hp: 1000, maxHp: 1000, mp: 0, maxMp: 10000 }, { requireMana: true });
+const craftHours = shotD.mpCost / (10000 / (restMs / 1000)) / 3600;
+near(crafted.labour, craftHours * Efficiency.hourValue({ level: crafterLevel, stats: {} }).perHour / shotD.productCount,
+    'labour = the craft time (MP over seated regeneration) at the crafter\'s hour');
+const shotBase = Number(DataCache.items.find((item) => Number(item.selfId) === 1463).template.price);
+assert.strictEqual(crafted.price, Math.min(shotBase, Math.max(NpcSellRules.npcBuyPrice(shotBase),
+    Math.round(crafted.materials + crafted.labour))), 'crafted price inside the NPC walls');
+// A crystal: Saber (743 D crystals) drops from monster 65 on the table's spot.
+const sabers = [{ id: 'S', avgLevel: 18, density: 30, npcEntries: [{ selfId: 65, name: 'x', level: 18, count: 1 }] }];
+const saber = FirstPrice.firstPrice(123, { spots: sabers });
+const crystal = FirstPrice.firstPrice(1458, { spots: sabers });
+const crystalBase = Number(DataCache.items.find((item) => Number(item.selfId) === 1458).template.price);
+assert.strictEqual(crystal.source, 'crystal');
+assert.strictEqual(crystal.price, Math.min(crystalBase, Math.max(NpcSellRules.npcBuyPrice(crystalBase), Math.round(saber.price / 743))),
+    'a crystal costs the gear it comes from per crystal');
+BotMarketPricing.useNpcOfferSnapshot([{ selfId: 1835, price: 7 }]);
+assert.deepStrictEqual(FirstPrice.firstPrice(1835, { spots }), { price: 7, source: 'npc' }, 'a no-grade shot at the NPC price');
+BotMarketPricing.useNpcOfferSnapshot(null);
+const plain = FirstPrice.firstPrice(notDropped.selfId, { spots });
+if (plain.source === 'buyback') assert.strictEqual(plain.price, NpcSellRules.npcBuyPrice(Number(notDropped.template.price)),
+    'no source at all: the NPC buy-back');
+assert.strictEqual(FirstPrice.firstPrice(1804, { spots: [] }).price, NpcSellRules.npcBuyPrice(
+    Number(DataCache.items.find((item) => Number(item.selfId) === 1804).template.price)), 'a recipe with no source: the buy-back');
+
 Table.useFile();
-console.log('First price of drops: kills needed x income per kill of the level, inside the NPC walls, passed');
+console.log('First price of drops, crafted items, crystals, shots and the rest, inside the NPC walls, passed');
