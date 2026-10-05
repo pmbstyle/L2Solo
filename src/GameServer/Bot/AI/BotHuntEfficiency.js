@@ -70,7 +70,8 @@ function scores(state, timestamp = Date.now(), mode) {
     return new Map(rows.map(row=>[row.spotId,Math.round(Math.max(-40,Math.min(15,55*row.exp/row.cycleMs/best-40)))]));
 }
 // The best measured income among at most MAX_SPOTS rows: adena plus loot at
-// the NPC buy price, per hour of the hunt cycle and per kill.
+// the NPC buy price, per hour of the hunt cycle and per kill, and the exp per
+// hour of that same row.
 function bestIncome(rows) {
     let best = null;
     for (const row of rows) {
@@ -78,7 +79,7 @@ function bestIncome(rows) {
         const income = row.adena + row.loot;
         const perHour = income / row.cycleMs * HOUR_MS;
         if (best && perHour <= best.perHour) continue;
-        best = { perHour, perKill: row.kills > 0 ? income / row.kills : 0 };
+        best = { perHour, perKill: row.kills > 0 ? income / row.kills : 0, expPerHour: row.exp / row.cycleMs * HOUR_MS };
     }
     return best;
 }
@@ -121,19 +122,22 @@ function bandMedian(band, timestamp) {
         || (entry.changed && timestamp - entry.median.sortedAt >= BAND_RESORT_MS);
     if (stale) {
         entry.changed = false;
-        const perHour = [], perKill = [];
+        const perHour = [], perKill = [], expPerHour = [];
         let oldestAt = Infinity;
         for (const [id, value] of entry.values) {
             if (timestamp - value.at >= MAX_AGE_MS) { entry.values.delete(id); continue; }
             perHour.push(value.perHour);
             perKill.push(value.perKill);
+            expPerHour.push(value.expPerHour);
             oldestAt = Math.min(oldestAt, value.at);
         }
         if (!perHour.length) { entry.median = null; return null; }
         perHour.sort((a, b) => a - b);
         perKill.sort((a, b) => a - b);
+        expPerHour.sort((a, b) => a - b);
         const middle = Math.floor(perHour.length / 2);
-        entry.median = { perHour: perHour[middle], perKill: perKill[middle], bots: perHour.length, oldestAt,
+        entry.median = { perHour: perHour[middle], perKill: perKill[middle], expPerHour: expPerHour[middle],
+            bots: perHour.length, oldestAt,
             sortedAt: timestamp };
     }
     return entry.median;
@@ -152,15 +156,19 @@ function levelBandValue(level, timestamp) {
 // What an hour of hunting is worth to this bot now: its own best measured
 // income, else the measured median of its level band. Before any bot of the
 // world has a sample, the planner's per-kill estimate at the author's six
-// kills per ten minutes stands in.
+// kills per ten minutes stands in. expPerHour is the exp per hour of the row
+// that gave the income (the band's median of those), null when nothing is
+// measured.
 function hourValue(state, timestamp = Date.now(), mode) {
     const own = bestIncome(sampledRows(state, timestamp, mode));
-    if (own) return { perHour: Math.round(own.perHour), perKill: Math.max(1, Math.round(own.perKill)), source: 'own' };
+    if (own) return { perHour: Math.round(own.perHour), perKill: Math.max(1, Math.round(own.perKill)),
+        expPerHour: Math.round(own.expPerHour), source: 'own' };
     const level = levelOf(state);
     const band = levelBandValue(level, timestamp);
-    if (band) return { perHour: Math.round(band.perHour), perKill: Math.max(1, Math.round(band.perKill)), source: 'level_band' };
+    if (band) return { perHour: Math.round(band.perHour), perKill: Math.max(1, Math.round(band.perKill)),
+        expPerHour: Math.round(band.expPerHour), source: 'level_band' };
     const perKill = Math.max(20, level * 25);
-    return { perHour: perKill * 36, perKill, source: 'default' };
+    return { perHour: perKill * 36, perKill, expPerHour: null, source: 'default' };
 }
 function resetLevelBands() {
     bands.clear();

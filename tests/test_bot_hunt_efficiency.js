@@ -28,7 +28,7 @@ const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 invoke('GameServer/DataCache').init();
 Efficiency.resetLevelBands();
 assert.deepStrictEqual(Efficiency.hourValue({ level: 35, stats: {} }, at),
-    { perHour: 875 * 36, perKill: 875, source: 'default' }, 'before any sample the planner estimate stands in');
+    { perHour: 875 * 36, perKill: 875, expPerHour: null, source: 'default' }, 'before any sample the planner estimate stands in');
 const priceOf = (selfId) => invoke('GameServer/DataCache').items.find((item) => Number(item.selfId) === selfId).template.price;
 assert.strictEqual(Efficiency.lootValue([{ selfId: 57, amount: 300 }, { selfId: 1864, amount: 4 }]),
     300 + 4 * NpcSellRules.npcBuyPrice(priceOf(1864)), 'loot: adena at face value, items at the NPC buy price');
@@ -39,25 +39,27 @@ function earner(characterId, level, hunts) {
     }
     return bot;
 }
-// 60 s cycles: 9,000 adena + 1,000 loot in 10 kills = 600,000 per hour, 1,000 per kill.
+// 60 s cycles: 9,000 adena + 1,000 loot in 10 kills = 600,000 per hour, 1,000 per kill, 100 exp = 6,000 exp per hour.
+// The poor spot gives more exp (18,000 per hour) but less income.
 const rich = earner(1, 35, [{ spotId: 'rich', combatMs: 50000, recoveryMs: 10000, adena: 9000, loot: 1000, kills: 10 },
-    { spotId: 'poor', combatMs: 60000, adena: 1000, loot: 0, kills: 10 }]);
+    { spotId: 'poor', combatMs: 60000, adena: 1000, loot: 0, kills: 10, exp: 300 }]);
 const row = rich.stats.huntEfficiency.find((entry) => entry.spotId === 'rich');
 assert.deepStrictEqual([row.adena, row.loot, row.kills], [9000, 1000, 10], 'record keeps adena, loot value and kills');
-assert.deepStrictEqual(Efficiency.hourValue(rich, at), { perHour: 600000, perKill: 1000, source: 'own' },
-    'the best of the bot\'s rows, per hour of the hunt cycle and per kill');
+assert.deepStrictEqual(Efficiency.hourValue(rich, at), { perHour: 600000, perKill: 1000, expPerHour: 6000, source: 'own' },
+    'the best of the bot\'s rows, per hour of the hunt cycle and per kill, with the exp per hour of that same row');
 assert.strictEqual(Efficiency.hourValue(rich, at, 'party').source, 'level_band', 'solo samples do not value a party hour');
 earner(2, 32, [{ spotId: 'a', combatMs: 60000, adena: 1000, loot: 0, kills: 5 }]);
-earner(3, 39, [{ spotId: 'a', combatMs: 60000, adena: 3000, loot: 0, kills: 5 }]);
-// Band 30-39 holds 600,000, 60,000 and 180,000 per hour: the median is 180,000 (600 per kill).
+earner(3, 39, [{ spotId: 'a', combatMs: 60000, adena: 3000, loot: 0, kills: 5, exp: 400 }]);
+// Band 30-39 holds 600,000, 60,000 and 180,000 per hour: the median is 180,000 (600 per kill);
+// exp per hour 6,000, 6,000 and 24,000: the median is 6,000.
 // A band read just before (the party check above) is re-sorted after new samples at most once a minute.
 assert.strictEqual(Efficiency.hourValue({ level: 30, stats: {} }, at).perHour, 600000,
     'within a minute a band keeps the median it last sorted');
 const resorted = at + 60 * 1000;
 assert.deepStrictEqual(Efficiency.hourValue({ level: 30, stats: {} }, resorted),
-    { perHour: 180000, perKill: 600, source: 'level_band' }, 'an unsampled bot takes its level band\'s median');
+    { perHour: 180000, perKill: 600, expPerHour: 6000, source: 'level_band' }, 'an unsampled bot takes its level band\'s median');
 assert.deepStrictEqual(Efficiency.hourValue({ level: 58, stats: {} }, resorted),
-    { perHour: 180000, perKill: 600, source: 'level_band' }, 'an empty band borrows the nearest measured one');
+    { perHour: 180000, perKill: 600, expPerHour: 6000, source: 'level_band' }, 'an empty band borrows the nearest measured one');
 assert.strictEqual(Efficiency.hourValue({ level: 30, stats: {} }, at + Efficiency.MAX_AGE_MS).source, 'default',
     'old band samples expire');
 Efficiency.resetLevelBands();
