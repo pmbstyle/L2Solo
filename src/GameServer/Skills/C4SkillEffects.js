@@ -540,24 +540,25 @@ function applyCombatPointHeal(session, actor, target, skill, semantic, magicSkil
     return Math.max(0, nextCp - currentCp);
 }
 
+// A recall always moves the target, as in C4 (MapRegionTable.getTeleToLocation):
+// a Clan Hall escape to the clan's own hall, a Castle escape to the clan's own
+// castle (this server has no castle owners), otherwise to the town by the
+// region rule, which sends a character with karma to the region's PK point.
 function applyRecall(session, target, semantic) {
     const targetSession = target?.session || (session?.actor === target ? session : null);
     if (
         !targetSession ||
-        (semantic.teleportWhereType && !['Town', 'ClanHall'].includes(semantic.teleportWhereType)) ||
+        (semantic.teleportWhereType && !['Town', 'ClanHall', 'Castle'].includes(semantic.teleportWhereType)) ||
         target?.isDead?.() ||
         target?.state?.fetchDead?.() ||
         Number(target?.fetchPrivateStoreType?.() || 0) > 0 ||
         target?.isInOlympiadMode?.()
     ) return false;
 
-    if (semantic.teleportWhereType === 'ClanHall') {
-        const coords = require('../ClanHall/Runtime').destination(target);
-        if (!coords) return false;
-        invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
-        return true;
-    }
-    const coords = invoke('GameServer/World/TownRespawn').restartCoords(target);
+    const hall = semantic.teleportWhereType === 'ClanHall'
+        ? require('../ClanHall/Runtime').destination(target)
+        : null;
+    const coords = hall || invoke('GameServer/World/TownRespawn').restartCoords(target);
     invoke('GameServer/Actor/Generics/TeleportTo')(targetSession, target, coords);
     return true;
 }

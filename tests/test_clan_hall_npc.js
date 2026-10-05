@@ -175,8 +175,12 @@ async function main() {
         restart.consume(session, { location: 1 });
         assert.equal(revived, null, 'lost ownership rejects a stale hall restart');
         dead = false;
-        assert.equal(effects.execute(session, session.actor, session.actor, escape).recalled, false);
-        assert.equal(teleported, null, 'lost ownership rejects a hall scroll without a town fallback');
+        // Decided 2026-10-05 (V13): as in C4, without an owned hall the scroll
+        // goes to the town by the region rule instead of doing nothing.
+        session.actor.fetchKarma = () => 0;
+        assert.equal(effects.execute(session, session.actor, session.actor, escape).recalled, true);
+        assert.deepEqual(teleported, invoke('GameServer/World/TownRespawn').restartCoords(session.actor),
+            'lost ownership sends a hall scroll to the town restart point');
         for (const hall of Policy.catalog.halls) {
             for (const managerId of hall.managerIds) {
                 const manager = DataCache.npcs.find(n => n.selfId === managerId);

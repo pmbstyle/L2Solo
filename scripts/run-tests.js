@@ -26,6 +26,7 @@ const tests = [
     'tests/test_clan_hall_auctions.js',
     'tests/test_clan_hall_progression_reserve.js',
     'tests/test_clan_hall_npc.js',
+    'tests/test_clan_hall_castle_escape.js',
     'tests/test_clan_hall_bot_services.js',
     'tests/test_clan_hall_notifications.js',
     'tests/test_clan_hall_doors.js',

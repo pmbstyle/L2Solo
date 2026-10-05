@@ -305,8 +305,11 @@ try {
         magicSkill: true,
         attack: { clearLoadedShot() {} }
     });
-    assert.strictEqual(clanHallOutcome.recalled, false, 'Clan Hall escape must not silently fall back to a town destination');
-    assert.strictEqual(recalledTarget, null, 'an unsupported destination-specific escape must not emit the wrong teleport');
+    // Decided 2026-10-05 (V13): as in C4 the scroll always moves its user; a
+    // character without its own hall goes to the town by the region rule. The
+    // old refusal predates clan halls (9364aab4).
+    assert.strictEqual(clanHallOutcome.recalled, true, 'a Clan Hall escape without an owned hall recalls to town, as in C4');
+    assert.deepStrictEqual(recalledTarget.coords, { locX: 10, locY: 20, locZ: 30 }, 'a Clan Hall escape without a hall lands at the town restart point');
 } finally {
     global.invoke = originalInvoke;
 }
