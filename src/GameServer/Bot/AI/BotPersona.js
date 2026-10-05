@@ -100,12 +100,13 @@ function dialogueVoice(persona) {
 }
 
 // Values derived from the stored traits when a persona is cached, never
-// stored: the text card when the row has none, the dialogue voice and the
-// combat talents (combat-skills brief B).
+// stored: the text card when the row has none, the dialogue voice, the
+// combat talents (combat-skills brief B) and the market understanding (N45).
 function withDerived(persona) {
     return {
         ...persona,
         talents: Types.talents(persona.traits),
+        understanding: Types.understanding(persona.primaryDrive, persona.traits, persona.inclinations, persona.characterId),
         textCard: persona.textCard || buildTextCard(persona),
         dialogueVoice: dialogueVoice(persona)
     };

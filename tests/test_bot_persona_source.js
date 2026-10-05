@@ -85,6 +85,8 @@ const row = {
         assert.deepStrictEqual(inWorker.traits, persona.traits);
         assert.deepStrictEqual(inWorker.inclinations, persona.inclinations);
         assert.deepStrictEqual(inWorker.talents, persona.talents);
+        assert.strictEqual(inWorker.understanding, persona.understanding, 'the understanding is the same in the worker');
+        assert(persona.understanding >= 0 && persona.understanding <= 1);
         assert.strictEqual(BotPersona.of(501), inWorker, 'cached after the first read');
         assert.deepStrictEqual(BotPersona.of(503).traits, created.traits, 'a new bot reaches the worker too');
         assert.strictEqual(BotPersona.of(999), null);

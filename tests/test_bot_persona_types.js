@@ -59,6 +59,18 @@ assert(Math.abs(sum / all) < 0.005, 'the spread is centred');
 assert.deepStrictEqual(Types.talents({ assertiveness: 0.8, ambition: 0.6, caution: 0.2, resilience: 0.4, empathy: 1, sociability: 0 }),
     { offense: 0.85, defence: 0.65, support: 0.75 });
 
+// Market understanding (N45): 0.35 wealth + 0.45 speculation + 0.2 caution
+// plus one roll of +-0.15 by the bot, clamped; the same every time it is read.
+{
+    const TendencyRoll = require('../src/GameServer/Bot/AI/TendencyRoll');
+    const wealthy = Types.understanding('wealth', { caution: 0.5 }, { speculation: 0.8 }, 77);
+    assert.strictEqual(wealthy, Math.max(0, Math.min(1, 0.35 + 0.36 + 0.1 + 0.3 * (TendencyRoll.roll('n45s', 77) - 0.5))));
+    assert.strictEqual(Types.understanding('wealth', { caution: 0.5 }, { speculation: 0.8 }, 77), wealthy, 'rolled once: fixed');
+    const values = [];
+    for (let id = 1; id <= 2000; id++) values.push(Types.understanding('social', { caution: 0 }, { speculation: 0 }, id));
+    assert(Math.min(...values) === 0 && Math.max(...values) <= 0.15, 'a novice keeps a small spread of its own');
+}
+
 // Shares on a synthetic new world (the author's race waves of 30, 1,700 bots).
 const POOL = { 0: [0, 10], 1: [18, 25], 2: [31, 38], 3: [44, 49], 4: [53] };
 const FIRST = { 0: [1, 4, 7], 10: [11, 15], 18: [19, 22], 25: [26, 29], 31: [32, 35], 38: [39, 42], 44: [45, 47], 49: [50, 51], 53: [54, 56] };
