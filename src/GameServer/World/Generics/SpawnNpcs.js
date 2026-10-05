@@ -143,9 +143,8 @@ function spawnDefinition(world, definition, coords, { ignoreRaidBossState = fals
     }
 
     const npc = createNpc(world, definition.npc, coords, definition);
-    if (isRaidBossDefinition(definition)) {
-        MinionManager.attachBoss(world, npc);
-    }
+    // Raid bosses and ordinary group leaders bring their minion groups.
+    MinionManager.attachBoss(world, npc);
     if (isRaidBossDefinition(definition) && RaidBossState.get(raidBossId(definition))) {
         RaidBossState.markSpawned(raidBossId(definition));
     }

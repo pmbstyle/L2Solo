@@ -56,7 +56,7 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         // C4 notifies the minion's master before the killed NPC is removed.
         // Keep the same ordering so a lethal hit still pulls the boss and its
         // surviving minions into combat.
-        if (npc.minionBossObjectId) {
+        if (npc.minionBossObjectId || npc.minionLeader) {
             MinionManager.onMinionAttacked(World, npc, actor, session);
         }
         invoke(path.npc).die(session, actor, npc);
@@ -71,9 +71,9 @@ function receivedHit(session, actor, npc, hit, options = {}) {
     else {
         npc.enterCombatState(session, actor);
     }
-    if (npc.fetchIsRaidBoss?.() === true) {
+    if (npc.fetchIsRaidBoss?.() === true || npc.minionState) {
         MinionManager.onBossAttacked(World, npc, actor, session);
-    } else if (npc.minionBossObjectId) {
+    } else if (npc.minionBossObjectId || npc.minionLeader) {
         MinionManager.onMinionAttacked(World, npc, actor, session);
     }
     SocialAggro.notifyClan(session, npc, actor);

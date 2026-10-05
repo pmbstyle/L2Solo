@@ -39,8 +39,9 @@ function changeMode(world, nextMode, response = ServerResponse) {
     world.npc.periodMode = mode;
     world.npc.periodRevision = Number(world.npc.periodRevision || 0) + 1;
 
+    // An ordinary leader's minions leave with it (Lisvus deleteMe).
     const inactive = (world.npc.spawns || []).filter((npc) => {
-        const spawn = npc?.spawnDefinition?.spawn;
+        const spawn = (npc?.minionLeader || npc)?.spawnDefinition?.spawn;
         return SpawnNpcs.isPeriodic(spawn) && !SpawnNpcs.isPeriodActive(spawn, mode);
     });
     inactive.forEach(stopNpc);

@@ -599,6 +599,7 @@ const tests = [
     'tests/test_c4_group_leader_minions.js',
     'tests/test_raid_boss_curse.js',
     'tests/test_raid_boss_minions.js',
+    'tests/test_group_leader_minions.js',
     'tests/test_raid_boss_respawn_persistence.js',
     'tests/test_item_skill_use.js',
     'tests/test_enchant_runtime.js',

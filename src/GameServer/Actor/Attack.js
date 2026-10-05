@@ -555,12 +555,17 @@ class Attack {
             const boss = Number(actor.minionBossObjectId) > 0 ? RaidEntityIndex.bossFor(World, actor) : null;
             const faction = actor.fetchClanName?.();
             const range = Math.max(0, Number(skill.fetchDistance?.()) || 0);
-            const targets = boss ? RaidEntityIndex.entitiesForRaid(World, {
-                bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId()
-            }) : [actor, ...(faction ? (World.npc?.spawns || []).filter(target => (
-                this.isNpcCombatant(target) && target !== actor
-                && target.fetchClanName?.() === faction && this.distance2d(actor,target) <= range
-            )) : [])];
+            let targets;
+            if (boss) {
+                targets = RaidEntityIndex.entitiesForRaid(World, { bossId: boss.fetchId(), bossTemplateId: boss.fetchSelfId() });
+            } else if (actor.minionLeader) {
+                targets = invoke('GameServer/World/RaidBossMinionManager').leaderGroup(World, actor.minionLeader);
+            } else {
+                targets = [actor, ...(faction ? (World.npc?.spawns || []).filter(target => (
+                    this.isNpcCombatant(target) && target !== actor
+                    && target.fetchClanName?.() === faction && this.distance2d(actor,target) <= range
+                )) : [])];
+            }
             return this.uniqueSkillTargets(targets.filter(target => (
                 this.isValidSkillTarget(target,skill,actor) && target.isDead?.() !== true
             )));
