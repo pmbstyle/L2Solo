@@ -37,8 +37,8 @@ const errand = () => ({
 });
 
 const original = {
-    findOwnerProjection: AfkTrade.findOwnerProjection,
-    stop: AfkTrade.stop,
+    ownerRecords: AfkTrade.ownerRecords,
+    closeBotRecord: AfkTrade.closeBotRecord,
     npcOffers: MarketOpportunity.npcOffers,
     buyFromStore: TradeService.buyFromStore,
     applyBestUpgrades: BotEquipmentUpgrade.applyBestUpgrades,
@@ -48,9 +48,10 @@ const original = {
 
 async function buyWithOrderFor(orderItemId) {
     const stopped = [];
-    AfkTrade.findOwnerProjection = (ownerId) => Number(ownerId) === BOT_ID
-        ? { shop: { storeType: AfkTrade.BUY, ownerAccount: 'bot_hot_buyer', lines: [{ selfId: orderItemId, count: 1, price: 750 }] } } : null;
-    AfkTrade.stop = async (ownerId) => { stopped.push(Number(ownerId)); return { stopped: true }; };
+    AfkTrade.ownerRecords = (ownerId) => Number(ownerId) === BOT_ID
+        ? [{ id: 21, kind: 'buy_ad', storeType: AfkTrade.BUY, ownerAccount: 'bot_hot_buyer', revision: 1,
+            lines: [{ selfId: orderItemId, count: 1, price: 750 }] }] : [];
+    AfkTrade.closeBotRecord = async (ownerId) => { stopped.push(Number(ownerId)); return { closed: true }; };
     const session = { companionShopping: errand(), coldLifeState: { characterId: BOT_ID, stats: {} } };
     await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => null, say() {} });
     assert.strictEqual(session.coldLifeState.stats.lastMarketPurchase.selfId, SHORT_SWORD, 'the purchase must complete');
@@ -73,8 +74,8 @@ async function run() {
 run().then(() => console.log('Hot purchase buy order checks passed'))
     .catch((error) => { console.error(error); process.exitCode = 1; })
     .finally(() => {
-        AfkTrade.findOwnerProjection = original.findOwnerProjection;
-        AfkTrade.stop = original.stop;
+        AfkTrade.ownerRecords = original.ownerRecords;
+        AfkTrade.closeBotRecord = original.closeBotRecord;
         MarketOpportunity.npcOffers = original.npcOffers;
         TradeService.buyFromStore = original.buyFromStore;
         BotEquipmentUpgrade.applyBestUpgrades = original.applyBestUpgrades;

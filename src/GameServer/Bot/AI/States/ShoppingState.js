@@ -41,10 +41,7 @@ async function sellInventoryToAfk(bot, store, coldState = null) {
         amount: Number(item.fetchAmount?.())
     })).filter((item) => item.amount > 0);
     for (const item of candidates) {
-        const projection = invoke('GameServer/AfkTrade/AfkTradeService').findProjection(
-            PROJECTION_ID_FOR_STORE(store)
-        );
-        const currentStore = projection?.actor?.fetchPrivateStore?.() || store;
+        const currentStore = invoke('GameServer/AfkTrade/AfkTradeService').recordStore(store?.shopId) || store;
         const line = currentStore.items?.find((entry) => Number(entry.selfId) === item.selfId && Number(entry.count) > 0);
         if (!line) continue;
         const qty = Math.min(item.amount, Number(line.count));
@@ -63,10 +60,6 @@ async function sellInventoryToAfk(bot, store, coldState = null) {
     };
 }
 
-function PROJECTION_ID_FOR_STORE(store) {
-    return Number(store?.projectionObjectId || store?.merchantObjectId || 900000000 + Number(store?.shopId || 0));
-}
-
 function formatAdena(value) {
     return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 }
@@ -77,13 +70,13 @@ function formatAdena(value) {
 // town could still fill and deliver a second copy.
 async function withdrawBuyOrderFor(bot, selfId) {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    const order = AfkTrade.findOwnerProjection(bot.fetchId())?.shop;
-    if (Number(order?.storeType) !== AfkTrade.BUY) return;
-    if (!(order.lines || []).some((line) => Number(line.selfId) === Number(selfId))) return;
+    const ordered = AfkTrade.ownerRecords(bot.fetchId()).some((record) => Number(record.storeType) === AfkTrade.BUY
+        && (record.lines || []).some((line) => Number(line.selfId) === Number(selfId) && Number(line.count) > 0));
+    if (!ordered) return;
     try {
         // Before the new item is equipped: the withdrawal reloads the backpack
         // from the database to return the escrow.
-        await invoke('GameServer/Bot/Economy/BotAfkMarketService').withdraw(bot.fetchId());
+        await invoke('GameServer/Bot/Economy/BotAfkMarketService').withdrawBuyAds(bot.fetchId(), selfId);
     } catch (error) {
         utils.infoWarn('Shopping', 'buy order withdrawal failed for %s: %s', bot.fetchName(), error.message);
     }
@@ -604,19 +597,7 @@ module.exports = {
                         bot.fetchId(), store, companionErrand.itemId, 1,
                         { expectedPrice: companionErrand.price, coldState: session.coldLifeState }
                     )
-                    : await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1, {
-                    afterPurchase: sellerSession?.coldMarketState
-                        ? async (purchaseResult) => {
-                            const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                                selfId: companionErrand.itemId,
-                                price: purchaseResult.totalAdena / purchaseResult.qty,
-                                buyerCharacterId: bot.fetchId(),
-                                storeItem
-                            }, purchaseResult.qty);
-                            if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-                        }
-                        : null
-                    });
+                    : await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1);
                 const boughtSummary = store?.afkTrade === true
                     ? { qty: bought.amount, name: storeItem?.name || companionErrand.itemName, totalAdena: bought.totalPrice }
                     : bought;

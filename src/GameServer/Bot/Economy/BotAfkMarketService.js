@@ -16,14 +16,12 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LotPolicy = require('./MarketLotPolicy');
 const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 
-const MAX_LINES = 3;
+const BoardRules = require('../../AfkTrade/BoardRules');
+const MAX_LINES = BoardRules.BOT_SHOP_LINES;
 const SHOP_REVIEW_MS = 5 * 60 * 1000;
 const reviewedInventory = new Map();
 const listingSince = new Map();
 const pending = new Map();
-let reviewOwners = [];
-let reviewCursor = 0;
-let reviewRunning = false;
 
 function desiredSide(goal) {
     if (goal?.status && goal.status !== 'active') return 0;
@@ -36,11 +34,22 @@ function desiredSide(goal) {
     return 0;
 }
 
-// Adena held by the bot's own open buy order. It is still the bot's money for
-// any purchase: a new order replaces the old one and refunds it.
+// Adena held by the bot's own buy ads. It is still the bot's money for any
+// purchase: a new ad for its goal replaces the old one and refunds it.
 function buyOrderEscrow(characterId) {
-    const shop = AfkTrade.findOwnerProjection(characterId)?.shop;
-    return Number(shop?.storeType) === AfkTrade.BUY ? Math.max(0, Number(shop.escrowAdena || 0)) : 0;
+    return AfkTrade.ownerRecords(characterId).reduce((sum, record) => (
+        Number(record.storeType) === AfkTrade.BUY ? sum + Math.max(0, Number(record.escrowAdena || 0)) : sum
+    ), 0);
+}
+
+// The bot's buy ads: the author's single WTB order became an ad that does not
+// take the bot's shop (design 4.2), so it sells and buys at once.
+function buyAds(characterId) {
+    return AfkTrade.ownerRecords(characterId).filter((record) => record.kind === 'buy_ad');
+}
+
+function linesOf(records) {
+    return records.flatMap((record) => (record.lines || []).filter((line) => Number(line.count) > 0));
 }
 
 function canTradeRemotely(state, goal) {
@@ -53,8 +62,8 @@ function canTradeRemotely(state, goal) {
         // WTB (NeedsEvaluator keeps NG/D gear on that plan); in town the bot
         // still takes a cheaper listing if one is there.
         if (goal.plan?.sourceType === 'npc') return false;
-        const existing = AfkTrade.findOwnerProjection(state.characterId)?.actor?.fetchPrivateStore?.();
-        const reserved = existing?.botOwned ? buyOrderEscrow(state.characterId) : 0;
+        const existing = linesOf(buyAds(state.characterId));
+        const reserved = buyOrderEscrow(state.characterId);
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
@@ -62,7 +71,7 @@ function canTradeRemotely(state, goal) {
             buyerCharacterId: state.characterId
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
-        if (reserved && existing.items.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
+        if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
         return !!BuyStoreService.bidFor(budgetState, goal);
     }
     return true;
@@ -203,7 +212,7 @@ function stateWithEscrow(state, stock) {
     return { ...state, inventory: combined };
 }
 
-function sellLines(state, stock, inventory, expiredIds = new Set()) {
+function sellLines(state, stock, inventory, expiredIds = new Set(), evaluateOptions = {}) {
     const existing = stock?.storeType === AfkTrade.SELL
         ? stock.lines.filter((line) => Number(line.count) > 0).map((line) => ({
             objectId: Number(line.sourceObjectId || 0),
@@ -218,7 +227,7 @@ function sellLines(state, stock, inventory, expiredIds = new Set()) {
         })) : [];
     const saleState = stateWithEscrow(state, stock);
     const hasRecipe = Object.values(saleState.inventory || {}).some(ItemDisposition.isMarketRecipeItem);
-    const classified = ListingPolicy.evaluate(saleState, hasRecipe ? { recipeFirst: true } : {});
+    const classified = ListingPolicy.evaluate(saleState, hasRecipe ? { ...evaluateOptions, recipeFirst: true } : evaluateOptions);
     const listings = classified.listings;
     const priorityMarketItems = new Set(classified.listings
         .filter((item) => ItemDisposition.isMarketRecipeItem(item)
@@ -283,7 +292,7 @@ function sellLines(state, stock, inventory, expiredIds = new Set()) {
     listings.filter((item) => priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
     existing.filter((line) => !priorityMarketItems.has(line.selfId)).forEach(keepExisting);
     listings.filter((item) => !priorityMarketItems.has(Number(item.selfId))).forEach(appendListing);
-    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed };
+    return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings };
 }
 
 function buyLines(state, goal) {
@@ -343,42 +352,113 @@ async function repriceSellLines(ownerId, stock, lines) {
     return shop;
 }
 
-async function reconcileOne(state, goal, candidates) {
+// The buy side of a review: the bot's buy ads follow its goal as the author's
+// single WTB order did. A buy goal the bot can trade remotely gets its ad
+// (replacing another one); a buy goal it travels for takes the ads back
+// first (the trip pays from the wallet); without a buy goal the ads stand
+// while the needs still ask for their items (standingBuyNeed), else go.
+async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
-    const projection = AfkTrade.findOwnerProjection(ownerId);
-    let stock = projection?.shop || null;
-    if (stock && await repairStoreTitle(stock)) {
-        stock = AfkTrade.findOwnerProjection(ownerId)?.shop || null;
-        state = LifeState.snapshot(ownerId) || state;
+    const ads = buyAds(ownerId);
+    const side = desiredSide(goal);
+    const lines = linesOf(ads);
+    if (side !== AfkTrade.BUY) {
+        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: false };
+        if (state.phase !== 'cold') return { state, changed: false };
+        return withdrawBuyAds(ownerId, null, state);
     }
-    const persistentSellGoal = Number(stock?.storeType) === AfkTrade.SELL && !desiredSide(goal)
-        ? { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } }
-        : goal;
-    if (Number(stock?.storeType) === AfkTrade.BUY && !desiredSide(goal)
-        && standingBuyNeed(state, stock.lines || [], candidates)) return { state, changed: false };
-    const side = desiredSide(persistentSellGoal);
-    if (!canTradeRemotely(state, persistentSellGoal)) {
-        if (state.phase === 'cold' && projection?.actor?.fetchPrivateStore?.()?.botOwned
-            && Number(stock?.storeType) === AfkTrade.BUY) {
-            await AfkTrade.stop(ownerId);
-            reviewedInventory.delete(ownerId);
-            return { state: LifeState.snapshot(ownerId) || state, changed: true, withdrawn: true };
-        }
+    if (!canTradeRemotely(state, goal)) {
+        if (!ads.length || state.phase !== 'cold') return { state, changed: false };
+        return withdrawBuyAds(ownerId, null, state);
+    }
+    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
+    const town = MarketTownPolicy.targetTownForItems(state, wanted);
+    if (!wanted.length || (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted))) {
         return { state, changed: false };
     }
+    let shop;
+    try {
+        shop = await publishBuyAds(ownerId, ads, wanted, town);
+    } catch (error) {
+        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
+        throw error;
+    }
+    return finishPublish(ownerId, state, shop);
+}
+
+// One buy ad per wanted item, in the town the item trades in. An ad stands
+// nowhere in the world: its place is the town's centre.
+async function publishBuyAds(ownerId, ads, lines, town) {
+    const center = ListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
+    const result = await AfkTrade.replaceBotRecords(ownerId, 'buy_ad', lines.map((line) => ({
+        storeType: AfkTrade.BUY,
+        title: marketBuyStoreTitle([line]),
+        town,
+        locX: center.locX, locY: center.locY, locZ: center.locZ,
+        lines: [line]
+    })), { expected: Object.fromEntries(ads.map((ad) => [ad.id, ad.revision])) });
+    return result.opened[0] || null;
+}
+
+// A bot in a market town asks for its goal item there: its buy ad replaces
+// the ads it has (their escrow comes back first). Returns { opened, state,
+// store } for ColdMarketBuyStoreService.open.
+async function openBuyAd(state, goal, town) {
+    const ownerId = Number(state.characterId);
+    const ads = buyAds(ownerId);
+    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
+    if (!wanted.length) return { state, opened: false, reason: 'insufficient_budget' };
+    let store;
+    try {
+        store = await publishBuyAds(ownerId, ads, wanted, town);
+    } catch (error) {
+        if (staleMove(error) || error?.message === 'board_cap_reached' || error?.message === 'not_enough_adena') {
+            return { state, opened: false, reason: error.message };
+        }
+        throw error;
+    }
+    const saved = LifeState.snapshot(ownerId) || state;
+    rememberInventory(ownerId, saved);
+    return { state: saved, opened: !!store, item: wanted[0], store };
+}
+
+// Takes the bot's buy ads back (all, or those for one item): the escrow
+// returns to its bag.
+async function withdrawBuyAds(ownerId, selfId = null, state = null) {
+    const ads = buyAds(ownerId).filter((ad) => selfId === null
+        || (ad.lines || []).some((line) => Number(line.selfId) === Number(selfId)));
+    let withdrawn = 0;
+    for (const ad of ads) {
+        try {
+            const closed = await AfkTrade.closeBotRecord(ownerId, ad.id, { expectedRevision: ad.revision });
+            if (closed.closed) withdrawn += 1;
+        } catch (error) {
+            if (!staleMove(error)) throw error;
+        }
+    }
+    const current = LifeState.snapshot(ownerId) || state;
+    return { state: current, changed: withdrawn > 0, withdrawn: withdrawn > 0 && withdrawn === ads.length };
+}
+
+// The sell side of a review: the bot's shop (the author's AFK sell shop).
+async function reconcileSellShop(state, goal) {
+    const ownerId = Number(state.characterId);
+    const shop = AfkTrade.findOwnerProjection(ownerId)?.shop;
+    const stock = Number(shop?.storeType) === AfkTrade.SELL ? shop : null;
+    const persistentSellGoal = stock && !desiredSide(goal)
+        ? { type: 'sell_inventory', status: 'active', plan: { expectedBenefit: 'market_sale_inventory' } }
+        : goal;
+    const side = desiredSide(persistentSellGoal);
+    if (side !== AfkTrade.SELL || !canTradeRemotely(state, persistentSellGoal)) return { state, changed: false };
     const signature = stockSignature(state);
-    const existingTown = stock?.storeType === side
-        ? MarketTownPolicy.targetTownForItems(state, stock.lines)
-        : null;
+    const existingTown = stock ? MarketTownPolicy.targetTownForItems(state, stock.lines) : null;
     const review = reviewedInventory.get(ownerId);
-    if (side === AfkTrade.SELL && stock?.storeType === side
-        && review?.signature === signature && Date.now() - review.reviewedAt < SHOP_REVIEW_MS
+    if (stock && review?.signature === signature && Date.now() - review.reviewedAt < SHOP_REVIEW_MS
         && review.buyerRevision === MarketBuyerActivity.revision() && stock.town === existingTown
         && stock.lines.every(viableSellLine)) return { state, changed: false };
-    if (side === AfkTrade.SELL) await MarketBuyerActivity.refresh();
+    await MarketBuyerActivity.refresh();
     const now = Date.now();
-    const expired = side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL
-        ? expiredSellLines(ownerId, stock, now) : [];
+    const expired = stock ? expiredSellLines(ownerId, stock, now) : [];
     let expiredIds = new Set();
     let pricingSaved = false;
     if (expired.length) {
@@ -403,57 +483,170 @@ async function reconcileOne(state, goal, candidates) {
     ]);
     const row = characters[0];
     if (!row || !String(row.username || '').startsWith('bot_')) return { state, changed: false };
-    const sale = side === AfkTrade.SELL ? sellLines(state, stock, inventory, expiredIds) : null;
-    const lines = sale ? sale.lines
-        : buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
+    const sale = sellLines(state, stock, inventory, expiredIds);
+    const lines = sale.lines;
     const town = MarketTownPolicy.targetTownForItems(state, lines);
-    if (!lines.length && side === AfkTrade.SELL && Number(stock?.storeType) === AfkTrade.SELL) {
+    if (!lines.length && stock) {
         await AfkTrade.stop(ownerId);
         listingSince.delete(ownerId);
         rememberInventory(ownerId, LifeState.snapshot(ownerId) || state);
         return { state: LifeState.snapshot(ownerId) || state, changed: true, withdrawn: true };
     }
-    if (sale) rememberListings(ownerId, stock, lines, sale.listed, expiredIds, now);
-    if (!lines.length || (stock?.town === town && side === AfkTrade.SELL && sameSellOrder(stock, lines))
-        || (stock?.town === town && side === AfkTrade.BUY && sameBuyOrder(stock, lines))) {
-        if (side === AfkTrade.SELL) rememberInventory(ownerId, state);
+    rememberListings(ownerId, stock, lines, sale.listed, expiredIds, now);
+    if (!lines.length || (stock?.town === town && sameSellOrder(stock, lines))) {
+        rememberInventory(ownerId, state);
         // A remembered failure changed the saved state even when the lines did not.
         return { state, changed: pricingSaved };
     }
-    if (side === AfkTrade.BUY) listingSince.delete(ownerId);
-    if (side === AfkTrade.SELL && stock?.town === town && sameSellLines(stock, lines)) {
+    if (stock?.town === town && sameSellLines(stock, lines)) {
         return finishPublish(ownerId, state, await repriceSellLines(ownerId, stock, lines));
     }
+    const published = await publishSellShop(ownerId, state, stock, lines, town, row, inventory);
+    if (!published.shop) return { state, changed: false, reason: published.reason };
+    return finishPublish(ownerId, state, published.shop);
+}
 
+// A deal or another move changed the record after the review read it: the
+// move is refused (its idempotency key) and the next review starts afresh.
+function staleMove(error) {
+    return error?.message === 'afk_trade_shop_changed';
+}
+
+// Publishes the bot's shop with `lines` in `town` (replacing the shop it
+// has): a place on the town's square, its look, its title. Returns { shop }
+// or { reason }.
+async function publishSellShop(ownerId, state, stock, lines, town, row, inventory) {
     const loc = stock?.town === town
         ? { locX: stock.locX, locY: stock.locY, locZ: stock.locZ }
         : ListingService.marketLocation({ name: town }, { state, owner: ShopPlaces.afkOwner(ownerId) });
-    if (!loc) return { state, changed: false, reason: ShopPlaces.fullReason(town) };
-    const title = side === AfkTrade.SELL
-        ? marketStoreTitle(lines)
-        : marketBuyStoreTitle(lines);
-    let shop;
+    if (!loc) return { reason: ShopPlaces.fullReason(town) };
     try {
-        shop = await AfkTrade.publishBot(ownerId, {
-            storeType: side,
-            title,
+        return { shop: await AfkTrade.publishBot(ownerId, {
+            storeType: AfkTrade.SELL,
+            title: marketStoreTitle(lines),
             town,
             ...loc,
             head: Number(row.head || 0),
             appearance: appearance(row, inventory),
-            lines
-        });
+            lines,
+            ...(stock ? { expectedRevision: stock.revision } : {})
+        }) };
     } catch (error) {
         AfkTrade.restorePlace(ownerId);
+        if (staleMove(error)) return { reason: 'shop_changed' };
         throw error;
     }
-    return finishPublish(ownerId, state, shop);
+}
+
+// The record-backed equivalent of the author's market stall (step 3.3): a
+// bot in a market town lists what the listing policy would put on a stall.
+// Its shop takes up to MAX_LINES lines (kept lines first, as a review keeps
+// them); each listing past the shop becomes a sell ad, up to the bot's cap;
+// what fits nowhere stays in the bag. Returns { state, listed, reason }.
+async function listOnBoard(state, options = {}) {
+    const ownerId = Number(state.characterId);
+    const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
+    const stock = Number(current?.storeType) === AfkTrade.SELL ? current : null;
+    const [characters, inventory] = await Promise.all([
+        Database.execute(['SELECT * FROM characters WHERE id = ? LIMIT 1', [ownerId]], 'bot-afk:owner'),
+        Database.fetchItems(ownerId)
+    ]);
+    const row = characters[0];
+    if (!row) return { state, listed: 0, reason: 'owner_missing' };
+    const sale = sellLines(state, stock, inventory, new Set(), options);
+    let listed = 0;
+    let reason = null;
+    let shop = stock;
+    if (sale.lines.length) {
+        const town = MarketTownPolicy.targetTownForItems(state, sale.lines);
+        if (stock?.town === town && sameSellOrder(stock, sale.lines)) {
+            listed += sale.lines.length;
+        } else {
+            const published = await publishSellShop(ownerId, state, stock, sale.lines, town, row, inventory);
+            if (published.shop) {
+                shop = published.shop;
+                listed += sale.lines.length;
+                rememberListings(ownerId, stock, sale.lines, sale.listed, new Set(), Date.now());
+                rememberInventory(ownerId, LifeState.snapshot(ownerId) || state);
+            } else {
+                reason = published.reason;
+            }
+        }
+    }
+    const ads = await listSellAds(ownerId, state, sale.listings, shop);
+    listed += ads.listed;
+    if (listed) {
+        try {
+            await AfkTrade.matchAfkOrders(ownerId);
+        } catch (error) {
+            utils.infoWarn('BotMarket', 'board matching failed for %s: %s', state.name, error.message);
+        }
+    }
+    return { state: LifeState.snapshot(ownerId) || state, listed, reason: reason || ads.reason };
+}
+
+// One sell ad per listing the shop has no line for, while the bot has ad
+// slots left (BoardRules.BOT_RECORDS); an item it already advertises keeps
+// its ad. All in one move from the bag.
+async function listSellAds(ownerId, state, listings, shop) {
+    const records = AfkTrade.ownerRecords(ownerId);
+    const advertised = new Set(linesOf(records.filter((record) => record.kind === 'sell_ad')).map((line) => Number(line.selfId)));
+    const inShop = new Set(linesOf(shop ? [shop] : []).map((line) => Number(line.selfId)));
+    const free = Math.max(0, BoardRules.BOT_RECORDS.sell_ad - records.filter((record) => record.kind === 'sell_ad').length);
+    if (!free) return { listed: 0, reason: 'board_cap_reached' };
+    const inventory = await Database.fetchItems(ownerId);
+    const configs = [];
+    for (const listing of listings || []) {
+        if (configs.length >= free) break;
+        const selfId = Number(listing.selfId);
+        if (inShop.has(selfId) || advertised.has(selfId)) continue;
+        const row = inventory.find((item) => Number(item.selfId) === selfId && !Number(item.equipped)
+            && Number(item.amount) > 0 && Number(item.enchant || 0) === Number(listing.enchant || 0));
+        if (!row) continue;
+        const stackable = ItemTemplateIndex.find(DataCache.items, selfId)?.etc?.stackable === true;
+        const line = {
+            objectId: Number(row.id), selfId, name: row.name || listing.name,
+            count: Math.min(Number(row.amount), Math.max(1, Number(listing.count) || 1)),
+            price: Number(listing.price), enchant: Number(row.enchant || 0), slot: Number(row.slot || 0),
+            stackable, petData: row.petData || null
+        };
+        if (!viableSellLine(line)) continue;
+        const town = MarketTownPolicy.targetTownForItems(state, [line]);
+        const center = ListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
+        configs.push({ storeType: AfkTrade.SELL, title: marketStoreTitle([line]), town, ...center, lines: [line] });
+        advertised.add(selfId);
+    }
+    if (!configs.length) return { listed: 0 };
+    try {
+        const result = await AfkTrade.openBotRecords(ownerId, 'sell_ad', configs);
+        return { listed: result.opened.length };
+    } catch (error) {
+        if (['board_cap_reached', 'board_ad_exists', 'invalid_afk_trade_source', 'inventory_item_changed'].includes(error.message)) {
+            return { listed: 0, reason: error.message };
+        }
+        throw error;
+    }
+}
+
+async function reconcileOne(state, goal, candidates) {
+    const ownerId = Number(state.characterId);
+    const shop = AfkTrade.findOwnerProjection(ownerId)?.shop || null;
+    if (shop && await repairStoreTitle(shop)) state = LifeState.snapshot(ownerId) || state;
+    const buy = await reconcileBuyAds(state, goal, candidates);
+    if (desiredSide(goal) === AfkTrade.BUY) return buy;
+    const sell = await reconcileSellShop(buy.state || state, goal);
+    return {
+        ...sell,
+        state: sell.state || buy.state || state,
+        changed: !!(buy.changed || sell.changed),
+        withdrawn: !!(buy.withdrawn || sell.withdrawn),
+        shop: sell.shop || null
+    };
 }
 
 async function finishPublish(ownerId, state, shop) {
     try {
         await AfkTrade.matchAfkOrders(ownerId);
-        await BuyStoreService.matchAfkPlayerShop(ownerId);
     } catch (error) {
         utils.infoWarn('BotMarket', 'AFK shop matching failed for %s: %s', state.name, error.message);
     }
@@ -473,51 +666,6 @@ async function repairStoreTitle(shop) {
     return true;
 }
 
-async function migrateRestoredShops() {
-    let moved = 0;
-    let skipped = 0;
-    let pruned = 0;
-    let closed = 0;
-    for (const shop of AfkTrade.activeShops()) {
-        if (!String(shop.ownerAccount || '').startsWith('bot_')) continue;
-        const state = { characterId: Number(shop.ownerId), loc: shop };
-        const lines = (shop.lines || []).filter((line) => Number(line.count) > 0);
-        const kept = Number(shop.storeType) === AfkTrade.SELL
-            ? lines.filter(viableSellLine) : lines;
-        const removed = lines.length - kept.length;
-        const town = MarketTownPolicy.targetTownForItems(state, kept.length ? kept : lines);
-        const relocate = town !== shop.town;
-        const loc = relocate
-            ? ListingService.marketLocation({ name: town }, { state, owner: ShopPlaces.afkOwner(shop.ownerId) })
-            : { locX: shop.locX, locY: shop.locY, locZ: shop.locZ };
-        if (!loc && kept.length) { skipped++; continue; }
-        try {
-            if (!relocate && !removed) {
-                await repairStoreTitle(shop);
-                continue;
-            }
-            if (!kept.length) {
-                await publishPrunedSellShop(shop, kept);
-                closed++;
-            } else if (removed) {
-                await publishPrunedSellShop(shop, kept, relocate ? town : shop.town, loc);
-                pruned += removed;
-                if (relocate) moved++;
-            } else if (relocate) {
-                await AfkTrade.relocateBot(shop.ownerId, town, loc);
-                moved++;
-            }
-        } catch (error) {
-            AfkTrade.restorePlace(shop.ownerId);
-            skipped++;
-            utils.infoWarn('BotMarket', 'AFK shop migration failed for %s: %s', shop.ownerName, error.message);
-        }
-    }
-    if (moved || skipped || pruned || closed) utils.infoSuccess('BotMarket',
-        'restored AFK shops relocated=%d resourceLinesRemoved=%d closed=%d pending=%d', moved, pruned, closed, skipped);
-    return { moved, skipped, pruned, closed };
-}
-
 function reconcile(state, goal, candidates = null) {
     const ownerId = Number(state?.characterId || 0);
     if (!ownerId) return Promise.resolve({ state, changed: false });
@@ -531,41 +679,18 @@ function reconcile(state, goal, candidates = null) {
     return next;
 }
 
+// The bot takes its shop and its buy ads back.
 async function withdraw(ownerId) {
     const id = Number(ownerId);
     const shop = AfkTrade.findOwnerProjection(id)?.shop;
-    if (!shop || !String(shop.ownerAccount || '').startsWith('bot_')) return { stopped: false };
-    const result = await AfkTrade.stop(id);
+    const bot = String(shop?.ownerAccount || '').startsWith('bot_');
+    const result = bot ? await AfkTrade.stop(id) : { stopped: false };
+    const ads = await withdrawBuyAds(id);
     reviewedInventory.delete(id);
     listingSince.delete(id);
-    return result;
+    return { ...result, stopped: !!result.stopped || ads.withdrawn };
 }
 
-async function reviewNextPersistentShop() {
-    if (reviewRunning) return false;
-    if (reviewCursor >= reviewOwners.length) {
-        reviewOwners = AfkTrade.activeShops()
-            .filter((shop) => String(shop.ownerAccount || '').startsWith('bot_')
-                && Number(shop.storeType) === AfkTrade.SELL)
-            .map((shop) => Number(shop.ownerId));
-        reviewCursor = 0;
-    }
-    const ownerId = reviewOwners[reviewCursor++];
-    if (!ownerId) return false;
-    const state = LifeState.snapshot(ownerId);
-    if (!state || state.phase !== 'cold') return false;
-    reviewRunning = true;
-    try {
-        await reconcile(state, null);
-        return true;
-    } catch (error) {
-        utils.infoWarn('BotMarket', 'persistent shop review failed for %d: %s', ownerId, error.message);
-        return false;
-    } finally {
-        reviewRunning = false;
-    }
-}
-
-module.exports = { buyOrderEscrow, canTradeRemotely, desiredSide, migrateRestoredShops, minimumResourceLotValue,
-    pruneResourceLots, reconcile, rememberInventory, reviewNextPersistentShop, viableSellLine, withdraw,
-    _resetForTests() { reviewedInventory.clear(); listingSince.clear(); pending.clear(); reviewOwners = []; reviewCursor = 0; reviewRunning = false; } };
+module.exports = { buyOrderEscrow, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,
+    pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
+    _resetForTests() { reviewedInventory.clear(); listingSince.clear(); pending.clear(); } };

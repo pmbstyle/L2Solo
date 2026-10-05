@@ -17,15 +17,15 @@ const SHORT_GLOVES = 48;
 const original = {
     snapshot: LifeState.snapshot,
     findOwnerProjection: AfkTrade.findOwnerProjection,
-    stop: AfkTrade.stop,
+    ownerRecords: AfkTrade.ownerRecords,
+    closeBotRecord: AfkTrade.closeBotRecord,
     evaluate: NeedsEvaluator.evaluate
 };
 
+// The bot's buy order is a buy ad on the board (step 3.3); it has no shop.
 const stops = [];
-const order = { id: 95726, ownerId: 7, storeType: AfkTrade.BUY, escrowAdena: 37213,
+const order = { id: 95726, ownerId: 7, kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 37213, revision: 1,
     lines: [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }] };
-const projection = { shop: order, actor: { fetchPrivateStore: () => ({ botOwned: true, storeType: AfkTrade.BUY,
-    shopId: order.id, items: order.lines }) } };
 // A level 40 bot planning to buy from another bot (an NPC-shop plan never
 // holds a WTB; checked at the end).
 const resting = (planTarget, sourceType = 'afk_bot_store', level = 40) => ({
@@ -41,8 +41,9 @@ const recover = { type: 'recover', status: 'active', priority: 90, target: { hpP
 
 (async () => {
 try {
-    AfkTrade.findOwnerProjection = () => projection;
-    AfkTrade.stop = (ownerId) => { stops.push(ownerId); return Promise.resolve({ stopped: true }); };
+    AfkTrade.findOwnerProjection = () => null;
+    AfkTrade.ownerRecords = () => [order];
+    AfkTrade.closeBotRecord = (ownerId) => { stops.push(ownerId); return Promise.resolve({ closed: true }); };
 
     // Resting makes recovery the current goal between two hunts. The buy
     // order posted for the plan's target must survive it, as a sell shop does.
@@ -175,7 +176,8 @@ try {
 } finally {
     LifeState.snapshot = original.snapshot;
     AfkTrade.findOwnerProjection = original.findOwnerProjection;
-    AfkTrade.stop = original.stop;
+    AfkTrade.ownerRecords = original.ownerRecords;
+    AfkTrade.closeBotRecord = original.closeBotRecord;
     NeedsEvaluator.evaluate = original.evaluate;
     BotAfkMarket._resetForTests();
 }

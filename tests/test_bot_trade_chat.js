@@ -10,7 +10,6 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Manager = invoke('GameServer/Bot/BotManager');
 const DataCache = invoke('GameServer/DataCache');
-const BuyStore = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const BuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const saved = { user: World.user, speak: Response.speak, cached: LifeState.cachedState,
@@ -144,17 +143,6 @@ async function main() {
         reset(); World.user.sessions = [];
         assert(!Chat.offer(cold(), now).announced);
         assert.strictEqual(Chat.snapshot().pending, 0, 'no backlog is collected without real players');
-
-        reset();
-        const seed = { ...cold(501), activity: 'shopping', level: 20, stats: {}, inventory: {}, loc: {}, timing: {} };
-        const goal = { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 5 }, plan: {} };
-        LifeState.upsertState = async () => null;
-        assert(!(await BuyStore.open(seed, goal, { now })).opened);
-        assert.strictEqual(packets.length, 0, 'failed store persistence must never announce an opening');
-        LifeState.upsertState = async state => { states.set(state.characterId, state); return state; };
-        assert((await BuyStore.open(seed, goal, { now })).opened);
-        assert.strictEqual(packets.length, 1, 'a successful opening advertises immediately without waiting for another market tick');
-        assert(packets[0].text.startsWith('WTB ') && packets[0].text.includes('Stem'));
 
         reset();
         assert.strictEqual(Config.marketTradeChatGlobalMinIntervalMs, 100000,

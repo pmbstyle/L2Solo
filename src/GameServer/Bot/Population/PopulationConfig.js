@@ -78,12 +78,6 @@ const DEFAULTS = {
     classProgressionMigrationBatchSize: 5,
     coldCombatProfileMigrationIntervalMs: 10000,
     coldCombatProfileMigrationBatchSize: 5,
-    // One-off migration for stores created before market towns were split.
-    // It is deliberately independent from the normal cold-resolve budget.
-    marketTownMigrationIntervalMs: 10000,
-    marketTownMigrationBatchSize: 10,
-    marketExpiryCleanupIntervalMs: 10000,
-    marketExpiryCleanupBatchSize: 10,
     partyFormationIntervalMs: 45000,
     // A protected player session may replenish only required parties. The
     // worker finds candidates; the main loop performs one guarded atomic write.

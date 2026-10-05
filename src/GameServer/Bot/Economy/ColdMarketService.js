@@ -1,7 +1,6 @@
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
-const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -76,10 +75,11 @@ function finishBlockedPurchase(state, goal, reason) {
     ));
 }
 
-// Buys one unit of a found offer for a cold bot: an AFK store through
-// AfkTradeService, otherwise the market snapshot (NPC, cold store). No goal or
-// travel change; a snapshot purchase records the bot as shopping unless
-// options.keepActivity (a purchase made for it where it hunts).
+// Buys one unit of a found offer for a cold bot: a board record through
+// AfkTradeService (one deal transaction), otherwise an NPC or a configured
+// city merchant. No goal or travel change; an NPC purchase records the bot
+// as shopping unless options.keepActivity (a purchase made for it where it
+// hunts).
 function buyOffer(state, offer, options = {}) {
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
@@ -113,15 +113,12 @@ function buyOffer(state, offer, options = {}) {
             MarketOpportunity.release(offer, 1);
             return { purchased: false, reason: 'persist_failed' };
         }
-        const settlement = offer.sourceType === 'cold_store' ? ListingService.settle(offer, 1) : Promise.resolve(null);
-        return settlement.then((sellerState) => {
-            MarketTelemetry.purchase(offer, 1, {
-                buyerCharacterId: updated.characterId,
-                buyerName: updated.name,
-                town: updated.currentRegion
-            });
-            return { state: updated, purchased: true, offer, sellerState };
+        MarketTelemetry.purchase(offer, 1, {
+            buyerCharacterId: updated.characterId,
+            buyerName: updated.name,
+            town: updated.currentRegion
         });
+        return { state: updated, purchased: true, offer, sellerState: null };
     }).catch((err) => {
         MarketOpportunity.release(offer, 1);
         utils.infoWarn('BotMarket', 'cold purchase failed for %s: %s', state.name, err.message);

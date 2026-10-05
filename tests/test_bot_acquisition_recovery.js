@@ -2,9 +2,7 @@ const assert = require('assert');
 require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
-const Listing = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 DataCache.init();
 
@@ -17,18 +15,14 @@ async function run() {
         inventory: {}, stats: { classId: 34, role: 'buffer', equipmentPlan: plan,
             marketStore: { storeType: 3, expiresAt: now, items: [{ selfId: 75, count: 1 }] } } };
     const originalSave = LifeState.upsertState;
-    const originalClear = Goals.clear;
-    let cleared = false;
     LifeState.upsertState = async (value) => value;
-    Goals.clear = async (id, status) => { cleared = id === 42 && status === 'abandoned'; };
     try {
-        assert.strictEqual((await Listing.resolve(state, now - 1)).closed, false);
-        const expired = await Listing.resolve(state, now);
-        assert(expired.closed && cleared, 'an expired unfilled shop must abandon its stale goal');
-        assert.strictEqual(expired.state.stats.equipmentPlan.status, 'abandoned');
-        assert.strictEqual(expired.state.stats.marketWanted, null);
-        assert.strictEqual(expired.state.activity, 'hunting', 'a missing return destination must not strand the buyer in shopping');
-        const remembered = JSON.parse(JSON.stringify(expired.state));
+        // The physical buy stall that abandoned the plan on expiry is gone
+        // (step 3.3: a buy ad returns its escrow and the bot reviews again);
+        // the planner's own abandonment stands for it here.
+        const abandoned = Planner.abandonAcquisition(state, 75, now);
+        assert.strictEqual(abandoned.stats.equipmentPlan.status, 'abandoned');
+        const remembered = JSON.parse(JSON.stringify(abandoned));
         const context = Planner.replanContextFor(remembered, remembered.stats.equipmentPlan, now + 1);
         assert(context.excludedTargetIds.includes(2566));
         assert(context.excludedMaterialIds.includes(75));
@@ -45,7 +39,6 @@ async function run() {
         assert(variants.size > 1, 'comparable dual routes must not synchronize the whole population');
     } finally {
         LifeState.upsertState = originalSave;
-        Goals.clear = originalClear;
     }
 
     assert.strictEqual(Planner.abandonAcquisition(state, 1869, now), state,

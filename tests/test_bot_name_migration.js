@@ -8,7 +8,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Clan = invoke('GameServer/Clan/ClanService');
 const World = invoke('GameServer/World/World');
 const Response = invoke('GameServer/Network/Response');
-const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const Seeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-name-migration-'));
 options.default.Database.path = path.join(directory, 'world.sqlite');
@@ -41,8 +41,11 @@ function session(id, clanId, name) {
     await Clan.reload();
     const player = session(2, 7, 'PlayerLeader'), outsider = session(9, 8, 'Outsider');
     World.user = { sessions: [player, outsider] };
-    Market.indexColdStore(Life.cachedState(1));
-    assert.strictEqual(Market.coldOffers(1864, 'Giran')[0].sourceName, 'OldBotName');
+    AfkTrade.refreshRecord({ id: 1, ownerId: 1, ownerName: 'OldBotName', ownerAccount: 'bot_pop_names', kind: 'sell_ad',
+        storeType: 1, status: 'active', town: 'Giran', title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+        lines: [{ id: 1, selfId: 1864, name: 'Stem', count: 10, price: 50 }] });
+    const boardName = () => AfkTrade.offers(1864, AfkTrade.SELL, { town: 'Giran' })[0].sourceName;
+    assert.strictEqual(boardName(), 'OldBotName');
     const migrated = await Life.acceptNameMetadata(1, 'NewBotName', 3);
     assert.strictEqual(Clan.findById(7).members.find(member => member.id === 1).name, 'NewBotName');
     assert.deepStrictEqual(player.packets.map(packet => packet[0]), [0x82, 0x53]);
@@ -51,7 +54,7 @@ function session(id, clanId, name) {
     assert(!packet.includes(Buffer.from('OldBotName\0', 'utf16le')), 'full roster must discard the old name');
     assert.strictEqual(outsider.packets.length, 0);
     assert.strictEqual(Clan.liveMember({ id: 1, name: 'StaleClanCache' }).name, 'NewBotName');
-    assert.strictEqual(Market.coldOffers(1864, 'Giran')[0].sourceName, 'NewBotName');
+    assert.strictEqual(boardName(), 'NewBotName');
     assert.strictEqual(await Seeder.migratePopulationNames([migrated]), 0, 'repeated migration must leave new names alone');
     const [stored] = await query('SELECT characterName,statsJson FROM bot_life_state WHERE characterId=1');
     assert.strictEqual(stored.characterName, 'NewBotName');
@@ -74,8 +77,8 @@ function session(id, clanId, name) {
     assert(hot.packets.some(p => p.toString() === 'self:HotBotName'));
     assert(hot.broadcasts.some(p => p.toString() === 'world:HotBotName'));
     assert.strictEqual(Clan.membersForDisplay(Clan.findById(7)).find(member => member.id === 1).name, 'HotBotName');
-    assert.strictEqual(Market.coldOffers(1864, 'Giran')[0].sourceName, 'HotBotName');
-    console.log('Bot name migration: atomic storage, C4 clan roster, hot sessions, cold display and market identity passed');
+    assert.strictEqual(boardName(), 'HotBotName');
+    console.log('Bot name migration: atomic storage, C4 clan roster, hot sessions, cold display and board identity passed');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     World.user = originals.user;
     Response.userInfo = originals.userInfo;

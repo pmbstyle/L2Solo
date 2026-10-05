@@ -30,7 +30,7 @@ const goal = { type: 'upgrade_gear', status: 'active', target: { itemId: 127 },
 const refunded = { ...base, adena: 1_500_000 };
 
 const saved = {
-    findOwnerProjection: AfkTrade.findOwnerProjection, review: GoalService.review, reconcile: BotAfkMarketService.reconcile,
+    ownerRecords: AfkTrade.ownerRecords, review: GoalService.review, reconcile: BotAfkMarketService.reconcile,
     beginMarketTravel: GoalExecutor.beginMarketTravel, cachedState: LifeState.cachedState, applyResolve: LifeState.applyResolve,
     upsertState: LifeState.upsertState, recordMany: LifeEvents.recordMany, resolveSolo: BackgroundResolver.resolveSolo,
     ensure: SpotProfiles.ensure, findForState: SpotProfiles.findForState
@@ -39,7 +39,7 @@ const saved = {
 (async () => {
     try {
         // 800,000 of the money is in the bot's WTB: funded only with the escrow.
-        AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: 800_000 } });
+        AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 800_000, lines: [] }];
         assert.strictEqual(PopulationService.canResumeAffordableMarketPlan(base), true, 'fixture: funded with the escrow');
         const calls = [];
         GoalService.review = () => Promise.resolve({ current: goal, candidates: [] });
@@ -105,7 +105,7 @@ const saved = {
 
         // No money in an order: the trip starts at once, nothing to withdraw.
         calls.length = 0;
-        AfkTrade.findOwnerProjection = () => null;
+        AfkTrade.ownerRecords = () => [];
         const rich = { ...base, adena: 2_000_000 };
         LifeState.applyResolve = () => Promise.resolve(rich);
         const trip = await PopulationService.resolveColdState({ ...rich, activity: 'resting',
@@ -113,7 +113,7 @@ const saved = {
         assert.deepStrictEqual(calls, ['travel:2000000']);
         assert.strictEqual(trip.state.activity, 'traveling');
     } finally {
-        Object.assign(AfkTrade, { findOwnerProjection: saved.findOwnerProjection });
+        Object.assign(AfkTrade, { ownerRecords: saved.ownerRecords });
         Object.assign(GoalService, { review: saved.review });
         Object.assign(BotAfkMarketService, { reconcile: saved.reconcile });
         Object.assign(GoalExecutor, { beginMarketTravel: saved.beginMarketTravel });

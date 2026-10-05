@@ -60,25 +60,8 @@ assert.strictEqual(ListingService.targetMarketTownName(state, [{ selfId: 1919 }]
     'a B-grade recipe fragment must use Giran');
 assert.strictEqual(ListingService.targetMarketTownName(state, [{ selfId: 1865 }]), 'Elven Village',
     'shared no-grade resources must keep their local starter market');
-assert(Number.isInteger(ListingService.MARKET_TOWN_ROUTING_VERSION) && ListingService.MARKET_TOWN_ROUTING_VERSION > 0, 'legacy market migration must be versioned and finite');
-const legacyStore = {
-    ...state,
-    phase: 'cold',
-    activity: 'merchant',
-    updatedAt: 1,
-    stats: { marketStore: { town: 'Giran', items: [{ rank: 'd', count: 1 }] } }
-};
-const currentStore = {
-    ...legacyStore,
-    characterId: 399,
-    updatedAt: 0,
-    stats: { marketStore: { ...legacyStore.stats.marketStore, marketTownRoutingVersion: ListingService.MARKET_TOWN_ROUTING_VERSION } }
-};
-assert.deepStrictEqual(
-    ListingService.legacyMarketTownCandidates([currentStore, legacyStore]).map((candidate) => candidate.characterId),
-    [legacyStore.characterId],
-    'only stores created before town routing are eligible for the transition migration'
-);
+// The legacy market-town migration of physical stalls is gone with the
+// stalls (step 3.3): the old world's bot stores closed once and relist.
 const first = ShopPlaces.take('Gludio', 'test:first');
 assert(ShopPlaces.isStallArea('Gludio', first), 'Gludio D-grade listings must remain inside the captured trading square');
 const second = ShopPlaces.take('Gludio', 'test:second');
@@ -215,47 +198,8 @@ assert.strictEqual(dwarvenTravel.stats.travel.townName, 'Dwarven Village', 'Dwar
 const dwarvenStall = ShopPlaces.take('Dwarven Village', 'test:dwarvenStall');
 assert(ShopPlaces.isStallArea('Dwarven Village', dwarvenStall), 'Dwarven Village no-grade listings must remain inside the captured trading square');
 
-const originalMigrateLegacyMarketTowns = PopulationService.migrateLegacyMarketTowns;
-const originalMigrationRunning = PopulationService.marketTownMigrationRunning;
-const originalNextMigrationAt = PopulationService.nextMarketTownMigrationAt;
-const originalExpireStaleMarketStores = PopulationService.expireStaleMarketStores;
-const originalExpiryRunning = PopulationService.marketExpiryCleanupRunning;
-const originalNextExpiryAt = PopulationService.nextMarketExpiryCleanupAt;
-let migrationCalls = 0;
-let expiryCalls = 0;
-PopulationService.migrateLegacyMarketTowns = () => {
-    migrationCalls++;
-    return Promise.resolve([]);
-};
-PopulationService.marketTownMigrationRunning = false;
-PopulationService.nextMarketTownMigrationAt = 0;
-PopulationService.expireStaleMarketStores = () => {
-    expiryCalls++;
-    return Promise.resolve([]);
-};
-PopulationService.marketExpiryCleanupRunning = false;
-PopulationService.nextMarketExpiryCleanupAt = 0;
-Promise.resolve()
-    .then(() => PopulationService.maybeMigrateLegacyMarketTowns(1000))
-    .then(() => PopulationService.maybeMigrateLegacyMarketTowns(1001))
-    .then(() => PopulationService.maybeMigrateLegacyMarketTowns(11000))
-    .then(() => PopulationService.maybeExpireStaleMarketStores(1000))
-    .then(() => PopulationService.maybeExpireStaleMarketStores(1001))
-    .then(() => PopulationService.maybeExpireStaleMarketStores(11000))
-    .then(() => {
-        assert.strictEqual(migrationCalls, 2, 'the post-resolve migration fallback must run initially and then respect its cadence');
-        assert.strictEqual(expiryCalls, 2, 'the post-resolve expiry cleanup must run initially and then respect its cadence');
-        console.log('Bot market town routing checks passed');
-    })
-    .catch((err) => {
-        console.error(err);
-        process.exitCode = 1;
-    })
-    .finally(() => {
-        PopulationService.migrateLegacyMarketTowns = originalMigrateLegacyMarketTowns;
-        PopulationService.marketTownMigrationRunning = originalMigrationRunning;
-        PopulationService.nextMarketTownMigrationAt = originalNextMigrationAt;
-        PopulationService.expireStaleMarketStores = originalExpireStaleMarketStores;
-        PopulationService.marketExpiryCleanupRunning = originalExpiryRunning;
-        PopulationService.nextMarketExpiryCleanupAt = originalNextExpiryAt;
-    });
+// The stall migration and stall expiry timers are gone with the stalls
+// (step 3.3): board records expire in the board's own queue.
+assert.strictEqual(PopulationService.maybeMigrateLegacyMarketTowns, undefined);
+assert.strictEqual(PopulationService.maybeExpireStaleMarketStores, undefined);
+console.log('Bot market town routing checks passed');

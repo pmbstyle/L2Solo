@@ -51,8 +51,8 @@ assert.strictEqual(travel.stats.travel.townName, plan.market.town, 'to the town 
 
 (async () => {
     const original = {
-        findOwnerProjection: AfkTrade.findOwnerProjection,
-        stop: AfkTrade.stop,
+        ownerRecords: AfkTrade.ownerRecords,
+        closeBotRecord: AfkTrade.closeBotRecord,
         snapshot: LifeState.snapshot
     };
     try {
@@ -60,18 +60,16 @@ assert.strictEqual(travel.stats.travel.townName, plan.market.town, 'to the town 
         // back) so the trip can pay the NPC.
         const stops = [];
         const lines = [{ id: 1, selfId: Number(plan.target.selfId), count: 1, price: Math.floor(plan.market.price * 0.85) }];
-        AfkTrade.findOwnerProjection = () => ({
-            shop: { ownerId: 7, storeType: AfkTrade.BUY, escrowAdena: lines[0].price, lines },
-            actor: { fetchPrivateStore: () => ({ botOwned: true, storeType: AfkTrade.BUY, items: lines }) }
-        });
-        AfkTrade.stop = (ownerId) => { stops.push(ownerId); return Promise.resolve({ stopped: true }); };
+        AfkTrade.ownerRecords = () => [{ id: 11, ownerId: 7, kind: 'buy_ad', storeType: AfkTrade.BUY,
+            escrowAdena: lines[0].price, revision: 1, lines }];
+        AfkTrade.closeBotRecord = (ownerId) => { stops.push(ownerId); return Promise.resolve({ closed: true }); };
         LifeState.snapshot = () => state;
         const result = await BotAfkMarket.reconcile(state, activeGoal);
         assert.deepStrictEqual(stops, [7], 'the WTB for an NPC-shop plan is withdrawn');
         assert.strictEqual(result.withdrawn, true);
     } finally {
-        AfkTrade.findOwnerProjection = original.findOwnerProjection;
-        AfkTrade.stop = original.stop;
+        AfkTrade.ownerRecords = original.ownerRecords;
+        AfkTrade.closeBotRecord = original.closeBotRecord;
         LifeState.snapshot = original.snapshot;
         BotAfkMarket._resetForTests?.();
     }

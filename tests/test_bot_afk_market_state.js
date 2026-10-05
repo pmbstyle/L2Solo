@@ -16,7 +16,6 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const Negotiation = invoke('GameServer/Bot/Economy/BotNegotiationService');
-const RemoteChat = invoke('GameServer/Bot/AI/BotRemoteChat');
 const World = invoke('GameServer/World/World');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-afk-market-state.sqlite');
 const originalEvaluate = ListingPolicy.evaluate;
@@ -138,15 +137,20 @@ async function run() {
     const buyGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: cWeapon.selfId, itemName: cWeapon.template.name },
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } };
+    // A buy goal opens a buy ad beside the shop (the board, step 3.3): the bot
+    // sells and buys at once; the shop and its stock stay.
+    const varnishBefore = amount(await Database.fetchItems(ownerId), 1865);
     const switched = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
     assert.strictEqual(switched.changed, true);
     assert.strictEqual(switched.state.activity, 'hunting');
     assert.strictEqual(switched.shop.storeType, AfkTrade.BUY);
+    assert.strictEqual(switched.shop.kind, 'buy_ad');
     assert.strictEqual(switched.shop.town, 'Giran');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wtb, 1);
-    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 1);
-    assert.strictEqual(amount(await Database.fetchItems(ownerId), 1865), 31,
-        'switching side must return the unsold escrow');
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 2, 'the shop and the buy ad');
+    assert(AfkTrade.findOwnerProjection(ownerId), 'the shop still stands');
+    assert.strictEqual(amount(await Database.fetchItems(ownerId), 1865), varnishBefore,
+        'a buy ad leaves the shop\'s stock where it is');
     assert.strictEqual(AfkTrade.offers(cWeapon.selfId, AfkTrade.BUY)[0].sourceType, 'afk_bot_buy_store');
     assert.strictEqual(await BotAfkMarket.reconcile(switched.state, buyGoal).then((result) => result.changed), false);
     const walletBeforeReprice = LifeState.snapshot(ownerId).adena;
@@ -156,33 +160,24 @@ async function run() {
     assert.strictEqual(LifeState.snapshot(ownerId).adena, walletBeforeReprice + 1);
     await assert.rejects(AfkTrade.repriceBot(ownerId, repriced.lines[0].id,
         Number(repriced.lines[0].price) - 1, switched.shop.revision), /afk_trade_shop_changed/);
-    const ask = Number(repriced.lines[0].price) + 1;
-    const buyOfferReply = await RemoteChat.replyForState(remotePlayer, LifeState.snapshot(ownerId),
-        `sell ${cWeapon.template.name} x1 for ${ask} Adena`);
-    assert.strictEqual(buyOfferReply.ok, true);
-    assert.strictEqual(buyOfferReply.action, 'shop_quote');
-    const buyAcceptedReply = await RemoteChat.replyForState(remotePlayer, LifeState.snapshot(ownerId), 'accept');
-    assert.strictEqual(buyAcceptedReply.ok, true);
-    assert.strictEqual(buyAcceptedReply.action, 'shop_accept');
-    assert.strictEqual(AfkTrade.findOwnerProjection(ownerId).actor.fetchPrivateStore().items[0].price, ask);
-    assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
 
+    const sellShop = AfkTrade.findOwnerProjection(ownerId).shop;
     await assert.rejects(Database.createAfkTradeShop(ownerId, {
         replace: true, storeType: AfkTrade.SELL,
         lines: [{ objectId: stockId, selfId: 1865, count: 999, price: 1 }]
     }));
-    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId))[0].id, switched.shop.id,
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.id), [sellShop.id, repriced.id],
         'failed remote update must leave the prior shop and escrow intact');
 
     AfkTrade._resetForTests();
-    assert.strictEqual(await AfkTrade.init(), 1);
+    assert.strictEqual(await AfkTrade.init(), 2);
     assert(AfkTrade.findOwnerProjection(ownerId), 'shop state must restore after restart');
-    await AfkTrade.sellToShop(customerId,
-        AfkTrade.findOwnerProjection(ownerId).actor.fetchPrivateStore(), cWeapon.selfId, 1,
+    await AfkTrade.sellToShop(customerId, AfkTrade.recordStore(repriced.id), cWeapon.selfId, 1,
         { objectId: customerStockId });
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
     assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
-    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0, 'a filled record is closed and deleted');
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop'],
+        'a filled ad is closed and deleted');
     const history = await Database.readHistory([
         `SELECT channel, sourceType FROM market_trades ORDER BY id`, []
     ]);
@@ -190,7 +185,7 @@ async function run() {
     const redundantDemand = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
     assert.strictEqual(redundantDemand.changed, false,
         'an owned gear target must not reopen a persistent buy order');
-    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0);
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop']);
 
     const dGradeGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: 45, itemName: 'Bone Helmet', adena: 1000000 },

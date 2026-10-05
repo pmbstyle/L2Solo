@@ -28,15 +28,14 @@ function eligible(state) {
     if (CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
         && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
-    const ownShop = AfkTrade.findOwnerProjection(state.characterId)?.actor?.fetchPrivateStore?.();
-    if (Number(state.stats?.marketStore?.storeType || 0) === AfkTrade.BUY
-        || Number(ownShop?.storeType || 0) === AfkTrade.BUY) return false;
+    // A bot asking for something on the board keeps its money for that.
+    if (invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId) > 0) return false;
     const previousCraft = state.stats?.wealthCraft;
     if (previousCraft?.outcome === 'waiting_for_buyer') {
         const outputId = Number(previousCraft.productId || 0);
         const inInventory = Number(state.inventory?.[String(outputId)]?.amount || 0) > 0;
-        const inShop = Number(ownShop?.storeType) === AfkTrade.SELL
-            && (ownShop.items || []).some((item) => Number(item.selfId) === outputId && Number(item.count) > 0);
+        const inShop = AfkTrade.ownerRecords(state.characterId).some((record) => Number(record.storeType) === AfkTrade.SELL
+            && (record.lines || []).some((line) => Number(line.selfId) === outputId && Number(line.count) > 0));
         if (inInventory || inShop) return false;
     }
     return BotPersona.of(state)?.primaryDrive === 'wealth';

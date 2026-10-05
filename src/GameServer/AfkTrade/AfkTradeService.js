@@ -877,9 +877,7 @@ async function activate(session, store) {
         spawnProjection(created.shop);
         let matched = null;
         try {
-            await matchAfkOrders(actor.fetchId());
-            matched = await invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService')
-                .matchAfkPlayerShop(actor.fetchId());
+            matched = await matchAfkOrders(actor.fetchId());
         } catch (error) {
             utils.infoWarn('AfkTrade', 'initial bot matching failed for %s: %s', actor.fetchName(), error.message);
         }
@@ -887,7 +885,9 @@ async function activate(session, store) {
             utils.infoSuccess(
                 'AfkTrade',
                 'matched player shop %s trades=%d items=%d adena=%d',
-                actor.fetchName(), matched.trades.length, matched.itemCount, matched.adena
+                actor.fetchName(), matched.trades.length,
+                matched.trades.reduce((sum, trade) => sum + Number(trade.amount || 0), 0),
+                matched.trades.reduce((sum, trade) => sum + Number(trade.totalPrice || 0), 0)
             );
         }
         commandMessage(session, findOwnerProjection(actor.fetchId())
@@ -1109,9 +1109,6 @@ async function matchBotDemand() {
             itemCount: peer.trades.reduce((sum, trade) => sum + Number(trade.amount || 0), 0),
             adena: peer.trades.reduce((sum, trade) => sum + Number(trade.totalPrice || 0), 0)
         });
-        const summary = await invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService')
-            .matchAfkPlayerShop(ownerId);
-        if (summary?.matched) summaries.push(summary);
     }
     const result = {
         matched: summaries.length > 0,

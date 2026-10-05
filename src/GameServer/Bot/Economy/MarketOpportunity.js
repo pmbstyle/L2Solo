@@ -7,7 +7,6 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const OfferOrder = require('./OfferOrder');
-const buyStoreReservations = new WeakMap();
 const coldStoreIndex = new Map();
 let coldStoreIndexHydrated = false;
 const SHOT_IDS = new Set([
@@ -36,21 +35,6 @@ function coldMarketStates() {
 
 function itemName(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || `Item ${selfId}`;
-}
-
-function reservedBuyAdena(store) {
-    return store && typeof store === 'object' ? Number(buyStoreReservations.get(store) || 0) : 0;
-}
-
-function affordableBuyCount(buyerState, store, item) {
-    const price = Number(item?.price || 0);
-    if (price <= 0) return 0;
-    const availableAdena = Math.max(0, Number(buyerState?.adena || 0) - reservedBuyAdena(store));
-    return Math.max(0, Math.min(Number(item?.count || 0), Math.floor(availableAdena / price)));
-}
-
-function updateBuyOfferCount(offer) {
-    offer.count = affordableBuyCount(offer.buyerState, offer.store, offer.storeItem);
 }
 
 function normalizeItemLookup(value) {
@@ -192,89 +176,6 @@ function privateOffers(selfId, town) {
     });
 }
 
-function coldOffers(selfId, town, buyerCharacterId = null, timestamp = Date.now()) {
-    return coldMarketStates().flatMap((state) => {
-        const store = state?.stats?.marketStore;
-        if (!store || Number(store.storeType || 1) !== 1 || state.activity !== 'merchant' || Number(state.characterId) === Number(buyerCharacterId)) return [];
-        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Number(timestamp)) return [];
-        if (town && store.town !== town) return [];
-        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
-        if (!item || Number(item.price) <= 0) return [];
-        return [{
-            sourceType: 'cold_store',
-            sourceId: Number(state.characterId),
-            sourceName: state.name || store.sellerName || 'Cold Seller',
-            town: store.town || town || null,
-            selfId: Number(selfId),
-            itemName: item.name || itemName(selfId),
-            price: Number(item.price),
-            count: Number(item.count),
-            available: true,
-            sellerState: state,
-            store,
-            storeItem: item
-        }];
-    });
-}
-
-function privateBuyOffers(selfId, town, sellerCharacterId = null) {
-    return (World.user?.sessions || []).flatMap((session) => {
-        const actor = session?.actor;
-        const store = actor?.fetchPrivateStore?.();
-        if (!actor || Number(store?.storeType) !== 3 || store.budgetBacked !== true) return [];
-        if (Number(actor.fetchId?.() || 0) === Number(sellerCharacterId)) return [];
-        if (town && store.town && store.town !== town) return [];
-        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
-        if (!item || Number(item.price) <= 0) return [];
-        const buyerState = session.coldMarketState || null;
-        const count = affordableBuyCount(buyerState, store, item);
-        if (count <= 0) return [];
-        return [{
-            sourceType: 'private_buy_store',
-            sourceId: Number(actor.fetchId?.() || 0),
-            sourceName: actor.fetchName?.() || 'Private Buyer',
-            town: store.town || town || null,
-            selfId: Number(selfId),
-            itemName: item.name || itemName(selfId),
-            price: Number(item.price),
-            count,
-            available: true,
-            buyerState,
-            session,
-            store,
-            storeItem: item
-        }];
-    });
-}
-
-function coldBuyOffers(selfId, town, sellerCharacterId = null) {
-    return coldMarketStates().flatMap((state) => {
-        const store = state?.stats?.marketStore;
-        if (!store || Number(store.storeType) !== 3 || store.budgetBacked !== true || state.activity !== 'merchant') return [];
-        if (Number(state.characterId) === Number(sellerCharacterId)) return [];
-        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Date.now()) return [];
-        if (town && store.town !== town) return [];
-        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
-        if (!item || Number(item.price) <= 0) return [];
-        const count = affordableBuyCount(state, store, item);
-        if (count <= 0) return [];
-        return [{
-            sourceType: 'cold_buy_store',
-            sourceId: Number(state.characterId),
-            sourceName: state.name || store.buyerName || 'Cold Buyer',
-            town: store.town || town || null,
-            selfId: Number(selfId),
-            itemName: item.name || itemName(selfId),
-            price: Number(item.price),
-            count,
-            available: true,
-            buyerState: state,
-            store,
-            storeItem: item
-        }];
-    });
-}
-
 function indexColdStore(state) {
     if (!coldStoreIndexHydrated) coldMarketStates();
     const characterId = Number(state?.characterId || 0);
@@ -297,12 +198,12 @@ function resetColdStores() {
     coldStoreIndexHydrated = false;
 }
 
+// What a cold bot can buy: board records, live private stores and NPC shops.
 function sellOfferCandidates(selfId, options = {}) {
     const town = options.town || null;
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
-        ...coldOffers(selfId, town, options.buyerCharacterId, options.now ?? Date.now()),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available);
 }
@@ -327,13 +228,12 @@ function bestOffer(selfId, options = {}) {
     return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
 }
 
+// The buy records of the board (escrow held): the budget-backed buy stores
+// whose money stayed in the wallet are gone (E24).
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
-    return [
-        ...AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId }),
-        ...privateBuyOffers(selfId, town, options.sellerCharacterId),
-        ...coldBuyOffers(selfId, town, options.sellerCharacterId)
-    ].filter((offer) => offer.available)
+    return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })
+        .filter((offer) => offer.available)
         .sort((left, right) => right.price - left.price
             || Number(right.playerPriority === true) - Number(left.playerPriority === true)
             || left.sourceId - right.sourceId);
@@ -343,88 +243,8 @@ function bestBuyOffer(selfId, options = {}) {
     return findBuyOffers(selfId, options)[0] || null;
 }
 
-function activeBuyDemandSelfIds(timestamp = Date.now()) {
-    const afkDemand = AfkTrade.activeDemandSelfIds();
-    const privateDemand = (World.user?.sessions || []).flatMap((session) => {
-        const actor = session?.actor;
-        const store = actor?.fetchPrivateStore?.();
-        const buyerState = session?.coldMarketState || null;
-        if (!actor || Number(store?.storeType) !== 3 || store.budgetBacked !== true) return [];
-        return (store.items || []).flatMap((item) => (
-            Number(item.selfId || 0) > 0 && affordableBuyCount(buyerState, store, item) > 0
-                ? [Number(item.selfId)]
-                : []
-        ));
-    });
-    const coldDemand = coldMarketStates().flatMap((state) => {
-        const store = state?.stats?.marketStore;
-        if (!store || Number(store.storeType) !== 3 || store.budgetBacked !== true || state.activity !== 'merchant') return [];
-        if (Number(store.expiresAt || 0) > 0 && Number(store.expiresAt) <= Number(timestamp)) return [];
-        return (store.items || []).flatMap((item) => (
-            Number(item.selfId || 0) > 0 && affordableBuyCount(state, store, item) > 0
-                ? [Number(item.selfId)]
-                : []
-        ));
-    });
-    return [...new Set([...afkDemand, ...privateDemand, ...coldDemand])];
-}
-
-function reserveBuy(offer, qty = 1) {
-    const count = Math.max(1, Math.floor(Number(qty) || 1));
-    if (['afk_player_buy_store', 'afk_bot_buy_store'].includes(offer?.sourceType)) return Number(offer.count) >= count;
-    if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return false;
-    if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
-    const buyerStoreItem = (offer.buyerState?.stats?.marketStore?.items || [])
-        .find((item) => Number(item.selfId) === Number(offer.selfId));
-    if (buyerStoreItem && buyerStoreItem !== offer.storeItem && Number(buyerStoreItem.count) < count) return false;
-    const reservedAdena = reservedBuyAdena(offer.store);
-    const reservationAdena = Number(offer.price) * count;
-    const buyerAdena = Number(offer.buyerState?.adena || 0);
-    if (buyerAdena - reservedAdena < reservationAdena) return false;
-    offer.storeItem.count -= count;
-    if (buyerStoreItem && buyerStoreItem !== offer.storeItem) buyerStoreItem.count -= count;
-    offer.buyerStoreItem = buyerStoreItem || offer.storeItem;
-    offer.reservedBuyCount = Number(offer.reservedBuyCount || 0) + count;
-    offer.reservedBuyAdena = Number(offer.reservedBuyAdena || 0) + reservationAdena;
-    buyStoreReservations.set(offer.store, reservedAdena + reservationAdena);
-    updateBuyOfferCount(offer);
-    return true;
-}
-
-function releaseBuy(offer, qty = 1) {
-    if (['afk_player_buy_store', 'afk_bot_buy_store'].includes(offer?.sourceType)) return;
-    if (!['private_buy_store', 'cold_buy_store'].includes(offer?.sourceType) || !offer.storeItem) return;
-    const count = Math.min(
-        Math.max(1, Math.floor(Number(qty) || 1)),
-        Math.max(0, Number(offer.reservedBuyCount || 0))
-    );
-    if (count <= 0) return;
-    offer.storeItem.count += count;
-    if (offer.buyerStoreItem && offer.buyerStoreItem !== offer.storeItem) offer.buyerStoreItem.count += count;
-    offer.reservedBuyCount -= count;
-    const releasedAdena = Math.min(Number(offer.reservedBuyAdena || 0), Number(offer.price) * count);
-    offer.reservedBuyAdena = Math.max(0, Number(offer.reservedBuyAdena || 0) - releasedAdena);
-    const remainingReservation = Math.max(0, reservedBuyAdena(offer.store) - releasedAdena);
-    if (remainingReservation > 0) buyStoreReservations.set(offer.store, remainingReservation);
-    else buyStoreReservations.delete(offer.store);
-    updateBuyOfferCount(offer);
-}
-
-function commitBuy(offer, qty = 1, buyerState = offer?.buyerState) {
-    if (['afk_player_buy_store', 'afk_bot_buy_store'].includes(offer?.sourceType)) return;
-    const count = Math.min(
-        Math.max(1, Math.floor(Number(qty) || 1)),
-        Math.max(0, Number(offer?.reservedBuyCount || 0))
-    );
-    if (count <= 0 || !offer?.store) return;
-    offer.reservedBuyCount -= count;
-    const committedAdena = Math.min(Number(offer.reservedBuyAdena || 0), Number(offer.price) * count);
-    offer.reservedBuyAdena = Math.max(0, Number(offer.reservedBuyAdena || 0) - committedAdena);
-    const remainingReservation = Math.max(0, reservedBuyAdena(offer.store) - committedAdena);
-    if (remainingReservation > 0) buyStoreReservations.set(offer.store, remainingReservation);
-    else buyStoreReservations.delete(offer.store);
-    offer.buyerState = buyerState;
-    updateBuyOfferCount(offer);
+function activeBuyDemandSelfIds() {
+    return AfkTrade.activeDemandSelfIds();
 }
 
 // A companion may leave the field for the city that actually sells the
@@ -493,7 +313,7 @@ function reserve(offer, qty = 1) {
     if (!offer?.available || Number(offer.price) <= 0) return false;
     if (offer.sourceType === 'npc') return true;
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) return Number(offer.count) >= count;
-    if (!['private_store', 'cold_store'].includes(offer.sourceType) || !offer.storeItem) return false;
+    if (offer.sourceType !== 'private_store' || !offer.storeItem) return false;
     if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
     offer.storeItem.count -= count;
     offer.count = offer.storeItem.count;
@@ -502,7 +322,7 @@ function reserve(offer, qty = 1) {
 
 function release(offer, qty = 1) {
     if (['afk_player_store', 'afk_bot_store'].includes(offer?.sourceType)) return;
-    if (!['private_store', 'cold_store'].includes(offer?.sourceType) || !offer.storeItem) return;
+    if (offer?.sourceType !== 'private_store' || !offer.storeItem) return;
     offer.storeItem.count += Math.max(1, Number(qty) || 1);
     offer.count = offer.storeItem.count;
 }
@@ -513,9 +333,6 @@ module.exports = {
     bestBuyOffer,
     activeBuyDemandSelfIds,
     bestSupplyOffer,
-    commitBuy,
-    coldOffers,
-    coldBuyOffers,
     findOffers,
     hotOffers,
     findBuyOffers,
@@ -524,15 +341,12 @@ module.exports = {
     npcOffersAll,
     normalizeItemLookup,
     privateOffers,
-    privateBuyOffers,
     resolveSupplyItem,
     removeColdStore,
     resetColdStores,
     supplyCatalog,
     release,
-    releaseBuy,
-    reserve,
-    reserveBuy
+    reserve
 };
 
 Object.defineProperty(module.exports, 'TOWN_NPC_SELLERS', {

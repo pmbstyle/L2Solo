@@ -48,14 +48,14 @@ assert.strictEqual(kitAfterPosting.market.reserve, kit.market.reserve, 'posting 
 assert.strictEqual(GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: 100000 - kitPrice },
     kitPrice), GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: 100000 }));
 
-const originalProjection = AfkTrade.findOwnerProjection;
+const originalProjection = AfkTrade.ownerRecords;
 try {
-    AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: price } });
+    AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: price, lines: [] }];
     assert.strictEqual(BotAfkMarketService.buyOrderEscrow(7), price, 'a buy order reports its escrow');
-    AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.SELL, escrowAdena: price } });
+    AfkTrade.ownerRecords = () => [{ kind: 'shop', storeType: AfkTrade.SELL, escrowAdena: price, lines: [] }];
     assert.strictEqual(BotAfkMarketService.buyOrderEscrow(7), 0, 'a sell shop holds no purchase budget');
 } finally {
-    AfkTrade.findOwnerProjection = originalProjection;
+    AfkTrade.ownerRecords = originalProjection;
 }
 
 // Every other funding check counts the same escrow: the funded re-price, the
@@ -75,16 +75,16 @@ const botPlanState = { ...weaponState, stats: { ...weaponState.stats, equipmentP
     market: { ...posting.market, sourceType: 'afk_bot_store' } } } };
 assert.notStrictEqual(lifecycleKind(botPlanState, { buyOrderEscrow: price }), 'command', 'a kept order is no trip');
 const PopulationServiceForResume = invoke('GameServer/Bot/Population/PopulationService');
-const savedProjection = AfkTrade.findOwnerProjection;
+const savedProjection = AfkTrade.ownerRecords;
 try {
     assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(weaponState), false);
-    AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: price } });
+    AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: price, lines: [] }];
     assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(weaponState), true,
         'the resume after a rest counts the escrow');
     assert.strictEqual(PopulationServiceForResume.canResumeAffordableMarketPlan(botPlanState), false,
         'a kept order is no reason to leave for town');
 } finally {
-    AfkTrade.findOwnerProjection = savedProjection;
+    AfkTrade.ownerRecords = savedProjection;
 }
 
 // A dual-sword plan buying its missing blade keeps the same reserve once its
@@ -118,7 +118,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         createOrUpdate: PartyState.createOrUpdate,
         ensure: SpotProfiles.ensure,
         currentOccupancy: SpotProfiles.currentOccupancy,
-        findOwnerProjection: AfkTrade.findOwnerProjection,
+        ownerRecords: AfkTrade.ownerRecords,
         cachedState: LifeState.cachedState,
         npcEquipmentBridgePlan: GearAcquisitionPlanner.npcEquipmentBridgePlan,
         replanContextFor: GearAcquisitionPlanner.replanContextFor,
@@ -132,7 +132,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         GearAcquisitionPlanner.replacementPlanFor = (_state, _previous, _spots, options) => {
             plannedWith.push(options.buyOrderEscrow); return memberPlan;
         };
-        AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: price } });
+        AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: price, lines: [] }];
         SpotProfiles.ensure = () => [];
         SpotProfiles.currentOccupancy = () => ({});
         PartyState.createOrUpdate = async (party) => party;
@@ -179,7 +179,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         PartyState.createOrUpdate = saved.createOrUpdate;
         SpotProfiles.ensure = saved.ensure;
         SpotProfiles.currentOccupancy = saved.currentOccupancy;
-        AfkTrade.findOwnerProjection = saved.findOwnerProjection;
+        AfkTrade.ownerRecords = saved.ownerRecords;
         LifeState.cachedState = saved.cachedState;
         GearAcquisitionPlanner.npcEquipmentBridgePlan = saved.npcEquipmentBridgePlan;
         GearAcquisitionPlanner.replanContextFor = saved.replanContextFor;

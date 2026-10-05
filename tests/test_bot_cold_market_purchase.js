@@ -79,10 +79,13 @@ async function run() {
         calls.push({ type: 'goal', characterId, status });
         return Promise.resolve(null);
     };
+    // A configured city merchant: a cold buyer never buys from a player's or
+    // a bot's live store (E14), only from NPC-like sellers and the board.
     World.user = { sessions: [{
+        accountId: 'bot_raresupplier',
         actor: {
             fetchId: () => 9001,
-            fetchName: () => 'PlayerSeller',
+            fetchName: () => 'RareSupplier',
             fetchPrivateStore: () => playerStore
         }
     }] };
@@ -131,12 +134,12 @@ async function run() {
     assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
     const playerTransactions = MarketTelemetry.transactions();
     const purchaseTrade = playerTransactions.recentPlayerTrades[0];
-    assert.strictEqual(purchaseTrade.channel, 'player_wts');
+    assert.strictEqual(purchaseTrade.channel, 'fixed_wts');
     assert.strictEqual(purchaseTrade.itemName, 'Long Sword');
-    assert.strictEqual(purchaseTrade.seller.name, 'PlayerSeller');
+    assert.strictEqual(purchaseTrade.seller.name, 'RareSupplier');
     assert.strictEqual(purchaseTrade.buyer.name, 'ColdBuyer');
     assert.strictEqual(purchaseTrade.town, 'Giran');
-    assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a real player WTS must not inflate bot-to-bot telemetry');
+    assert.strictEqual(playerTransactions.recentPeerTrades.length, 0, 'a city merchant must not inflate bot-to-bot telemetry');
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 0);
 
     let lowTierMarketLookups = 0;

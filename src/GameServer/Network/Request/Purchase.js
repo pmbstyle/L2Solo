@@ -5,7 +5,6 @@ const DataCache      = invoke('GameServer/DataCache');
 const Item           = invoke('GameServer/Item/Item');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
-const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -63,21 +62,9 @@ async function consume(session, data) {
             const bought = [];
             const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
             for (const item of data.list) {
-                const storeItem = store.items.find((entry) => Number(entry.selfId) === Number(item.selfId));
                 const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount, {
                     expectedRevision: trade.revision,
-                    expectedUnitPrice: trade.prices?.[Number(item.selfId)],
-                    afterPurchase: sellerSession?.coldMarketState
-                        ? async (purchaseResult) => {
-                            const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                                selfId: item.selfId,
-                                price: purchaseResult.totalAdena / purchaseResult.qty,
-                                buyerCharacterId: session.actor.fetchId(),
-                                storeItem
-                            }, purchaseResult.qty);
-                            if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-                        }
-                        : null
+                    expectedUnitPrice: trade.prices?.[Number(item.selfId)]
                 });
                 bought.push(result);
                 MarketTelemetry.recordTrade({

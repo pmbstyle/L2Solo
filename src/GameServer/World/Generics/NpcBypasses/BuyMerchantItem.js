@@ -3,7 +3,6 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
-const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -107,19 +106,7 @@ module.exports = async function(session, parts) {
 
     try {
         const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === bot);
-        const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty, {
-            afterPurchase: sellerSession?.coldMarketState
-                ? async (purchaseResult) => {
-                    const updatedSeller = await LifeState.applyMarketSale(sellerSession.coldMarketState, {
-                        selfId,
-                        price: storeItem.price,
-                        buyerCharacterId: session.actor.fetchId(),
-                        storeItem
-                    }, purchaseResult.qty);
-                    if (updatedSeller) sellerSession.coldMarketState = updatedSeller;
-                }
-                : null
-        });
+        const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty);
         const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         if (sellerSession?.coldMarketState) {
             // A dynamic seller has no reason to remain seated after its last

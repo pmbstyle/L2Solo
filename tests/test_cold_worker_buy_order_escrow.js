@@ -39,11 +39,11 @@ assert.notStrictEqual(GearAcquisitionPlanner.planFor(base(7, afterPosting), { sp
     posting.target.selfId, 'the fixture target must need the escrow once the bid is posted');
 
 (async () => {
-    const originalProjection = AfkTrade.findOwnerProjection;
+    const originalProjection = AfkTrade.ownerRecords;
     const originalCachedState = LifeState.cachedState;
     try {
-        AfkTrade.findOwnerProjection = (id) => Number(id) === 7
-            ? { shop: { storeType: AfkTrade.BUY, escrowAdena: price } } : null;
+        AfkTrade.ownerRecords = (id) => Number(id) === 7
+            ? [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: price, lines: [] }] : [];
         LifeState.cachedState = () => null;
         const coordinator = new ColdSimulationCoordinator();
         const index = { spots: new Map(), parties: new Map(), occupancy: {} };
@@ -51,7 +51,7 @@ assert.notStrictEqual(GearAcquisitionPlanner.planFor(base(7, afterPosting), { sp
             'the resolve context carries the bot\'s own buy-order escrow');
         assert.strictEqual(coordinator.contextFor(base(8, afterPosting), index).buyOrderEscrow, 0);
     } finally {
-        AfkTrade.findOwnerProjection = originalProjection;
+        AfkTrade.ownerRecords = originalProjection;
         LifeState.cachedState = originalCachedState;
     }
 

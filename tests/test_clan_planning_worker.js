@@ -27,35 +27,32 @@ async function parityAndIntegration() {
                 `worker must preserve planning for class ${classId}, level ${level}`);
         }
         assert.equal(worker.metrics().completed, 4);
-        const world = invoke('GameServer/World/World');
-        const market = invoke('GameServer/Bot/Economy/MarketOpportunity');
-        const oldUser = world.user;
+        // The offers are board records: a cold buyer never buys from a live
+        // private store (E14).
+        const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+        const record = (id, ownerId, ownerName, town, line, account = 'test-seller') => AfkTrade.refreshRecord({
+            id, ownerId, ownerName, ownerAccount: account, kind: 'sell_ad', storeType: 1, status: 'active', town,
+            title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0, lines: [{ id, name: ownerName, ...line }]
+        });
         try {
-            world.user = { sessions: [{ accountId: 'test-seller', actor: {
-                fetchId: () => 990010, fetchName: () => 'Test Seller',
-                fetchPrivateStore: () => ({ storeType: 1, town: 'Giran', items: [{ selfId: 123, price: 10, count: 1 }] })
-            } }] };
-            market.indexColdStore({ characterId: 990002, activity: 'merchant', stats: {
-                marketStore: { storeType: 1, town: 'Giran', items: [{ selfId: 123, price: 1, count: 1 }] }
-            } });
+            record(990110, 990010, 'Test Seller', 'Giran', { selfId: 123, price: 10, count: 1 });
+            record(990102, 990002, 'Own Seller', 'Giran', { selfId: 123, price: 1, count: 1 }, 'bot_own');
             const member = { characterId: 990002, level: 20, classId: 4, phase: 'cold', inventory: {}, adena: 100000,
                 stats: { classId: 4, equipmentPlan: { status: 'active', strategy: 'market', rateModelVersion: 0,
                     target: { selfId: 123, slot: 7 } } } };
             const marketContext = await Runtime.context();
             const expected = planForMember(member);
-            assert.equal(expected.market.sourceType, 'private_store');
-            assert.equal(expected.market.price, 10, 'a buyer must not plan to buy from its own cheaper cold shop');
+            assert.equal(expected.market.sourceType, 'afk_player_store');
+            assert.equal(expected.market.price, 10, 'a buyer must not plan to buy from its own cheaper listing');
             assert.deepEqual(await worker.plan({ member, spots: [], warehouseRows: [], options: {}, context: marketContext }, DataCache), expected);
 
             const swordLine = { selfId: 79, price: 78600000, count: 1 };
-            world.user = { sessions: [{ accountId: 'test-seller', actor: {
-                fetchId: () => 990011, fetchName: () => 'Sword Seller',
-                fetchPrivateStore: () => ({ storeType: 1, town: 'Heine', items: [swordLine] })
-            } }] };
+            AfkTrade._resetForTests();
+            record(990111, 990011, 'Sword Seller', 'Heine', swordLine);
             const swordMember = { characterId: 990003, level: 55, classId: 21, phase: 'cold',
                 adena: 20000000, inventory: {}, stats: { classId: 21, equipmentPlan: {
                     status: 'active', strategy: 'market', target: { selfId: 79, slot: 7 },
-                    market: { town: 'Heine', price: 78600000, sourceType: 'private_store' },
+                    market: { town: 'Heine', price: 78600000, sourceType: 'afk_player_store' },
                     clanGoal: { clanId: 77, goalKey: 'clan-equipment:77:990003:79:7' }
                 } } };
             const swordContext = await Runtime.context();
@@ -66,6 +63,7 @@ async function parityAndIntegration() {
                 options: {}, context: swordContext }, DataCache), unfunded);
 
             swordLine.price = 10000000;
+            record(990111, 990011, 'Sword Seller', 'Heine', swordLine);
             const affordableContext = { ...swordContext, offers: swordContext.offers.map((offer) => (
                 offer.selfId === 79 && offer.sourceId === 990011 ? { ...offer, price: swordLine.price } : offer
             )) };
@@ -78,6 +76,7 @@ async function parityAndIntegration() {
                 options: {}, context: affordableContext }, DataCache), repriced);
 
             swordLine.count = 0;
+            record(990111, 990011, 'Sword Seller', 'Heine', swordLine);
             const soldOutContext = { ...affordableContext, offers: affordableContext.offers.filter((offer) => (
                 offer.selfId !== 79 || offer.sourceId !== 990011
             )) };
@@ -87,8 +86,7 @@ async function parityAndIntegration() {
             assert.deepEqual(await worker.plan({ member: swordMember, spots: [], warehouseRows: [],
                 options: {}, context: soldOutContext }, DataCache), soldOut);
         } finally {
-            world.user = oldUser;
-            market.removeColdStore(990002);
+            AfkTrade._resetForTests();
         }
         const oldRate = process.env.L2NODE_PROGRESSION_RATE;
         try {

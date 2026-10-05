@@ -272,8 +272,7 @@ async function obtainRecipe(state, recipe, now) {
     let offer = affordableOffer();
     if (!offer) {
         const holder = ((await marketSnapshot(now)).recipeHolders.get(itemId) || [])
-            .find((entry) => entry.characterId !== Number(state.characterId) && entry.price <= maxSpend
-                && Number(AfkTrade.findOwnerProjection(entry.characterId)?.shop?.storeType || 0) !== AfkTrade.BUY);
+            .find((entry) => entry.characterId !== Number(state.characterId) && entry.price <= maxSpend);
         const seller = holder ? LifeState.snapshot(holder.characterId) : null;
         if (seller?.phase === 'cold') {
             const goal = { type: 'sell_inventory', status: 'active',

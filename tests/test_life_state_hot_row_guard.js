@@ -74,7 +74,9 @@ async function run() {
     await BotLifeState.markHot(session, 'hot_activation');
     assert.strictEqual(BotLifeState.snapshot(83).phase, 'hot', 'fixture: markHot wrote the hot row');
     assert.strictEqual(session.coldMarketState.phase, 'hot', 'markHot marks the session snapshot hot');
-    const sold = await BotLifeState.applyMarketSale(session.coldMarketState, { selfId: 2, price: 1000 }, 1);
+    // (The market sale write went with the stalls, step 3.3; any write of the
+    // session's hot snapshot stands for it.)
+    const sold = await BotLifeState.upsertState({ ...session.coldMarketState, adena: 1500 }, 'hot_market_sale');
     assert.strictEqual(sold?.adena, 1500, 'a hot merchant\'s sale is written');
     assert.strictEqual(BotLifeState.snapshot(83).phase, 'hot', 'and its row stays hot');
     const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
@@ -92,7 +94,7 @@ async function run() {
         assert.strictEqual(BotLifeState.snapshot(83).phase, 'cold', 'and hands its row back cold');
         assert.strictEqual(leaving.coldMarketState.phase, 'cold', 'its session snapshot is cold again');
         // A sale that lands after the hand-back cannot turn the row hot again.
-        await BotLifeState.applyMarketSale(leaving.coldMarketState, { selfId: 57, price: 1 }, 1).catch(() => null);
+        await BotLifeState.upsertState({ ...leaving.coldMarketState, adena: 1501 }, 'late_market_sale').catch(() => null);
         assert.strictEqual(BotLifeState.snapshot(83).phase, 'cold', 'a late write keeps the row cold');
     } finally {
         Coordinator.acceptColdState = accept;

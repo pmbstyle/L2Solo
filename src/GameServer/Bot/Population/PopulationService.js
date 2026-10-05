@@ -944,9 +944,7 @@ const PopulationService = {
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
-    marketTownMigrationTimer: null,
     nextColdCombatProfileMigrationAt: 0,
-    nextMarketTownMigrationAt: 0,
     nextPartyRequestCleanupAt: 0,
     nextColdOwnerRecoveryAt: 0,
     nextWarehouseCleanupAt: 0,
@@ -958,22 +956,17 @@ const PopulationService = {
     walResetRunning: false,
     nextWalResetAt: 0,
     lastWalResetResult: null,
-    marketExpiryCleanupTimer: null,
-    afkShopReviewTimer: null,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
-    nextMarketExpiryCleanupAt: 0,
     resolving: false,
     classProgressionMigrationRunning: false,
     coldCombatProfileMigrationRunning: false,
-    marketTownMigrationRunning: false,
     staleGoalReviewRunning: false,
     warehouseReleaseRunning: false,
     marketGoalReconcileRunning: false,
     nextStaleGoalReviewAt: 0,
     nextWarehouseReleaseAt: 0,
     nextMarketGoalReconcileAt: 0,
-    marketExpiryCleanupRunning: false,
     coldOwnerRecoveryRunning: false,
     warehouseCleanupRunning: false,
     stateRetentionRunning: false,
@@ -1047,31 +1040,6 @@ const PopulationService = {
         if (typeof this.classProgressionMigrationTimer.unref === 'function') {
             this.classProgressionMigrationTimer.unref();
         }
-
-        this.marketTownMigrationTimer = setInterval(() => {
-            this.maybeMigrateLegacyMarketTowns();
-        }, Config.marketTownMigrationIntervalMs);
-
-        if (typeof this.marketTownMigrationTimer.unref === 'function') {
-            this.marketTownMigrationTimer.unref();
-        }
-
-        this.marketExpiryCleanupTimer = setInterval(() => {
-            this.maybeExpireStaleMarketStores();
-        }, Config.marketExpiryCleanupIntervalMs);
-
-        if (typeof this.marketExpiryCleanupTimer.unref === 'function') {
-            this.marketExpiryCleanupTimer.unref();
-        }
-
-        // A storefront has no expiry. Review one persistent bot WTS per slice
-        // so changes in demand can retire stale escrow without a market spike.
-        this.afkShopReviewTimer = setInterval(() => {
-            BotAfkMarketService.reviewNextPersistentShop().catch((error) => {
-                utils.infoWarn('BotMarket', 'persistent shop review failed: %s', error.message);
-            });
-        }, 500);
-        this.afkShopReviewTimer.unref?.();
 
         if (Config.warehouseCleanupEnabled !== false) {
             this.nextWarehouseCleanupAt = Date.now() + Math.max(1000, Number(Config.warehouseCleanupStartDelayMs) || 60000);
@@ -1217,18 +1185,6 @@ const PopulationService = {
             this.classProgressionMigrationTimer = null;
         }
         this.nextColdCombatProfileMigrationAt = 0;
-        if (this.marketTownMigrationTimer) {
-            clearInterval(this.marketTownMigrationTimer);
-            this.marketTownMigrationTimer = null;
-        }
-        if (this.marketExpiryCleanupTimer) {
-            clearInterval(this.marketExpiryCleanupTimer);
-            this.marketExpiryCleanupTimer = null;
-        }
-        if (this.afkShopReviewTimer) {
-            clearInterval(this.afkShopReviewTimer);
-            this.afkShopReviewTimer = null;
-        }
         this.staleGoalReviewRunning = false;
         this.warehouseReleaseRunning = false;
         this.marketGoalReconcileRunning = false;
@@ -1366,77 +1322,6 @@ const PopulationService = {
         }
         this.nextColdCombatProfileMigrationAt = timestamp + Config.coldCombatProfileMigrationIntervalMs;
         return this.migrateLegacyColdCombatProfiles();
-    },
-
-    migrateLegacyMarketTowns() {
-        // This migration is deliberately bounded and serialized. Do not gate
-        // it on `resolving`: both timers share a 10-second cadence, which can
-        // otherwise starve the transition forever while the resolver is live.
-        if (this.playerActivityProfile().protected) {
-            Metrics.recordBackgroundDeferral();
-            return Promise.resolve([]);
-        }
-        if (this.marketTownMigrationRunning || Config.enabled === false) return Promise.resolve([]);
-        this.marketTownMigrationRunning = true;
-        return ColdMarketListingService.migrateLegacyMarketTowns(Config.marketTownMigrationBatchSize)
-            .then((migrated) => {
-                const relocated = migrated.filter((entry) => entry.relocated).length;
-                if (migrated.length) {
-                    console.info('BotPopulation :: migrated market towns checked=%d relocated=%d', migrated.length, relocated);
-                }
-                return migrated;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'legacy market-town migration failed: %s', err.message);
-                return [];
-            })
-            .finally(() => {
-                this.marketTownMigrationRunning = false;
-            });
-    },
-
-    maybeMigrateLegacyMarketTowns(timestamp = Date.now()) {
-        if (this.marketTownMigrationRunning || timestamp < this.nextMarketTownMigrationAt) return Promise.resolve([]);
-        this.nextMarketTownMigrationAt = timestamp + Config.marketTownMigrationIntervalMs;
-        return this.migrateLegacyMarketTowns();
-    },
-
-    expireStaleMarketStores(timestamp = Date.now()) {
-        if (this.playerActivityProfile(timestamp).protected) {
-            Metrics.recordBackgroundDeferral();
-            return Promise.resolve([]);
-        }
-        if (this.marketExpiryCleanupRunning || Config.enabled === false) return Promise.resolve([]);
-        this.marketExpiryCleanupRunning = true;
-        const World = invoke('GameServer/World/World');
-        const hotSessions = (World.user?.sessions || []).filter((session) => (
-            session?.actor
-            && session?.coldMarketState?.stats?.marketStore
-        ));
-        return ColdMarketListingService.maintainHotMarketStores(hotSessions, Config.marketExpiryCleanupBatchSize, timestamp)
-            .then((hotMaintained) => ColdMarketListingService.expireStaleMarketStores(Config.marketExpiryCleanupBatchSize, timestamp)
-                .then((coldMaintained) => [...hotMaintained, ...coldMaintained]))
-            .then((maintained) => {
-                if (maintained.length) {
-                    const closed = maintained.filter((result) => result.closed).length;
-                    const revalidated = maintained.filter((result) => result.revalidated).length;
-                    console.info('BotPopulation :: market stores maintained=%d closed=%d revalidated=%d', maintained.length, closed, revalidated);
-                }
-                return maintained;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'expired market cleanup failed: %s', err.message);
-                return [];
-            })
-            .finally(() => {
-                this.marketExpiryCleanupRunning = false;
-            });
-    },
-
-    maybeExpireStaleMarketStores(timestamp = Date.now()) {
-        if (this.marketExpiryCleanupRunning || timestamp < this.nextMarketExpiryCleanupAt) return Promise.resolve([]);
-        this.nextMarketExpiryCleanupAt = timestamp + Config.marketExpiryCleanupIntervalMs;
-        return this.expireStaleMarketStores(timestamp);
     },
 
     recordHotTick(session) {
@@ -3707,8 +3592,7 @@ const PopulationService = {
             }
             return ColdShotEconomyService.review(updatedState)
                 .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
-                .then((wealthCraft) => ColdMarketListingService.reconcileInventory(wealthCraft.state || updatedState))
-                .then((inventoryLifecycle) => ColdMarketListingService.resolve(inventoryLifecycle.state))
+                .then((wealthCraft) => ColdMarketListingService.resolve(wealthCraft.state || updatedState))
                 .then((marketLifecycle) => {
                     const completedSale = marketLifecycle.closed && marketLifecycle.reason === 'sold_out';
                     const goalReady = completedSale

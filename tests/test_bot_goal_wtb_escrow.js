@@ -8,7 +8,7 @@ const DataCache = invoke('GameServer/DataCache');
 
 DataCache.init();
 
-const originalProjection = AfkTrade.findOwnerProjection;
+const originalProjection = AfkTrade.ownerRecords;
 const spot = { id: 'starter', risk: 1, route: { id: 'starter_route' } };
 const timestamp = 100000;
 const item = (DataCache.items || []).find((entry) => (
@@ -51,23 +51,23 @@ try {
     // escrow. The same bot must still see its purchase as funded, otherwise
     // the next review withdraws the order, refunds it and posts it again.
     const walletAfterPosting = price + reserve - escrow;
-    AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.BUY, escrowAdena: escrow } });
+    AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: escrow, lines: [] }];
     const withOrder = gearGoal(walletAfterPosting);
     assert.strictEqual(withOrder.plan.requiredAdena, 0, 'the WTB escrow counts toward the purchase budget');
     assert.strictEqual(withOrder.plan.expectedBenefit, 'market_search_for_gear');
 
     // Only a buy order holds Adena; a sell shop does not fund a purchase.
-    AfkTrade.findOwnerProjection = () => ({ shop: { storeType: AfkTrade.SELL, escrowAdena: escrow } });
+    AfkTrade.ownerRecords = () => [{ kind: 'shop', storeType: AfkTrade.SELL, escrowAdena: escrow, lines: [] }];
     const withSellShop = gearGoal(walletAfterPosting);
     assert.strictEqual(withSellShop.plan.requiredAdena, escrow, 'a sell shop does not add purchase budget');
     assert.strictEqual(withSellShop.plan.expectedBenefit, 'adena_for_gear_upgrade');
 
-    AfkTrade.findOwnerProjection = () => null;
+    AfkTrade.ownerRecords = () => [];
     const noOrder = gearGoal(walletAfterPosting);
     assert.strictEqual(noOrder.plan.requiredAdena, escrow, 'without an order the wallet alone decides');
     assert.strictEqual(noOrder.plan.expectedBenefit, 'adena_for_gear_upgrade');
 } finally {
-    AfkTrade.findOwnerProjection = originalProjection;
+    AfkTrade.ownerRecords = originalProjection;
 }
 
 console.log('Bot goal WTB escrow checks passed');

@@ -58,9 +58,9 @@ const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
-const originalProjection = AfkTrade.findOwnerProjection;
+const originalProjection = AfkTrade.ownerRecords;
 const gearGoal = (level, adena, escrow, equipmentPlan) => {
-    AfkTrade.findOwnerProjection = () => (escrow ? { shop: { storeType: AfkTrade.BUY, escrowAdena: escrow } } : null);
+    AfkTrade.ownerRecords = () => (escrow ? [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: escrow, lines: [] }] : []);
     return NeedsEvaluator.evaluate({
         characterId: 7, phase: 'cold', level, adena, spotId: 'starter', persona: { primaryDrive: 'wealth', traits: {} },
         vitals: { hp: 900, maxHp: 1000, mp: 400, maxMp: 500 }, party: {},
@@ -87,7 +87,7 @@ try {
     assert.strictEqual(gearGoal(20, 125000, 0, plan).priority, 72,
         'a wallet above the cushion but under the plan\'s reserve is no affordable investment');
 } finally {
-    AfkTrade.findOwnerProjection = originalProjection;
+    AfkTrade.ownerRecords = originalProjection;
 }
 
 console.log('Wealth investment policy checks passed');

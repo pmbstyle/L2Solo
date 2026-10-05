@@ -3,7 +3,8 @@
 // of 2026-10-05 changed these expectations (each marked "changed:" below):
 // 40 between stalls in every town, the margin measured from the real edge,
 // places filled from the centre outward, craft shops counted in every town,
-// a buy store on a full square not opening.
+// a buy store on a full square not opening. The board (step 3.3) removed the
+// buy stall: a buy order is an ad with no place on a square.
 // PIN_PRINT=1 prints the observed values instead of checking them.
 const assert = require('assert');
 
@@ -15,10 +16,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeStateCache = require('../src/GameServer/Bot/Population/LifeStateCache');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
-const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const BotTradeChat = invoke('GameServer/Bot/Economy/BotTradeChat');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 
@@ -109,49 +107,6 @@ function staticBlocks(town) {
         .map(([name]) => name);
 }
 
-async function buyStoreCases() {
-    const marketLocation = ListingService.marketLocation;
-    const upsertState = LifeState.upsertState;
-    const indexColdStore = MarketOpportunity.indexColdStore;
-    const offer = BotTradeChat.offer;
-    const material = DataCache.items.find((item) => item?.template?.kind?.startsWith('Other.Material') && Number(item.template?.price) > 100);
-    LifeState.upsertState = (state) => Promise.resolve(state);
-    MarketOpportunity.indexColdStore = () => {};
-    BotTradeChat.offer = () => {};
-    const state = {
-        characterId: 77,
-        name: 'Buyer',
-        phase: 'cold',
-        activity: 'shopping',
-        currentRegion: 'Oren',
-        adena: 10000000,
-        loc: { locX: 82000, locY: 53000, locZ: -1490 },
-        inventory: {},
-        stats: {},
-        timing: {}
-    };
-    const goal = { type: 'buy_craft_material', target: { itemId: material.selfId, amount: 1, adena: material.template.price * 2 }, plan: {} };
-    try {
-        ShopPlaces._resetForTests();
-        const oren = await BuyStoreService.open(state, goal, { now: 1000 });
-        const giran = await BuyStoreService.open({ ...state, currentRegion: 'Giran' }, goal, { now: 1000 });
-        ListingService.marketLocation = () => null;
-        // changed: phase 1 opened the store on the bot's own place.
-        const full = await BuyStoreService.open({ ...state, currentRegion: 'Giran' }, goal, { now: 1000 });
-        return {
-            oren: point(oren.state.loc),
-            giran: point(giran.state.loc),
-            giranStore: point(giran.state.stats.marketStore.loc),
-            whenFull: { opened: full.opened, reason: full.reason, loc: point(full.state.loc) }
-        };
-    } finally {
-        ListingService.marketLocation = marketLocation;
-        LifeState.upsertState = upsertState;
-        MarketOpportunity.indexColdStore = indexColdStore;
-        BotTradeChat.offer = offer;
-    }
-}
-
 function giranEdgeChecks() {
     // Points around the Giran trading square: the wide square of the two
     // "is on the plaza" checks and the narrow stall area.
@@ -196,7 +151,6 @@ async function observe() {
         // changed: one reason for every caller, naming the town (was giran_plaza_full,
         // market_plaza_full or market_full).
         fullReason: ShopPlaces.fullReason('Dion'),
-        buyStore: await buyStoreCases(),
         giranEdges: giranEdgeChecks(),
         craftStations: CraftShopService.CraftStations.map((station) => `${station.id} ${station.loc.locX},${station.loc.locY},${station.loc.locZ}`)
     };
@@ -551,12 +505,6 @@ const EXPECTED = {
     },
     outsidePlazas: { orenWithCentre: [82960, 53177, -1496], orenNoCentre: [5, 6, 7], restoredShop: [147450, 26741, -2204] },
     fullReason: "plaza_full:Dion",
-    buyStore: {
-        oren: [82000, 53000, -1490],
-        giran: [81571, 148602, -3460],
-        giranStore: [81571, 148602, -3460],
-        whenFull: { opened: false, reason: "plaza_full:Giran", loc: [82000, 53000, -1490] }
-    },
     giranEdges: [
         "80910,148000 starter:kept orphan:kept stall:no",
         "80911,148000 starter:moved orphan:moved stall:no",
@@ -639,7 +587,9 @@ observe().then((actual) => {
             assert.deepStrictEqual(plain.towns[name][key], EXPECTED.towns[name][key], `${name} ${key}`);
         }
     }
-    for (const key of ['outsidePlazas', 'fullReason', 'buyStore', 'giranEdges', 'craftStations']) {
+    // The physical buy stall is gone (step 3.3): a bot's buy order is a board
+    // ad with no place on a square.
+    for (const key of ['outsidePlazas', 'fullReason', 'giranEdges', 'craftStations']) {
         assert.deepStrictEqual(plain[key], EXPECTED[key], key);
     }
     releaseChecks();

@@ -506,6 +506,30 @@ function normalize(row) {
     });
 }
 
+// A market purchase that failed after its save writes the bot's state from
+// before it back (applyMarketPurchase's own compensation; NPC and configured
+// merchant purchases only, board deals are one transaction).
+function rewriteMarketState(state, reason) {
+    if (!state?.characterId || !state.inventory) return Promise.resolve(null);
+    const nextState = {
+        ...state,
+        stats: { ...(state.stats || {}), lastReason: reason },
+        updatedAt: now()
+    };
+    const row = rowFromState(nextState);
+    return save(row)
+        .then(() => syncInventorySummary(row.characterId, nextState.inventory, 'market_restore'))
+        .then(() => {
+            const snapshot = normalize(row);
+            cache.set(snapshot.characterId, snapshot);
+            notifyColdSnapshot(snapshot, 'market_sale', { critical: true });
+            return snapshot;
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
+            return null;
+        });
+}
+
 function recordFromSession(session, phase, reason = '') {
     const actor = session.actor;
     const loc = actorLocation(actor);
@@ -1859,89 +1883,6 @@ const BotLifeState = {
         });
     },
 
-    legacyMarketTownCandidates(limit = 10, routingVersion = 1) {
-        if (!initialized) return Promise.resolve([]);
-        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
-        const version = Math.max(1, Number(routingVersion) || 1);
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND activity = 'merchant'
-            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
-            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.marketTownRoutingVersion') AS INTEGER), 0) < ?
-            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) > ?
-            ORDER BY updatedAt ASC
-            LIMIT ${safeLimit}`,
-            [version, Date.now()]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to fetch legacy market-town candidates: %s', err.message);
-            return [];
-        });
-    },
-
-    expiredMarketStoreCandidates(limit = 10, timestamp = Date.now()) {
-        if (!initialized) return Promise.resolve([]);
-        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND activity = 'merchant'
-            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
-            AND COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ?
-            ORDER BY updatedAt ASC
-            LIMIT ${safeLimit}`,
-            [Number(timestamp) || Date.now()]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to fetch expired market stores: %s', err.message);
-            return [];
-        });
-    },
-
-    marketStoreMaintenanceCandidates(limit = 10, timestamp = Date.now()) {
-        if (!initialized) return Promise.resolve([]);
-        const safeLimit = Math.max(1, Math.min(25, Number(limit) || 10));
-        const at = Number(timestamp) || Date.now();
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND activity = 'merchant'
-            AND json_extract(statsJson, '$.marketStore') IS NOT NULL
-            AND (
-                COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ?
-                OR (
-                    COALESCE(CAST(json_extract(statsJson, '$.marketStore.storeType') AS INTEGER), 1) = 1
-                    AND COALESCE(
-                        CAST(json_extract(statsJson, '$.marketStore.nextReviewAt') AS INTEGER),
-                        CAST(json_extract(statsJson, '$.marketStore.openedAt') AS INTEGER),
-                        0
-                    ) <= ?
-                )
-            )
-            ORDER BY CASE
-                WHEN COALESCE(CAST(json_extract(statsJson, '$.marketStore.expiresAt') AS INTEGER), 0) <= ? THEN 0
-                ELSE 1
-            END ASC,
-            updatedAt ASC
-            LIMIT ${safeLimit}`,
-            [at, at, at]
-        ]).then((rows) => rows.map((row) => {
-            const state = normalize(row);
-            cache.set(state.characterId, state);
-            return state;
-        })).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to fetch market maintenance candidates: %s', err.message);
-            return [];
-        });
-    },
-
     migrateLegacyClassProgression(limit = 5) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
@@ -3221,95 +3162,8 @@ const BotLifeState = {
                 return snapshot;
             }).catch(async (err) => {
                 utils.infoWarn('BotLife', 'failed market purchase for %s: %s', state.name, err.message);
-                const restored = await this.restoreMarketState(state, 'market_purchase_persist_rollback');
+                const restored = await rewriteMarketState(state, 'market_purchase_persist_rollback');
                 if (!restored) utils.infoWarn('BotLife', 'failed to compensate market purchase for %s', state.name);
-                return null;
-            });
-    },
-
-    restoreMarketState(state, reason = 'market_transaction_rollback') {
-        if (!state?.characterId || !state.inventory) return Promise.resolve(null);
-        const nextState = {
-            ...state,
-            stats: { ...(state.stats || {}), lastReason: reason },
-            updatedAt: now()
-        };
-        const row = rowFromState(nextState);
-        return save(row)
-            .then(() => syncInventorySummary(row.characterId, nextState.inventory, 'market_restore'))
-            .then(() => {
-                const snapshot = normalize(row);
-                cache.set(snapshot.characterId, snapshot);
-                notifyColdSnapshot(snapshot, 'market_sale', { critical: true });
-                return snapshot;
-            }).catch((error) => {
-                utils.infoWarn('BotLife', 'failed market rollback for %s: %s', state.name, error?.message || String(error));
-                return null;
-            });
-    },
-
-    applyMarketSale(state, offer, qty = 1) {
-        const selfId = Number(offer?.selfId || 0);
-        const count = Math.max(1, Number(qty) || 1);
-        const price = Number(offer?.price || 0);
-        const currentItem = state?.inventory?.[String(selfId)];
-        if (!state || !selfId || price <= 0) return Promise.resolve(null);
-        const equippedCount = Math.max(0, Number(currentItem?.equippedCount ?? (currentItem?.equipped ? 1 : 0)));
-        if (currentItem && Number(currentItem.amount || 0) - equippedCount < count) return Promise.resolve(null);
-
-        const inventory = { ...(state.inventory || {}) };
-        // A hot private store can sell before an older cold snapshot has been
-        // refreshed from the character inventory. The store is authoritative
-        // for the transaction, otherwise sold stock returns after a restart.
-        inventory[String(selfId)] = {
-            ...(currentItem || {}),
-            selfId,
-            name: currentItem?.name || offer?.storeItem?.name || itemName(selfId),
-            amount: Math.max(0, Number(currentItem?.amount || 0) - count)
-        };
-        inventory['57'] = {
-            ...(inventory['57'] || {}),
-            selfId: 57,
-            name: 'Adena',
-            amount: Number(state.adena || 0) + (price * count)
-        };
-        const marketStore = state.stats?.marketStore;
-        const marketItems = (marketStore?.items || []).map((item) => {
-            if (Number(item.selfId) !== selfId) return item;
-            const remaining = offer?.storeItem && Number.isFinite(Number(offer.storeItem.count))
-                ? Math.max(0, Number(offer.storeItem.count))
-                : Math.max(0, Number(item.count || 0) - count);
-            return { ...item, count: remaining };
-        });
-        const nextState = {
-            ...state,
-            adena: Number(state.adena || 0) + (price * count),
-            inventory,
-            stats: {
-                ...(state.stats || {}),
-                ...(marketStore ? { marketStore: { ...marketStore, items: marketItems } } : {}),
-                lastMarketSale: {
-                    selfId,
-                    qty: count,
-                    price,
-                    buyerCharacterId: Number(offer.buyerCharacterId || 0) || null,
-                    at: now()
-                }
-            },
-            updatedAt: now()
-        };
-        const row = rowFromState(nextState);
-        return save(row)
-            .then(() => syncInventorySummary(row.characterId, inventory, 'market_sale'))
-            .then(() => {
-                const snapshot = normalize(row);
-                cache.set(snapshot.characterId, snapshot);
-                notifyColdSnapshot(snapshot, 'npc_liquidation', { critical: true });
-                return snapshot;
-            }).catch(async (err) => {
-                utils.infoWarn('BotLife', 'failed market sale for %s: %s', state.name, err.message);
-                const restored = await this.restoreMarketState(state, 'market_sale_persist_rollback');
-                if (!restored) utils.infoWarn('BotLife', 'failed to compensate market sale for %s', state.name);
                 return null;
             });
     },
@@ -3735,7 +3589,7 @@ const BotLifeState = {
                 }
             }
             invoke('GameServer/Clan/ClanService').renameMember(id, name);
-            if (snapshot.stats?.marketStore) invoke('GameServer/Bot/Economy/MarketOpportunity').indexColdStore(snapshot);
+            invoke('GameServer/AfkTrade/AfkTradeService').renameOwner(id, name);
             notifyColdSnapshot(snapshot, 'generated_name_migration', { critical: true });
             return snapshot;
         });

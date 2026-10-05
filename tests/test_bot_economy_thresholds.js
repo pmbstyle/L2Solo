@@ -65,7 +65,13 @@ const crafter = { characterId: 9103, accountName: 'bot_pop_test', name: 'Crafter
     activity: 'hunting', level: 60, adena: 500000, vitals: { mp: 100 }, inventory: {},
     stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
 assert.strictEqual(WealthCraft.eligible(crafter), true);
-assert.strictEqual(WealthCraft.eligible({ ...crafter, stats: { ...crafter.stats, marketStore: { storeType: AfkTrade.BUY } } }), false,
-    'its own buy order comes first');
+const ownerRecords = AfkTrade.ownerRecords;
+try {
+    AfkTrade.ownerRecords = (id) => Number(id) === 9103
+        ? [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 1000, lines: [] }] : [];
+    assert.strictEqual(WealthCraft.eligible(crafter), false, 'its own buy ad comes first');
+} finally {
+    AfkTrade.ownerRecords = ownerRecords;
+}
 
 console.log('test_bot_economy_thresholds passed');
