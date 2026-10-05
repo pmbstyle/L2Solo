@@ -140,4 +140,37 @@ Config.coldHonestTravel = false;
     AfkTrade._resetForTests();
 }
 
-console.log('Board trips: trip cost, karma towns, the shop town and buy-ad answers passed');
+// 5. The cheapest town for a stack (user Q1 A): the board's lines of each
+// town, then its NPC as one more offer, plus the trip; the whole amount first.
+{
+    const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');
+    const { BoardIndex, SELL } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const SHOT = 1463;
+    const index = new BoardIndex();
+    const put = (id, town, count, price, ownerId = 7) => index.put({ id, kind: 'sell_ad', storeType: SELL, ownerId, town,
+        botOwned: true, lines: [{ lineId: id * 10, selfId: SHOT, count, price }] });
+    put(1, 'Giran', 100, 80);
+    put(2, 'Dion', 2000, 90);
+    put(3, 'Dion', 500, 95, 99);
+    const npcOffers = ['Giran', 'Dion', 'Talking Island'].map((name) => ({ town: name, price: 100 }));
+    const trips = { Giran: 50000, Dion: 10000, 'Talking Island': 0 };
+    const cost = (name) => trips[name] ?? Infinity;
+    const best = OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost, excludeOwner: 99 });
+    assert.strictEqual(best.town, 'Dion', 'Dion: 2,000 at 90 + 1,000 from the NPC + its trip');
+    assert.deepStrictEqual(best.lines.map((entry) => [entry.line.recordId, entry.count]), [[2, 2000]], 'not its own line');
+    assert.strictEqual(best.npc, 1000);
+    assert.strictEqual(best.landed, 2000 * 90 + 1000 * 100 + 10000);
+    trips.Dion = 30000;
+    assert.strictEqual(OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost }).town, 'Talking Island',
+        'a dearer trip sends the bot to its own village\'s NPC');
+    // A short wallet fills no town: the least landed price a unit wins.
+    const poor = OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost, money: 9000 });
+    assert.strictEqual(poor.whole, false);
+    assert.strictEqual(poor.town, 'Talking Island');
+    assert.strictEqual(OfferQuery.cheapestTown(index, SHOT, { amount: 10, npcOffers: [], cost: () => Infinity }), null);
+    const filled = OfferQuery.fill([{ price: 5, count: 10, sourceId: 1 }, { price: 9, count: 10, sourceId: 2 }], 15,
+        { npcPrice: 8, maxPrice: 8, money: 100 });
+    assert.deepStrictEqual([filled.lines.length, filled.npc, filled.units, filled.cost], [1, 5, 15, 90]);
+}
+
+console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers and the cheapest town passed');

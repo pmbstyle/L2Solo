@@ -330,22 +330,14 @@ function restockPlan(value, options = {}) {
         .cheapestPurchase(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
     const needed = npcPrice > 0 && currentAmount < DEFAULT_TARGET_AMOUNT;
-    let left = needed ? PURCHASE_TARGET_AMOUNT - currentAmount : 0;
+    const left = needed ? PURCHASE_TARGET_AMOUNT - currentAmount : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
-    let money = Math.max(0, adena - reserve - potionCost);
-    const shops = [];
-    const cheaper = (options.offers || [])
-        .filter((offer) => Number(offer.price) > 0 && Number(offer.price) < npcPrice && Number(offer.count) > 0)
-        .sort((a, b) => Number(a.price) - Number(b.price));
-    for (const offer of cheaper) {
-        if (left <= 0) break;
-        const price = Number(offer.price);
-        const amount = Math.min(left, Number(offer.count), Math.floor(money / price));
-        if (amount <= 0) break;
-        shops.push({ offer, price, amount, cost: amount * price });
-        left -= amount;
-        money -= amount * price;
-    }
+    const money = Math.max(0, adena - reserve - potionCost);
+    // The players' lines cheaper than the NPC, cheapest first, then the NPC:
+    // the one rule for a stack purchase (OfferQuery.fill).
+    const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
+    const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice: npcPrice - 1 });
+    const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price }));
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
     const npcAmount = npcRestockAmount({ needed, targetAmount: PURCHASE_TARGET_AMOUNT, currentAmount,

@@ -35,6 +35,73 @@ function bestSellOffer(index, selfId, options = {}) {
     return OfferOrder.best(offers, { budget, cost: options.cost || null });
 }
 
+// What `amount` units cost from sell lines (best first, the board's order)
+// at or under `maxPrice`, then the NPC at `npcPrice` for the rest, within
+// `money`: { lines: [{ line, count, price }], npc (units from the NPC),
+// units, cost }. One rule for the purchase of a stack (a shot restock,
+// materials): ShotStock.restockPlan and cheapestTown.
+function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0 } = {}) {
+    let left = Math.max(0, Math.floor(Number(amount) || 0));
+    let budget = Math.max(0, Number(money));
+    const taken = [];
+    let cost = 0;
+    for (const line of lines || []) {
+        if (left <= 0) break;
+        const price = Number(line.price);
+        if (excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner)) continue;
+        if (!(price > 0) || price > maxPrice || !(Number(line.count) > 0)) continue;
+        const count = Math.min(left, Number(line.count), Math.floor(budget / price));
+        if (count <= 0) break;
+        taken.push({ line, count, price });
+        left -= count;
+        budget -= count * price;
+        cost += count * price;
+    }
+    const npc = npcPrice > 0 && npcPrice <= maxPrice ? Math.max(0, Math.min(left, Math.floor(budget / npcPrice))) : 0;
+    cost += npc * npcPrice;
+    let units = npc;
+    for (const entry of taken) units += entry.count;
+    return { lines: taken, npc, units, cost };
+}
+
+// The town where a buyer gets `amount` units of an item for the least, its
+// trip there included (б5, D1; user Q1 A for shots): in each town the board's
+// lines there and the NPC shop there as one more offer (fill), plus the
+// buyer's round trip (`cost`, OfferOrder.tripCost; 0 for its own town). A
+// town that fills the whole amount comes first, then the least landed price
+// a unit. options: towns (null: every town with lines or an NPC), npcOffers
+// ([{ town, price }]), money, maxPrice, excludeOwner, cost. Returns { town,
+// lines, npc, npcPrice, units, cost, trip, landed } or null. O(T log n + k)
+// over the towns with offers.
+function cheapestTown(index, selfId, options = {}) {
+    const amount = Math.max(1, Math.floor(Number(options.amount) || 1));
+    const npcPrice = new Map();
+    for (const offer of options.npcOffers || []) {
+        const price = Number(offer.price);
+        if (offer.town && price > 0 && (!npcPrice.has(offer.town) || price < npcPrice.get(offer.town))) npcPrice.set(offer.town, price);
+    }
+    const towns = new Set(options.towns || [...(index ? index.towns(selfId, SELL) : []), ...npcPrice.keys()]);
+    let best = null;
+    for (const town of towns) {
+        if (!town) continue;
+        const trip = options.cost ? Number(options.cost(town)) : 0;
+        if (!Number.isFinite(trip)) continue;
+        const price = npcPrice.get(town) || 0;
+        const filled = fill(index ? index.list(selfId, SELL, town) : [], amount, {
+            npcPrice: price, money: options.money ?? Infinity, maxPrice: options.maxPrice ?? Infinity,
+            excludeOwner: options.excludeOwner
+        });
+        if (!filled.units) continue;
+        const landed = filled.cost + trip;
+        const whole = filled.units >= amount;
+        const better = !best || (whole !== best.whole ? whole
+            : landed / filled.units < best.landed / best.units || (landed / filled.units === best.landed / best.units
+                && String(town).localeCompare(best.town) < 0));
+        if (better) best = { town, ...filled, npcPrice: price, trip, landed, whole };
+    }
+    return best;
+}
+
 // The other sources a buyer sees in `towns` (null: every town): the
 // configured merchants there (or without a town), the NPC shops only in a
 // named town.
@@ -45,4 +112,4 @@ function othersIn(towns, fixed = [], npc = []) {
     ].filter((offer) => offer.available !== false);
 }
 
-module.exports = { bestSellOffer, othersIn };
+module.exports = { bestSellOffer, cheapestTown, fill, othersIn };
