@@ -54,8 +54,7 @@ function personaArchetype(persona) {
 const merchantConfigFor = (botData, characterName) => MerchantConfigs[botData.merchantConfigName || characterName];
 
 function isOnGiranMarketPlaza(loc = {}) {
-    return Number(loc.locX) >= 80911 && Number(loc.locX) <= 83750
-        && Number(loc.locY) >= 147662 && Number(loc.locY) <= 149550;
+    return invoke('GameServer/Bot/Economy/ShopPlaces').isOnSquare('Giran', loc);
 }
 
 function stableSpawnLocation(botData = {}) {

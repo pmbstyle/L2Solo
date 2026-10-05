@@ -1,5 +1,6 @@
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
+const ShopPlaces = require('../Economy/ShopPlaces');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
@@ -1006,20 +1007,8 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
 // A stale cold snapshot can retain the previous hunting region while its
 // physical coordinate is still on the Giran trading square.  Coordinates are
 // authoritative here: currentRegion is plan context, not a location proof.
-const GIRAN_MARKET_PLAZA = Object.freeze({
-    minX: 80911,
-    // Public stations and the north-east edge of the actual trading square
-    // extend beyond the conservative stall-placement rectangle.
-    maxX: 83750,
-    minY: 147662,
-    maxY: 149550
-});
-
 function isOnGiranMarketPlaza(loc = {}) {
-    return Number(loc.locX) >= GIRAN_MARKET_PLAZA.minX
-        && Number(loc.locX) <= GIRAN_MARKET_PLAZA.maxX
-        && Number(loc.locY) >= GIRAN_MARKET_PLAZA.minY
-        && Number(loc.locY) <= GIRAN_MARKET_PLAZA.maxY;
+    return ShopPlaces.isOnSquare('Giran', loc);
 }
 
 function shouldRecoverOrphanedGiranState(state = {}) {
