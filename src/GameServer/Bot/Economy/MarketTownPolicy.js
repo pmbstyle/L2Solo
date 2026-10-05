@@ -4,6 +4,7 @@ const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const OfferOrder = require('./OfferOrder');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
@@ -13,13 +14,9 @@ let rankBySelfId = new Map();
 let kindBySelfId = new Map();
 let materialRanksBySelfId = new Map();
 
-const NO_GRADE_MARKETS = Object.freeze([
-    { name: 'Talking Island', locX: -84700, locY: 244200, radius: 12000 },
-    { name: 'Elven Village', locX: 46600, locY: 49700, radius: 12000 },
-    { name: 'Dark Elven Village', locX: 12700, locY: 16600, radius: 12000 },
-    { name: 'Orc Village', locX: -44600, locY: -112400, locZ: -240, radius: 12000 },
-    { name: 'Dwarven Village', locX: 115440, locY: -178580, locZ: -920, radius: 12000 }
-]);
+// The starter villages and the captured plaza centre their market travel goes to.
+const NO_GRADE_MARKETS = Object.freeze(['Talking Island', 'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village']
+    .map((name) => ({ name, ...ShopPlaces.PLAZAS[name].travelCenter, radius: 12000 })));
 
 // These starter villages are intentionally not all part of TownPathfinder's
 // geodata atlas yet. Market travel only needs the captured plaza centre: the

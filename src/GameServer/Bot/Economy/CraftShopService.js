@@ -6,13 +6,15 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
+
 const MAX_PUBLIC_RECIPES = 16;
-const CRAFT_LOC_Z = -3466;
+const CRAFT_LOC_Z = ShopPlaces.PLAZAS.Giran.locZ;
 const craftLoc = (locX, locY) => Object.freeze({ locX, locY, locZ: CRAFT_LOC_Z });
-// These are the captured sellable limits of the Giran plaza, inset by the
-// normal 60-unit store margin.  Keep service crafters on this outer frame:
-// the large central column remains completely free for player movement.
-const GIRAN_CRAFT_OUTER = Object.freeze({ minX: 80971, maxX: 82887, minY: 147722, maxY: 149490 });
+// The sellable limits of the Giran plaza, inset by its store margin.  Keep
+// service crafters on this outer frame: the large central column remains
+// completely free for player movement.
+const GIRAN_CRAFT_OUTER = Object.freeze(ShopPlaces.stallBounds('Giran'));
 
 function perimeterStalls(bounds, count) {
     const width = bounds.maxX - bounds.minX;
