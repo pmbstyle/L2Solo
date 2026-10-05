@@ -1,0 +1,32 @@
+[
+  {
+    "selfId": 4915,
+    "template": {
+      "kind": "Other",
+      "name": "Blueprint: Summon Wild Hog Cannon",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 4921,
+    "template": {
+      "kind": "Other",
+      "name": "Blueprint: Summon Big Boom",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 6750
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]
