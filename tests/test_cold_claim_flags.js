@@ -22,8 +22,9 @@ const cases = [
     ['{"warehouseWorkflow":{"step":1}}', 'warehouse_state'],
     ['{"warehouseWorkflow":false,"warehouseErrand":null}', 'claimed'],
     ['{"warehouseErrand":[]}', 'warehouse_state'],
-    ['{"marketStore":0}', 'claimed'],
-    ['{"marketStore":{}}', 'market_state'],
+    // A bot's stall state is gone with the board (step 3.3): a leftover
+    // marketStore no longer holds a claim.
+    ['{"marketStore":{}}', 'claimed'],
     ['{"marketReturn":"0"}', 'market_state'],
     ['{"craftStationId":""}', 'claimed'],
     ['{"craftStationId":7}', 'craft_state'],

@@ -26,7 +26,6 @@ const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const BotAfkMarketService = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
-const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const PersistentStateRetention = invoke('GameServer/Bot/Population/PersistentStateRetention');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -1800,7 +1799,6 @@ const PopulationService = {
                         // activation work.
                         const parties = available.filter((state) => !!state.party?.partyId);
                         const standalone = available.filter((state) => !state.party?.partyId);
-                        const merchants = standalone.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
                         const crafters = standalone.filter((state) => state.activity === 'crafting' && state.stats?.craftShop);
                         // There is intentionally no local population target
                         // here. The old fixed local target made a player see
@@ -1816,7 +1814,7 @@ const PopulationService = {
                         const ambient = standalone.filter((state) => (
                             state.activity !== 'merchant' && state.activity !== 'crafting'
                         ));
-                        const candidates = [...parties, ...crafters, ...merchants, ...ambient]
+                        const candidates = [...parties, ...crafters, ...ambient]
                             .slice(0, parties.length + crafters.length + ambientRemaining);
                         const floorAware = FloorAwareActivationPolicy.filterCandidates(candidates, {
                             playerLoc: loc,
@@ -1834,8 +1832,7 @@ const PopulationService = {
                                 return this.requestActivation(state, 'near_player', {
                                     recoverOnActivation: this.isRestingActivationState(state),
                                     readyOnActivation: true,
-                                    keepStoreLocation: (state.activity === 'merchant' && !!state.stats?.marketStore)
-                                        || (state.activity === 'crafting' && !!state.stats?.craftShop),
+                                    keepStoreLocation: state.activity === 'crafting' && !!state.stats?.craftShop,
                                     playerLoc: loc
                                 }).then((result) => {
                                     logPartyActivationFailure(state, result);
@@ -3593,13 +3590,7 @@ const PopulationService = {
             return ColdShotEconomyService.review(updatedState)
                 .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
                 .then((wealthCraft) => ColdMarketListingService.resolve(wealthCraft.state || updatedState))
-                .then((marketLifecycle) => {
-                    const completedSale = marketLifecycle.closed && marketLifecycle.reason === 'sold_out';
-                    const goalReady = completedSale
-                        ? GoalService.complete(marketLifecycle.state.characterId)
-                        : Promise.resolve(null);
-                    return goalReady.then(() => marketLifecycle);
-                }).then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
+                .then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
                     .then((goalSnapshot) => {
                         if (goalSnapshot?.current?.status === 'active') return goalSnapshot;
                         const returnSpot = SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId);
@@ -3641,7 +3632,6 @@ const PopulationService = {
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;
-                        if (listingState.activity === 'merchant') return listingState;
                         if (listingResult.listed) return listingState;
                         return restockColdHealingPotions(listingState).then(restockColdScrolls).then((restockedState) => {
                             const returnState = GoalExecutor.finishMarketVisit(restockedState);
@@ -3651,7 +3641,6 @@ const PopulationService = {
                         });
                     });
                     return marketStatePromise.then((persistedState) => persistedState || purchasedState)
-                        .then((marketState) => ColdMarketTradeChat.maybeAnnounce(marketState).then((result) => result.state || marketState))
                         .then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;

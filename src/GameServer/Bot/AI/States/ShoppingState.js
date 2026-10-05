@@ -7,8 +7,6 @@ const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotWarehouse   = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const BotEquipmentUpgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const LifeState      = invoke('GameServer/Bot/Population/BotLifeState');
-const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
-const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -615,16 +613,6 @@ module.exports = {
                 TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: seller.fetchName() }),
                     { values: { item: boughtSummary.name, seller: seller.fetchName() } });
                 purchaseSucceeded = true;
-
-                if (!store.items.some((item) => Number(item.count || 0) > 0) && sellerSession?.coldMarketState) {
-                    const returnState = GoalExecutor.finishMarketVisit(sellerSession.coldMarketState);
-                    if (returnState) {
-                        await Cooldown.transitionToColdState(sellerSession, {
-                            ...returnState,
-                            stats: { ...(returnState.stats || {}), marketStore: null }
-                        }, 'market_sold_out');
-                    }
-                }
             } catch (err) {
                 deferEquipmentRetry(session);
                 session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
@@ -694,10 +682,7 @@ module.exports = {
                         ? await sellInventoryToAfk(bot, store, session.coldLifeState)
                         : await TradeService.sellInventoryToStore(bot, store, {
                         buyerActor: buyer,
-                        state: session.coldLifeState,
-                        afterTrade: store.budgetBacked === true && buyerSession?.coldMarketState
-                            ? () => LifeState.syncMarketSession(buyerSession, 'hot_bot_market_buy_fill')
-                            : null
+                        state: session.coldLifeState
                         });
                     if (result.coldState) session.coldLifeState = result.coldState;
                     if (result.itemsSold > 0) {

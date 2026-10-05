@@ -20,7 +20,6 @@ const objective = { status: 'open', priority: 'required', clanGoalKey: 'equipmen
 const flags = {
     warehouseWorkflow: { step: 1 },
     warehouseErrand: { step: 1 },
-    marketStore: { items: [] },
     marketReturn: { spotId: 'home' },
     partyMarketReturn: { partyId: 'p1', until: now + 60000 },
     craftShop: { stationId: 1 },
@@ -83,7 +82,6 @@ const columns = Object.keys(copies);
 const expected = {
     warehouseWorkflow: [T, T, T, F, F, T, T, T],
     warehouseErrand: [T, T, F, F, F, T, F, F],
-    marketStore: [T, T, F, T, F, T, F, F],
     marketReturn: [T, T, T, T, F, F, T, T],
     partyMarketReturn: [F, T, T, T, T, T, F, F],
     craftShop: [T, T, F, F, F, T, F, F],

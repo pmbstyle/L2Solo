@@ -2,7 +2,6 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const { marketStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
@@ -207,7 +206,6 @@ function resolve(state, timestamp = Date.now()) {
         timing: { ...(state.timing || {}), nextResolveAt: timestamp } };
     return LifeState.upsertState(recovered, 'orphaned_market_recovery').then(saved => {
         if (!saved) return { state, closed: false };
-        MarketOpportunity.removeColdStore(state.characterId);
         return { state: saved, closed: true, reason: 'orphaned_market_recovery' };
     });
 }
@@ -230,55 +228,6 @@ function pricingAfterReview(state, store, timestamp, expired = false) {
     return pricing;
 }
 
-function withdrawForParty(state, timestamp = Date.now()) {
-    const store = state?.stats?.marketStore;
-    if (!state || (!store && state.activity !== 'merchant')) {
-        return Promise.resolve({ state, withdrawn: false });
-    }
-
-    const marketReturn = state.stats?.marketReturn;
-    const nextState = {
-        ...state,
-        activity: 'hunting',
-        currentRegion: marketReturn?.regionName || state.currentRegion,
-        spotId: marketReturn?.spotId || state.spotId,
-        loc: marketReturn?.loc ? { ...marketReturn.loc } : state.loc,
-        stats: {
-            ...(state.stats || {}),
-            marketStore: null,
-            marketReturn: null,
-            travel: null
-        },
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            nextResolveAt: timestamp
-        }
-    };
-
-    // A const-party invitation has priority over the current market shift.
-    // Persist the transition before removing market discovery so a failed
-    // write leaves the existing offer and store intact.
-    return LifeState.upsertState(nextState, 'party_market_withdrawal').then((saved) => ({
-        state: saved || nextState,
-        previousState: state,
-        withdrawn: !!store
-    })).then((result) => {
-        MarketOpportunity.removeColdStore(state.characterId);
-        return result;
-    });
-}
-
-function restoreAfterPartyFailure(state) {
-    const store = state?.stats?.marketStore;
-    if (!state || !store) return Promise.resolve({ state, restored: false });
-    return LifeState.upsertState(state, 'party_market_withdrawal_rollback').then((saved) => {
-        const restored = saved || state;
-        MarketOpportunity.indexColdStore(restored);
-        return { state: restored, restored: true };
-    });
-}
-
 module.exports = {
     DEFAULT_LISTING_MS,
     SPECULATIVE_LISTING_MS,
@@ -289,7 +238,5 @@ module.exports = {
     targetMarketTownName,
     townCenter,
     open,
-    resolve,
-    restoreAfterPartyFailure,
-    withdrawForParty
+    resolve
 };

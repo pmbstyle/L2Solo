@@ -8,31 +8,11 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
-const coldStoreIndex = new Map();
-let coldStoreIndexHydrated = false;
 const SHOT_IDS = new Set([
     1835, 1463, 1464, 1465, 1466, 1467,
     2509, 2510, 2511, 2512, 2513, 2514,
     3947, 3948, 3949, 3950, 3951, 3952
 ]);
-
-function coldMarketStates() {
-    // Hydrate persisted shops once after startup. Every later store mutation
-    // updates the index directly, so market lookups never rescan all bots.
-    if (!coldStoreIndexHydrated) {
-        coldStoreIndexHydrated = true;
-        try {
-            (invoke('GameServer/Bot/Population/BotLifeState').allStates(5000) || []).forEach((state) => {
-                if (state?.activity === 'merchant' && state.stats?.marketStore) {
-                    coldStoreIndex.set(Number(state.characterId), state);
-                }
-            });
-        } catch (_) {
-            // Lifecycle storage is optional in lightweight catalog/test contexts.
-        }
-    }
-    return Array.from(coldStoreIndex.values());
-}
 
 function itemName(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || `Item ${selfId}`;
@@ -205,28 +185,6 @@ function fixedStoreOffers() {
     return offers;
 }
 
-function indexColdStore(state) {
-    if (!coldStoreIndexHydrated) coldMarketStates();
-    const characterId = Number(state?.characterId || 0);
-    const store = state?.stats?.marketStore;
-    if (!characterId || state.activity !== 'merchant' || !store) {
-        if (characterId) coldStoreIndex.delete(characterId);
-        return false;
-    }
-    coldStoreIndex.set(characterId, state);
-    return true;
-}
-
-function removeColdStore(characterId) {
-    if (!coldStoreIndexHydrated) coldMarketStates();
-    coldStoreIndex.delete(Number(characterId));
-}
-
-function resetColdStores() {
-    coldStoreIndex.clear();
-    coldStoreIndexHydrated = false;
-}
-
 // What a cold bot can buy without meeting anyone: board records, NPC shops
 // and the configured city merchants. A player's or a bot's live private
 // store trades face to face only (E14, E22): a cold bot never buys from it
@@ -386,14 +344,11 @@ module.exports = {
     hotOffers,
     findBuyOffers,
     fixedStoreOffers,
-    indexColdStore,
     npcOffers,
     npcOffersAll,
     normalizeItemLookup,
     privateOffers,
     resolveSupplyItem,
-    removeColdStore,
-    resetColdStores,
     supplyCatalog,
     release,
     reserve

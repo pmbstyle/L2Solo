@@ -7,7 +7,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 // A Mammon trip waits for every other errand to finish, as the other trips do.
-const BUSY_FLAGS = ['marketReturn', 'partyMarketReturn', 'marketStore', 'craftReturn', 'craftStationId',
+const BUSY_FLAGS = ['marketReturn', 'partyMarketReturn', 'craftReturn', 'craftStationId',
     'supplyErrand', 'pvpEncounter'];
 
 function recipeFor(selfId, state) {

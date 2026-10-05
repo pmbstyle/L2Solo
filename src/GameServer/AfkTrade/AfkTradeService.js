@@ -514,8 +514,7 @@ async function syncColdCharacter(characterId, previousState, reason, rows = [], 
     if (fenced) return invoke('GameServer/Bot/Population/BotLifeState').acceptLifecycleRow(fenced);
     if (!previousState) return null;
     // A hot row belongs to the actor in the world: syncOnlineInventory has
-    // refreshed its backpack and markCold or syncMarketSession writes the
-    // row. A cold snapshot written here would flip it to cold and roll back
+    // refreshed its backpack and markCold writes the row. A cold snapshot written here would flip it to cold and roll back
     // the experience and location earned while hot.
     if (invoke('GameServer/Bot/Population/BotLifeState').hotRow(characterId)) return null;
     try {

@@ -6,7 +6,6 @@
 const GROUPS = {
     warehouseWorkflow: 'warehouse',
     warehouseErrand: 'warehouse',
-    marketStore: 'market',
     marketReturn: 'market',
     partyMarketReturn: 'market',
     craftShop: 'craft',
@@ -22,7 +21,7 @@ const GROUPS = {
 
 // The cold simulation claim (the owner, the SQL claim row and the worker's
 // lifecycle). craftReturn is a saved destination, not an outstanding craft.
-const COLD_CLAIM = ['warehouseWorkflow', 'warehouseErrand', 'marketStore', 'marketReturn',
+const COLD_CLAIM = ['warehouseWorkflow', 'warehouseErrand', 'marketReturn',
     'craftShop', 'craftStationId', 'supplyErrand'];
 const CLAIM_REASONS = {
     warehouse: 'warehouse_state',

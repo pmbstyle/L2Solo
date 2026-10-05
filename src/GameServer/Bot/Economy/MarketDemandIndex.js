@@ -91,26 +91,6 @@ function indexSignals(allStates, timestamp = Date.now()) {
     return byItem;
 }
 
-function indexSupply(allStates) {
-    const byItem = new Map();
-    for (const state of allStates || []) {
-        if (state?.activity !== 'merchant') continue;
-        const store = state.stats?.marketStore;
-        if (!store || Number(store.storeType || 1) !== 1) continue;
-        for (const item of store.items || []) {
-            const selfId = Number(item.selfId || 0);
-            if (!selfId || Number(item.count || 0) <= 0) continue;
-            if (!byItem.has(selfId)) byItem.set(selfId, []);
-            byItem.get(selfId).push({
-                characterId: Number(state.characterId),
-                town: store.town || state.currentRegion || null,
-                count: Number(item.count), price: Number(item.price || 0)
-            });
-        }
-    }
-    return byItem;
-}
-
 function demandFor(selfId, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const unitPrice = Math.max(0, Number(options.unitPrice || 0));
@@ -160,23 +140,11 @@ function demandFor(selfId, options = {}) {
     };
 }
 
+// The sellers of an item: the board's sell lines, and `options.supplyByItem`
+// (the supply a caller already has, by item) besides.
 function supplyFor(selfId, options = {}) {
     const excludedCharacterId = Number(options.excludeCharacterId || 0);
-    const coldOffers = options.supplyByItem
-        ? options.supplyByItem.get(Number(selfId)) || []
-        : states(options).flatMap((state) => {
-        if (Number(state.characterId) === excludedCharacterId || state.activity !== 'merchant') return [];
-        const store = state.stats?.marketStore;
-        if (!store || Number(store.storeType || 1) !== 1) return [];
-        const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count || 0) > 0);
-        if (!item) return [];
-        return [{
-            characterId: Number(state.characterId),
-            town: store.town || state.currentRegion || null,
-            count: Number(item.count),
-            price: Number(item.price || 0)
-        }];
-    });
+    const coldOffers = options.supplyByItem?.get(Number(selfId)) || [];
     const offers = coldOffers.filter((offer) => Number(offer.characterId) !== excludedCharacterId)
         .concat(invoke('GameServer/AfkTrade/AfkTradeService').offers(selfId, 1, {
         characterId: excludedCharacterId
@@ -204,5 +172,5 @@ function snapshot(selfId, options = {}) {
     };
 }
 
-module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals, indexSupply,
+module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals,
     snapshot, supplyFor, timestampForWanted };

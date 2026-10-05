@@ -50,16 +50,8 @@ function snapshot() {
     const states = LifeState.allStates(5000);
     const now = Date.now();
     const signalsByItem = MarketDemandIndex.indexSignals(states, now);
-    const active = states.filter((state) => state.activity === 'merchant' && state.stats?.marketStore);
-    const dynamicStores = [
-        ...active.map((state) => ({
-            storeType: state.stats.marketStore.storeType,
-            town: state.stats.marketStore.town || state.currentRegion,
-            items: state.stats.marketStore.items || []
-        })),
-        ...AfkTrade.activeShops().filter((shop) => String(shop.ownerAccount || '').startsWith('bot_'))
-            .map((shop) => ({ storeType: shop.storeType, town: shop.town, items: shop.lines || [] }))
-    ];
+    const dynamicStores = AfkTrade.activeShops().filter((shop) => String(shop.ownerAccount || '').startsWith('bot_'))
+        .map((shop) => ({ storeType: shop.storeType, town: shop.town, items: shop.lines || [] }));
     dynamicStores.forEach((store) => {
         const side = Number(store.storeType || 1) === 3 ? 'wtb' : 'wts';
         const town = store.town || 'Unknown';
@@ -168,26 +160,6 @@ function storeRow({ id, source, ownerId = null, ownerName, storeType, title = ''
         } : null,
         items
     };
-}
-
-function dynamicStores(states, itemsById) {
-    return states.flatMap((state) => {
-        const store = state?.stats?.marketStore;
-        if (state?.activity !== 'merchant' || !store) return [];
-        const items = normalizeStoreItems(store.items, itemsById);
-        if (!items.length) return [];
-        return [storeRow({
-            id: `bot:${Number(state.characterId)}`,
-            source: 'bot',
-            ownerId: state.characterId,
-            ownerName: state.name || store.sellerName || store.buyerName,
-            storeType: store.storeType,
-            title: store.title,
-            town: store.town || state.currentRegion,
-            loc: store.loc || state.loc,
-            items
-        })];
-    });
 }
 
 function fixedStores(itemsById) {
@@ -416,7 +388,6 @@ async function detail() {
         Database.fetchMarketStoreHistory().catch(() => null)
     ]);
     const stores = [
-        ...dynamicStores(states, itemsById),
         ...fixedStores(itemsById),
         ...playerStores(World.user?.sessions || [], itemsById),
         ...afkStores(afk, itemsById)
@@ -432,7 +403,6 @@ module.exports = {
     afkStores,
     buildDetail,
     detail,
-    dynamicStores,
     fixedStores,
     history,
     playerStores,

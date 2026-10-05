@@ -84,10 +84,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         for (const line of requested) {
             const result = await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
                 objectId: line.item.fetchId(),
-                buyerActor: trade.merchant,
-                afterTrade: store.budgetBacked === true && trade.merchant?.session?.coldMarketState
-                    ? () => invoke('GameServer/Bot/Population/BotLifeState').syncMarketSession(trade.merchant.session, 'hot_market_buy_fill')
-                    : null
+                buyerActor: trade.merchant
             });
             sold.push(result);
             MarketTelemetry.recordTrade({

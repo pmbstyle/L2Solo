@@ -18,7 +18,7 @@ function safeMembers(party, members) {
             && ['hunting', 'grouped', 'resting', 'party_wait'].includes(member.activity)
             && !member.stats?.clanPartyObjective && !member.stats?.equipmentPlan?.clanGoal
             && !member.stats?.pvpEncounter && !member.stats?.partyMarketReturn
-            && !member.stats?.travel && !member.stats?.marketStore);
+            && !member.stats?.travel);
 }
 async function reclaim(objective, { parties, life, database, metrics }, now = Date.now()) {
     if (!required(objective)) return false;

@@ -3,6 +3,7 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
+const EMPTY_SUPPLY = new Map();
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -213,7 +214,7 @@ function evaluate(state, options = {}) {
         ...npcCandidates.filter((item) => !marketIds.has(Number(item.selfId)))
     ];
     const states = options.states || LifeState.allStates(5000);
-    const supplyByItem = options.supplyByItem || MarketDemandIndex.indexSupply(states);
+    const supplyByItem = options.supplyByItem || EMPTY_SUPPLY;
     const signalsByItem = options.signalsByItem || MarketDemandIndex.indexSignals(states, Number(options.now) || Date.now());
     const decisions = candidates.map((item) => {
         const decision = classify(state, item, { ...options, states, supplyByItem,

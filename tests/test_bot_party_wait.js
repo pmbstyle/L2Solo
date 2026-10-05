@@ -10,7 +10,6 @@ const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const ColdMarketTradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -27,7 +26,6 @@ const originals = {
     resolveListing: ColdMarketListingService.resolve,
     currentGoal: GoalService.current,
     tryPurchase: ColdMarketService.tryPurchase,
-    announceTrade: ColdMarketTradeChat.maybeAnnounce,
     reviewGoal: GoalService.review,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
     recordMany: LifeEvents.recordMany,
@@ -105,7 +103,6 @@ async function run() {
     ColdMarketListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || applied || state, closed: false });
     GoalService.current = () => Promise.resolve({ current: null });
     ColdMarketService.tryPurchase = (current) => Promise.resolve({ state: current, purchased: false });
-    ColdMarketTradeChat.maybeAnnounce = (current) => Promise.resolve({ state: current });
     GoalService.review = () => Promise.resolve({ current: null });
     GoalExecutor.beginMarketTravel = () => null;
     LifeEvents.recordMany = () => Promise.resolve();
@@ -310,7 +307,6 @@ run().catch((err) => {
     ColdMarketListingService.resolve = originals.resolveListing;
     GoalService.current = originals.currentGoal;
     ColdMarketService.tryPurchase = originals.tryPurchase;
-    ColdMarketTradeChat.maybeAnnounce = originals.announceTrade;
     GoalService.review = originals.reviewGoal;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     LifeEvents.recordMany = originals.recordMany;

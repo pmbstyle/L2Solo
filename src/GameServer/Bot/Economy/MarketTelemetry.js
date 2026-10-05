@@ -188,7 +188,7 @@ module.exports = {
         const count = Math.max(1, Number(quantity) || 1);
         const adena = Math.max(0, Number(offer?.price || 0)) * count;
         const npc = offer?.sourceType === 'npc';
-        const peer = offer?.sourceType === 'cold_store' || offer?.sourceType === 'afk_bot_store'
+        const peer = offer?.sourceType === 'afk_bot_store'
             || (offer?.sourceType === 'private_store' && offer?.sellerKind === 'bot');
         const channel = npc
             ? 'npc_buy'

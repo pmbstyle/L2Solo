@@ -79,7 +79,7 @@ function specialOperation(party, states) {
     return states.some((state) => {
         const member = state?.stats || {};
         return member.travel || member.pvpEncounter || activeCompetition(member) || member.supplyErrand
-            || member.warehouseWorkflow || member.marketStore || member.craftShop
+            || member.warehouseWorkflow || member.craftShop
             || ['dead', 'merchant', 'crafting', 'shopping', 'traveling', 'pk_hunting'].includes(state?.activity);
     });
 }

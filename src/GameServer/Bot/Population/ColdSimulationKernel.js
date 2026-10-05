@@ -202,8 +202,7 @@ function lifecycleKind(state = {}, context = {}) {
     if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';
     if (context.isPartyLeader) return 'party';
     if (state.partyId || state.party?.partyId) return 'party_member';
-    if ((state.activity === 'merchant' && state.stats?.marketStore)
-        || (state.activity === 'crafting' && state.stats?.craftShop)) return 'event_driven';
+    if (state.activity === 'crafting' && state.stats?.craftShop) return 'event_driven';
     const stats = state.stats || {};
     const plan = stats.equipmentPlan || {};
     if (context.clanHallServices || stats.clanHallVisit) return 'command';

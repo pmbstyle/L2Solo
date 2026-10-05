@@ -6,8 +6,6 @@ const Item           = invoke('GameServer/Item/Item');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotManager     = invoke('GameServer/Bot/BotManager');
-const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
-const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function merchantPurchaseItems(store) {
@@ -97,15 +95,6 @@ async function consume(session, data) {
             session.dataSendToMe(ServerResponse.itemsList(session.actor.backpack.fetchItems()));
             const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
             if (soldOut) {
-                const returnState = sellerSession?.coldMarketState
-                    ? GoalExecutor.finishMarketVisit(sellerSession.coldMarketState)
-                    : null;
-                if (returnState) {
-                    await Cooldown.transitionToColdState(sellerSession, {
-                        ...returnState,
-                        stats: { ...(returnState.stats || {}), marketStore: null }
-                    }, 'market_sold_out');
-                }
                 session.activeMerchantTrade = null;
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return;

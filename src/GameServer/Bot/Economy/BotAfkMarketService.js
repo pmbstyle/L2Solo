@@ -54,7 +54,7 @@ function linesOf(records) {
 
 function canTradeRemotely(state, goal) {
     const side = desiredSide(goal);
-    if (!state || state.phase !== 'cold' || state.stats?.marketStore
+    if (!state || state.phase !== 'cold'
         || !(state.stats?.generatedCold === true || String(state.accountName || '').startsWith('bot_'))
         || !side) return false;
     if (side === AfkTrade.BUY) {

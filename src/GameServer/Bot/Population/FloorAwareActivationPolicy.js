@@ -9,8 +9,7 @@ function finiteLocation(loc) {
 }
 
 function locationForState(state) {
-    return state?.stats?.marketStore?.loc
-        || state?.stats?.craftShop?.loc
+    return state?.stats?.craftShop?.loc
         || state?.loc
         || null;
 }

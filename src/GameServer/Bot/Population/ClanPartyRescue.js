@@ -4,7 +4,7 @@ const Clan = invoke('GameServer/Clan/ClanService');
 const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
-const BUSY_FLAGS = ['partyMarketReturn', 'pvpEncounter', 'marketStore', 'craftShop',
+const BUSY_FLAGS = ['partyMarketReturn', 'pvpEncounter', 'craftShop',
     'warehouseWorkflow', 'warehouseErrand', 'supplyErrand'];
 
 function eligible(state, objective) {

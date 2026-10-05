@@ -7,8 +7,18 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 
 DataCache.init();
+
+// A competitor's supply is a board sell ad (the bots' stalls are gone, step 3.3).
+let supplyRecordId = 995000;
+function boardSupply(ownerId, selfId, count, price, town = 'Giran') {
+    const id = ++supplyRecordId;
+    AfkTrade.refreshRecord({ id, ownerId, ownerName: `Seller${ownerId}`, ownerAccount: `bot_${ownerId}`, kind: 'sell_ad',
+        storeType: 1, status: 'active', town, title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+        lines: [{ id, selfId, name: `Item ${selfId}`, count, price }] });
+}
 
 const starterWeapon = (DataCache.newbieItems || [])
     .flatMap((row) => row.items || [])
@@ -141,13 +151,11 @@ assert.strictEqual(belowFloor.reason, 'unfunded_demand', 'funding must be checke
 const competitiveFloor = MarketListingPolicy.listingFloor(saleItem(usefulWeapon));
 const competingPrice = Math.floor(competitiveFloor * 1.25);
 const competingBuyer = { ...buyer, adena: Math.floor(competingPrice * 0.98) };
+boardSupply(24, targetId, 1, competingPrice);
 const discounted = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 1, competitiveFloor * 1.5), {
-    states: [competingBuyer, { ...competingBuyer, characterId: 23 }, {
-        characterId: 24, activity: 'merchant', stats: { marketStore: {
-            storeType: 1, items: [{ selfId: targetId, count: 1, price: competingPrice }]
-        } }
-    }], now
+    states: [competingBuyer, { ...competingBuyer, characterId: 23 }], now
 });
+AfkTrade._resetForTests();
 assert.strictEqual(discounted.action, 'list', 'buyers who can fund the competitive ask must count even below the preferred ask');
 
 const unfundedBuyer = { ...buyer, characterId: 21, adena: 100 };
@@ -173,20 +181,15 @@ const ordinaryLatent = MarketListingPolicy.classify(seller, ordinaryLatentItem, 
 assert.strictEqual(ordinaryLatent.action, 'warehouse', 'ordinary gear must not be listed against latent progression demand');
 assert.strictEqual(ordinaryLatent.reason, 'latent_demand');
 
-const saturatedStates = [buyer, {
-    characterId: 30,
-    activity: 'merchant',
-    stats: { marketStore: { storeType: 1, town: 'Gludio', items: [{ selfId: targetId, count: 3, price: 8000 }] } }
-}];
-const saturated = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 1, 9000), { states: saturatedStates, now });
+boardSupply(30, targetId, 3, 8000, 'Gludio');
+const saturated = MarketListingPolicy.classify(seller, saleItem(usefulWeapon, 1, 9000), { states: [buyer], now });
+AfkTrade._resetForTests();
 assert.strictEqual(saturated.action, 'warehouse', 'supply above the demand ceiling must not create another store');
 assert.strictEqual(saturated.reason, 'saturated');
 
 const activeLowGrade = saleItem(lowGradeGear, 1, Math.floor(Number(lowGradeGear.template.price) * 0.8));
-const competingLowGrade = { characterId: 31, activity: 'merchant', stats: { marketStore: {
-    storeType: 1, items: [{ selfId: activeLowGrade.selfId, count: 2, price: activeLowGrade.price }]
-} } };
-const recentMarket = { states: [competingLowGrade], now, buyerActivity: new Map([[activeLowGrade.selfId, 3]]) };
+boardSupply(31, activeLowGrade.selfId, 2, activeLowGrade.price);
+const recentMarket = { states: [], now, buyerActivity: new Map([[activeLowGrade.selfId, 3]]) };
 assert.strictEqual(MarketListingPolicy.classify(seller, activeLowGrade, recentMarket).action, 'list',
     'distinct recent buyers should support one more competitive low-grade listing');
 const crowdedMarket = { ...recentMarket, buyerActivity: new Map([[activeLowGrade.selfId, 1]]) };

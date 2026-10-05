@@ -1299,7 +1299,7 @@ class ColdSimulationCoordinator {
         if (!state || ['pk_hunting', 'traveling'].includes(state.activity) || state.stats?.supplyErrand) return false;
         const players = this.population?.realPlayerSessions?.() || [];
         if (!players.length) return false;
-        const candidateLoc = state.stats?.marketStore?.loc || state.stats?.craftShop?.loc || state.loc;
+        const candidateLoc = state.stats?.craftShop?.loc || state.loc;
         if (!candidateLoc) return false;
         const radius = Math.max(1, Number(Config.activationRadius) || 9000);
         const floor = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');

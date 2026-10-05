@@ -602,7 +602,6 @@ const BotManager = {
                 const character = readyCharacters?.[0];
                 if (!character) return null;
                 const storeCfg = merchantConfigFor(botData, character.name);
-                const runtimeStore = botData.privateStore || null;
                 const manufactureShop = botData.manufactureShop || null;
 
                 return Shared.fetchClassInformation(character.classId).then(async (classInfo) => {
@@ -662,10 +661,9 @@ const BotManager = {
                     };
 
                     let privateStore = null;
-                    if (storeCfg || runtimeStore) {
-                        privateStore = runtimeStore || storeCfg;
+                    if (storeCfg) {
+                        privateStore = storeCfg;
                         session.plan = 'merchant';
-                        session.coldMarketState = botData.coldMarketState || null;
                         session.actor.state.setSeated(true);
 
                         // A C4 shop title is carried by PrivateStoreMsg, not
@@ -673,7 +671,7 @@ const BotManager = {
                         // clan title while publishing the store overlay.
                         session.actor.setPrivateStoreType(privateStore.storeType);
 
-                        const storeItems = TradeService.normalizeStoreItems(privateStore, { staticStore: !runtimeStore && !!storeCfg });
+                        const storeItems = TradeService.normalizeStoreItems(privateStore, { staticStore: true });
 
                         session.actor.setPrivateStore({
                             storeType: privateStore.storeType,
@@ -754,7 +752,6 @@ const BotManager = {
                         BotAI.init(session);
 
                         this.sessions.push(session);
-                        if (privateStore) invoke('GameServer/Bot/Economy/BotTradeChat').offer(session);
                         let modeText = "[Hunting Mode]";
                         if (session.townGossip) modeText = "[Gossip Mode]";
                         if (session.plan === 'pk_hunting') modeText = "[PK Mode]";

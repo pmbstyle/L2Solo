@@ -71,17 +71,18 @@ function occupantCases(town) {
     const cases = {
         none: () => {},
         afk_shop: (at) => ShopPlaces.occupy(ShopPlaces.afkOwner(7), town, at),
-        merchant_same_town: (at, cache) => cache.set(1, { characterId: 1, activity: 'merchant', stats: { marketStore: { town, loc: at } } }),
-        merchant_other_town: (at, cache) => cache.set(2, { characterId: 2, activity: 'merchant', stats: { marketStore: { town: other, loc: at } } }),
-        merchant_loc_from_state: (at, cache) => cache.set(3, { characterId: 3, activity: 'merchant', loc: at, stats: { marketStore: { town } } }),
-        self_merchant: (at, cache) => cache.set(SELF, { characterId: SELF, activity: 'merchant', stats: { marketStore: { town, loc: at } } }),
+        // A bot's store on the place grid is a crafter's craft shop (the bots'
+        // sale stalls went with the board, step 3.3; board shops: afk_shop).
+        crafter_other_town: (at, cache) => cache.set(2, { characterId: 2, activity: 'crafting', stats: { craftShop: { town: other, loc: at } } }),
+        crafter_loc_from_state: (at, cache) => cache.set(3, { characterId: 3, activity: 'crafting', loc: at, stats: { craftShop: { town } } }),
+        self_crafter: (at, cache) => cache.set(SELF, { characterId: SELF, activity: 'crafting', stats: { craftShop: { town, loc: at } } }),
         // changed: phase 1 counted craft shops only in Giran.
         crafting_same_town: (at, cache) => cache.set(4, { characterId: 4, activity: 'crafting', stats: { craftShop: { town, loc: at } } }),
         hunting_on_point: (at, cache) => cache.set(5, { characterId: 5, activity: 'hunting', loc: at, stats: {} }),
         // new: a store off the grid (a player's shop) blocks the places closer than 40.
         off_grid_shop: (at) => ShopPlaces.occupy(ShopPlaces.afkOwner(8), town, { locX: at.locX + 10, locY: at.locY + 10 }),
         closed_again: (at, cache) => {
-            cache.set(6, { characterId: 6, activity: 'merchant', stats: { marketStore: { town, loc: at } } });
+            cache.set(6, { characterId: 6, activity: 'crafting', stats: { craftShop: { town, loc: at } } });
             cache.set(6, { characterId: 6, activity: 'hunting', loc: at, stats: {} });
         }
     };
@@ -190,10 +191,9 @@ const EXPECTED = {
             occupants: {
                 none: [81571, 148602, -3460],
                 afk_shop: [81571, 148642, -3462],
-                merchant_same_town: [81571, 148642, -3462],
-                merchant_other_town: [81571, 148602, -3460],
-                merchant_loc_from_state: [81571, 148642, -3462],
-                self_merchant: [81571, 148602, -3460],
+                crafter_other_town: [81571, 148602, -3460],
+                crafter_loc_from_state: [81571, 148642, -3462],
+                self_crafter: [81571, 148602, -3460],
                 crafting_same_town: [81571, 148642, -3462],
                 hunting_on_point: [81571, 148602, -3460],
                 off_grid_shop: [81571, 148562, -3465],
@@ -233,10 +233,9 @@ const EXPECTED = {
             occupants: {
                 none: [-14450, 123200, -3112],
                 afk_shop: [-14450, 123240, -3114],
-                merchant_same_town: [-14450, 123240, -3114],
-                merchant_other_town: [-14450, 123200, -3112],
-                merchant_loc_from_state: [-14450, 123240, -3114],
-                self_merchant: [-14450, 123200, -3112],
+                crafter_other_town: [-14450, 123200, -3112],
+                crafter_loc_from_state: [-14450, 123240, -3114],
+                self_crafter: [-14450, 123200, -3112],
                 crafting_same_town: [-14450, 123240, -3114],
                 hunting_on_point: [-14450, 123200, -3112],
                 off_grid_shop: [-14490, 123200, -3117],
@@ -276,10 +275,9 @@ const EXPECTED = {
             occupants: {
                 none: [16950, 144599, -2897],
                 afk_shop: [16910, 144559, -2900],
-                merchant_same_town: [16910, 144559, -2900],
-                merchant_other_town: [16950, 144599, -2897],
-                merchant_loc_from_state: [16910, 144559, -2900],
-                self_merchant: [16950, 144599, -2897],
+                crafter_other_town: [16950, 144599, -2897],
+                crafter_loc_from_state: [16910, 144559, -2900],
+                self_crafter: [16950, 144599, -2897],
                 crafting_same_town: [16910, 144559, -2900],
                 hunting_on_point: [16950, 144599, -2897],
                 off_grid_shop: [16910, 144559, -2900],
@@ -319,10 +317,9 @@ const EXPECTED = {
             occupants: {
                 none: [-84639, 244315, -3724],
                 afk_shop: [-84639, 244275, -3729],
-                merchant_same_town: [-84639, 244275, -3729],
-                merchant_other_town: [-84639, 244315, -3724],
-                merchant_loc_from_state: [-84639, 244275, -3729],
-                self_merchant: [-84639, 244315, -3724],
+                crafter_other_town: [-84639, 244315, -3724],
+                crafter_loc_from_state: [-84639, 244275, -3729],
+                self_crafter: [-84639, 244315, -3724],
                 crafting_same_town: [-84639, 244275, -3729],
                 hunting_on_point: [-84639, 244315, -3724],
                 off_grid_shop: [-84639, 244275, -3729],
@@ -362,10 +359,9 @@ const EXPECTED = {
             occupants: {
                 none: [46605, 49638, -3060],
                 afk_shop: [46605, 49678, -3055],
-                merchant_same_town: [46605, 49678, -3055],
-                merchant_other_town: [46605, 49638, -3060],
-                merchant_loc_from_state: [46605, 49678, -3055],
-                self_merchant: [46605, 49638, -3060],
+                crafter_other_town: [46605, 49638, -3060],
+                crafter_loc_from_state: [46605, 49678, -3055],
+                self_crafter: [46605, 49638, -3060],
                 crafting_same_town: [46605, 49678, -3055],
                 hunting_on_point: [46605, 49638, -3060],
                 off_grid_shop: [46645, 49678, -3057],
@@ -405,10 +401,9 @@ const EXPECTED = {
             occupants: {
                 none: [12687, 16576, -4582],
                 afk_shop: [12687, 16536, -4580],
-                merchant_same_town: [12687, 16536, -4580],
-                merchant_other_town: [12687, 16576, -4582],
-                merchant_loc_from_state: [12687, 16536, -4580],
-                self_merchant: [12687, 16576, -4582],
+                crafter_other_town: [12687, 16576, -4582],
+                crafter_loc_from_state: [12687, 16536, -4580],
+                self_crafter: [12687, 16576, -4582],
                 crafting_same_town: [12687, 16536, -4580],
                 hunting_on_point: [12687, 16576, -4582],
                 off_grid_shop: [12687, 16536, -4580],
@@ -448,10 +443,9 @@ const EXPECTED = {
             occupants: {
                 none: [-44724, -112440, -240],
                 afk_shop: [-44724, -112480, -245],
-                merchant_same_town: [-44724, -112480, -245],
-                merchant_other_town: [-44724, -112440, -240],
-                merchant_loc_from_state: [-44724, -112480, -245],
-                self_merchant: [-44724, -112440, -240],
+                crafter_other_town: [-44724, -112440, -240],
+                crafter_loc_from_state: [-44724, -112480, -245],
+                self_crafter: [-44724, -112440, -240],
                 crafting_same_town: [-44724, -112480, -245],
                 hunting_on_point: [-44724, -112440, -240],
                 off_grid_shop: [-44724, -112480, -245],
@@ -491,10 +485,9 @@ const EXPECTED = {
             occupants: {
                 none: [115434, -178666, -921],
                 afk_shop: [115434, -178706, -926],
-                merchant_same_town: [115434, -178706, -926],
-                merchant_other_town: [115434, -178666, -921],
-                merchant_loc_from_state: [115434, -178706, -926],
-                self_merchant: [115434, -178666, -921],
+                crafter_other_town: [115434, -178666, -921],
+                crafter_loc_from_state: [115434, -178706, -926],
+                self_crafter: [115434, -178666, -921],
                 crafting_same_town: [115434, -178706, -926],
                 hunting_on_point: [115434, -178666, -921],
                 off_grid_shop: [115434, -178706, -926],
@@ -561,7 +554,7 @@ function releaseChecks() {
     ShopPlaces._resetForTests();
     const total = ShopPlaces.freeCount('Gludio');
     const cache = new LifeStateCache();
-    const store = (id) => ({ characterId: id, activity: 'merchant', stats: { marketStore: { town: 'Gludio', loc: ShopPlaces.take('Gludio', ShopPlaces.stateOwner(id)) } } });
+    const store = (id) => ({ characterId: id, activity: 'crafting', stats: { craftShop: { town: 'Gludio', loc: ShopPlaces.take('Gludio', ShopPlaces.stateOwner(id)) } } });
     cache.set(11, store(11));
     cache.set(12, store(12));
     cache.set(13, store(13));

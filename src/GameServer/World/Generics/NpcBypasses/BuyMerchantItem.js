@@ -3,9 +3,6 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
-const BotManager     = invoke('GameServer/Bot/BotManager');
-const Cooldown       = invoke('GameServer/Bot/Population/Cooldown');
-const GoalExecutor   = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Html           = invoke('GameServer/World/Generics/HtmlKit');
 
 function fold(v) {
@@ -105,22 +102,8 @@ module.exports = async function(session, parts) {
     }
 
     try {
-        const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === bot);
         const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty);
         const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
-        if (sellerSession?.coldMarketState) {
-            // A dynamic seller has no reason to remain seated after its last
-            // item is bought. Preserve its planned return trip, remove the
-            // now-empty store, and hand it back to cold simulation.
-            const returnState = soldOut ? GoalExecutor.finishMarketVisit(sellerSession.coldMarketState) : null;
-            if (returnState) {
-                const departingState = {
-                    ...returnState,
-                    stats: { ...(returnState.stats || {}), marketStore: null }
-                };
-                await Cooldown.transitionToColdState(sellerSession, departingState, 'market_sold_out');
-            }
-        }
         BotSocialMemory.recordTradeCompleted(session, bot, `bought ${bought.qty} ${bought.name}`);
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));

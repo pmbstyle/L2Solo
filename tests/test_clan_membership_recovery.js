@@ -113,11 +113,6 @@ async function main() {
         const cooled = await Life.markCold(session, 'membership_handoff');
         assert.equal(cooled.stats.clanId, created.clanId, 'a delayed hot actor update cannot erase committed membership on cooldown');
         assert(cooled.stats.clanMembershipVersion > 0);
-        session.coldMarketState = { ...cooled, stats: { ...cooled.stats, clanId: 0, clanMembershipVersion: 0,
-            marketStore: { loc: cooled.loc, items: [], expiresAt: Date.now() + 60000 } } };
-        const cooledMerchant = await Life.markCold(session, 'membership_merchant_handoff');
-        assert.equal(cooledMerchant.stats.clanId, created.clanId, 'an open shop can cool after joining a clan');
-        assert.equal(cooledMerchant.activity, 'merchant');
 
         // A membership change invalidates work already running on the old revision.
         await Life.upsertState({ ...Life.cachedState(ids[3]), stats: { generatedCold: true, clanId: 0 } });

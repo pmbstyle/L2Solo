@@ -691,9 +691,7 @@ function preserveVersionedAppearanceForSave(row) {
 // The session's own snapshots carry the phase of its row: after markHot what
 // the actor writes from them (a hot merchant's sale, its haggling) keeps the
 // row hot, while a cold job's older snapshot is still rejected by save(); after
-// the hand-back a late write that copies the phase from them stays cold
-// (writers that set phase 'hot' themselves, like syncMarketSession, are not
-// covered by this).
+// the hand-back a late write that copies the phase from them stays cold.
 function setSessionSnapshotsPhase(session, phase) {
     for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
         if (session?.[key]) session[key] = { ...session[key], phase };
@@ -1587,16 +1585,8 @@ const BotLifeState = {
                 loc: preservedState.loc
             }))
             : recordFromSession(session, 'hot', reason);
-        const marketState = session.coldMarketState;
         const craftState = refreshCraftShop(session.coldCraftState);
-        if (marketState?.stats?.marketStore) {
-            row.activity = 'merchant';
-            row.currentRegion = marketState.currentRegion || row.currentRegion;
-            row.spotId = marketState.spotId || row.spotId;
-            row.inventorySummary = safeJson(InventorySummary.canonicalize(marketState.inventory));
-            row.adena = Number(marketState.adena || row.adena || 0);
-            row.statsJson = safeJson({ ...(marketState.stats || {}), pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session), lastReason: reason });
-        } else if (craftState?.stats?.craftShop) {
+        if (craftState?.stats?.craftShop) {
             row.activity = 'crafting';
             row.currentRegion = craftState.currentRegion || row.currentRegion;
             row.spotId = craftState.spotId || row.spotId;
@@ -1636,7 +1626,7 @@ const BotLifeState = {
         });
     },
 
-    // markCold's write: the next cold row built from the actor or its market or craft state.
+    // markCold's write: the next cold row built from the actor or its craft state.
     writeColdRow(session, reason = 'cooldown') {
         if (!session || !session.actor) return Promise.resolve(null);
 
@@ -1646,42 +1636,7 @@ const BotLifeState = {
             clanMembershipVersion: membership.clanMembershipVersion,
             clanDiscipline: membership.clanDiscipline
         } : {};
-        const marketState = session.coldMarketState;
         const craftState = refreshCraftShop(session.coldCraftState);
-        if (marketState?.stats?.marketStore) {
-            const actor = session.actor;
-            const store = actor.fetchPrivateStore?.();
-            const timestamp = now();
-            const storeLoc = marketState.stats.marketStore.loc || marketState.loc;
-            const persistedItems = new Map((marketState.stats.marketStore.items || []).map((item) => [Number(item.selfId), item]));
-            const nextState = {
-                ...marketState,
-                phase: 'cold',
-                activity: 'merchant',
-                loc: { ...storeLoc },
-                timing: {
-                    ...(marketState.timing || {}),
-                    activityStartedAt: timestamp,
-                    nextResolveAt: Number(marketState.stats?.marketStore?.expiresAt || 0) || timestamp + 60000
-                },
-                stats: {
-                    ...(marketState.stats || {}),
-                    ...membershipStats,
-                    pvpEnemies: invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session),
-                    marketStore: {
-                        ...(marketState.stats.marketStore || {}),
-                        loc: { ...storeLoc },
-                        items: (store?.items || []).map((item) => ({
-                            ...(persistedItems.get(Number(item.selfId)) || {}),
-                            selfId: Number(item.selfId), price: Number(item.price), count: Number(item.count), name: item.name || itemName(item.selfId),
-                            rank: item.rank || persistedItems.get(Number(item.selfId))?.rank || itemTemplate(item.selfId)?.etc?.rank || 'none'
-                        }))
-                    }
-                }
-            };
-            return this.upsertState(nextState, reason, { releaseHot: true });
-        }
-
         if (craftState?.stats?.craftShop) {
             const row = recordFromSession(session, 'cold', reason);
             const craftShop = craftState.stats.craftShop;
@@ -1841,10 +1796,8 @@ const BotLifeState = {
             AND activity <> 'pk_hunting'
             AND (partyId IS NULL OR partyId = '')
             AND simulationOwner = 'legacy_main'
-            -- Cold stores settle on trade/expiry events, and craft-service
-            -- stations are materialized on demand.  Neither belongs in the
-            -- combat scheduler's periodic queue.
-            AND NOT (activity = 'merchant' AND json_extract(statsJson, '$.marketStore') IS NOT NULL)
+            -- Craft-service stations are materialized on demand: they do
+            -- not belong in the combat scheduler's periodic queue.
             AND NOT (activity = 'crafting' AND json_extract(statsJson, '$.craftShop') IS NOT NULL)
             AND (
                 nextResolveAt IS NULL OR nextResolveAt <= ?
@@ -2997,46 +2950,6 @@ const BotLifeState = {
         });
     },
 
-    syncMarketSession(session, reason = 'hot_market_sync') {
-        const state = session?.coldMarketState;
-        const actor = session?.actor;
-        if (!state || !actor?.backpack?.fetchItems) return Promise.resolve(null);
-        const inventory = inventorySummaryFromItems(actor.backpack.fetchItems());
-        const liveStore = actor.fetchPrivateStore?.();
-        const hasLines = liveStore && (liveStore.items || []).some((item) => Number(item.count || 0) > 0);
-        const persistedItems = new Map((state.stats?.marketStore?.items || []).map((item) => [Number(item.selfId), item]));
-        const marketStore = hasLines ? {
-            ...(state.stats?.marketStore || {}),
-            storeType: Number(liveStore.storeType || state.stats?.marketStore?.storeType || 1),
-            budgetBacked: liveStore.budgetBacked === true || state.stats?.marketStore?.budgetBacked === true,
-            items: (liveStore.items || []).map((item) => ({
-                ...(persistedItems.get(Number(item.selfId)) || {}),
-                ...item
-            }))
-        } : null;
-        const nextState = {
-            ...state,
-            phase: 'hot',
-            activity: marketStore ? 'merchant' : 'shopping',
-            adena: inventoryAdena(inventory),
-            inventory,
-            stats: {
-                ...(state.stats || {}),
-                marketStore,
-                marketWanted: marketStore ? state.stats?.marketWanted || null : null,
-                equipment: equipmentSummaryFromInventory(inventory)
-            },
-            timing: {
-                ...(state.timing || {}),
-                nextResolveAt: marketStore ? Number(marketStore.expiresAt || 0) || null : now()
-            }
-        };
-        return this.upsertState(nextState, reason).then((saved) => {
-            if (saved) session.coldMarketState = saved;
-            return saved;
-        });
-    },
-
     syncExternalInventory(characterId, reason = 'external_inventory_sync', previousState = null, options = {}) {
         const id = Number(characterId);
         const state = previousState || cache.get(id);
@@ -3466,7 +3379,6 @@ const BotLifeState = {
                 || state.activity === 'pk_hunting'
                 || state.partyId
                 || state.party?.partyId
-                || (state.activity === 'merchant' && state.stats?.marketStore)
                 || (state.activity === 'crafting' && state.stats?.craftShop)) {
                 return;
             }

@@ -375,13 +375,10 @@ function freeCount(town) {
 const stateOwner = (characterId) => `state:${Number(characterId)}`;
 const afkOwner = (ownerId) => `afk:${Number(ownerId)}`;
 
-// Where a bot life state's store stands: a merchant's store, or a crafting
-// bot's craft shop, in any town.
+// Where a bot life state's store stands: a crafting bot's craft shop, in any
+// town (the bots' sale stalls went with the board, step 3.3).
 function placeOfState(state = {}) {
     const stats = state.stats || {};
-    if (state.activity === 'merchant' && stats.marketStore?.town) {
-        return { town: stats.marketStore.town, loc: stats.marketStore.loc || state.loc };
-    }
     if (state.activity === 'crafting' && stats.craftShop?.town) {
         return { town: stats.craftShop.town, loc: stats.craftShop.loc || state.loc };
     }
