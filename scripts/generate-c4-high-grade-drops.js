@@ -1,6 +1,5 @@
 // Adds the C4 high-grade drop rows that data/Npcs/Rewards/rewards.json lacks on
-// its spawned monsters: B grade equipment recipe scrolls and Scroll: Enchant
-// Armor (Grade A). rewards.json is not a Lisvus list, so its own groups stay
+// its spawned monsters: B grade recipe scrolls and Scroll: Enchant Armor (Grade A). rewards.json is not a Lisvus list, so its own groups stay
 // untouched; the missing Lisvus rows are appended as new groups, grouped the
 // way the monster slices group a Lisvus drop category (spoil rows one by one).
 // The file is edited line by line to keep its hand-made layout.
@@ -14,9 +13,10 @@ const C4RecipeItems = require(path.join(root, 'src', 'GameServer', 'Items', 'C4R
 
 const rewardsPath = path.join(root, 'data', 'Npcs', 'Rewards', 'rewards.json');
 const enchantArmorA = 730;
-const expectedRecipeRows = 77;
+// Every Lisvus row of those items on these monsters, present before or added here.
+const expectedRecipeRows = 109;
 const expectedEnchantRows = 2;
-const expectedMonsters = 47;
+const expectedMonsters = 53;
 
 generateC4MonsterLocation.assertLisvusRevision();
 const sourceItems = generateC4MonsterLocation.vendorItems();
@@ -24,12 +24,8 @@ const itemNames = new Map(generateC4MonsterLocation.loadedItems()
     .filter((item) => item.template?.name)
     .map((item) => [Number(item.selfId), item.template.name]));
 
-const bEquipmentRecipeScrolls = new Set(Object.values(C4RecipeItems.loadRecipeItems())
-    .filter((recipe) => {
-        const product = sourceItems.get(recipe.productId);
-        return String(product?.sets.get('crystal_type') || '').toUpperCase() === 'B'
-            && ['Weapon', 'Armor'].includes(product.type);
-    })
+const bRecipeScrolls = new Set(Object.values(C4RecipeItems.loadRecipeItems())
+    .filter((recipe) => String(sourceItems.get(recipe.productId)?.sets.get('crystal_type') || '').toUpperCase() === 'B')
     .map((recipe) => recipe.recipeItemId));
 
 const lisvusSpawned = new Set(generateC4MonsterLocation.tuples('sql/spawnlist.sql').map((row) => Number(row[3])));
@@ -48,21 +44,17 @@ const ownItemsByMob = new Map(rewardTables.map((table) => [Number(table.selfId),
 const candidateRows = generateC4MonsterLocation.tuples('sql/droplist.sql').filter((row) => {
     const mobId = Number(row[0]);
     const itemId = Number(row[1]);
-    return (bEquipmentRecipeScrolls.has(itemId) || itemId === enchantArmorA)
+    return (bRecipeScrolls.has(itemId) || itemId === enchantArmorA)
         && ownItemsByMob.has(mobId) && lisvusSpawned.has(mobId) && spawnedHere.has(mobId);
 });
+const recipeRows = candidateRows.filter((row) => Number(row[1]) !== enchantArmorA).length;
+const enchantRows = candidateRows.length - recipeRows;
+const candidateMonsters = new Set(candidateRows.map((row) => Number(row[0]))).size;
+if (recipeRows !== expectedRecipeRows || enchantRows !== expectedEnchantRows || candidateMonsters !== expectedMonsters) {
+    throw new Error(`Expected ${expectedRecipeRows} recipe and ${expectedEnchantRows} enchant rows on ${expectedMonsters} monsters, found ${recipeRows}, ${enchantRows} on ${candidateMonsters}`);
+}
 const missingRows = candidateRows.filter((row) => !ownItemsByMob.get(Number(row[0])).has(Number(row[1])));
-if (missingRows.length === 0) {
-    console.info(`All ${candidateRows.length} high-grade drop rows are already in rewards.json.`);
-    process.exit(0);
-}
-
-const recipeRows = missingRows.filter((row) => Number(row[1]) !== enchantArmorA).length;
-const enchantRows = missingRows.length - recipeRows;
 const monsterIds = [...new Set(missingRows.map((row) => Number(row[0])))];
-if (recipeRows !== expectedRecipeRows || enchantRows !== expectedEnchantRows || monsterIds.length !== expectedMonsters) {
-    throw new Error(`Expected ${expectedRecipeRows} recipe and ${expectedEnchantRows} enchant rows on ${expectedMonsters} monsters, found ${recipeRows}, ${enchantRows} on ${monsterIds.length}`);
-}
 
 function itemName(itemId) {
     const name = itemNames.get(itemId);
@@ -102,4 +94,4 @@ const text = lines.join('\n');
 JSON.parse(text);
 fs.writeFileSync(rewardsPath, text);
 
-console.info(`Added ${recipeRows} recipe and ${enchantRows} enchant drop rows to ${monsterIds.length} rewards.json monsters.`);
+console.info(`Added ${missingRows.length} drop rows to ${monsterIds.length} rewards.json monsters; all ${candidateRows.length} high-grade rows are present.`);
