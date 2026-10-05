@@ -109,7 +109,11 @@ function evaluate(state, options = {}) {
     let keptLines = 0;
     for (const item of candidates) {
         const hard = classify(state, item);
-        if (hard.action !== 'market') {
+        // A lot too small to list still answers a buy ad that asks for it:
+        // the lot rule is the board's, the ad's buyer chose the amount.
+        const smallLot = hard.reason === 'small_material_lot'
+            && (MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant })?.net || 0) > 0;
+        if (hard.action !== 'market' && !smallLot) {
             decisions.push({ ...hard, item });
             continue;
         }
@@ -121,10 +125,11 @@ function evaluate(state, options = {}) {
         }
         const town = MarketTownPolicy.targetTownForItems(state, [item]);
         const chosen = MarketPricing.disposition(book, item, ctx, {
-            town, room: roomFor(item, options.stored),
+            town, room: roomFor(item, options.stored), smallLot,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
-        const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action, reason: 'expected_value', item,
+        const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action,
+            reason: smallLot && chosen.action === 'keep' ? hard.reason : 'expected_value', item,
             priced: chosen.priced, gain: chosen.gain, answer: chosen.answer };
         decisions.push(decision);
         if (decision.action === 'list') forBoard.push(decision);

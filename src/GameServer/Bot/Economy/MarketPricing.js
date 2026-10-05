@@ -92,14 +92,16 @@ function adopt(book, belief, ctx, price) {
 // own value is a loss. Returns { action: 'list' | 'npc' | 'keep' | 'ad',
 // priced, gain, answer } with gain the board's Adena over the NPC for all
 // units ('list' still needs a slot) and answer the ad ({ line, count }).
-function disposition(book, item, ctx, { town = null, room = 1, rollKey }) {
+// smallLot: a lot too small for the board (MarketLotPolicy) that the author
+// keeps for a bulk lot: keeping it or a buy ad only.
+function disposition(book, item, ctx, { town = null, room = 1, smallLot = false, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(book, item.selfId, ctx, { town, units, rollKey: [...rollKey, 'ask'] });
     if (!priced) return { action: 'keep', priced: null, gain: 0 };
     const { ask, market, belief } = priced;
     const gain = ask.npc ? 0 : (ask.money - market.buyback) * units;
-    const options = [{ action: 'npc', value: ask.npcValue }];
-    if (gain > 0) options.push({ action: 'list', value: ask.value });
+    const options = smallLot ? [] : [{ action: 'npc', value: ask.npcValue }];
+    if (gain > 0 && !smallLot) options.push({ action: 'list', value: ask.value });
     else if (room > 0) {
         const later = market.buyersPerHour > 0 ? Math.exp(-ctx.trader.wait / market.buyersPerHour) : 0;
         options.push({ action: 'keep', value: Math.exp(belief.mu) * later });
