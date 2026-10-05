@@ -1,99 +1,26 @@
-// A bot's belief of what an item fetches (group E, N45, N50; market-sim step
-// 3.3, tools/market-sim/n0/step33/groupE: e10 belief, e15 rival, e4b memory):
-// a log-normal of what a buyer pays, its centre mu (log Adena) and its weight
-// K, the evidence behind it; its width is S0 / sqrt(1 + K). One module for the
-// main thread and the cold worker: it reads the board index, the market
-// counters and the first prices the caller's thread has.
-//
-// Prior, when the bot first weighs an item: the board's evidence, each with
-// its weight: the item's last deals (their median, weight up to 10), the best
-// competing ask (1), the best buy ad (1), the market index of its counter x
-// its first price (0.5), what a crafter could pay for it (0.3) and its first
-// price (0.3); read once with the bot's understanding error, which halves
-// every 3 own deals of the item.
-// Learning at the bot's own look (MarketPricing.look): its sales say buyers pay at
-// least its ask, the buyers of its counter that passed say less, new deals of
-// the item are prices, and the rival's current ask counts by the bot's
-// understanding when it changed.
-// Memory without a size: a belief fades with the bot's own touches of other
-// items and with its counter's index drifting since it learned; read lazily,
-// it is dropped when it falls to the public prior. 48 at most, a bound only.
+// A fresh price estimate from the indexed board, with a stable personal
+// error for (bot, item). There is no saved per-item price book: observations
+// belong to the author's open board line, and own experience to a counter.
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const TendencyRoll = require('../AI/TendencyRoll');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 
 const S0 = 0.6;
 const K_MAX = 60;
-const FADE = 0.02;
-const DRIFT = 0.1;
-const DROP = 0.25;
-const BOUND = 48;
-const RIVAL_CHANGE = 0.005;
 const PASSED_MAX = 10;
 const DEALS_WEIGHT_MAX = 10;
-const HALVING_DEALS = 3;
-
-// Stored compactly in stats.priceBeliefs: { t: own touches, at: last look,
-// n: looks, b: [[selfId, mu, K, confidence, tick, index, bias, own deals,
-// ask (or bid), rival, item deals seen, counter deals seen, worth of a bid,
-// cursor basis (2: durable world counts; absent: legacy process counts)]] }.
-function readBook(stats) {
-    const stored = stats?.priceBeliefs;
-    const beliefs = new Map();
-    for (const row of stored?.b || []) {
-        beliefs.set(Number(row[0]), {
-            selfId: Number(row[0]), mu: row[1], K: row[2], c: row[3], tick: row[4], index: row[5], bias: row[6],
-            deals: row[7], ask: row[8], rival: row[9], seenItem: row[10], seenCounter: row[11], worth: Number(row[12] || 0),
-            cursorBasis: Number(row[13] || 1)
-        });
-    }
-    return { tick: Number(stored?.t || 0), lookAt: Number(stored?.at || 0), looks: Number(stored?.n || 0), beliefs };
-}
-
-const round = (value, places) => Math.round(Number(value) * places) / places;
-function writeBook(book) {
-    if (!book.beliefs.size && !book.lookAt) return null;
-    return { t: book.tick, at: book.lookAt, n: book.looks, b: [...book.beliefs.values()].map((belief) => [
-        belief.selfId, round(belief.mu, 1e4), round(belief.K, 100), round(belief.c, 1e3), belief.tick,
-        belief.index === null ? null : round(belief.index, 1e4), round(belief.bias, 1e4), belief.deals, Math.round(belief.ask || 0),
-        Math.round(belief.rival || 0), belief.seenItem, belief.seenCounter, Math.round(belief.worth || 0),
-        belief.cursorBasis || 1]) };
-}
+const errorOf = PriceLearning.errorOf;
 
 function sigma(belief) {
     return S0 / Math.sqrt(1 + belief.K);
 }
 
-// The error of the bot's price guess: 3% for an analyst, 20% for a novice,
-// halved every 3 own deals of the item.
-function errorOf(understanding, deals = 0) {
-    return (0.03 + 0.17 * (1 - Math.max(0, Math.min(1, Number(understanding) || 0)))) * 0.5 ** (deals / HALVING_DEALS);
-}
-
 function counterIndex(selfId, timestamp) {
     return MarketCounters.counter(MarketCounters.counterOf(selfId), timestamp).index;
-}
-
-// What is left of a belief's confidence now: it fades by (1 - f) per own
-// touch of another item since its last touch (f = 0.02 x (1 - 0.6 x
-// understanding)) and by its counter's index drift since then.
-function confidence(book, belief, ctx) {
-    const fade = FADE * (1 - 0.6 * Math.max(0, Math.min(1, Number(ctx.understanding) || 0)));
-    const index = counterIndex(belief.selfId, ctx.timestamp);
-    const drift = index === null || belief.index === null ? 0 : Math.abs(index - belief.index);
-    return belief.c * (1 - fade) ** Math.max(0, book.tick - belief.tick) * Math.exp(-drift / DRIFT);
-}
-
-// The belief the bot still holds, or null (a faded one is dropped).
-function lookup(book, selfId, ctx) {
-    const belief = book.beliefs.get(Number(selfId));
-    if (!belief) return null;
-    if (confidence(book, belief, ctx) >= DROP) return belief;
-    book.beliefs.delete(Number(selfId));
-    return null;
 }
 
 function median(values) {
@@ -181,8 +108,8 @@ function productValue(selfId, timestamp) {
     return first > 0 ? first * Math.exp(index ?? 0) : null;
 }
 
-// The board's evidence on an item, read once with the bot's error: { mu, K,
-// bias } (log Adena), null when nothing prices it.
+// Public source weights stay unchanged; every choice reads them again.
+// bias is a signed fractional error, so the log centre gains log(1 + bias).
 function prior(selfId, ctx) {
     const id = Number(selfId);
     const observations = [];
@@ -205,57 +132,17 @@ function prior(selfId, ctx) {
         weight += w;
         sum += value * w;
     }
-    const bias = (2 * TendencyRoll.roll('n45e', ctx.characterId, id) - 1) * errorOf(ctx.understanding, 0);
-    return { mu: sum / weight + bias, K: weight, bias };
+    const counter = MarketCounters.counterOf(id);
+    const enabled = ctx.knowledgeEnabled ?? PriceLearning.knowledgeEnabled();
+    const experience = Math.max(0, Number(ctx.marketTrades?.[counter]) || 0);
+    const bias = enabled
+        ? (2 * TendencyRoll.roll('n45e', ctx.characterId, id) - 1) * errorOf(ctx.understanding, experience, counter)
+        : 0;
+    return { selfId: id, mu: sum / weight + Math.log1p(bias), K: weight, bias };
 }
 
-// A touch of the bot's own (a listing, a sale): every other belief fades by one.
-function touch(book, belief, ctx, count = 1) {
-    belief.c = confidence(book, belief, ctx) + count;
-    book.tick += count;
-    belief.tick = book.tick;
-    belief.index = counterIndex(belief.selfId, ctx.timestamp);
-}
-
-// A new belief from the prior, not yet kept: null when nothing prices it.
-function fresh(book, selfId, ctx) {
-    const id = Number(selfId);
-    const start = prior(id, ctx);
-    if (!start) return null;
-    const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
-    return { selfId: id, mu: start.mu, K: start.K, c: 0, tick: book.tick, index: null, bias: start.bias,
-        deals: 0, ask: 0, rival: 0, seenItem: MarketCounters.itemDeals(id).deals, seenCounter: counter.deals,
-        cursorBasis: 2 };
-}
-
-// The bot's belief of an item: the one it holds, else a new one from the
-// prior, kept.
-function ensure(book, selfId, ctx) {
-    const held = lookup(book, selfId, ctx);
-    if (held) return held;
-    const belief = fresh(book, selfId, ctx);
-    return belief ? keep(book, belief, ctx) : null;
-}
-
-// Keeps a new belief (a touch of the bot's own); the bound drops the
-// faintest other one.
-function keep(book, belief, ctx) {
-    book.beliefs.set(belief.selfId, belief);
-    touch(book, belief, ctx);
-    if (book.beliefs.size > BOUND) {
-        let faintest = null;
-        let lowest = Infinity;
-        for (const other of book.beliefs.values()) {
-            if (other === belief) continue;
-            const value = confidence(book, other, ctx);
-            if (value < lowest) { lowest = value; faintest = other; }
-        }
-        if (faintest) book.beliefs.delete(faintest.selfId);
-    }
-    return belief;
-}
-
-// observations: [[log price, weight]]: the centre moves to the weighted mean.
+// Current line observations add weight to the fresh estimate, never to a
+// persistent centre. Closing the line discards all its observation state.
 function learn(belief, observations) {
     let weight = 0;
     let sum = 0;
@@ -270,74 +157,23 @@ function learn(belief, observations) {
     return true;
 }
 
-// Own deals of the item: the error read into the prior halves every 3.
-function ownDeals(belief, count) {
-    if (!(count > 0)) return;
-    const keep = 0.5 ** (count / HALVING_DEALS);
-    belief.mu -= belief.bias * (1 - keep);
-    belief.bias *= keep;
-    belief.deals += count;
-}
-
-// What the bot learns at a look at its line of the item (asking `ask`):
-// returns { observations, sales } and marks what it has now seen.
-// lines: the open sell lines of the item's counter on the board.
-function lookObservations(book, belief, ctx, { ask, lines }) {
-    const id = belief.selfId;
+// Exact own fills belong to this line, not the bounded item-deal tail.
+// Other item deals and the current rival already enter the fresh prior.
+function lineObservations(line, belief, ctx, openLines) {
+    const previous = line.pricing;
+    const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
+    const fills = Math.max(0, Number(line.fills || 0) - Number(previous.seenFills || 0));
+    const passed = Math.min(PASSED_MAX, Math.max(0,
+        (counter.deals - previous.seenCounter) / Math.max(1, openLines) - fills));
+    const price = Number(previous.price);
     const observations = [];
-    const item = MarketCounters.itemDeals(id);
-    const fresh = Math.min(item.prices.length, Math.max(0, item.deals - belief.seenItem));
-    let sales = 0;
-    for (let at = item.prices.length - fresh; at < item.prices.length; at++) {
-        if (Number(item.sellers[at]) === Number(ctx.characterId)) sales += 1;
-        else observations.push([Math.log(item.prices[at]), 1]);
+    if (price > 0) {
+        const direction = line.storeType === BUY ? -1 : 1;
+        const width = sigma(belief);
+        if (fills > 0) observations.push([Math.log(price) + direction * 0.5 * width, fills]);
+        if (passed > 0) observations.push([Math.log(price) - direction * 0.5 * width, passed]);
     }
-    const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
-    const width = sigma(belief);
-    if (ask > 0 && sales) observations.push([Math.log(ask) + 0.5 * width, sales]);
-    const passed = Math.min(PASSED_MAX, Math.max(0, counter.deals - belief.seenCounter) / Math.max(1, lines) - sales);
-    if (ask > 0 && passed > 0) observations.push([Math.log(ask) - 0.5 * width, passed]);
-    const rival = ctx.board?.first(id, SELL, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0;
-    if (rival > 0 && !(belief.rival > 0 && Math.abs(rival / belief.rival - 1) <= RIVAL_CHANGE)) {
-        observations.push([Math.log(rival), 0.5 * Math.max(0.05, Number(ctx.understanding) || 0)]);
-    }
-    belief.rival = rival;
-    belief.seenItem = item.deals;
-    belief.seenCounter = counter.deals;
-    belief.cursorBasis = 2;
-    return { observations, sales };
-}
-
-// The mirror for the bot's buy ad of the item (bidding `bid`; the buy side
-// learns as the sell side, group E follow-up): its fills say sellers accept
-// its bid (the price is no higher), the sellers of its counter that sold to
-// others say more, new deals of the item are prices, and the best rival bid
-// counts by the bot's understanding when it changed. lines: the open buy
-// lines of the item. Returns { observations, fills }.
-function bidObservations(book, belief, ctx, { bid, lines }) {
-    const id = belief.selfId;
-    const observations = [];
-    const item = MarketCounters.itemDeals(id);
-    const fresh = Math.min(item.prices.length, Math.max(0, item.deals - belief.seenItem));
-    let fills = 0;
-    for (let at = item.prices.length - fresh; at < item.prices.length; at++) {
-        if (Number(item.buyers?.[at]) === Number(ctx.characterId)) fills += 1;
-        else observations.push([Math.log(item.prices[at]), 1]);
-    }
-    const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
-    const width = sigma(belief);
-    if (bid > 0 && fills) observations.push([Math.log(bid) - 0.5 * width, fills]);
-    const passed = Math.min(PASSED_MAX, Math.max(0, counter.deals - belief.seenCounter) / Math.max(1, lines) - fills);
-    if (bid > 0 && passed > 0) observations.push([Math.log(bid) + 0.5 * width, passed]);
-    const rival = ctx.board?.first(id, BUY, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0;
-    if (rival > 0 && !(belief.rival > 0 && Math.abs(rival / belief.rival - 1) <= RIVAL_CHANGE)) {
-        observations.push([Math.log(rival), 0.5 * Math.max(0.05, Number(ctx.understanding) || 0)]);
-    }
-    belief.rival = rival;
-    belief.seenItem = item.deals;
-    belief.seenCounter = counter.deals;
-    belief.cursorBasis = 2;
-    return { observations, fills };
+    return observations;
 }
 
 function resetCaches() {
@@ -345,5 +181,4 @@ function resetCaches() {
     recipesByMaterial = null;
 }
 
-module.exports = { S0, K_MAX, DROP, BOUND, FADE, readBook, writeBook, sigma, errorOf, confidence, lookup, prior, fresh,
-    ensure, keep, touch, learn, ownDeals, lookObservations, bidObservations, demandValue, resetCaches };
+module.exports = { S0, K_MAX, sigma, errorOf, prior, learn, lineObservations, demandValue, resetCaches };

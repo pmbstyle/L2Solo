@@ -1,17 +1,12 @@
-// How a bot prices its board trade (group E, user 2026-10-05): the shared
-// steps over its beliefs (PriceBelief) and the one decision (PriceDecision),
-// for the main thread (a listing at the market, a buy ad, the NPC sale) and
-// the cold worker (the look at its own lines, ColdSimulationWorker).
-//
-// The caller's thread supplies the board index, the NPC shops selling an item
-// and the trader's trip cost; the counters and first prices are read from
-// MarketCounters in either thread.
+// One stateless board estimate and the unchanged expected-value decision
+// for hot/cold trading. Only an author's open line keeps review cursors;
+// own experience is counted by the actual trade transaction, not here.
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const OfferOrder = require('./OfferOrder');
-const TendencyRoll = require('../AI/TendencyRoll');
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 
 // A bot as a trader: its persona's parameters, its hour and its money, its
 // trips, and what its thread knows of the board. deps: { board, persona,
@@ -28,6 +23,8 @@ function traderContext(state, deps = {}) {
     return {
         characterId: Number(state?.characterId || 0),
         understanding: trader.understanding,
+        marketTrades: state?.stats?.marketTrades || {},
+        knowledgeEnabled: deps.knowledgeEnabled ?? PriceLearning.knowledgeEnabled(),
         trader,
         hour,
         adena,
@@ -54,32 +51,33 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0 } = {}) {
     return best;
 }
 
-// The ask for `units` of an item listed in `town`: { belief, ask, market }.
-// The belief is the bot's own, else a fresh prior not yet kept (adopt keeps
-// it when the item is listed).
-function priceForSale(book, selfId, ctx, { town = null, units = 1, rollKey }) {
-    const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
+// A fresh ask for this choice; nothing is read from saved item memory.
+function priceForSale(selfId, ctx, { town = null, units = 1, rollKey }) {
+    const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
-    const market = PriceDecision.marketFor(selfId, {
-        board: ctx.board, ownerId: ctx.characterId, town, units, tripCost: ctx.tripCost,
-        npcOffers: ctx.npcOffersFor(selfId), timestamp: ctx.timestamp
-    });
+    const market = marketFor(selfId, ctx, { town, units });
     return { belief, market, ask: PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey) };
 }
 
-// The item is listed at `price`: the bot keeps its belief (a touch of its
-// own) and remembers its ask and what it has seen of the market now.
-function adopt(book, belief, ctx, price) {
-    const id = Number(belief.selfId);
-    if (book.beliefs.get(id) === belief) PriceBelief.touch(book, belief, ctx);
-    else PriceBelief.keep(book, belief, ctx);
-    const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
-    belief.ask = Math.round(price);
-    belief.seenItem = MarketCounters.itemDeals(id).deals;
-    belief.seenCounter = counter.deals;
-    belief.cursorBasis = 2;
-    belief.rival = ctx.board?.first(id, SELL, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0;
-    return belief;
+function marketFor(selfId, ctx, { town = null, units = 1 } = {}) {
+    return PriceDecision.marketFor(selfId, {
+        board: ctx.board, ownerId: ctx.characterId, town, units, tripCost: ctx.tripCost,
+        npcOffers: ctx.npcOffersFor(selfId), timestamp: ctx.timestamp
+    });
+}
+
+// Publication and every completed review checkpoint exactly this line's
+// state, even when its standing price remains among the near-best choices.
+function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0 }) {
+    const counter = MarketCounters.counter(MarketCounters.counterOf(selfId), ctx.timestamp);
+    return {
+        price: Math.round(price),
+        seenCounter: counter.deals,
+        seenItem: MarketCounters.itemDeals(selfId).deals,
+        rival: ctx.board?.first(selfId, storeType, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0,
+        worth: storeType === BUY ? Number(worth) || 0 : 0,
+        seenFills: Math.max(0, Number(fills) || 0)
+    };
 }
 
 // What to do with `units` of an item the bot may sell (hold / board /
@@ -95,9 +93,9 @@ function adopt(book, belief, ctx, price) {
 // units ('list' still needs a slot) and answer the ad ({ line, count }).
 // smallLot: a lot too small for the board (MarketLotPolicy) that the author
 // keeps for a bulk lot: keeping it or a buy ad only.
-function disposition(book, item, ctx, { town = null, room = 1, smallLot = false, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, smallLot = false, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
-    const priced = priceForSale(book, item.selfId, ctx, { town, units, rollKey: [...rollKey, 'ask'] });
+    const priced = priceForSale(item.selfId, ctx, { town, units, rollKey: [...rollKey, 'ask'] });
     if (!priced) return { action: 'keep', priced: null, gain: 0 };
     const { ask, market, belief } = priced;
     const gain = ask.npc ? 0 : (ask.money - market.buyback) * units;
@@ -117,146 +115,55 @@ function disposition(book, item, ctx, { town = null, room = 1, smallLot = false,
         answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count } : null };
 }
 
-// The bot's own deal of an item at `price` (a purchase on the board, group E
-// follow-up: the buy side learns): the price is evidence, the deal one of
-// its own. False when nothing prices the item.
-function learnDeal(book, selfId, ctx, price) {
-    if (!(Number(price) > 0)) return false;
-    const belief = PriceBelief.ensure(book, selfId, ctx);
-    if (!belief) return false;
-    PriceBelief.learn(belief, [[Math.log(Number(price)), 1]]);
-    PriceBelief.ownDeals(belief, 1);
-    PriceBelief.touch(book, belief, ctx);
-    return true;
-}
-
-// The bid of a buy ad for `units` worth `worth` a unit to the buyer, at most
-// `cap` a unit: the same belief, the mirrored decision. null: no bid gains.
-// The chosen bid is kept in the bot's beliefs with its worth (the buy ad's
-// own look reviews it, look), as a listing is (adopt).
-function bid(book, selfId, ctx, { units = 1, worth, cap, rollKey }) {
-    const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
+// A buy ad keeps authored worth with its line; the next ad starts fresh.
+function bid(selfId, ctx, { units = 1, worth, cap, rollKey }) {
+    const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
-    const market = PriceDecision.marketFor(selfId, {
-        board: ctx.board, ownerId: ctx.characterId, units, tripCost: ctx.tripCost,
-        npcOffers: ctx.npcOffersFor(selfId), timestamp: ctx.timestamp
-    });
-    const chosen = PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap }, rollKey);
-    if (chosen) {
-        adopt(book, belief, ctx, chosen.price);
-        belief.worth = Math.round(Number(worth) || 0);
-    }
-    return chosen;
+    const chosen = PriceDecision.chooseBid(belief, marketFor(selfId, ctx, { units }), ctx.trader, { worth, cap }, rollKey);
+    return chosen ? { ...chosen, pricing: lineState(selfId, ctx, { price: chosen.price, storeType: BUY, worth }) } : null;
 }
 
-// Attention (user, 2026-10-05): at a cold resolve the bot looks at its lines
-// with chance worth / (worth + cost). worth = the value listed (price x units
-// over its open lines) x its counters' hourly move x the hours since its last
-// look (at most 1) x its understanding (at least 0.05) x (1 + its money
-// need); cost = what it earns now in one minute (a hunting or grouped bot:
-// its hour; any other: nothing).
-const EARNING_ACTIVITIES = new Set(['hunting', 'grouped']);
-function lookChance(state, lines, ctx, lookAt) {
-    let listed = 0;
-    let moved = 0;
-    for (const line of lines) {
-        const value = line.price * line.count;
-        listed += value;
-        moved += value * MarketCounters.moveOf(MarketCounters.counterOf(line.selfId), ctx.timestamp);
-    }
-    if (!(listed > 0)) return 0;
-    const hours = lookAt > 0 ? Math.min(1, Math.max(0, ctx.timestamp - lookAt) / 3600000) : 1;
-    const need = ctx.hour / Math.max(1, ctx.adena + ctx.hour);
-    const worth = moved * hours * Math.max(0.05, ctx.understanding) * (1 + need);
-    const cost = EARNING_ACTIVITIES.has(state?.activity) ? ctx.hour / 60 : 0;
-    return TendencyRoll.chance(worth / Math.max(1e-9, worth + cost));
-}
-
-// The bot's look at its own lines (ColdSimulationWorker at a cold resolve):
-// learns from what happened since its last look and chooses each line's
-// price again where new evidence arrived: an ask for a sell line, a bid for
-// a buy ad (one system for both sides, group E follow-up; a bid that no
-// longer gains is withdrawn). Returns { book, reprices: [{ recordId,
-// lineId, selfId, price, expectedRevision }], withdrawals: [{ recordId,
-// lineId, selfId, expectedRevision }] };
-// null when it did not look.
+// A counter event is the attention trigger. No event means no estimate,
+// market construction or roll. The caller supplies only its indexed lines.
+// The database applies each move using revision + the full previousPricing
+// fence; metadata-only updates checkpoint no-change choices too.
 function look(state, lines, ctx) {
-    const book = PriceBelief.readBook(state.stats);
-    const roll = TendencyRoll.roll('look', ctx.characterId, ctx.timestamp);
-    if (roll >= lookChance(state, lines, ctx, book.lookAt)) return null;
+    const updates = [];
     const reprices = [];
     const withdrawals = [];
-    book.looks += 1;
     for (const line of lines) {
-        const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId, expectedRevision: line.revision };
-        const known = PriceBelief.lookup(book, line.selfId, ctx);
-        const belief = known || PriceBelief.ensure(book, line.selfId, ctx);
+        if (!(line.count > 0) || !line.pricing) continue;
+        if (line.ownerId && Number(line.ownerId) !== Number(ctx.characterId)) continue;
+        const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
+        if (counter.deals <= line.pricing.seenCounter) continue;
+        const belief = PriceBelief.prior(line.selfId, ctx);
         if (!belief) continue;
+        const openLines = line.storeType === BUY
+            ? ctx.board?.list(line.selfId, BUY).length || 1
+            : ctx.board?.linesIn(MarketCounters.counterOf(line.selfId)) || 1;
+        PriceBelief.learn(belief, PriceBelief.lineObservations(line, belief, ctx, openLines));
+        const market = marketFor(line.selfId, ctx, { town: line.town, units: line.count });
+        const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
+            expectedRevision: line.revision, previousPricing: { ...line.pricing } };
+        const rollKey = [line.storeType === BUY ? 'bid' : 'ask', ctx.characterId,
+            line.lineId, line.selfId, counter.deals, line.fills || 0];
+        let chosen;
         if (line.storeType === BUY) {
-            const chosen = lookBid(book, belief, known, line, ctx);
-            if (chosen === null) withdrawals.push(move);
-            else if (chosen && chosen.price !== line.price) {
-                reprices.push({ ...move, price: chosen.price });
-                belief.ask = chosen.price;
-            }
-            continue;
+            const worth = line.pricing.worth;
+            const cap = Math.floor(Math.min(worth, line.price + ctx.adena / Math.max(1, line.count)));
+            chosen = PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap }, rollKey, line.price);
+            if (!chosen) { withdrawals.push(move); continue; }
         }
-        const ask = belief.ask > 0 ? belief.ask : line.price;
-        const { observations, sales } = PriceBelief.lookObservations(book, belief, ctx, {
-            ask, lines: ctx.board?.linesIn(MarketCounters.counterOf(line.selfId)) || 0
-        });
-        if (sales) {
-            PriceBelief.ownDeals(belief, sales);
-            PriceBelief.touch(book, belief, ctx, sales);
+        else {
+            chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey, line.price);
+            if (chosen.npc) { withdrawals.push(move); continue; }
         }
-        belief.ask = line.price;
-        // React only when new evidence arrived.
-        if (known && !PriceBelief.learn(belief, observations)) continue;
-        if (!known) PriceBelief.learn(belief, observations);
-        const market = PriceDecision.marketFor(line.selfId, {
-            board: ctx.board, ownerId: ctx.characterId, town: line.town, units: line.count, tripCost: ctx.tripCost,
-            npcOffers: ctx.npcOffersFor(line.selfId), timestamp: ctx.timestamp
-        });
-        const chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, ['ask', ctx.characterId, line.selfId, book.looks],
-            line.price);
-        if (chosen.npc) {
-            withdrawals.push(move);
-            continue;
-        }
-        if (chosen.price !== line.price) {
-            reprices.push({ ...move, price: chosen.price });
-            belief.ask = chosen.price;
-        }
+        const pricing = lineState(line.selfId, ctx, { price: chosen.price, storeType: line.storeType,
+            worth: line.pricing.worth, fills: line.fills });
+        if (chosen.price !== line.price) reprices.push({ ...move, price: chosen.price, pricing });
+        else updates.push({ ...move, pricing });
     }
-    book.lookAt = ctx.timestamp;
-    return { book, reprices, withdrawals };
+    return updates.length || reprices.length || withdrawals.length ? { updates, reprices, withdrawals } : null;
 }
 
-// The look at one buy ad: learns from its fills and the sellers that went
-// elsewhere, then bids again (worth: the bid's worth kept with the belief,
-// else its own value; at most its bid plus what the bot holds a unit).
-// Returns the new { price } when evidence arrived, undefined when nothing
-// changed, null when no bid gains any more.
-function lookBid(book, belief, known, line, ctx) {
-    const bidNow = belief.ask > 0 ? belief.ask : line.price;
-    const { observations, fills } = PriceBelief.bidObservations(book, belief, ctx, {
-        bid: bidNow, lines: ctx.board?.list(line.selfId, BUY).length || 1
-    });
-    if (fills) {
-        PriceBelief.ownDeals(belief, fills);
-        PriceBelief.touch(book, belief, ctx, fills);
-    }
-    belief.ask = line.price;
-    if (known && !PriceBelief.learn(belief, observations)) return undefined;
-    if (!known) PriceBelief.learn(belief, observations);
-    const worth = belief.worth > 0 ? belief.worth : Math.exp(belief.mu);
-    const cap = Math.floor(Math.min(worth, line.price + ctx.adena / Math.max(1, line.count)));
-    const market = PriceDecision.marketFor(line.selfId, {
-        board: ctx.board, ownerId: ctx.characterId, units: line.count, tripCost: ctx.tripCost,
-        npcOffers: ctx.npcOffersFor(line.selfId), timestamp: ctx.timestamp
-    });
-    return PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap },
-        ['bid', ctx.characterId, line.selfId, book.looks], line.price);
-}
-
-module.exports = { traderContext, priceForSale, adopt, bestAnswer, disposition, bid, learnDeal, lookChance, look };
+module.exports = { traderContext, priceForSale, lineState, bestAnswer, disposition, bid, look };
