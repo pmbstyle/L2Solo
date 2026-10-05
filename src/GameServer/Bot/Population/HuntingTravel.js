@@ -1,8 +1,8 @@
 const SpotRiskPolicy = require('./SpotRiskPolicy');
-const Karma = require('../../Karma');
+const ColdTrip = require('./ColdTrip');
 
 // A trip to a hunting spot (gatekeeper, or a walk for a red bot) takes this long.
-const HUNTING_TRAVEL_MS = 25000;
+const HUNTING_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
 function hasFiniteCoordinate(value) {
     return value !== null
@@ -24,41 +24,24 @@ function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {
     const destination = routeDestination(state, route);
     const from = { ...(state.loc || {}) };
     if (!destination || !hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
-    const arrivalAt = timestamp + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
     const isPartyRoute = route.mode === 'party';
     const routedState = route.spotBackoff && !isPartyRoute
         ? SpotRiskPolicy.withBackoff(state, route.spotBackoff, timestamp)
         : state;
-    return {
-        ...routedState,
-        activity: 'traveling',
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            nextResolveAt: arrivalAt
-        },
-        stats: {
-            ...(routedState.stats || {}),
-            pveEncounter: null,
-            travel: {
-                from,
-                to: { ...destination },
-                startedAt: timestamp,
-                arrivalAt,
-                regionName: route.regionName || state.currentRegion || 'Hunting Ground',
-                method: Karma.closesTowns(state.stats?.karma) ? 'walk' : 'gatekeeper_spot',
-                spotId: route.spotId,
-                arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
-                arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',
-                reason: isPartyRoute
-                    ? 'party_spot_replan'
-                    : route.reason || (state.stats?.equipmentPlan?.status === 'active'
-                        ? 'equipment_source_replan'
-                        : 'level_replan'),
-                ...(route.cause ? { cause: route.cause } : {})
-            }
-        }
-    };
+    return ColdTrip.toSpot(routedState, {
+        from,
+        to: { ...destination },
+        regionName: route.regionName || state.currentRegion || 'Hunting Ground',
+        spotId: route.spotId,
+        arrivalActivity: isPartyRoute ? 'grouped' : 'hunting',
+        arrivalEvent: isPartyRoute ? 'party_arrived_hunting_ground' : 'arrived_hunting_ground',
+        reason: isPartyRoute
+            ? 'party_spot_replan'
+            : route.reason || (state.stats?.equipmentPlan?.status === 'active'
+                ? 'equipment_source_replan'
+                : 'level_replan'),
+        ...(route.cause ? { cause: route.cause } : {})
+    }, timestamp, { durationMs: Number(route.travelMs) || HUNTING_TRAVEL_MS, extraStats: { pveEncounter: null } });
 }
 
 module.exports = { HUNTING_TRAVEL_MS, beginHuntingTrip };

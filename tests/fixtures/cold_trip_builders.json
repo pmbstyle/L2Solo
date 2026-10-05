@@ -11,12 +11,12 @@
       "nextResolveAt": 1025000
     },
     "travel": {
-      "reason": "market_sale_inventory",
       "from": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
+      "reason": "market_sale_inventory",
       "to": {
         "locX": 46600,
         "locY": 49700,
@@ -24,9 +24,9 @@
       },
       "townName": "Elven Village",
       "viaTown": "Dion",
-      "method": "soe_gatekeeper",
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
+      "method": "soe_gatekeeper",
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -55,12 +55,12 @@
       "nextResolveAt": 1025000
     },
     "travel": {
-      "reason": "market_search_for_weapon",
       "from": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
+      "reason": "market_search_for_weapon",
       "to": {
         "locX": 83396,
         "locY": 147904,
@@ -68,9 +68,9 @@
       },
       "townName": "Giran",
       "viaTown": "Dion",
-      "method": "soe_gatekeeper",
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
+      "method": "soe_gatekeeper",
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -99,12 +99,12 @@
       "nextResolveAt": 1025000
     },
     "travel": {
-      "reason": "return_after_market",
       "from": {
         "locX": 83396,
         "locY": 147904,
         "locZ": -3400
       },
+      "reason": "return_after_market",
       "to": {
         "locX": 116100,
         "locY": -180000,
@@ -114,10 +114,10 @@
       "spotId": "19_-19",
       "townName": "Dwarven Village",
       "viaTown": "Dwarven Village",
-      "method": "gatekeeper_spot",
       "arrivalActivity": "hunting",
       "arrivalEvent": "returned_to_spot",
       "clearMarketReturn": true,
+      "method": "gatekeeper_spot",
       "startedAt": 1000000,
       "arrivalAt": 1025000
     },
@@ -142,8 +142,8 @@
       "736": 3
     },
     "timing": {
-      "activityStartedAt": 950000,
-      "nextResolveAt": 999999
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
     },
     "travel": {
       "from": {
@@ -156,15 +156,15 @@
         "locY": 148169,
         "locZ": -3592
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Giran",
       "regionName": "Giran",
       "viaTown": "Dion",
-      "method": "soe_gatekeeper",
       "arrivalActivity": "crafting",
       "reason": "dual_sword_combine",
-      "stationId": "blacksmith_pushkin"
+      "stationId": "blacksmith_pushkin",
+      "method": "soe_gatekeeper",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": {
@@ -187,8 +187,8 @@
       "736": 0
     },
     "timing": {
-      "activityStartedAt": 950000,
-      "nextResolveAt": 999999
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
     },
     "travel": {
       "from": {
@@ -201,15 +201,15 @@
         "locY": 140000,
         "locZ": -3000
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Dion fields",
       "regionName": "Dion fields",
       "viaTown": "Dion",
-      "method": "gatekeeper_spot",
       "spotId": "pin_spot",
       "arrivalActivity": "hunting",
-      "reason": "dual_sword_combine_return"
+      "reason": "dual_sword_combine_return",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -224,8 +224,8 @@
       "736": 0
     },
     "timing": {
-      "activityStartedAt": 950000,
-      "nextResolveAt": 999999
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
     },
     "travel": {
       "from": {
@@ -238,15 +238,15 @@
         "locY": 140000,
         "locZ": -3000
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Dion fields",
       "regionName": "Dion fields",
       "viaTown": "Dion",
-      "method": "gatekeeper_spot",
       "spotId": "pin_spot",
       "arrivalActivity": "hunting",
-      "reason": "component_craft_return"
+      "reason": "component_craft_return",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -261,8 +261,8 @@
       "736": 0
     },
     "timing": {
-      "activityStartedAt": 950000,
-      "nextResolveAt": 999999
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
     },
     "travel": {
       "from": {
@@ -275,15 +275,15 @@
         "locY": 140000,
         "locZ": -3000
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Dion fields",
       "regionName": "Dion fields",
       "viaTown": "Dion",
-      "method": "gatekeeper_spot",
       "spotId": "pin_spot",
       "arrivalActivity": "hunting",
-      "reason": "equipment_craft_return"
+      "reason": "equipment_craft_return",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -298,7 +298,7 @@
       "736": 3
     },
     "timing": {
-      "activityStartedAt": 950000,
+      "activityStartedAt": 1000000,
       "nextResolveAt": 1025000
     },
     "travel": {
@@ -312,14 +312,14 @@
         "locY": 149266,
         "locZ": -3405
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Giran",
       "regionName": "Giran",
-      "method": "soe_gatekeeper",
       "arrivalActivity": "crafting",
       "reason": "mammon_unseal",
-      "stationId": "Blacksmith of Mammon"
+      "stationId": "Blacksmith of Mammon",
+      "method": "soe_gatekeeper",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": null,
@@ -342,7 +342,7 @@
       "736": 3
     },
     "timing": {
-      "activityStartedAt": 950000,
+      "activityStartedAt": 1000000,
       "nextResolveAt": 1025000
     },
     "travel": {
@@ -356,14 +356,14 @@
         "locY": 140000,
         "locZ": -3000
       },
-      "startedAt": 1000000,
-      "arrivalAt": 1025000,
       "townName": "Dion fields",
       "regionName": "Dion fields",
       "spotId": "pin_spot",
-      "method": "gatekeeper_spot",
       "arrivalActivity": "hunting",
-      "reason": "mammon_unseal_return"
+      "reason": "mammon_unseal_return",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
     },
     "marketReturn": null,
     "craftReturn": null,

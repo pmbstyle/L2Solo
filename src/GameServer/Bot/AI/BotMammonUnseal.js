@@ -57,11 +57,9 @@ function beginTravel(state, timestamp = Date.now()) {
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || BotErrands.busyWith(state, BUSY_FLAGS)
         || Number(state.stats?.mammonRetryAt||0)>timestamp || !candidate(state)) return null;
-    return {...state,activity:'traveling',stats:{...state.stats,
-        mammonReturn:{loc:{...state.loc},spotId:state.spotId,regionName:state.currentRegion},
-        travel:{from:{...state.loc},to:{...Mammon.loc},startedAt:timestamp,arrivalAt:timestamp+25000,
-            townName:'Giran',regionName:'Giran',method:'soe_gatekeeper',arrivalActivity:'crafting',reason:'mammon_unseal',stationId:'Blacksmith of Mammon'}},
-        timing:{...state.timing,nextResolveAt:timestamp+25000}};
+    return invoke('GameServer/Bot/Population/ColdTrip').toTown(state, {to:{...Mammon.loc},
+        townName:'Giran',regionName:'Giran',arrivalActivity:'crafting',reason:'mammon_unseal',stationId:'Blacksmith of Mammon'},
+        timestamp, {mammonReturn:{loc:{...state.loc},spotId:state.spotId,regionName:state.currentRegion}});
 }
 async function finish(state,timestamp=Date.now()) {
     if (state.activity !== 'crafting' || !state.stats?.mammonReturn) return null;
@@ -89,9 +87,9 @@ async function finish(state,timestamp=Date.now()) {
         else delete inventory[selfId];
     }
     const refreshed = await Life.refreshInventory({...state,inventory},{equip:true});
-    return {...refreshed,activity:'traveling',stats:{...refreshed.stats,mammonReturn:null,mammonRetryAt:count?0:timestamp+300000,
-        travel:{from:{...state.loc},to:{...target.loc},startedAt:timestamp,arrivalAt:timestamp+25000,
-            townName:target.regionName,regionName:target.regionName,spotId:target.spotId,method:'gatekeeper_spot',
-            arrivalActivity:'hunting',reason:'mammon_unseal_return'}},timing:{...refreshed.timing,nextResolveAt:timestamp+25000}};
+    return invoke('GameServer/Bot/Population/ColdTrip').toSpot(refreshed, {from:{...state.loc},to:{...target.loc},
+        townName:target.regionName,regionName:target.regionName,spotId:target.spotId,
+        arrivalActivity:'hunting',reason:'mammon_unseal_return'},
+        timestamp, {extraStats:{mammonReturn:null,mammonRetryAt:count?0:timestamp+300000}});
 }
 module.exports = {recipeFor,candidate,plan,execute,beginTravel,finish};

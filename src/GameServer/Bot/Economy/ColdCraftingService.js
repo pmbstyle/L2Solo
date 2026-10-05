@@ -9,8 +9,9 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
 
-const NATIVE_TRAVEL_MS = 25000;
+const NATIVE_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
 function isStationService(state = {}) {
     return Boolean(state.stats?.craftStationId)
@@ -85,29 +86,34 @@ function beginTravel(state, timestamp = Date.now()) {
     const station = stationForRecipe(recipe?.recipeId, state);
     if (!recipe || !station) return null;
     const nearestTown = TownRespawn.getClosestTown(state.loc?.locX, state.loc?.locY, state.loc?.locZ);
-    return {
-        ...state,
-        activity: 'traveling',
-        stats: {
-            ...(state.stats || {}),
-            craftReturn: state.stats?.craftReturn || { loc: { ...(state.loc || {}) }, spotId: state.spotId || null, regionName: state.currentRegion || null },
-            travel: {
-                from: { ...(state.loc || {}) },
-                to: { ...station.loc },
-                startedAt: timestamp,
-                arrivalAt: timestamp + NATIVE_TRAVEL_MS,
-                townName: station.townName || 'Giran',
-                regionName: station.regionName || station.townName || 'Giran',
-                viaTown: nearestTown?.name || null,
-                method: 'soe_gatekeeper',
-                arrivalActivity: 'crafting',
-                reason: C4DualSwordCombinations.isCombination(recipe)
-                    ? 'dual_sword_combine'
-                    : recipe.recipeId === finalRecipe?.recipeId ? 'equipment_craft' : 'component_craft',
-                stationId: station.id
-            }
-        }
-    };
+    return ColdTrip.toTown(state, {
+        to: { ...station.loc },
+        townName: station.townName || 'Giran',
+        regionName: station.regionName || station.townName || 'Giran',
+        viaTown: nearestTown?.name || null,
+        arrivalActivity: 'crafting',
+        reason: C4DualSwordCombinations.isCombination(recipe)
+            ? 'dual_sword_combine'
+            : recipe.recipeId === finalRecipe?.recipeId ? 'equipment_craft' : 'component_craft',
+        stationId: station.id
+    }, timestamp, {
+        craftReturn: state.stats?.craftReturn || { loc: { ...(state.loc || {}) }, spotId: state.spotId || null, regionName: state.currentRegion || null }
+    });
+}
+
+// The trip back from a craft station to the spot the bot left (craftReturn).
+function returnTrip(state, from, craftReturn, reason, timestamp) {
+    const returnTown = TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY, craftReturn.loc.locZ);
+    return ColdTrip.toSpot(state, {
+        from: { ...from },
+        to: { ...craftReturn.loc },
+        townName: craftReturn.regionName || 'Hunting Ground',
+        regionName: craftReturn.regionName || state.currentRegion,
+        viaTown: returnTown?.name || null,
+        spotId: craftReturn.spotId || null,
+        arrivalActivity: 'hunting',
+        reason
+    }, timestamp, { extraStats: { craftReturn: null } });
 }
 
 function materialRows(items, recipe, multiplier = 1) {
@@ -223,31 +229,9 @@ async function combineDualSword(state, recipe, station) {
     }
 
     const craftReturn = state.stats?.craftReturn;
-    const timestamp = Date.now();
-    const returnTown = craftReturn?.loc
-        ? TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY, craftReturn.loc.locZ)
-        : null;
-    const refreshed = await refreshPhysicalInventory({
-        ...state,
-        activity: craftReturn?.loc ? 'traveling' : 'hunting',
-        stats: {
-            ...(state.stats || {}),
-            craftReturn: null,
-            travel: craftReturn?.loc ? {
-                from: { ...(state.loc || station.loc) },
-                to: { ...craftReturn.loc },
-                startedAt: timestamp,
-                arrivalAt: timestamp + NATIVE_TRAVEL_MS,
-                townName: craftReturn.regionName || 'Hunting Ground',
-                regionName: craftReturn.regionName || state.currentRegion,
-                viaTown: returnTown?.name || null,
-                method: 'gatekeeper_spot',
-                spotId: craftReturn.spotId || null,
-                arrivalActivity: 'hunting',
-                reason: 'dual_sword_combine_return'
-            } : null
-        }
-    });
+    const refreshed = await refreshPhysicalInventory(craftReturn?.loc
+        ? returnTrip(state, state.loc || station.loc, craftReturn, 'dual_sword_combine_return', Date.now())
+        : { ...state, activity: 'hunting', stats: { ...(state.stats || {}), craftReturn: null, travel: null } });
     return {
         state: refreshed,
         crafted: true,
@@ -387,34 +371,14 @@ async function craft(state, random = Math.random) {
     }, 'cold_manufacture');
     const craftReturn = state.stats?.craftReturn;
     const timestamp = Date.now();
-    const returnTown = craftReturn?.loc
-        ? TownRespawn.getClosestTown(craftReturn.loc.locX, craftReturn.loc.locY, craftReturn.loc.locZ)
-        : null;
-    const refreshed = await refreshPhysicalInventory({
-        ...state,
-        // Decide whether to remain at the station after inventory refresh.
-        // The crafted output may unlock another component, but if its raw
-        // inputs are exhausted the bot must resume farming instead of idling
-        // forever in the high-priority crafting queue.
-        activity: componentCraft ? 'hunting' : craftReturn?.loc ? 'traveling' : 'hunting',
-        stats: {
-            ...(state.stats || {}),
-            craftReturn: componentCraft ? craftReturn : null,
-            travel: !componentCraft && craftReturn?.loc ? {
-                from: { ...(state.loc || station.loc) },
-                to: { ...craftReturn.loc },
-                startedAt: timestamp,
-                arrivalAt: timestamp + NATIVE_TRAVEL_MS,
-                townName: craftReturn.regionName || 'Hunting Ground',
-                regionName: craftReturn.regionName || state.currentRegion,
-                viaTown: returnTown?.name || null,
-                method: 'gatekeeper_spot',
-                spotId: craftReturn.spotId || null,
-                arrivalActivity: 'hunting',
-                reason: 'equipment_craft_return'
-            } : null
-        }
-    });
+    // Decide whether to remain at the station after inventory refresh.
+    // The crafted output may unlock another component, but if its raw
+    // inputs are exhausted the bot must resume farming instead of idling
+    // forever in the high-priority crafting queue.
+    const refreshed = await refreshPhysicalInventory(!componentCraft && craftReturn?.loc
+        ? returnTrip(state, state.loc || station.loc, craftReturn, 'equipment_craft_return', timestamp)
+        : { ...state, activity: 'hunting',
+            stats: { ...(state.stats || {}), craftReturn: componentCraft ? craftReturn : null, travel: null } });
     const nextReadyRecipe = componentCraft ? readyRecipeFor(refreshed, finalRecipe) : null;
     const continueCrafting = componentCraft
         && !!nextReadyRecipe
@@ -422,27 +386,9 @@ async function craft(state, random = Math.random) {
     const returnAfterComponent = componentCraft && !continueCrafting && craftReturn?.loc;
     const settled = continueCrafting
         ? { ...refreshed, activity: 'crafting' }
-        : returnAfterComponent ? {
-            ...refreshed,
-            activity: 'traveling',
-            stats: {
-                ...(refreshed.stats || {}),
-                craftReturn: null,
-                travel: {
-                    from: { ...(state.loc || station.loc) },
-                    to: { ...craftReturn.loc },
-                    startedAt: timestamp,
-                    arrivalAt: timestamp + NATIVE_TRAVEL_MS,
-                    townName: craftReturn.regionName || 'Hunting Ground',
-                    regionName: craftReturn.regionName || state.currentRegion,
-                    viaTown: returnTown?.name || null,
-                    method: 'gatekeeper_spot',
-                    spotId: craftReturn.spotId || null,
-                    arrivalActivity: 'hunting',
-                    reason: 'component_craft_return'
-                }
-            }
-        } : refreshed;
+        : returnAfterComponent
+            ? returnTrip(refreshed, state.loc || station.loc, craftReturn, 'component_craft_return', timestamp)
+            : refreshed;
     return {
         state: settled,
         crafted: success,

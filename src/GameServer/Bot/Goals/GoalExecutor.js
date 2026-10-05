@@ -5,11 +5,12 @@ const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
-const MARKET_TRAVEL_MS = 25 * 1000;
-const GATEKEEPER_SPOT_TRAVEL_MS = 25 * 1000;
+const MARKET_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
+const GATEKEEPER_SPOT_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
 function marketTown(name = 'Giran') {
     const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
@@ -39,38 +40,17 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
-    const to = { ...town.center };
-    return {
-        ...state,
-        activity: 'traveling',
-        stats: {
-            ...(state.stats || {}),
-            marketReturn: {
-                loc: from,
-                regionName: state.currentRegion || null,
-                spotId: state.spotId || null
-            },
-            travel: {
-                reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
-                from,
-                to,
-                townName: town.name,
-                viaTown: nearestTown.name,
-                method: 'soe_gatekeeper',
-                arrivalActivity: 'shopping',
-                arrivalEvent: 'arrived_town',
-                startedAt: timestamp,
-                arrivalAt: timestamp + MARKET_TRAVEL_MS
-            }
-        },
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            // Travel is a finite transition.  There is no state to simulate
-            // while a cold bot is casting SoE / waiting for gatekeeper travel.
-            nextResolveAt: timestamp + MARKET_TRAVEL_MS
-        }
-    };
+    return ColdTrip.toTown(state, {
+        reason: buyingGear || buyingMaterial ? goal.plan.expectedBenefit : 'market_sale_inventory',
+        from,
+        to: { ...town.center },
+        townName: town.name,
+        viaTown: nearestTown.name,
+        arrivalActivity: 'shopping',
+        arrivalEvent: 'arrived_town'
+    }, timestamp, {
+        marketReturn: { loc: from, regionName: state.currentRegion || null, spotId: state.spotId || null }
+    });
 }
 
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
@@ -131,35 +111,19 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
     const routedState = spotBackoff
         ? SpotRiskPolicy.withBackoff(state, spotBackoff, timestamp)
         : state;
-    return {
-        ...routedState,
-        activity: 'traveling',
-        stats: {
-            ...(routedState.stats || {}),
-            ...(clanReturn ? {} : { partyMarketReturn: null }),
-            travel: {
-                reason: spotBackoff ? 'death_pressure_replan' : 'return_after_market',
-                from,
-                to,
-                regionName,
-                spotId,
-                townName: destinationTown?.name || regionName || 'Hunting Ground',
-                viaTown: destinationTown?.name || null,
-                method: 'gatekeeper_spot',
-                arrivalActivity: clanReturn ? 'party_wait' : 'hunting',
-                arrivalEvent: spotBackoff ? 'arrived_hunting_ground' : 'returned_to_spot',
-                ...(spotBackoff ? { cause: 'death_pressure' } : {}),
-                clearMarketReturn: true,
-                startedAt: timestamp,
-                arrivalAt: timestamp + GATEKEEPER_SPOT_TRAVEL_MS
-            }
-        },
-        timing: {
-            ...(state.timing || {}),
-            activityStartedAt: timestamp,
-            nextResolveAt: timestamp + GATEKEEPER_SPOT_TRAVEL_MS
-        }
-    };
+    return ColdTrip.toSpot(routedState, {
+        reason: spotBackoff ? 'death_pressure_replan' : 'return_after_market',
+        from,
+        to,
+        regionName,
+        spotId,
+        townName: destinationTown?.name || regionName || 'Hunting Ground',
+        viaTown: destinationTown?.name || null,
+        arrivalActivity: clanReturn ? 'party_wait' : 'hunting',
+        arrivalEvent: spotBackoff ? 'arrived_hunting_ground' : 'returned_to_spot',
+        ...(spotBackoff ? { cause: 'death_pressure' } : {}),
+        clearMarketReturn: true
+    }, timestamp, { extraStats: clanReturn ? {} : { partyMarketReturn: null } });
 }
 
 module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
