@@ -74,6 +74,27 @@ async function unitChecks() {
         w.same();
     }
 
+    // Without a worker attached nothing is kept for it: changes of ever new
+    // rows (board records come and go) leave no pending entry; a worker that
+    // attaches later gets the table in full.
+    {
+        const w = wired();
+        for (let id = 1; id <= 5000; id++) {
+            w.change({ id, price: id });
+            if (id % 2) w.remove(id);
+        }
+        assert.strictEqual(w.channel.tables.get('test').pending.size, 0, 'no pending change without a worker');
+        w.channel.flush();
+        assert.strictEqual(w.channel.snapshot().tables.test.version, 1, 'the unseen changes still make a version');
+        w.channel.attach(w.target, 'e1', w.deliver('e1'));
+        assert.strictEqual(w.mirror.rows('test').size, 2500);
+        w.same();
+        w.change({ id: 1, price: 1 });
+        assert.strictEqual(w.channel.tables.get('test').pending.size, 1, 'an attached worker gets the change');
+        w.channel.flush();
+        w.same();
+    }
+
     // Pages are limited by size only: a 600 KB table and a 600 KB change both
     // arrive whole, each page within 240 KB, with far more than 64 rows a page.
     {

@@ -25,13 +25,19 @@ class ColdTableChannel {
 
     // key(row) gives a row's key; allRows() gives every current row.
     register(name, { key, allRows }) {
-        this.tables.set(String(name), { name: String(name), key, allRows, version: 0, pending: new Map() });
+        this.tables.set(String(name), { name: String(name), key, allRows, version: 0, pending: new Map(), changedUnseen: false });
     }
 
-    // change: a row, or { key, removed: true } for a removed row.
+    // change: a row, or { key, removed: true } for a removed row. With no
+    // worker attached nobody needs the row: a worker that attaches gets the
+    // table in full, so only the next version is marked.
     changed(name, change) {
         const table = this.tables.get(String(name));
         if (!table || !change) return false;
+        if (!this.targets.size) {
+            table.changedUnseen = true;
+            return true;
+        }
         if (change.removed === true) table.pending.set(change.key, REMOVED);
         else table.pending.set(table.key(change), change);
         return true;
@@ -80,7 +86,8 @@ class ColdTableChannel {
         // Each table's pending changes become one new version.
         const deltas = [];
         for (const table of this.tables.values()) {
-            if (!table.pending.size) continue;
+            if (!table.pending.size && !table.changedUnseen) continue;
+            table.changedUnseen = false;
             const rows = [];
             const removed = [];
             for (const [key, row] of table.pending) {
