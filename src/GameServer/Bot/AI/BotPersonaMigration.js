@@ -20,8 +20,8 @@ function persona(row, archetype, salt = '') {
 // first type and roll, from the regular one on, that passes the author's
 // founder gate (leaderScore within the top founderTopShare of its drive) at
 // the given cut-offs; when none of the tries passes, the try with the highest
-// leaderScore in the class circle (any type when none is), the closest to
-// the gate, still in the clan's drive.
+// leaderScore (any type of the drive: the class circle is only a weight of
+// the tries), the closest to the gate, still in the clan's drive.
 function leaderPersona(row, regular, thresholds, total, Policy) {
     const drive = Types.isDwarf(row.classId) ? 'wealth' : row.primaryDrive;
     let best = null;
@@ -32,9 +32,7 @@ function leaderPersona(row, regular, thresholds, total, Policy) {
         const candidate = persona(row, archetype, attempt ? `:${attempt}` : '');
         const score = Policy.leaderScore(candidate);
         if (!(thresholds[drive] > score)) return candidate;
-        // The closest try: in the class circle first, then by leaderScore.
-        const circle = Types.inCircle(archetype, row.classId);
-        if (!best || (circle && !best.circle) || (circle === best.circle && score > best.score)) best = { circle, score, candidate };
+        if (!best || score > best.score) best = { score, candidate };
     }
     return best.candidate;
 }
