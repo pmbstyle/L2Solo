@@ -19,6 +19,7 @@ const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
@@ -768,6 +769,9 @@ module.exports = {
                 if (potionResult.ok && potionResult.changed) {
                     TownChatter.say(session, BotAI, 'healing-potions-restocked', Speech.lines('town.healing-potions-restocked', { count: potionResult.amount, item: potionResult.potion.name, reserve: formatAdena(potionResult.reserve) }));
                 }
+                // Then the Scrolls of Escape for the next town trip (ScrollStock).
+                const scrollPrice = ScrollStock.localNpcPrice(potionTown);
+                if (scrollPrice > 0) await ScrollStock.purchaseActorRestock(bot, { unitPrice: scrollPrice });
 
                 const result = await ShotStock.purchaseActorRestock(bot, { plan, potionUnitPrice: potionPrice || undefined });
                 if (!result.ok) {

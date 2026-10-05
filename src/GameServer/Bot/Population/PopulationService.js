@@ -62,6 +62,7 @@ const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 
 const {
     partyObjectiveForPlan,
@@ -92,6 +93,16 @@ function restockColdHealingPotions(state) {
     const patch = HealingPotionStock.coldPurchasePatch(state, { potion, unitPrice });
     if (!patch) return Promise.resolve(state);
     return LifeState.applyConsumablePurchase(state, patch, 'healing_potion_restock')
+        .then((saved) => saved || state);
+}
+
+// After the potions, the Scrolls of Escape for the next town trip (ScrollStock).
+function restockColdScrolls(state) {
+    if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
+    const unitPrice = ScrollStock.localNpcPrice(state.currentRegion);
+    const patch = unitPrice > 0 ? ScrollStock.coldPurchasePatch(state, { unitPrice }) : null;
+    if (!patch) return Promise.resolve(state);
+    return LifeState.applyConsumablePurchase(state, patch, 'scroll_of_escape_restock')
         .then((saved) => saved || state);
 }
 
@@ -3699,7 +3710,7 @@ const PopulationService = {
                         const listingState = listingResult.state || purchasedState;
                         if (listingState.activity === 'merchant') return listingState;
                         if (listingResult.listed) return listingState;
-                        return restockColdHealingPotions(listingState).then((restockedState) => {
+                        return restockColdHealingPotions(listingState).then(restockColdScrolls).then((restockedState) => {
                             const returnState = GoalExecutor.finishMarketVisit(restockedState);
                             return returnState
                                 ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)

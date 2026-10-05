@@ -140,9 +140,11 @@ const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
 
 // Consumables a bot sells to the NPC beyond what its class keeps: arrows (a
 // bot's bow spends none, Actor/BowResources), scrolls other than enchant
-// scrolls (no bot code reads a scroll of escape or resurrection; a party
-// revival casts without an item), potions (the healing stock is reserved up to
-// its restock target in saleCandidates), keys, seal stones and the like.
+// scrolls (the Scrolls of Escape a bot reads for town trips are reserved up to
+// their restock target in saleCandidates; no bot reads a scroll of
+// resurrection, a party revival casts without an item), potions (the healing
+// stock is reserved up to its restock target in saleCandidates), keys, seal
+// stones and the like.
 // Not spare: Adena, crystals (the shot crafters' input), clan items, any
 // recipe material (a crafter's input, e.g. Rope of Magic), and an item the NPC
 // pays nothing for (soul crystals, Ancient Adena): those are not bot junk.
@@ -424,10 +426,12 @@ function saleCandidates(state, options = {}) {
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
-    for (const [selfId, amount] of Object.entries({
-        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state),
-        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state)
-    })) {
+    // The healing potions, the bot's own shots and the Scrolls of Escape a bot
+    // spends are kept up to their restock targets; a surplus is sold.
+    const kept = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state),
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state),
+        ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
+    for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
     }
     return Object.values(state?.inventory || {}).flatMap((item) => {

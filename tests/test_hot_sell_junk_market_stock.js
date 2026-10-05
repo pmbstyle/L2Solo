@@ -93,7 +93,9 @@ async function run() {
     const keep = HealingPotionStock.targetAmountFor({ level: 30, stats: { classId: 0 } });
     assert(keep > 0 && keep < 30, `the potion stock must be part of the stack: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
-        [[D_RECIPE, 1], [CRYSTAL_D, 40], [ANIMAL_BONE, 5], [HEALING_POTION, keep], [ENCHANT_ARMOR_D, 1]],
+        // Step 3.2 (H12 narrowed): the Scrolls of Escape a bot reads for town
+        // trips are kept up to their restock target; the surplus is sold.
+        [[D_RECIPE, 1], [CRYSTAL_D, 40], [ANIMAL_BONE, 5], [HEALING_POTION, keep], [ESCAPE_SCROLL, 2], [ENCHANT_ARMOR_D, 1]],
         'a hot bot keeps what its class uses and sells what no bot uses, as when cold');
 
     const crafterSale = await sellJunk('bot_hot_crafter', ARTISAN);
