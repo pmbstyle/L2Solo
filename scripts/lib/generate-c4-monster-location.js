@@ -112,6 +112,36 @@ function itemTemplate(source) {
     };
 }
 
+// Lisvus droplist rows of one monster as reward groups: a drop category becomes
+// one group (overall = category chance, item chance = share of the category),
+// every spoil row (category -1) its own group.
+function rewardGroups(rows, itemName) {
+    const categories = new Map();
+    rows.filter((row) => Number(row[4]) >= 0).forEach((row) => {
+        const category = Number(row[4]);
+        if (!categories.has(category)) categories.set(category, []);
+        categories.get(category).push(row);
+    });
+    const rewards = [...categories.values()].map((categoryRows) => {
+        const totalChance = categoryRows.reduce((sum, row) => sum + Number(row[5]), 0);
+        return {
+            items: categoryRows.map((row) => ({
+                selfId: Number(row[1]), name: itemName(Number(row[1])), min: Number(row[2]),
+                max: Number(row[3]), chance: round(Number(row[5]) / totalChance * 100)
+            })),
+            overall: round(totalChance / 10000)
+        };
+    });
+    const spoils = rows.filter((row) => Number(row[4]) === -1).map((row) => ({
+        items: [{
+            selfId: Number(row[1]), name: itemName(Number(row[1])), min: Number(row[2]),
+            max: Number(row[3]), chance: round(Number(row[5]) / 10000)
+        }],
+        overall: 100
+    }));
+    return { rewards, spoils };
+}
+
 function generateC4MonsterLocation(config) {
     assertLisvusRevision();
 
@@ -236,33 +266,11 @@ function generateC4MonsterLocation(config) {
         return source.name;
     }
 
-    const rewards = newMobIds.map((mobId) => {
-        const rows = dropRows.filter((row) => Number(row[0]) === mobId);
-        const categories = new Map();
-        rows.filter((row) => Number(row[4]) >= 0).forEach((row) => {
-            const category = Number(row[4]);
-            if (!categories.has(category)) categories.set(category, []);
-            categories.get(category).push(row);
-        });
-        const normal = [...categories.values()].map((categoryRows) => {
-            const totalChance = categoryRows.reduce((sum, row) => sum + Number(row[5]), 0);
-            return {
-                items: categoryRows.map((row) => ({
-                    selfId: Number(row[1]), name: sourceItemName(Number(row[1])), min: Number(row[2]),
-                    max: Number(row[3]), chance: round(Number(row[5]) / totalChance * 100)
-                })),
-                overall: round(totalChance / 10000)
-            };
-        });
-        const spoils = rows.filter((row) => Number(row[4]) === -1).map((row) => ({
-            items: [{
-                selfId: Number(row[1]), name: sourceItemName(Number(row[1])), min: Number(row[2]),
-                max: Number(row[3]), chance: round(Number(row[5]) / 10000)
-            }],
-            overall: 100
-        }));
-        return { selfId: mobId, template: { name: npcNameById.get(mobId) }, rewards: normal, spoils };
-    });
+    const rewards = newMobIds.map((mobId) => ({
+        selfId: mobId,
+        template: { name: npcNameById.get(mobId) },
+        ...rewardGroups(dropRows.filter((row) => Number(row[0]) === mobId), sourceItemName)
+    }));
 
     const requiredItemIds = new Set(dropRows.map((row) => Number(row[1])));
     const missingSourceItems = [...requiredItemIds]
@@ -301,4 +309,6 @@ module.exports.loadedItems = loadedItems;
 module.exports.vendorItems = vendorItems;
 module.exports.itemTemplate = itemTemplate;
 module.exports.assertExact = assertExact;
+module.exports.tuples = tuples;
+module.exports.rewardGroups = rewardGroups;
 module.exports.writeJson = writeJson;
