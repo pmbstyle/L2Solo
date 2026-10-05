@@ -338,8 +338,8 @@ async function run() {
     assert.strictEqual(craftRelease.state.inventory[5220].amount, 60);
     assert(craftRelease.state.timing.nextResolveAt <= Date.now(), 'released craft materials must make a hunting bot due for replanning');
     assert.deepStrictEqual(itemStages, [
-        'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant', 'item_persist'
-    ], 'a released warehouse item must expose every physical and lifecycle phase');
+        'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant'
+    ], 'transfer now includes atomic projection/metadata persistence without a later lifecycle overwrite');
 
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;

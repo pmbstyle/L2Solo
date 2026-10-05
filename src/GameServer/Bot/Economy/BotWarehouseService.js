@@ -323,9 +323,11 @@ function cleanupHistoricalOwner(characterId, maxUnits = 16) {
 }
 
 async function cleanupHistoricalOwnerUnlocked(characterId, maxUnits) {
-    const [state] = await LifeState.statesByIds([Number(characterId)], { ownerId: 'legacy_main', unassigned: true });
+    let [state] = await LifeState.statesByIds([Number(characterId)], { ownerId: 'legacy_main', unassigned: true });
     if (!canRelease(state)) return { ok: false, reason: 'owner_unavailable', characterId: Number(characterId) };
     const warehouseItems = await Database.fetchWarehouseItems(characterId);
+    state = LifeState.cachedState(characterId) || state;
+    if (!canRelease(state)) return { ok: false, reason: 'owner_unavailable', characterId: Number(characterId) };
     const selections = historicalGearOverflow(warehouseItems, maxUnits);
     if (!selections.length) {
         return { ok: true, reason: 'no_overflow', characterId: Number(characterId), rowsRemoved: 0, units: 0, payout: 0 };
@@ -337,7 +339,7 @@ async function cleanupHistoricalOwnerUnlocked(characterId, maxUnits) {
         amount: Math.min(request.amount, selectedAmounts.get(request.selfId) || 0)
     })).filter((request) => request.amount > 0);
     const result = await releaseRequests(state, selections, requests);
-    return { ...result, ok: true, reason: result.released ? 'market_released' : 'market_kept',
+    return { ...result, ok: !result.aborted, reason: result.aborted ? result.reason : result.released ? 'market_released' : 'market_kept',
         characterId: Number(characterId), rowsRemoved: 0,
         units: result.items.reduce((total, item) => total + item.amount, 0), payout: 0 };
 }
@@ -410,7 +412,8 @@ function marketRequests(state, warehouseItems, reserved = new Map(), options = {
             ...(item.instances ? { instances: [...(owned?.instances || []), ...item.instances] } : {}) };
     }
     // A temporary inventory for the one common E choice. It is never saved:
-    // only the selected physical rows move, then the real bag is refreshed.
+    // only selected physical rows move and the transaction commits the real
+    // bag projection alongside them.
     // Warehouse units in this temporary bag are not counted again as occupied
     // room. Only the stock reserved to remain there limits the E keep option.
     const decision = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(
@@ -486,6 +489,10 @@ async function releaseColdUnlocked(state, options = {}) {
     const fetchStartedAt = Date.now();
     const warehouseItems = await Database.fetchWarehouseItems(state.characterId)
         .finally(() => recordStage('item_fetch', fetchStartedAt));
+    // The read yielded to lifecycle writers. Plan with their latest goals and
+    // reservations rather than merely checking whether the old owner survives.
+    state = LifeState.cachedState(state.characterId) || state;
+    if (!canRelease(state)) return { state, released: false, items: [] };
     if (!warehouseItems.length) return { state, released: false, items: [] };
 
     const planStartedAt = Date.now();
@@ -503,7 +510,7 @@ async function releaseColdUnlocked(state, options = {}) {
 
 async function releaseRequests(state, warehouseItems, requested, options = {}) {
     const current = LifeState.cachedState(state.characterId) || state;
-    if (!canRelease(current)) return { state: current, released: false, items: [] };
+    if (!canRelease(current) || current !== state) return { state: current, released: false, items: [], reason: 'economy_state_changed' };
     const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
     const requests = requested.reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
@@ -515,37 +522,58 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
 
     const remainingByRequest = new Map([...requests.entries()].map(([key, request]) => [key, Number(request.amount || 0)]));
     const released = [];
+    const timestamp = Date.now();
+    let atomicSnapshot = false;
+    const stopped = () => ({ state: LifeState.cachedState(state.characterId) || state,
+        released: released.length > 0, items: released, reason: 'economy_state_changed', aborted: true });
     const transferStartedAt = Date.now();
     try {
         for (const row of warehouseItems) {
-            if (!canRelease(LifeState.cachedState(state.characterId) || state)) break;
             for (const reason of ['craft', 'enchant', 'market']) {
-                if (!canRelease(LifeState.cachedState(state.characterId) || state)) break;
+                const latest = LifeState.cachedState(state.characterId) || state;
+                // The requests are tied to this planning snapshot. A changed
+                // goal between rows waits for another bounded release attempt.
+                if (!canRelease(latest) || latest !== state) return stopped();
                 const key = `${Number(row.selfId)}:${reason}`;
                 const remaining = Number(remainingByRequest.get(key) || 0);
                 if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
                 const amount = Math.min(remaining, Number(row.amount));
                 const template = templateFor(row.selfId);
-                await Database.transferWarehouseToInventory(state.characterId, {
+                const withdrawal = { selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason };
+                const transfer = await Database.transferWarehouseToInventory(state.characterId, {
                     id: Number(row.id),
                     selfId: Number(row.selfId),
                     name: row.name || template?.template?.name || `Item ${row.selfId}`,
                     amount,
                     stackable: !!template?.etc?.stackable
-                });
+                }, { coldState: state, withdrawal: { items: [...released, withdrawal], at: timestamp } });
                 row.amount = Number(row.amount) - amount;
                 remainingByRequest.set(key, remaining - amount);
-                released.push({ selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason });
+                released.push(withdrawal);
+                if (transfer?.coldLifeRow) {
+                    // Physical stock and its projection already committed in
+                    // one transaction. Never overwrite a newer cache/owner
+                    // with the row returned by an earlier awaited transfer.
+                    if ((LifeState.cachedState(state.characterId) || state) !== state) return stopped();
+                    state = LifeState.acceptLifecycleRow(transfer.coldLifeRow);
+                    atomicSnapshot = true;
+                }
             }
         }
+    } catch (error) {
+        if (error?.message === 'economy_state_changed' || error?.message === 'warehouse_owner_changed') return stopped();
+        throw error;
     } finally {
         recordStage('item_transfer', transferStartedAt);
     }
     if (!released.length) return { state, released: false, items: [] };
 
     const refreshStartedAt = Date.now();
-    const refreshed = await LifeState.refreshInventory(state)
-        .finally(() => recordStage('item_refresh', refreshStartedAt));
+    // The native transfer already returned the real bag. The fallback only
+    // supports callers/test adapters using the original row-only return shape.
+    const refreshed = atomicSnapshot ? state : await LifeState.refreshInventory(state);
+    recordStage('item_refresh', refreshStartedAt);
+    if ((LifeState.cachedState(state.characterId) || state) !== state || !canRelease(state)) return stopped();
     const enchantStartedAt = Date.now();
     let enchantResult;
     try {
@@ -555,8 +583,9 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
     } finally {
         recordStage('item_enchant', enchantStartedAt);
     }
-    const releasedState = enchantResult.state || refreshed;
-    const timestamp = Date.now();
+    const releasedState = LifeState.cachedState(state.characterId) || enchantResult.state || refreshed;
+    if (!canRelease(releasedState)) return stopped();
+    if (atomicSnapshot) return { state: releasedState, released: true, items: released };
     const releasedForMarket = released.some((item) => item.reason === 'market');
     const nextState = {
         ...releasedState,
@@ -572,10 +601,9 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                 : releasedState.timing?.nextResolveAt
         }
     };
-    const persistStartedAt = Date.now();
-    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_release')
-        .finally(() => recordStage('item_persist', persistStartedAt));
-    return { state: saved || nextState, released: true, items: released };
+    // Native withdrawal persisted only its own metadata in the transaction;
+    // a full lifecycle upsert here would overwrite concurrent goals/stats.
+    return { state: nextState, released: true, items: released };
 }
 
 function enchantReleaseCandidates(limit = 8, options = {}) {

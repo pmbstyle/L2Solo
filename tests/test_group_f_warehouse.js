@@ -7,10 +7,12 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Enchant = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
+const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 
 const originals = { saleDecision: Market.saleDecision, warehouseRequests: Enchant.warehouseRequests,
     enchantSafe: Enchant.enchantSafe, execute: Database.execute, applyNpcLiquidation: Life.applyNpcLiquidation,
-    applyWarehouseGearCleanup: Life.applyWarehouseGearCleanup };
+    applyWarehouseGearCleanup: Life.applyWarehouseGearCleanup, fetchWarehouseItems: Database.fetchWarehouseItems,
+    transferWarehouseToInventory: Database.transferWarehouseToInventory };
 let choices = [];
 const decisions = [];
 Market.saleDecision = (state, options) => {
@@ -48,7 +50,7 @@ async function totals(id, selfId) {
 }
 
 async function run() {
-    const ids = [710071, 710072, 710073, 710074];
+    const ids = [710071, 710072, 710073, 710074, 710075, 710076, 710077, 710078, 710079];
     const world = await createWorld(ids.map(id => ({ id, classId: 0, level: 40 })), 'group-f-warehouse');
     try {
         await Life.init();
@@ -141,12 +143,101 @@ async function run() {
         Database.execute = originals.execute;
         await world.reopen(ids[0]);
         assert.equal((await totals(ids[0], 1864)).total, 30, 'withdrawal and money survive reopen');
+
+        const handoff = await seed(ids[4]);
+        await stock(ids[4], 1864, 20);
+        choices = [{ action: 'list', selfId: 1864, count: 20 }];
+        Database.transferWarehouseToInventory = async (id, item, options) => {
+            const claim = await Owner.claim(Life.cachedState(id), { allowLifecycle: true });
+            assert.equal(claim.ok, true, 'ownership changes after the last service check');
+            return originals.transferWarehouseToInventory(id, item, options);
+        };
+        const rejected = await Warehouse.releaseCold(handoff);
+        Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+        assert.equal(rejected.released, false, 'a claimed owner cannot withdraw after the service check');
+        const claimedTotals = await totals(ids[4], 1864);
+        assert.equal(claimedTotals.physical, 0);
+        assert.equal(claimedTotals.stored, 20);
+        assert.equal(rejected.state.simulation.ownerId, Owner.OWNER_ID);
+
+        const oldPlan = await seed(ids[5]);
+        await stock(ids[5], 1870, 10);
+        await stock(ids[5], 1870, 15);
+        const newPlan = { status: 'active', strategy: 'craft', materials: [{ selfId: 1870, amount: 18, owned: 0, missing: 18 }] };
+        choices = [{ action: 'list', selfId: 1870, count: 25 }];
+        Database.fetchWarehouseItems = async id => {
+            const rows = await originals.fetchWarehouseItems(id);
+            await Life.upsertState({ ...Life.cachedState(id), stats: { equipmentPlan: newPlan, note: 'newer reservation' } }, 'new_plan_during_warehouse_read');
+            return rows;
+        };
+        const replanned = await Warehouse.releaseCold(oldPlan);
+        Database.fetchWarehouseItems = originals.fetchWarehouseItems;
+        assert.equal(decisions.at(-1).state.stats.equipmentPlan.strategy, 'craft', 'E sees the plan committed during its warehouse read');
+        const plannedUnits = replanned.items.reduce((out, item) => ({ ...out, [item.reason]: (out[item.reason] || 0) + item.amount }), {});
+        assert.deepEqual(plannedUnits, { craft: 18, market: 7 }, 'fresh craft units are not counted as market surplus');
+        assert.equal(replanned.state.stats.equipmentPlan.strategy, 'craft');
+        assert.equal(replanned.state.stats.note, 'newer reservation');
+        const [savedPlan] = await Database.execute(['SELECT statsJson,simulationRevision FROM bot_life_state WHERE characterId=?', [ids[5]]]);
+        assert.equal(JSON.parse(savedPlan.statsJson).note, 'newer reservation');
+        assert(savedPlan.simulationRevision >= 3, 'successive physical rows adopt each committed revision');
+        assert.equal((await totals(ids[5], 1870)).physical, 25);
+
+        const lastCheck = await seed(ids[6]);
+        await stock(ids[6], 1870, 25);
+        Database.transferWarehouseToInventory = async (id, item, options) => {
+            await Life.upsertState({ ...Life.cachedState(id), stats: { equipmentPlan: newPlan, note: 'last check reservation' } }, 'new_plan_before_physical_transfer');
+            return originals.transferWarehouseToInventory(id, item, options);
+        };
+        const changed = await Warehouse.releaseCold(lastCheck);
+        Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+        assert.equal(changed.released, false, 'a reservation committed after planning fences the native withdrawal');
+        assert.equal((await totals(ids[6], 1870)).stored, 25);
+        assert.equal(changed.state.stats.note, 'last check reservation');
+
+        const afterCommit = await seed(ids[7]);
+        await stock(ids[7], 1864, 10);
+        await stock(ids[7], 1864, 10);
+        choices = [{ action: 'list', selfId: 1864, count: 20 }];
+        Database.transferWarehouseToInventory = async (id, item, options) => {
+            const result = await originals.transferWarehouseToInventory(id, item, options);
+            const committed = Life.acceptLifecycleRow(result.coldLifeRow);
+            assert.equal((await Owner.claim(committed, { allowLifecycle: true })).ok, true,
+                'a newer owner is cached before the old transaction result is delivered');
+            return result;
+        };
+        const partial = await Warehouse.releaseCold(afterCommit);
+        Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+        assert.equal(partial.aborted, true);
+        assert.equal(partial.state.simulation.ownerId, Owner.OWNER_ID, 'a returned legacy row cannot replace the newer owner');
+        assert.equal(partial.items.reduce((amount, item) => amount + item.amount, 0), 10, 'only the first committed row is reported');
+        const partialTotals = await totals(ids[7], 1864);
+        assert.equal(partialTotals.physical, 10);
+        assert.equal(partialTotals.stored, 10);
+        const [partialSaved] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [ids[7]]]);
+        assert.equal(JSON.parse(partialSaved.statsJson).lastWarehouseWithdrawal.items[0].amount, 10,
+            'a partial transfer has its physical projection and release metadata already committed');
+
+        await seed(ids[8]);
+        for (const enchant of [0, 1, 2]) await stock(ids[8], 94, 1, enchant);
+        choices = [{ action: 'list', selfId: 94, count: 3 }];
+        Database.transferWarehouseToInventory = async (id, item, options) => {
+            assert.equal((await Owner.claim(Life.cachedState(id), { allowLifecycle: true })).ok, true);
+            return originals.transferWarehouseToInventory(id, item, options);
+        };
+        const historicalHandoff = await Warehouse.cleanupHistoricalOwner(ids[8], 1);
+        Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+        assert.equal(historicalHandoff.ok, false, 'historical cleanup reports the ownership fence instead of E keep');
+        assert.equal(historicalHandoff.reason, 'economy_state_changed');
+        assert.equal(historicalHandoff.units, 0);
+        assert.equal((await totals(ids[8], 94)).stored, 3);
         console.log('Group F warehouse: common E choice, no-ad listings, reservations, money/items, identity, fences and bounded discovery passed');
     } finally {
         Object.assign(Market, { saleDecision: originals.saleDecision });
         Object.assign(Enchant, { warehouseRequests: originals.warehouseRequests, enchantSafe: originals.enchantSafe });
         Object.assign(Life, { applyNpcLiquidation: originals.applyNpcLiquidation, applyWarehouseGearCleanup: originals.applyWarehouseGearCleanup });
         Database.execute = originals.execute;
+        Database.fetchWarehouseItems = originals.fetchWarehouseItems;
+        Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
         await world.close();
     }
 }
