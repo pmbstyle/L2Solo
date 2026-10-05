@@ -27,7 +27,7 @@ const t0 = 1800000000000;
 const stem = FirstPrice.cachedFirstPrice(1864, { timestamp: t0 });
 assert(stem > 0, 'Stem has a first price');
 // 30 deals of Stem in one hour at twice its first price, then 60 in two hours at three times.
-for (let i = 0; i < 30; i++) MarketCounters.deal(1864, stem * 2, 5, t0 + i * 2 * 60 * 1000);
+for (let i = 0; i < 30; i++) MarketCounters.deal(1864, stem * 2, 5, t0 + i * 2 * 60 * 1000, 7);
 for (let i = 0; i < 60; i++) MarketCounters.deal(1864, stem * 3, 5, t0 + HOUR + i * 2 * 60 * 1000);
 const end = t0 + 2 * HOUR + 58 * 60 * 1000;
 const counter = MarketCounters.counter('material none', end);
@@ -40,6 +40,8 @@ const stems = MarketCounters.itemDeals(1864);
 assert.strictEqual(stems.deals, 90);
 assert.strictEqual(stems.prices.length, 21, 'the last 21 prices');
 assert.strictEqual(stems.prices[20], stem * 3);
+assert.strictEqual(stems.units, 5, 'units a deal takes');
+assert.deepStrictEqual([stems.sellers[0], stems.sellers.length], [0, 21], 'who sold at each kept price');
 assert.strictEqual(MarketCounters.moveOf('gear s', end), counter.move, 'a counter with no move takes the measured ones');
 
 // The worker reads the same numbers from its table.
@@ -51,11 +53,13 @@ assert.strictEqual(mirrored.deals, worker.counter.deals);
 assert(Math.abs(mirrored.perHour - worker.counter.perHour) < 0.01);
 assert(Math.abs(mirrored.index - worker.counter.index) < 0.001);
 assert.deepStrictEqual(MarketCounters.itemDeals(1864), worker.item);
-assert.deepStrictEqual(MarketCounters.itemDeals(1), { deals: 0, prices: [] });
+assert.deepStrictEqual(MarketCounters.itemDeals(1), { deals: 0, units: 1, prices: [], sellers: [] });
 
 // The journal replayed at start gives the same counters.
 MarketCounters.reset();
-MarketCounters.load([{ selfId: 1864, unitPrice: 100, quantity: 1, occurredAt: t0 }, { selfId: 123, unitPrice: 9, quantity: 1, occurredAt: t0 + 1 }]);
+MarketCounters.load([{ selfId: 1864, unitPrice: 100, quantity: 1, occurredAt: t0, sellerCharacterId: 5 },
+    { selfId: 123, unitPrice: 9, quantity: 1, occurredAt: t0 + 1 }]);
+assert.deepStrictEqual(MarketCounters.itemDeals(1864).sellers, [5]);
 assert.strictEqual(MarketCounters.counter('material none', t0 + 1).deals, 1);
 assert.strictEqual(MarketCounters.counter('gear d', t0 + 1).deals, 1);
 console.log('Market counters: per sub-kind and grade, rates, index, move, prices and the worker table passed');

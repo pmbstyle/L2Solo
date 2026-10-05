@@ -585,7 +585,8 @@ async function settleOwners(ownerIds = []) {
 }
 
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
-    MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount);
+    MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount, Date.now(),
+        kind === 'sale' ? result.shop?.ownerId : counterpartyId);
     syncOnlineInventory(result.shop.ownerId, result.ownerInventory);
     syncOnlineInventory(counterpartyId, result.counterpartyInventory);
     await settleOwners(result.settlementOwners);
@@ -765,7 +766,7 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
             if (['afk_trade_shop_changed', 'afk_trade_offer_changed', 'afk_trade_budget_changed'].includes(error.message)) break;
             throw error;
         }
-        MarketCounters.deal(trade.line?.selfId, trade.line?.price, trade.amount);
+        MarketCounters.deal(trade.line?.selfId, trade.line?.price, trade.amount, Date.now(), seller.ownerId);
         // Records only: what each owner gets is in its bag (a player, a hot
         // actor) or waits on the board for a cold bot's next save.
         syncOnlineInventory(seller.ownerId, trade.sellerInventory);

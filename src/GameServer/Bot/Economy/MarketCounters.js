@@ -71,12 +71,14 @@ function counterRow(key, counter) {
         counter.move === null ? null : Math.round(counter.move * 10000) / 10000];
 }
 
+// [key, deals, units per deal, prices..., sellers...]: the last prices and
+// who sold at each, oldest first.
 function itemRow(selfId, item) {
-    return [`i:${selfId}`, item.deals, ...item.prices];
+    return [`i:${selfId}`, item.deals, Math.round(item.units * 100) / 100, ...item.prices, ...item.sellers];
 }
 
 // One board deal: +1 on its counter and the item's price list.
-function deal(selfId, unitPrice, quantity, timestamp = Date.now()) {
+function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0) {
     const id = Number(selfId);
     const price = Number(unitPrice);
     if (!id || id === 57 || !(price > 0) || !(Number(quantity) > 0)) return;
@@ -107,12 +109,17 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now()) {
     }
     let item = items.get(id);
     if (!item) {
-        item = { deals: 0, prices: [] };
+        item = { deals: 0, units: Number(quantity), prices: [], sellers: [] };
         items.set(id, item);
     }
     item.deals += 1;
+    item.units += (Number(quantity) - item.units) / INDEX_DEALS;
     item.prices.push(price);
-    if (item.prices.length > PRICES_KEPT) item.prices.shift();
+    item.sellers.push(Number(sellerId) || 0);
+    if (item.prices.length > PRICES_KEPT) {
+        item.prices.shift();
+        item.sellers.shift();
+    }
     if (channel) {
         channel.changed('market', counterRow(key, counter));
         channel.changed('market', itemRow(id, item));
@@ -121,7 +128,7 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now()) {
 
 // The journal of the last day at start (oldest first): the same deals again.
 function load(rows = []) {
-    for (const row of rows) deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt));
+    for (const row of rows) deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId);
     return rows.length;
 }
 
@@ -168,15 +175,19 @@ function moveOf(key, timestamp = Date.now()) {
     return count ? sum / count : STARTING_MOVE;
 }
 
-// The item's deals so far and its last prices, oldest first.
+// The item's deals so far, the units a deal takes on average and its last
+// prices with their sellers, oldest first.
+const NO_DEALS = Object.freeze({ deals: 0, units: 1, prices: Object.freeze([]), sellers: Object.freeze([]) });
 function itemDeals(selfId) {
     const id = Number(selfId);
     if (mirror) {
         const row = mirror().get(`i:${id}`);
-        return row ? { deals: row[1], prices: row.slice(2) } : { deals: 0, prices: [] };
+        if (!row) return NO_DEALS;
+        const kept = (row.length - 3) / 2;
+        return { deals: row[1], units: row[2], prices: row.slice(3, 3 + kept), sellers: row.slice(3 + kept) };
     }
     const item = items.get(id);
-    return item ? { deals: item.deals, prices: item.prices } : { deals: 0, prices: [] };
+    return item ? { deals: item.deals, units: item.units, prices: item.prices, sellers: item.sellers } : NO_DEALS;
 }
 
 function firstPrice(selfId, timestamp = Date.now()) {

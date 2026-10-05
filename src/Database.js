@@ -3072,7 +3072,7 @@ const Database = {
     // replay them at start (MarketCounters.load).
     fetchRecentBoardDeals({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000 } = {}) {
         const since = Number(timestamp) - Math.max(1, Math.min(MARKET_TRADE_RETENTION_MS, Number(rangeMs) || 86400000));
-        return readHistory(() => History.all(`SELECT selfId, unitPrice, quantity, occurredAt
+        return readHistory(() => History.all(`SELECT selfId, unitPrice, quantity, occurredAt, sellerCharacterId
             FROM market_trades
             WHERE occurredAt >= ? AND channel IN ('bot_wts', 'player_wts', 'wts', 'wtb') AND unitPrice > 0
             ORDER BY occurredAt ASC, id ASC`, [since]), 'market:recent-board-deals');
