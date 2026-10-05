@@ -91,8 +91,12 @@ function discard() {
 }
 
 // Rows summed since the last drain; the caller writes them.
+function snapshot() {
+    return [...totals.values()];
+}
+
 function drain() {
-    const rows = [...totals.values()];
+    const rows = snapshot();
     totals.clear();
     return rows;
 }
@@ -170,5 +174,6 @@ module.exports = {
     record,
     commit,
     discard,
-    drain
+    drain,
+    snapshot
 };

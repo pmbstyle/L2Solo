@@ -92,10 +92,14 @@ function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
     });
 }
 
+function snapshot() {
+    return pending.slice();
+}
+
 function drain() {
     const rows = pending;
     pending = [];
     return rows;
 }
 
-module.exports = { coldConflict, hotKill, matchup, record, drain };
+module.exports = { coldConflict, hotKill, matchup, record, drain, snapshot };

@@ -288,10 +288,22 @@ function readHistory(work, operation) {
 function flushJournals() {
     return enqueue(() => {
         if (!economyJournalComplete) economyJournalComplete = EconomyJournal.attachMissing(connection);
-        const rows = EconomyJournal.drain();
-        const conflicts = PvpJournal.drain();
+        const rows = EconomyJournal.snapshot();
+        const conflicts = PvpJournal.snapshot();
         if (!rows.length && !conflicts.length) return 0;
-        historyOutboxUnsafe('journal', { rows, conflicts });
+        metrics.transactions += 1;
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            historyOutboxUnsafe('journal', { rows, conflicts });
+            connection.exec('COMMIT');
+        } catch (error) {
+            try { connection.exec('ROLLBACK'); } catch (_) { /* preserve the write failure */ }
+            throw error;
+        }
+        // This synchronous write-queue job cannot interleave with producers.
+        // Keep both buffers intact until their outbox transaction commits.
+        EconomyJournal.drain();
+        PvpJournal.drain();
         return rows.length + conflicts.length;
     }, { operation: 'journal:flush' });
 }
@@ -2898,6 +2910,9 @@ const Database = {
             shuttingDown = false;
             closePromise = null;
             databasePath = databaseFile();
+            // Runtime startup already holds the shared database-access lock.
+            // Recover the stopped pair before either database can be opened.
+            require('./DatabaseRestore').recover(databasePath, historyFile());
             fs.mkdirSync(path.dirname(databasePath), { recursive: true });
             connection = new DatabaseSync(databasePath, { timeout: 5000 });
             // SQLite's built-in auto-checkpoint runs synchronously inside the

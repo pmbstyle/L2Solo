@@ -347,8 +347,9 @@ async function saves() {
     await Database.close();
 
     fs.rmSync(path.join(saveDir, 'history.sqlite'));
-    await SavedGames.run({ operation: 'load', databasePath: worldPath, historyPath, savesDir, id: save.id });
-    assert(!fs.existsSync(historyPath), 'a one-file save leaves no stale history file');
+    await assert.rejects(SavedGames.run({ operation: 'load', databasePath: worldPath, historyPath, savesDir, id: save.id }),
+        /history.*missing/, 'a damaged modern pair must not be treated as a legacy world');
+    assert(fs.existsSync(historyPath), 'a rejected load preserves the current history');
 }
 
 // The observer's read-only worker reads the same history file. It keeps its

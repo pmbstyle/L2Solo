@@ -2,17 +2,19 @@
 
 const fs = require('fs');
 const path = require('path');
-const { randomUUID } = require('crypto');
+const { createHash, randomUUID } = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { Worker, isMainThread, parentPort, workerData } = require('worker_threads');
 const { acquireDatabaseAccess } = require('./database-access');
 const HistoryStore = require('../src/HistoryStore');
+const Restore = require('../src/DatabaseRestore');
 
 // A save holds the world file and, next to it, the history file
 // (src/HistoryStore.js). Saves made before the history file existed hold only
 // the world; loading one lets the server move its history tables at start.
 const WORLD_FILE = 'database.sqlite';
 const HISTORY_FILE = 'history.sqlite';
+const SAVE_FORMAT_VERSION = 2;
 
 function fail(message, statusCode = 400) {
     throw Object.assign(new Error(message), { statusCode });
@@ -34,7 +36,7 @@ function readSave(savesDir, id) {
         const metadataFile = path.join(directory, 'save.json');
         if (!fs.lstatSync(metadataFile).isFile()) fail('Invalid save metadata.');
         const metadata = JSON.parse(fs.readFileSync(metadataFile, 'utf8'));
-        if (typeof metadata.name !== 'string' || !Number.isFinite(Date.parse(metadata.createdAt))) fail('Invalid save metadata.');
+        validateMetadata(metadata, directory);
         return { id, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: saveBytes(directory) };
     } catch (error) {
         if (error.code === 'ENOENT') fail('Save not found.', 404);
@@ -57,7 +59,7 @@ async function list(savesDir) {
             const metadataFile = path.join(directory, 'save.json');
             if (!file.isFile() || !(await fs.promises.lstat(metadataFile)).isFile()) continue;
             const metadata = JSON.parse(await fs.promises.readFile(metadataFile, 'utf8'));
-            if (typeof metadata.name !== 'string' || !Number.isFinite(Date.parse(metadata.createdAt))) continue;
+            validateMetadata(metadata, directory);
             saves.push({ id: entry.name, name: metadata.name, createdAt: metadata.createdAt, sizeBytes: saveBytes(directory) });
         } catch (_) { /* Ignore incomplete saves and concurrently deleted entries. */ }
     }
@@ -70,6 +72,81 @@ function saveBytes(directory) {
     }, 0);
 }
 
+function validateMetadata(metadata, directory) {
+    if (typeof metadata.name !== 'string' || !Number.isFinite(Date.parse(metadata.createdAt))) fail('Invalid save metadata.');
+    if (metadata.formatVersion === undefined) return; // Earlier save metadata.
+    if (metadata.formatVersion !== SAVE_FORMAT_VERSION || typeof metadata.hasHistory !== 'boolean') fail('Invalid save format.');
+    if (metadata.hasHistory !== fs.existsSync(path.join(directory, HISTORY_FILE))) fail('The save history file is missing or unexpected.');
+    const names = [WORLD_FILE, ...(metadata.hasHistory ? [HISTORY_FILE] : [])];
+    if (!metadata.files || Object.keys(metadata.files).length !== names.length
+        || names.some((name) => !/^[0-9a-f]{64}$/.test(metadata.files[name]))) fail('Invalid save file checksums.');
+}
+
+function digestFile(file) {
+    const hash = createHash('sha256');
+    const buffer = Buffer.alloc(256 * 1024);
+    const fd = fs.openSync(file, 'r');
+    try {
+        for (;;) {
+            const bytes = fs.readSync(fd, buffer, 0, buffer.length, null);
+            if (!bytes) break;
+            hash.update(buffer.subarray(0, bytes));
+        }
+    } finally { fs.closeSync(fd); }
+    return hash.digest('hex');
+}
+
+function validateCopies(metadata, worldFile, historyFile) {
+    if (metadata.formatVersion === undefined) return;
+    for (const [name, file] of [[WORLD_FILE, worldFile], ...(historyFile ? [[HISTORY_FILE, historyFile]] : [])]) {
+        if (digestFile(file) !== metadata.files[name]) fail(`The save ${name} checksum does not match.`);
+    }
+}
+
+function hasTable(db, name) {
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+}
+
+// Older metadata did not describe the pair. Inspect the world too: missing
+// history is only valid for a genuine world made before the split.
+function validatePair(worldFile, historyFile) {
+    const world = new DatabaseSync(worldFile, { readOnly: true });
+    let history;
+    try {
+        const token = hasTable(world, 'world_meta')
+            ? String(world.prepare("SELECT value FROM world_meta WHERE key='historyToken'").get()?.value || '') : '';
+        const split = !!token || (hasTable(world, 'schema_migrations')
+            && !!world.prepare('SELECT 1 FROM schema_migrations WHERE version=50').get());
+        if (!split && !historyFile) return;
+        if (!token) fail('The save world is missing its history identity.');
+        if (!historyFile) fail('The migrated save requires its history file.');
+        history = new DatabaseSync(historyFile, { readOnly: true });
+        if (!hasTable(history, 'history_meta') || HistoryStore.meta(history, HistoryStore.WORLD_TOKEN_KEY) !== token) {
+            fail('The save history belongs to another world.');
+        }
+        if ([...HistoryStore.MOVED_TABLES, 'clan_actions'].some((table) => !hasTable(history, table))) {
+            fail('The save history schema is incomplete.');
+        }
+        const sequence = hasTable(world, 'sqlite_sequence')
+            ? Number(world.prepare("SELECT MAX(seq) AS seq FROM sqlite_sequence WHERE name='history_outbox'").get()?.seq || 0) : 0;
+        const cursor = HistoryStore.cursor(history);
+        if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > sequence) fail('The save history cursor is ahead of its world.');
+        // The initial one-time move raises the outbox sequence above imported
+        // AFK/clan event ids without producing outbox rows for those ids. Only
+        // a cursor still at zero can have this pre-outbox allocation gap.
+        let covered = cursor;
+        if (cursor === 0) {
+            for (const table of ['afk_trade_events', 'clan_goal_events']) {
+                if (hasTable(history, table)) covered = Math.max(covered, Number(history.prepare(`SELECT MAX(id) AS id FROM ${table}`).get()?.id || 0));
+            }
+            if (covered > sequence) fail('The save history cursor is ahead of its world.');
+        }
+        const backlog = hasTable(world, 'history_outbox')
+            ? Number(world.prepare('SELECT COUNT(*) AS n FROM history_outbox WHERE id>? AND id<=?').get(covered, sequence).n) : 0;
+        if (backlog !== sequence - covered) fail('The save history is incomplete and its world outbox cannot replay the missing rows.');
+    } finally { history?.close(); world.close(); }
+}
+
 function validateDatabase(file) {
     const header = Buffer.alloc(16);
     const fd = fs.openSync(file, 'r');
@@ -80,11 +157,6 @@ function validateDatabase(file) {
         const rows = db.prepare('PRAGMA quick_check').all();
         if (rows.length !== 1 || rows[0].quick_check !== 'ok') fail('Database integrity check failed.');
     } finally { db.close(); }
-}
-
-function flushFile(file) {
-    const fd = fs.openSync(file, 'r+');
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
 function openStoppedDatabase(file) {
@@ -106,10 +178,13 @@ function openStoppedDatabase(file) {
 }
 
 function removeDatabaseFiles(file) {
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    for (const suffix of ['', '-wal', '-shm', '-journal']) fs.rmSync(file + suffix, { force: true });
 }
 
 function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(databasePath), savesDir, name, id }) {
+    databasePath = path.resolve(databasePath);
+    historyPath = path.resolve(historyPath);
+    if (databasePath === historyPath) fail('World and history paths must be different.');
     if (operation === 'delete') {
         // A damaged snapshot should still be removable.
         const directory = saveDirectory(savesDir, id);
@@ -121,26 +196,30 @@ function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(d
         if (name !== undefined && typeof name !== 'string') fail('Save name must be text.');
         const trimmed = (name || '').trim();
         if (trimmed.length > 120) fail('Save name must be 120 characters or fewer.');
+        Restore.recover(databasePath, historyPath);
         const createdAt = new Date().toISOString();
         id = randomUUID();
         const directory = saveDirectory(savesDir, id);
         const pending = path.join(savesDir, `.${id}.pending`);
         const db = openStoppedDatabase(databasePath);
-        const history = fs.existsSync(historyPath) ? openStoppedDatabase(historyPath) : null;
+        let history;
         try {
+            history = fs.existsSync(historyPath) ? openStoppedDatabase(historyPath) : null;
             fs.mkdirSync(pending, { recursive: true });
             const copies = [[databasePath, WORLD_FILE], ...(history ? [[historyPath, HISTORY_FILE]] : [])];
             copies.forEach(([source, target]) => {
                 const file = path.join(pending, target);
                 fs.copyFileSync(source, file, fs.constants.COPYFILE_EXCL);
                 validateDatabase(file);
-                flushFile(file);
+                Restore.flushFile(file);
             });
+            validatePair(path.join(pending, WORLD_FILE), history ? path.join(pending, HISTORY_FILE) : null);
             fs.writeFileSync(path.join(pending, 'save.json'), JSON.stringify({
                 name: trimmed || `Save — ${new Date(createdAt).toLocaleString('en-GB')}`,
-                createdAt
+                createdAt, formatVersion: SAVE_FORMAT_VERSION, hasHistory: !!history,
+                files: Object.fromEntries(copies.map(([_source, target]) => [target, digestFile(path.join(pending, target))]))
             }, null, 2));
-            flushFile(path.join(pending, 'save.json'));
+            Restore.flushFile(path.join(pending, 'save.json'));
             fs.renameSync(pending, directory);
             return readSave(savesDir, id);
         } finally {
@@ -152,37 +231,46 @@ function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(d
     if (operation === 'load') {
         const save = readSave(savesDir, id);
         const directory = saveDirectory(savesDir, id);
+        const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'save.json'), 'utf8'));
         const savedHistory = path.join(directory, HISTORY_FILE);
         const hasHistory = fs.existsSync(savedHistory);
-        const pending = `${databasePath}.${randomUUID()}.loading`;
-        const pendingHistory = `${historyPath}.${randomUUID()}.loading`;
+        const operationId = randomUUID();
+        const pending = Restore.files(databasePath, operationId).next;
+        const pendingHistory = Restore.files(historyPath, operationId).next;
+        let installationStarted = false;
         try {
             fs.copyFileSync(path.join(directory, WORLD_FILE), pending, fs.constants.COPYFILE_EXCL);
             validateDatabase(pending);
-            flushFile(pending);
+            Restore.flushFile(pending);
+            fs.mkdirSync(path.dirname(historyPath), { recursive: true });
             if (hasHistory) {
                 fs.copyFileSync(savedHistory, pendingHistory, fs.constants.COPYFILE_EXCL);
                 validateDatabase(pendingHistory);
-                flushFile(pendingHistory);
+                Restore.flushFile(pendingHistory);
             }
-            if (fs.existsSync(databasePath)) {
-                const db = openStoppedDatabase(databasePath);
+            validateCopies(metadata, pending, hasHistory ? pendingHistory : null);
+            validatePair(pending, hasHistory ? pendingHistory : null);
+            Restore.recover(databasePath, historyPath);
+            for (const file of [databasePath, historyPath]) {
+                if (!fs.existsSync(file) && (fs.existsSync(`${file}-wal`) || fs.existsSync(`${file}-journal`))) {
+                    fail('A current database is missing but its journal still exists. Restore the database file first.');
+                }
+            }
+            for (const file of [databasePath, historyPath]) {
+                if (!fs.existsSync(file)) continue;
+                const db = openStoppedDatabase(file);
                 db.close();
-            } else if (fs.existsSync(`${databasePath}-wal`) || fs.existsSync(`${databasePath}-journal`)) {
-                fail('The current database is missing but its journal still exists. Restore the database file first.');
-            }
-            if (fs.existsSync(historyPath)) {
-                const history = openStoppedDatabase(historyPath);
-                history.close();
             }
             // The shared lock remains held after closing SQLite (required on
-            // Windows). Rename replaces the database only once the copy is ready.
-            fs.renameSync(pending, databasePath);
-            if (hasHistory) fs.renameSync(pendingHistory, historyPath);
-            else removeDatabaseFiles(historyPath);
+            // Windows). Startup can roll back an interrupted pair replacement.
+            installationStarted = true;
+            Restore.install(databasePath, historyPath, operationId, hasHistory);
             return save;
         } finally {
-            for (const file of [pending, pendingHistory]) removeDatabaseFiles(file);
+            // A pending marker owns these files until recovery completes.
+            if (!installationStarted || !fs.existsSync(Restore.markerPath(databasePath))) {
+                for (const file of [pending, pendingHistory]) removeDatabaseFiles(file);
+            }
         }
     }
     fail('Unknown save operation.');
