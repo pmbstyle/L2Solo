@@ -189,9 +189,9 @@ function crystalPrice(id, item, options) {
     return best ? { price: withinWalls(item, best.unit), gearId: best.gearId, source: 'crystal' } : null;
 }
 
-const GRADE_IN_NAME = /(?:^|[\s:])(D|C|B|A|S)(?:[- ]?Grade|\b)/i;
+// A shot of no grade, by the one item classifier (MarketCounters.counterOf).
 function noGradeShotPrice(item) {
-    if (String(item.template?.kind || '') !== 'Other.Shot' || GRADE_IN_NAME.test(String(item.template?.name || ''))) return null;
+    if (invoke('GameServer/Bot/Economy/MarketCounters').counterOf(item.selfId) !== 'shot none') return null;
     const npc = invoke('GameServer/Bot/Economy/BotMarketPricing').npcPrice(item);
     return Number.isFinite(npc) ? { price: Math.max(1, Math.round(npc)), source: 'npc' } : null;
 }
