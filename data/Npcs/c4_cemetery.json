@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 996,
+    "template": {
+      "kind": "Monster",
+      "name": "Spiteful Ghost of Ruins",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 560,
+      "pAtkRnd": 30,
+      "pDef": 253,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 16
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 21
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.1396,
+      "sp": 403
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 997,
+    "template": {
+      "kind": "Monster",
+      "name": "Soldier of Grief",
+      "title": "",
+      "level": 51,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 593,
+      "pAtkRnd": 30,
+      "pDef": 260,
+      "mAtk": 281,
+      "mDef": 232,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 23,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 2323,
+      "maxMp": 861,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.454056132257,
+      "sp": 288
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 998,
+    "template": {
+      "kind": "Monster",
+      "name": "Cruel Punishment",
+      "title": "",
+      "level": 52,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 518,
+      "pAtkRnd": 30,
+      "pDef": 324,
+      "mAtk": 300,
+      "mDef": 239,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 132
+    },
+    "vitals": {
+      "maxHp": 2402,
+      "maxMp": 892,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.541420118343,
+      "sp": 322
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 999,
+    "template": {
+      "kind": "Monster",
+      "name": "Roving Soul",
+      "title": "",
+      "level": 53,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 527,
+      "pAtkRnd": 10,
+      "pDef": 304,
+      "mAtk": 319,
+      "mDef": 247,
+      "accur": 0,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 2481,
+      "maxMp": 923,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 11,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.759700961196,
+      "sp": 389
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1000,
+    "template": {
+      "kind": "Monster",
+      "name": "Soul of Ruins",
+      "title": "",
+      "level": 54,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 578,
+      "pAtkRnd": 30,
+      "pDef": 344,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 10.27,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 8,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.483196159122,
+      "sp": 345
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]

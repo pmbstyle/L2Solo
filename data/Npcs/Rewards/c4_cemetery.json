@@ -1,0 +1,818 @@
+[
+  {
+    "selfId": 996,
+    "template": {
+      "name": "Spiteful Ghost of Ruins"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 561,
+            "max": 1141,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 265,
+            "name": "Fisted Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.83709
+          },
+          {
+            "selfId": 2108,
+            "name": "Fisted Blade Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 99.16291
+          }
+        ],
+        "overall": 0.1553
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 48.863518
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 24.43161
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 9.772525
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 15.034791
+          },
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 0.432181
+          },
+          {
+            "selfId": 3019,
+            "name": "Recipe: Full Plate Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.651244
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.814129
+          }
+        ],
+        "overall": 33.6433
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 5,
+            "chance": 92.7568
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 3,
+            "chance": 69.5675
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1914,
+            "name": "Earring of Binding Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 7.8166
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 997,
+    "template": {
+      "name": "Soldier of Grief"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 501,
+            "max": 1017,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 60,
+            "name": "Composite Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.63029
+          },
+          {
+            "selfId": 1977,
+            "name": "Composite Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 68.269404
+          },
+          {
+            "selfId": 2170,
+            "name": "Recipe: Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 31.100306
+          }
+        ],
+        "overall": 0.5553
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 68.469332
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 13.693679
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 6.846606
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 9.781333
+          },
+          {
+            "selfId": 3012,
+            "name": "Recipe: Full Plate Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.638655
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.570395
+          }
+        ],
+        "overall": 21.3887
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 27.5438
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1915,
+            "name": "Ring of Ages Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 10.9205
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4601,
+            "name": "Greater Dye of STR (Str+3 Con-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2754
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 998,
+    "template": {
+      "name": "Cruel Punishment"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 554,
+            "max": 1119,
+            "chance": 99.971151
+          },
+          {
+            "selfId": 200,
+            "name": "Sage's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.000286
+          },
+          {
+            "selfId": 2103,
+            "name": "Sage's Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.028563
+          }
+        ],
+        "overall": 70.0202
+      },
+      {
+        "items": [
+          {
+            "selfId": 162,
+            "name": "War Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 174,
+            "name": "Nirvana Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 196,
+            "name": "Stick of Eternity",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 197,
+            "name": "Paradia Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 199,
+            "name": "Pa'agrian Hammer",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 201,
+            "name": "Club of Nature",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 202,
+            "name": "Mace of The Underworld",
+            "min": 1,
+            "max": 1,
+            "chance": 0.073421
+          },
+          {
+            "selfId": 2097,
+            "name": "War Axe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 13.876652
+          },
+          {
+            "selfId": 2098,
+            "name": "Nirvana Axe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 13.876652
+          },
+          {
+            "selfId": 2099,
+            "name": "Stick of Eternity Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 14.610866
+          },
+          {
+            "selfId": 2100,
+            "name": "Paradia Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 14.610866
+          },
+          {
+            "selfId": 2102,
+            "name": "Pa'agrian Hammer Head",
+            "min": 1,
+            "max": 1,
+            "chance": 14.023495
+          },
+          {
+            "selfId": 2104,
+            "name": "Club of Nature Head",
+            "min": 1,
+            "max": 1,
+            "chance": 14.610866
+          },
+          {
+            "selfId": 2105,
+            "name": "Mace of The Underworld Head",
+            "min": 1,
+            "max": 1,
+            "chance": 13.876652
+          }
+        ],
+        "overall": 0.1362
+      },
+      {
+        "items": [
+          {
+            "selfId": 1832,
+            "name": "Greater Antidote",
+            "min": 1,
+            "max": 1,
+            "chance": 36.013192
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 21.607812
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 32.411718
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 1.296489
+          },
+          {
+            "selfId": 2231,
+            "name": "Recipe: Full Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.139352
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.647729
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.281801
+          },
+          {
+            "selfId": 5155,
+            "name": "Recipe: Soulshot (B) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.064515
+          },
+          {
+            "selfId": 6669,
+            "name": "Deluxe Chest Key - Grade 5",
+            "min": 1,
+            "max": 1,
+            "chance": 7.537393
+          }
+        ],
+        "overall": 19.3754
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1916,
+            "name": "Necklace of Mermaid Teardrop",
+            "min": 1,
+            "max": 1,
+            "chance": 5.8159
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 2.419
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2170,
+            "name": "Recipe: Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 3.2234
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 999,
+    "template": {
+      "name": "Roving Soul"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 656,
+            "max": 1332,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 228,
+            "name": "Crystal Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 0.654545
+          },
+          {
+            "selfId": 2119,
+            "name": "Crystal Dagger Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 99.345455
+          }
+        ],
+        "overall": 0.1375
+      },
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.076299
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 76.748342
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 15.349361
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 2.5578
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 1.278644
+          },
+          {
+            "selfId": 5270,
+            "name": "Recipe: Greater Soulshot (B) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.076299
+          },
+          {
+            "selfId": 5280,
+            "name": "Recipe: Greater Blessed Spiritshot (B) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.076299
+          },
+          {
+            "selfId": 5549,
+            "name": "Metallic Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 3.836956
+          }
+        ],
+        "overall": 19.5285
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 7,
+            "chance": 81.1841
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 64.9473
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1918,
+            "name": "Nassen's Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 7.032
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1000,
+    "template": {
+      "name": "Soul of Ruins"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 574,
+            "max": 1168,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 299,
+            "name": "Orcish Poleaxe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.159363
+          },
+          {
+            "selfId": 301,
+            "name": "Scorpion",
+            "min": 1,
+            "max": 1,
+            "chance": 0.239044
+          },
+          {
+            "selfId": 303,
+            "name": "Widow Maker",
+            "min": 1,
+            "max": 1,
+            "chance": 0.239044
+          },
+          {
+            "selfId": 2113,
+            "name": "Scorpion Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 33.784861
+          },
+          {
+            "selfId": 2114,
+            "name": "Widowmaker Head",
+            "min": 1,
+            "max": 1,
+            "chance": 33.784861
+          },
+          {
+            "selfId": 2122,
+            "name": "Orcish Poleaxe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 31.792829
+          }
+        ],
+        "overall": 0.1255
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 44.160233
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 44.160233
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 2.943511
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 7.359913
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.883129
+          },
+          {
+            "selfId": 4146,
+            "name": "Recipe: Tunic of Zubei",
+            "min": 1,
+            "max": 1,
+            "chance": 0.282783
+          },
+          {
+            "selfId": 4182,
+            "name": "Recipe: Great Sword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.050659
+          },
+          {
+            "selfId": 5160,
+            "name": "Recipe: Spiritshot (B) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.087708
+          },
+          {
+            "selfId": 5436,
+            "name": "Recipe: Berserker Blade(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.07183
+          }
+        ],
+        "overall": 13.2257
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 3,
+            "chance": 71.1817
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1918,
+            "name": "Nassen's Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 6.1656
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1986,
+            "name": "Full Plate Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 1.5043
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

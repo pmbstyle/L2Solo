@@ -54,6 +54,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_devastated_castle_outskirts.json'),
     ...require('../../../data/Npcs/Skills/c4_antharas_lair.json'),
     ...require('../../../data/Npcs/Skills/c4_devils_isle_elites.json'),
+    ...require('../../../data/Npcs/Skills/c4_cemetery.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_witch.json'),
