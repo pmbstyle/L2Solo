@@ -62,10 +62,12 @@ function canTradeRemotely(state, goal) {
         const existing = linesOf(buyAds(state.characterId));
         const reserved = buyOrderEscrow(state.characterId);
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
+        // The offer as the buyer weighs it: its price and its trip there (б5, C7).
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
             budget: PurchaseFunding.spendable(state, reserved),
-            buyerCharacterId: state.characterId
+            buyerCharacterId: state.characterId,
+            cost: invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state)
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
         if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;

@@ -310,6 +310,9 @@ function evaluate(state = {}, options = {}) {
             // Clan beneficiaries can spend a modest premium to finish a shared
             // equipment goal sooner; personal crafting keeps a savings margin.
             const farmPriceFactor = craftPlan.clanGoal?.clanId ? 1.35 : 0.9;
+            // An offer costs its price and the trip to its town (the landed
+            // price, group C item 7): the bot buys there, one trip.
+            const trip = invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
             return (craftPlan.materials || []).flatMap((material) => {
                 const missing = Math.max(0, Number(material.amount || 0)
                     - Number(state.inventory?.[material.selfId]?.amount || 0));
@@ -319,12 +322,13 @@ function evaluate(state = {}, options = {}) {
                 const farmEffortPerItem = farmEffort / estimatedMissing;
                 return AfkTrade.offers(material.selfId, AfkTrade.SELL,
                     { characterId: state.characterId })
-                    .filter((offer) => Number(offer.count) > 0 && Number(offer.price) > 0
-                        && Number(offer.price) <= spendable
-                        && Number(offer.price) / adenaPerKill <= farmEffortPerItem * farmPriceFactor)
-                    .map((offer) => ({ material, missing, offer,
-                        savings: (farmEffortPerItem - Number(offer.price) / adenaPerKill)
-                            * Math.min(missing, Number(offer.count)) }));
+                    .flatMap((offer) => {
+                        const count = Math.min(missing, Number(offer.count));
+                        if (!(count > 0) || !(Number(offer.price) > 0) || Number(offer.price) > spendable) return [];
+                        const landed = Number(offer.price) + Number(trip(offer.town)) / count;
+                        if (!Number.isFinite(landed) || landed / adenaPerKill > farmEffortPerItem * farmPriceFactor) return [];
+                        return [{ material, missing, offer, savings: (farmEffortPerItem - landed / adenaPerKill) * count }];
+                    });
             }).sort((a, b) => b.savings - a.savings || a.offer.price - b.offer.price)[0] || null;
         })() : null;
     const plannedMaterial = marketMaterial?.material || (craftPlan?.marketFallback && craftPlan?.next?.itemId

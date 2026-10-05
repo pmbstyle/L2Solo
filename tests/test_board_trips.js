@@ -193,4 +193,25 @@ Config.coldHonestTravel = false;
     assert.deepStrictEqual(ColdMarketService.errandGoal(errand).plan.marketTown, 'Dion');
 }
 
-console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town and errands passed');
+// 7. A crafter's material purchase weighs the landed price (item 7): an
+// offer a little cheaper in a far town loses to one in the town it stands in.
+{
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+    const STEM = 1864;
+    const ad = (id, town, price) => AfkTrade.refreshRecord({ id, ownerId: 996000 + id % 10, ownerName: 'S', ownerAccount: 'bot_996',
+        kind: 'sell_ad', storeType: AfkTrade.SELL, status: 'active', town, title: '', revision: 1, expiresAt: 0,
+        locX: 0, locY: 0, locZ: 0, appearance: {}, lines: [{ id: id * 10, selfId: STEM, name: 'Stem', count: 10, price, enchant: 0 }] });
+    ad(996001, 'Giran', 95);
+    ad(996002, 'Dion', 100);
+    const crafter = { characterId: 996100, accountName: 'bot_996100', name: 'Crafter', level: 40, phase: 'cold',
+        activity: 'shopping', currentRegion: 'Dion', loc: { ...town('Dion') }, adena: 5000000,
+        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, inventory: {},
+        stats: { equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1,
+            materials: [{ selfId: STEM, amount: 10, missing: 10, farmEffort: 1e6 }] } } };
+    const goal = NeedsEvaluator.evaluate(crafter, { now: 1000 }).find((candidate) => candidate.type === 'buy_craft_material');
+    assert.strictEqual(goal?.plan?.marketTown, 'Dion', `the near offer wins by its landed price (${goal?.plan?.marketTown})`);
+    AfkTrade._resetForTests();
+}
+
+console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands and landed material prices passed');
