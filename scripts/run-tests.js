@@ -297,6 +297,7 @@ const tests = [
     'tests/test_bot_goal_state.js',
     'tests/test_bot_goal_state_batch.js',
     'tests/test_bot_persona.js',
+    'tests/test_bot_persona_types.js',
     'tests/test_bot_persona_background_intent.js',
     'tests/test_bot_persona_economic_policy.js',
     'tests/test_wealth_investment_policy.js',
