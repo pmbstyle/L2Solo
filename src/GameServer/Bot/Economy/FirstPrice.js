@@ -140,7 +140,7 @@ function craftPrice(id, item, options, depth) {
     let materials = 0;
     for (const material of recipe.materials || []) {
         const npc = BotMarketPricing.npcPrice({ selfId: material.selfId });
-        const unit = Number.isFinite(npc) ? npc : priceOf(Number(material.selfId), options, depth + 1)?.price;
+        const unit = Number.isFinite(npc) ? npc : cachedFirstPrice(material.selfId, options, depth + 1);
         if (!(unit > 0)) return null;
         materials += unit * Number(material.amount || 0);
     }
@@ -190,17 +190,18 @@ function firstPrice(itemId, { spots = [], timestamp = Date.now() } = {}) {
     return priceOf(Number(itemId), { spots, timestamp }, 0);
 }
 
-// The first price for the market's readers (PriceBelief), kept an hour of
-// the caller's clock: it moves only with the level bands' hours.
+// The first price for the market's readers (PriceBelief) and of a recipe's
+// materials, kept an hour of this thread's clock: it moves only with the
+// level bands' hours.
 const CACHE_MS = 60 * 60 * 1000;
 const cache = new Map();
-function cachedFirstPrice(itemId, options = {}) {
+function cachedFirstPrice(itemId, options = {}, depth = 0) {
     const id = Number(itemId);
-    const timestamp = Number(options.timestamp || Date.now());
     const kept = cache.get(id);
-    if (kept && timestamp - kept.at < CACHE_MS && timestamp >= kept.at) return kept.value;
-    const value = firstPrice(id, { spots: options.spots || [], timestamp })?.price ?? null;
-    cache.set(id, { at: timestamp, value });
+    const clock = Date.now();
+    if (kept && clock - kept.at < CACHE_MS) return kept.value;
+    const value = priceOf(id, { spots: options.spots || [], timestamp: Number(options.timestamp || clock) }, depth)?.price ?? null;
+    cache.set(id, { at: clock, value });
     return value;
 }
 
