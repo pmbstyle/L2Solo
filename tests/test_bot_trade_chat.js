@@ -3,7 +3,6 @@ require('../src/Global');
 const Chat = invoke('GameServer/Bot/Economy/BotTradeChat');
 const Merchant = invoke('GameServer/Bot/AI/States/MerchantState');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
-const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const World = invoke('GameServer/World/World');
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');

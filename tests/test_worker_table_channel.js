@@ -202,7 +202,7 @@ async function unitChecks() {
         const w = wired();
         for (let id = 1; id <= 3000; id++) w.change({ id, note: 'x'.repeat(200) + id });
         const held = [];
-        w.channel.attach(w.target, 'e1', (payload, bytes) => { held.push(payload); return true; });
+        w.channel.attach(w.target, 'e1', (payload) => { held.push(payload); return true; });
         assert(held.length >= 3, `the full copy takes ${held.length} pages`);
         assert(held.every((page, at) => page.tables.every((piece) => piece.last === (at === held.length - 1 ? 1 : 0))),
             'every piece of a full copy says whether it is the last');
