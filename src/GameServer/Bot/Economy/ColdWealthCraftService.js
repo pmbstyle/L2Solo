@@ -22,7 +22,7 @@ const inFlight = new Set();
 
 function eligible(state) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping'].includes(state.activity)
-        || state.stats?.marketErrand
+        || invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state)
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state)) return false;

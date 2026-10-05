@@ -364,7 +364,7 @@ function evaluate(state = {}, options = {}) {
     // An errand another job planned (ColdMarketService.acquire: a shot
     // restock, a crafter's input, a clan order): a purchase in its town. A
     // bot in a party gets there by its party's market break.
-    const errand = state.stats?.marketErrand;
+    const errand = invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
     if (errand?.town && Number(errand.selfId) > 0) {
         candidates.push({
             type: 'market_errand',

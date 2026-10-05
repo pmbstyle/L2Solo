@@ -98,10 +98,9 @@ function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), 
             if (values.has(entry.town)) values.set(entry.town, values.get(entry.town) + worth * entry.perHour / total);
         }
     }
-    const trip = tripCost || OfferOrder.tripCost(state, {
-        origin: OfferOrder.farmingOrigin(state, (spotId) => SpotService.findById(spotId)), timestamp
-    });
-    const options = towns.map((town) => ({ action: town, value: values.get(town) - (trip ? trip(town) : 0) }));
+    // The bot's round trip there (none to the town it is shopping in).
+    const trip = tripCost || invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
+    const options = towns.map((town) => ({ action: town, value: values.get(town) - trip(town) }));
     const chosen = invoke('GameServer/Bot/Economy/PriceDecision').chooseByWeight(options,
         rollKey || ['shop_town', Number(state?.characterId || 0), timestamp]);
     return chosen?.action || targetTownForItems(state, items);

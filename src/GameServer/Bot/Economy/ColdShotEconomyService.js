@@ -208,7 +208,7 @@ async function reviewDemand(state, now) {
     // there as one more offer (ColdMarketService.acquire); the amount and the
     // money follow the one restock rule of hot and cold bots (restockPlan).
     // A bot with an errand waiting goes on that one first.
-    if (state.stats?.marketErrand) return state;
+    if (ColdMarket().pendingErrand(state, now)) return state;
     const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice });
     if (!restock.needed || restock.amount <= 0) return state;
     const result = await ColdMarket().acquire(state, plan.selfId, restock.targetAmount - restock.currentAmount, {
@@ -550,7 +550,7 @@ async function review(state, now = Date.now()) {
         state = await reviewDemand(state, now);
         noteBuyer(state);
         // Gone for its restock, or another errand waits: no craft now.
-        if (state.activity === 'traveling' || state.stats?.marketErrand) return { state };
+        if (state.activity === 'traveling' || ColdMarket().pendingErrand(state, now)) return { state };
         if (!CraftShopService.isServiceCrafter(state) || state.party?.partyId || state.partyId
             || CraftShopService.craftLevelFor(state) < 2 || state.stats?.craftStationId
             || (state.stats?.equipmentPlan?.strategy === 'craft'

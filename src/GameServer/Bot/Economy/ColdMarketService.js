@@ -10,6 +10,9 @@ const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
+// A bound on an errand the bot has not carried out (no route, a party that
+// keeps it): after it the job that sent it plans again.
+const ERRAND_MS = 30 * 60 * 1000;
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
 // job awaited the trade the bot may have been activated: its row is hot and
@@ -211,6 +214,12 @@ async function buyHere(state, plan) {
     return { state: current, units, spent, hot: false };
 }
 
+// The bot's errand while it still stands (ERRAND_MS), else null.
+function pendingErrand(state, timestamp = Date.now()) {
+    const errand = state?.stats?.marketErrand;
+    return errand && timestamp - Number(errand.at || 0) < ERRAND_MS ? errand : null;
+}
+
 function errandGoal(errand) {
     return { type: 'market_errand', status: 'active', target: { itemId: errand.selfId, amount: errand.amount },
         plan: { expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose } };
@@ -348,8 +357,10 @@ const ColdMarketService = {
     planPurchase,
     buyHere,
     acquire,
-    errandGoal
+    errandGoal,
+    pendingErrand
 };
 
 ColdMarketService.RETRY_DELAY_MS = RETRY_DELAY_MS;
+ColdMarketService.ERRAND_MS = ERRAND_MS;
 module.exports = ColdMarketService;
