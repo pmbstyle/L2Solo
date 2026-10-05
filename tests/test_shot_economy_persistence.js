@@ -102,8 +102,10 @@ async function run() {
     // D shots near the crafter's price over the last hour. A shop opens at a
     // market visit in the town the bot chose (group C): here, Giran.
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-    for (let deal = 0; deal < 20; deal++) MarketCounters.deal(1463, 90, 500, Date.now() - (20 - deal) * 180000, 999999);
-    await BotMarket.listOnBoard({ ...success.state, stats: { ...success.state.stats, shopTown: { town: 'Giran', at: Date.now() } } });
+    const visitAt = 1791000000000;
+    for (let deal = 0; deal < 20; deal++) MarketCounters.deal(1463, 90, 500, visitAt - (20 - deal) * 180000, 999999);
+    await BotMarket.listOnBoard({ ...success.state, stats: { ...success.state.stats, shopTown: { town: 'Giran', at: visitAt } } },
+        { now: visitAt });
     const shop = Afk.findOwnerProjection(crafter.characterId)?.shop;
     assert(shop?.lines.some(line => Number(line.selfId) === 1463), 'crafted shots must be listed for real funded demand');
     const buyer = await demand();

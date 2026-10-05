@@ -88,8 +88,10 @@ async function run() {
 
     const seller = await makeBot('bot_material_seller', 'MaterialSeller', 20, [{ selfId: 1864, name: 'Stem', amount: 2 }]);
     const town = opened.store.town;
-    assert.strictEqual(BuyStoreService.bestTownFor(seller).town, town, 'a seller must discover the ad in its town');
-    const sale = await BuyStoreService.sellToBestBuyer(seller, town);
+    // One decision point for the seller's sale decision (its rolls stand still).
+    const decided = { now: 1791000000000 };
+    assert.strictEqual(BuyStoreService.bestTownFor(seller, decided).town, town, 'a seller must discover the ad in its town');
+    const sale = await BuyStoreService.sellToBestBuyer(seller, town, decided);
     assert.strictEqual(sale.sold, true);
     assert.strictEqual(sale.itemCount, 2);
     assert.strictEqual(sale.adena, 2 * bid.price);
