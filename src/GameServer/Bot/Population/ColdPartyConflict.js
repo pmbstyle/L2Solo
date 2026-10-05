@@ -64,8 +64,9 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     // Each side's can-I-win was rolled once at the dispute and travels on the
     // event (U26) for who gives way; the PvP start has its own gate.
     const willing = event.willing || [];
+    const combatAt = resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp;
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
-        ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
+        ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: combatAt,
             rng, personaFor, step, openingSide: opener, key: event.key }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
@@ -175,8 +176,19 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         if (results.length !== states.length || results.some(r => !r.ok)) return { ok: false, reason: 'commit_rejected' };
         preparedParties.filter(Boolean).forEach(prepared => parties.acceptCommit(prepared));
         if (encounter) onEncounter(encounter);
-        const matchup = sides.map(s => s.party ? 'party' : 'solo').join('_vs_');
-        require('../../../PvpJournal').coldConflict({ event, sides, outcome, pvp, matchup, revenge, personaFor, at: timestamp });
+        const Journal = require('../../../PvpJournal');
+        const partyIds = sides.map(s => s.party?.partyId);
+        const matchup = Journal.matchup(partyIds);
+        // One journal row when the conflict ends; a fight still going writes none.
+        // Its length runs from the first step to the end of this one, never past the deadline.
+        const startedAt = resume?.startedAt || timestamp;
+        if (!encounter) Journal.coldConflict({ key: event.key, revenge, reason: pvp?.reason || event.action,
+            spotId: event.spotId, npcId: event.npcId, partyIds,
+            sideSizes: sides.map(s => s.members.length), outcome, fought: !!pvp?.started,
+            principals: sides.map(s => s.principal), personaFor, at: timestamp,
+            ...(pvp?.started ? { losingSide: pvp.losingSide, kills: pvp.fighters.flatMap(f => f.kills),
+                durationMs: Math.min(combatAt + pvp.durationMs, step?.expiresAt ?? Infinity) - startedAt,
+                actions: (resume?.actions || 0) + pvp.actions } : {}) });
         return { ok: true, deescalated, outcome, pvp: !!pvp?.started,
             ...(pvp ? { pvpReason: pvp.reason || outcome } : {}),
             ...(pvp?.started ? { encounter, extensionMs: encounter ? Math.max(0, encounter.expiresAt - step.expiresAt) : 0,

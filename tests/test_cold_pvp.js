@@ -304,6 +304,25 @@ async function main() {
         event: { ...revengeEvent(29, 32), at: at + 1000 }, resume: JSON.parse(JSON.stringify(initial.encounter)), incrementalPvp: true });
     assert(continued.ok, JSON.stringify(continued));
     assert(continued.encounter?.reason === 'revenge' || !continued.encounter);
+    // The fight writes one journal row, when it ends: its whole length and every step's actions.
+    const PvpJournal = require('../src/PvpJournal');
+    const fightRows = () => PvpJournal.drain().filter(row => row.conflictKey === 'revenge-test:29:32');
+    let resumed = initial.encounter, last = continued, stepAt = at + 1000;
+    while (last.encounter) {
+        assert.strictEqual(fightRows().length, 0, 'a fight still going writes no journal row');
+        resumed = last.encounter; stepAt += 1000;
+        const t = stepAt;
+        last = await Conflict.apply({ ...base, now: () => t, event: { ...revengeEvent(29, 32), at: t },
+            resume: JSON.parse(JSON.stringify(resumed)), incrementalPvp: true });
+        assert(last.ok && stepAt < at + 120000, JSON.stringify(last));
+    }
+    const [fightRow, ...extraRows] = fightRows();
+    assert(fightRow && !extraRows.length, 'one journal row per fight');
+    assert.strictEqual(fightRow.action, 'revenge');
+    assert.strictEqual(fightRow.outcome, last.outcome);
+    assert.strictEqual(fightRow.actions, resumed.actions + last.combat.actions);
+    assert.strictEqual(fightRow.durationMs, Math.min(Math.max(resumed.stepAt, stepAt - 1000) + last.combat.durationMs,
+        resumed.expiresAt) - resumed.startedAt, 'the row spans the fight from its first step to its end');
 
     // A real accepted cold heal commits the grievance with its HP/MP outcome.
     await party([35, 36]);

@@ -183,7 +183,26 @@ function conflict(outcome, at) {
     return { at, source: 'cold', conflictKey: null, action: 'contest', reason: null, spotId: null, npcId: null, matchup: null,
         outcome, pvp: 0, initiatorId: 1, initiatorLevel: 1, initiatorArchetype: null, initiatorKarma: 0, targetId: 2,
         targetLevel: 1, targetArchetype: null, targetKarma: 0, sideSizes: '1:1', losingSide: null, kills: 0, pkKills: 0,
-        durationMs: 0, playerInvolved: 0 };
+        durationMs: 0, playerInvolved: 0, actions: 0 };
+}
+
+// A history file made before pvp_conflicts had the fight's actions gets the column.
+function pvpActionsColumn() {
+    const file = path.join(directory, 'pvp-actions.history.sqlite');
+    const old = new DatabaseSync(file);
+    old.exec(`CREATE TABLE pvp_conflicts (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL,
+        source TEXT NOT NULL, conflictKey TEXT, action TEXT NOT NULL, reason TEXT, spotId TEXT, npcId INTEGER,
+        matchup TEXT, outcome TEXT NOT NULL, pvp INTEGER NOT NULL DEFAULT 0, initiatorId INTEGER NOT NULL,
+        initiatorLevel INTEGER NOT NULL DEFAULT 0, initiatorArchetype TEXT, initiatorKarma INTEGER NOT NULL DEFAULT 0,
+        targetId INTEGER NOT NULL, targetLevel INTEGER NOT NULL DEFAULT 0, targetArchetype TEXT,
+        targetKarma INTEGER NOT NULL DEFAULT 0, sideSizes TEXT, losingSide INTEGER, kills INTEGER NOT NULL DEFAULT 0,
+        pkKills INTEGER NOT NULL DEFAULT 0, durationMs INTEGER NOT NULL DEFAULT 0, playerInvolved INTEGER NOT NULL DEFAULT 0)`);
+    old.close();
+    const db = HistoryStore.open(file);
+    HistoryStore.APPLY.journal(db, { conflicts: [{ ...conflict('migrated', Date.now()), actions: 7 }] });
+    assert.strictEqual(db.prepare('SELECT actions FROM pvp_conflicts').get().actions, 7);
+    db.close();
+    HistoryStore.open(file).close();
 }
 
 // Age cleanup in the history thread keeps each table's old rule.
@@ -351,6 +370,7 @@ async function overviewWorker() {
         await finishedClanActions();
         await crashBetweenMoveAndDelete();
         retention();
+        pvpActionsColumn();
         await saves();
         await migrateOldWorld(ids);
         await overviewWorker();

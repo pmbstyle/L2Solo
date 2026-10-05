@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS pvp_conflicts (
     kills INTEGER NOT NULL DEFAULT 0,
     pkKills INTEGER NOT NULL DEFAULT 0,
     durationMs INTEGER NOT NULL DEFAULT 0,
-    playerInvolved INTEGER NOT NULL DEFAULT 0
+    playerInvolved INTEGER NOT NULL DEFAULT 0,
+    actions INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS pvp_conflicts_at ON pvp_conflicts(at);
 CREATE TABLE IF NOT EXISTS pvp_conflict_hour (

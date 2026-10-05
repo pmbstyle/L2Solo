@@ -132,21 +132,14 @@ function sumBy(rows, keyOf) {
         && Number(row.selfId) === 57 && Number(row.delta) > 0), 'the sync reason must name the operation');
     assert.ok(!rows.some((row) => row.operation === 'test:failing-update'), 'a failed statement must not be journaled');
 
-    // A committed cold fight is journaled with who started it, the outcome and the kills.
+    // A finished cold fight is journaled with who started it, the outcome, its length, actions and kills.
     const fighter = (characterId, level, karma = 0) => ({ characterId, level, stats: { karma } });
     PvpJournal.coldConflict({
-        event: { key: 'test-conflict', action: 'contest', spotId: 'spot-1', npcId: 20001 },
-        sides: [
-            { principal: fighter(ownerId, 30), members: [fighter(ownerId, 30)] },
-            { principal: fighter(customerId, 28, 120), members: [fighter(customerId, 28, 120), fighter(9, 27)] }
-        ],
-        outcome: 'pvp_killed',
-        pvp: { started: true, reason: 'contest', losingSide: 1, durationMs: 4200,
-            fighters: [{ id: ownerId, kills: [{ victimId: customerId, pvp: true }, { victimId: 9, pvp: false }] }] },
-        matchup: 'solo_vs_party',
-        revenge: false,
-        personaFor: () => ({ archetype: 'brawler' }),
-        at: Date.now()
+        key: 'test-conflict', revenge: false, reason: 'contest', spotId: 'spot-1', npcId: 20001,
+        partyIds: [null, 'party-2'], sideSizes: [1, 2], outcome: 'pvp_killed', fought: true,
+        principals: [fighter(ownerId, 30), fighter(customerId, 28, 120)],
+        losingSide: 1, kills: [{ victimId: customerId, pvp: true }, { victimId: 9, pvp: false }],
+        durationMs: 4200, actions: 12, personaFor: () => ({ archetype: 'brawler' }), at: Date.now()
     });
     const actor = (id, level, karma) => ({ fetchId: () => id, fetchLevel: () => level, fetchKarma: () => karma });
     PvpJournal.hotKill({ attacker: actor(ownerId, 30, 0), victim: actor(customerId, 29, 0), pk: true,
@@ -162,6 +155,10 @@ function sumBy(rows, keyOf) {
     assert.strictEqual(conflict.kills, 2);
     assert.strictEqual(conflict.pkKills, 1);
     assert.strictEqual(conflict.initiatorArchetype, 'brawler');
+    assert.strictEqual(conflict.matchup, 'solo_vs_party');
+    assert.strictEqual(conflict.losingSide, 1);
+    assert.strictEqual(conflict.durationMs, 4200);
+    assert.strictEqual(conflict.actions, 12);
     const [summary] = await Database.readHistory([
         "SELECT * FROM pvp_conflict_hour WHERE source = 'cold' AND outcome = 'pvp_killed'"
     ], 'test:pvp-hour');

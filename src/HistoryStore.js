@@ -34,7 +34,7 @@ const LIFE_EVENTS_PER_BOT = 20;
 
 const PVP_COLUMNS = ['at', 'source', 'conflictKey', 'action', 'reason', 'spotId', 'npcId', 'matchup', 'outcome', 'pvp',
     'initiatorId', 'initiatorLevel', 'initiatorArchetype', 'initiatorKarma', 'targetId', 'targetLevel', 'targetArchetype',
-    'targetKarma', 'sideSizes', 'losingSide', 'kills', 'pkKills', 'durationMs', 'playerInvolved'];
+    'targetKarma', 'sideSizes', 'losingSide', 'kills', 'pkKills', 'durationMs', 'playerInvolved', 'actions'];
 const MARKET_TRADE_COLUMNS = ['eventKey', 'occurredAt', 'channel', 'sourceType', 'selfId', 'itemName',
     'quantity', 'unitPrice', 'totalPrice', 'town', 'sellerCharacterId', 'sellerName', 'buyerCharacterId', 'buyerName'];
 const AFK_EVENT_COLUMNS = ['shopId', 'ownerId', 'counterpartyId', 'kind', 'selfId', 'itemName', 'amount',
@@ -67,6 +67,10 @@ function open(file) {
     const connection = new DatabaseSync(file, { timeout: 5000 });
     connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
     connection.exec(fs.readFileSync(SCHEMA_FILE, 'utf8'));
+    // A history file made before pvp_conflicts had the fight's actions.
+    if (!connection.prepare('PRAGMA table_info(pvp_conflicts)').all().some((column) => column.name === 'actions')) {
+        connection.exec('ALTER TABLE pvp_conflicts ADD COLUMN actions INTEGER NOT NULL DEFAULT 0');
+    }
     return connection;
 }
 

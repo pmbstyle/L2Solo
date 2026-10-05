@@ -1,6 +1,7 @@
-// PvP journal: one row per committed conflict between characters (a cold
-// contest, revenge or fight; a hot kill), kept in memory and written with the
-// economy journal flush. Raw rows are kept for hours; an hourly summary for days.
+// PvP journal: one row per conflict between characters (a cold contest,
+// revenge or fight, written when it ends; a hot kill), kept in memory and
+// written with the economy journal flush. Raw rows are kept for hours; an
+// hourly summary for days.
 
 const MAX_PENDING = 5000;
 
@@ -19,22 +20,29 @@ function record(row) {
     pending.push(row);
 }
 
-// A committed cold conflict (ColdPartyConflict.apply). sides[0] started it.
-function coldConflict({ event, sides, outcome, pvp, matchup, revenge, personaFor, at }) {
-    const [first, second] = sides.map((side) => side.principal);
-    const fighters = pvp?.started ? pvp.fighters || [] : [];
-    const kills = fighters.flatMap((fighter) => fighter.kills || []);
+// Both sides as the journal names them: solo_vs_party and so on.
+const matchup = (partyIds) => partyIds.map((partyId) => (partyId ? 'party' : 'solo')).join('_vs_');
+
+// One row when a cold conflict ends: a contest or revenge without a fight, a
+// fight that ends in a step (retreat, kill, defeat, disengage;
+// ColdPartyConflict.apply), or a fight that runs out of time, is interrupted
+// or separated (PvpEncounterRuntime.finish). principals[0] started it. A step
+// that leaves the fight going writes nothing. kills: the cold kills of the
+// fight; a kill ends it, so they all come from its last step.
+function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes, outcome, fought,
+    principals, losingSide = null, kills = [], durationMs = 0, actions = 0, personaFor, at }) {
+    const [first, second] = principals;
     record({
         at,
         source: 'cold',
-        conflictKey: String(event.key || ''),
+        conflictKey: String(key || ''),
         action: revenge ? 'revenge' : 'contest',
-        reason: pvp?.reason || event.action || null,
-        spotId: event.spotId || null,
-        npcId: Number(event.npcId || 0) || null,
-        matchup,
+        reason: reason || null,
+        spotId: spotId || null,
+        npcId: Number(npcId || 0) || null,
+        matchup: matchup(partyIds),
         outcome,
-        pvp: pvp?.started ? 1 : 0,
+        pvp: fought ? 1 : 0,
         initiatorId: first.characterId,
         initiatorLevel: Number(first.level || 0),
         initiatorArchetype: personaArchetype(personaFor, first),
@@ -43,11 +51,12 @@ function coldConflict({ event, sides, outcome, pvp, matchup, revenge, personaFor
         targetLevel: Number(second.level || 0),
         targetArchetype: personaArchetype(personaFor, second),
         targetKarma: Number(second.stats?.karma || 0),
-        sideSizes: sides.map((side) => side.members.length).join(':'),
-        losingSide: pvp?.started ? Number(pvp.losingSide) : null,
+        sideSizes: sideSizes.join(':'),
+        losingSide: losingSide === null || losingSide === undefined ? null : Number(losingSide),
         kills: kills.length,
         pkKills: kills.filter((kill) => !kill.pvp).length,
-        durationMs: pvp?.started ? Number(pvp.durationMs || 0) : 0,
+        durationMs: Math.max(0, Math.round(Number(durationMs) || 0)),
+        actions: Number(actions || 0),
         playerInvolved: 0
     });
 }
@@ -78,6 +87,7 @@ function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
         kills: 1,
         pkKills: pk ? 1 : 0,
         durationMs: 0,
+        actions: 0,
         playerInvolved: playerInvolved ? 1 : 0
     });
 }
@@ -88,4 +98,4 @@ function drain() {
     return rows;
 }
 
-module.exports = { coldConflict, hotKill, record, drain };
+module.exports = { coldConflict, hotKill, matchup, record, drain };
