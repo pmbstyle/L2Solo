@@ -78,8 +78,8 @@ function createLookup(rows = [], board = () => null) {
     });
 
     const offersFor = (target) => offersByItem.get(Number(target?.selfId ?? target)) || EMPTY_OFFERS;
-    const bestOffer = (target, state, origin) => OfferOrder.best(offersFor(target),
-        { cost: OfferOrder.tripCost(state, { origin }) });
+    const bestOffer = (target, state, origin) => OfferQuery.bestSellOffer(null, Number(target?.selfId ?? target),
+        { cost: OfferOrder.tripCost(state, { origin }), others: offersFor(target) });
     // A board line at price 0 is no purchase (GearAcquisitionPlanner: usable).
     const findMarketOffer = (target, state, origin) => OfferQuery.bestSellOffer(board(), Number(target?.selfId ?? target), {
         excludeOwner: state?.characterId,

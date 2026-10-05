@@ -3,7 +3,6 @@ const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
-const TradeService = invoke('GameServer/Bot/TradeService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const OfferOrder = require('./OfferOrder');
@@ -75,54 +74,14 @@ function npcOffersAll(selfId) {
     return Object.keys(TownNpcCatalog.sellersByTown()).flatMap((town) => npcOffers(selfId, town));
 }
 
-function configuredStoreSession(storeName) {
-    const sessions = World.user?.sessions;
-    if (!Array.isArray(sessions)) return null;
-    return sessions.find((session) => {
-        const actor = session?.actor;
-        const store = actor?.fetchPrivateStore?.();
-        return actor?.fetchName?.() === storeName && Number(store?.storeType) === 1;
-    }) || null;
-}
-
-function configuredStoreOffers(selfId) {
-    return Object.entries(MerchantStoreConfigs)
-        .flatMap(([storeName, store]) => {
-            if (store?.storeType !== 1 || !store.town) return [];
-            const liveSession = configuredStoreSession(storeName);
-            const liveStore = liveSession?.actor?.fetchPrivateStore?.();
-            // In a running world, a configured offer is valid only when the
-            // actual merchant bot is spawned and still has the item.  The
-            // config-only fallback keeps lightweight catalog/unit fixtures
-            // usable before World.init(), but purchase execution never trusts
-            // that fallback as a live source.
-            const line = liveStore
-                ? (liveStore.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0)
-                : (Array.isArray(World.user?.sessions) ? null : (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0));
-            if (!line) return [];
-            const price = liveStore ? Number(line.price) : TradeService.ratedPrice(selfId, line.priceRate ?? 1);
-            if (price <= 0) return [];
-            const actor = liveSession?.actor;
-            return [{
-                sourceType: 'configured_store',
-                sourceId: actor ? Number(actor.fetchId?.() || 0) : storeName,
-                sourceName: actor?.fetchName?.() || storeName,
-                town: store.town,
-                selfId: Number(selfId),
-                itemName: itemName(selfId),
-                price,
-                count: Number(line.count),
-                available: true,
-                live: !!liveStore,
-                locX: Number(actor?.fetchLocX?.() ?? store.locX ?? 0),
-                locY: Number(actor?.fetchLocY?.() ?? store.locY ?? 0),
-                locZ: Number(actor?.fetchLocZ?.() ?? store.locZ ?? 0),
-                storeConfig: store,
-                session: liveSession || undefined,
-                store: liveStore || undefined,
-                storeItem: liveStore ? line : undefined
-            }];
-        });
+// Group F: ordinary NPC shops stay; configured city supply remains only for
+// shots until the dwarves' production chain replaces it in 3.6. Also used at
+// execution, so a saved non-shot offer cannot bypass the new routing rule.
+function botCanBuy(offer) {
+    if (!offer) return false;
+    const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
+        || (offer.sourceType === 'private_store' && MerchantStoreConfigs[offer.sourceName]);
+    return !fixed || SHOT_IDS.has(Number(offer.selfId));
 }
 
 // A live private store's line as an offer: a configured city merchant is
@@ -164,25 +123,37 @@ function privateOffers(selfId, town) {
         if (town && store.town && store.town !== town) return [];
         const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
         if (!item || Number(item.price) <= 0) return [];
-        return [storeOffer(session, store, item, town)];
+        const offer = storeOffer(session, store, item, town);
+        return botCanBuy(offer) ? [offer] : [];
     });
 }
 
-// Every line of the configured city merchants' live stores, in one pass over
-// the sessions (the clan planning worker gets them with its plan).
-function fixedStoreOffers() {
-    const offers = [];
-    for (const session of World.user?.sessions || []) {
-        const store = sellingStore(session);
-        if (!store) continue;
-        for (const item of store.items || []) {
-            if (Number(item.count) <= 0 || Number(item.price) <= 0) continue;
-            const offer = storeOffer(session, store, item, null);
-            if (offer.sellerKind !== 'fixed') break;
-            offers.push(offer);
+// Fixed bot supply is a shot-only game-data table, built once per rate and
+// indexed by item. Player-facing live stores keep their own trade path.
+let fixedRate = null;
+let fixedRows = null;
+let fixedByItem = new Map();
+const EMPTY_OFFERS = Object.freeze([]);
+function fixedStoreOffers(selfId = null) {
+    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+    if (!fixedRows || fixedRate !== rate) {
+        fixedRate = rate;
+        fixedByItem = new Map();
+        const rows = [];
+        const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+        for (const id of SHOT_IDS) {
+            const offers = Pricing.sellersOf(id).filter((row) => Number(row.price) > 0).map((row) => {
+                const store = MerchantStoreConfigs[row.sourceName];
+                return Object.freeze({ ...row, sourceType: 'configured_store', sourceId: row.sourceName,
+                    sellerKind: 'fixed', selfId: id, itemName: itemName(id), count: Infinity, available: true,
+                    locX: Number(store?.locX || 0), locY: Number(store?.locY || 0), locZ: Number(store?.locZ || 0) });
+            });
+            fixedByItem.set(id, Object.freeze(offers));
+            rows.push(...offers);
         }
+        fixedRows = Object.freeze(rows);
     }
-    return offers;
+    return selfId === null ? fixedRows : fixedByItem.get(Number(selfId)) || EMPTY_OFFERS;
 }
 
 function hotOffers(selfId, options = {}) {
@@ -197,21 +168,20 @@ function hotOffers(selfId, options = {}) {
 
 // The one offer query (OfferQuery) for a buyer on the main thread: what a
 // cold bot can buy without meeting anyone (board records, NPC shops and the
-// configured city merchants; a player's or a bot's live private store trades
+// configured shot merchants; a player's or a bot's live private store trades
 // face to face only, E14, E22), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
 function bestOffer(selfId, options = {}) {
     const towns = options.town ? [options.town] : options.towns || null;
-    const fixed = privateOffers(selfId, towns?.length === 1 ? towns[0] : null)
-        .filter((offer) => offer.sellerKind === 'fixed');
+    const fixed = fixedStoreOffers(selfId);
     const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
     return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
         towns,
         excludeOwner: options.buyerCharacterId,
         budget: options.budget,
         cost: options.cost,
-        accept: options.accept,
+        accept: (offer) => botCanBuy(offer) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
@@ -238,27 +208,27 @@ function activeBuyDemandSelfIds() {
 // requested item.  Checking only the geographically nearest town made a
 // valid item look impossible whenever its NPC list lived elsewhere.
 function bestSupplyOffer(selfId, options = {}) {
-    const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
     const amount = Math.max(1, Number(options.amount) || 1);
-    // A companion supply errand uses a server-owned NPC or configured city
-    // merchant. Dynamic private/cold offers remain available to the market
-    // planner and are never guessed as a guaranteed supply source.
-    const offers = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)];
-    return offers
-        .filter((offer) => offer.available && Number(offer.price) <= budget &&
-            (offer.sourceType === 'npc' || Number(offer.count) >= amount))
-        .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, options.origin))[0] || null;
+    const towns = options.towns || [...new Set([...Object.keys(TownNpcCatalog.sellersByTown()),
+        ...fixedStoreOffers(selfId).map((offer) => offer.town), ...AfkTrade.boardIndex().towns(selfId, AfkTrade.SELL)])];
+    const cost = options.cost || OfferOrder.tripCost(options.state || { loc: options.origin }, { origin: options.origin });
+    return bestOffer(selfId, { ...options, towns,
+        cost: cost ? (town) => cost(town) / amount : null,
+        accept: (offer) => Number(offer.count) >= amount && Number(offer.price) > 0
+            && (!options.accept || options.accept(offer)) });
+}
+
+let supplyIds = null;
+function supplyItemIds() {
+    supplyIds ||= [...new Set([...(NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)), ...SHOT_IDS]
+        .filter(Boolean))];
+    return [...new Set([...supplyIds, ...AfkTrade.boardIndex().selfIds(AfkTrade.SELL)])];
 }
 
 function resolveSupplyItem(value) {
     const requested = normalizeItemLookup(value);
     if (!requested) return null;
-    const candidates = [...new Set([
-        ...(NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)),
-        ...Object.values(MerchantStoreConfigs)
-            .filter((store) => store?.storeType === 1)
-            .flatMap((store) => (store.items || []).map((entry) => Number(entry.selfId)))
-    ].filter(Boolean))]
+    const candidates = supplyItemIds()
         .map((selfId) => ({ selfId, name: itemName(selfId), normalized: normalizeItemLookup(itemName(selfId)) }))
         .filter((entry) => entry.normalized);
 
@@ -273,16 +243,11 @@ function resolveSupplyItem(value) {
 }
 
 function supplyCatalog(limit = 96, origin = null) {
-    const ids = [...new Set([
-        ...(NpcShopBuyLists.allEntries?.() || []).map((entry) => Number(entry.selfId)),
-        ...Object.values(MerchantStoreConfigs)
-            .filter((store) => store?.storeType === 1)
-            .flatMap((store) => (store.items || []).map((entry) => Number(entry.selfId)))
-    ].filter(Boolean))];
-    return ids
+    const state = { loc: origin };
+    const cost = OfferOrder.tripCost(state, { origin });
+    return supplyItemIds()
         .map((selfId) => {
-            const offer = [...npcOffersAll(selfId), ...configuredStoreOffers(selfId)]
-                .sort((a, b) => OfferOrder.compareSupplyOffers(a, b, origin))[0];
+            const offer = bestSupplyOffer(selfId, { origin, state, cost });
             return offer ? {
                 selfId,
                 name: offer.itemName,
@@ -317,6 +282,7 @@ function reserve(offer, qty = 1) {
     const count = Math.max(1, Number(qty) || 1);
     if (!offer?.available || Number(offer.price) <= 0) return false;
     if (offer.sourceType === 'npc') return true;
+    if (offer.sourceType === 'configured_store') return botCanBuy(offer);
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) return Number(offer.count) >= count;
     if (offer.sourceType !== 'private_store' || !offer.storeItem) return false;
     if (Number(offer.storeItem.count) < count || Number(offer.storeItem.price) !== Number(offer.price)) return false;
@@ -333,6 +299,7 @@ function release(offer, qty = 1) {
 }
 
 module.exports = {
+    botCanBuy,
     bestOffer,
     bestBuyOffer,
     activeBuyDemandSelfIds,

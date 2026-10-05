@@ -99,6 +99,7 @@ function learnPurchase(state, selfId, price) {
 // purchase records the bot as shopping unless options.keepActivity (a
 // purchase made for it where it hunts).
 function buyOffer(state, offer, options = {}) {
+    if (!MarketOpportunity.botCanBuy(offer)) return Promise.resolve({ purchased: false, blocked: true, reason: 'configured_supply_retired' });
     const qty = Math.max(1, Math.floor(Number(options.qty) || 1));
     const blocker = LifeState.marketPurchaseBlocker(state, offer, qty);
     if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
@@ -147,11 +148,11 @@ function buyOffer(state, offer, options = {}) {
 }
 
 // What sells an item at a fixed price in each town: the NPC shops and the
-// configured city merchants (their stock never runs out for a cold bot, as
+// configured shot merchants until 3.6 (their stock never runs out for a cold bot, as
 // the author's cold NPC restock had it).
 function staticOffers(selfId) {
     return [...MarketOpportunity.npcOffersAll(selfId),
-        ...invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(selfId)];
+        ...MarketOpportunity.fixedStoreOffers(selfId)];
 }
 
 // The bot's round trip to a town in Adena, from its farming place
@@ -199,7 +200,11 @@ async function buyHere(state, plan) {
         units += entry.count;
         spent += entry.count * entry.price;
     }
-    const npcPrice = Number(plan.npcPrice || 0);
+    // A saved plan may predate group F or a rate change. Only a current
+    // NPC/shot-table quote in this town can supply its remainder.
+    const quotedPrice = Number(plan.npcPrice || 0);
+    const npcPrice = staticOffers(plan.selfId).some((offer) => offer.town === plan.town
+        && Number(offer.price) === quotedPrice) ? quotedPrice : 0;
     const money = Math.min(Number.isFinite(plan.money) ? plan.money - spent : Infinity, Number(current.adena || 0));
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (rest > 0) {

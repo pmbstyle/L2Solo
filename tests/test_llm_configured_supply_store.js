@@ -16,7 +16,7 @@ function inventoryItem(id, selfId, amount) {
         fetchSelfId: () => selfId,
         fetchAmount: () => count,
         setAmount: (value) => { count = value; },
-        fetchName: () => 'Varnish'
+        fetchName: () => 'Soulshot: D-grade'
     };
 }
 
@@ -26,10 +26,10 @@ async function main() {
     const originalBuy = TradeService.buyFromStore;
     const originalStartObservation = LangfuseTracing.startObservation;
     const observations = [];
-    const botItem = inventoryItem(700, 1864, 0);
+    const botItem = inventoryItem(700, 1463, 0);
     const bot = {
         fetchId: () => 7100,
-        backpack: { fetchItemFromSelfId: (selfId) => Number(selfId) === 1864 ? botItem : null }
+        backpack: { fetchItemFromSelfId: (selfId) => Number(selfId) === 1463 ? botItem : null }
     };
     const store = {
         storeType: 1,
@@ -47,29 +47,31 @@ async function main() {
     const merchantSession = { actor: merchant };
     let calls = 0;
     try {
-        DataCache.items = [{ selfId: 1864, template: { name: 'Varnish' }, etc: { stackable: true } }];
+        DataCache.init();
         World.user = { sessions: [merchantSession] };
         LangfuseTracing.startObservation = (name, input, metadata) => {
             observations.push({ name, input, metadata });
             return { end() {} };
         };
 
-        const offer = MarketOpportunity.bestSupplyOffer(1864);
-        assert(offer, 'live configured merchant should produce a supply offer');
+        assert.strictEqual(MarketOpportunity.bestSupplyOffer(1864), null,
+            'group F retires configured material supply even while its actor is live');
+        const offer = MarketOpportunity.bestSupplyOffer(1463);
+        assert(offer, 'configured shots remain in the fixed supply table until 3.6');
         assert.strictEqual(offer.sourceType, 'configured_store');
-        assert.strictEqual(offer.sourceId, 7200);
-        assert.strictEqual(offer.count, 2);
-        assert.strictEqual(offer.price, 10);
-        assert.strictEqual(MarketOpportunity.bestSupplyOffer(1864, { amount: 3 }), null, 'a finite store must not be selected for an oversized request');
+        assert.strictEqual(offer.sourceId, offer.sourceName);
+        assert.strictEqual(offer.count, Infinity);
+        assert(offer.price > 0);
 
-        TradeService.buyFromStore = async (_bot, liveStore, selfId, amount) => {
+        TradeService.buyFromStore = async (_bot, liveStore, selfId, amount, options) => {
             calls += 1;
-            assert.strictEqual(liveStore, store);
-            assert.strictEqual(selfId, 1864);
+            assert.notStrictEqual(liveStore, store, 'shot supply uses the server-owned table, not a material merchant');
+            assert.strictEqual(selfId, 1463);
+            assert.strictEqual(options.expectedUnitPrice, offer.price);
             const line = liveStore.items.find((entry) => entry.selfId === selfId);
             line.count -= amount;
             botItem.setAmount(botItem.fetchAmount() + amount);
-            return { qty: amount, totalAdena: amount * line.price, name: 'Varnish' };
+            return { qty: amount, totalAdena: amount * options.expectedUnitPrice, name: 'Soulshot: D-grade' };
         };
 
         const overdraw = await BotSupplyErrand.purchaseAtDestination(bot, {
@@ -82,22 +84,22 @@ async function main() {
             unitPrice: 10
         });
         assert.strictEqual(overdraw.ok, false);
-        assert.strictEqual(overdraw.reason, 'configured_store_stock_changed');
-        assert.strictEqual(calls, 0, 'finite stock must be checked before TradeService');
+        assert.strictEqual(overdraw.reason, 'configured_supply_retired');
+        assert.strictEqual(calls, 0, 'a stale configured material errand must be rejected before TradeService');
         assert.strictEqual(store.items[0].count, 2);
 
         const bought = await BotSupplyErrand.purchaseAtDestination(bot, {
             workflowId: 'workflow-stock-ok',
             sourceType: 'configured_store',
-            sourceId: 7200,
-            sourceName: 'IslandMats',
-            itemId: 1864,
+            sourceId: offer.sourceId,
+            sourceName: offer.sourceName,
+            itemId: 1463,
             amount: 1,
-            unitPrice: 10
+            unitPrice: offer.price
         });
         assert.strictEqual(bought.ok, true);
         assert.strictEqual(calls, 1);
-        assert.strictEqual(store.items[0].count, 1);
+        assert.strictEqual(store.items[0].count, 2, 'player-facing material stock is untouched');
         assert.strictEqual(botItem.fetchAmount(), 1);
         assert(observations.some((entry) => entry.name === 'bot.workflow.supply.purchase' && entry.metadata.workflowId === 'workflow-stock-ok'));
         console.log('Configured supply store checks passed');

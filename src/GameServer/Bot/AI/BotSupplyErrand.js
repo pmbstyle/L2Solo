@@ -56,6 +56,9 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
 
     const Market = MarketOpportunity.bestSupplyOffer(selfId, {
         amount,
+        buyerCharacterId: bot.fetchId(),
+        state: { ...session.coldLifeState, characterId: bot.fetchId(), level: bot.fetchLevel?.() || session.coldLifeState?.level || 1,
+            loc: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() } },
         origin: { locX: bot.fetchLocX(), locY: bot.fetchLocY() }
     });
     if (!Market) return { ok: false, reason: 'supply_not_available' };
@@ -104,17 +107,13 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         sourceType: Market.sourceType,
         sourceId: Market.sourceId,
         sourceName: Market.sourceName,
+        recordId: Market.recordId,
+        lineId: Market.lineId,
         workflowId: `supply-${bot.fetchId()}-${player.fetchId()}-${workflowStartedAt}-${Math.random().toString(36).slice(2, 8)}`,
         startedAt: workflowStartedAt,
         expiresAt: workflowStartedAt + 10 * 60 * 1000,
-        target: {
-            actorId: ['private_store', 'configured_store'].includes(Market.sourceType) ? Number(Market.sourceId) || null : null,
-            name: Market.sourceName || `${town.name} general shop`,
-            locX: Number(Market.locX ?? town.x),
-            locY: Number(Market.locY ?? town.y),
-            locZ: Number(Market.locZ ?? town.z),
-            town: town.name
-        }
+        target: MarketOpportunity.offerTarget({ ...Market,
+            locX: Market.locX ?? town.x, locY: Market.locY ?? town.y, locZ: Market.locZ ?? town.z }, town.name)
     };
     session.shoppingTarget = session.companionShopping.target;
     session.shoppingDoneAnnounced = false;
@@ -194,37 +193,40 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
 
 async function purchaseAtDestination(bot, errand) {
     if (!errand || !bot) return { ok: false, reason: 'missing_supply_errand' };
-    if (!['npc', 'configured_store'].includes(errand.sourceType)) {
+    if (!MarketOpportunity.botCanBuy({ ...errand, selfId: errand.itemId })) {
+        return { ok: false, reason: 'configured_supply_retired' };
+    }
+    const boardSource = ['afk_player_store', 'afk_bot_store'].includes(errand.sourceType);
+    if (!boardSource && !['npc', 'configured_store'].includes(errand.sourceType)) {
         return { ok: false, reason: 'supply_source_unavailable' };
     }
 
     let store = null;
-    if (errand.sourceType === 'configured_store') {
-        const World = invoke('GameServer/World/World');
-        const sessions = World.user?.sessions || [];
-        const source = sessions.find((candidate) => {
-            const actor = candidate?.actor;
-            const candidateStore = actor?.fetchPrivateStore?.();
-            return Number(candidateStore?.storeType) === 1 && (
-                Number(actor.fetchId?.() || 0) === Number(errand.sourceId) ||
-                actor.fetchName?.() === errand.sourceName
-            );
+    let boardOffer = null;
+    if (boardSource) {
+        boardOffer = MarketOpportunity.bestOffer(errand.itemId, {
+            town: errand.target?.town,
+            buyerCharacterId: bot.fetchId(),
+            accept: (offer) => Number(offer.recordId) === Number(errand.recordId)
+                && Number(offer.lineId) === Number(errand.lineId)
+                && Number(offer.count) >= Number(errand.amount)
+                && Number(offer.price) === Number(errand.unitPrice)
         });
-        store = source?.actor?.fetchPrivateStore?.() || null;
-        const line = store?.items?.find((entry) => Number(entry.selfId) === Number(errand.itemId));
-        if (!source || !line) {
+        if (!boardOffer) return { ok: false, reason: 'supply_source_changed' };
+    }
+    if (errand.sourceType === 'configured_store') {
+        const line = MarketOpportunity.fixedStoreOffers(errand.itemId)
+            .find((offer) => offer.sourceName === errand.sourceName);
+        if (!line) {
             WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'configured_store_unavailable');
             return { ok: false, reason: 'configured_store_unavailable' };
-        }
-        if (Number(line.count) < Number(errand.amount)) {
-            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, available: Number(line.count) }, 'rejected', 'configured_store_stock_changed');
-            return { ok: false, reason: 'configured_store_stock_changed', available: Number(line.count) };
         }
         if (Number(line.price) !== Number(errand.unitPrice)) {
             WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, price: Number(line.price) }, 'rejected', 'configured_store_price_changed');
             return { ok: false, reason: 'configured_store_price_changed', price: Number(line.price) };
         }
-    } else {
+    }
+    if (!boardSource) {
         store = {
             storeType: 1,
             items: [{
@@ -233,11 +235,27 @@ async function purchaseAtDestination(bot, errand) {
                 count: Number(errand.amount)
             }]
         };
+        if (errand.sourceType === 'configured_store') {
+            const config = invoke('GameServer/Bot/MerchantStoreConfigs')[errand.sourceName];
+            const authoredLine = config?.items?.find((entry) => Number(entry.selfId) === Number(errand.itemId));
+            if (!authoredLine) return { ok: false, reason: 'configured_store_unavailable' };
+            // Keep the normalizer's source metadata: the shared trade price
+            // accessor uses the bot's shot price even after a player window
+            // has refreshed the displayed configured-store price.
+            store.items = TradeService.normalizeStoreItems({ ...config,
+                items: [{ ...authoredLine, count: Number(errand.amount) }] }, { staticStore: true });
+        }
     }
     try {
-        const bought = await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
-            expectedUnitPrice: Number(errand.unitPrice)
-        });
+        const trade = boardSource
+            ? await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(bot.fetchId(), boardOffer.store,
+                Number(errand.itemId), Number(errand.amount), { lineId: boardOffer.lineId,
+                    expectedPrice: Number(errand.unitPrice), coldState: bot.session?.coldLifeState, autoEquip: false })
+            : await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
+                expectedUnitPrice: Number(errand.unitPrice)
+            });
+        if (trade.coldState && bot.session) bot.session.coldLifeState = trade.coldState;
+        const bought = boardSource ? { qty: trade.amount, totalAdena: trade.totalPrice } : trade;
         if (Number(bought.qty) !== Number(errand.amount)) {
             WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
                 botId: bot.fetchId(),

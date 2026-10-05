@@ -35,22 +35,16 @@ function currentState(session, bot, town) {
     };
 }
 
-// A seller the companion can buy from in town: a bot's live stall, or a
-// board record, a shop at its stall or an ad by record (D6).
-function liveMerchantOffer(offer) {
-    return ['afk_player_store', 'afk_bot_store'].includes(offer?.sourceType) || (offer?.session?.actor
-        && offer.sourceType === 'private_store' && String(offer.session.accountId || '').startsWith('bot_'));
-}
-
 function affordableOffers(target, state, town) {
     const budget = PurchaseFunding.spendable(state);
-    return MarketOpportunity.hotOffers(target.selfId, {
+    const offer = MarketOpportunity.bestOffer(target.selfId, {
         town: town.name,
-        buyerCharacterId: state.characterId
-    }).filter((offer) => (
-        Number(offer.price) <= budget
-        && (offer.sourceType === 'npc' || liveMerchantOffer(offer))
-    ));
+        buyerCharacterId: state.characterId,
+        budget,
+        accept: (candidate) => candidate.sourceType === 'npc'
+            || ['afk_player_store', 'afk_bot_store'].includes(candidate.sourceType)
+    });
+    return offer ? [offer] : [];
 }
 
 function ownedTargetAmount(state, plan) {

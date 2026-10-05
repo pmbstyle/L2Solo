@@ -31,7 +31,7 @@ function inventoryItem(selfId, amount, equipped = false, slot = 0) {
 const original = {
     user: World.user,
     npc: World.npc,
-    hotOffers: MarketOpportunity.hotOffers,
+    bestOffer: MarketOpportunity.bestOffer,
     npcOffers: MarketOpportunity.npcOffers,
     buyFromStore: TradeService.buyFromStore,
     applyBestUpgrades: BotEquipmentUpgrade.applyBestUpgrades,
@@ -122,7 +122,8 @@ async function run() {
 
     World.user = { sessions: [] };
     World.npc = { spawns: [npc, alternateNpc] };
-    MarketOpportunity.hotOffers = (selfId) => Number(selfId) === 1 && !purchased ? [offer] : [];
+    MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
+        && (!options.accept || options.accept(offer)) ? offer : null;
     MarketOpportunity.npcOffers = (selfId, townName) => (
         Number(selfId) === 1 && townName === town.name ? [offer] : []
     );
@@ -184,9 +185,9 @@ async function run() {
         }
     };
     let genericMarketLookups = 0;
-    MarketOpportunity.hotOffers = (selfId) => {
+    MarketOpportunity.bestOffer = (selfId) => {
         genericMarketLookups += 1;
-        return Number(selfId) === 1 ? [{
+        return Number(selfId) === 1 ? {
             sourceType: 'afk_player_store',
             sourceId: afkSellerActor.fetchId(),
             sourceName: afkSellerActor.fetchName(),
@@ -197,7 +198,7 @@ async function run() {
             count: 1,
             available: true,
             session: afkSellerSession
-        }] : [];
+        } : null;
     };
     World.user = { sessions: [afkSellerSession] };
     ShoppingState.tick(genericSession, genericBot, null, {
@@ -217,7 +218,8 @@ async function run() {
     assert(genericMoves.length >= 1, 'the generic hot bot must route to the AFK seller');
 
     World.user = { sessions: [] };
-    MarketOpportunity.hotOffers = (selfId) => Number(selfId) === 1 && !purchased ? [offer] : [];
+    MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
+        && (!options.accept || options.accept(offer)) ? offer : null;
 
     let sameTownShoppingStarted = 0;
     ShoppingState.sellAndRestock = () => { sameTownShoppingStarted++; };
@@ -324,7 +326,7 @@ run().catch((error) => {
 }).finally(() => {
     World.user = original.user;
     World.npc = original.npc;
-    MarketOpportunity.hotOffers = original.hotOffers;
+    MarketOpportunity.bestOffer = original.bestOffer;
     MarketOpportunity.npcOffers = original.npcOffers;
     TradeService.buyFromStore = original.buyFromStore;
     BotEquipmentUpgrade.applyBestUpgrades = original.applyBestUpgrades;
