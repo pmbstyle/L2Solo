@@ -9,6 +9,16 @@ function profileFor(state) {
     return BotPersona.of(state);
 }
 
+// How much a persona wants a party, before the situation: shared by the
+// bot-to-bot intent below and the answer to a player's invite
+// (PersonaPartyDecisionPolicy). Not rounded.
+function baseScore(persona) {
+    const traits = persona.traits;
+    const driveBonus = persona.primaryDrive === 'social' ? 18
+        : persona.primaryDrive === 'progression' ? 4 : -8;
+    return traits.sociability * 55 + traits.commitment * 25 + traits.empathy * 10 + driveBonus;
+}
+
 function backgroundIntent(state = {}) {
     const persona = profileFor(state);
     if (!persona) return { accept: true, reason: 'no_persona', score: null, persona: null };
@@ -16,17 +26,9 @@ function backgroundIntent(state = {}) {
         return { accept: true, reason: 'goal_requires_party', score: 100, persona };
     }
 
-    const traits = persona.traits;
     const establishedBond = Object.values(state.stats?.partyHistory || {})
         .some((entry) => Number(entry?.runs || 0) >= 3);
-    const driveBonus = persona.primaryDrive === 'social' ? 18
-        : persona.primaryDrive === 'progression' ? 4 : -8;
-    const score = Math.round(
-        traits.sociability * 55 +
-        traits.commitment * 25 +
-        traits.empathy * 10 +
-        driveBonus
-    );
+    const score = Math.round(baseScore(persona));
     const accept = establishedBond || score >= 45;
     return {
         accept,
@@ -74,4 +76,4 @@ function explain(state, peers = [], coverage = {}) {
     };
 }
 
-module.exports = { backgroundIntent, preference, explain };
+module.exports = { baseScore, backgroundIntent, preference, explain };

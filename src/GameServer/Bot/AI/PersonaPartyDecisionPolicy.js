@@ -1,5 +1,6 @@
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
+const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
 const ACCEPT_SCORE = 45;
 
@@ -17,18 +18,14 @@ function evaluate(subject, memory = {}) {
         return { accept: true, reason: 'available', reasonText: 'available', score: null, persona: null };
     }
 
-    const traits = persona.traits;
     const trust = Number(memory.trust || 0);
     const familiarity = Number(memory.familiarity || 0);
     const relationship = BotSocialMemory.relationship(memory);
     const knownPartner = relationship === 'trusted' || relationship === 'friendly';
-    const driveBonus = persona.primaryDrive === 'social' ? 18
-        : persona.primaryDrive === 'progression' ? 6 : -12;
+    // The shared persona score (PersonaPartyPolicy.baseScore) plus what the
+    // bot knows of this player.
     const score = Math.round(clamp(
-        traits.sociability * 60 +
-        traits.empathy * 10 +
-        traits.commitment * 10 +
-        driveBonus +
+        PersonaPartyPolicy.baseScore(persona) +
         trust * 4 +
         familiarity * 1.5,
         0,
