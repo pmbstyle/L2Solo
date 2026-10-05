@@ -5401,10 +5401,11 @@ const Database = {
         }, 'warehouse:deposit'));
     },
 
-    transferWarehouseToInventory(characterId, item, { coldState = null } = {}) {
+    transferWarehouseToInventory(characterId, item, { coldState = null, withdrawal = null } = {}) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            let life = null;
             if (coldState) {
-                const life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
                 // A queued flush can hand the bot to a worker or add a craft
                 // reservation after the caller planned the withdrawal.
                 if (!life || Number(coldState.characterId) !== Number(characterId)
@@ -5425,6 +5426,14 @@ const Database = {
             const warehouseAmount = Number(source.amount) - Number(item.amount);
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
+            if (life && withdrawal) {
+                const timestamp = Number(withdrawal.at) || now();
+                const stats = jsonObject(life.statsJson);
+                stats.lastWarehouseWithdrawal = { items: withdrawal.items, at: timestamp };
+                if (withdrawal.items.some(entry => entry.reason === 'market')) stats.marketSellRetryAfter = null;
+                write(`UPDATE bot_life_state SET statsJson=?, nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END
+                    WHERE characterId=?`, [JSON.stringify(stats), timestamp, characterId]);
+            }
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
