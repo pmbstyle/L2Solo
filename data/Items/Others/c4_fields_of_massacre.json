@@ -1,0 +1,62 @@
+[
+  {
+    "selfId": 7656,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Warrior Servitor",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7657,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Wizard Servitor",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7658,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Assassin Servitor",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 7659,
+    "template": {
+      "kind": "Other",
+      "name": "Spellbook - Final Servitor",
+      "class1": 4,
+      "class2": 0,
+      "mass": 120,
+      "price": 11600
+    },
+    "etc": {
+      "stackable": false,
+      "consumable": false
+    }
+  }
+]

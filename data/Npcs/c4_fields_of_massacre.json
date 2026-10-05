@@ -1,0 +1,246 @@
+[
+  {
+    "selfId": 966,
+    "template": {
+      "kind": "Monster",
+      "name": "Black Shadow",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1513,
+      "pAtkRnd": 30,
+      "pDef": 512,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 100
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "giant_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.829254930606,
+      "sp": 1616
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 969,
+    "template": {
+      "kind": "Monster",
+      "name": "Giant's Shadow",
+      "title": "",
+      "level": 79,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3921,
+      "pAtkRnd": 5,
+      "pDef": 566,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": -3.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 88,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 4028,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "giant_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.089889440795,
+      "sp": 1446
+    },
+    "traits": {
+      "race": "giant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 973,
+    "template": {
+      "kind": "Monster",
+      "name": "Forgotten Ancient People",
+      "title": "",
+      "level": 77,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1664,
+      "pAtkRnd": 10,
+      "pDef": 463,
+      "mAtk": 1031,
+      "mDef": 442,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 16,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 4364,
+      "maxMp": 1747,
+      "revHp": 6.72,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 44
+    },
+    "equipment": {
+      "weapon": 3938,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "giant_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.860178782257,
+      "sp": 1836
+    },
+    "traits": {
+      "race": "giant",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1058,
+    "template": {
+      "kind": "Monster",
+      "name": "Beast Lord",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 946,
+      "pAtkRnd": 30,
+      "pDef": 335,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 20.54,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 34,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "beast_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 2.188888888889,
+      "sp": 684
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  }
+]

@@ -569,6 +569,7 @@ const tests = [
     'tests/test_c4_devils_isle_elites.js',
     'tests/test_c4_cemetery.js',
     'tests/test_c4_forsaken_plains.js',
+    'tests/test_c4_fields_of_massacre.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',
