@@ -345,6 +345,7 @@ const tests = [
     'tests/test_cold_safe_enchant.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
+    'tests/test_shop_place_pinning.js',
     'tests/test_bot_market_spot_town.js',
     'tests/test_bot_market_nearest_town.js',
     'tests/test_bot_market_offer_order.js',

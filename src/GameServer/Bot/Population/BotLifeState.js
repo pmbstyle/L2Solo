@@ -2664,6 +2664,8 @@ const BotLifeState = {
 
     enqueueEquipmentGoalAdvanceForState,
 
+    shouldRecoverOrphanedGiranState,
+
     marketGoalCandidates(limit = 8, timestamp = now(), options = {}) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
