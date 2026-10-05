@@ -1,6 +1,7 @@
 // Shared social decisions. A forecast is not an accepted encounter or a memory event.
 const Config = require('../Bot/Population/PopulationConfig');
 const { scaleChance, retreatChance } = require('./PvpAggression');
+const Visible = require('./VisibleStrength');
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, Number(value) || 0));
 function traits(persona = {}) {
     const t = persona.traits || {};
@@ -16,7 +17,7 @@ function sameClan(relation) {
 function feeling(relation) {
     const p = relation?.ready ? (relation.effective || relation.personal) : null;
     const result = p
-        ? { warmth: clamp((p.affinity + p.trust * 2) / 30, -1, 1), hostility: clamp(p.hostility / 30), fear: clamp(p.fear / 30) }
+        ? { warmth: clamp((p.affinity + p.trust * 2) / 30, -1, 1), hostility: clamp(p.hostility / 30), fear: Visible.fear(relation) }
         : { warmth: 0, hostility: 0, fear: 0 };
     if (sameClan(relation)) result.warmth = Math.max(result.warmth, CLANMATE_WARMTH);
     return result;

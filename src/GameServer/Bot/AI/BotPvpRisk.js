@@ -1,5 +1,6 @@
 const Config = require('../Population/PopulationConfig');
 const Aggression = require('../../Social/PvpAggression');
+const Visible = require('../../Social/VisibleStrength');
 
 function actorId(actor) {
     return Number(actor?.fetchId?.()) || 0;
@@ -90,7 +91,7 @@ function combatStrength(actor, { includeSummon = true } = {}) {
     const cpRatio = ratio(actor?.fetchCp?.(), actor?.fetchMaxCp?.(), 0);
     const manaDependent = invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(actor);
     const gearFactor = 1 + Math.log1p(gearValue / Math.max(1000, level * level * 50));
-    const resources = Math.max(0.03, hpRatio + 0.25 * cpRatio) * (manaDependent ? 0.2 + 0.8 * mpRatio : 0.9 + 0.1 * mpRatio);
+    const resources = Visible.resources(hpRatio, cpRatio, mpRatio, manaDependent);
     const clamp = (value, low = 0.5, high = 2) => Math.max(low, Math.min(high, value));
     const relative = (value, baseline) => Number(value) > 0 ? clamp(Number(value) / baseline) : 1;
     // Collective stats include equipment bonuses and active buffs. Missing
@@ -131,7 +132,7 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
     const caution = voice.trait(session, 'caution');
     const assertiveness = voice.trait(session, 'assertiveness');
     const empathy = voice.trait(session, 'empathy');
-    const avoidsPvp = caution >= 0.7 && assertiveness <= 0.4 && empathy >= 0.6;
+    const avoidsPvp = Visible.avoidsPvp({ caution, assertiveness, empathy });
     const requiredRatio = avoidsPvp ? Infinity : (0.9 + 0.55 * caution - 0.35 * assertiveness)
         * Aggression.retreatMultiplier(Config.pvpAggression);
     return {
