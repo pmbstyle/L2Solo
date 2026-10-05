@@ -1236,6 +1236,27 @@ function state(characterId = 1, overrides = {}) {
     assert.strictEqual(release.payload.releases[0].token.leaseId, 'error-lease', 'resolver errors must release the exact lease');
     assert.strictEqual(errorKernel.snapshot().errors, 1);
 
+    // The bot's look at its board lines (group E) leaves the worker with its
+    // proposal: the main thread applies the new asks after the commit.
+    const marketMessages = [];
+    const marketKernel = new ColdSimulationKernel({
+        resolveSolo: resolver,
+        projectResolve: async (current) => ({ state: { ...current, stats: { ...current.stats, priceBeliefs: { t: 1 } } },
+            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }], withdrawals: [] } }),
+        emit: (type, payload) => marketMessages.push({ type, payload }),
+        now: () => now
+    });
+    marketKernel.upsert({ state: state(40), context: { spot: { id: 'spot', rewards: {} } } });
+    marketKernel.tick();
+    marketKernel.onClaimAck({ grants: [{
+        ok: true, characterId: 40, ownerId: 'cold_simulation_owner', revision: 4, leaseId: 'market-lease', leaseUntil: now + 30000
+    }] });
+    await marketKernel.resolveChain;
+    marketKernel.flush(null, true);
+    const marketProposal = marketMessages.find((entry) => entry.type === 'proposal_batch').payload.proposals[0];
+    assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }]);
+    assert.deepStrictEqual(marketProposal.nextState.stats.priceBeliefs, { t: 1 }, 'the beliefs ride in the state');
+
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {
     console.error(error);

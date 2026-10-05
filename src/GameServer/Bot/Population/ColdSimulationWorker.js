@@ -86,7 +86,7 @@ const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
-const { BoardIndex } = require('../../AfkTrade/BoardIndex');
+const { BoardIndex, SELL: SELL_SIDE } = require('../../AfkTrade/BoardIndex');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -126,6 +126,25 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
+
+// At each cold resolve a bot with sell lines on the board may look at them
+// (attention) and price them again (MarketPricing.look).
+const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+function reviewMarket(state, timestamp) {
+    const board = boardReady();
+    if (!board || state?.phase !== 'cold') return null;
+    const lines = board.ownerLines(state.characterId).filter((line) => line.storeType === SELL_SIDE);
+    if (!lines.length) return null;
+    const ctx = MarketPricing.traderContext(state, {
+        timestamp, board, persona: BotPersona.of(state),
+        npcOffersFor: (selfId) => planningNpcCatalog.offersFor(selfId),
+        findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId)
+    });
+    const looked = MarketPricing.look(state, lines, ctx);
+    if (!looked) return null;
+    return { priceBeliefs: PriceBelief.writeBook(looked.book), reprices: looked.reprices, withdrawals: looked.withdrawals };
+}
 
 function currentPlanningOccupancy(timestamp = Date.now()) {
     if (planningOccupancyCache && timestamp - planningOccupancyCachedAt < 1000) {
@@ -186,11 +205,15 @@ function startKernel(config = {}) {
             buyOrderEscrow: kernel.states.get(Number(state.characterId))?.context?.buyOrderEscrow
         }),
         projectResolve: async (state, result, timestamp) => {
-            const projected = await LifeStateProjector.prepareResolve(state, result, {
+            const resolved = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
                 timestamp,
                 projectClassProgression: true
             });
+            // The bot's look at its board lines (group E): its beliefs ride in
+            // the state, the new asks go to the main thread with the proposal.
+            const market = reviewMarket(resolved, timestamp);
+            const projected = market ? { ...resolved, stats: { ...resolved.stats, priceBeliefs: market.priceBeliefs } } : resolved;
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
             const afterClassId = Number(projected.stats?.classProgressionClassId ?? projected.stats?.classId ?? beforeClassId);
@@ -204,7 +227,9 @@ function startKernel(config = {}) {
                 : [];
             return {
                 state: projected,
-                durable: progressionChanged ? { classId: afterClassId, skills } : null
+                durable: progressionChanged ? { classId: afterClassId, skills } : null,
+                ...(market?.reprices.length || market?.withdrawals.length
+                    ? { market: { reprices: market.reprices, withdrawals: market.withdrawals } } : {})
             };
         },
         planLifecycle: ({ state, context, timestamp }) => {

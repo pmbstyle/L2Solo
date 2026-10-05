@@ -1100,6 +1100,7 @@ class ColdSimulationKernel {
                     baseState: state,
                     nextState: projectedState,
                     durable: projection?.durable || null,
+                    ...(projection?.market ? { market: projection.market } : {}),
                     result: {
                         ...result,
                         events: [
@@ -1177,6 +1178,7 @@ class ColdSimulationKernel {
                 baseState: resolveState,
                 nextState: projectedState,
                 durable: projection?.durable || null,
+                ...(projection?.market ? { market: projection.market } : {}),
                 result,
                 options: { allowLifecycle: true }
             };

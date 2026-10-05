@@ -1418,6 +1418,12 @@ class ColdSimulationCoordinator {
         }
         const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
+        // The bot looked at its board lines in the worker: its new asks.
+        if (entry.proposal.market) {
+            await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(state.characterId, entry.proposal.market)
+                .catch((error) => utils.infoWarn('BotMarket', 'board look failed for %s: %s',
+                    state.characterId, error?.message || error));
+        }
         await LifeState.enqueueEquipmentGoalAdvanceForState(state)
             .catch((error) => {
                 utils.infoWarn('BotGoals', 'equipment goal advance enqueue failed for %s: %s',
