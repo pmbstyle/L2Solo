@@ -11,7 +11,7 @@
 // its first price (0.5), what a crafter could pay for it (0.3) and its first
 // price (0.3); read once with the bot's understanding error, which halves
 // every 3 own deals of the item.
-// Learning at the bot's own look (MarketReview): its sales say buyers pay at
+// Learning at the bot's own look (MarketPricing.look): its sales say buyers pay at
 // least its ask, the buyers of its counter that passed say less, new deals of
 // the item are prices, and the rival's current ask counts by the bot's
 // understanding when it changed.

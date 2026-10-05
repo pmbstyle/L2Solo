@@ -1,7 +1,7 @@
 // How a bot prices its board trade (group E, user 2026-10-05): the shared
 // steps over its beliefs (PriceBelief) and the one decision (PriceDecision),
 // for the main thread (a listing at the market, a buy ad, the NPC sale) and
-// the cold worker (the look at its own lines, MarketReview there).
+// the cold worker (the look at its own lines, ColdSimulationWorker).
 //
 // The caller's thread supplies the board index, the NPC shops selling an item
 // and the trader's trip cost; the counters and first prices are read from
@@ -123,7 +123,7 @@ function lookChance(state, lines, ctx, lookAt) {
     return TendencyRoll.chance(worth / Math.max(1e-9, worth + cost));
 }
 
-// The bot's look at its own sell lines (MarketReview, cold worker): learns
+// The bot's look at its own sell lines (ColdSimulationWorker at a cold resolve): learns
 // from what happened since its last look and chooses each line's ask again
 // where new evidence arrived. Returns { book, reprices: [{ recordId, lineId,
 // selfId, price }], withdrawals: [{ recordId, lineId, selfId }] }; null when

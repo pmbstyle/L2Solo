@@ -168,7 +168,7 @@ function stateWithEscrow(state, stock) {
 
 // The bot's shop lines and what it lists past them (sell ads), from the
 // sale decision (MarketListingPolicy.evaluate) on its bag and its shop: a kept
-// line keeps its price (the bot's own look reprices it, MarketReview); a new
+// line keeps its price (the bot's own look reprices it, MarketPricing.look); a new
 // one is listed at the bot's ask. Shots fill the shop first, as the author's
 // review placed them. Returns { lines, listed, listings, book }.
 function sellLines(state, stock, inventory, evaluateOptions = {}) {
@@ -393,7 +393,7 @@ async function withdrawBuyAds(ownerId, selfId = null, state = null) {
 // The sell side of a review: the bot's shop (the author's AFK sell shop).
 // It changes when the bag changed, the shop's town moved or a line is no
 // longer a lot; the prices of its lines are the bot's own look (attention,
-// MarketReview), not a fixed review period.
+// MarketPricing.look), not a fixed review period.
 async function reconcileSellShop(state, goal) {
     const ownerId = Number(state.characterId);
     const shop = AfkTrade.findOwnerProjection(ownerId)?.shop;
@@ -618,7 +618,7 @@ async function withdraw(ownerId) {
     return { ...result, stopped: !!result.stopped || ads.withdrawn };
 }
 
-// What the bot's own look decided (MarketReview, cold worker): new asks of
+// What the bot's own look decided (MarketPricing.look in the cold worker): new asks of
 // its lines, and lines whose best outcome is now the NPC (they leave the
 // board; the NPC buys them at the next town visit). A line a deal or another
 // move changed meanwhile waits for the next look.

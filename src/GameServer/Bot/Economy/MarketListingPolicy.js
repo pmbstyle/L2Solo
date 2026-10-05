@@ -90,7 +90,7 @@ const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 // board at its best ask, the NPC buy-back now, or keeping it), one roll; the
 // items for the board compete for its free slots by their gain over the NPC,
 // one weighted roll. A line the bot already has keeps its slot and its price
-// (its own look reprices it or takes it back, MarketReview). options: now
+// (its own look reprices it or takes it back, MarketPricing.look). options: now
 // (the decision point), slots (board slots), kept (selfId -> price of its
 // lines), stored (selfId -> units in the warehouse), plus traderContext's.
 // Returns { candidates, decisions, listings, npc, warehouse, book } with the
