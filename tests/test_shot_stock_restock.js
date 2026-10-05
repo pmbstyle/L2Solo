@@ -60,8 +60,10 @@ const originalFetchItems = Database.fetchItems;
     const originalBuyFromShop = AfkTrade.buyFromShop;
     let offers = [];
     const shopBuys = [];
+    const failingStores = new Set();
     AfkTrade.offers = () => offers;
     AfkTrade.buyFromShop = async (_characterId, store, selfId, amount, options) => {
+        if (failingStores.has(store)) throw new Error('afk_trade_stock_changed');
         shopBuys.push({ store, amount, price: options.expectedPrice });
         const bag = currentActor.backpack;
         bag.fetchItemFromSelfId(57).setAmount(bag.fetchItemFromSelfId(57).fetchAmount() - amount * options.expectedPrice);
@@ -116,6 +118,26 @@ const originalFetchItems = Database.fetchItems;
         assert.strictEqual(shopped.delta, 3000, 'the NPC sells the rest');
         assert.strictEqual(shopped.cost, 5000 + 3000 + 3600 + 900 * 7);
         assert.strictEqual(shopper.backpack.fetchItemFromSelfId(1835).fetchAmount(), 3000);
+
+        // A shop line that fails at purchase (the listing sold out, closed or was
+        // repriced after the bot chose it) leaves its shots and money to the NPC (E31).
+        shopBuys.length = 0;
+        failingStores.add('b');
+        offers = [{ store: 'a', price: 5, count: 1000 }, { store: 'b', price: 6, count: 2500 }];
+        const partlyFailed = currentActor = actorWith({ shots: 0, adena: 100000 });
+        const afterFailedLine = await ShotStock.purchaseActorRestock(partlyFailed, { plan, unitPrice: 7 });
+        assert.deepStrictEqual(shopBuys.map((buy) => [buy.store, buy.amount]), [['a', 1000]]);
+        assert.deepStrictEqual([afterFailedLine.ok, afterFailedLine.delta, afterFailedLine.cost], [true, 3000, 5000 + 2000 * 7],
+            'the NPC sells what the failed shop line did not');
+        assert.strictEqual(partlyFailed.backpack.fetchItemFromSelfId(1835).fetchAmount(), 3000);
+        shopBuys.length = 0;
+        offers = [{ store: 'b', price: 6, count: 5000 }];
+        const allFailed = currentActor = actorWith({ shots: 0, adena: 100000 });
+        const afterFailedShop = await ShotStock.purchaseActorRestock(allFailed, { plan, unitPrice: 7 });
+        assert.deepStrictEqual([afterFailedShop.ok, afterFailedShop.delta, afterFailedShop.cost], [true, 3000, 3000 * 7],
+            'a bot whose only shop failed buys its restock from the NPC');
+        assert.strictEqual(allFailed.backpack.fetchItemFromSelfId(57).fetchAmount(), 100000 - 3000 * 7);
+        failingStores.clear();
         offers = [];
 
         // The decided example: a level 30 bot with 51,000 adena and no D shots at 20 each

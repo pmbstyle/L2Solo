@@ -208,24 +208,29 @@ async function reviewDemand(state, now) {
     const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice,
         offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: state.characterId }) });
     let bought = false;
+    let boughtAmount = 0;
+    let spent = 0;
     for (const line of restock.shops) {
         try {
             const trade = await AfkTrade.buyFromShop(state.characterId, line.offer.store, plan.selfId, line.amount,
                 { expectedPrice: line.price, coldState: state });
+            boughtAmount += line.amount;
+            spent += line.cost;
             if (trade.coldState) {
                 state = trade.coldState;
                 bought = true;
             }
         } catch (_) {
-            // Retry on a later lifecycle when the offer changes.
+            // The NPC sells what a failed line did not (ShotStock.npcRestockAmount).
         }
     }
-    if (restock.npcAmount > 0) {
+    const npcAmount = ShotStock.npcRestockAmount(restock, boughtAmount, spent);
+    if (npcAmount > 0) {
         const purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-            selfId: plan.selfId, name: plan.name, amount: restock.npcAmount, unitPrice: staticPrice, coldState: state
+            selfId: plan.selfId, name: plan.name, amount: npcAmount, unitPrice: staticPrice, coldState: state
         });
         if (purchase.ok) {
-            state = debitAdena(state, Number(purchase.spent || restock.npcAmount * staticPrice));
+            state = debitAdena(state, Number(purchase.spent || npcAmount * staticPrice));
             const refreshed = await acceptMutation(purchase, state, 'shot_static_inventory');
             return await persist({ ...refreshed, stats: { ...(refreshed.stats || {}), shotDemand: null } },
                 'shot_static_purchase') || refreshed;

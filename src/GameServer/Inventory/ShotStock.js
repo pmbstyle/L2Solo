@@ -343,8 +343,10 @@ function restockPlan(value, options = {}) {
         left -= amount;
         money -= amount * price;
     }
-    const npcAmount = left > 0 ? Math.min(left, Math.floor(money / npcPrice)) : 0;
-    const amount = shops.reduce((sum, line) => sum + line.amount, 0) + npcAmount;
+    const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
+    const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
+    const npcAmount = npcRestockAmount({ needed, targetAmount: PURCHASE_TARGET_AMOUNT, currentAmount,
+        unitPrice: npcPrice, adena, reserve, potionCost }, shopAmount, shopCost);
     return {
         plan,
         currentAmount,
@@ -353,12 +355,22 @@ function restockPlan(value, options = {}) {
         shops,
         npcAmount,
         unitPrice: npcPrice,
-        amount,
-        cost: shops.reduce((sum, line) => sum + line.cost, 0) + npcAmount * npcPrice,
+        amount: shopAmount + npcAmount,
+        cost: shopCost + npcAmount * npcPrice,
         adena,
         reserve,
         potionCost
     };
+}
+
+// The NPC part of a restock (restockPlan): the rest up to 3,000 with the money
+// left after the players' shops. `bought` and `spent` are what the shop lines
+// bought, so a line that fails at purchase leaves its shots and money to the NPC.
+function npcRestockAmount(restock, bought = 0, spent = 0) {
+    if (!restock.needed || !(restock.unitPrice > 0)) return 0;
+    const left = restock.targetAmount - restock.currentAmount - bought;
+    const money = Math.max(0, restock.adena - restock.reserve - restock.potionCost - spent);
+    return Math.max(0, Math.min(left, Math.floor(money / restock.unitPrice)));
 }
 
 // A hot bot's restock (restockPlan) on its trip: the players' shops, then the NPC.
@@ -391,19 +403,20 @@ async function purchaseActorRestock(actor, options = {}) {
     }
     const adenaItem = actor.backpack.fetchItemFromSelfId(57);
     const adena = Number(adenaItem?.fetchAmount ? adenaItem.fetchAmount() : 0);
-    const npcCost = restock.npcAmount * restock.unitPrice;
-    if (!adenaItem || restock.npcAmount <= 0 || adena < npcCost) {
+    const npcAmount = npcRestockAmount(restock, delta, cost);
+    const npcCost = npcAmount * restock.unitPrice;
+    if (!adenaItem || npcAmount <= 0 || adena < npcCost) {
         return delta > 0
             ? { ok: true, changed: true, plan, amount: shotAmount(actor, plan), delta, cost, adena }
             : { ok: false, reason: 'not_enough_adena', plan, cost: restock.cost, adena };
     }
 
     const nextAdena = adena - npcCost;
-    const nextAmount = shotAmount(actor, plan) + restock.npcAmount;
+    const nextAmount = shotAmount(actor, plan) + npcAmount;
     await Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
     adenaItem.setAmount(nextAdena);
     const result = await ensureActorStock(actor, { targetAmount: nextAmount, plan });
-    return { ok: true, ...result, delta: delta + restock.npcAmount, cost: cost + npcCost, adena: nextAdena };
+    return { ok: true, ...result, delta: delta + npcAmount, cost: cost + npcCost, adena: nextAdena };
 }
 
 // A weapon change can switch the shot grade and kind: buy the restock with the
@@ -463,6 +476,7 @@ module.exports = {
     ensureActorStock,
     ensureCharacterStock,
     restockPlan,
+    npcRestockAmount,
     purchaseActorRestock,
     restockAfterWeaponChange,
     needsActorRestock,

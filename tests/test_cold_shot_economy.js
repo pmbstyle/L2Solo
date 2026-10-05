@@ -204,6 +204,13 @@ const original = {
         'a cold bot below 1000 shots buys from the cheaper shop, then the NPC');
     assert.strictEqual(restocked.adena, 12800, 'the cold restock keeps the consumables reserve and the potions money');
     assert.strictEqual(restocked.stats.shotDemand, null);
+    // A shop line that fails at purchase leaves its shots and money to the NPC (E31):
+    // 51,000 - 7,500 - 5,280 = 38,220 to spend, 382 D shots at 100.
+    coldBuys.length = 0;
+    AfkTrade.buyFromShop = async () => { throw new Error('afk_trade_stock_changed'); };
+    const afterFailedShop = (await Service.review({ ...fighter, characterId: 431 }, procurementAt + 3000)).state;
+    assert.deepStrictEqual(coldBuys, [['npc', 382, 100]], 'a cold bot whose shop failed buys its restock from the NPC');
+    assert.strictEqual(afterFailedShop.adena, 51000 - 38200);
     console.log('Cold shot economy buys scrap, crystallizes and crafts a demanded batch');
 })().finally(() => {
     for (const [key, value] of Object.entries(original)) {
