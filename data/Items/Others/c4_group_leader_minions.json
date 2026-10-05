@@ -1,0 +1,17 @@
+[
+  {
+    "selfId": 5275,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Spiritshot (B) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 100000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

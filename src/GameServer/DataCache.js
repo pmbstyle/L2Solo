@@ -78,6 +78,7 @@ const DataCache = {
             ...validateModel(path + 'Npcs/c4_low_level_raid_bosses'),
             ...validateModel(path + 'Npcs/c4_raid_bosses'),
             ...validateModel(path + 'Npcs/c4_raid_boss_minions'),
+            ...validateModel(path + 'Npcs/c4_group_leader_minions'),
             ...validateModel(path + 'Npcs/c4_quest_content'),
             ...C4LateTownGatekeepers.npcs,
             ...require('./World/GiranMammon').npcs,
@@ -194,7 +195,8 @@ const DataCache = {
             ...validateModel(path + 'Npcs/Rewards/c4_catacomb_of_the_forbidden_path'),
             ...validateModel(path + 'Npcs/Rewards/c4_low_level_raid_bosses'),
             ...validateModel(path + 'Npcs/Rewards/c4_raid_bosses'),
-            ...validateModel(path + 'Npcs/Rewards/c4_raid_boss_minions')
+            ...validateModel(path + 'Npcs/Rewards/c4_raid_boss_minions'),
+            ...validateModel(path + 'Npcs/Rewards/c4_group_leader_minions')
         ];
         DataCache.adminShop       = validateModel(path + 'Admin/Shop/shop');
 
@@ -266,7 +268,8 @@ const DataCache = {
             ...validateModel(path + 'Items/Others/c4_raid_bosses'),
             ...validateModel(path + 'Items/Others/c4_quest_298_380_items'),
             ...validateModel(path + 'Items/Others/c4_quest_334_items'),
-            ...validateModel(path + 'Items/Others/c4_recipe_scrolls')
+            ...validateModel(path + 'Items/Others/c4_recipe_scrolls'),
+            ...validateModel(path + 'Items/Others/c4_group_leader_minions')
         ];
 
         DataCache.skills = invoke('GameServer/Skills/C4SkillRules').expandSourcedLevels([

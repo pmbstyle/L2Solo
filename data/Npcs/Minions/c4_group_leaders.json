@@ -1,0 +1,554 @@
+[
+  {
+    "bossId": 117,
+    "minionId": 118,
+    "min": 1,
+    "max": 3
+  },
+  {
+    "bossId": 376,
+    "minionId": 377,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 398,
+    "minionId": 399,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 520,
+    "minionId": 445,
+    "min": 3,
+    "max": 5
+  },
+  {
+    "bossId": 522,
+    "minionId": 524,
+    "min": 2,
+    "max": 4
+  },
+  {
+    "bossId": 738,
+    "minionId": 739,
+    "min": 3,
+    "max": 5
+  },
+  {
+    "bossId": 745,
+    "minionId": 746,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 747,
+    "minionId": 748,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 749,
+    "minionId": 750,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 751,
+    "minionId": 752,
+    "min": 3,
+    "max": 3
+  },
+  {
+    "bossId": 753,
+    "minionId": 1040,
+    "min": 4,
+    "max": 4
+  },
+  {
+    "bossId": 758,
+    "minionId": 759,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 758,
+    "minionId": 760,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 761,
+    "minionId": 762,
+    "min": 2,
+    "max": 3
+  },
+  {
+    "bossId": 763,
+    "minionId": 764,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 763,
+    "minionId": 765,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 763,
+    "minionId": 766,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 767,
+    "minionId": 768,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 767,
+    "minionId": 769,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 767,
+    "minionId": 770,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 771,
+    "minionId": 772,
+    "min": 1,
+    "max": 3
+  },
+  {
+    "bossId": 773,
+    "minionId": 774,
+    "min": 2,
+    "max": 4
+  },
+  {
+    "bossId": 779,
+    "minionId": 750,
+    "min": 1,
+    "max": 3
+  },
+  {
+    "bossId": 941,
+    "minionId": 940,
+    "min": 3,
+    "max": 3
+  },
+  {
+    "bossId": 947,
+    "minionId": 945,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 947,
+    "minionId": 946,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 950,
+    "minionId": 948,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 950,
+    "minionId": 949,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 953,
+    "minionId": 951,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 953,
+    "minionId": 952,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 956,
+    "minionId": 954,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 956,
+    "minionId": 955,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 959,
+    "minionId": 957,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 959,
+    "minionId": 958,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 963,
+    "minionId": 960,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 963,
+    "minionId": 961,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 963,
+    "minionId": 962,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 966,
+    "minionId": 964,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 966,
+    "minionId": 965,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 969,
+    "minionId": 967,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 969,
+    "minionId": 968,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 973,
+    "minionId": 970,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 973,
+    "minionId": 971,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 973,
+    "minionId": 972,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 974,
+    "minionId": 975,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 974,
+    "minionId": 976,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 977,
+    "minionId": 978,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 977,
+    "minionId": 979,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 980,
+    "minionId": 981,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 980,
+    "minionId": 982,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 983,
+    "minionId": 984,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 983,
+    "minionId": 985,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 983,
+    "minionId": 1074,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 986,
+    "minionId": 987,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 986,
+    "minionId": 988,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 989,
+    "minionId": 990,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 991,
+    "minionId": 992,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 991,
+    "minionId": 993,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 994,
+    "minionId": 995,
+    "min": 3,
+    "max": 4
+  },
+  {
+    "bossId": 1058,
+    "minionId": 1059,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 1058,
+    "minionId": 1060,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 1075,
+    "minionId": 1076,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1075,
+    "minionId": 1077,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 1078,
+    "minionId": 1079,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1078,
+    "minionId": 1080,
+    "min": 1,
+    "max": 2
+  },
+  {
+    "bossId": 1081,
+    "minionId": 1082,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1081,
+    "minionId": 1083,
+    "min": 1,
+    "max": 3
+  },
+  {
+    "bossId": 1090,
+    "minionId": 1091,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1090,
+    "minionId": 1092,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1312,
+    "minionId": 1313,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 1343,
+    "minionId": 1344,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 1345,
+    "minionId": 1346,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 1347,
+    "minionId": 1348,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1347,
+    "minionId": 1349,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1369,
+    "minionId": 1370,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 1371,
+    "minionId": 1372,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 1373,
+    "minionId": 1374,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1373,
+    "minionId": 1375,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1541,
+    "minionId": 1542,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1541,
+    "minionId": 1543,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1544,
+    "minionId": 1545,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1544,
+    "minionId": 1546,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1596,
+    "minionId": 1597,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1596,
+    "minionId": 1598,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1599,
+    "minionId": 1600,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 1599,
+    "minionId": 1601,
+    "min": 1,
+    "max": 1
+  },
+  {
+    "bossId": 5021,
+    "minionId": 492,
+    "min": 6,
+    "max": 8
+  },
+  {
+    "bossId": 5022,
+    "minionId": 367,
+    "min": 1,
+    "max": 3
+  },
+  {
+    "bossId": 5036,
+    "minionId": 5037,
+    "min": 2,
+    "max": 3
+  },
+  {
+    "bossId": 5065,
+    "minionId": 5066,
+    "min": 2,
+    "max": 2
+  },
+  {
+    "bossId": 5110,
+    "minionId": 5111,
+    "min": 3,
+    "max": 5
+  },
+  {
+    "bossId": 5113,
+    "minionId": 5111,
+    "min": 3,
+    "max": 6
+  }
+]
