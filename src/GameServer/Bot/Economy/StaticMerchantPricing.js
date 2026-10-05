@@ -86,8 +86,8 @@ function sellersOf(selfId) {
     return sellers.get(Number(selfId)) || [];
 }
 
-function validPrice(line) {
-    return Number.isSafeInteger(Number(line.price)) && Number(line.price) > 0;
+function validPrice(line, minimum = 1) {
+    return Number.isSafeInteger(Number(line.price)) && Number(line.price) >= minimum;
 }
 
 // The player's static price is read from the one board at the window and
@@ -104,7 +104,7 @@ function priceFor(store, line) {
     const price = configuredPrice(line);
     if (Number(store.storeType) !== SELL) return price;
     const ask = OfferQuery.bestSellOffer(index, line.selfId, {
-        accept: offer => ['shop', 'sell_ad'].includes(offer.recordKind) && validPrice(offer)
+        accept: offer => ['shop', 'sell_ad'].includes(offer.recordKind) && validPrice(offer, 0)
     });
     return ask ? Math.max(price, Number(ask.price)) : price;
 }

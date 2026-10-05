@@ -7,12 +7,13 @@ const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const WireD = invoke('Packet/WireD');
 
 function merchantPurchaseItems(store, actor) {
     const items = [];
 
     TradeService.refreshStorePrices(store, actor);
-    store.items.forEach((storeItem) => {
+    TradeService.nativeStoreItems(store).forEach((storeItem) => {
         DataCache.fetchItemFromSelfId(storeItem.selfId, (item) => {
             items.push(new Item(storeItem.objectId, {
                 ...utils.crushOb(item),
@@ -67,9 +68,11 @@ async function consume(session, data) {
             const bought = [];
             const sellerSession = BotManager.sessions.find((candidate) => candidate.actor === trade.merchant);
             for (const item of data.list) {
+                const quote = trade.prices?.[Number(item.selfId)];
+                if (!WireD.isRepresentable(quote)) throw new Error('Store item has no native quote.');
                 const result = await TradeService.buyFromStore(session.actor, store, item.selfId, item.amount, {
                     expectedRevision: trade.revision,
-                    expectedUnitPrice: trade.prices?.[Number(item.selfId)]
+                    expectedUnitPrice: quote
                 });
                 bought.push(result);
                 MarketTelemetry.recordTrade({
@@ -104,7 +107,7 @@ async function consume(session, data) {
                 merchantPurchaseItems(store, session.actor),
                 session.actor.backpack.fetchTotalAdena()
             ));
-            trade.prices = Object.fromEntries(store.items.map(line => [Number(line.selfId), Number(line.price)]));
+            trade.prices = Object.fromEntries(TradeService.nativeStoreItems(store).map(line => [Number(line.selfId), Number(line.price)]));
         } catch (err) {
             utils.infoWarn('Purchase', 'merchant purchase error: %s', err.message || err);
             if (store.repricing === true || Number(trade.revision || 1) !== Number(store.revision || 1) || /changed/i.test(String(err.message || err))) {

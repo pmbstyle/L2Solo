@@ -91,7 +91,8 @@ async function nativePurchase(session, selfId, amount) {
     const before = session.sent.length;
     Purchase(session, purchasePacket(selfId, amount));
     for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (session.sent.slice(before).some(packet => ['purchaseList', 'actionFailed'].includes(packet?.kind))) return;
+        if (session.sent.slice(before).some(packet => ['purchaseList', 'actionFailed'].includes(packet?.kind)
+            || (Buffer.isBuffer(packet) && packet[0] === 0x11))) return;
         await new Promise(resolve => setTimeout(resolve, 5));
     }
     throw new Error('native purchase did not finish');
@@ -134,6 +135,65 @@ test('SELL holds authored floor, follows asks, fixed observer rows are current',
         .items.find(item => item.selfId === MATERIAL).price, authored + 500);
     line(11, 1, 1, { kind: 'shop', town: 'Gludio' });
     assert.strictEqual(Pricing.priceFor(Configs.IslandMats, source), authored);
+});
+
+test('zero executable SELL is the best ask while zero BUY never establishes a bid', () => {
+    const source = materialLine(Configs.IslandMats);
+    const authored = Pricing.botPriceFor(Configs.IslandMats, source);
+    line(12, 1, 0, { kind: 'shop' });
+    line(13, 1, authored + 1000);
+    assert.strictEqual(Pricing.priceFor(Configs.IslandMats, source), authored,
+        'a free executable offer keeps the authored floor rather than using the next expensive ask');
+    line(14, 3, 0);
+    assert.strictEqual(Pricing.priceFor(Configs['4manda'], materialLine(Configs['4manda'])),
+        NpcSellRules.npcBuyPrice(TradeService.itemBasePrice(MATERIAL)));
+});
+
+test('native packet omits an oversized quote and cannot execute it; HTML retains the exact price', async () => {
+    const session = await player('FNativeWidePrice');
+    const adena = session.actor.backpack.fetchItemFromSelfId(57);
+    const money = 6000000000;
+    await Database.updateItemAmount(session.actor.fetchId(), adena.fetchId(), money);
+    adena.setAmount(money);
+    const store = staticStore(Configs.IslandMats);
+    const seller = merchant(store);
+    const stock = store.items[0].count;
+    line(15, 1, 5000000000);
+    const stub = ServerResponse.purchaseList;
+    let window;
+    try {
+        ServerResponse.purchaseList = responses.purchaseList;
+        open(session, seller);
+        window = session.sent.find(packet => Buffer.isBuffer(packet) && packet[0] === 0x11);
+        await nativePurchase(session, MATERIAL, 1);
+    } finally { ServerResponse.purchaseList = stub; }
+    assert.strictEqual(window.readUInt16LE(9), 0, 'the actual native window must omit an unrepresentable price');
+    assert.strictEqual(session.activeMerchantTrade?.prices?.[MATERIAL], undefined, 'an omitted row has no native quote');
+    assert.strictEqual(wallet(session), money);
+    assert.strictEqual(amount(session, MATERIAL), 20);
+    assert.strictEqual(store.items[0].count, stock);
+    assert.strictEqual(records.length, 0);
+    const persisted = await Database.fetchItems(session.actor.fetchId());
+    assert.strictEqual(persisted.find(item => item.selfId === 57).amount, money);
+    assert.strictEqual(persisted.find(item => item.selfId === MATERIAL).amount, 20);
+    const buyerStore = staticStore(Configs['4manda']);
+    line(16, 3, 5000000000);
+    const buyerStub = ServerResponse.privateStoreListBuy;
+    try {
+        ServerResponse.privateStoreListBuy = responses.privateStoreListBuy;
+        open(session, merchant(buyerStore, 82001, '4manda'));
+        const buyerWindow = session.sent.findLast(packet => Buffer.isBuffer(packet) && packet[0] === 0xb8);
+        assert.strictEqual(buyerWindow.readUInt32LE(9), 0, 'native demand omits an unrepresentable bid');
+        assert.strictEqual(session.activeMerchantTrade.prices[MATERIAL], undefined);
+        const own = session.actor.backpack.fetchItemFromSelfId(MATERIAL);
+        await Sell.consumeMerchant(session, [{ objectId: own.fetchId(), selfId: MATERIAL, amount: 1 }], { native: true });
+    } finally { ServerResponse.privateStoreListBuy = buyerStub; }
+    assert.strictEqual(wallet(session), money);
+    assert.strictEqual(amount(session, MATERIAL), 20);
+    assert.strictEqual(records.length, 0);
+    session.viewedPrivateStoreSeller = seller;
+    await BuyHtml(session, ['buy-merchant-item']);
+    assert(session.sent.at(-1).args[1].includes('5,000,000,000a'), 'HTML shows the exact safe integer price');
 });
 
 test('spawned and spread-cloned rows retain source identity through window and trade', async () => {

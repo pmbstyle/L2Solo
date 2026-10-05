@@ -8,10 +8,11 @@ const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 
 function merchantSellRows(actor, store) {
     TradeService.refreshStorePrices(store, actor);
+    const nativeItems = TradeService.nativeStoreItems(store);
     return actor.backpack.fetchItems()
         .filter(TradeService.isSellableInventoryItem)
         .map((item) => {
-            const wanted = store.items.find((storeItem) => storeItem.selfId === item.fetchSelfId() && storeItem.count > 0);
+            const wanted = nativeItems.find((storeItem) => storeItem.selfId === item.fetchSelfId() && storeItem.count > 0);
             if (!wanted) return null;
 
             return {
@@ -65,11 +66,12 @@ async function consumeMerchant(session, list, { native = false } = {}) {
 
     try {
         TradeService.refreshStorePrices(store, session.actor);
+        const nativeItems = TradeService.nativeStoreItems(store);
         const sold = [];
         const objectIds = new Set();
         const requested = list.map((line) => {
             const item = line.objectId ? TradeService.sellableCopy(session.actor, line.selfId, line.objectId) : null;
-            const wanted = store.items.find((storeItem) => storeItem.selfId === line.selfId && storeItem.count > 0);
+            const wanted = nativeItems.find((storeItem) => storeItem.selfId === line.selfId && storeItem.count > 0);
             const amount = Number(line.amount);
             const matchesPrice = line.price === undefined || Number(line.price) === Number(wanted?.price);
             if (!item || !wanted ||
@@ -120,6 +122,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
             return;
         }
         const rows = merchantSellRows(session.actor, store);
+        trade.prices = Object.fromEntries(TradeService.nativeStoreItems(store).map(line => [Number(line.selfId), Number(line.price)]));
         if (native) {
             session.dataSendToMe(ServerResponse.privateStoreListBuy(
                 trade.merchant,

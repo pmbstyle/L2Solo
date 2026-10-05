@@ -30,6 +30,13 @@ function refreshStorePrices(store, actor = null) {
     return store;
 }
 
+// Native C4 store windows cannot quote a price wider than their D field.
+// Keep the exact price for HTML and execution; omitted native rows have no quote.
+function nativeStoreItems(store) {
+    const WireD = invoke('Packet/WireD');
+    return (store?.items || []).filter(item => WireD.isRepresentable(item.price));
+}
+
 // The retained static-buyer route until 3.6 is only for bot materials.
 // Preview and queued execution share this gate so neither buyer selection
 // nor a direct/stale arrival can liquidate gear through a static buyer.
@@ -545,6 +552,7 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
 }
 
 module.exports = {
+    nativeStoreItems,
     buyFromStore,
     describeStoreItems,
     findAfkBuyerForActor,

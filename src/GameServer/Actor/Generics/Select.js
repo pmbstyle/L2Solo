@@ -3,11 +3,12 @@ const World          = invoke('GameServer/World/World');
 const DataCache      = invoke('GameServer/DataCache');
 const Item           = invoke('GameServer/Item/Item');
 const SummonControl  = invoke('GameServer/Npc/SummonControl');
+const TradeService   = invoke('GameServer/Bot/TradeService');
 
 function merchantPurchaseItems(store) {
     const items = [];
 
-    store.items.forEach((storeItem) => {
+    TradeService.nativeStoreItems(store).forEach((storeItem) => {
         DataCache.fetchItemFromSelfId(storeItem.selfId, (item) => {
             items.push(new Item(storeItem.objectId, {
                 ...utils.crushOb(item),
@@ -23,7 +24,7 @@ function merchantPurchaseItems(store) {
 function merchantDemandRows(actor, store) {
     const rows = [];
 
-    store.items.forEach((storeItem) => {
+    TradeService.nativeStoreItems(store).forEach((storeItem) => {
         const inventoryItem = actor.backpack.fetchItems().find((item) => (
             item.fetchSelfId() === storeItem.selfId &&
             !item.fetchEquipped() &&
@@ -63,13 +64,13 @@ function openMerchantTradeWindow(session, merchant) {
         return;
     }
 
-    invoke('GameServer/Bot/TradeService').refreshStorePrices(store, session.actor);
+    TradeService.refreshStorePrices(store, session.actor);
     store.revision = Math.max(1, Number(store.revision || 1));
     session.activeMerchantTrade = {
         merchant,
         store,
         revision: store.revision,
-        prices: Object.fromEntries(store.items.map((line) => [Number(line.selfId), Number(line.price)]))
+        prices: Object.fromEntries(TradeService.nativeStoreItems(store).map((line) => [Number(line.selfId), Number(line.price)]))
     };
     session.viewedPrivateStoreSeller = merchant;
 
