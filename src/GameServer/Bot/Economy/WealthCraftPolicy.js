@@ -41,6 +41,14 @@ function basketFor(recipe, offersFor, ownedFor = () => null) {
         ? { purchases, owned, cashCost, ownedValue, cost } : null;
 }
 
+// The margin of one craft: the product's price x its count x the success
+// rate, less the cost of the basket. Also the value a crafter puts on a
+// material or a recipe (PriceBelief.demandValue).
+function craftMargin(recipe, productPrice, basketCost) {
+    const successRate = Math.max(0, Math.min(100, Number(recipe?.successRate || 0))) / 100;
+    return Math.floor(Number(productPrice) * Number(recipe?.productCount || 0) * successRate) - Number(basketCost);
+}
+
 function opportunityFor(state, recipe, offersFor, exits = [], ownedFor = () => null) {
     const successRate = Math.max(0, Math.min(100, Number(recipe?.successRate || 0))) / 100;
     const outputCount = Number(recipe?.productCount || 0);
@@ -53,7 +61,7 @@ function opportunityFor(state, recipe, offersFor, exits = [], ownedFor = () => n
             && Number(exit.count) >= outputCount)
         .map((exit) => {
             const revenue = Number(exit.price) * outputCount;
-            const expectedProfit = Math.floor(revenue * successRate) - basket.cost;
+            const expectedProfit = craftMargin(recipe, exit.price, basket.cost);
             return { recipe, basket, exit, revenue, expectedProfit, successRate };
         })
         .filter((candidate) => candidate.expectedProfit >= Math.max(MIN_PROFIT, Math.ceil(basket.cost * MIN_RETURN)))
@@ -62,5 +70,5 @@ function opportunityFor(state, recipe, offersFor, exits = [], ownedFor = () => n
 
 module.exports = {
     MAX_INPUT_OFFERS, MIN_PROFIT, MIN_RETURN, MAX_WALLET_SHARE, WALLET_RESERVE,
-    basketFor, opportunityFor
+    basketFor, craftMargin, opportunityFor
 };
