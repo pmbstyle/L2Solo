@@ -4,6 +4,7 @@ const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
+const TownRespawn = invoke('GameServer/World/TownRespawn');
 const OfferOrder = require('./OfferOrder');
 const Karma = require('../../Karma');
 
@@ -13,15 +14,18 @@ const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 const NO_GRADE_MARKETS = Object.freeze(['Talking Island', 'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village']
     .map((name) => ({ name, ...ShopPlaces.PLAZAS[name].travelCenter, radius: 12000 })));
 
-// These starter villages are intentionally not all part of TownPathfinder's
-// geodata atlas yet. Market travel only needs the captured plaza centre: the
-// cold resolver places the actual private store inside its polygon on arrival.
+// Markets outside TownPathfinder's geodata atlas still have their real town
+// centre. Travel and board ads use it; a shop uses its captured polygon.
 function marketTown(name) {
     const market = NO_GRADE_MARKETS.find((candidate) => candidate.name === name);
-    return market && {
+    if (market) return {
         name: market.name,
         center: { locX: market.locX, locY: market.locY, locZ: market.locZ || 0 }
     };
+    const plaza = ShopPlaces.PLAZAS[name];
+    if (plaza) return { name, center: { ...(plaza.center || ShopPlaces.fillCenter(name)), locZ: plaza.locZ } };
+    const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
+    return town ? { name, center: { locX: town.locX, locY: town.locY, locZ: town.locZ } } : null;
 }
 
 function nearestNoGradeMarket(loc = {}) {

@@ -19,6 +19,13 @@ const Negotiation = invoke('GameServer/Bot/Economy/BotNegotiationService');
 const World = invoke('GameServer/World/World');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-afk-market-state.sqlite');
 const originalEvaluate = ListingPolicy.evaluate;
+const originalShopTown = MarketTownPolicy.shopTown;
+const townChoices = [];
+MarketTownPolicy.shopTown = (...args) => {
+    const town = originalShopTown(...args);
+    townChoices.push(town);
+    return town;
+};
 
 function character(name) {
     return { name, race: 0, classId: 0, maxHp: 100, maxMp: 100,
@@ -145,7 +152,7 @@ async function run() {
     assert.strictEqual(switched.state.activity, 'hunting');
     assert.strictEqual(switched.shop.storeType, AfkTrade.BUY);
     assert.strictEqual(switched.shop.kind, 'buy_ad');
-    assert.strictEqual(switched.shop.town, 'Giran');
+    assert.strictEqual(switched.shop.town, townChoices.at(-1), 'buy ads use the shop opening decision');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wtb, 1);
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 2, 'the shop and the buy ad');
     assert(AfkTrade.findOwnerProjection(ownerId), 'the shop still stands');
@@ -190,10 +197,12 @@ async function run() {
     const dGradeGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: 45, itemName: 'Bone Helmet', adena: 1000000 },
         plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran', priceSource: 'offer' } };
+    const choicesBefore = townChoices.length;
     const dGradeBuyer = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), dGradeGoal);
     assert.strictEqual(dGradeBuyer.changed, true);
-    assert.strictEqual(dGradeBuyer.shop.town, MarketTownPolicy.dGradeMarketFor(dGradeBuyer.state),
-        'D-grade buy shops follow the item grade even when the shopping plan points to Giran');
+    assert.strictEqual(townChoices.length, choicesBefore + 1, 'opening a new buy ad makes one shop-town decision');
+    assert.strictEqual(dGradeBuyer.shop.town, townChoices.at(-1),
+        'D-grade buy ads use weighted town choice rather than a fixed grade town');
     await BotAfkMarket.withdraw(ownerId);
 
     await Database.createAccount('bot_afk_second_seller', 'pw');
@@ -543,4 +552,5 @@ async function run() {
 
 run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => {
     ListingPolicy.evaluate = originalEvaluate;
+    MarketTownPolicy.shopTown = originalShopTown;
 });

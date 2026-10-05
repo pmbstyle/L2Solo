@@ -16,6 +16,7 @@ const LotPolicy = require('./MarketLotPolicy');
 const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
 
 const BoardRules = require('../../AfkTrade/BoardRules');
+const Karma = require('../../Karma');
 const MAX_LINES = BoardRules.BOT_SHOP_LINES;
 const reviewedInventory = new Map();
 const pending = new Map();
@@ -43,6 +44,15 @@ function buyOrderEscrow(characterId) {
 // take the bot's shop (design 4.2), so it sells and buys at once.
 function buyAds(characterId) {
     return AfkTrade.ownerRecords(characterId).filter((record) => record.kind === 'buy_ad');
+}
+
+// A continuing item's ad keeps its town. A new wanted item opens by the
+// same weighted decision as a shop; karma closes every town but Floran.
+function buyAdTown(state, ads, wanted) {
+    const standing = ads.find((ad) => (ad.lines || []).some((line) =>
+        wanted.some((item) => Number(item.selfId) === Number(line.selfId))));
+    return standing && Karma.townFor(state.stats?.karma, standing.town) === standing.town
+        ? standing.town : MarketTownPolicy.shopTown(state, wanted);
 }
 
 function linesOf(records) {
@@ -352,7 +362,7 @@ async function reconcileBuyAds(state, goal, candidates) {
         return withdrawBuyAds(ownerId, null, state);
     }
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
-    const town = MarketTownPolicy.targetTownForItems(state, wanted);
+    const town = buyAdTown(state, ads, wanted);
     if (!wanted.length || (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted))) {
         return { state, changed: false };
     }
@@ -380,14 +390,15 @@ async function publishBuyAds(ownerId, ads, lines, town) {
     return result.opened[0] || null;
 }
 
-// A bot in a market town asks for its goal item there: its buy ad replaces
+// A bot asks in the town chosen by the shop opening roll: its buy ad replaces
 // the ads it has (their escrow comes back first). Returns { opened, state,
 // store } for ColdMarketBuyStoreService.open.
-async function openBuyAd(state, goal, town) {
+async function openBuyAd(state, goal) {
     const ownerId = Number(state.characterId);
     const ads = buyAds(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
     if (!wanted.length) return { state, opened: false, reason: 'insufficient_budget' };
+    const town = buyAdTown(state, ads, wanted);
     let store;
     try {
         store = await publishBuyAds(ownerId, ads, wanted, town);
@@ -586,7 +597,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory) {
             stackable, petData: row.petData || null
         };
         if (!viableSellLine(line)) continue;
-        const town = MarketTownPolicy.targetTownForItems(state, [line]);
+        const town = MarketTownPolicy.shopTown(state, [line]);
         const center = ListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
         configs.push({ storeType: AfkTrade.SELL, title: marketStoreTitle([line]), town, ...center, lines: [line] });
         advertised.add(selfId);

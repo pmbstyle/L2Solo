@@ -108,8 +108,7 @@ const PLAZAS = Object.freeze({
     }),
     // The author's five squares captured in-game (commit 2fa4508b), data as
     // is: outline, stall padding, captured centre and ground level. He
-    // recorded them for later market routing; bots do not open shops here yet
-    // (botShops: false, SHOP_TOWNS), the places only take part in occupancy.
+    // recorded them for market routing; group F opens them to bot shops.
     // Oren: the concave inset stays outside the trading area.
     Oren: Object.freeze({
         boundary: Object.freeze([
@@ -118,7 +117,7 @@ const PLAZAS = Object.freeze({
         ]),
         margin: 55,
         locZ: -1496,
-        botShops: false
+        botShops: true
     }),
     // Hunter's Village: heights vary across the square.
     "Hunter's Village": Object.freeze({
@@ -129,7 +128,7 @@ const PLAZAS = Object.freeze({
         margin: 55,
         center: Object.freeze({ locX: 116505, locY: 76109, locZ: -2717 }),
         locZ: -2717,
-        botShops: false
+        botShops: true
     }),
     // Aden: the lower trading square, not the higher respawn terrace.
     Aden: Object.freeze({
@@ -139,7 +138,7 @@ const PLAZAS = Object.freeze({
         margin: 55,
         center: Object.freeze({ locX: 147453, locY: 26951, locZ: -2205 }),
         locZ: -2205,
-        botShops: false
+        botShops: true
     }),
     // Rune: the slanted edges of the measured footprint.
     Rune: Object.freeze({
@@ -149,7 +148,7 @@ const PLAZAS = Object.freeze({
         margin: 55,
         center: Object.freeze({ locX: 44140, locY: -48039, locZ: -797 }),
         locZ: -797,
-        botShops: false
+        botShops: true
     }),
     // Goddard, including the concave upper edge.
     Goddard: Object.freeze({
@@ -160,7 +159,7 @@ const PLAZAS = Object.freeze({
         ]),
         margin: 55,
         locZ: -2781,
-        botShops: false
+        botShops: true
     })
 });
 

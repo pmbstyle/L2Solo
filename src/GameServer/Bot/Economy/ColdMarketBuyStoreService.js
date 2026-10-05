@@ -63,16 +63,15 @@ function bidFor(state, goal) {
 }
 
 // A bot in a market town asks for the item it could not find: a buy ad on
-// the board (step 3.3) whose escrow leaves its wallet, in the town it stands
-// in. The author's budget-backed stall (money left in the wallet, the bot
-// waiting in town) is gone; the bot goes back to its hunt and its next save
+// the board (step 3.3) whose escrow leaves its wallet, in a town chosen by
+// the same roll as shops. The author's budget-backed stall (money left in
+// the wallet, the bot waiting in town) is gone; the bot goes back to its hunt and its next save
 // brings what the ad bought.
 function open(state, goal) {
     if (!state || state.phase === 'hot' || state.activity !== 'shopping') {
         return Promise.resolve({ state, opened: false, reason: 'not_shopping' });
     }
-    const town = state.currentRegion || goal?.plan?.marketTown || 'Giran';
-    return invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(state, goal, town).then((result) => {
+    return invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(state, goal).then((result) => {
         if (result.opened) MarketTelemetry.buyStoreOpened?.();
         return result;
     });

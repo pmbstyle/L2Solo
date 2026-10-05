@@ -4,7 +4,6 @@ const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const ProgressionRates = invoke('GameServer/ProgressionRates');
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
@@ -30,10 +29,6 @@ function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
 }
 
-function allowsLowGradeMarket() {
-    return ['x1', 'x10'].includes(ProgressionRates.profile().preset);
-}
-
 function surplusGearDecision(item, reason) {
     const ordinary = item.npcComparable !== false && Number(item.enchant || 0) <= 0;
     const common = isGear(item) && ordinary
@@ -42,8 +37,8 @@ function surplusGearDecision(item, reason) {
 }
 
 // The author's hard rules for what never enters the board: an invalid item,
-// a lot too small to list, NPC-only junk, the starter kit, low-grade gear at
-// high rates, cheap C+ gear. Anything else is the market's: { action:
+// a lot too small to list, NPC-only junk, the starter kit, cheap C+ gear.
+// Anything else is the market's: { action:
 // 'market' }, priced and placed by the one expected-value decision.
 function classify(state, item) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
@@ -59,9 +54,6 @@ function classify(state, item) {
     }
     const lowGradeGear = isGear(item)
         && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c');
-    if (lowGradeGear && !allowsLowGradeMarket()) {
-        return surplusGearDecision(item, 'low_grade_high_rate');
-    }
     if (isGear(item) && !lowGradeGear && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
         return surplusGearDecision(item, 'low_value_gear');
     }
@@ -201,7 +193,6 @@ function npcSaleForActor(session) {
 module.exports = {
     BOARD_SLOTS,
     MARKET_GEAR_MIN_BASE_PRICE,
-    allowsLowGradeMarket,
     classify,
     evaluate,
     isGear,

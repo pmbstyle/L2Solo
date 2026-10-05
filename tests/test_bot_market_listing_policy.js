@@ -46,7 +46,10 @@ function atRate(rate, work) {
 
 // Hard rules.
 assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)), { action: 'npc', reason: 'starter_kit' });
-assert.strictEqual(atRate('x50', () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).reason), 'low_grade_high_rate');
+for (const rate of ['x1', 'x10', 'x50']) {
+    assert.strictEqual(atRate(rate, () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).action), 'market',
+        'low-grade gear uses the same market decision at every rate');
+}
 assert.strictEqual(MarketListingPolicy.classify(seller, saleItem(spellbook)).reason, 'npc_only_item');
 assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(DataCache.items.find((item) => Number(item.selfId) === 1865)), count: 2 }).reason,
     'small_material_lot');
