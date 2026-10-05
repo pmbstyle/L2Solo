@@ -29,7 +29,8 @@ const originals = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     record: LifeEvents.record,
     buyersInTown: StaticBuyerService.buyersInTown,
-    staticPriceFor: StaticMerchantPricing.priceFor,
+    staticPriceFor: StaticMerchantPricing.botPriceFor,
+    playerPriceFor: StaticMerchantPricing.priceFor,
     staticBuyerSale: MarketTelemetry.staticBuyerSale
 };
 
@@ -176,7 +177,8 @@ async function run() {
         ? [{ sourceId: 9003, price: 500, count: 6, store: sellStore }] : [];
     StaticBuyerService.buyersInTown = (town) => town === 'Giran'
         ? [{ name: 'FixedBuyer', items: [{ selfId: 1882 }] }] : [];
-    StaticMerchantPricing.priceFor = () => 10000;
+    StaticMerchantPricing.botPriceFor = () => 10000;
+    StaticMerchantPricing.priceFor = () => { throw new Error('bot craft exit must not read the player board price'); };
     MarketTelemetry.staticBuyerSale = () => null;
     crafted = false;
     Database.fetchItems = async () => crafted
@@ -226,6 +228,7 @@ run().then(() => console.log('Cold wealth craft checks passed')).catch((error) =
     LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeEvents.record = originals.record;
     StaticBuyerService.buyersInTown = originals.buyersInTown;
-    StaticMerchantPricing.priceFor = originals.staticPriceFor;
+    StaticMerchantPricing.botPriceFor = originals.staticPriceFor;
+    StaticMerchantPricing.priceFor = originals.playerPriceFor;
     MarketTelemetry.staticBuyerSale = originals.staticBuyerSale;
 });

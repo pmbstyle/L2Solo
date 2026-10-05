@@ -22,7 +22,7 @@ function candidatesFor(state, town) {
         const offer = buyers.reduce((best, buyer) => {
             const line = (buyer.items || []).find((entry) => Number(entry.selfId) === Number(item.selfId));
             if (!line) return best;
-            const price = StaticMerchantPricing.priceFor(buyer, line);
+            const price = StaticMerchantPricing.botPriceFor(buyer, line);
             return !best || price > best.price ? { buyer, price } : best;
         }, null);
         if (!offer || offer.price <= 0) return [];

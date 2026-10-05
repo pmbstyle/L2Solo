@@ -430,6 +430,15 @@ const tests = [
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_market_opportunity.js',
     'tests/test_bot_market_listing_policy.js',
+    'tests/test_group_f_player_pricing.js',
+    'tests/test_group_f_bot_routing.js',
+    'tests/test_group_f_companion_board_line.js',
+    'tests/test_group_f_market_ads.js',
+    'tests/test_group_f_empty_sale_trip.js',
+    'tests/test_group_f_spoil_quest.js',
+    'tests/test_group_f_warehouse.js',
+    'tests/test_group_f_warehouse_transaction.js',
+    'tests/test_group_f_warehouse_materialization.js',
     'tests/test_bot_economy_thresholds.js',
     'tests/test_bot_dynamic_buy_store.js',
     'tests/test_market_snapshot_detail.js',
@@ -865,8 +874,17 @@ const optionalGeodataTests = new Set([
     'tests/test_pathfinding_worker_pool.js'
 ]);
 const geodataOnly = process.argv.includes('--geodata');
-// Recovery fixtures reject local/shared configuration before loading Global.
+// Disposable recovery and group F fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_group_f_player_pricing.js',
+    'tests/test_group_f_bot_routing.js',
+    'tests/test_group_f_companion_board_line.js',
+    'tests/test_group_f_market_ads.js',
+    'tests/test_group_f_empty_sale_trip.js',
+    'tests/test_group_f_spoil_quest.js',
+    'tests/test_group_f_warehouse.js',
+    'tests/test_group_f_warehouse_transaction.js',
+    'tests/test_group_f_warehouse_materialization.js',
     'tests/test_history_database_recovery.js',
     'tests/test_saved_games_history_recovery.js',
     'tests/test_database_restore_protocol.js'

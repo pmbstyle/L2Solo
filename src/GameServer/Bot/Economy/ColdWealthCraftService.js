@@ -49,7 +49,7 @@ function staticExits(recipe, template) {
         .map((store) => store.town))]
         .flatMap((town) => StaticBuyerService.buyersInTown(town).flatMap((buyer) => {
             const line = (buyer.items || []).find((item) => Number(item.selfId) === Number(recipe.productId));
-            const price = line ? StaticMerchantPricing.priceFor(buyer, line) : 0;
+            const price = line ? StaticMerchantPricing.botPriceFor(buyer, line) : 0;
             return Number.isFinite(price) && price > 0
                 ? [{ type: 'static', price, count: Number(recipe.productCount), town, buyerName: buyer.name }] : [];
         }));

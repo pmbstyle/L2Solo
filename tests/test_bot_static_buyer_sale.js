@@ -1,5 +1,7 @@
 const assert = require('assert');
 
+process.env.L2NODE_PROGRESSION_RATE = 'x1';
+
 require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
@@ -7,13 +9,18 @@ const Database = invoke('Database');
 const originalReconcileClanGoals = Database.reconcileBotClanGoals;
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+const Configs = invoke('GameServer/Bot/MerchantStoreConfigs');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 DataCache.init();
 
 const originals = {
     reconcileBotClanMembership: Database.reconcileBotClanMembership,
     execute: Database.execute,
-    syncInventorySummary: Database.syncInventorySummary
+    syncInventorySummary: Database.syncInventorySummary,
+    boardIndex: AfkTrade.boardIndex
 };
 
 async function run() {
@@ -37,10 +44,17 @@ async function run() {
         stats: {}
     };
 
+    const board = new BoardIndex();
+    board.put({ id: 9991, kind: 'buy_ad', storeType: 3, ownerId: 9992, town: 'Talking Island',
+        lines: [{ lineId: 9993, selfId: 1864, count: 10, price: 9999 }] });
+    AfkTrade.boardIndex = () => board;
+    const buyer = Object.values(Configs).find(store => store.storeType === 3 && store.town === 'Talking Island');
+    const authoredLine = buyer.items.find(line => Number(line.selfId) === 1864);
+    assert.strictEqual(StaticMerchantPricing.priceFor(buyer, authoredLine), 9999, 'the player sees the board bid');
     const preview = StaticBuyerService.candidatesFor(state, 'Talking Island');
     assert.strictEqual(preview.length, 1, 'the local buyer should accept listed materials');
     assert.strictEqual(preview[0].selfId, 1864);
-    assert(preview[0].npcPrice > 0, 'the buyer price must use its configured rate');
+    assert.strictEqual(preview[0].npcPrice, 80, 'the bot retains its exact authored x1 Stem payout until 3.6');
     assert.strictEqual(StaticBuyerService.bestTownFor(state).town, 'Talking Island', 'market travel should target a town that buys the held material');
 
     const result = await StaticBuyerService.sell(state, 'Talking Island');
@@ -61,5 +75,6 @@ run().catch((err) => {
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
     Database.execute = originals.execute;
     Database.syncInventorySummary = originals.syncInventorySummary;
+    AfkTrade.boardIndex = originals.boardIndex;
     LifeState.reset?.();
 });

@@ -17,6 +17,7 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const World = invoke('GameServer/World/World');
+const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 
 const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-dynamic-buy-store.sqlite');
 
@@ -69,7 +70,16 @@ async function run() {
     assert(bid && bid.count > 0);
     assert(bid.price * bid.count <= 1500, 'a buy ad must preserve its operating reserve');
 
-    const opened = await BuyStoreService.open(buyerSeed, goal);
+    // The town roll has its own group F coverage. This settlement fixture
+    // needs a local ad: two Stems cannot pay for a cross-country sale trip.
+    const chooseTown = MarketTownPolicy.shopTown;
+    let opened;
+    try {
+        MarketTownPolicy.shopTown = () => 'Giran';
+        opened = await BuyStoreService.open(buyerSeed, goal);
+    } finally {
+        MarketTownPolicy.shopTown = chooseTown;
+    }
     assert.strictEqual(opened.opened, true);
     assert.strictEqual(opened.state.activity, 'shopping', 'the bot does not stand in town: its ad waits on the board');
     assert.strictEqual(opened.store.storeType, 3);
