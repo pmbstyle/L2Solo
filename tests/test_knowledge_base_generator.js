@@ -86,6 +86,15 @@ assert.deepStrictEqual(raidMinion.availability, {
 });
 assert(raidMinion.minionOf.some((relation) => relation.bossId === 10001));
 
+// Varka's Elite Guard: an ordinary group leader's minion, reachable only through it.
+const groupMinion = mobById.get(1370);
+assert.deepStrictEqual(groupMinion.availability, {
+    directSpawn: false,
+    knownReachable: true,
+    raidMinion: false
+});
+assert.deepStrictEqual(groupMinion.minionOf, [{ bossId: 1369, minionId: 1370, minCount: 2, maxCount: 2 }]);
+
 assert.deepStrictEqual(
     manifest.anomalies.duplicateItemDefinitions.map((entry) => entry.id),
     [5550, 5551, 5552, 5553, 5554],

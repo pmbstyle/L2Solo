@@ -22,7 +22,12 @@ const DataCache = invoke('GameServer/DataCache');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
-const minionDefinitions = require('../data/Npcs/Minions/c4_raid_bosses.json');
+const raidMinionDefinitions = require('../data/Npcs/Minions/c4_raid_bosses.json');
+const minionDefinitions = [
+    ...raidMinionDefinitions,
+    ...require('../data/Npcs/Minions/c4_group_leaders.json')
+];
+const raidMinionIds = new Set(raidMinionDefinitions.map((definition) => Number(definition.minionId)));
 
 const SCHEMA_VERSION = 1;
 const GENERATOR_PATH = 'scripts/generate-knowledge-base.js';
@@ -222,8 +227,8 @@ function buildMinionIndex(directSpawnIds) {
     const parentsByMinion = new Map();
     const childrenByBoss = new Map();
     minionDefinitions.forEach((definition) => {
-        const bossId = positiveId(definition.bossId, 'raid boss minion parent');
-        const minionId = positiveId(definition.minionId, 'raid boss minion');
+        const bossId = positiveId(definition.bossId, 'minion leader');
+        const minionId = positiveId(definition.minionId, 'minion');
         const relation = {
             bossId,
             minionId,
@@ -312,7 +317,7 @@ function buildKnowledgeBase() {
             const boss = npcById.get(Number(definition.bossId));
             const minion = npcById.get(Number(definition.minionId));
             if (!isAttackable(boss) || !isAttackable(minion)) {
-                throw new Error(`Raid minion relation ${definition.bossId} -> ${definition.minionId} references a missing attackable NPC`);
+                throw new Error(`Minion relation ${definition.bossId} -> ${definition.minionId} references a missing attackable NPC`);
             }
         });
         const rateProfiles = buildRateProfiles();
@@ -333,7 +338,7 @@ function buildKnowledgeBase() {
             const spoils = normalizedRewardGroups(reward.spoils, 'spoil', level, ratePresets);
             const availability = {
                 directSpawn: directSpawnIds.has(id),
-                raidMinion: minions.parentsByMinion.has(id),
+                raidMinion: raidMinionIds.has(id),
                 knownReachable: minions.reachable.has(id)
             };
 
