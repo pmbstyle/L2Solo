@@ -90,7 +90,8 @@ async function run() {
     const asked = [];
     MarketOpportunity.findBuyOffers = (selfId) => {
         asked.push(selfId);
-        return [{ sourceType: 'afk_bot_buy_store', price: 100, count: 50, selfId }];
+        return [{ sourceType: 'afk_bot_buy_store', price: 100, count: 50, selfId,
+            projection: { actor: { fetchId: () => 940001 } } }];
     };
     const best = TradeService.findAfkBuyerForActor(bot, { name: 'Gludio' }, state);
     assert.deepStrictEqual(asked, [ANIMAL_BONE], 'the AFK buyer search must weigh only sellable items');
