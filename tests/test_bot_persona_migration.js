@@ -128,7 +128,7 @@ function rows(db) {
         }
         assert.deepStrictEqual(thresholds, stats.thresholds, 'the reported cut-offs are the final population\'s');
         assert.strictEqual(passed, LEADERS.length + 1 - stats.leaderFallbacks, `leaders through the final gate: ${passed}`);
-        assert(keptDrive >= passed, `leaders keep the clan drive: ${keptDrive}`);
+        assert.strictEqual(keptDrive, LEADERS.length + 1, 'every leader keeps the clan drive (a dwarf becomes wealth)');
         assert.strictEqual(migrated.find((row) => row.characterId === DWARF_LEADER).primaryDrive, 'wealth');
 
         // Idempotent: a second run changes nothing.

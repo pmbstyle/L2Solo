@@ -19,19 +19,24 @@ function persona(row, archetype, salt = '') {
 // A clan leader keeps the clan's drive (a dwarf's is wealth) and takes the
 // first type and roll, from the regular one on, that passes the author's
 // founder gate (leaderScore within the top founderTopShare of its drive) at
-// the given cut-offs; null when none of the tries passes, and the regular
-// result stays.
+// the given cut-offs; when none of the tries passes, the try with the highest
+// leaderScore in the class circle (any type when none is), the closest to
+// the gate, still in the clan's drive.
 function leaderPersona(row, regular, thresholds, total, Policy) {
     const drive = Types.isDwarf(row.classId) ? 'wealth' : row.primaryDrive;
-    if (!(thresholds[drive] >= 0)) return null;
+    let best = null;
     for (let attempt = 0; attempt < LEADER_TRIES; attempt++) {
         const archetype = attempt === 0 && regular.primaryDrive === drive
             ? regular.archetype
             : Types.chooseType(row.classId, row.seed, {}, total, { drive, salt: `type:${attempt}` });
         const candidate = persona(row, archetype, attempt ? `:${attempt}` : '');
-        if (Policy.leaderScore(candidate) >= thresholds[drive]) return candidate;
+        const score = Policy.leaderScore(candidate);
+        if (!(thresholds[drive] > score)) return candidate;
+        // The closest try: in the class circle first, then by leaderScore.
+        const circle = Types.inCircle(archetype, row.classId);
+        if (!best || (circle && !best.circle) || (circle === best.circle && score > best.score)) best = { circle, score, candidate };
     }
-    return null;
+    return best.candidate;
 }
 
 // Migration 52 (step 3.1, N6a), run by Database.applySchemaMigrations inside
@@ -63,22 +68,25 @@ function apply(connection, timestamp = Date.now()) {
 
     // Leaders against the cut-offs of the final population (what the
     // author's founderThresholds computes at run time): re-roll the leaders
-    // below them, recompute, until no leader changes (at most LEADER_PASSES).
+    // below them or outside the clan's drive, recompute, until no leader
+    // changes (at most LEADER_PASSES).
     const Policy = invoke('GameServer/Clan/ClanSimulationPolicy');
     const keptPersonas = kept.map((row) => ({ primaryDrive: row.primaryDrive, traits: JSON.parse(row.traitsJson) }));
     const leaders = new Set(connection.prepare('SELECT leaderId FROM clans WHERE leaderId > 0').all().map((row) => Number(row.leaderId)));
     const leaderRows = todo.filter((row) => leaders.has(Number(row.characterId)));
     const regular = new Map(leaderRows.map((row) => [Number(row.characterId), result.get(Number(row.characterId))]));
     const below = (leader, thresholds) => !(Policy.leaderScore(leader) >= thresholds[leader.primaryDrive]);
+    const clanDrive = (row) => (Types.isDwarf(row.classId) ? 'wealth' : row.primaryDrive);
     let thresholds = Policy.founderThresholds([...keptPersonas, ...result.values()]);
     let leaderPasses = 0;
     for (let pass = 0; pass < LEADER_PASSES; pass++) {
         let changed = 0;
         for (const row of leaderRows) {
             const id = Number(row.characterId);
-            if (!below(result.get(id), thresholds)) continue;
-            const next = leaderPersona(row, regular.get(id), thresholds, rows.length, Policy) || regular.get(id);
-            if (JSON.stringify(next) === JSON.stringify(result.get(id))) continue;
+            const current = result.get(id);
+            if (current.primaryDrive === clanDrive(row) && !below(current, thresholds)) continue;
+            const next = leaderPersona(row, regular.get(id), thresholds, rows.length, Policy);
+            if (JSON.stringify(next) === JSON.stringify(current)) continue;
             result.set(id, next);
             changed++;
         }
