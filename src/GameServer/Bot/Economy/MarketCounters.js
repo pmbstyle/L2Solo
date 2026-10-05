@@ -9,7 +9,9 @@
 // A counter holds: deals (all of them), the buyers per hour (an exponential
 // rate over the last hour of uptime), the market index (the mean log of the
 // deal price over the item's first price, the last ~32 deals), and its
-// hourly move (how much the index changes in an hour of uptime).
+// hourly move (how much the index changes in an hour of uptime). Each counter
+// also keeps its buyers per hour in each town where it had deals (б7: the
+// shop town, MarketTownPolicy.shopTown).
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Uptime = require('../Population/Uptime');
 const DataCache = invoke('GameServer/DataCache');
@@ -29,6 +31,9 @@ let spotsSource = () => [];
 const counterCache = new Map();
 const counters = new Map();
 const items = new Map();
+// counter key -> town -> { rate, at }: the buyers per hour of the counter in
+// each town (б7, the shop town), the same exponential rate as the counter's.
+const towns = new Map();
 let mirror = null;
 let channel = null;
 
@@ -111,8 +116,27 @@ function itemRow(selfId, item) {
     return [`i:${selfId}`, item.deals, Math.round(item.units * 100) / 100, ...item.prices, ...item.sellers];
 }
 
-// One board deal: +1 on its counter and the item's price list.
-function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0) {
+// [key, town, rate, at, town, rate, at, ...]: the counter's buyers per town.
+function townRow(key, byTown) {
+    const row = [`t:${key}`];
+    for (const [town, value] of byTown) row.push(town, Math.round(value.rate * 1000) / 1000, value.at);
+    return row;
+}
+
+function countTown(key, town, timestamp) {
+    let byTown = towns.get(key);
+    if (!byTown) {
+        byTown = new Map();
+        towns.set(key, byTown);
+    }
+    const kept = byTown.get(town) || { rate: 0, at: timestamp };
+    byTown.set(town, { rate: kept.rate * Math.exp(-Uptime.between(kept.at, timestamp) / HOUR_MS) + 1, at: timestamp });
+    return byTown;
+}
+
+// One board deal: +1 on its counter (and on its town, where the deal was
+// made) and the item's price list.
+function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0, town = null) {
     const id = Number(selfId);
     const price = Number(unitPrice);
     if (!id || id === 57 || !(price > 0) || !(Number(quantity) > 0)) return;
@@ -154,15 +178,19 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0)
         item.prices.shift();
         item.sellers.shift();
     }
+    const byTown = town ? countTown(key, String(town), timestamp) : null;
     if (channel) {
         channel.changed('market', counterRow(key, counter));
         channel.changed('market', itemRow(id, item));
+        if (byTown) channel.changed('market', townRow(key, byTown));
     }
 }
 
 // The journal of the last day at start (oldest first): the same deals again.
 function load(rows = []) {
-    for (const row of rows) deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId);
+    for (const row of rows) {
+        deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId, row.town || null);
+    }
     return rows.length;
 }
 
@@ -209,6 +237,23 @@ function moveOf(key, timestamp = Date.now()) {
     return count ? sum / count : STARTING_MOVE;
 }
 
+// The buyers per hour of a counter in each town at `timestamp`: [{ town,
+// perHour }], the towns where it has had deals.
+function townDemand(key, timestamp = Date.now()) {
+    const result = [];
+    if (mirror) {
+        const row = mirror().get(`t:${key}`);
+        for (let at = 1; row && at + 2 < row.length; at += 3) {
+            result.push({ town: row[at], perHour: row[at + 1] * Math.exp(-Uptime.between(row[at + 2], timestamp) / HOUR_MS) });
+        }
+        return result;
+    }
+    for (const [town, value] of towns.get(key) || []) {
+        result.push({ town, perHour: value.rate * Math.exp(-Uptime.between(value.at, timestamp) / HOUR_MS) });
+    }
+    return result;
+}
+
 // The item's deals so far, the units a deal takes on average and its last
 // prices with their sellers, oldest first.
 const NO_DEALS = Object.freeze({ deals: 0, units: 1, prices: Object.freeze([]), sellers: Object.freeze([]) });
@@ -235,7 +280,8 @@ function publish(tableChannel) {
         key: (row) => row[0],
         allRows: () => [
             ...[...counters].map(([key, value]) => counterRow(key, value)),
-            ...[...items].map(([id, value]) => itemRow(id, value))
+            ...[...items].map(([id, value]) => itemRow(id, value)),
+            ...[...towns].map(([key, value]) => townRow(key, value))
         ]
     });
 }
@@ -253,8 +299,9 @@ function useSpots(source) {
 function reset() {
     counters.clear();
     items.clear();
+    towns.clear();
     mirror = null;
 }
 
-module.exports = { STARTING_MOVE, COUNTER_KEYS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, firstPrice, publish, useTable,
-    useSpots, reset };
+module.exports = { STARTING_MOVE, COUNTER_KEYS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, townDemand, firstPrice,
+    publish, useTable, useSpots, reset };
