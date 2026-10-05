@@ -52,12 +52,14 @@ function item(selfId, amount) {
 check('E40', () => {
     record(992101, { kind: 'buy_ad', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 30 }] });
     const actor = { fetchId: () => 992100, backpack: { fetchItems: () => [item(STEM, 5)] } };
-    const found = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' });
+    // One decision point: the sale decision's rolls stand still.
+    const now = 1800000000000;
+    const found = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, null, { now });
     assert.strictEqual(found?.offer.recordKind, 'buy_ad', 'the ad in town is answered');
     const adTarget = MarketOpportunity.offerTarget(found.offer, 'Giran');
     assert.deepStrictEqual([adTarget.actorId, adTarget.recordId], [null, found.offer.recordId], 'by record, at its place');
     record(992102, { kind: 'shop', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 40 }] });
-    const shop = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' });
+    const shop = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, null, { now });
     assert.strictEqual(Number(shop?.offer.sourceId), 992102, 'E40: the trip walks to the better buy shop');
     assert(MarketOpportunity.offerTarget(shop.offer, 'Giran').actorId > 0);
 });

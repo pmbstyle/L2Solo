@@ -105,7 +105,7 @@ async function run() {
         locX: 1, locY: 2, locZ: 3, appearance: {},
         lines: [{ id: 9410010 + index, selfId, name: `Item ${selfId}`, count: 50, price, enchant: 0 }] }));
     try {
-        const best = TradeService.findAfkBuyerForActor(bot, { name: 'Gludio' }, state);
+        const best = TradeService.findAfkBuyerForActor(bot, { name: 'Gludio' }, state, { now: 1800000000000 });
         assert.deepStrictEqual(best?.sale, { [ANIMAL_BONE]: 20 }, 'the AFK buyer search must weigh only sellable items');
         assert.strictEqual(best.score, 20 * 3000);
     } finally {

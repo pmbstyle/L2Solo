@@ -234,7 +234,8 @@ function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelf
 // may sell (its reservations kept); of those in this town, the record that
 // pays most. sale: selfId -> the units decided for that record. A buy shop's
 // stall is walked to; a buy ad is answered by record at its place (D6, E45).
-function findAfkBuyerForActor(actor, town, state = null) {
+// options.now: the decision point (tests).
+function findAfkBuyerForActor(actor, town, state = null, options = {}) {
     const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -244,7 +245,7 @@ function findAfkBuyerForActor(actor, town, state = null) {
     seller.inventory = { ...LifeState.inventorySummaryFromItems(items),
         ...(seller.inventory['57'] ? { 57: seller.inventory['57'] } : {}) };
     const records = new Map();
-    for (const answer of ListingPolicy.evaluate(seller, { unlimited: true }).answers) {
+    for (const answer of ListingPolicy.evaluate(seller, { unlimited: true, now: options.now }).answers) {
         if (answer.line.town !== town?.name) continue;
         const record = records.get(answer.line.recordId) || { line: answer.line, score: 0, sale: {} };
         record.score += answer.line.price * answer.count;
