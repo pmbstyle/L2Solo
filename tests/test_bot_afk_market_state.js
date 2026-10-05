@@ -79,7 +79,8 @@ async function run() {
     assert.deepStrictEqual(opened.state.loc, hunting.loc);
     assert.strictEqual(opened.state.timing.nextResolveAt, hunting.timing.nextResolveAt);
     assert.strictEqual(opened.shop.storeType, AfkTrade.SELL);
-    assert.strictEqual(opened.shop.expiresAt, undefined, 'the shop is a persistent state without a deadline');
+    assert(Math.abs(Number(opened.shop.expiresAt) - (Date.now() + 12 * 60 * 60 * 1000)) < 60000,
+        'the shop lives 12 hours of server uptime (the board)');
     assert.strictEqual(opened.shop.town, 'Talking Island');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wts, 1,
         'world status should count bot AFK shops');
@@ -181,7 +182,7 @@ async function run() {
         { objectId: customerStockId });
     assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
     assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
-    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0);
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 0, 'a filled record is closed and deleted');
     const history = await Database.readHistory([
         `SELECT channel, sourceType FROM market_trades ORDER BY id`, []
     ]);
@@ -341,12 +342,12 @@ async function run() {
     });
     await AfkTrade._resetForTests();
     assert.strictEqual(await AfkTrade.init(), 1);
-    const migratedFragment = (await Database.fetchAfkTradeShops(fragmentOwnerId))[0];
-    assert.strictEqual(migratedFragment.id, legacyFragment.shop.id,
-        'rerouting a persistent shop must keep its identity and escrow');
-    assert.strictEqual(migratedFragment.town, 'Giran');
-    assert.strictEqual(AfkTrade.findOwnerProjection(fragmentOwnerId).shop.town, 'Giran');
-    assert.strictEqual(migratedFragment.lines.find((line) => line.selfId === 1962).count, 2);
+    // A restart moves nothing on the board: the old world's bot records
+    // closed once at the board's first start (Database.migrateBoardWorld).
+    const restoredFragment = (await Database.fetchAfkTradeShops(fragmentOwnerId))[0];
+    assert.strictEqual(restoredFragment.id, legacyFragment.shop.id, 'a restart keeps a record as it is');
+    assert.strictEqual(restoredFragment.town, 'Elven Village');
+    assert.strictEqual(restoredFragment.lines.find((line) => line.selfId === 1962).count, 2);
     assert.strictEqual(amount(await Database.fetchItems(fragmentOwnerId), 1962), 0);
     const fragmentState = { characterId: fragmentOwnerId, name: 'FragmentSeller' };
     const casualOffer = BotAfkTradeChat.parse(fragmentState,
@@ -448,16 +449,8 @@ async function run() {
         });
         AfkTrade._resetForTests();
         assert.strictEqual(await AfkTrade.init(), 2);
-        const migratedLot = AfkTrade.findOwnerProjection(oldOwnerId).shop;
-        assert.deepStrictEqual(migratedLot.lines.map((line) => Number(line.selfId)), [1962]);
-        assert.strictEqual(amount(await Database.fetchItems(oldOwnerId), 1875), 1);
-        assert.strictEqual(amount(await Database.fetchItems(oldOwnerId), 1962), 0);
-        await Database.execute(["UPDATE afk_trade_shops SET title = 'Soulshot: C-grade x74 +2' WHERE id = ?", [migratedLot.id]]);
-        AfkTrade._resetForTests();
-        await AfkTrade.init();
-        assert.strictEqual(AfkTrade.findOwnerProjection(oldOwnerId).shop.title, 'Karmian Tunic Pattern',
-            'restore repairs stale titles even when no stock or location needs changing');
-        assert.strictEqual((await Database.fetchAfkTradeShops(oldOwnerId))[0].title, 'Karmian Tunic Pattern');
+        assert.deepStrictEqual(AfkTrade.findOwnerProjection(oldOwnerId).shop.lines.map((line) => Number(line.selfId)), [1875, 1962],
+            'a restart keeps a record as it is; the owner\'s next review prunes its lots');
     } finally {
         if (originalRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
         else process.env.L2NODE_PROGRESSION_RATE = originalRate;

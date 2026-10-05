@@ -11,6 +11,7 @@ const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
+const BoardRules = require('./GameServer/AfkTrade/BoardRules');
 const BotErrands = require('./GameServer/Bot/Population/BotErrands');
 
 let connection;
@@ -1315,6 +1316,25 @@ function applySchemaMigrations() {
     // Personas v2 (step 3.1, N6a): eleven types by class and share, clan
     // leaders through the author's founder gate, remembered listing prices reset.
     migrations.push([52, () => invoke('GameServer/Bot/AI/BotPersonaMigration').apply(connection, now())]);
+    // The board (step 3.3, group A): every AFK shop row is a record of a
+    // kind with an expiry; one active shop per owner, any number of other
+    // records. Closed records are deleted at once (design 16.19).
+    migrations.push([53, () => {
+        const columns = connection.prepare('PRAGMA table_info(afk_trade_shops)').all().map((column) => column.name);
+        if (!columns.includes('kind')) {
+            connection.exec(`ALTER TABLE afk_trade_shops ADD COLUMN kind TEXT NOT NULL DEFAULT 'shop'
+                CHECK(kind IN ('shop', 'sell_ad', 'buy_ad', 'order'))`);
+        }
+        if (!columns.includes('expiresAt')) connection.exec('ALTER TABLE afk_trade_shops ADD COLUMN expiresAt INTEGER NOT NULL DEFAULT 0');
+        connection.exec(`
+            DROP INDEX IF EXISTS afk_trade_shops_active_owner;
+            CREATE UNIQUE INDEX afk_trade_shops_active_owner
+                ON afk_trade_shops(ownerId) WHERE status = 'active' AND kind = 'shop';
+            CREATE INDEX IF NOT EXISTS afk_trade_shops_owner_kind ON afk_trade_shops(ownerId, kind);
+            DELETE FROM afk_trade_lines WHERE shopId IN (SELECT id FROM afk_trade_shops WHERE status != 'active');
+            DELETE FROM afk_trade_shops WHERE status != 'active';
+        `);
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -2391,19 +2411,97 @@ function afkTradeTakeItemUnsafe(characterId, itemId, selfId, enchant, amount) {
     return source;
 }
 
-// Returns the items (selfIds) it gave back; a buy shop gives back adena only.
-function returnAfkTradeEscrowUnsafe(shop, closedAt = now()) {
-    const lines = all('SELECT * FROM afk_trade_lines WHERE shopId = ? AND count > 0 ORDER BY id', [shop.id]);
-    if (Number(shop.storeType) === 1) {
-        lines.forEach((line) => afkTradeCreditItemUnsafe(shop.ownerId, line, line.count));
-    } else if (Number(shop.escrowAdena || 0) > 0) {
-        afkTradeCreditAdenaUnsafe(shop.ownerId, shop.escrowAdena);
+// ---- The board (design section 4): the author's AFK shop rows are records ----
+
+// Bot owners whose settlements wait for their next save; kept in memory so a
+// save looks only when there is something to merge (rebuilt at start).
+const pendingSettlementOwners = new Set();
+
+function isBotOwnerUnsafe(ownerId) {
+    return BoardRules.isBotAccount(one('SELECT username FROM characters WHERE id = ?', [Number(ownerId)])?.username);
+}
+
+// A cold bot learns of a deal at its next save: what the deal owes it waits on
+// the board. A player or a hot actor gets it at once (the main thread owns its
+// bag and refreshes the actor after the commit).
+function settlesLaterUnsafe(ownerId) {
+    return one('SELECT phase FROM bot_life_state WHERE characterId = ?', [Number(ownerId)])?.phase === 'cold';
+}
+
+// Gives a record owner `amount` of `item` (selfId 57 for adena): into a
+// settlement for a cold bot, into the bag for anyone else. Returns where.
+function creditRecordOwnerUnsafe(ownerId, item, amount, at = now()) {
+    const owner = Number(ownerId);
+    const count = Math.floor(Number(amount) || 0);
+    if (count <= 0) return null;
+    const selfId = Number(item.selfId);
+    if (settlesLaterUnsafe(owner)) {
+        write(`INSERT INTO board_settlements (ownerId, selfId, name, amount, enchant, slot, stackable, petData, createdAt)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [owner, selfId, selfId === 57 ? 'Adena' : String(item.name || `Item ${selfId}`),
+            count, Math.max(0, Number(item.enchant || 0)), Number(item.slot || 0),
+            selfId === 57 || Number(item.stackable || 0) === 1 ? 1 : 0, item.petData || null, at]);
+        pendingSettlementOwners.add(owner);
+        return 'settlement';
     }
-    write('UPDATE afk_trade_lines SET count = 0, updatedAt = ? WHERE shopId = ? AND count > 0', [closedAt, shop.id]);
-    write(`UPDATE afk_trade_shops
-        SET status = 'closed', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
-        WHERE id = ? AND status = 'active'`, [closedAt, closedAt, shop.id]);
-    return Number(shop.storeType) === 1 ? lines.map((line) => Number(line.selfId)) : [];
+    if (selfId === 57) afkTradeCreditAdenaUnsafe(owner, count);
+    else afkTradeCreditItemUnsafe(owner, item, count);
+    return 'bag';
+}
+
+// A move names the revision of each record it changes (its idempotency key):
+// a replayed or stale move finds another revision, or no record, and changes
+// nothing. A new ad cannot be opened twice (one ad per item and kind).
+function checkRecordRevisionUnsafe(shop, expected) {
+    if (expected === undefined || expected === null) return;
+    if (!shop || Number(shop.revision) !== Number(expected)) throw new Error('afk_trade_shop_changed');
+}
+
+// Per-bot caps (BoardRules): a shop holds at most BOT_SHOP_LINES lines; a bot
+// holds at most BOT_RECORDS[kind] records of another kind. Over the cap the
+// new record is refused and nothing moves.
+function checkBotCapsUnsafe(ownerId, kind, lineCount) {
+    if (!isBotOwnerUnsafe(ownerId)) return;
+    if (kind === 'shop') {
+        if (lineCount > BoardRules.BOT_SHOP_LINES) throw new Error('board_cap_reached');
+        return;
+    }
+    const held = Number(one('SELECT COUNT(*) AS count FROM afk_trade_shops WHERE ownerId = ? AND kind = ?',
+        [Number(ownerId), kind]).count || 0);
+    if (held + 1 > Number(BoardRules.BOT_RECORDS[kind] || 0)) throw new Error('board_cap_reached');
+}
+
+// A closed record is deleted at once (design 16.19): its holdings first go
+// back (count and escrow to zero, so the economy journal sees them leave),
+// then its lines and the row itself.
+function deleteBoardRecordUnsafe(shopId, at) {
+    write('UPDATE afk_trade_lines SET count = 0, updatedAt = ? WHERE shopId = ? AND count > 0', [at, shopId]);
+    write('UPDATE afk_trade_shops SET escrowAdena = 0, updatedAt = ? WHERE id = ? AND escrowAdena > 0', [at, shopId]);
+    write('DELETE FROM afk_trade_lines WHERE shopId = ?', [shopId]);
+    write('DELETE FROM afk_trade_shops WHERE id = ?', [shopId]);
+}
+
+// Closes a record and gives its holdings back: the items of its sell lines or
+// its escrow. The owner's own move (a stop, a replace, a withdrawal) puts them
+// in its bag; a close the owner did not make (expiry, leave) goes through
+// creditRecordOwnerUnsafe. Returns the selfIds that went back to the bag.
+function closeBoardRecordUnsafe(shop, { ownMove = true, at = now() } = {}) {
+    const ownerId = Number(shop.ownerId);
+    const lines = all('SELECT * FROM afk_trade_lines WHERE shopId = ? AND count > 0 ORDER BY id', [shop.id]);
+    const changed = [];
+    const give = (item, amount) => {
+        if (!ownMove) return creditRecordOwnerUnsafe(ownerId, item, amount, at);
+        if (Number(item.selfId) === 57) afkTradeCreditAdenaUnsafe(ownerId, amount);
+        else afkTradeCreditItemUnsafe(ownerId, item, amount);
+        return 'bag';
+    };
+    if (Number(shop.storeType) === BoardRules.SELL) {
+        lines.forEach((line) => {
+            if (give(line, line.count) === 'bag') changed.push(Number(line.selfId));
+        });
+    }
+    if (Number(shop.escrowAdena || 0) > 0) give({ selfId: 57 }, shop.escrowAdena);
+    deleteBoardRecordUnsafe(shop.id, at);
+    return changed;
 }
 
 // An AFK shop write (a fill, close, reprice or publish) moves adena and the
@@ -2418,6 +2516,9 @@ function fenceAfkTradePartiesUnsafe(characterIds, selfIds) {
     return rows;
 }
 
+// After a deal: a record with nothing left is closed and deleted; one with
+// lines left gets the bot's title for its remaining stock. Returns true when
+// the record closed.
 function completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned = false) {
     const lines = botOwned ? all(`SELECT selfId, name, count FROM afk_trade_lines
         WHERE shopId = ? AND count > 0 ORDER BY id`, [shopId]) : null;
@@ -2435,10 +2536,183 @@ function completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned = false) {
         }
         return false;
     }
-    write(`UPDATE afk_trade_shops
-        SET status = 'filled', escrowAdena = 0, revision = revision + 1, updatedAt = ?, closedAt = ?
-        WHERE id = ? AND status = 'active'`, [timestamp, timestamp, shopId]);
+    const shop = one('SELECT * FROM afk_trade_shops WHERE id = ?', [shopId]);
+    if (shop) closeBoardRecordUnsafe(shop, { ownMove: false, at: timestamp });
     return true;
+}
+
+// A record as the callers knew it, after it closed: the projection and the
+// in-memory index drop it; nothing is left in the database.
+function closedRecord(shop, status = 'filled') {
+    return { ...shop, status, escrowAdena: 0, lines: (shop.lines || []).map((line) => ({ ...line, count: 0 })) };
+}
+
+function validBoardRecord(kind, storeType, rows) {
+    if (!BoardRules.isKind(kind) || !Array.isArray(rows) || rows.length < 1) return false;
+    if (kind !== 'shop' && rows.length !== 1) return false;
+    return [BoardRules.SELL, BoardRules.BUY].includes(BoardRules.storeTypeFor(kind, storeType));
+}
+
+// Opens one record inside the caller's transaction (see createAfkTradeShop).
+// A shop replaces the owner's shop when `replace` is set and keeps its
+// deadline (its life runs from its first publication); an ad is one item and
+// one per item. `expectedRevision` names the shop it replaces. Returns
+// { shop, changedIds }.
+function openBoardRecordUnsafe(characterId, config, rows) {
+    const kind = config.kind;
+    const storeType = BoardRules.storeTypeFor(kind, config.storeType);
+    const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
+    if (!owner) throw new Error('afk_trade_owner_missing');
+    const timestamp = now();
+    let expiresAt = timestamp + BoardRules.LIFETIME_MS;
+    const changedIds = [];
+    let active = null;
+    if (kind === 'shop') {
+        const expandTrade = one('SELECT level FROM skills WHERE characterId = ? AND selfId = 1370', [characterId]);
+        const limit = require('./GameServer/PrivateStoreLimits').tradeLimit(owner.race, expandTrade?.level || 0, storeType);
+        if (rows.length > limit) throw new Error(`AFK trade allows at most ${limit} item slots`);
+        active = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND kind = 'shop' AND status = 'active'", [characterId]);
+        if (active && !config.replace) throw new Error('afk_trade_already_active');
+        if (config.expectedRevision !== undefined) checkRecordRevisionUnsafe(active, config.expectedRevision);
+        // Replacing a remote shop returns its escrow and reserves the new
+        // stock in the same transaction. A failed publish restores both.
+        if (active) {
+            if (Number(active.expiresAt) > 0) expiresAt = Number(active.expiresAt);
+            changedIds.push(...closeBoardRecordUnsafe(active, { ownMove: true, at: timestamp }));
+        }
+    } else {
+        const line = rows[0];
+        const same = one(`SELECT shops.id FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
+            WHERE shops.ownerId = ? AND shops.kind = ? AND lines.selfId = ? AND lines.enchant = ?`,
+        [characterId, kind, Number(line.selfId), Math.max(0, Math.floor(Number(line.enchant || 0)))]);
+        if (same) throw new Error('board_ad_exists');
+    }
+    checkBotCapsUnsafe(characterId, kind, rows.length);
+
+    let escrowAdena = 0;
+    if (storeType === BoardRules.BUY) {
+        escrowAdena = rows.reduce((sum, line) => {
+            const count = Math.floor(Number(line.count));
+            const price = Math.floor(Number(line.price));
+            if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(price) || price < 1
+                || !Number.isSafeInteger(sum + count * price)) throw new Error('invalid_afk_trade_line');
+            return sum + count * price;
+        }, 0);
+        afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
+        changedIds.push(57);
+    }
+
+    const shopId = Number(write(`INSERT INTO afk_trade_shops(
+        ownerId, storeType, status, title, town, locX, locY, locZ, head,
+        appearanceJson, packageSale, escrowAdena, revision, createdAt, updatedAt, kind, expiresAt
+    ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`, [
+        characterId,
+        storeType,
+        String(config.title || '').slice(0, 52),
+        config.town || null,
+        Number(config.locX || 0),
+        Number(config.locY || 0),
+        Number(config.locZ || 0),
+        Number(config.head || 0),
+        // Only a shop stands in the world and is drawn from its snapshot.
+        kind === 'shop' ? JSON.stringify(config.appearance || {}) : '{}',
+        config.packageSale ? 1 : 0,
+        escrowAdena,
+        timestamp,
+        timestamp,
+        kind,
+        expiresAt
+    ]).insertId);
+
+    // A replaced shop or an ad may name a stack the bag has merged since: the
+    // same item from another stack serves. A player's new shop names its own.
+    const flexible = !!active || kind !== 'shop';
+    const sourceIds = new Set();
+    rows.forEach((line) => {
+        const selfId = Number(line.selfId);
+        const count = Math.floor(Number(line.count));
+        const price = Math.floor(Number(line.price));
+        const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
+        if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+            || !Number.isSafeInteger(count) || count < 1
+            || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
+            throw new Error('invalid_afk_trade_line');
+        }
+
+        let source = null;
+        if (storeType === BoardRules.SELL) {
+            let sourceId = Number(line.objectId || line.sourceObjectId || 0);
+            if (flexible) {
+                const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
+                    AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?`,
+                [sourceId, characterId, selfId, enchant, count]);
+                if (!preferred || sourceIds.has(sourceId)) {
+                    const candidates = all(`SELECT id FROM items WHERE characterId = ?
+                        AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?
+                        ORDER BY id`, [characterId, selfId, enchant, count]);
+                    sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
+                }
+            }
+            if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
+            sourceIds.add(sourceId);
+            source = afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+            changedIds.push(selfId);
+        }
+        write(`INSERT INTO afk_trade_lines(
+            shopId, sourceObjectId, selfId, name, count, initialCount, price,
+            enchant, slot, stackable, petData, createdAt, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+            shopId,
+            source ? Number(source.id) : null,
+            selfId,
+            source?.name || line.name || `Item ${selfId}`,
+            count,
+            count,
+            price,
+            source ? Number(source.enchant || 0) : enchant,
+            source ? Number(source.slot || 0) : Number(line.slot || 0),
+            line.stackable ? 1 : 0,
+            source?.petData || line.petData || null,
+            timestamp,
+            timestamp
+        ]);
+    });
+    return { shop: afkTradeShopUnsafe(shopId), changedIds };
+}
+
+// Merges a bot's settlements into its bag; its cold row follows: the summary
+// entries of the merged items and the adena are read back from the items, as
+// a fenced write does (writeColdInventorySnapshotUnsafe). `advance` moves the
+// row's simulationRevision (a main-thread settle); a commit that already set
+// it passes false. Returns { changedIds, row } or null when nothing waited.
+function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
+    const id = Number(characterId);
+    const rows = all('SELECT * FROM board_settlements WHERE ownerId = ? ORDER BY id', [id]);
+    if (!rows.length) {
+        pendingSettlementOwners.delete(id);
+        return null;
+    }
+    const changedIds = new Set([57]);
+    for (const row of rows) {
+        if (Number(row.selfId) === 57) afkTradeCreditAdenaUnsafe(id, row.amount);
+        else afkTradeCreditItemUnsafe(id, row, row.amount);
+        changedIds.add(Number(row.selfId));
+    }
+    write('DELETE FROM board_settlements WHERE ownerId = ?', [id]);
+    pendingSettlementOwners.delete(id);
+    const life = one('SELECT phase, inventorySummary FROM bot_life_state WHERE characterId = ?', [id]);
+    if (!life || life.phase !== 'cold') return { changedIds: [...changedIds], row: null };
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [id]));
+    const inventory = jsonObject(life.inventorySummary);
+    for (const selfId of changedIds) {
+        if (physical[selfId]) inventory[selfId] = physical[selfId];
+        else delete inventory[selfId];
+    }
+    write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
+        simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
+    [JSON.stringify(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
+    return { changedIds: [...changedIds], row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id])) };
 }
 
 function commitInteractionMemoryUnsafe(batch, timestamp) {
@@ -2550,6 +2824,9 @@ const Database = {
             connection.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000; PRAGMA temp_store = MEMORY; PRAGMA wal_autocheckpoint = 0;');
             connection.exec(fs.readFileSync(path.join(process.cwd(), 'database', 'sql', 'sqlite.sql'), 'utf8'));
             applySchemaMigrations();
+            pendingSettlementOwners.clear();
+            connection.prepare('SELECT DISTINCT ownerId FROM board_settlements').all()
+                .forEach((row) => pendingSettlementOwners.add(Number(row.ownerId)));
             historyPath = historyFile();
             History.prepare(connection, historyPath);
             outboxDeletedUpTo = 0;
@@ -2840,123 +3117,91 @@ const Database = {
         }, 'market:trade-history');
     },
 
+    // Opens a board record (design 4.1): an AFK shop (`kind` 'shop', the
+    // default), a sell ad, a buy ad or an order. In the same transaction the
+    // record takes what it holds out of the owner's bag: the items of its sell
+    // lines or the escrow of its buy lines. `replace` replaces the owner's
+    // shop; `expectedRevision` names the revision of the shop it replaces
+    // (the move's idempotency key).
     createAfkTradeShop(ownerId, config = {}) {
         const characterId = Number(ownerId);
-        const storeType = Number(config.storeType);
+        const kind = config.kind || 'shop';
         const rows = Array.isArray(config.lines) ? config.lines.slice() : [];
-        if (!characterId || ![1, 3].includes(storeType) || rows.length < 1) {
+        if (!characterId || !validBoardRecord(kind, config.storeType, rows)) {
             return Promise.reject(new Error('invalid_afk_trade_shop'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
-            if (!owner) throw new Error('afk_trade_owner_missing');
-            const expandTrade = one('SELECT level FROM skills WHERE characterId = ? AND selfId = 1370', [characterId]);
-            const limit = require('./GameServer/PrivateStoreLimits').tradeLimit(owner.race, expandTrade?.level || 0, storeType);
-            if (rows.length > limit) throw new Error(`AFK trade allows at most ${limit} item slots`);
-            const active = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
-            if (active && !config.replace) throw new Error('afk_trade_already_active');
-            // Replacing a remote shop returns its escrow and reserves the new
-            // stock in the same transaction. A failed publish restores both.
-            const changedIds = active ? returnAfkTradeEscrowUnsafe(active) : [];
-
-            const timestamp = now();
-            let escrowAdena = 0;
-            if (storeType === 3) {
-                escrowAdena = rows.reduce((sum, line) => {
-                    const count = Math.floor(Number(line.count));
-                    const price = Math.floor(Number(line.price));
-                    if (!Number.isSafeInteger(count) || count < 1 || !Number.isSafeInteger(price) || price < 1
-                        || !Number.isSafeInteger(sum + count * price)) throw new Error('invalid_afk_trade_line');
-                    return sum + count * price;
-                }, 0);
-                afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
-            }
-
-            const shopId = Number(write(`INSERT INTO afk_trade_shops(
-                ownerId, storeType, status, title, town, locX, locY, locZ, head,
-                appearanceJson, packageSale, escrowAdena, revision, createdAt, updatedAt
-            ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`, [
-                characterId,
-                storeType,
-                String(config.title || '').slice(0, 52),
-                config.town || null,
-                Number(config.locX || 0),
-                Number(config.locY || 0),
-                Number(config.locZ || 0),
-                Number(config.head || 0),
-                JSON.stringify(config.appearance || {}),
-                config.packageSale ? 1 : 0,
-                escrowAdena,
-                timestamp,
-                timestamp
-            ]).insertId);
-
-            const sourceIds = new Set();
-            rows.forEach((line) => {
-                const selfId = Number(line.selfId);
-                const count = Math.floor(Number(line.count));
-                const price = Math.floor(Number(line.price));
-                const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
-                if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
-                    || !Number.isSafeInteger(count) || count < 1
-                    || !Number.isSafeInteger(price) || price < (storeType === 3 ? 1 : 0)) {
-                    throw new Error('invalid_afk_trade_line');
-                }
-
-                let source = null;
-                if (storeType === 1) {
-                    let sourceId = Number(line.objectId || line.sourceObjectId || 0);
-                    if (active && config.replace) {
-                        const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
-                            AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?`,
-                        [sourceId, characterId, selfId, enchant, count]);
-                        if (!preferred || sourceIds.has(sourceId)) {
-                            const candidates = all(`SELECT id FROM items WHERE characterId = ?
-                                AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?
-                                ORDER BY id`, [characterId, selfId, enchant, count]);
-                            sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
-                        }
-                    }
-                    if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
-                    sourceIds.add(sourceId);
-                    source = afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
-                    changedIds.push(selfId);
-                }
-                write(`INSERT INTO afk_trade_lines(
-                    shopId, sourceObjectId, selfId, name, count, initialCount, price,
-                    enchant, slot, stackable, petData, createdAt, updatedAt
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
-                    shopId,
-                    source ? Number(source.id) : null,
-                    selfId,
-                    source?.name || line.name || `Item ${selfId}`,
-                    count,
-                    count,
-                    price,
-                    source ? Number(source.enchant || 0) : enchant,
-                    source ? Number(source.slot || 0) : Number(line.slot || 0),
-                    line.stackable ? 1 : 0,
-                    source?.petData || line.petData || null,
-                    timestamp,
-                    timestamp
-                ]);
-            });
-
+            const opened = openBoardRecordUnsafe(characterId, { ...config, kind }, rows);
             return {
-                shop: afkTradeShopUnsafe(shopId),
+                shop: opened.shop,
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.changedIds)
             };
         }, 'afk-trade:create'));
     },
 
+    // The owner's records of one kind are replaced by `configs` (each one
+    // record) in one transaction: the old ones give back what they hold, the
+    // new ones take it. A bot's buy ads follow its goal this way. `expected`
+    // maps every record of that kind the caller saw to its revision (the
+    // move's idempotency key): any other state refuses the move.
+    replaceBoardRecords(ownerId, kind, configs = [], { expected = null } = {}) {
+        const characterId = Number(ownerId);
+        const list = Array.isArray(configs) ? configs : [];
+        if (!characterId || kind === 'shop' || !BoardRules.isKind(kind)
+            || list.some((config) => !validBoardRecord(kind, config.storeType, config.lines || []))) {
+            return Promise.reject(new Error('invalid_board_records'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const timestamp = now();
+            const closed = all('SELECT id FROM afk_trade_shops WHERE ownerId = ? AND kind = ? ORDER BY id', [characterId, kind])
+                .map((row) => afkTradeShopUnsafe(row.id));
+            if (expected) {
+                const seen = Object.keys(expected).map(Number);
+                if (seen.length !== closed.length) throw new Error('afk_trade_shop_changed');
+                closed.forEach((shop) => checkRecordRevisionUnsafe(shop, expected[shop.id]));
+            }
+            const changedIds = [57];
+            closed.forEach((shop) => changedIds.push(...closeBoardRecordUnsafe(shop, { ownMove: true, at: timestamp })));
+            const opened = list.map((config) => openBoardRecordUnsafe(characterId, { ...config, kind }, config.lines));
+            opened.forEach((record) => changedIds.push(...record.changedIds));
+            return {
+                closed: closed.map((shop) => closedRecord(shop, 'closed')),
+                opened: opened.map((record) => record.shop),
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
+            };
+        }, 'board:replace'));
+    },
+
+    // The owner opens several records of one kind (not shops) in one move;
+    // any refusal (a cap, an item gone) moves nothing.
+    openBoardRecords(ownerId, kind, configs = []) {
+        const characterId = Number(ownerId);
+        const list = Array.isArray(configs) ? configs : [];
+        if (!characterId || kind === 'shop' || !BoardRules.isKind(kind) || !list.length
+            || list.some((config) => !validBoardRecord(kind, config.storeType, config.lines || []))) {
+            return Promise.reject(new Error('invalid_board_records'));
+        }
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const opened = list.map((config) => openBoardRecordUnsafe(characterId, { ...config, kind }, config.lines));
+            return {
+                opened: opened.map((record) => record.shop),
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.flatMap((record) => record.changedIds))
+            };
+        }, 'board:open'));
+    },
+
+    // The owner closes its AFK shop (the author's .afkstop): its stock or
+    // escrow goes back to its bag.
     closeAfkTradeShop(ownerId) {
         const characterId = Number(ownerId);
         if (!characterId) return Promise.resolve({ closed: false, ownerInventory: [] });
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const shop = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
+            const shop = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND kind = 'shop' AND status = 'active'", [characterId]);
             if (!shop) return { closed: false, ownerInventory: afkTradeInventoryUnsafe(characterId) };
-            const changedIds = returnAfkTradeEscrowUnsafe(shop);
+            const changedIds = closeBoardRecordUnsafe(shop);
             return {
                 closed: true,
                 shopId: Number(shop.id),
@@ -2967,6 +3212,116 @@ const Database = {
         }, 'afk-trade:close'));
     },
 
+    // The owner closes one of its records (any kind); what it holds goes back
+    // to the owner's bag.
+    closeBoardRecord(ownerId, recordId, { expectedRevision } = {}) {
+        const characterId = Number(ownerId);
+        const id = Number(recordId);
+        if (!characterId || !id) return Promise.reject(new Error('invalid_board_record'));
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const shop = afkTradeShopUnsafe(id);
+            if (!shop || Number(shop.ownerId) !== characterId) return { closed: false, ownerInventory: afkTradeInventoryUnsafe(characterId) };
+            checkRecordRevisionUnsafe(shop, expectedRevision);
+            const changedIds = closeBoardRecordUnsafe(shop);
+            return {
+                closed: true,
+                record: closedRecord(shop, 'closed'),
+                ownerInventory: afkTradeInventoryUnsafe(characterId),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
+            };
+        }, 'board:close'));
+    },
+
+    // Records whose deadline passed close; what they hold goes to their owners
+    // (a cold bot gets it at its next save). Returns the closed records as
+    // they stood and the owners left with settlements.
+    expireBoardRecords(recordIds = [], at = now()) {
+        const ids = [...new Set((recordIds || []).map(Number).filter(Boolean))];
+        if (!ids.length) return Promise.resolve({ closed: [], settlementOwners: [] });
+        return inTransaction(() => {
+            const closed = [];
+            for (const id of ids) {
+                const shop = afkTradeShopUnsafe(id);
+                if (!shop || Number(shop.expiresAt) <= 0 || Number(shop.expiresAt) > Number(at)) continue;
+                closeBoardRecordUnsafe(shop, { ownMove: false, at });
+                closed.push(closedRecord(shop, 'expired'));
+            }
+            return {
+                closed,
+                settlementOwners: [...new Set(closed.map((shop) => Number(shop.ownerId)))]
+                    .filter((ownerId) => pendingSettlementOwners.has(ownerId)),
+                ownerInventories: Object.fromEntries([...new Set(closed.map((shop) => Number(shop.ownerId)))]
+                    .map((ownerId) => [ownerId, afkTradeInventoryUnsafe(ownerId)]))
+            };
+        }, 'board:expire');
+    },
+
+    // The leave rule (design 2.7): an owner leaving the game closes every
+    // record it holds, of every kind; items and escrow go back to it.
+    closeOwnerBoardRecords(ownerId) {
+        const characterId = Number(ownerId);
+        if (!characterId) return Promise.resolve({ closed: [], settlementOwners: [] });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const at = now();
+            const closed = all('SELECT id FROM afk_trade_shops WHERE ownerId = ? ORDER BY id', [characterId])
+                .map((row) => afkTradeShopUnsafe(row.id));
+            closed.forEach((shop) => closeBoardRecordUnsafe(shop, { ownMove: false, at }));
+            return {
+                closed: closed.map((shop) => closedRecord(shop, 'closed')),
+                settlementOwners: pendingSettlementOwners.has(characterId) ? [characterId] : [],
+                ownerInventory: afkTradeInventoryUnsafe(characterId)
+            };
+        }, 'board:leave'));
+    },
+
+    // A main-thread save of what waits for a bot on the board: merged unless
+    // the worker leases the bot (its commit merges it). Returns the bot's
+    // row when its cold state changed, and its bag.
+    settleBoardOwner(ownerId) {
+        const characterId = Number(ownerId);
+        if (!characterId || !pendingSettlementOwners.has(characterId)) return Promise.resolve({ settled: false });
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const life = one('SELECT simulationOwner FROM bot_life_state WHERE characterId = ?', [characterId]);
+            if (life?.simulationOwner === COLD_SIMULATION_OWNER) return { settled: false, leased: true };
+            const merged = mergeBoardSettlementsUnsafe(characterId, { advance: true });
+            if (!merged) return { settled: false };
+            return { settled: true, row: merged.row, ownerInventory: afkTradeInventoryUnsafe(characterId) };
+        }, 'board:settle'));
+    },
+
+    boardSettlementOwners() {
+        return [...pendingSettlementOwners];
+    },
+
+    // The board's clock runs with the server (records live 12 hours of
+    // uptime): `boardAliveAt` is the last moment the server was seen running.
+    fetchBoardAliveAt() {
+        return run("SELECT value FROM world_meta WHERE key = 'boardAliveAt'", [], 'board:clock', true)
+            .then((rows) => Number(rows[0]?.value || 0));
+    },
+
+    // Moves every deadline by `ms` (the downtime) and records `aliveAt`.
+    shiftBoardDeadlines(ms, aliveAt = now()) {
+        const shift = Math.max(0, Math.floor(Number(ms) || 0));
+        return enqueue(() => {
+            connection.exec('BEGIN IMMEDIATE');
+            try {
+                const moved = shift > 0
+                    ? Number(write('UPDATE afk_trade_shops SET expiresAt = expiresAt + ? WHERE expiresAt > 0', [shift]).affectedRows || 0)
+                    : 0;
+                write(`INSERT INTO world_meta (key, value) VALUES ('boardAliveAt', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(Math.floor(Number(aliveAt)))]);
+                connection.exec('COMMIT');
+                return { moved, shift };
+            } catch (error) {
+                connection.exec('ROLLBACK');
+                throw error;
+            }
+        }, { operation: 'board:shift-deadlines' });
+    },
+
+    // The owner changes the price (and count) of one of its lines: a sell
+    // line gives back the rest of its stock, a buy line's escrow follows.
     repriceAfkTradeShop(ownerId, lineId, price, expectedRevision = null, quantity = null) {
         const characterId = Number(ownerId);
         const id = Number(lineId);
@@ -2975,7 +3330,8 @@ const Database = {
             return Promise.reject(new Error('invalid_afk_trade_price'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const shop = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND status = 'active'", [characterId]);
+            const shop = one(`SELECT shops.* FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
+                WHERE lines.id = ? AND shops.ownerId = ? AND shops.status = 'active'`, [id, characterId]);
             if (!shop) throw new Error('afk_trade_shop_unavailable');
             if (expectedRevision !== null && Number(shop.revision) !== Number(expectedRevision)) {
                 throw new Error('afk_trade_shop_changed');
@@ -3004,17 +3360,21 @@ const Database = {
             write(`UPDATE afk_trade_shops SET escrowAdena = ?, revision = revision + 1,
                 updatedAt = ? WHERE id = ?`, [reserved, timestamp, shop.id]);
             const owner = one('SELECT username FROM characters WHERE id = ?', [characterId]);
-            completeAfkTradeIfFilledUnsafe(shop.id, timestamp, String(owner?.username || '').startsWith('bot_'));
+            const current = afkTradeShopUnsafe(shop.id);
+            const filled = completeAfkTradeIfFilledUnsafe(shop.id, timestamp, BoardRules.isBotAccount(owner?.username));
             // A price-only change moves nothing and leaves the worker's lease alone.
             const moved = changedIds.length > 0 || difference !== 0;
             return {
-                shop: afkTradeShopUnsafe(shop.id),
+                shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
                 coldLifeRows: moved ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
             };
         }, 'afk-trade:reprice'));
     },
 
+    // A deal between two records (a sell line and a buy line), at the ask:
+    // only the records change; what each owner gets is credited by
+    // creditRecordOwnerUnsafe (a cold bot's waits for its next save).
     matchAfkTradeShops(details = {}) {
         const sellShopId = Number(details.sellShopId);
         const buyShopId = Number(details.buyShopId);
@@ -3035,8 +3395,8 @@ const Database = {
             if (!sellerShop || !buyerShop) throw new Error('afk_trade_shop_changed');
             const seller = one('SELECT name, username FROM characters WHERE id = ?', [sellerId]);
             const buyer = one('SELECT name, username FROM characters WHERE id = ?', [buyerId]);
-            const botOwned = String(seller?.username || '').startsWith('bot_');
-            const botBuyer = String(buyer?.username || '').startsWith('bot_');
+            const botOwned = BoardRules.isBotAccount(seller?.username);
+            const botBuyer = BoardRules.isBotAccount(buyer?.username);
             if (sellerShop.town !== buyerShop.town && !botOwned && !botBuyer) throw new Error('afk_trade_shop_changed');
             if (details.sellRevision != null && Number(sellerShop.revision) !== Number(details.sellRevision)) throw new Error('afk_trade_shop_changed');
             if (details.buyRevision != null && Number(buyerShop.revision) !== Number(details.buyRevision)) throw new Error('afk_trade_shop_changed');
@@ -3050,11 +3410,11 @@ const Database = {
             if (!Number.isSafeInteger(total) || total < 1 || Number(buyerShop.escrowAdena) < Number(buyLine.price) * quantity) {
                 throw new Error('afk_trade_budget_changed');
             }
-            afkTradeCreditItemUnsafe(buyerId, sellLine, quantity);
-            afkTradeCreditAdenaUnsafe(sellerId, total);
-            const refund = (Number(buyLine.price) - Number(sellLine.price)) * quantity;
-            if (refund > 0) afkTradeCreditAdenaUnsafe(buyerId, refund);
             const timestamp = now();
+            creditRecordOwnerUnsafe(buyerId, sellLine, quantity, timestamp);
+            creditRecordOwnerUnsafe(sellerId, { selfId: 57 }, total, timestamp);
+            const refund = (Number(buyLine.price) - Number(sellLine.price)) * quantity;
+            if (refund > 0) creditRecordOwnerUnsafe(buyerId, { selfId: 57 }, refund, timestamp);
             write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id IN (?, ?)',
                 [quantity, timestamp, sellLineId, buyLineId]);
             write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?',
@@ -3079,21 +3439,26 @@ const Database = {
                 sellerCharacterId: sellerId, sellerName: seller?.name || null,
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
             });
-            completeAfkTradeIfFilledUnsafe(sellShopId, timestamp, botOwned);
-            completeAfkTradeIfFilledUnsafe(buyShopId, timestamp, botBuyer);
-            const coldLifeRows = fenceAfkTradePartiesUnsafe([sellerId, buyerId], [sellLine.selfId]);
+            const sellerBefore = afkTradeShopUnsafe(sellShopId);
+            const buyerBefore = afkTradeShopUnsafe(buyShopId);
+            const sellerFilled = completeAfkTradeIfFilledUnsafe(sellShopId, timestamp, botOwned);
+            const buyerFilled = completeAfkTradeIfFilledUnsafe(buyShopId, timestamp, botBuyer);
             return {
-                coldLifeRows,
+                coldLifeRows: {},
+                settlementOwners: [sellerId, buyerId].filter((id) => pendingSettlementOwners.has(id)),
                 sellerEventId, buyerEventId, amount: quantity, totalPrice: total,
                 line: sellLine,
-                sellerShop: afkTradeShopUnsafe(sellShopId),
-                buyerShop: afkTradeShopUnsafe(buyShopId),
+                sellerShop: sellerFilled ? closedRecord(sellerBefore) : afkTradeShopUnsafe(sellShopId),
+                buyerShop: buyerFilled ? closedRecord(buyerBefore) : afkTradeShopUnsafe(buyShopId),
                 sellerInventory: afkTradeInventoryUnsafe(sellerId),
                 buyerInventory: afkTradeInventoryUnsafe(buyerId)
             };
         }, 'afk-trade:match-shops'));
     },
 
+    // A buyer in person (a player, or a bot acting now) buys from a sell
+    // record: the buyer's bag pays and receives in the same transaction; the
+    // record's owner is credited by creditRecordOwnerUnsafe.
     buyFromAfkTradeShop(counterpartyId, details = {}) {
         const buyerId = Number(counterpartyId);
         const shopId = Number(details.shopId);
@@ -3111,10 +3476,10 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
+            const timestamp = now();
             afkTradeDebitAdenaUnsafe(buyerId, total);
             afkTradeCreditItemUnsafe(buyerId, line, quantity);
-            afkTradeCreditAdenaUnsafe(shop.ownerId, total);
-            const timestamp = now();
+            creditRecordOwnerUnsafe(shop.ownerId, { selfId: 57 }, total, timestamp);
             write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
             write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?', [timestamp, shopId]);
             const eventId = Number(recordAfkTradeEventUnsafe({
@@ -3123,7 +3488,7 @@ const Database = {
             }));
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
             const buyer = one('SELECT name FROM characters WHERE id = ?', [buyerId]);
-            const botOwned = String(owner?.username || '').startsWith('bot_');
+            const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
                 eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: botOwned ? 'bot_wts' : 'player_wts',
                 sourceType: botOwned ? 'afk_bot_store' : 'afk_player_store', selfId: line.selfId, itemName: line.name,
@@ -3131,21 +3496,27 @@ const Database = {
                 sellerCharacterId: shop.ownerId, sellerName: owner?.name || null,
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
             });
+            const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, buyerId], [line.selfId]),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([buyerId], [line.selfId]),
+                settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
                 filled,
                 amount: quantity,
                 totalPrice: total,
                 line: { ...line, count: Number(line.count) - quantity },
-                shop: afkTradeShopUnsafe(shopId),
+                shop: filled ? closedRecord(before) : afkTradeShopUnsafe(shopId),
                 ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
                 counterpartyInventory: afkTradeInventoryUnsafe(buyerId)
             };
         }, 'afk-trade:buy-from-shop'));
     },
 
+    // A seller in person sells into a buy record: the item leaves the
+    // seller's bag (no item, no deal: afkTradeTakeItemUnsafe) and the price
+    // comes from the record's escrow, in one transaction; the item goes to
+    // the record's owner by creditRecordOwnerUnsafe.
     sellToAfkTradeShop(counterpartyId, details = {}) {
         const sellerId = Number(counterpartyId);
         const shopId = Number(details.shopId);
@@ -3163,6 +3534,7 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 1 || Number(shop.escrowAdena) < total) throw new Error('afk_trade_budget_changed');
+            const timestamp = now();
             const source = afkTradeTakeItemUnsafe(
                 sellerId,
                 Number(details.objectId || 0),
@@ -3170,12 +3542,8 @@ const Database = {
                 Number(line.enchant || 0),
                 quantity
             );
-            afkTradeCreditItemUnsafe(shop.ownerId, {
-                ...source,
-                stackable: Number(line.stackable || 0)
-            }, quantity);
+            creditRecordOwnerUnsafe(shop.ownerId, { ...source, stackable: Number(line.stackable || 0) }, quantity, timestamp);
             afkTradeCreditAdenaUnsafe(sellerId, total);
-            const timestamp = now();
             write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
             write(`UPDATE afk_trade_shops
                 SET escrowAdena = escrowAdena - ?, revision = revision + 1, updatedAt = ?
@@ -3186,7 +3554,7 @@ const Database = {
             }));
             const seller = one('SELECT name FROM characters WHERE id = ?', [sellerId]);
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
-            const botOwned = String(owner?.username || '').startsWith('bot_');
+            const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
                 eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: 'wtb',
                 sourceType: botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store', selfId: line.selfId, itemName: line.name,
@@ -3194,38 +3562,21 @@ const Database = {
                 sellerCharacterId: sellerId, sellerName: seller?.name || null,
                 buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
             });
+            const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([shop.ownerId, sellerId], [line.selfId]),
+                coldLifeRows: fenceAfkTradePartiesUnsafe([sellerId], [line.selfId]),
+                settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
                 filled,
                 amount: quantity,
                 totalPrice: total,
                 line: { ...line, count: Number(line.count) - quantity },
-                shop: afkTradeShopUnsafe(shopId),
+                shop: filled ? closedRecord(before) : afkTradeShopUnsafe(shopId),
                 ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
                 counterpartyInventory: afkTradeInventoryUnsafe(sellerId)
             };
         }, 'afk-trade:sell-to-shop'));
-    },
-
-    relocateBotAfkTradeShop(ownerId, town, loc) {
-        const characterId = Number(ownerId);
-        if (!characterId || !town || ![loc?.locX, loc?.locY, loc?.locZ].every(Number.isFinite)) {
-            return Promise.reject(new Error('invalid_bot_afk_trade_location'));
-        }
-        return withCharacterFlush(characterId, () => inTransaction(() => {
-            const shop = one(`SELECT shops.id FROM afk_trade_shops shops
-                JOIN characters ON characters.id = shops.ownerId
-                WHERE shops.ownerId = ? AND shops.status = 'active'
-                AND substr(characters.username, 1, 4) = 'bot_'`, [characterId]);
-            if (!shop) throw new Error('bot_afk_trade_unavailable');
-            write(`UPDATE afk_trade_shops SET town = ?, locX = ?, locY = ?, locZ = ?,
-                revision = revision + 1, updatedAt = ? WHERE id = ?`, [
-                town, Math.round(loc.locX), Math.round(loc.locY), Math.round(loc.locZ), now(), shop.id
-            ]);
-            return afkTradeShopUnsafe(shop.id);
-        }, 'afk-trade:relocate-bot'));
     },
 
     fetchAfkTradeShops(ownerId = null, { activeOnly = true } = {}) {
@@ -3744,6 +4095,11 @@ const Database = {
             const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
             if (physical) applyColdPhysicalStateUnsafe(characterId, physical);
+            // What deals and closed records left for the bot on the board while
+            // the worker held it reaches its bag with this save.
+            EconomyJournal.detail('board_settlement');
+            const settled = pendingSettlementOwners.has(characterId)
+                ? mergeBoardSettlementsUnsafe(characterId, { advance: false }) : null;
             EconomyJournal.detail(null);
             // Persist the entitlement under the same lease fence and transaction
             // as EXP. Cold-to-hot resurrection reads this durable record.
@@ -3757,6 +4113,7 @@ const Database = {
                 leaseUntil: 0,
                 reason: 'committed_released',
                 ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
+                ...(settled ? { settled: true } : {}),
                 row: coldSimulationRow(characterId)
             };
         });

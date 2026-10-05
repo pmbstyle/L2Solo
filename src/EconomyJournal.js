@@ -26,7 +26,9 @@ const STORES = [
         item: 'selfId',
         sellLinesOnly: true
     },
-    { store: 'clan_hall_bid', table: 'clan_hall_bids', column: 'amount', adena: true }
+    { store: 'clan_hall_bid', table: 'clan_hall_bids', column: 'amount', adena: true },
+    // What a deal or a closed record owes a cold bot until its next save.
+    { store: 'board_settlement', table: 'board_settlements', column: 'amount', item: 'selfId' }
 ];
 
 let operation = null;

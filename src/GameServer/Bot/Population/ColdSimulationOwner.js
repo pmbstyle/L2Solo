@@ -98,7 +98,12 @@ function withPersistedStats(state, result) {
     if (!state || typeof result?.row?.statsJson !== 'string') return state;
     try {
         const stats = JSON.parse(result.row.statsJson);
-        return stats && typeof stats === 'object' ? { ...state, name: result.row.characterName || state.name, stats } : state;
+        if (!stats || typeof stats !== 'object') return state;
+        const persisted = { ...state, name: result.row.characterName || state.name, stats };
+        // The commit merged what the board held for the bot (deals, closed
+        // records): the stored bag is the one the bot goes on with.
+        if (!result.settled) return persisted;
+        return { ...persisted, adena: Number(result.row.adena || 0), inventory: JSON.parse(result.row.inventorySummary || '{}') };
     } catch (_) {
         return state;
     }

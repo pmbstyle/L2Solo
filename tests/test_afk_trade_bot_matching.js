@@ -1,3 +1,7 @@
+// A player's AFK shop meets the bots' board records at once (step 3.3): a
+// crossed bot buy ad fills the player's sell shop, a crossed bot sell ad
+// fills the player's buy shop, at the ask. The bots' bags follow at their
+// next save (here at once: the worker does not hold them).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -8,13 +12,15 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PrivateStore = invoke('GameServer/PrivateStore');
 const World = invoke('GameServer/World/World');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-afk-trade-bot-matching.sqlite');
 
 function clean() {
-    for (const suffix of ['', '-wal', '-shm']) fs.rmSync(databasePath + suffix, { force: true });
+    const history = databasePath.replace(/\.sqlite$/, '.history.sqlite');
+    for (const file of [databasePath, history]) {
+        for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    }
 }
 
 function character(name) {
@@ -54,28 +60,24 @@ function sessionFor(accountId, row, items) {
     return session;
 }
 
-function coldState(characterId, name, inventory, store) {
-    return {
-        characterId,
-        accountName: `bot_${name.toLowerCase()}`,
-        name,
-        level: 40,
-        adena: Number(inventory['57']?.amount || 0),
-        phase: 'cold',
-        activity: 'merchant',
-        currentRegion: 'Giran',
+async function coldBot(characterId, name) {
+    return BotLifeState.upsertState({
+        characterId, accountName: `bot_${name.toLowerCase()}`, name, level: 40,
+        adena: 0, phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
         loc: { locX: 83100, locY: 148100, locZ: -3400 },
-        inventory,
-        stats: {
-            marketStore: store,
-            marketWanted: Number(store.storeType) === 3
-                ? { itemId: 1865, itemName: 'Varnish', amount: 1, maxPrice: store.items[0].price, lastMissingAt: Date.now() }
-                : null
-        },
-        timing: { activityStartedAt: Date.now(), nextResolveAt: store.expiresAt },
-        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }
-    };
+        inventory: BotLifeState.inventorySummaryFromItems(await Database.fetchItems(characterId)),
+        stats: { generatedCold: true }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }
+    }, 'test_seed');
 }
+
+async function amount(characterId, selfId) {
+    return (await Database.fetchItems(characterId)).filter((row) => Number(row.selfId) === selfId)
+        .reduce((sum, row) => sum + Number(row.amount), 0);
+}
+
+const VARNISH = 1865;
+const ad = (kind, lines) => ({ kind, storeType: kind === 'sell_ad' ? 1 : 3, title: 'Varnish', town: 'Giran',
+    locX: 0, locY: 0, locZ: 0, lines });
 
 (async () => {
     clean();
@@ -91,40 +93,24 @@ function coldState(characterId, name, inventory, store) {
     const buyerId = Number((await Database.createCharacter('bot_market_buyer', character('BotBuyer'))).insertId);
     const sellerId = Number((await Database.createCharacter('bot_market_seller', character('BotSeller'))).insertId);
     const ownerStockId = Number((await Database.setItem(ownerId, {
-        selfId: 1865, name: 'Varnish', amount: 1, enchant: 0, equipped: false, slot: 0
+        selfId: VARNISH, name: 'Varnish', amount: 1, enchant: 0, equipped: false, slot: 0
     })).insertId);
     await Database.setItem(ownerId, { selfId: 57, name: 'Adena', amount: 20, enchant: 0, equipped: false, slot: 0 });
     await Database.setItem(buyerId, { selfId: 57, name: 'Adena', amount: 100, enchant: 0, equipped: false, slot: 0 });
-    await Database.setItem(sellerId, { selfId: 57, name: 'Adena', amount: 0, enchant: 0, equipped: false, slot: 0 });
-    await Database.setItem(sellerId, { selfId: 1865, name: 'Varnish', amount: 1, enchant: 0, equipped: false, slot: 0 });
+    const sellerStockId = Number((await Database.setItem(sellerId, {
+        selfId: VARNISH, name: 'Varnish', amount: 1, enchant: 0, equipped: false, slot: 0
+    })).insertId);
 
     const ownerRow = (await Database.fetchCharacters('afk_match_owner'))[0];
     const owner = sessionFor('afk_match_owner', ownerRow, await Database.fetchItems(ownerId));
     World.user.sessions.push(owner);
 
     await BotLifeState.init();
-    const expiresAt = Date.now() + 20 * 60 * 1000;
-    const buyer = await BotLifeState.upsertState(coldState(buyerId, 'BotBuyer', {
-        57: { selfId: 57, name: 'Adena', amount: 100 }
-    }, {
-        storeType: 3,
-        budgetBacked: true,
-        town: 'Giran',
-        expiresAt,
-        items: [{ selfId: 1865, name: 'Varnish', count: 1, price: 11 }]
-    }), 'test_afk_matching_buyer');
-    const seller = await BotLifeState.upsertState(coldState(sellerId, 'BotSeller', {
-        57: { selfId: 57, name: 'Adena', amount: 0 },
-        1865: { selfId: 1865, name: 'Varnish', amount: 1, equipped: false, stackable: true, slot: 0, kind: 'Other.Material' }
-    }, {
-        storeType: 1,
-        town: 'Giran',
-        expiresAt,
-        items: [{ selfId: 1865, name: 'Varnish', count: 1, price: 9 }]
-    }), 'test_afk_matching_seller');
-    MarketOpportunity.resetColdStores();
-    MarketOpportunity.indexColdStore(buyer);
-    MarketOpportunity.indexColdStore(seller);
+    await AfkTrade.init();
+    await coldBot(buyerId, 'BotBuyer');
+    await coldBot(sellerId, 'BotSeller');
+    await AfkTrade.publishBot(buyerId, ad('buy_ad', [{ selfId: VARNISH, name: 'Varnish', count: 1, price: 11, stackable: true }]));
+    assert.strictEqual(BotLifeState.snapshot(buyerId).adena, 89, 'the buy ad holds its escrow');
 
     assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.SELL), true);
     assert.strictEqual(PrivateStore.setTitle(owner, AfkTrade.SELL, 'Player first'), true);
@@ -134,42 +120,27 @@ function coldState(characterId, name, inventory, store) {
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId), null,
         'a crossed bot bid must fill the AFK player WTS immediately');
     const filledBuyer = BotLifeState.snapshot(buyerId);
-    assert.strictEqual(filledBuyer.adena, 90);
-    assert.strictEqual(filledBuyer.inventory['1865'].amount, 1);
-    assert.strictEqual(filledBuyer.stats.marketStore, null);
-    assert.strictEqual(BotLifeState.snapshot(sellerId).inventory['1865'].amount, 1,
-        'the player WTS must take priority over a cheaper bot WTS when the bot bid crosses the player ask');
+    assert.strictEqual(filledBuyer.adena, 90, 'the deal is at the ask; the rest of the bid comes back');
+    assert.strictEqual(filledBuyer.inventory[String(VARNISH)].amount, 1);
+    assert.strictEqual(AfkTrade.ownerRecords(buyerId).length, 0, 'a filled ad is closed and deleted');
+    assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 30, 'the player is paid in the same deal');
 
+    await AfkTrade.publishBot(sellerId, ad('sell_ad', [{ objectId: sellerStockId, selfId: VARNISH, name: 'Varnish',
+        count: 1, price: 9, stackable: true }]));
     assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.BUY), true);
     assert.strictEqual(PrivateStore.setTitle(owner, AfkTrade.BUY, 'Player demand'), true);
-    assert.strictEqual(await PrivateStore.publishBuy(owner, [{ selfId: 1865, enchant: 0, count: 1, price: 10 }]), true);
+    assert.strictEqual(await PrivateStore.publishBuy(owner, [{ selfId: VARNISH, enchant: 0, count: 1, price: 10 }]), true);
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId), null,
         'a crossed bot ask must fill the AFK player WTB immediately');
     const filledSeller = BotLifeState.snapshot(sellerId);
-    assert.strictEqual(filledSeller.adena, 10);
-    assert.strictEqual(filledSeller.inventory['1865'], undefined);
-    assert.strictEqual(filledSeller.stats.marketStore, null);
-    assert.strictEqual(owner.actor.backpack.fetchItemFromSelfId(1865).fetchAmount(), 1);
-    assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 20,
-        'the completed sell and buy must preserve the player wallet');
+    assert.strictEqual(filledSeller.adena, 9);
+    assert.strictEqual(filledSeller.inventory[String(VARNISH)], undefined);
+    assert.strictEqual(owner.actor.backpack.fetchItemFromSelfId(VARNISH).fetchAmount(), 1);
+    assert.strictEqual(owner.actor.backpack.fetchTotalAdena(), 21,
+        'the player sold at 10 and bought at the ask of 9');
 
-    const lowBidBuyer = await BotLifeState.upsertState({
-        ...filledBuyer,
-        activity: 'merchant',
-        stats: {
-            ...(filledBuyer.stats || {}),
-            marketStore: {
-                storeType: 3,
-                budgetBacked: true,
-                town: 'Giran',
-                expiresAt,
-                items: [{ selfId: 1865, name: 'Varnish', count: 1, price: 9 }]
-            },
-            marketWanted: { itemId: 1865, itemName: 'Varnish', amount: 1, maxPrice: 9, lastMissingAt: Date.now() }
-        }
-    }, 'test_afk_matching_low_bid');
-    MarketOpportunity.indexColdStore(lowBidBuyer);
-    const returnedStock = owner.actor.backpack.fetchItemFromSelfId(1865);
+    await AfkTrade.publishBot(buyerId, ad('buy_ad', [{ selfId: VARNISH, name: 'Varnish', count: 1, price: 9, stackable: true }]));
+    const returnedStock = owner.actor.backpack.fetchItemFromSelfId(VARNISH);
     assert.strictEqual(await AfkTrade.begin(owner, AfkTrade.SELL), true);
     assert.strictEqual(PrivateStore.setTitle(owner, AfkTrade.SELL, 'No bad price'), true);
     assert.strictEqual(await PrivateStore.publishSell(owner, false, [{
@@ -178,24 +149,13 @@ function coldState(characterId, name, inventory, store) {
     assert(AfkTrade.findOwnerProjection(ownerId),
         'a bot bid below the player ask must not force an unfavorable trade');
 
-    await BotLifeState.upsertState({
-        ...lowBidBuyer,
-        stats: {
-            ...(lowBidBuyer.stats || {}),
-            marketStore: {
-                ...lowBidBuyer.stats.marketStore,
-                items: [{ selfId: 1865, name: 'Varnish', count: 1, price: 11 }]
-            },
-            marketWanted: { itemId: 1865, itemName: 'Varnish', amount: 1, maxPrice: 11, lastMissingAt: Date.now() }
-        }
-    }, 'test_afk_matching_restored_bid');
+    const lowBid = AfkTrade.ownerRecords(buyerId)[0];
+    await AfkTrade.repriceBot(buyerId, lowBid.lines[0].id, 11, lowBid.revision, null, { match: false });
     await AfkTrade._resetForTests();
-    MarketOpportunity.resetColdStores();
-    assert.strictEqual(await AfkTrade.init(), 1, 'the active AFK shop must be restored on startup');
+    assert.strictEqual(await AfkTrade.init(), 2, 'the player shop and the bot ad come back on startup');
     const restoredMatch = await AfkTrade.matchBotDemand();
     assert.strictEqual(restoredMatch.matched, true,
         'a restored AFK shop must be matched after bot market state is ready');
-    assert.strictEqual(restoredMatch.shops, 1);
     assert.strictEqual(restoredMatch.itemCount, 1);
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId), null);
 
@@ -204,22 +164,21 @@ function coldState(characterId, name, inventory, store) {
         [ownerId]
     ], 'test:afk-bot-matching-events');
     assert.deepStrictEqual(events, [{
-        kind: 'sale', selfId: 1865, amount: 1, unitPrice: 10, totalPrice: 10
+        kind: 'sale', selfId: VARNISH, amount: 1, unitPrice: 10, totalPrice: 10
     }, {
-        kind: 'purchase', selfId: 1865, amount: 1, unitPrice: 10, totalPrice: 10
+        kind: 'purchase', selfId: VARNISH, amount: 1, unitPrice: 9, totalPrice: 9
     }, {
-        kind: 'sale', selfId: 1865, amount: 1, unitPrice: 10, totalPrice: 10
+        kind: 'sale', selfId: VARNISH, amount: 1, unitPrice: 10, totalPrice: 10
     }]);
+    assert.strictEqual(await amount(buyerId, VARNISH), 2);
 
     await AfkTrade._resetForTests();
-    MarketOpportunity.resetColdStores();
     await Database.close();
     clean();
     console.log('AFK bot market matching checks passed');
 })().catch(async (error) => {
     console.error(error);
     try { AfkTrade._resetForTests(); } catch (_) {}
-    try { MarketOpportunity.resetColdStores(); } catch (_) {}
     try { await Database.close(); } catch (_) {}
     clean();
     process.exitCode = 1;

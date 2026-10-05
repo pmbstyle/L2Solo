@@ -1,25 +1,52 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const BoardRules = require('./BoardRules');
+const BoardExpiryQueue = require('./BoardExpiryQueue');
 const Actor = invoke('GameServer/Actor/Actor');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
 
-const SELL = 1;
-const BUY = 3;
+const SELL = BoardRules.SELL;
+const BUY = BoardRules.BUY;
 const PROJECTION_ID_BASE = 900000000;
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const VISIBILITY_CELL_SIZE = CLIENT_VISIBILITY_RADIUS;
+// The board in memory (design section 4). A shop stands in the world as a
+// projection (an actor drawn from its snapshot); an ad or an order is an entry
+// with its store object and no actor. Both are in the per-item offer index.
 const projectionsById = new Map();
 const projectionsByOwner = new Map();
 const projectionsByCell = new Map();
+const entriesById = new Map();
+const entriesByOwner = new Map();
 const pendingMatchContinuations = new Set();
 let matchGeneration = 0;
 const projectionOffersByType = new Map([
     [SELL, new Map()],
     [BUY, new Map()]
 ]);
+// Record deadlines (12 h of server uptime), checked every EXPIRY_TICK_MS on
+// the main thread; the clock beat records the server alive every BEAT_MS.
+const expiryQueue = new BoardExpiryQueue();
+const EXPIRY_TICK_MS = 5000;
+const EXPIRY_BATCH = 64;
+const BEAT_MS = 60 * 1000;
+let expiryTimer = null;
+let beatTimer = null;
+let lastBeatAt = 0;
+let expiring = false;
+let expiryRun = Promise.resolve(0);
+
+function kindOf(shop) {
+    return shop?.kind || 'shop';
+}
+
+// The store object of an entry: a shop's lives on its projection's actor.
+function entryStore(entry) {
+    return entry?.actor ? entry.actor.fetchPrivateStore() : entry?.store;
+}
 
 function unindexProjection(projection) {
     const indexed = projection?.indexedOffers;
@@ -35,7 +62,7 @@ function unindexProjection(projection) {
 }
 
 function indexProjection(projection) {
-    const store = projection?.actor?.fetchPrivateStore?.();
+    const store = entryStore(projection);
     const byItem = projectionOffersByType.get(Number(store?.storeType));
     if (!byItem) return;
     const selfIds = new Set((store.items || [])
@@ -48,6 +75,31 @@ function indexProjection(projection) {
         byItem.set(selfId, projections);
     });
     projection.indexedOffers = { storeType: Number(store.storeType), selfIds };
+}
+
+// Every record, shop or ad, by id and by owner; its deadline in the queue.
+function rememberEntry(entry) {
+    const id = Number(entry.shop.id);
+    const ownerId = Number(entry.shop.ownerId);
+    entriesById.set(id, entry);
+    const owned = entriesByOwner.get(ownerId) || new Map();
+    owned.set(id, entry);
+    entriesByOwner.set(ownerId, owned);
+    const deadline = Number(entry.shop.expiresAt || 0);
+    if (deadline > 0 && entry.queuedDeadline !== deadline) {
+        expiryQueue.push(deadline, id);
+        entry.queuedDeadline = deadline;
+    }
+}
+
+function forgetEntry(entry) {
+    if (!entry?.shop) return;
+    const id = Number(entry.shop.id);
+    const ownerId = Number(entry.shop.ownerId);
+    if (entriesById.get(id) === entry) entriesById.delete(id);
+    const owned = entriesByOwner.get(ownerId);
+    if (owned?.get(id) === entry) owned.delete(id);
+    if (owned && !owned.size) entriesByOwner.delete(ownerId);
 }
 
 function isBotSession(session) {
@@ -146,8 +198,10 @@ function projectionStore(shop) {
         botOwned: String(shop.ownerAccount || '').startsWith('bot_'),
         budgetBacked: Number(shop.storeType) === BUY,
         shopId: Number(shop.id),
+        kind: kindOf(shop),
         ownerId: Number(shop.ownerId),
         storeType: Number(shop.storeType),
+        expiresAt: Number(shop.expiresAt || 0),
         title: String(shop.title || ''),
         town: shop.town || null,
         packageSale: Number(shop.packageSale) === 1,
@@ -252,6 +306,7 @@ function removeProjection(ownerId) {
     const projection = projectionsByOwner.get(Number(ownerId));
     if (!projection) return false;
     unindexProjection(projection);
+    forgetEntry(projection);
     unindexLocation(projection);
     if (projection.session.botOwned && !projection.session.afkRepricing) {
         invoke('GameServer/Bot/Economy/BotNegotiationService').cleanup(projection.session, 'store_changed');
@@ -276,6 +331,7 @@ function spawnProjection(shop) {
     projectionsByOwner.set(Number(shop.ownerId), projection);
     projectionsById.set(projection.actor.fetchId(), projection);
     indexProjection(projection);
+    rememberEntry(projection);
     indexLocation(projection);
     (World.user?.sessions || []).forEach((viewer) => {
         if (visibleTo(viewer, projection.actor)) sendProjection(viewer, projection);
@@ -285,7 +341,9 @@ function spawnProjection(shop) {
 
 function refreshProjection(shop) {
     if (!shop || shop.status !== 'active' || !(shop.lines || []).some((line) => Number(line.count) > 0)) {
-        if (shop) removeProjection(shop.ownerId);
+        // Only the shop that closed leaves: a newer one may stand already.
+        const current = shop ? projectionsByOwner.get(Number(shop.ownerId)) : null;
+        if (current && Number(current.shop?.id) === Number(shop.id)) removeProjection(shop.ownerId);
         return null;
     }
     const projection = projectionsByOwner.get(Number(shop.ownerId));
@@ -295,6 +353,8 @@ function refreshProjection(shop) {
     const titleChanged = actor.fetchPrivateStore()?.title !== store.title;
     invalidateTradeWindows(actor);
     unindexProjection(projection);
+    forgetEntry(projection);
+    if (Number(projection.shop?.id) !== Number(shop.id)) projection.queuedDeadline = null;
     projection.shop = shop;
     if (store.botOwned) {
         projection.session.coldMarketState = { characterId: Number(shop.ownerId),
@@ -317,6 +377,7 @@ function refreshProjection(shop) {
         }));
     }
     indexProjection(projection);
+    rememberEntry(projection);
     if (titleChanged) {
         const packet = store.storeType === BUY
             ? ServerResponse.privateStoreBuyMsg(actor, store.title)
@@ -326,6 +387,53 @@ function refreshProjection(shop) {
         }
     }
     return projection;
+}
+
+// An ad or an order: no actor, no place in the world; its store object is
+// what offers() and the deals read.
+function dropAd(id) {
+    const entry = entriesById.get(Number(id));
+    if (!entry || entry.actor) return false;
+    unindexProjection(entry);
+    forgetEntry(entry);
+    return true;
+}
+
+// Puts a record as the database returned it into memory: a shop through its
+// projection (the author's), an ad as an entry. A closed or empty record
+// leaves memory.
+function refreshRecord(shop) {
+    if (!shop) return null;
+    if (kindOf(shop) === 'shop') return refreshProjection(shop);
+    dropAd(shop.id);
+    if (shop.status !== 'active' || !(shop.lines || []).some((line) => Number(line.count) > 0)) return null;
+    const entry = { shop, store: projectionStore(shop), actor: null, indexedOffers: null };
+    indexProjection(entry);
+    rememberEntry(entry);
+    return entry;
+}
+
+// A renamed owner: its records on the board carry the new name (a shop's
+// actor shows it to whoever looks next).
+function renameOwner(ownerId, name) {
+    for (const entry of ownerEntries(ownerId)) {
+        entry.shop.ownerName = name;
+        if (entry.actor) entry.actor.model.name = name;
+    }
+}
+
+function ownerEntries(ownerId) {
+    return [...(entriesByOwner.get(Number(ownerId))?.values() || [])];
+}
+
+function ownerRecords(ownerId) {
+    return ownerEntries(ownerId).map((entry) => entry.shop);
+}
+
+// The current store object of a record (by its id), for a caller that kept
+// an older one.
+function recordStore(recordId) {
+    return entryStore(entriesById.get(Number(recordId))) || null;
 }
 
 function refreshVisibility(session, actor = session?.actor) {
@@ -460,14 +568,31 @@ function committedTrade(trade, characterId) {
     return { committed: false, hot: false, state: null };
 }
 
+// What a deal left for cold bots on the board reaches them now, unless the
+// worker leases them (its commit merges it): a main-thread save of each.
+async function settleOwners(ownerIds = []) {
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const leasedBy = invoke('GameServer/Bot/Population/ColdSimulationOwner').OWNER_ID;
+    for (const ownerId of new Set((ownerIds || []).map(Number).filter(Boolean))) {
+        if (LifeState.cachedState(ownerId)?.simulation?.ownerId === leasedBy) continue;
+        let result;
+        try {
+            result = await Database.settleBoardOwner(ownerId);
+        } catch (error) {
+            // It stays on the board; the next tick tries again.
+            utils.infoWarn('AfkTrade', 'settlement for %d waits: %s', ownerId, error.message);
+            continue;
+        }
+        if (!result.settled) continue;
+        if (result.row) LifeState.acceptLifecycleRow(result.row);
+        syncOnlineInventory(ownerId, result.ownerInventory);
+    }
+}
+
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
     syncOnlineInventory(result.shop.ownerId, result.ownerInventory);
     syncOnlineInventory(counterpartyId, result.counterpartyInventory);
-    if (String(result.shop?.ownerAccount || '').startsWith('bot_')) {
-        const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(result.shop.ownerId);
-        await syncColdCharacter(result.shop.ownerId, ownerState,
-            `afk_trade_owner_${kind}`, result.ownerInventory, { coldLifeRows: result.coldLifeRows });
-    }
+    await settleOwners(result.settlementOwners);
     const coldState = await syncColdCharacter(
         counterpartyId,
         previousState,
@@ -475,10 +600,10 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null,
         result.counterpartyInventory,
         { ...options, coldLifeRows: result.coldLifeRows }
     );
-    refreshProjection(result.shop);
+    refreshRecord(result.shop);
     await notifyCommitted(result, kind);
     if (String(result.shop?.ownerAccount || '').startsWith('bot_')
-        && Number(result.shop.storeType) === SELL) {
+        && Number(result.shop.storeType) === SELL && kindOf(result.shop) === 'shop') {
         await invoke('GameServer/Bot/Economy/BotAfkMarketService').pruneResourceLots(result.shop.ownerId);
     }
     return { ...result, coldState };
@@ -511,31 +636,75 @@ async function stop(session) {
     return { ...result, stopped: result.closed };
 }
 
+// A bot opens a record from its bag: its shop (replacing the one it has) or
+// an ad (`config.kind`).
 async function publishBot(ownerId, config) {
     const characterId = Number(ownerId);
-    if (!characterId || ![SELL, BUY].includes(Number(config?.storeType))) {
+    const kind = config?.kind || 'shop';
+    if (!characterId || !BoardRules.isKind(kind) || ![SELL, BUY].includes(BoardRules.storeTypeFor(kind, config?.storeType))) {
         throw new Error('invalid_bot_afk_trade');
     }
-    const result = await Database.createAfkTradeShop(characterId, { ...config, replace: true });
-    syncOnlineInventory(characterId, result.ownerInventory);
-    const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(characterId);
-    if (ownerState) await syncColdCharacter(characterId, ownerState, 'bot_afk_trade_published', result.ownerInventory,
-        { coldLifeRows: result.coldLifeRows });
-    spawnProjection(result.shop);
+    const result = await Database.createAfkTradeShop(characterId, { ...config, kind, replace: kind === 'shop' });
+    await syncOwnerAfterMove(characterId, result, 'bot_afk_trade_published');
+    if (kind === 'shop') spawnProjection(result.shop);
+    else refreshRecord(result.shop);
     return result.shop;
 }
 
-async function relocateBot(ownerId, town, loc) {
-    const projection = findOwnerProjection(ownerId);
-    if (!projection?.actor?.fetchPrivateStore?.()?.botOwned) throw new Error('bot_afk_trade_unavailable');
-    const shop = await Database.relocateBotAfkTradeShop(ownerId, town, loc);
-    spawnProjection(shop);
-    return shop;
+// The owner's own move took from or gave back to its bag: the actor and the
+// bot's cold state follow (the author's sync after a publish).
+async function syncOwnerAfterMove(ownerId, result, reason) {
+    syncOnlineInventory(ownerId, result.ownerInventory);
+    const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId);
+    if (ownerState) await syncColdCharacter(ownerId, ownerState, reason, result.ownerInventory,
+        { coldLifeRows: result.coldLifeRows });
+}
+
+// A bot's records of one kind become `configs` in one move (its buy ads
+// follow its goal). `expected` maps the records it saw to their revisions.
+async function replaceBotRecords(ownerId, kind, configs, options = {}) {
+    const characterId = Number(ownerId);
+    const result = await Database.replaceBoardRecords(characterId, kind, configs, options);
+    result.closed.forEach(refreshRecord);
+    result.opened.forEach(refreshRecord);
+    await syncOwnerAfterMove(characterId, result, 'bot_board_records_replaced');
+    return result;
+}
+
+// A bot opens several records of one kind from its bag in one move.
+async function openBotRecords(ownerId, kind, configs) {
+    const characterId = Number(ownerId);
+    const result = await Database.openBoardRecords(characterId, kind, configs);
+    result.opened.forEach(refreshRecord);
+    await syncOwnerAfterMove(characterId, result, 'bot_board_records_opened');
+    return result;
+}
+
+// The owner withdraws one of its records; what it holds comes back.
+async function closeBotRecord(ownerId, recordId, options = {}) {
+    const characterId = Number(ownerId);
+    const result = await Database.closeBoardRecord(characterId, recordId, options);
+    if (!result.closed) return result;
+    refreshRecord(result.record);
+    await syncOwnerAfterMove(characterId, result, 'bot_board_record_closed');
+    return result;
+}
+
+// The leave rule (design 2.7): an owner leaving the game closes all its
+// records; items and escrow go back to it.
+async function leave(ownerId) {
+    const characterId = Number(ownerId);
+    const result = await Database.closeOwnerBoardRecords(characterId);
+    result.closed.forEach(refreshRecord);
+    syncOnlineInventory(characterId, result.ownerInventory);
+    await settleOwners(result.settlementOwners);
+    return result;
 }
 
 async function repriceBot(ownerId, lineId, price, expectedRevision = null, quantity = null, options = {}) {
-    const current = findOwnerProjection(ownerId);
-    if (!current?.actor?.fetchPrivateStore?.()?.botOwned) throw new Error('bot_afk_trade_unavailable');
+    const current = ownerEntries(ownerId).find((entry) => (entryStore(entry)?.items || [])
+        .some((line) => Number(line.afkTradeLineId) === Number(lineId)));
+    if (!entryStore(current)?.botOwned) throw new Error('bot_afk_trade_unavailable');
     const result = await Database.repriceAfkTradeShop(ownerId, lineId, price, expectedRevision, quantity);
     syncOnlineInventory(ownerId, result.ownerInventory);
     const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId);
@@ -543,33 +712,36 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
         { coldLifeRows: result.coldLifeRows });
     invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId,
         invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId));
-    refreshProjection(result.shop);
+    refreshRecord(result.shop);
     if (options.match !== false) await matchAfkOrders(ownerId);
-    return findOwnerProjection(ownerId)?.shop || null;
+    return entriesById.get(Number(result.shop?.id))?.shop || null;
 }
 
 async function matchAfkOrders(ownerId, maxTrades = 64) {
     const batchLimit = Math.max(1, Math.min(64, Math.floor(Number(maxTrades) || 64)));
     const trades = [];
     for (let attempt = 0; attempt < batchLimit; attempt++) {
-        const own = findOwnerProjection(ownerId);
-        const ownStore = own?.actor?.fetchPrivateStore?.();
-        if (!ownStore) break;
+        // Every record of the owner (its shop and its ads) meets the board.
         let pair = null;
-        for (const line of ownStore.items || []) {
-            const opposite = offers(line.selfId, ownStore.storeType === SELL ? BUY : SELL, {
-                characterId: ownerId
-            }).filter((offer) => (ownStore.botOwned || offer.store.botOwned)
-                && Number(offer.storeItem.enchant || 0) === Number(line.enchant || 0)
-                && (ownStore.storeType === SELL
-                    ? Number(offer.price) >= Number(line.price)
-                    : Number(offer.price) <= Number(line.price)))
-                .sort((left, right) => ownStore.storeType === SELL
-                    ? Number(right.price) - Number(left.price)
-                    : Number(left.price) - Number(right.price));
-            if (opposite.length) { pair = { line, offer: opposite[0] }; break; }
+        for (const own of ownerEntries(ownerId)) {
+            const ownStore = entryStore(own);
+            for (const line of ownStore?.items || []) {
+                const opposite = offers(line.selfId, ownStore.storeType === SELL ? BUY : SELL, {
+                    characterId: ownerId
+                }).filter((offer) => (ownStore.botOwned || offer.store.botOwned)
+                    && Number(offer.storeItem.enchant || 0) === Number(line.enchant || 0)
+                    && (ownStore.storeType === SELL
+                        ? Number(offer.price) >= Number(line.price)
+                        : Number(offer.price) <= Number(line.price)))
+                    .sort((left, right) => ownStore.storeType === SELL
+                        ? Number(right.price) - Number(left.price)
+                        : Number(left.price) - Number(right.price));
+                if (opposite.length) { pair = { ownStore, line, offer: opposite[0] }; break; }
+            }
+            if (pair) break;
         }
         if (!pair) break;
+        const ownStore = pair.ownStore;
         const selling = ownStore.storeType === SELL;
         const seller = selling ? ownStore : pair.offer.store;
         const buyer = selling ? pair.offer.store : ownStore;
@@ -588,22 +760,20 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
             if (['afk_trade_shop_changed', 'afk_trade_offer_changed', 'afk_trade_budget_changed'].includes(error.message)) break;
             throw error;
         }
+        // Records only: what each owner gets is in its bag (a player, a hot
+        // actor) or waits on the board for a cold bot's next save.
         syncOnlineInventory(seller.ownerId, trade.sellerInventory);
         syncOnlineInventory(buyer.ownerId, trade.buyerInventory);
-        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-        if (seller.botOwned) await syncColdCharacter(seller.ownerId, LifeState.snapshot(seller.ownerId),
-            'afk_trade_owner_sale', trade.sellerInventory, { coldLifeRows: trade.coldLifeRows });
-        if (buyer.botOwned) await syncColdCharacter(buyer.ownerId, LifeState.snapshot(buyer.ownerId),
-            'afk_trade_owner_purchase', trade.buyerInventory, { coldLifeRows: trade.coldLifeRows });
-        refreshProjection(trade.sellerShop);
-        refreshProjection(trade.buyerShop);
+        await settleOwners(trade.settlementOwners);
+        refreshRecord(trade.sellerShop);
+        refreshRecord(trade.buyerShop);
         await notifyCommitted({ shop: trade.sellerShop, eventId: trade.sellerEventId,
             line: trade.line, amount: trade.amount, totalPrice: trade.totalPrice }, 'sale');
         await notifyCommitted({ shop: trade.buyerShop, eventId: trade.buyerEventId,
             line: trade.line, amount: trade.amount, totalPrice: trade.totalPrice }, 'purchase');
         trades.push(trade);
         const lotPolicy = invoke('GameServer/Bot/Economy/MarketLotPolicy');
-        if (trade.sellerShop.ownerAccount?.startsWith('bot_')
+        if (trade.sellerShop.ownerAccount?.startsWith('bot_') && kindOf(trade.sellerShop) === 'shop'
             && trade.sellerShop.lines.some(line => Number(line.count) > 0
                 && lotPolicy.shot(line) && !lotPolicy.viable(line))) {
             await invoke('GameServer/Bot/Economy/BotAfkMarketService').pruneResourceLots(trade.sellerShop.ownerId);
@@ -632,8 +802,10 @@ function restorePlace(ownerId) {
     else ShopPlaces.release(ShopPlaces.afkOwner(ownerId));
 }
 
+// Every record on the board: shops and ads (an ad is a shout heard in every
+// town, design 4.2).
 function activeShops() {
-    return [...projectionsByOwner.values()].map((projection) => projection.shop);
+    return [...entriesById.values()].map((entry) => entry.shop);
 }
 
 async function begin(session, storeType) {
@@ -774,33 +946,36 @@ function offers(selfId, storeType, options = {}) {
     const town = options.town || null;
     const excluded = Number(options.characterId || 0);
     const candidates = projectionOffersByType.get(Number(storeType))?.get(Number(selfId)) || [];
-    return [...candidates].flatMap((projection) => {
-        const store = projection.actor.fetchPrivateStore();
+    return [...candidates].flatMap((entry) => {
+        const store = entryStore(entry);
         if (Number(store.storeType) !== Number(storeType) || Number(store.ownerId) === excluded) return [];
         if (town && store.town && String(store.town) !== String(town)) return [];
-        const line = store.items.find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
+        const line = store.items.find((item) => Number(item.selfId) === Number(selfId) && Number(item.count) > 0);
         if (!line) return [];
+        // A shop stands in the world; an ad has no actor and no place.
+        const projection = entry.actor ? entry : null;
         return [{
             sourceType: storeType === SELL
                 ? (store.botOwned ? 'afk_bot_store' : 'afk_player_store')
                 : (store.botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store'),
             sourceId: Number(store.ownerId),
-            sourceName: projection.actor.fetchName(),
+            sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
             sellerKind: store.botOwned ? 'bot' : 'player',
             playerPriority: !store.botOwned,
             town: store.town || town,
+            recordKind: store.kind || 'shop',
             selfId: Number(line.selfId),
             itemName: line.name || itemName(line.selfId),
             price: Number(line.price),
             count: Number(line.count),
             available: true,
             projection,
-            session: projection.session,
+            session: projection?.session || null,
             store,
             storeItem: line,
-            locX: projection.actor.fetchLocX(),
-            locY: projection.actor.fetchLocY(),
-            locZ: projection.actor.fetchLocZ()
+            locX: projection ? projection.actor.fetchLocX() : Number(entry.shop.locX || 0),
+            locY: projection ? projection.actor.fetchLocY() : Number(entry.shop.locY || 0),
+            locZ: projection ? projection.actor.fetchLocZ() : Number(entry.shop.locZ || 0)
         }];
     });
 }
@@ -809,17 +984,117 @@ function activeDemandSelfIds() {
     return [...(projectionOffersByType.get(BUY)?.keys() || [])];
 }
 
-async function init() {
+function clearBoard() {
+    stopTimers();
     projectionsByOwner.forEach((projection) => ShopPlaces.release(ShopPlaces.afkOwner(projection.shop.ownerId)));
     projectionsById.clear();
     projectionsByOwner.clear();
     projectionsByCell.clear();
+    entriesById.clear();
+    entriesByOwner.clear();
+    expiryQueue.clear();
     projectionOffersByType.forEach((byItem) => byItem.clear());
+}
+
+// Restores the board at start: the deadlines move by the downtime, so a
+// record lives 12 hours of server uptime; then every record comes back into
+// memory.
+async function init() {
+    clearBoard();
+    const startedAt = Date.now();
+    const aliveAt = await Database.fetchBoardAliveAt();
+    const shifted = await Database.shiftBoardDeadlines(aliveAt > 0 ? Math.max(0, startedAt - aliveAt) : 0, startedAt);
+    if (shifted.moved) utils.infoSuccess('AfkTrade', 'board deadlines moved by the downtime %d s (%d records)',
+        Math.round(shifted.shift / 1000), shifted.moved);
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
-    shops.forEach((shop) => spawnProjection(shop));
-    if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d persistent AFK shops', shops.length);
-    await invoke('GameServer/Bot/Economy/BotAfkMarketService').migrateRestoredShops();
+    shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
+    if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
+    startTimers(startedAt);
     return shops.length;
+}
+
+function startTimers(at = Date.now()) {
+    stopTimers();
+    lastBeatAt = at;
+    expiryTimer = setInterval(() => {
+        if (expiring) return;
+        expireDue().catch((error) => utils.infoWarn('AfkTrade', 'board expiry failed: %s', error.message));
+    }, EXPIRY_TICK_MS);
+    expiryTimer.unref?.();
+    beatTimer = setInterval(() => {
+        beat().catch((error) => utils.infoWarn('AfkTrade', 'board clock failed: %s', error.message));
+    }, BEAT_MS);
+    beatTimer.unref?.();
+}
+
+function stopTimers() {
+    clearInterval(expiryTimer);
+    clearInterval(beatTimer);
+    expiryTimer = null;
+    beatTimer = null;
+}
+
+// The board's clock beat: the server is alive. A beat that comes far too
+// late means the server did not run in between (the machine slept); no
+// record lives through that time, so every deadline moves by it.
+async function beat(at = Date.now()) {
+    const gap = lastBeatAt > 0 ? at - lastBeatAt - BEAT_MS : 0;
+    lastBeatAt = at;
+    const shift = gap > BEAT_MS ? gap : 0;
+    await Database.shiftBoardDeadlines(shift, at);
+    if (!shift) return 0;
+    expiryQueue.clear();
+    entriesById.forEach((entry) => {
+        if (Number(entry.shop.expiresAt) > 0) entry.shop.expiresAt = Number(entry.shop.expiresAt) + shift;
+        entry.queuedDeadline = null;
+        rememberEntry(entry);
+    });
+    return shift;
+}
+
+// Closes the records whose deadline passed, a batch per tick; then merges
+// what waits on the board for bots the worker does not lease. One run at a
+// time: a call during a run waits for it.
+function expireDue(at = Date.now()) {
+    const run = expiryRun.then(() => expireOnce(at));
+    expiryRun = run.catch(() => 0);
+    return run;
+}
+
+async function expireOnce(at) {
+    expiring = true;
+    try {
+        const due = [];
+        while (expiryQueue.peekDeadline() <= at && due.length < EXPIRY_BATCH) {
+            const next = expiryQueue.pop();
+            const entry = entriesById.get(next.id);
+            if (!entry || Number(entry.shop.expiresAt) !== next.deadline) continue;
+            entry.queuedDeadline = null;
+            due.push(next.id);
+        }
+        let closed = [];
+        if (due.length) {
+            const result = await Database.expireBoardRecords(due, at);
+            closed = result.closed;
+            closed.forEach((shop) => {
+                refreshRecord(shop);
+                const owner = onlineSession(shop.ownerId);
+                syncOnlineInventory(shop.ownerId, result.ownerInventories?.[shop.ownerId]);
+                if (owner && !isBotSession(owner)) commandMessage(owner, 'AFK trade expired. Reserved assets returned.');
+            });
+        }
+        await settlePending();
+        return closed.length;
+    } finally {
+        expiring = false;
+    }
+}
+
+// The owners with settlements still on the board (a lease ended without a
+// commit, a settle that failed) get them merged.
+function settlePending() {
+    const owners = Database.boardSettlementOwners();
+    return owners.length ? settleOwners(owners) : Promise.resolve();
 }
 
 async function matchBotDemand() {
@@ -827,7 +1102,7 @@ async function matchBotDemand() {
     if (!ready) return { matched: false, shops: 0, trades: 0, itemCount: 0, adena: 0 };
 
     const summaries = [];
-    for (const ownerId of [...projectionsByOwner.keys()]) {
+    for (const ownerId of [...entriesByOwner.keys()]) {
         const peer = await matchAfkOrders(ownerId);
         if (peer.matched) summaries.push({
             trades: peer.trades,
@@ -860,31 +1135,39 @@ module.exports = {
     SELL,
     restorePlace,
     activeShops,
-    relocateBot,
     activeDemandSelfIds,
     activate,
+    beat,
     begin,
     buyFromShop,
+    closeBotRecord,
     committedTrade,
     deliverNotifications,
+    expireDue,
     findOwnerProjection,
     findProjection,
     init,
+    leave,
     matchBotDemand,
     matchAfkOrders,
     offers,
+    openBotRecords,
+    ownerRecords,
     publishBot,
+    recordStore,
+    refreshRecord,
+    replaceBotRecords,
     repriceBot,
     refreshVisibility,
+    renameOwner,
     sellToShop,
+    settleOwners,
+    settlePending,
     stop,
     _resetForTests() {
         matchGeneration += 1;
         pendingMatchContinuations.clear();
         [...projectionsByOwner.keys()].forEach(removeProjection);
-        projectionsById.clear();
-        projectionsByOwner.clear();
-        projectionsByCell.clear();
-        projectionOffersByType.forEach((byItem) => byItem.clear());
+        clearBoard();
     }
 };

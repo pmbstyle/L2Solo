@@ -75,7 +75,51 @@ async function coldBot(id, account, name) {
     }, 'test_cold_seed');
 }
 
-// The worker leases the owner, a shop write (a fill, close, reprice or
+// A deal on a leased bot's record (step 3.3) touches only the records: what
+// the deal owes the bot waits on the board and the worker's commit merges it.
+// The worker leases the owner, a buyer or seller fills its record, then the
+// worker commits a hunt (+30 adena, 2 Stems) projected from the inventory it
+// leased: the commit succeeds and the bot has the hunt and the deal.
+async function fillUnderLease({ label, storeType, lines, ownerItems, counterpartyItems = [], write, settled }) {
+    const owner = await makeCharacter(`bot_${label}_owner`, `${label}Owner`, ownerItems);
+    const counterparty = await makeCharacter(`pl_${label}`, `${label}Player`, counterpartyItems);
+    await coldBot(owner.id, `bot_${label}_owner`, `${label}Owner`);
+    await AfkTrade.publishBot(owner.id, {
+        storeType, title: label, town: 'Giran', locX: 83000, locY: 148000, locZ: -3400,
+        appearance: { model: character(`${label}Owner`) },
+        lines: lines(owner.ids)
+    });
+    const leased = LifeState.cachedState(owner.id);
+    const claim = await Owner.claim(leased, { timestamp: Date.now(), leaseMs: 30000 });
+    assert(claim.ok, `${label}: the worker leases the owner`);
+    const before = await amounts(owner.id);
+    const store = AfkTrade.findOwnerProjection(owner.id).actor.fetchPrivateStore();
+    await write(store, counterparty, owner);
+    assert.deepStrictEqual(await amounts(owner.id), before, `${label}: the deal leaves the leased bot's bag alone`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [owner.id], `${label}: what the deal owes waits on the board`);
+
+    const next = structuredClone(leased.inventory);
+    next['57'].amount += 30;
+    next['1864'] = { selfId: 1864, name: 'Stem', amount: 2 };
+    const nextState = { ...leased, adena: next['57'].amount, inventory: next,
+        simulation: { ...leased.simulation, ownerId: Owner.OWNER_ID, revision: claim.revision } };
+    const [commit] = await Owner.commitAndReleaseBatch([{ token: claim, nextState,
+        proposal: { baseState: { inventory: leased.inventory } } }], { timestamp: Date.now() });
+    assert(commit.ok, `${label}: the worker commit after the deal succeeds`);
+    assert.strictEqual(commit.settled, true, `${label}: the commit merges the deal`);
+    const after = await amounts(owner.id);
+    const expected = { ...settled, 57: 30 + Number(settled[57] || 0) };
+    for (const [selfId, delta] of Object.entries(expected)) {
+        assert.strictEqual(Number(after[selfId] || 0), Number(before[selfId] || 0) + delta,
+            `${label}: item ${selfId} holds the hunt and the deal`);
+    }
+    assert.strictEqual(Number(after[1864] || 0), 2, `${label}: the hunt's stems stay`);
+    const cached = LifeState.cachedState(owner.id);
+    assert.strictEqual(cached.adena, after[57], `${label}: the bot goes on with the merged wallet`);
+    assert.deepStrictEqual(Database.boardSettlementOwners(), [], `${label}: nothing waits after the commit`);
+}
+
+// The worker leases the owner, the owner's own move (a close, reprice or
 // publish) lands, then the worker commits a hunt (+30 adena, 2 Stems)
 // projected from the inventory it leased.
 async function writeUnderLease({ label, storeType, lines, ownerItems, counterpartyItems = [], write }) {
@@ -148,23 +192,27 @@ async function writeUnderLease({ label, storeType, lines, ownerItems, counterpar
     World.user = { sessions: [], revision: 0 };
     await LifeState.init();
 
-    // A sale from a leased bot's sell shop: the 250 adena it earned stay.
-    await writeUnderLease({
+    // A sale from a leased bot's sell shop: the 250 adena it earned arrive
+    // with the commit.
+    await fillUnderLease({
         label: 'sell', storeType: AfkTrade.SELL,
         ownerItems: [item(57, 1000, 'Adena'), item(POTION, 10, 'Lesser Healing Potion')],
         counterpartyItems: [item(57, 5000, 'Adena')],
         lines: (ids) => [{ objectId: ids[POTION], selfId: POTION, name: 'Lesser Healing Potion', count: 10, price: 50, stackable: true }],
-        write: (store, buyer) => AfkTrade.buyFromShop(buyer.id, store, POTION, 5, { expectedPrice: 50 })
+        write: (store, buyer) => AfkTrade.buyFromShop(buyer.id, store, POTION, 5, { expectedPrice: 50 }),
+        settled: { 57: 250 }
     });
 
-    // A fill of a leased bot's buy shop: the 5 bought ores stay.
-    await writeUnderLease({
+    // A fill of a leased bot's buy order: the 5 bought ores arrive with the
+    // commit.
+    await fillUnderLease({
         label: 'buy', storeType: AfkTrade.BUY,
         ownerItems: [item(57, 1000, 'Adena'), item(IRON_ORE, 5, 'Iron Ore')],
         counterpartyItems: [item(57, 5000, 'Adena'), item(IRON_ORE, 10, 'Iron Ore')],
         lines: () => [{ selfId: IRON_ORE, name: 'Iron Ore', count: 10, price: 20, stackable: true }],
         write: (store, seller) => AfkTrade.sellToShop(seller.id, store, IRON_ORE, 5,
-            { objectId: seller.ids[IRON_ORE], expectedPrice: 20 })
+            { objectId: seller.ids[IRON_ORE], expectedPrice: 20 }),
+        settled: { [IRON_ORE]: 5 }
     });
 
     // Closing a leased bot's buy shop returns its 200 escrow adena; they stay.
@@ -214,18 +262,21 @@ async function writeUnderLease({ label, storeType, lines, ownerItems, counterpar
     const freeTrade = await Database.buyFromAfkTradeShop(freeBuyer.id, { shopId: AfkTrade.findOwnerProjection(free.id).shop.id,
         ownerId: free.id, lineId: AfkTrade.findOwnerProjection(free.id).actor.fetchPrivateStore().items[0].afkTradeLineId, amount: 1 });
     assert.deepStrictEqual(freeTrade.coldLifeRows, {}, 'a legacy-owned row is not fenced');
+    assert.deepStrictEqual(freeTrade.settlementOwners, [free.id], 'the deal leaves the owner a settlement');
+    await AfkTrade.settleOwners(freeTrade.settlementOwners);
+    assert.strictEqual(LifeState.cachedState(free.id).adena, 1010, 'a bot the worker does not hold gets it at once');
     const [freeRow] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [free.id]]);
-    assert.strictEqual(Number(freeRow.simulationRevision), Number(before));
+    assert.strictEqual(Number(freeRow.simulationRevision), Number(before) + 1, 'the settle is a save of the bot');
     const freeClose = await Database.closeAfkTradeShop(free.id);
     assert(freeClose.closed);
     assert.deepStrictEqual(freeClose.coldLifeRows, {}, 'closing the shop of a legacy-owned row does not fence it');
     const [closedRow] = await Database.execute(['SELECT simulationRevision FROM bot_life_state WHERE characterId = ?', [free.id]]);
-    assert.strictEqual(Number(closedRow.simulationRevision), Number(before));
+    assert.strictEqual(Number(closedRow.simulationRevision), Number(before) + 1);
 
     await AfkTrade._resetForTests();
     await Database.close();
     clean();
-    console.log(`AFK shop writes on ${accounts} characters: a fill, close, reprice or publish on a leased bot fences its row; the worker resolves again, nothing lost`);
+    console.log(`Board writes on ${accounts} characters: a deal on a leased bot waits for its commit; its own close, reprice or publish fences its row; nothing lost`);
 })().catch((error) => {
     console.error(error);
     process.exit(1);

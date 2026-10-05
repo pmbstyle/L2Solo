@@ -309,7 +309,9 @@ CREATE TABLE IF NOT EXISTS afk_trade_shops (
     revision INTEGER NOT NULL DEFAULT 1,
     createdAt INTEGER NOT NULL,
     updatedAt INTEGER NOT NULL,
-    closedAt INTEGER
+    closedAt INTEGER,
+    kind TEXT NOT NULL DEFAULT 'shop' CHECK(kind IN ('shop', 'sell_ad', 'buy_ad', 'order')),
+    expiresAt INTEGER NOT NULL DEFAULT 0
 );
 CREATE UNIQUE INDEX IF NOT EXISTS afk_trade_shops_active_owner
     ON afk_trade_shops(ownerId) WHERE status = 'active';
@@ -334,6 +336,22 @@ CREATE TABLE IF NOT EXISTS afk_trade_lines (
 );
 CREATE INDEX IF NOT EXISTS afk_trade_lines_shop_item
     ON afk_trade_lines(shopId, selfId, count);
+
+-- What a deal or a closed record owes a cold bot: it reaches the bot's bag
+-- at its next save (the worker's commit or a main-thread settle).
+CREATE TABLE IF NOT EXISTS board_settlements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ownerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    selfId INTEGER NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    amount INTEGER NOT NULL CHECK(amount > 0),
+    enchant INTEGER NOT NULL DEFAULT 0,
+    slot INTEGER NOT NULL DEFAULT 0,
+    stackable INTEGER NOT NULL DEFAULT 0,
+    petData TEXT,
+    createdAt INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS board_settlements_owner ON board_settlements(ownerId);
 
 CREATE TABLE IF NOT EXISTS character_recipes (
     characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
