@@ -4,6 +4,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Html           = invoke('GameServer/World/Generics/HtmlKit');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function fold(v) {
     return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -27,6 +28,7 @@ function quantityLinks(prefix, selfId, stock) {
 
 function buildShopHtml(session, bot) {
     const store = bot.fetchPrivateStore();
+    TradeService.refreshStorePrices(store, session.actor);
     const items = store ? store.items : [];
     const adena = session.actor.backpack.fetchTotalAdena();
     const title = store?.title ?? 'Merchant';
@@ -71,6 +73,11 @@ module.exports = async function(session, parts) {
     }
 
     const store = bot.fetchPrivateStore();
+    TradeService.refreshStorePrices(store, session.actor);
+    if (store?.afkTrade === true) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
     if (!store || store.storeType !== 1 || !store.items.length) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant has nothing for sale." }));
         return;
@@ -103,6 +110,10 @@ module.exports = async function(session, parts) {
 
     try {
         const bought = await TradeService.buyFromStore(session.actor, store, selfId, buyQty);
+        MarketTelemetry.recordTrade({ channel: 'wts', sourceType: 'private_store_player_purchase',
+            selfId, itemName: bought.name, quantity: bought.qty, unitPrice: bought.totalAdena / bought.qty,
+            town: store.town, sellerCharacterId: bot.fetchId(), sellerName: bot.fetchName(),
+            buyerCharacterId: session.actor.fetchId(), buyerName: session.actor.fetchName() });
         const soldOut = !store.items.some((item) => Number(item.count || 0) > 0);
         BotSocialMemory.recordTradeCompleted(session, bot, `bought ${bought.qty} ${bought.name}`);
 

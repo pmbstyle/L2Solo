@@ -4,6 +4,7 @@ const DataCache      = invoke('GameServer/DataCache');
 const TradeService   = invoke('GameServer/Bot/TradeService');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Html           = invoke('GameServer/World/Generics/HtmlKit');
+const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
 function fold(v) {
     return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
@@ -29,6 +30,7 @@ function quantityLinks(prefix, selfId, maxSell) {
 
 function buildShopHtml(session, bot) {
     const store = bot.fetchPrivateStore();
+    TradeService.refreshStorePrices(store, session.actor);
     const items = store ? store.items : [];
     const adena = session.actor.backpack.fetchTotalAdena();
     const title = store?.title ?? 'Buyer';
@@ -75,6 +77,11 @@ module.exports = async function(session, parts) {
     }
 
     const store = bot.fetchPrivateStore();
+    TradeService.refreshStorePrices(store, session.actor);
+    if (store?.afkTrade === true) {
+        session.dataSendToMe(ServerResponse.actionFailed());
+        return;
+    }
     if (!store || store.storeType !== 3 || !store.items.length) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "This merchant is not buying anything." }));
         return;
@@ -105,6 +112,10 @@ module.exports = async function(session, parts) {
 
     try {
         const sold = await TradeService.sellToStore(session.actor, store, selfId, sellQty);
+        MarketTelemetry.recordTrade({ channel: 'wtb', sourceType: 'private_buy_store_player_sale',
+            selfId, itemName: sold.name, quantity: sold.qty, unitPrice: sold.totalAdena / sold.qty,
+            town: store.town, sellerCharacterId: session.actor.fetchId(), sellerName: session.actor.fetchName(),
+            buyerCharacterId: bot.fetchId(), buyerName: bot.fetchName() });
         BotSocialMemory.recordTradeCompleted(session, bot, `sold ${sold.qty} ${sold.name}`);
 
         session.dataSendToMe(ServerResponse.userInfo(session.actor));

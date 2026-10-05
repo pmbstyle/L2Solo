@@ -1,8 +1,10 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
-const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
+const OfferQuery = require('./OfferQuery');
+const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 
 const BUYBACK_RATIO = 0.9;
 let npcOffers = new Map();
@@ -29,53 +31,82 @@ function configuredPrice(line) {
     return BotEconomyPricing.scalePrice(base > 0 ? base * (line.priceRate ?? 1) : 1);
 }
 
-function cheapestPurchase(selfId) {
-    refreshNpcOffers();
-    const id = Number(selfId);
-    let minimum = Infinity;
-    for (const line of npcOffers.get(id) || []) {
-        minimum = Math.min(minimum, Number(line.price ?? basePrice(id)));
-    }
-    for (const store of Object.values(MerchantStoreConfigs)) {
-        if (store.storeType !== 1) continue;
-        for (const line of store.items || []) {
-            if (Number(line.selfId) === id && Number(line.count ?? 1) > 0) {
-                minimum = Math.min(minimum, configuredPrice(line));
-            }
-        }
-    }
-    return minimum;
-}
-
-function priceFor(store, line) {
+function botPriceFor(store, line) {
     const price = configuredPrice(line);
-    if (store.storeType !== 3) return price;
+    if (Number(store.storeType) !== BUY) return price;
     // Bound fixed-buyer payouts below repeatable NPC and fixed-store supply.
     const ceiling = Math.floor(cheapestPurchase(line.selfId) * BUYBACK_RATIO);
     return Math.min(price, ceiling);
 }
 
-// The configured city merchants selling an item, by town: [{ town, price,
-// sourceName }] (the shots' sellers: NPC shops do not sell them). A static
-// table read once per rate; a purchase trip weighs them as the NPC.
-let sellers = null;
-let sellersRate = null;
-function sellersOf(selfId) {
-    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
-    if (!sellers || sellersRate !== rate) {
-        sellers = new Map();
-        sellersRate = rate;
-        for (const [name, store] of Object.entries(MerchantStoreConfigs)) {
-            if (store?.storeType !== 1 || !store.town) continue;
-            for (const line of store.items || []) {
-                if (!(Number(line.count ?? 1) > 0)) continue;
-                const id = Number(line.selfId);
+// Configured supply is independent of the board: bots keep its original
+// price until 3.6. Index it once per loaded config and effective Adena rate.
+let fixedConfig = null;
+let fixedRate = null;
+let sellers = new Map();
+let fixedMinimums = new Map();
+function refreshFixedOffers() {
+    const config = invoke('GameServer/Bot/MerchantStoreConfigs');
+    const rate = BotEconomyPricing.economyRate();
+    if (fixedConfig === config && fixedRate === rate) return;
+    fixedConfig = config;
+    fixedRate = rate;
+    sellers = new Map();
+    fixedMinimums = new Map();
+    for (const [name, store] of Object.entries(config)) {
+        if (Number(store?.storeType) !== SELL) continue;
+        for (const line of store.items || []) {
+            if (!(Number(line.count ?? 1) > 0)) continue;
+            const id = Number(line.selfId);
+            const price = configuredPrice(line);
+            fixedMinimums.set(id, Math.min(fixedMinimums.get(id) ?? Infinity, price));
+            if (store.town) {
                 if (!sellers.has(id)) sellers.set(id, []);
-                sellers.get(id).push({ town: store.town, price: configuredPrice(line), sourceName: name });
+                sellers.get(id).push({ town: store.town, price, sourceName: name });
             }
         }
     }
+}
+
+function cheapestPurchase(selfId) {
+    refreshNpcOffers();
+    refreshFixedOffers();
+    const id = Number(selfId);
+    let minimum = fixedMinimums.get(id) ?? Infinity;
+    for (const line of npcOffers.get(id) || []) {
+        minimum = Math.min(minimum, Number(line.price ?? basePrice(id)));
+    }
+    return minimum;
+}
+
+// The configured city merchants selling an item, by town. This remains the
+// authored supply for bot shot trips, never the player's board-relative price.
+function sellersOf(selfId) {
+    refreshFixedOffers();
     return sellers.get(Number(selfId)) || [];
 }
 
-module.exports = { BUYBACK_RATIO, cheapestPurchase, priceFor, sellersOf };
+function validPrice(line) {
+    return Number.isSafeInteger(Number(line.price)) && Number(line.price) > 0;
+}
+
+// The player's static price is read from the one board at the window and
+// transaction, not at spawn. Shops and ads share the same item-side index;
+// orders are another goal and do not establish an ordinary purchase bid.
+function priceFor(store, line) {
+    const index = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
+    if (Number(store.storeType) === BUY) {
+        const bid = index.first(line.selfId, BUY, {
+            accept: candidate => ['shop', 'buy_ad'].includes(candidate.kind) && validPrice(candidate)
+        });
+        return bid ? bid.price : NpcSellRules.npcBuyPrice(basePrice(line.selfId));
+    }
+    const price = configuredPrice(line);
+    if (Number(store.storeType) !== SELL) return price;
+    const ask = OfferQuery.bestSellOffer(index, line.selfId, {
+        accept: offer => ['shop', 'sell_ad'].includes(offer.recordKind) && validPrice(offer)
+    });
+    return ask ? Math.max(price, Number(ask.price)) : price;
+}
+
+module.exports = { BUYBACK_RATIO, botPriceFor, cheapestPurchase, priceFor, sellersOf };

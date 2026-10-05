@@ -8,9 +8,10 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const BotManager     = invoke('GameServer/Bot/BotManager');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
-function merchantPurchaseItems(store) {
+function merchantPurchaseItems(store, actor) {
     const items = [];
 
+    TradeService.refreshStorePrices(store, actor);
     store.items.forEach((storeItem) => {
         DataCache.fetchItemFromSelfId(storeItem.selfId, (item) => {
             items.push(new Item(storeItem.objectId, {
@@ -100,9 +101,10 @@ async function consume(session, data) {
                 return;
             }
             session.dataSendToMe(ServerResponse.purchaseList(
-                merchantPurchaseItems(store),
+                merchantPurchaseItems(store, session.actor),
                 session.actor.backpack.fetchTotalAdena()
             ));
+            trade.prices = Object.fromEntries(store.items.map(line => [Number(line.selfId), Number(line.price)]));
         } catch (err) {
             utils.infoWarn('Purchase', 'merchant purchase error: %s', err.message || err);
             if (store.repricing === true || Number(trade.revision || 1) !== Number(store.revision || 1) || /changed/i.test(String(err.message || err))) {

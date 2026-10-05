@@ -63,6 +63,7 @@ function openMerchantTradeWindow(session, merchant) {
         return;
     }
 
+    invoke('GameServer/Bot/TradeService').refreshStorePrices(store, session.actor);
     store.revision = Math.max(1, Number(store.revision || 1));
     session.activeMerchantTrade = {
         merchant,

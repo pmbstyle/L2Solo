@@ -7,6 +7,7 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 
 function merchantSellRows(actor, store) {
+    TradeService.refreshStorePrices(store, actor);
     return actor.backpack.fetchItems()
         .filter(TradeService.isSellableInventoryItem)
         .map((item) => {
@@ -63,6 +64,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
     }
 
     try {
+        TradeService.refreshStorePrices(store, session.actor);
         const sold = [];
         const objectIds = new Set();
         const requested = list.map((line) => {
@@ -74,7 +76,7 @@ async function consumeMerchant(session, list, { native = false } = {}) {
                 !Number.isSafeInteger(amount) || amount < 1 || amount > item.fetchAmount() || amount > wanted.count || !matchesPrice ||
                 objectIds.has(item.fetchId())) return null;
             objectIds.add(item.fetchId());
-            return { item, amount };
+            return { item, amount, expectedUnitPrice: line.price };
         });
         if (requested.length !== list.length || requested.some((line) => line === null)) {
             session.dataSendToMe(ServerResponse.actionFailed());
@@ -84,7 +86,8 @@ async function consumeMerchant(session, list, { native = false } = {}) {
         for (const line of requested) {
             const result = await TradeService.sellToStore(session.actor, store, line.item.fetchSelfId(), line.amount, {
                 objectId: line.item.fetchId(),
-                buyerActor: trade.merchant
+                buyerActor: trade.merchant,
+                expectedUnitPrice: line.expectedUnitPrice
             });
             sold.push(result);
             MarketTelemetry.recordTrade({
