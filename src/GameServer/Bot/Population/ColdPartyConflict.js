@@ -61,12 +61,12 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
     const opener = revenge ? 0 : 1;
-    // Each side's can-I-win was rolled once at the encounter's decision (the
-    // dispute, or the revenge) and travels on the event (U26); nothing rerolls.
+    // Each side's can-I-win was rolled once at the dispute and travels on the
+    // event (U26) for who gives way; the PvP start has its own gate.
     const willing = event.willing || [];
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
-            rng, personaFor, step, openingSide: opener, openerWilling: willing[opener] === true }) : null;
+            rng, personaFor, step, openingSide: opener, key: event.key }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
     const involved = side => side.members.filter(s => s.characterId === side.principal.characterId || roles.get(s.characterId) === 'support');

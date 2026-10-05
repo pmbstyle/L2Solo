@@ -102,16 +102,17 @@ async function main() {
     function firstModeAction(fighter, inParty = false) {
         const opponent = { ...structuredClone(fighter), characterId: 95 };
         const companion = { ...structuredClone(fighter), characterId: 90 };
-        // A visibly better weapon (no template, so the profile is unchanged): a caster
-        // at its last MP still opens (U26 judges own MP).
-        const opener = { ...fighter, inventory: { ...fighter.inventory, 999999: { selfId: 999999, amount: 1, rank: 'c', equipped: true, equippedSlots: [7],
-            instances: [{ enchant: 0, equipped: true, slot: 7 }] } } };
+        // A caster at its last MP is clearly weaker at the U26 start gate; this checks
+        // its first action, so the gate's rare exception lets it open (roll under 0.02).
+        const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+        Tendency.roll = () => 0.01;
         const result = Pvp.resolve({
-            sides: [{ principal: opener, members: inParty ? [opener, companion] : [opener] },
+            sides: [{ principal: fighter, members: inParty ? [fighter, companion] : [fighter] },
                 { principal: opponent, members: [opponent] }],
             roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('class-mode'), personaFor,
             openingSide: 0, step: { until: at + 1, expiresAt: at + 30000, maxActions: 1 }
         });
+        Tendency.roll = () => 0.49;
         assert(result.started && result.actions === 1, 'resolve exactly one hostile action');
         return result.fighters.find(f => f.id === fighter.characterId);
     }

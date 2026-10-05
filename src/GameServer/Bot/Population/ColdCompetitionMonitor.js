@@ -190,7 +190,7 @@ class ColdCompetitionMonitor {
         }
         this.cursor += Math.min(32, pressured.length);
         if (elapsed > 0) {
-            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`), this.ownSide);
+            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`));
             this.report.events.push(...revenge);
             this.report.recent = [...this.report.recent, ...revenge].slice(-12);
             this.report.revenge = { ...this.revenge.report };

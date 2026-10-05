@@ -82,30 +82,46 @@ function coldStart(opener, other, persona = calm) {
     const sides = [{ principal: other, members: [other] }, { principal: opener, members: [opener] }];
     let seed = 7;
     const rng = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    // One decision per encounter: the opener's willingness is rolled at the dispute
-    // (own side exact, the other side as seen) and carried to the start.
-    const V = require('../src/GameServer/Social/VisibleStrength');
-    const openerWilling = V.willing(V.canWin({ own: Pvp.ownSide([opener], at), other: V.stateSide([other], at), traits: persona.traits }), 'pin');
-    return Pvp.resolve({ sides, roles: new Map(), timestamp: at, rng, personaFor: () => persona, openingSide: 1, openerWilling });
+    return Pvp.resolve({ sides, roles: new Map(), timestamp: at, rng, personaFor: () => persona, openingSide: 1, key: 'pin' });
 }
-// U26: the opener sees its own side exactly and the other side by its look.
+// U26, the user's choice B (2026-10-05): character decided at the escalation roll; the
+// opener declines only when it clearly looks weaker. Traits no longer matter here.
 const bold = { traits: { ...calm.traits, caution: 0, assertiveness: 1 } };
 const timid = { traits: { ...calm.traits, caution: 1, assertiveness: 0 } };
 const weapon = rank => ({ 1: { selfId: 1, amount: 1, rank, equipped: true, equippedSlots: [7], instances: [{ enchant: 0, equipped: true, slot: 7 }] } });
-assert(coldStart(coldState(11), coldState(12), bold).started, 'cold: an even look starts for the assertive');
-assert.strictEqual(coldStart(coldState(11), coldState(12)).reason, 'pvp_outmatched',
-    'cold: a calm opener short of full CP refuses an even look (the other is assumed fresh)');
-assert(coldStart(coldState(11), coldState(12, { pAtk: 5000 }), bold).started, 'cold: hidden attack power is not seen');
-assert(coldStart(coldState(11, { pAtk: 5000 }), coldState(12), bold).started, 'cold: the stronger opener starts');
-assert.strictEqual(coldStart(coldState(11, { hp: 100 }), coldState(12), bold).reason, 'pvp_outmatched', 'cold: an injured opener refuses');
+// hurt: HP share with full CP, so the own condition is (hp + 0.25) / 1.25 (MP ~full).
+const hurt = (id, share) => { const s = coldState(id, { hp: 1009.53 * share }); s.stats.coldCombat.cp = 1e6; return s; };
+assert(coldStart(coldState(11), coldState(12), timid).started, 'cold: an even look starts, even for the cautious (was refused)');
+assert(coldStart(coldState(11), coldState(12, { pAtk: 5000 }), timid).started, 'cold: hidden attack power is not seen');
 assert.strictEqual(coldStart(coldState(11, { inventory: weapon('d') }), coldState(12, { inventory: weapon('c') }), bold).reason,
-    'pvp_outmatched', 'cold: a visibly higher grade refuses even the assertive');
+    'pvp_outmatched', 'cold: visibly worse gear declines, even the assertive');
 assert(coldStart(coldState(11, { inventory: weapon('c') }), coldState(12, { inventory: weapon('d') }), timid).started,
-    'cold: a visibly lower grade is attacked even by the cautious');
+    'cold: visibly better gear starts');
+// Own condition on ceil quarters against the other's seen condition (fresh without a cue).
+assert(coldStart(hurt(11, 0.6), coldState(12)).started, 'cold: one quarter below (0.75 vs 1) does not count');
+assert.strictEqual(coldStart(hurt(11, 0.3), coldState(12)).reason, 'pvp_outmatched', 'cold: two quarters below (0.5 vs 1) declines');
+assert.strictEqual(coldStart(coldState(11, { hp: 100 }), coldState(12), bold).reason, 'pvp_outmatched', 'cold: a badly hurt opener declines');
+{
+    const onSpot = (id, share) => ({ ...hurt(id, share), spotId: 'spot' }); // hunting on a spot: his condition shows
+    assert(coldStart(hurt(11, 0.3), onSpot(12, 0.45)).started, 'cold: 0.5 against a seen 0.5: even');
+    assert(coldStart(hurt(11, 0.05), onSpot(12, 0.45)).started, 'cold: 0.25 against a seen 0.5: one quarter');
+    assert.strictEqual(coldStart(hurt(11, 0.05), onSpot(12, 0.7)).reason, 'pvp_outmatched', 'cold: 0.25 against a seen 0.75 declines');
+}
 {
     const withServitor = id => { const s = coldState(id); s.stats.coldCombat.summon = { active: true, expiresAt: at + 60000 }; return s; };
-    assert.strictEqual(coldStart(coldState(11), withServitor(12), bold).reason, 'pvp_outmatched', 'cold: his servitor is one more person');
+    assert.strictEqual(coldStart(coldState(11), withServitor(12), bold).reason, 'pvp_outmatched', 'cold: fewer people declines (his servitor)');
     assert(coldStart(withServitor(11), coldState(12), timid).started, 'cold: my servitor is one more person');
+}
+{
+    // The rare exception both ways: one roll on the encounter's key, chance 0.02 / 0.98.
+    const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+    const keys = [];
+    Tendency.roll = (...key) => { keys.push(key.join(':')); return 0.01; };
+    assert(coldStart(coldState(11, { inventory: weapon('d') }), coldState(12, { inventory: weapon('c') })).started, 'cold: a weaker one rarely attacks anyway');
+    assert.deepStrictEqual(keys, ['pin:open'], 'one roll, on the carried key');
+    Tendency.roll = () => 0.99;
+    assert.strictEqual(coldStart(coldState(11), coldState(12)).reason, 'pvp_outmatched', 'cold: an even one rarely declines');
+    Tendency.roll = () => 0.49;
 }
 
 // ---- 3. Hot defense decision.
@@ -215,16 +231,16 @@ assert.strictEqual(sighting({ ownPeople: 2, threatPeople: 2 }).action, 'fight', 
     assert.deepStrictEqual([both.ownPeople, both.threatPeople], [2, 2], 'sighting: each side\'s summon is seen');
 }
 
-// One pair, one verdict: a visibly equal pair is decided by traits in all four places.
+// One pair, one verdict: a visibly equal pair is decided by traits in the dispute, defense and
+// sighting; in the cold chain character decided at escalation, so the start lets it through.
 {
     const pairs = [[{ caution: 0.5, assertiveness: 0.5, empathy: 0.5 }, true], [{ caution: 0.8, assertiveness: 0.3, empathy: 0.3 }, false]];
     for (const [traits, fights] of pairs) {
         const persona = { traits: { ...calm.traits, ...traits } };
         const solo40 = solo(40, { look: D });
         assert.strictEqual(dispute(solo40, solo(40, { look: D }), persona).reason === 'outmatched', !fights, 'dispute');
-        const coldA = coldState(21, { hp: 1e6 }), coldB = coldState(22);
-        coldA.stats.coldCombat.cp = 1e6; coldA.vitals.mp = 1e6; // fresh: clamped to the profile maxima
-        assert.strictEqual(coldStart(coldA, coldB, persona).started === true, fights, 'cold start');
+        // The cold start no longer weighs traits (choice B): an even look starts for both.
+        assert(coldStart(coldState(21), coldState(22), persona).started, 'cold start');
         assert.strictEqual(defense(fresh, {}, traits).action === 'fight', fights, 'defense');
         assert.strictEqual(sighting({ traits }).action === 'fight', fights, 'sighting');
     }

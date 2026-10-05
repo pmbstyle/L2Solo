@@ -6,6 +6,7 @@ const Aid = require('../../Social/OpponentAidPolicy');
 const Config = require('./PopulationConfig');
 const Aggression = require('../../Social/PvpAggression');
 const Visible = require('../../Social/VisibleStrength');
+const Tendency = require('../AI/TendencyRoll');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const DeathExperience = invoke('GameServer/Progression/DeathExperience');
 const { MAX_ACTIONS, INITIAL_MS: MAX_DURATION_MS } = require('./PvpEncounterBudget');
@@ -25,20 +26,34 @@ function allowed(sides) {
 
 // A cold side as it knows itself: best look, people with servitors, and people
 // weighted by their exact condition (HP, CP, MP; a servitor counts fresh).
-function ownSide(states, timestamp) {
+// coarse: each condition on the ceil quarters others see it on.
+function ownSide(states, timestamp, coarse = false) {
     const condition = state => {
         const p = Profile.profileFor(state, timestamp);
-        return Visible.condition(clamp(Number(state.vitals?.hp) || 0, 0, p.maxHp) / p.maxHp, p.maxCp > 0 ? p.cp / p.maxCp : 0,
+        const exact = Visible.condition(clamp(Number(state.vitals?.hp) || 0, 0, p.maxHp) / p.maxHp, p.maxCp > 0 ? p.cp / p.maxCp : 0,
             clamp(Number(state.vitals?.mp) || 0, 0, p.maxMp) / p.maxMp, Roles.shouldRestForMana(state), p.maxCp > 0);
+        return coarse ? Visible.seen(exact, true) : exact;
     };
     return { look: Visible.best(states.map(Visible.stateLook)),
         people: states.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0),
         strength: states.reduce((sum, s) => sum + condition(s) + Visible.statePeople(s, timestamp) - 1, 0) };
 }
 
-// openerWilling: the opener's one can-I-win roll, taken at the encounter's
-// decision (the dispute or the revenge) and carried here (U26).
-function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, openerWilling = true }) {
+// The start gate (U26, the user's choice, 2026-10-05). Character already decided
+// at the author's escalation (the PvP intent) or revenge roll; here the opener
+// only declines when it clearly looks weaker: visibly worse gear, fewer people,
+// or its own condition at least CLEAR_GAP below the other side's seen one
+// (both on ceil quarters; one quarter does not count). One roll on the
+// encounter's key keeps a rare 2% exception both ways.
+const CLEAR_GAP = 0.5;
+function clearlyWeaker(own, other, timestamp) {
+    const mine = ownSide(own, timestamp, true), theirs = Visible.stateSide(other, timestamp);
+    return Visible.compare(mine.look, theirs.look) < 0 || mine.people < theirs.people
+        || mine.strength / mine.people <= theirs.strength / theirs.people - CLEAR_GAP;
+}
+
+// key: the encounter's key, for the start gate's one roll.
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, key = null }) {
     if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
     if (!step?.resuming && Aggression.normalize(Config.pvpAggression) === 0) return { started: false, reason: 'pvp_passive' };
     const fighters = sides.flatMap((side, index) => side.members
@@ -60,7 +75,12 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         }));
     // Resource retaliation opens on side 1; an independent grievance opens on side 0.
     // Can I win? The opener knows its own side exactly, the other only by look (U26).
-    if (!step?.resuming && !openerWilling) return { started: false, reason: 'pvp_outmatched' };
+    if (!step?.resuming) {
+        const involved = side => fighters.filter(f => f.side === side).map(f => f.state);
+        const weaker = clearlyWeaker(involved(openingSide), involved(1 - openingSide), timestamp);
+        const gateKey = key || `cold_open:${sides[openingSide].principal.characterId}:${sides[1 - openingSide].principal.characterId}:${timestamp}`;
+        if (Tendency.roll(gateKey, 'open') >= Tendency.chance(weaker ? 0 : 1)) return { started: false, reason: 'pvp_outmatched' };
+    }
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
@@ -187,4 +207,4 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             preparations: f.preparations, charges: f.charges, heals: f.heals, kills: f.kills })), actions };
 }
 
-module.exports = { resolve, allowed, ownSide, MAX_ACTIONS, MAX_DURATION_MS, FLAG_MS, RECOVERY_MS };
+module.exports = { resolve, allowed, ownSide, clearlyWeaker, CLEAR_GAP, MAX_ACTIONS, MAX_DURATION_MS, FLAG_MS, RECOVERY_MS };
