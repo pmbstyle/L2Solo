@@ -37,9 +37,11 @@ for (const [name, sizes] of Object.entries({ solo: [1, 1], solo_party: [1, 3], p
         }
         counts[relationName] = { pvp, contests };
     }
-    assert(counts.neutral.pvp > samples * 0.06 && counts.neutral.pvp < samples * 0.25, `${name}: crowded neutral encounters sometimes become PvP, with a large peaceful majority`);
+    assert(counts.neutral.pvp > samples * 0.06 && counts.neutral.pvp < samples * 0.3, `${name}: crowded neutral encounters sometimes become PvP, with a large peaceful majority`);
     assert(counts.grievance.pvp > counts.neutral.pvp * 1.3, `${name}: remembered offenses materially increase escalation`);
-    assert(counts.grievance.pvp < samples * 0.4, `${name}: even resentful hunters usually resolve competition without PvP`);
+    // Upper limits raised (user, 2026-10-05): neutral 0.25 -> 0.3, grievance 0.4 -> 0.5; the 11 persona types and the +-0.2 spread of step 3.1
+    // add bolder bots (brawlers), so resentful party-vs-solo encounters reach ~43% and neutral party-vs-party ~27%.
+    assert(counts.grievance.pvp < samples * 0.5, `${name}: even resentful hunters usually resolve competition without PvP`);
     assert(counts.friendly.pvp < counts.neutral.pvp / 10, `${name}: friendship protects cooperation`);
     report[name] = counts;
 }

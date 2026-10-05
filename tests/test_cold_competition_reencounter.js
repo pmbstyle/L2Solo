@@ -131,8 +131,10 @@ function run() {
         assert(counts('one').contest > counts('neutral').contest, 'one remembered offense must affect actual decisions');
         assert(counts('repeated').contest > counts('one').contest);
         assert(counts('repeated').avoid > counts('neutral').avoid, 'hostility can also increase avoidance');
-        assert(counts('repeated').contest < SAMPLES * 0.8, 'remembered enemies can compete more often while retaining peaceful alternatives');
-        assert(counts('repeated').pvpIntent < SAMPLES * 0.45, 'even repeated resource conflicts usually stop short of PvP');
+        // Limits raised (user, 2026-10-05): the step 3.1 personas (11 types, +-0.2 spread) make repeated
+        // solo conflicts contest ~80% and intend PvP ~49% of the time.
+        assert(counts('repeated').contest < SAMPLES * 0.85, 'remembered enemies can compete more often while retaining peaceful alternatives');
+        assert(counts('repeated').pvpIntent < SAMPLES * 0.55, 'even repeated resource conflicts usually stop short of PvP');
         if (c.name === 'solo') {
             assert(counts('one').accepted < counts('neutral').accepted);
             assert(counts('repeated').accepted < counts('one').accepted);
