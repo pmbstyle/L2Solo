@@ -41,13 +41,14 @@ function fromPlayer(offer) {
     return offer.playerPriority === true || offer.sellerKind === 'player';
 }
 
-// What the trip to each town costs the buyer in Adena (б5): the trip's time at
-// the buyer's hour value plus the gatekeeper fee, for a trip from `origin` (its
-// farming place, else its position) as the bot's trip builder plans it
-// (ColdTrip.townPlan). A function of the town's name, each town computed once;
-// null for a buyer without a location (no trip to weigh). A town no gatekeeper
-// route reaches costs Infinity. Kept per state object and origin: a plan
-// weighs many items for one state.
+// What the trip to each town costs the buyer in Adena (б5): the round trip's
+// time at the buyer's hour value plus the gatekeeper fee, for a trip from
+// `origin` (its farming place, else its position) as the bot's trip builder
+// plans it (ColdTrip.townPlan) and back to that place (ColdTrip.spotTripMs).
+// A function of the town's name, each town computed once; null for a buyer
+// without a location (no trip to weigh). A town no route reaches, or one a
+// bot with karma may not enter, costs Infinity. Kept per state object and
+// origin: a plan weighs many items for one state.
 const tripCosts = new WeakMap();
 function tripCost(state, { origin = null, timestamp = Date.now() } = {}) {
     const from = origin || state?.loc;
@@ -69,7 +70,8 @@ function townCosts(state, from, timestamp) {
         if (!costs.has(townName)) {
             const town = townByName.get(townName);
             const plan = town ? ColdTrip.townPlan(traveller, town) : null;
-            costs.set(townName, plan ? Math.round(plan.durationMs / HOUR_MS * hour) + Number(plan.route.fee || 0) : Infinity);
+            const back = plan ? ColdTrip.spotTripMs({ ...traveller, loc: ColdTrip.point(town) }, from) : 0;
+            costs.set(townName, plan ? Math.round((plan.durationMs + back) / HOUR_MS * hour) + Number(plan.route.fee || 0) : Infinity);
         }
         return costs.get(townName);
     };
