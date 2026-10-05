@@ -135,18 +135,24 @@ function beginEscape(session, bot, town, options = {}) {
     }, SOE_CAST_MS);
 }
 
+function karmaTown() {
+    const town = Object.values(invoke('GameServer/World/TownRespawn').towns).find((candidate) => candidate.name === Karma.TOWN_NAME);
+    return { name: town.name, x: town.locX, y: town.locY, z: town.locZ };
+}
+
 function request(session, bot, BotAI, reason, options = {}) {
     if (session.partyCompanion === true && session.followPlayerSession && options.allowCompanion !== true) return 'companion';
 
     const pending = session.pendingTownTrip || {};
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
     if (inCombat(session, bot)) return 'deferred';
-    // A bot with karma keeps the trip pending until it has washed its karma.
-    if (Karma.closesTowns(bot.fetchKarma?.())) return 'deferred';
-
-    const town = options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+    // A bot with karma walks to Floran, the town where a PK trades (design
+    // 5.8): no scroll, no gatekeeper.
+    const red = Karma.closesTowns(bot.fetchKarma?.());
+    if (red && options.forceScrollOfEscape === true) return 'unpaid';
+    const town = red ? karmaTown() : options.destinationTown || BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
     const alreadyInTown = TownTransitPolicy.townAt(bot) === town.name;
-    const wantsScroll = !alreadyInTown && (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE);
+    const wantsScroll = !red && !alreadyInTown && (options.forceScrollOfEscape === true || distance2d(bot, town) > SOE_DISTANCE);
     // The scroll is spent and the gatekeeper paid into another town, as for a
     // player (TripPayment). Without a scroll the bot walks; a trip that must
     // be made by scroll (a hidden supply errand) is refused instead.
