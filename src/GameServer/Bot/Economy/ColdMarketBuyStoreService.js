@@ -33,7 +33,8 @@ function bidFor(state, goal) {
         : 1;
     // The bid (group E): the bot's belief of the item and the mirror of its
     // ask; the item is worth its plan's price to it, or its own belief's
-    // centre when the plan only estimated; never more than it can spend.
+    // centre when the plan only estimated; never more than it can spend on
+    // one unit: a bot short of the whole amount asks for fewer units.
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
     const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
@@ -41,7 +42,7 @@ function bidFor(state, goal) {
     const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
     if (!belief) return null;
     const worth = requestedPrice > 0 ? requestedPrice : Math.exp(belief.mu);
-    const cap = Math.floor(Math.min(worth, spendable / requestedCount));
+    const cap = Math.floor(Math.min(worth, spendable));
     const chosen = MarketPricing.bid(book, selfId, ctx, { units: requestedCount, worth, cap,
         rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
     if (!chosen) return null;

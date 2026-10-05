@@ -134,6 +134,13 @@ async function run() {
     assert.strictEqual(combinedTrades.byItem[0].adena, 2 * bid.price + 150, 'all-channel totals should retain both peer and static turnover');
     assert.strictEqual(combinedTrades.byPeerItem[0].adena, 2 * bid.price, 'peer item totals must exclude static-buyer turnover');
 
+    // A bot short of the whole amount asks for fewer units, never for none.
+    const poorBuyer = await makeBot('bot_poor_buyer', 'PoorBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 1000 }]);
+    const poorBid = BuyStoreService.bidFor(poorBuyer,
+        { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 20 }, plan: {} });
+    assert(poorBid && poorBid.count > 0 && poorBid.count < 20, 'a short wallet bids for the units it can pay');
+    assert(poorBid.price * poorBid.count <= 500, 'a smaller bid still keeps the operating reserve');
+
     await AfkTrade._resetForTests();
     await Database.close();
     clean();
