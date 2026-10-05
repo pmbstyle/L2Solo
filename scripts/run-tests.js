@@ -572,6 +572,7 @@ const tests = [
     'tests/test_c4_fields_of_massacre.js',
     'tests/test_c4_ancient_battleground.js',
     'tests/test_c4_tower_of_insolence_lower_floors.js',
+    'tests/test_c4_skyshadow_meadow.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',

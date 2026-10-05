@@ -1,0 +1,409 @@
+[
+  {
+    "selfId": 947,
+    "template": {
+      "name": "Connabi"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 493,
+            "max": 1004,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 356,
+            "name": "Full Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.555262
+          },
+          {
+            "selfId": 1986,
+            "name": "Full Plate Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 63.114754
+          },
+          {
+            "selfId": 4144,
+            "name": "Recipe: Zubei's Leather Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 15.362242
+          },
+          {
+            "selfId": 4179,
+            "name": "Recipe: Zubei's Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 19.222634
+          },
+          {
+            "selfId": 4184,
+            "name": "Recipe: Sprite's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 1.745108
+          }
+        ],
+        "overall": 0.3782
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 63.559842
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 31.77964
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 3.177908
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 1.058927
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.423684
+          }
+        ],
+        "overall": 17.7727
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2448
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4938,
+            "name": "Recipe: Adamantite Ring (70%)",
+            "min": 1,
+            "max": 1,
+            "chance": 3.0291
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4967,
+            "name": "Recipe: Sword of Valhalla (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.141
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 950,
+    "template": {
+      "name": "Innersen"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 629,
+            "max": 1278,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 300,
+            "name": "Great Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.420875
+          },
+          {
+            "selfId": 4113,
+            "name": "Great Axe Head",
+            "min": 1,
+            "max": 1,
+            "chance": 99.579125
+          }
+        ],
+        "overall": 0.1188
+      },
+      {
+        "items": [
+          {
+            "selfId": 4931,
+            "name": "Spellbook: Aura Symphony",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 4932,
+            "name": "Spellbook: Inferno",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 4933,
+            "name": "Spellbook: Blizzard",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          },
+          {
+            "selfId": 4934,
+            "name": "Spellbook: Demon Wind",
+            "min": 1,
+            "max": 1,
+            "chance": 25
+          }
+        ],
+        "overall": 1.2784
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 947,
+            "name": "Scroll: Enchant Weapon (Grade B)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0623
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 8.1733
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4056,
+            "name": "Zubei's Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 2.8204
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 953,
+    "template": {
+      "name": "Pobby"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 563,
+            "max": 1149,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 856,
+            "name": "Adamantite Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.193339
+          },
+          {
+            "selfId": 887,
+            "name": "Adamantite Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.298796
+          },
+          {
+            "selfId": 918,
+            "name": "Adamantite Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.149398
+          },
+          {
+            "selfId": 4049,
+            "name": "Adamantite Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 31.733896
+          },
+          {
+            "selfId": 4050,
+            "name": "Adamantite Ring Wire",
+            "min": 1,
+            "max": 1,
+            "chance": 37.490113
+          },
+          {
+            "selfId": 4051,
+            "name": "Adamantite Necklace Chain",
+            "min": 1,
+            "max": 1,
+            "chance": 23.464276
+          },
+          {
+            "selfId": 4962,
+            "name": "Recipe: Zubei's Helmet (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 6.670182
+          }
+        ],
+        "overall": 1.1379
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 49.247298
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 24.623441
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 9.849376
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 15.152919
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.820712
+          },
+          {
+            "selfId": 4999,
+            "name": "Recipe: Doom Boots (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.306254
+          }
+        ],
+        "overall": 23.967
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 5,
+            "chance": 93.2365
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2962,
+            "name": "Drake Leather Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 7.6153
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4948,
+            "name": "Recipe: Avadon Leather Armor (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.6134
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 947,
+    "template": {
+      "kind": "Monster",
+      "name": "Connabi",
+      "title": "",
+      "level": 54,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 636,
+      "pAtkRnd": 20,
+      "pDef": 313,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 60,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 5.14,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 88,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "green_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.550411522634,
+      "sp": 592
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 950,
+    "template": {
+      "kind": "Monster",
+      "name": "Innersen",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 860,
+      "pAtkRnd": 20,
+      "pDef": 368,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 60,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 5.14,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 160,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "green_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.601388888889,
+      "sp": 812
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 953,
+    "template": {
+      "kind": "Monster",
+      "name": "Pobby",
+      "title": "",
+      "level": 57,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 743,
+      "pAtkRnd": 30,
+      "pDef": 289,
+      "mAtk": 405,
+      "mDef": 276,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2806,
+      "maxMp": 1052,
+      "revHp": 5.14,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "green_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.601415820252,
+      "sp": 702
+    },
+    "traits": {
+      "race": "plant",
+      "undead": false
+    }
+  }
+]
