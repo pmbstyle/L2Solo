@@ -36,8 +36,9 @@ function bestSellOffer(index, selfId, options = {}) {
 }
 
 // What `amount` units cost from sell lines (best first, the board's order)
-// at or under `maxPrice`, then the NPC at `npcPrice` for the rest, within
-// `money`: { lines: [{ line, count, price }], npc (units from the NPC),
+// at or under `maxPrice` and no dearer than the NPC (its stock never runs
+// out: a dearer line is never taken), then the NPC at `npcPrice` for the
+// rest, within `money`: { lines: [{ line, count, price }], npc (units from the NPC),
 // units, cost }. One rule for the purchase of a stack (a shot restock,
 // materials): ShotStock.restockPlan and cheapestTown.
 function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0 } = {}) {
@@ -49,7 +50,7 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
         if (left <= 0) break;
         const price = Number(line.price);
         if (excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner)) continue;
-        if (!(price > 0) || price > maxPrice || !(Number(line.count) > 0)) continue;
+        if (!(price > 0) || price > maxPrice || (npcPrice > 0 && price > npcPrice) || !(Number(line.count) > 0)) continue;
         const count = Math.min(left, Number(line.count), Math.floor(budget / price));
         if (count <= 0) break;
         taken.push({ line, count, price });

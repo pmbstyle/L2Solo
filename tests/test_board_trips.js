@@ -152,6 +152,7 @@ Config.coldHonestTravel = false;
     put(1, 'Giran', 100, 80);
     put(2, 'Dion', 2000, 90);
     put(3, 'Dion', 500, 95, 99);
+    put(4, 'Talking Island', 50, 120);
     const npcOffers = ['Giran', 'Dion', 'Talking Island'].map((name) => ({ town: name, price: 100 }));
     const trips = { Giran: 50000, Dion: 10000, 'Talking Island': 0 };
     const cost = (name) => trips[name] ?? Infinity;
@@ -161,8 +162,9 @@ Config.coldHonestTravel = false;
     assert.strictEqual(best.npc, 1000);
     assert.strictEqual(best.landed, 2000 * 90 + 1000 * 100 + 10000);
     trips.Dion = 30000;
-    assert.strictEqual(OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost }).town, 'Talking Island',
-        'a dearer trip sends the bot to its own village\'s NPC');
+    const village = OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost });
+    assert.strictEqual(village.town, 'Talking Island', 'a dearer trip sends the bot to its own village\'s NPC');
+    assert.deepStrictEqual(village.lines, [], 'a line dearer than the NPC is never taken');
     // A short wallet fills no town: the least landed price a unit wins.
     const poor = OfferQuery.cheapestTown(index, SHOT, { amount: 3000, npcOffers, cost, money: 9000 });
     assert.strictEqual(poor.whole, false);
@@ -262,5 +264,51 @@ Config.coldHonestTravel = false;
     MarketCounters.reset();
 }
 
-console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands, landed material'
-    + ' prices and the buy-ad look passed');
+// 9. On arrival the errand is bought there (ColdMarketService.tryPurchase):
+// the board's lines of the town one deal each, the merchant the rest, then
+// the errand is done.
+(async () => {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const GoalState = invoke('GameServer/Bot/Goals/GoalState');
+    const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+    const kept = { upsertState: LifeState.upsertState, applyMarketPurchase: LifeState.applyMarketPurchase,
+        clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop };
+    const buys = [];
+    try {
+        LifeState.upsertState = async (state) => state;
+        GoalState.clear = async () => null;
+        AfkTrade.buyFromShop = async (_id, _store, selfId, amount, options) => {
+            buys.push(['line', amount, options.expectedPrice]);
+            return { coldState: { ...options.coldState, adena: options.coldState.adena - amount * options.expectedPrice } };
+        };
+        LifeState.applyMarketPurchase = async (state, offer, qty) => {
+            buys.push(['merchant', qty, offer.price]);
+            return { ...state, adena: state.adena - qty * offer.price };
+        };
+        const merchant = invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(1463)
+            .find((seller) => seller.town === 'Dion').price;
+        const cheaper = merchant - 1;
+        AfkTrade.refreshRecord({ id: 998001, ownerId: 998000, ownerName: 'Seller', ownerAccount: 'bot_998000', kind: 'sell_ad',
+            storeType: AfkTrade.SELL, status: 'active', town: 'Dion', title: '', revision: 1, expiresAt: 0, locX: 0, locY: 0, locZ: 0,
+            appearance: {}, lines: [{ id: 9980011, selfId: 1463, name: 'Soulshot: D-grade', count: 500, price: cheaper, enchant: 0 }] });
+        const arrived = { ...hunter(), phase: 'cold', activity: 'shopping', currentRegion: 'Dion', loc: { ...town('Dion') },
+            adena: 300000, stats: { marketErrand: { selfId: 1463, amount: 2000, town: 'Dion', money: 180000, maxPrice: null,
+                purpose: 'shots', at: Date.now() } } };
+        const result = await ColdMarketService.tryPurchase(arrived, null);
+        assert.strictEqual(result.purchased, true);
+        assert.deepStrictEqual(buys, [['line', 500, cheaper], ['merchant', 1500, merchant]], 'the cheaper line, then the merchant');
+        assert.strictEqual(result.state.stats.marketErrand, null, 'the errand is done');
+        assert.strictEqual(result.state.stats.lastErrand.units, 2000);
+    } finally {
+        Object.assign(LifeState, { upsertState: kept.upsertState, applyMarketPurchase: kept.applyMarketPurchase });
+        GoalState.clear = kept.clear;
+        AfkTrade.buyFromShop = kept.buyFromShop;
+        AfkTrade._resetForTests();
+    }
+    console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands, landed material'
+        + ' prices, the buy-ad look and the purchase on arrival passed');
+})().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+});
