@@ -248,8 +248,6 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
     return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings, book: classified.book };
 }
 
-// The bot's buy ad lines for its goal, with the beliefs that keep its bid
-// (lines.book, saved when the ad is published).
 // The sale decision (MarketListingPolicy.evaluate) over the bot's bag and its
 // shop's stock: the shop's lines keep their slot and price, its sell ads
 // take their slots.
@@ -272,6 +270,8 @@ function saleDecision(state, options = {}) {
     return decide(state, stock, existing, options);
 }
 
+// The bot's buy ad lines for its goal, with the beliefs that keep its bid
+// (lines.book, saved when the ad is published).
 function buyLines(state, goal) {
     const bid = BuyStoreService.bidFor(state, goal);
     if (!bid) return [];
@@ -322,7 +322,7 @@ async function repriceSellLines(ownerId, stock, lines) {
     for (let index = 0; index < lines.length; index++) {
         if (Number(current[index].price) === Number(lines[index].price)) continue;
         try {
-            shop = await AfkTrade.repriceBot(ownerId, current[index].id, lines[index].price, shop.revision, null);
+            shop = await AfkTrade.repriceBot(ownerId, current[index].id, lines[index].price, shop.revision);
         } catch (error) {
             if (error.message !== 'afk_trade_shop_changed') throw error;
             return AfkTrade.findOwnerProjection(ownerId)?.shop || null;
@@ -631,7 +631,7 @@ async function repairStoreTitle(shop) {
     const title = Number(shop.storeType) === AfkTrade.BUY
         ? marketBuyStoreTitle(lines) : marketStoreTitle(lines);
     if (shop.title === title) return false;
-    await AfkTrade.repriceBot(shop.ownerId, lines[0].id, lines[0].price, shop.revision, null);
+    await AfkTrade.repriceBot(shop.ownerId, lines[0].id, lines[0].price, shop.revision);
     return true;
 }
 
@@ -669,7 +669,7 @@ async function applyReview(ownerId, review = {}) {
     let changed = 0;
     for (const reprice of review.reprices || []) {
         try {
-            await AfkTrade.repriceBot(id, reprice.lineId, reprice.price, null, null);
+            await AfkTrade.repriceBot(id, reprice.lineId, reprice.price);
             changed += 1;
         } catch (error) {
             if (!['afk_trade_shop_changed', 'afk_trade_line_unavailable', 'afk_trade_shop_unavailable',

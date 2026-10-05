@@ -153,13 +153,6 @@ function staticOffers(selfId) {
         ...invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(selfId)];
 }
 
-// The one purchase path of a cold bot (б5, D1, user 2026-10-05): every
-// board purchase is a trip to the seller's town. planPurchase picks the town
-// (OfferQuery.cheapestTown over the board and the NPC shops, the bot's round
-// trip included; none to the town it is shopping in); acquire buys there at
-// once when the bot stands in it, else leaves it an errand and starts the
-// author's market trip (GoalExecutor.beginMarketTravel); on arrival
-// tryPurchase buys the errand (buyHere). One trip per purchase.
 // The bot's round trip to a town in Adena, from its farming place
 // (OfferOrder.tripCost); none to the town it is shopping in.
 function tripFrom(state, timestamp = Date.now()) {
@@ -169,6 +162,13 @@ function tripFrom(state, timestamp = Date.now()) {
     return (town) => (town === here ? 0 : trip ? trip(town) : 0);
 }
 
+// The one purchase path of a cold bot (б5, D1, user 2026-10-05): every
+// board purchase is a trip to the seller's town. planPurchase picks the town
+// (OfferQuery.cheapestTown over the board and the NPC shops, the bot's round
+// trip included; none to the town it is shopping in); acquire buys there at
+// once when the bot stands in it, else leaves it an errand and starts the
+// author's market trip (GoalExecutor.beginMarketTravel); on arrival
+// tryPurchase buys the errand (buyHere). One trip per purchase.
 function planPurchase(state, selfId, amount, { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
     timestamp = Date.now(), cost = null } = {}) {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -274,11 +274,11 @@ const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
         if (state.stats?.marketErrand?.town === state.currentRegion) return buyErrand(state);
-        if (goal?.type === 'market_errand' && state.stats?.marketErrand) {
+        const errand = state.stats?.marketErrand;
+        if (goal?.type === 'market_errand' && errand) {
             // The errand's town is another one: the bot goes on there.
-            return acquire({ ...state }, state.stats.marketErrand.selfId, state.stats.marketErrand.amount, {
-                money: state.stats.marketErrand.money ?? Infinity, maxPrice: state.stats.marketErrand.maxPrice ?? Infinity,
-                purpose: state.stats.marketErrand.purpose, towns: [state.stats.marketErrand.town] })
+            return acquire(state, errand.selfId, errand.amount, { money: errand.money ?? Infinity,
+                maxPrice: errand.maxPrice ?? Infinity, purpose: errand.purpose, tag: errand.tag, towns: [errand.town] })
                 .then((result) => ({ state: result.state, purchased: result.bought, reason: 'market_errand_town' }));
         }
         const expectedBenefit = goal?.plan?.expectedBenefit;
