@@ -1,0 +1,699 @@
+[
+  {
+    "selfId": 803,
+    "template": {
+      "name": "Doll Master"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1387,
+            "max": 2820,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 231,
+            "name": "Grace Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 0.377537
+          },
+          {
+            "selfId": 233,
+            "name": "Dark Screamer",
+            "min": 1,
+            "max": 1,
+            "chance": 0.377537
+          },
+          {
+            "selfId": 2106,
+            "name": "Grace Dagger Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 45.705521
+          },
+          {
+            "selfId": 2107,
+            "name": "Dark Screamer Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 45.705521
+          },
+          {
+            "selfId": 2356,
+            "name": "Recipe: Demon's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 7.833884
+          }
+        ],
+        "overall": 0.4238
+      },
+      {
+        "items": [
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 74.159213
+          },
+          {
+            "selfId": 2360,
+            "name": "Recipe: Orcish Poleaxe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.422949
+          },
+          {
+            "selfId": 3014,
+            "name": "Recipe: Full Plate Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 7.250192
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 5.190391
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 4.325326
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 8.651929
+          }
+        ],
+        "overall": 7.826
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 5.7307
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 11.4615
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 11.4615
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 941,
+    "template": {
+      "name": "Tanor Silenos Chieftain"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 429,
+            "max": 873,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 60,
+            "name": "Composite Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.91352
+          },
+          {
+            "selfId": 1977,
+            "name": "Composite Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 99.08648
+          }
+        ],
+        "overall": 0.3284
+      },
+      {
+        "items": [
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 45.679115
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 45.679115
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 3.045053
+          },
+          {
+            "selfId": 3013,
+            "name": "Recipe: Drake Leather Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 1.275832
+          },
+          {
+            "selfId": 3014,
+            "name": "Recipe: Full Plate Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 1.275832
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 1.522526
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 1.522526
+          }
+        ],
+        "overall": 12.0392
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 2109,
+            "name": "Akat Longbow Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 0.5965
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2233,
+            "name": "Recipe: Divine Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 0.9943
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4601,
+            "name": "Greater Dye of STR (Str+3 Con-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2364
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 994,
+    "template": {
+      "name": "Garden Guard Leader"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1464,
+            "max": 2975,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 265,
+            "name": "Fisted Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.839299
+          },
+          {
+            "selfId": 2108,
+            "name": "Fisted Blade Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 99.160701
+          }
+        ],
+        "overall": 0.4051
+      },
+      {
+        "items": [
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 20.953628
+          },
+          {
+            "selfId": 3015,
+            "name": "Recipe: Drake Leather Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 16.678743
+          },
+          {
+            "selfId": 3016,
+            "name": "Recipe: Full Plate Gauntlets",
+            "min": 1,
+            "max": 1,
+            "chance": 16.678743
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 19.905808
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 5.191729
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 19.905808
+          },
+          {
+            "selfId": 4186,
+            "name": "Recipe: Sword of Valhalla",
+            "min": 1,
+            "max": 1,
+            "chance": 0.685542
+          }
+        ],
+        "overall": 3.5884
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 6.4202
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 12.0913
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 12.0913
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1261,
+    "template": {
+      "name": "Ol Mahum Transcender"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 565,
+            "max": 1150,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 231,
+            "name": "Grace Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 0.377358
+          },
+          {
+            "selfId": 233,
+            "name": "Dark Screamer",
+            "min": 1,
+            "max": 1,
+            "chance": 0.377358
+          },
+          {
+            "selfId": 2106,
+            "name": "Grace Dagger Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.622642
+          },
+          {
+            "selfId": 2107,
+            "name": "Dark Screamer Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.622642
+          }
+        ],
+        "overall": 0.159
+      },
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 6.587851
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 59.291376
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 29.645688
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 2.964175
+          },
+          {
+            "selfId": 2231,
+            "name": "Recipe: Full Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.127461
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.988178
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.395271
+          }
+        ],
+        "overall": 27.9302
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1914,
+            "name": "Earring of Binding Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 7.8741
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 2.4807
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2170,
+            "name": "Recipe: Nassen's Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 3.3056
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1797,
+    "template": {
+      "name": "Spirit of Timiniel"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 263,
+            "max": 536,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 23.445206
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 17.583777
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 17.583777
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 17.583777
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 23.445206
+          },
+          {
+            "selfId": 4175,
+            "name": "Recipe: Avadon Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.338326
+          },
+          {
+            "selfId": 4972,
+            "name": "Recipe: Great Axe (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.019932
+          }
+        ],
+        "overall": 19.5669
+      },
+      {
+        "items": [
+          {
+            "selfId": 2414,
+            "name": "Full Plate Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.405157
+          },
+          {
+            "selfId": 2497,
+            "name": "Full Plate Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.589319
+          },
+          {
+            "selfId": 2959,
+            "name": "Full Plate Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 38.342541
+          },
+          {
+            "selfId": 2966,
+            "name": "Full Plate Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 60.662983
+          }
+        ],
+        "overall": 0.543
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 1,
+            "chance": 86.9731
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 65.2298
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2961,
+            "name": "Full Plate Boots Part",
+            "min": 1,
+            "max": 1,
+            "chance": 3.5519
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]

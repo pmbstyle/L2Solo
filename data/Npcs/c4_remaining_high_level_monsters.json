@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 803,
+    "template": {
+      "kind": "Monster",
+      "name": "Doll Master",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 616,
+      "pAtkRnd": 30,
+      "pDef": 230,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 26.07,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.5796,
+      "sp": 297
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 941,
+    "template": {
+      "kind": "Monster",
+      "name": "Tanor Silenos Chieftain",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 509,
+      "pAtkRnd": 10,
+      "pDef": 278,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 4.35,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 31.5
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.6012,
+      "sp": 490
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 994,
+    "template": {
+      "kind": "Monster",
+      "name": "Garden Guard Leader",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 560,
+      "pAtkRnd": 30,
+      "pDef": 253,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 30,
+      "size": 63
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "theeder_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.4776,
+      "sp": 466
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1261,
+    "template": {
+      "kind": "Monster",
+      "name": "Ol Mahum Transcender",
+      "title": "",
+      "level": 50,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 509,
+      "pAtkRnd": 10,
+      "pDef": 236,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 143
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 8.69,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13.5,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 127,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.7136,
+      "sp": 323
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1797,
+    "template": {
+      "kind": "Monster",
+      "name": "Spirit of Timiniel",
+      "title": "",
+      "level": 55,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 554,
+      "pAtkRnd": 30,
+      "pDef": 331,
+      "mAtk": 360,
+      "mDef": 261,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 2643,
+      "maxMp": 987,
+      "revHp": 5.14,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 5,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "timiniel_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.308760330579,
+      "sp": 320
+    },
+    "traits": {
+      "race": "fairy",
+      "undead": false
+    }
+  }
+]

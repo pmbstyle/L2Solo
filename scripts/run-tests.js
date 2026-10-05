@@ -574,6 +574,7 @@ const tests = [
     'tests/test_c4_tower_of_insolence_lower_floors.js',
     'tests/test_c4_skyshadow_meadow.js',
     'tests/test_c4_beast_farm.js',
+    'tests/test_c4_remaining_high_level_monsters.js',
     'tests/test_c4_necropolis_of_sacrifice.js',
     'tests/test_c4_catacomb_of_the_branded.js',
     'tests/test_c4_catacomb_of_the_witch.js',
