@@ -135,7 +135,8 @@ async function unitChecks() {
         w.channel.attach(w.target, 'e2', w.deliver('e2'));
         assert.strictEqual(w.mirror.version('test'), 2);
         w.same();
-        // A detached worker gets nothing; a failed post sends the table in full next time.
+        // A detached worker gets nothing; a failed post suspends the worker
+        // until it asks for a resync, then the table goes in full.
         w.channel.detach(w.target);
         const pages = w.sent.length;
         w.change({ id: 3, price: 30 });
@@ -147,8 +148,77 @@ async function unitChecks() {
         w.change({ id: 4, price: 40 });
         w.channel.flush();
         assert.strictEqual(w.channel.stats.failedPosts, 1);
+        assert.strictEqual(w.sent.length, pages, 'a suspended worker gets nothing');
+        w.channel.resync(w.target, 'e3', []);
         assert(w.sent.at(-1).payload.tables[0].full, 'after a failed post the table goes in full');
         w.same();
+    }
+
+    // A failed post while the worker is gone (a restart between its new epoch
+    // and its attach) costs one page, not a rebuild of every table per flush;
+    // only the tables it missed go in full when it is back.
+    {
+        const channel = new ColdTableChannel();
+        const tables = { a: new Map(), b: new Map(), c: new Map() };
+        for (const name of Object.keys(tables)) channel.register(name, source(tables[name]));
+        const set = (name, row) => { tables[name].set(row.id, row); channel.changed(name, row); };
+        for (let id = 1; id <= 50; id++) { set('a', { id }); set('b', { id }); set('c', { id }); }
+        const mirror = new TableMirror();
+        const target = {};
+        let gone = false;
+        let posts = 0;
+        const post = (payload) => {
+            posts += 1;
+            if (gone) return false;
+            mirror.apply(payload.tables);
+            return true;
+        };
+        channel.attach(target, 'e1', post);
+        assert.deepStrictEqual(Object.keys(mirror.summary()).sort(), ['a', 'b', 'c']);
+        gone = true;
+        set('a', { id: 1, price: 2 });
+        channel.flush();
+        const failed = posts;
+        for (let flush = 0; flush < 5; flush++) {
+            set('b', { id: 2, price: flush });
+            channel.flush();
+        }
+        assert.strictEqual(posts, failed, 'a suspended worker is not posted to on every flush');
+        assert.strictEqual(channel.stats.failedPosts, 1);
+        assert.strictEqual(channel.stats.fulls, 3, 'no full table is rebuilt while the worker is gone');
+        gone = false;
+        const sent = [];
+        channel.attach(target, 'e1', (payload) => { sent.push(...payload.tables.map((piece) => `${piece.name}:${piece.full}`)); return post(payload); });
+        assert.deepStrictEqual(sent, [], 'the same epoch attaching again does not lift the suspension');
+        channel.resync(target, 'e1', []);
+        assert.deepStrictEqual(sent.sort(), ['a:true', 'b:true'], 'only the tables the worker missed go in full');
+        assert.strictEqual(mirror.rows('b').get(2).price, 4);
+        assert.strictEqual(mirror.rows('c').size, 50);
+    }
+
+    // A full table cut across pages is loading until its final piece: the
+    // mirror never reads the first pages as the whole table.
+    {
+        const w = wired();
+        for (let id = 1; id <= 3000; id++) w.change({ id, note: 'x'.repeat(200) + id });
+        const held = [];
+        w.channel.attach(w.target, 'e1', (payload, bytes) => { held.push(payload); return true; });
+        assert(held.length >= 3, `the full copy takes ${held.length} pages`);
+        assert(held.every((page, at) => page.tables.every((piece) => piece.last === (at === held.length - 1 ? 1 : 0))),
+            'every piece of a full copy says whether it is the last');
+        for (const page of held.slice(0, -1)) w.mirror.apply(page.tables);
+        assert.strictEqual(w.mirror.ready('test'), false);
+        assert.strictEqual(w.mirror.rows('test').size, 0, 'a loading table reads as empty');
+        assert.deepStrictEqual(w.mirror.apply([{ name: 'test', from: 1, to: 2, rows: [], removed: [] }]), ['test'],
+            'a change on a full copy that never finished asks for the whole table');
+        const fresh = new TableMirror();
+        const seen = [];
+        fresh.watch('test', { reset: () => seen.push('reset'), put: (key) => seen.push(key), remove: () => {} });
+        for (const page of held) fresh.apply(page.tables);
+        assert.strictEqual(fresh.ready('test'), true);
+        assert.strictEqual(fresh.rows('test').size, 3000);
+        assert.strictEqual(seen[0], 'reset');
+        assert.strictEqual(seen.length, 3001, 'a listener follows every row');
     }
 
     // The cold coordinator: pages go out as valid table_page envelopes; a
@@ -257,13 +327,13 @@ async function clanWorkerRestart() {
     const summary = () => coordinator.send('table_summary', {});
     try {
         await coordinator.ready({});
-        assert.deepStrictEqual((await summary()).test, { version: 0, rows: 2, waiting: false });
+        assert.deepStrictEqual((await summary()).test, { version: 0, rows: 2, waiting: false, loading: false });
 
         // Changes go out before each plan, ahead of the plan message.
         rows.set(3, { id: 3, price: 30 });
         channel.changed('test', rows.get(3));
         await assert.rejects(coordinator.plan({ member: null, context: {} }, {}));
-        assert.deepStrictEqual((await summary()).test, { version: 1, rows: 3, waiting: false });
+        assert.deepStrictEqual((await summary()).test, { version: 1, rows: 3, waiting: false, loading: false });
 
         // A restarted worker starts empty and gets the table in full.
         const old = coordinator.worker;
@@ -276,7 +346,7 @@ async function clanWorkerRestart() {
         channel.flush();
         await coordinator.ready({});
         assert.notStrictEqual(coordinator.worker, old);
-        assert.deepStrictEqual((await summary()).test, { version: 2, rows: 2, waiting: false });
+        assert.deepStrictEqual((await summary()).test, { version: 2, rows: 2, waiting: false, loading: false });
     } finally {
         await coordinator.shutdown();
     }

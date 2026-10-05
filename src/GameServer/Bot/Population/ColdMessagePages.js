@@ -43,8 +43,10 @@ function collectionPagesWithBytes(type, epoch, collections, msgId, onOversize = 
 // size: each page's payload stays within budget bytes, counted while it is
 // built (each value measured once). A table cut across pages goes on in a
 // piece at the version the first piece reached (from === to), which a
-// TableMirror applies in order. A single value larger than a page is left out
-// and counted in skipped.
+// TableMirror applies in order. Every piece of a full table carries `last`:
+// 1 on its final piece, 0 before (equal lengths keep the counted size exact);
+// the mirror does not read the table until it has the final piece. A single
+// value larger than a page is left out and counted in skipped.
 const EMPTY_TABLES_BYTES = Protocol.byteLength({ tables: [] });
 function tablePagesWithBytes(tables, budget = PAGE_BYTES - 1024) {
     const pages = [];
@@ -60,6 +62,7 @@ function tablePagesWithBytes(tables, budget = PAGE_BYTES - 1024) {
     const openPiece = (table, first) => {
         piece = { name: table.name, from: first ? table.from : table.to, to: table.to,
             full: first && table.full === true, rows: [], removed: [] };
+        if (table.full === true) piece.last = 0;
         const size = Protocol.byteLength(piece);
         if (pieces.length && bytes + size + 1 > budget) closePage();
         bytes += size + (pieces.length ? 1 : 0);
@@ -79,6 +82,7 @@ function tablePagesWithBytes(tables, budget = PAGE_BYTES - 1024) {
         openPiece(table, true);
         for (const entry of table.rows || []) add(table, 'rows', entry);
         for (const key of table.removed || []) add(table, 'removed', key);
+        if (table.full === true) piece.last = 1;
     }
     closePage();
     return { pages, skipped };

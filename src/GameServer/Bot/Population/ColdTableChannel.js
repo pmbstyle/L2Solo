@@ -12,12 +12,15 @@ const REMOVED = Symbol('removed');
 //
 // No acknowledgements: a MessagePort keeps the order. A worker that sees a
 // gap asks for the whole table (resync); a worker with a new epoch (a
-// restart) gets every table in full when it attaches.
+// restart) gets every table in full when it attaches. A page that could not
+// be posted suspends the worker: the tables of that page and of the pages
+// after it, and every table that changes while it is suspended, go in full
+// once it attaches again or asks for a resync; the tables it got stay.
 class ColdTableChannel {
     constructor() {
         this.tables = new Map();
         this.targets = new Map();
-        this.stats = { flushes: 0, pages: 0, rows: 0, fulls: 0, resyncs: 0, skipped: 0, failedPosts: 0 };
+        this.stats = { flushes: 0, pages: 0, rows: 0, fulls: 0, resyncs: 0, skipped: 0, failedPosts: 0, suspendedFlushes: 0 };
     }
 
     // key(row) gives a row's key; allRows() gives every current row.
@@ -43,7 +46,7 @@ class ColdTableChannel {
             current.post = post;
             return;
         }
-        this.targets.set(target, { epoch, post, synced: new Set() });
+        this.targets.set(target, { epoch, post, synced: new Set(), suspended: false });
         this.flush();
     }
 
@@ -55,6 +58,7 @@ class ColdTableChannel {
         const entry = this.targets.get(target);
         if (!entry || entry.epoch !== epoch) return;
         for (const name of names) entry.synced.delete(String(name));
+        entry.suspended = false;
         this.stats.resyncs += 1;
         this.flush();
     }
@@ -89,6 +93,11 @@ class ColdTableChannel {
         }
         let sharedPages = null;
         for (const target of this.targets.values()) {
+            if (target.suspended) {
+                for (const delta of deltas) target.synced.delete(delta.name);
+                this.stats.suspendedFlushes += 1;
+                continue;
+            }
             // A table the worker does not hold yet goes in full; the full copy
             // already has this flush's changes.
             const fulls = [];
@@ -102,14 +111,18 @@ class ColdTableChannel {
             const own = fullNames.size ? deltas.filter((delta) => !fullNames.has(delta.name)) : deltas;
             if (own === deltas && !sharedPages) sharedPages = this.pages(deltas);
             const pages = [...this.pages(fulls), ...(own === deltas ? sharedPages : this.pages(own))];
-            for (const page of pages) {
-                if (target.post(page.payload, page.bytes)) {
+            for (let at = 0; at < pages.length; at++) {
+                if (target.post(pages[at].payload, pages[at].bytes)) {
                     this.stats.pages += 1;
                     continue;
                 }
-                // The worker missed a page: it gets every table in full next time.
+                // The worker missed this page and the rest: their tables go
+                // in full when it is back.
                 this.stats.failedPosts += 1;
-                target.synced.clear();
+                for (const page of pages.slice(at)) {
+                    for (const piece of page.payload.tables) target.synced.delete(piece.name);
+                }
+                target.suspended = true;
                 break;
             }
         }
