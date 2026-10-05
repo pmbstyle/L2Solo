@@ -3740,18 +3740,20 @@ const Database = {
     // records after the moves), skipped, ownerInventory, coldLifeRows } as
     // repriceAfkTradeShop does.
     repriceBoardLines(ownerId, reprices = [], { withdrawals = [], updates = [],
-        coldAuthority = null, canCommitReview = null } = {}) {
+        coldAuthority = null, hotAuthority = null, canCommitReview = null } = {}) {
         const characterId = Number(ownerId);
         if (!characterId) return Promise.reject(new Error('invalid_afk_trade_price'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
             // The flush can outlive a fence or a handoff. Check authority in
             // this transaction before metadata, quote or escrow writes.
-            if (coldAuthority) {
+            if (coldAuthority && hotAuthority) throw new Error('invalid_market_review_authority');
+            const authority = coldAuthority || hotAuthority;
+            if (authority) {
                 const life = one(`SELECT phase, simulationOwner, simulationRevision, simulationLeaseId
                     FROM bot_life_state WHERE characterId = ?`, [characterId]);
-                if (!life || life.phase !== 'cold' || life.simulationOwner !== coldAuthority.ownerId
-                    || Number(life.simulationRevision) !== coldAuthority.revision
-                    || (life.simulationLeaseId || null) !== coldAuthority.leaseId) {
+                if (!life || life.phase !== (coldAuthority ? 'cold' : 'hot') || life.simulationOwner !== authority.ownerId
+                    || Number(life.simulationRevision) !== authority.revision
+                    || (life.simulationLeaseId || null) !== authority.leaseId) {
                     throw new Error('stale_market_review');
                 }
             }

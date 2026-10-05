@@ -665,7 +665,7 @@ async function withdraw(ownerId) {
 // NPC (they leave the board; the NPC buys them at the next town visit) and
 // buy ads no bid gains for (their escrow comes back). A line a deal or
 // another move changed meanwhile waits for the next look.
-async function applyReview(ownerId, review = {}, { coldAuthority = null, canCommitReview = null } = {}) {
+async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuthority = null, canCommitReview = null } = {}) {
     // Prices and withdrawals share one fence, including lines of the same
     // record. Rows from an older worker have no revision and wait for a look
     // from a worker that has the current board format.
@@ -673,6 +673,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, canComm
         withdrawals: review.withdrawals || [],
         updates: review.updates || [],
         coldAuthority,
+        hotAuthority,
         canCommitReview
     });
     return { changed: result.changed, updated: result.updated || 0 };

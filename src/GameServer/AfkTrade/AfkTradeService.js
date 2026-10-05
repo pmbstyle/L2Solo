@@ -726,7 +726,7 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
 // A bot's look reprices several of its lines (E59): one transaction, and the
 // syncs only when an item or Adena moved. Returns { changed, skipped }.
 async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updates = [],
-    coldAuthority = null, canCommitReview = null } = {}) {
+    coldAuthority = null, hotAuthority = null, canCommitReview = null } = {}) {
     const botLines = new Set();
     for (const entry of ownerEntries(ownerId)) {
         const store = entryStore(entry);
@@ -738,7 +738,7 @@ async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updat
     if (!owned.length && !leaving.length && !observations.length) return { changed: 0, updated: 0,
         skipped: reprices.length + withdrawals.length + updates.length };
     const result = await Database.repriceBoardLines(ownerId, owned,
-        { withdrawals: leaving, updates: observations, coldAuthority, canCommitReview });
+        { withdrawals: leaving, updates: observations, coldAuthority, hotAuthority, canCommitReview });
     await syncAfterReprice(ownerId, result);
     result.shops.forEach(refreshRecord);
     return { changed: result.changed, updated: result.updated,

@@ -847,7 +847,8 @@ const tests = [
     'tests/test_n53_worker_ack_ordering.js',
     'tests/test_n53_market_review_command.js',
     'tests/test_character_location_index.js',
-    'tests/test_n62_visibility_index.js'
+    'tests/test_n62_visibility_index.js',
+    'tests/test_hot_market_review_authority.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -902,6 +903,7 @@ const defaultConfigTests = new Set([
     'tests/test_n53_market_review_command.js',
     'tests/test_character_location_index.js',
     'tests/test_n62_visibility_index.js',
+    'tests/test_hot_market_review_authority.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
     'tests/test_market_restart_cursors.js',
