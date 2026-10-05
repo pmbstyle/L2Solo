@@ -93,6 +93,44 @@ function statePeople(state, timestamp) {
     return 1 + (summon?.active && Number(summon.expiresAt || 0) > timestamp ? 1 : 0);
 }
 
+// What a player sees of another's condition: nothing (fresh, 1) unless a cue
+// shows he has been fighting or is recovering; then his HP rounded down to
+// quarters (1, 0.75, 0.5, 0.25).
+function seen(hpRatio, cue) {
+    return cue ? Math.max(0.25, Math.floor(clamp(hpRatio) * 4) / 4) : 1;
+}
+
+// Live cues: sitting, the combat stance (autoAttackStart is broadcast) or a
+// purple name (a fight with a player just now).
+function actorSeen(actor) {
+    const cue = actor?.state?.fetchSeated?.() === true || actor?.state?.fetchCombats?.() === true
+        || Number(actor?.fetchPvpFlag?.() || 0) > 0;
+    return seen(Number(actor?.fetchHp?.()) / Math.max(1, Number(actor?.fetchMaxHp?.()) || 1), cue);
+}
+
+// Cold cues: resting, or a skirmish that ended within its flag time
+// (ColdPvpResolver writes coldPvp.until = end + 15 s). Hunting is abstract in
+// cold: no momentary mob-fight cue.
+function stateCue(state, timestamp) {
+    return state?.activity === 'resting' || Number(state?.stats?.coldPvp?.until || 0) > timestamp;
+}
+
+function stateSeen(state, timestamp, vitals = state?.vitals) {
+    return seen(Number(vitals?.hp) / Math.max(1, Number(vitals?.maxHp) || 1), stateCue(state, timestamp));
+}
+
+// A side as another bot sees it: best look, people (summons included) and the
+// seen strength (people weighted by their seen condition; a summon counts 1).
+function actorSide(actors) {
+    return { look: best(actors.map(actorLook)), people: actors.reduce((sum, a) => sum + actorPeople(a), 0),
+        strength: actors.reduce((sum, a) => sum + actorSeen(a) + actorPeople(a) - 1, 0) };
+}
+
+function stateSide(states, timestamp) {
+    return { look: best(states.map(stateLook)), people: states.reduce((sum, s) => sum + statePeople(s, timestamp), 0),
+        strength: states.reduce((sum, s) => sum + stateSeen(s, timestamp) + statePeople(s, timestamp) - 1, 0) };
+}
+
 // The author's resource factor (BotPvpRisk.combatStrength): HP with a quarter
 // of CP, and MP for casters.
 function resources(hpRatio, cpRatio, mpRatio, manaDependent) {
@@ -128,7 +166,8 @@ function required(traits, fearOf = 0) {
 }
 
 // own: { look, people, strength } where strength is own people weighted by
-// their exact condition (defaults to people); other: { look, people }.
+// their exact condition; other: { look, people, strength } where strength is
+// what is seen of them (both default to people).
 // Visibly better gear and at least as many people = stronger; visibly worse
 // and no more people = weaker; anything else looks even and the bot's
 // character and memory decide by the head count.
@@ -136,11 +175,12 @@ function canWin({ own, other, traits, fear: fearOf = 0 }) {
     const people = own.people / Math.max(1, other.people);
     const gear = compare(own.look, other.look);
     const verdict = gear > 0 && people >= 1 ? 'stronger' : gear < 0 && people <= 1 ? 'weaker' : 'even';
-    const ratio = (own.strength ?? own.people) / Math.max(1, other.people);
+    const ratio = (own.strength ?? own.people) / Math.max(0.25, other.strength ?? other.people);
     const need = required(traits, fearOf);
     return { verdict, fight: verdict === 'stronger' || verdict === 'even' && ratio >= need,
         ratio: Math.round(ratio * 100) / 100, required: need };
 }
 
-module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, resources, condition,
+module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, seen, actorSeen, stateCue, stateSeen, actorSide, stateSide,
+    resources, condition,
     fear, avoidsPvp, required, canWin };

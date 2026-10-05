@@ -47,7 +47,8 @@ function evaluate(context = {}) {
     const allies = Math.max(0, Number(context.allies) || 0);
     const reasons = [];
     const visible = Visible.canWin({ own: { look: context.ownLook, people: Math.max(1, Number(context.ownPeople) || 1) },
-        other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1) },
+        other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1),
+            strength: context.threatStrength },
         traits: context.traits, fear: context.fear || 0 });
     let score = (visible.verdict === 'stronger' ? VISIBLE_GAP : visible.fight ? 0 : -VISIBLE_GAP) + allies * 1.4;
 
@@ -169,7 +170,7 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
     const verdict = Visible.canWin({
         own: { look: Visible.best(own.map(Visible.actorLook)), people: own.length + pets(own),
             strength: own.reduce((sum, actor) => sum + condition(actor), 0) + pets(own) },
-        other: { look: Visible.best(enemies.map(Visible.actorLook)), people: enemies.length + pets(enemies) },
+        other: Visible.actorSide(enemies),
         traits, fear: fearOf(session.actor, threats) });
     const fight = !avoidsPvp && verdict.fight;
     return {
@@ -187,10 +188,9 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
 
 // What a hunter sees of a PK, for evaluate().
 function sighting(session, pk, now = Date.now()) {
-    const opponents = [...opponentsOf(session, [pk]).values()];
+    const threat = Visible.actorSide([...opponentsOf(session, [pk]).values()]);
     return { ownLook: Visible.actorLook(session.actor), ownPeople: Visible.actorPeople(session.actor),
-        threatLook: Visible.best(opponents.map(Visible.actorLook)),
-        threatPeople: opponents.reduce((sum, actor) => sum + Visible.actorPeople(actor), 0), traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
+        threatLook: threat.look, threatPeople: threat.people, threatStrength: threat.strength, traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
         fear: fearOf(session.actor, [pk], now) };
 }
 

@@ -79,7 +79,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         const own = involved(sides[index]), other = involved(sides[1 - index]);
         const people = list => list.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0);
         return Visible.canWin({ own: { look: Visible.best(own.map(Visible.stateLook)), people: people(own) },
-            other: { look: Visible.best(other.map(Visible.stateLook)), people: people(other) },
+            other: Visible.stateSide(other, timestamp),
             traits: personaFor(sides[index].principal)?.traits, fear: fear(index) }).fight;
     };
     const pushChance = () => {

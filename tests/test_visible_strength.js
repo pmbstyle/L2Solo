@@ -55,6 +55,23 @@ assert.strictEqual(V.statePeople(servitor(2000), 1000), 2);
 assert.strictEqual(V.statePeople(servitor(500), 1000), 1, 'an expired servitor is gone');
 assert.strictEqual(V.statePeople({ stats: {} }, 1000), 1);
 
+// The other's condition: fresh unless a visible cue; then HP rounded down to quarters.
+assert.deepStrictEqual([1, 0.99, 0.75, 0.6, 0.3, 0.1, 0].map(hp => V.seen(hp, true)), [1, 0.75, 0.75, 0.5, 0.25, 0.25, 0.25]);
+assert.strictEqual(V.seen(0.1, false), 1, 'no cue: assumed fresh');
+const live = (hp, state = {}, flag = 0) => ({ fetchHp: () => hp, fetchMaxHp: () => 100, fetchPvpFlag: () => flag, state });
+assert.strictEqual(V.actorSeen(live(40)), 1, 'hurt but nothing shows it');
+assert.strictEqual(V.actorSeen(live(40, { fetchSeated: () => true })), 0.25, 'sitting');
+assert.strictEqual(V.actorSeen(live(60, { fetchCombats: () => true })), 0.5, 'in combat stance');
+assert.strictEqual(V.actorSeen(live(80, {}, 1)), 0.75, 'a purple name');
+const coldOf = (hp, extra = {}) => ({ vitals: { hp, maxHp: 100 }, activity: 'hunting', stats: {}, ...extra });
+assert.strictEqual(V.stateSeen(coldOf(40), 1000), 1, 'cold hunting is no cue');
+assert.strictEqual(V.stateSeen(coldOf(40, { activity: 'resting' }), 1000), 0.25, 'cold resting');
+assert.strictEqual(V.stateSeen(coldOf(60, { stats: { coldPvp: { until: 2000 } } }), 1000), 0.5, 'a cold skirmish just ended');
+assert.strictEqual(V.stateSeen(coldOf(60, { stats: { coldPvp: { until: 500 } } }), 1000), 1, 'long ago');
+assert.deepStrictEqual(V.actorSide([live(50, { fetchSeated: () => true }), { ...live(100), summon: { isDead: () => false } }]),
+    { look: V.NOTHING, people: 3, strength: 0.5 + 1 + 1 });
+assert.deepStrictEqual(V.stateSide([coldOf(50, { activity: 'resting' })], 1000), { look: V.NOTHING, people: 1, strength: 0.5 });
+
 // Own condition is exact; the other side is assumed fresh.
 assert.strictEqual(V.condition(1, 1, 1, false, true), 1);
 assert.strictEqual(V.condition(1, 0, 1, false, false), 1, 'no CP pool is not a weakness');
@@ -84,6 +101,11 @@ assert.strictEqual(win(side(C), side(D, 2)).verdict, 'even', 'better gear agains
 assert.strictEqual(win(side(D, 2), side(C)).verdict, 'even', 'worse gear with more people cannot be told');
 assert.strictEqual(win(side(D, 2), side(C)).fight, true);
 assert.strictEqual(win(side(C, 1, 0.3), side(D)).verdict, 'stronger', 'own wounds do not hide a visible gap');
+// A visibly worn opponent: the even case weighs his seen condition, the gear verdict does not.
+const cautious = { caution: 0.8, assertiveness: 0.3 };
+assert.strictEqual(win(side(D), side(D), cautious).fight, false);
+assert.strictEqual(win(side(D), side(D, 1, 0.75), cautious).fight, true, 'the cautious take on a visibly worn equal');
+assert.strictEqual(win(side(D), side(C, 1, 0.25)).verdict, 'weaker', 'a worn but visibly stronger one still looks stronger');
 // Memory: fear asks for more.
 const feared = { ready: true, personal: { fear: 6 } };
 assert(Math.abs(V.fear(feared) - 0.2) < 1e-12);

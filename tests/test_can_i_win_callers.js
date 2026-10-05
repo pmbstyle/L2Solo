@@ -141,6 +141,17 @@ assert.strictEqual(defense({ ...fresh, ...armed('c') }, {}, { caution: 0.9, asse
 assert.strictEqual(defense(fresh, armed('c'), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: a visibly higher grade flees');
 assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',
     'defense: a visibly lower grade is fought even by the cautious');
+{
+    // A visibly worn attacker (combat stance, half HP) looks weaker in an even fight.
+    const own = hotSession(hotActor(fresh), { caution: 0.8, assertiveness: 0.3, empathy: 0.3 });
+    const enemy = hotActor({ hp: 50 });
+    hotSession(enemy);
+    World.user = { sessions: [own, enemy.session] };
+    invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee', 'defense: his wounds do not show');
+    enemy.state.fetchCombats = () => true;
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'fight', 'defense: a worn attacker in combat stance');
+}
 const pet = () => ({ summon: { isDead: () => false } });
 assert.strictEqual(defense(fresh, pet(), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: his summon is one more person');
 assert.strictEqual(defense({ ...fresh, ...pet() }, {}, { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',

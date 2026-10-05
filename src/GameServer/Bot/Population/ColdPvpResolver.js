@@ -32,7 +32,8 @@ function canOpen(fighters, openingSide, traits, fear, timestamp) {
     return Visible.canWin({
         own: { look: Visible.best(own.map(f => Visible.stateLook(f.state))), people: own.length + pets(own),
             strength: own.reduce((sum, f) => sum + condition(f), 0) + pets(own) },
-        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length + pets(other) },
+        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length + pets(other),
+            strength: other.reduce((sum, f) => sum + Visible.stateSeen(f.state, timestamp, f.vitals), 0) + pets(other) },
         traits, fear }).fight;
 }
 

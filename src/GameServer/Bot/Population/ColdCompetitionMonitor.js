@@ -165,8 +165,7 @@ class ColdCompetitionMonitor {
             if (!ab.ready || !ba.ready) { this.report.skipped.memory++; continue; }
             const decisionRolls = Array.from({ length: 4 }, () => rng());
             let decisionIndex = 0;
-            const look = unit => ({ ...unit, look: Visible.best(unit.members.map(Visible.stateLook)),
-                people: unit.members.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0) });
+            const look = unit => ({ ...unit, ...Visible.stateSide(unit.members, timestamp) });
             const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++] });
             // Cooling down a conflict must not prevent leaving the spot or cooperating.
