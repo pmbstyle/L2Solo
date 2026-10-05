@@ -94,10 +94,11 @@ function statePeople(state, timestamp) {
 }
 
 // What a player sees of another's condition: nothing (fresh, 1) unless a cue
-// shows he has been fighting or is recovering; then his HP rounded down to
-// quarters (1, 0.75, 0.5, 0.25).
+// shows he has been fighting or is recovering; then his HP rounded up to
+// quarters (76-100% = 1, 51-75% = 0.75, 26-50% = 0.5, else 0.25): a slightly
+// hurt fighter looks healthy, only clear damage shows.
 function seen(hpRatio, cue) {
-    return cue ? Math.max(0.25, Math.floor(clamp(hpRatio) * 4) / 4) : 1;
+    return cue ? Math.max(0.25, Math.ceil(clamp(hpRatio) * 4) / 4) : 1;
 }
 
 // Live cues: sitting, the combat stance (autoAttackStart is broadcast) or a

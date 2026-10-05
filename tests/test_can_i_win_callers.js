@@ -151,6 +151,8 @@ assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee', 'defense: his wounds do not show');
     enemy.state.fetchCombats = () => true;
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'fight', 'defense: a worn attacker in combat stance');
+    enemy.hp = 80;
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee', 'defense: a slightly hurt attacker looks healthy');
 }
 const pet = () => ({ summon: { isDead: () => false } });
 assert.strictEqual(defense(fresh, pet(), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: his summon is one more person');
