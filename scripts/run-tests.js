@@ -463,6 +463,7 @@ const tests = [
     'tests/test_bot_population_cooldown_cleanup.js',
     'tests/test_bot_cold_state_context.js',
     'tests/test_bot_pvp_risk.js',
+    'tests/test_can_i_win_callers.js',
     'tests/test_pk_hunting_state.js',
     'tests/test_pk_chat_guard.js',
     'tests/test_pk_profiles.js',
