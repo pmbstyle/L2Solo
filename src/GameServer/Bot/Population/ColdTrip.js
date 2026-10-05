@@ -127,6 +127,8 @@ function spotTripMs(state, to) {
 // `sharedMs`, a party's one trip time for every member (no walker).
 function toSpot(state, travel, timestamp = Date.now(), { durationMs = AUTHOR_TRIP_MS, sharedMs = 0, extraStats = {} } = {}) {
     const method = Karma.closesTowns(state.stats?.karma) ? 'walk' : 'gatekeeper_spot';
+    // A spot arrival is never logged as a town arrival (resolveTravel's default).
+    travel = { arrivalEvent: 'arrived_hunting_ground', ...travel };
     if (!honest()) return begin(state, { ...travel, method }, timestamp, durationMs, extraStats);
     if (sharedMs > 0) return begin(state, { ...travel, method }, timestamp, sharedMs, extraStats);
     const plan = spotPlan(state, travel.to);

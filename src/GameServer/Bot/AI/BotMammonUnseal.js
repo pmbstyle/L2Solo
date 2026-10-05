@@ -5,6 +5,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Compatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
+const TownRespawn = invoke('GameServer/World/TownRespawn');
 // A Mammon trip waits for every other errand to finish, as the other trips do.
 const BUSY_FLAGS = ['marketReturn', 'partyMarketReturn', 'marketStore', 'craftReturn', 'craftStationId',
     'supplyErrand', 'pvpEncounter'];
@@ -57,8 +58,10 @@ function beginTravel(state, timestamp = Date.now()) {
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || BotErrands.busyWith(state, BUSY_FLAGS)
         || Number(state.stats?.mammonRetryAt||0)>timestamp || !candidate(state)) return null;
+    const nearestTown = TownRespawn.getClosestTown(state.loc?.locX,state.loc?.locY,state.loc?.locZ);
     return invoke('GameServer/Bot/Population/ColdTrip').toTown(state, {to:{...Mammon.loc},
-        townName:'Giran',regionName:'Giran',arrivalActivity:'crafting',reason:'mammon_unseal',stationId:'Blacksmith of Mammon'},
+        townName:'Giran',regionName:'Giran',viaTown:nearestTown?.name || null,
+        arrivalActivity:'crafting',reason:'mammon_unseal',stationId:'Blacksmith of Mammon'},
         timestamp, {mammonReturn:{loc:{...state.loc},spotId:state.spotId,regionName:state.currentRegion}});
 }
 async function finish(state,timestamp=Date.now()) {
@@ -87,9 +90,11 @@ async function finish(state,timestamp=Date.now()) {
         else delete inventory[selfId];
     }
     const refreshed = await Life.refreshInventory({...state,inventory},{equip:true});
+    const returnTown = TownRespawn.getClosestTown(target.loc?.locX,target.loc?.locY,target.loc?.locZ);
     return invoke('GameServer/Bot/Population/ColdTrip').toSpot(refreshed, {from:{...state.loc},to:{...target.loc},
-        townName:target.regionName,regionName:target.regionName,spotId:target.spotId,
-        arrivalActivity:'hunting',reason:'mammon_unseal_return'},
+        townName:returnTown?.name || target.regionName || 'Hunting Ground',regionName:target.regionName,
+        viaTown:returnTown?.name || null,spotId:target.spotId,
+        arrivalActivity:'hunting',arrivalEvent:'returned_to_spot',reason:'mammon_unseal_return'},
         timestamp, {extraStats:{mammonReturn:null,mammonRetryAt:count?0:timestamp+300000}});
 }
 module.exports = {recipeFor,candidate,plan,execute,beginTravel,finish};

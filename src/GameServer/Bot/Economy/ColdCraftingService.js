@@ -107,11 +107,12 @@ function returnTrip(state, from, craftReturn, reason, timestamp) {
     return ColdTrip.toSpot(state, {
         from: { ...from },
         to: { ...craftReturn.loc },
-        townName: craftReturn.regionName || 'Hunting Ground',
+        townName: returnTown?.name || craftReturn.regionName || 'Hunting Ground',
         regionName: craftReturn.regionName || state.currentRegion,
         viaTown: returnTown?.name || null,
         spotId: craftReturn.spotId || null,
         arrivalActivity: 'hunting',
+        arrivalEvent: 'returned_to_spot',
         reason
     }, timestamp, { extraStats: { craftReturn: null } });
 }

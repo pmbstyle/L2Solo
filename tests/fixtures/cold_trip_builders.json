@@ -112,6 +112,7 @@
         "locY": 147904,
         "locZ": -3400
       },
+      "arrivalEvent": "returned_to_spot",
       "reason": "return_after_market",
       "to": {
         "locX": 116100,
@@ -123,7 +124,6 @@
       "townName": "Dwarven Village",
       "viaTown": "Dwarven Village",
       "arrivalActivity": "hunting",
-      "arrivalEvent": "returned_to_spot",
       "clearMarketReturn": true,
       "method": "gatekeeper_spot",
       "startedAt": 1000000,
@@ -208,12 +208,13 @@
         "locY": 148169,
         "locZ": -3592
       },
+      "arrivalEvent": "returned_to_spot",
       "to": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
-      "townName": "Dion fields",
+      "townName": "Dion",
       "regionName": "Dion fields",
       "viaTown": "Dion",
       "spotId": "pin_spot",
@@ -245,12 +246,13 @@
         "locY": 147904,
         "locZ": -3400
       },
+      "arrivalEvent": "returned_to_spot",
       "to": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
-      "townName": "Dion fields",
+      "townName": "Dion",
       "regionName": "Dion fields",
       "viaTown": "Dion",
       "spotId": "pin_spot",
@@ -282,12 +284,13 @@
         "locY": 147904,
         "locZ": -3400
       },
+      "arrivalEvent": "returned_to_spot",
       "to": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
-      "townName": "Dion fields",
+      "townName": "Dion",
       "regionName": "Dion fields",
       "viaTown": "Dion",
       "spotId": "pin_spot",
@@ -326,6 +329,7 @@
       },
       "townName": "Giran",
       "regionName": "Giran",
+      "viaTown": "Dion",
       "arrivalActivity": "crafting",
       "reason": "mammon_unseal",
       "stationId": "Blacksmith of Mammon",
@@ -367,13 +371,15 @@
         "locY": 149266,
         "locZ": -3405
       },
+      "arrivalEvent": "returned_to_spot",
       "to": {
         "locX": 22000,
         "locY": 140000,
         "locZ": -3000
       },
-      "townName": "Dion fields",
+      "townName": "Dion",
       "regionName": "Dion fields",
+      "viaTown": "Dion",
       "spotId": "pin_spot",
       "arrivalActivity": "hunting",
       "reason": "mammon_unseal_return",
@@ -403,6 +409,7 @@
         "locY": 140000,
         "locZ": -3000
       },
+      "arrivalEvent": "arrived_hunting_ground",
       "to": {
         "locX": 116000,
         "locY": -180000,
@@ -411,7 +418,6 @@
       "regionName": "Pinned hunting ground",
       "spotId": "19_-19",
       "arrivalActivity": "hunting",
-      "arrivalEvent": "arrived_hunting_ground",
       "reason": "level_replan",
       "method": "gatekeeper_spot",
       "startedAt": 1000000,
@@ -439,6 +445,7 @@
         "locY": 140000,
         "locZ": -3000
       },
+      "arrivalEvent": "party_arrived_hunting_ground",
       "to": {
         "locX": 116000,
         "locY": -180000,
@@ -447,7 +454,6 @@
       "regionName": "Pinned hunting ground",
       "spotId": "19_-19",
       "arrivalActivity": "grouped",
-      "arrivalEvent": "party_arrived_hunting_ground",
       "reason": "party_spot_replan",
       "method": "gatekeeper_spot",
       "startedAt": 1000000,
@@ -475,6 +481,7 @@
         "locY": 140000,
         "locZ": -3000
       },
+      "arrivalEvent": "arrived_hunting_ground",
       "to": {
         "locX": 39872,
         "locY": 140009,
@@ -484,7 +491,6 @@
       "spotId": "wash",
       "regionName": "Wash",
       "arrivalActivity": "hunting",
-      "arrivalEvent": "arrived_hunting_ground",
       "method": "walk",
       "startedAt": 1000000,
       "arrivalAt": 1148934
