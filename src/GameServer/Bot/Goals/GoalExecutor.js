@@ -31,7 +31,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     // An errand: a purchase another job planned in its town (ColdMarketService.acquire).
     const buyingErrand = goal.type === 'market_errand' && !!goal.plan?.marketTown;
     const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
-    const forcedInventoryCleanup = sellingInventory && !!(goal.target?.cleanupReason || goal.plan?.cleanupReason);
+    const cleanupReason = goal.target?.cleanupReason || goal.plan?.cleanupReason;
+    const forcedInventoryCleanup = sellingInventory && !!cleanupReason && cleanupReason !== 'inventory_half_full';
     if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory) return null;
     if (invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
