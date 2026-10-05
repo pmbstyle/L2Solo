@@ -7,6 +7,25 @@ const RaidBossState = invoke('GameServer/World/RaidBossState');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const NpcObjectIndex = require('./NpcObjectIndex');
+const CharacterLocationIndex = require('./CharacterLocationIndex');
+const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
+const userLocationIndexes = new WeakMap();
+
+function createUserLocationIndex(user) {
+    const runtime = { index: new CharacterLocationIndex(), sessions: new Map(), retiredActors: new WeakSet() };
+    userLocationIndexes.set(user, runtime);
+    return runtime;
+}
+
+function removeIndexedSession(runtime, session) {
+    const membership = runtime?.sessions.get(session);
+    if (!membership) return;
+    if (membership.actor) {
+        runtime.index.remove(membership.id, membership.actor);
+        runtime.retiredActors.add(membership.actor);
+    }
+    runtime.sessions.delete(session);
+}
 
 function actorLoc(actor) {
     return {
@@ -131,6 +150,7 @@ const World = {
         RaidBossMinionManager.stop(this);
         DayNightSpawnManager.stop(this);
         this.user  = { sessions : [], revision: 0 };
+        createUserLocationIndex(this.user);
         this.gameTime = GameTime;
         this.npc   = {
             spawns: [], grid: {}, nextId: 1000000,
@@ -153,8 +173,12 @@ const World = {
     },
 
     insertUser(session) {
+        const runtime = userLocationIndexes.get(this.user) ?? createUserLocationIndex(this.user);
         const exists = this.user.sessions.find((ob) => session.fetchAccountId() === ob.fetchAccountId());
-        if (exists) {
+        if (exists && exists !== session) {
+            // Retire before destroying the socket: synchronous/late cleanup
+            // from the previous session cannot alter its replacement.
+            removeIndexedSession(runtime, exists);
             if (exists.socket && typeof exists.socket.destroy === 'function') {
                 exists.socket.destroy();
             } else if (exists.socket && typeof exists.socket.resetAndDestroy === 'function') {
@@ -163,20 +187,75 @@ const World = {
             this.user.sessions = this.user.sessions.filter((ob) => session.fetchAccountId() !== ob.fetchAccountId());
             this.user.sessions.push(session);
         }
-        else {
+        else if (!exists) {
             this.user.sessions.push(session);
         }
+        // Explicit registration is authoritative, including reconnecting the
+        // same session/actor. Delayed setters alone cannot undo retirement.
+        if (session.actor) runtime.retiredActors.delete(session.actor);
+        if (!runtime.sessions.has(session)) runtime.sessions.set(session, { actor: null, id: null });
+        this.updateUserLocation(session);
         this.user.revision += 1;
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     },
 
     removeUser(session) {
+        removeIndexedSession(userLocationIndexes.get(this.user), session);
         const wasPresent = this.user.sessions.includes(session);
         this.user.sessions = this.user.sessions.filter((ob) => ob !== session);
         this.user.revision += 1;
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
         // Build the packet after removal so its online object ID becomes zero.
         if (wasPresent) invoke('GameServer/Clan/ClanService').broadcastMemberPresence(session.actor);
+    },
+
+    updateUserLocation(session, actor = session?.actor) {
+        const runtime = userLocationIndexes.get(this.user);
+        const membership = runtime?.sessions.get(session);
+        if (!membership || !actor || session.actor !== actor || runtime.retiredActors.has(actor)) return false;
+        if (membership.actor && membership.actor !== actor) this.retireUserActor(session, membership.actor);
+        if (actor.fetchIsOnline?.() === false) {
+            if (membership.actor === actor) runtime.index.remove(membership.id, actor);
+            return false;
+        }
+        const id = actor.fetchId?.();
+        const previous = runtime.index.get(id);
+        if (membership.actor === actor && membership.id !== id) runtime.index.remove(membership.id, actor);
+        const realPlayer = PlayerActivitySignal.isRealPlayerSession(session);
+        if (previous?.source === actor && previous.session === session) {
+            previous.realPlayer = realPlayer;
+            runtime.index.update(id, actor);
+        } else {
+            runtime.index.put({ id, source: actor, phase: 'hot', realPlayer, loc: () => actorLoc(actor), session });
+            if (previous && previous.source !== actor) {
+                // Only a successful replacement retires the old source. Its
+                // delayed movement must not reclaim the character ID.
+                runtime.retiredActors.add(previous.source);
+            }
+        }
+        membership.actor = actor;
+        membership.id = id;
+        return true;
+    },
+
+    retireUserActor(session, actor) {
+        const runtime = userLocationIndexes.get(this.user);
+        const membership = runtime?.sessions.get(session);
+        if (!membership || !actor || membership.actor !== actor) return false;
+        runtime.index.remove(membership.id, actor);
+        runtime.retiredActors.add(actor);
+        membership.actor = null;
+        membership.id = null;
+        return true;
+    },
+
+    realPlayerSessionsNear(loc, radius) {
+        const runtime = userLocationIndexes.get(this.user);
+        if (!runtime) throw new Error('character_location_index_uninitialized');
+        return runtime.index.near(loc, radius, { kind: 'player' })
+            .filter((record) => record.session.actor === record.source
+                && PlayerActivitySignal.isRealPlayerSession(record.session))
+            .map((record) => record.session);
     },
 
     fetchUser(id) {

@@ -9,6 +9,11 @@ class ActorModel extends CreatureModel {
 
     // Set
 
+    setLocXYZ(coords) {
+        super.setLocXYZ(coords);
+        if (this.session?.actor === this) invoke('GameServer/World/World').updateUserLocation?.(this.session, this);
+    }
+
     canReplenishVitals() {
         return this.model.isOnline === true
             && this.session?.actor === this
@@ -122,6 +127,7 @@ class ActorModel extends CreatureModel {
 
     setIsOnline(data) {
         this.model.isOnline = data;
+        if (this.session?.actor === this) invoke('GameServer/World/World').updateUserLocation?.(this.session, this);
     }
 
     setPrivateStoreType(data) {
