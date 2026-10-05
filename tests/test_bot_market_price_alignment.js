@@ -86,7 +86,7 @@ try {
         let next = buyer;
         for (let i = 0; i < 3; i += 1) {
             next = { ...next, stats: { ...next.stats, huntEfficiency: Efficiency.record(next, { spotId: 'field',
-                exp: 1000, combatMs: 60000, adena: perKill * 8, loot: perKill * 2, kills: 10, timestamp: 1000 }) } };
+                exp: 1000, cycleMs: 60000, adena: perKill * 8, loot: perKill * 2, kills: 10, timestamp: 1000 }) } };
         }
         return next;
     };

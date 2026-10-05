@@ -269,8 +269,10 @@ const coldSummonerResult = BackgroundResolver.resolveSolo({
 assert(coldSummonerResult.debug.summonUses > 0, 'cold summoner combat must cast its servitor before attacking');
 assert(!coldSummonerResult.patch.inventory?.[1459], 'cold bot summoning must not require or consume crystals');
 assert(coldSummonerResult.patch.stats.coldCombat.summon?.active, 'the cold summon must survive in the persisted combat state');
-assert(coldSummonerResult.patch.stats.huntEfficiency.some(sample => sample.cycleMs > 0
-    && sample.source === 'cold_combat_and_estimated_recovery'), 'actual cold resolution records its bounded cycle cost for later hunt planning');
+const coldSummonerRound = invoke('GameServer/Bot/AI/BotHuntEfficiency').recordRound(coldSummoner, coldSummonerResult,
+    { exp: coldSummonerResult.materialize.exp, timestamp });
+assert(coldSummonerRound.huntEfficiency.some(sample => sample.cycleMs === coldSummonerResult.nextResolveAt - timestamp
+    && sample.source === 'cold_round'), 'actual cold resolution records the time until its next round for later hunt planning');
 assert(coldSummonerResult.patch.stats.coldCombat.summon.pAtk >= 342,
     'cold Kai the Cat must use the sourced NPC attack instead of the owner-scaled fallback');
 

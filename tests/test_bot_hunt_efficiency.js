@@ -5,7 +5,7 @@ const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const at = Date.now();
 let state = { level:40,stats:{classId:9},inventory:{1:{selfId:1,equipped:true}} };
 function sample(spotId,exp,combatMs,recoveryMs=0) {
-    state={...state,stats:{...state.stats,huntEfficiency:Efficiency.record(state,{spotId,exp,combatMs,recoveryMs,timestamp:at})}};
+    state={...state,stats:{...state.stats,huntEfficiency:Efficiency.record(state,{spotId,exp,cycleMs:combatMs+recoveryMs,timestamp:at})}};
 }
 for(let i=0;i<3;i++) {sample('sustainable',100,10000);sample('costly',200,10000,90000);}
 const scores=Efficiency.scores(state,at);
@@ -41,15 +41,15 @@ function earner(characterId, level, hunts) {
 }
 // 60 s cycles: 9,000 adena + 1,000 loot in 10 kills = 600,000 per hour, 1,000 per kill, 100 exp = 6,000 exp per hour.
 // The poor spot gives more exp (18,000 per hour) but less income.
-const rich = earner(1, 35, [{ spotId: 'rich', combatMs: 50000, recoveryMs: 10000, adena: 9000, loot: 1000, kills: 10 },
-    { spotId: 'poor', combatMs: 60000, adena: 1000, loot: 0, kills: 10, exp: 300 }]);
+const rich = earner(1, 35, [{ spotId: 'rich', cycleMs: 60000, adena: 9000, loot: 1000, kills: 10 },
+    { spotId: 'poor', cycleMs: 60000, adena: 1000, loot: 0, kills: 10, exp: 300 }]);
 const row = rich.stats.huntEfficiency.find((entry) => entry.spotId === 'rich');
 assert.deepStrictEqual([row.adena, row.loot, row.kills], [9000, 1000, 10], 'record keeps adena, loot value and kills');
 assert.deepStrictEqual(Efficiency.hourValue(rich, at), { perHour: 600000, perKill: 1000, expPerHour: 6000, source: 'own' },
     'the best of the bot\'s rows, per hour of the hunt cycle and per kill, with the exp per hour of that same row');
 assert.strictEqual(Efficiency.hourValue(rich, at, 'party').source, 'level_band', 'solo samples do not value a party hour');
-earner(2, 32, [{ spotId: 'a', combatMs: 60000, adena: 1000, loot: 0, kills: 5 }]);
-earner(3, 39, [{ spotId: 'a', combatMs: 60000, adena: 3000, loot: 0, kills: 5, exp: 400 }]);
+earner(2, 32, [{ spotId: 'a', cycleMs: 60000, adena: 1000, loot: 0, kills: 5 }]);
+earner(3, 39, [{ spotId: 'a', cycleMs: 60000, adena: 3000, loot: 0, kills: 5, exp: 400 }]);
 // Band 30-39 holds 600,000, 60,000 and 180,000 per hour: the median is 180,000 (600 per kill);
 // exp per hour 6,000, 6,000 and 24,000: the median is 6,000.
 // A band read just before (the party check above) is re-sorted after new samples at most once a minute.

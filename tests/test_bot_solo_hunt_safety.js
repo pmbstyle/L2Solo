@@ -162,7 +162,7 @@ async function run() {
     assert(next.stats.huntingRecovery.levelPenalty > 0);
     let losing = { ...state, stats: { ...state.stats } };
     for (let i = 0; i < 3; i++) losing.stats.huntEfficiency = Efficiency.record(losing,
-        { spotId: 'danger', exp: -100, combatMs: 10000, timestamp: at });
+        { spotId: 'danger', exp: -100, cycleMs: 10000, timestamp: at });
     assert(Efficiency.scores(losing, at).get('danger') < 0, 'an exclusively losing history still lowers its route score');
     const legacy = { ...losing, stats: { ...losing.stats, huntEfficiency: losing.stats.huntEfficiency
         .map(row => ({ ...row, signature: row.signature.replace('net-xp-v1:', ''), exp: 10000 })) } };

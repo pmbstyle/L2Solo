@@ -2426,19 +2426,14 @@ const BotLifeState = {
                         wins: Number(result.debug?.wins || 0), exp,
                         expBeforeDeath: experienceAward.totalExp,
                         pressure: soloPressure
-                    }),
-                    ...(Number(result.debug?.combatMs) > 0 ? {
-                        // The lifecycle owns actual death penalties and capped XP.
-                        // Replace the resolver's provisional gross reward sample.
-                        huntEfficiency: invoke('GameServer/Bot/AI/BotHuntEfficiency').record(state, {
-                            spotId: nextSpotId, timestamp, exp: exp - Number(state.exp || 0),
-                            adena: Number(result.materialize?.adena || 0),
-                            loot: Number(result.debug.lootValue || 0), kills: Number(result.debug.wins || 0),
-                            combatMs: result.debug.combatMs,
-                            recoveryMs: Math.max(0, Number(result.patch?.stats?.restUntil || timestamp) - timestamp)
-                        })
-                    } : {})
+                    })
                 } : {}),
+                // The one record of a hunting round, solo or a party member's
+                // own share; the lifecycle owns actual death penalties and
+                // capped XP, so the sample takes the net exp.
+                ...invoke('GameServer/Bot/AI/BotHuntEfficiency').recordRound(state, result, {
+                    spotId: nextSpotId, timestamp, exp: exp - Number(state.exp || 0)
+                }),
                 // Party combat carries a projected combat snapshot in patch.stats.
                 // Keep lifecycle telemetry from this resolve authoritative over
                 // that snapshot, which still contains the previous tick's data.

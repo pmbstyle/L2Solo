@@ -1884,13 +1884,9 @@ const BackgroundResolver = {
             }
         }
 
-        const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-        const lootValue = HuntEfficiency.lootValue(materialize.items);
-        patch.stats.huntEfficiency = HuntEfficiency.record(state, {
-            spotId:spot.id,combatMs,exp:materialize.exp,timestamp,
-            adena:materialize.adena,loot:lootValue,kills:wins,
-            recoveryMs:Math.max(0,Number(patch.stats.restUntil || timestamp)-timestamp)
-        });
+        // The round's sample is recorded once its lifecycle is applied
+        // (BotLifeState.prepareResolve): net exp, until the next round.
+        const lootValue = invoke('GameServer/Bot/AI/BotHuntEfficiency').lootValue(materialize.items);
         if (wins > 0 && !died) {
             events.push({
                 type: 'hunt',

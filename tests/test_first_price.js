@@ -43,7 +43,7 @@ assert(first.price >= NpcSellRules.npcBuyPrice(basePrice) && first.price <= base
 function band(level, perKill) {
     let bot = { characterId: 7000 + perKill, level, stats: { classId: 1 }, inventory: { 1: { selfId: 1, equipped: true } } };
     for (let i = 0; i < 3; i++) {
-        bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Efficiency.record(bot, { spotId: 'x', exp: 100, combatMs: 60000,
+        bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Efficiency.record(bot, { spotId: 'x', exp: 100, cycleMs: 60000,
             adena: perKill * 10, loot: 0, kills: 10, timestamp: 1000 }) } };
     }
 }
