@@ -159,12 +159,14 @@ function learn(belief, observations) {
 
 // Exact own fills belong to this line, not the bounded item-deal tail.
 // Other item deals and the current rival already enter the fresh prior.
-function lineObservations(line, belief, ctx, openLines) {
+// Every other deal of its counter passed this line; competing listings do
+// not divide that evidence.
+function lineObservations(line, belief, ctx) {
     const previous = line.pricing;
     const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
     const fills = Math.max(0, Number(line.fills || 0) - Number(previous.seenFills || 0));
     const passed = Math.min(PASSED_MAX, Math.max(0,
-        (counter.deals - previous.seenCounter) / Math.max(1, openLines) - fills));
+        counter.deals - previous.seenCounter - fills));
     const price = Number(previous.price);
     const observations = [];
     if (price > 0) {

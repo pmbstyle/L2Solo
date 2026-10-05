@@ -138,10 +138,7 @@ function look(state, lines, ctx) {
         if (counter.deals <= line.pricing.seenCounter) continue;
         const belief = PriceBelief.prior(line.selfId, ctx);
         if (!belief) continue;
-        const openLines = line.storeType === BUY
-            ? ctx.board?.list(line.selfId, BUY).length || 1
-            : ctx.board?.linesIn(MarketCounters.counterOf(line.selfId)) || 1;
-        PriceBelief.learn(belief, PriceBelief.lineObservations(line, belief, ctx, openLines));
+        PriceBelief.learn(belief, PriceBelief.lineObservations(line, belief, ctx));
         const market = marketFor(line.selfId, ctx, { town: line.town, units: line.count });
         const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
             expectedRevision: line.revision, previousPricing: { ...line.pricing } };

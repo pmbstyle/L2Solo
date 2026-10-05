@@ -15,6 +15,7 @@ const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 const { BoardIndex, SELL, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 const ITEM = 999999;
+const OTHER = 999998;
 const now = 1800000000000;
 const original = {
     itemDeals: MarketCounters.itemDeals, counter: MarketCounters.counter,
@@ -23,9 +24,11 @@ const original = {
 };
 let counterDeals = 100;
 let counterPerHour = 4;
+let otherCounterDeals = 500;
 let seenBeliefs = [];
-MarketCounters.counterOf = () => 'material none';
-MarketCounters.counter = () => ({ deals: counterDeals, index: 0, perHour: counterPerHour });
+MarketCounters.counterOf = (selfId) => Number(selfId) === OTHER ? 'gear d' : 'material none';
+MarketCounters.counter = (key) => ({ deals: key === 'gear d' ? otherCounterDeals : counterDeals,
+    index: 0, perHour: counterPerHour });
 // The recent tail contains no own fill: exact evidence must come from the line.
 MarketCounters.itemDeals = () => ({ deals: counterDeals, prices: [], sellers: [], buyers: [] });
 MarketCounters.firstPrice = () => 1000;
@@ -45,6 +48,7 @@ function fixture(side = SELL, rows = [{ fills: 0 }]) {
     seenBeliefs = [];
     counterDeals = 100;
     counterPerHour = 4;
+    otherCounterDeals = 500;
     const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
     const lines = rows.map((row, index) => ({
         recordId: index + 1, lineId: index + 1, revision: 7, ownerId: 43,
@@ -96,10 +100,35 @@ try {
         assert.strictEqual(reviewed.updates.length, 2);
         assert(seenBeliefs[0].mu > Math.log(1000), 'the filled line sees sales not below its price');
         assert(seenBeliefs[1].mu < Math.log(1000), 'the other own same-item line sees only passed buyers');
-        assert(Math.abs(seenBeliefs[0].K - 41.8) < 1e-9, 'all 41 fills counted beyond the public tail');
+        assert(Math.abs(seenBeliefs[0].K - 42.8) < 1e-9, 'all 41 own fills and one other trade counted beyond the public tail');
         assert.strictEqual(reviewed.updates[0].pricing.seenFills, 41);
         assert.strictEqual(reviewed.updates[1].pricing.seenFills, 0);
         assert.deepStrictEqual(lines[0].pricing.seenFills, 0, 'evaluator never mutates caller line state');
+    });
+    contract('all other counter deals are passed evidence despite many open lines', () => {
+        for (const side of [SELL, BUY]) {
+            const { state, lines, ctx } = fixture(side, [{ fills: 1 }]);
+            for (let index = 0; index < 9; index++) ctx.board.put({ id: 100 + index, ownerId: 100 + index,
+                storeType: side, town: 'Giran', lines: [{ lineId: 100 + index, selfId: ITEM, count: 100, price: 1000 }] });
+            assert.strictEqual(ctx.board.list(ITEM, side).length, 10, 'ten competing lines');
+            counterDeals += 10;
+            const reviewed = MarketPricing.look(state, lines, ctx);
+            assert.strictEqual(reviewed.updates.length, 1);
+            assert(Math.abs(seenBeliefs[0].K - 11.8) < 1e-9,
+                `side ${side}: weight must include nine passed trades plus one own fill, got ${seenBeliefs[0].K}`);
+            assert(side === BUY ? seenBeliefs[0].mu > Math.log(1000) : seenBeliefs[0].mu < Math.log(1000),
+                'nine passed trades outweigh the opposite observation from one own fill');
+        }
+    });
+    contract('other counter trades create no evidence for this line', () => {
+        const { state, lines, ctx } = fixture();
+        ctx.board.put({ id: 99, ownerId: 99, storeType: SELL, town: 'Giran',
+            lines: [{ lineId: 99, selfId: OTHER, count: 100, price: 1000 }] });
+        otherCounterDeals += 250;
+        assert.strictEqual(MarketCounters.counter('gear d').deals, 750);
+        assert.strictEqual(MarketPricing.look(state, lines, ctx), null);
+        assert.strictEqual(seenBeliefs.length, 0);
+        assert.strictEqual(lines[0].pricing.seenCounter, 100, 'own counter cursor unchanged');
     });
     contract('BUY mirrors line evidence and keeps authored buyer worth', () => {
         const { state, lines, ctx } = fixture(BUY, [{ fills: 4 }, { fills: 0 }]);
