@@ -227,8 +227,9 @@ function takeItem(actor, selfId, amount, item = actor.backpack.fetchItemFromSelf
     });
 }
 
-// The AFK buy order in this town that pays most for the actor's sellable
-// items, as { offer, score }, or null.
+// The AFK buy shop in this town that pays most for the actor's sellable
+// items, as { offer, score }, or null. A hot bot walks to the shop's stall; a
+// buy ad stands nowhere, so the trip never takes one (E40).
 function findAfkBuyerForActor(actor, town, state = null) {
     const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
     let best = null;
@@ -236,7 +237,8 @@ function findAfkBuyerForActor(actor, town, state = null) {
         const offer = MarketOpportunity.findBuyOffers(item.fetchSelfId(), {
             town: town?.name,
             sellerCharacterId: actor.fetchId()
-        }).find((candidate) => ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
+        }).find((candidate) => candidate.projection?.actor
+            && ['afk_player_buy_store', 'afk_bot_buy_store'].includes(candidate.sourceType));
         if (!offer) return;
         const qty = Math.min(Number(item.fetchAmount?.() || 0), Number(offer.count || 0));
         if (qty <= 0) return;
