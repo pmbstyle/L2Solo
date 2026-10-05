@@ -115,13 +115,36 @@ function defense(ownOptions, enemyOptions, traits) {
     invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     return Risk.defenseDecision(own, [enemy]);
 }
-assert.strictEqual(defense({}, {}).action, 'fight', 'defense: equal fights');
-assert.strictEqual(defense({}, { level: 60 }).action, 'flee', 'defense: a hidden higher level flees');
-assert.strictEqual(defense({}, { gear: 100000000 }).action, 'flee', 'defense: a hidden expensive kit flees');
-assert.strictEqual(defense({ hp: 20 }, {}).action, 'flee', 'defense: own low HP flees');
-assert.strictEqual(defense({}, {}, { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'flee', 'defense: cautious flees from an equal');
-assert.strictEqual(defense({}, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).reasons[0], 'avoids_pvp', 'defense: the never-fight trio');
-assert.strictEqual(defense({}, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).action, 'flee');
+// U26: own side exact, the other side by its look; levels and prices are hidden.
+const fresh = { cp: 100 };
+const armed = rank => ({ items: [{ fetchSelfId: () => 1, fetchPrice: () => 0, fetchEquipped: () => true, fetchSlot: () => 7,
+    fetchRank: () => rank, fetchEnchantLevel: () => 0 }] });
+assert.strictEqual(defense(fresh, {}).action, 'fight', 'defense: an even look fights (calm)');
+assert.strictEqual(defense({}, {}).action, 'flee', 'defense: own CP gone, the attacker assumed fresh: calm flees');
+assert.strictEqual(defense(fresh, { level: 60 }).action, 'fight', 'defense: a hidden higher level is not seen');
+assert.strictEqual(defense(fresh, { gear: 100000000 }).action, 'fight', 'defense: a hidden expensive kit is not seen');
+assert.strictEqual(defense({ ...fresh, hp: 20 }, {}).action, 'flee', 'defense: own low HP flees');
+assert.strictEqual(defense(fresh, {}, { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'flee', 'defense: cautious flees from an even look');
+assert.strictEqual(defense(fresh, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).reasons[0], 'avoids_pvp', 'defense: the never-fight trio');
+assert.strictEqual(defense({ ...fresh, ...armed('c') }, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).action, 'flee',
+    'defense: the trio never fights, even visibly stronger');
+assert.strictEqual(defense(fresh, armed('c'), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: a visibly higher grade flees');
+assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',
+    'defense: a visibly lower grade is fought even by the cautious');
+{
+    const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    const MemoryPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
+    const own = hotSession(hotActor(fresh)), enemy = hotActor();
+    hotSession(enemy);
+    World.user = { sessions: [own, enemy.session] };
+    invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'fight');
+    const now = Date.now();
+    const memory = MemoryPolicy.apply(MemoryPolicy.empty(own.actor.id), { key: 'u26-killed', at: now, type: 'killed',
+        sourceId: own.actor.id, targetId: enemy.id }, now).snapshot;
+    Memory.accept(memory);
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee', 'defense: fear of the one who killed me');
+}
 
 // ---- 4. Hot PK sighting.
 const sighting = (botLevel, threatLevel, extra = {}) => Risk.evaluate({ botLevel, threatLevel, hpRatio: 1, mpRatio: 1, role: 'dps', ...extra });

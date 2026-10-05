@@ -104,8 +104,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
         }
     }
     session.lastPvpDecision = { action: encounter.action, score: encounter.score, reasons: encounter.reasons,
-        own: encounter.own, enemies: encounter.enemies, requiredRatio: encounter.requiredRatio,
-        allyPower: encounter.allyPower, enemyIds: encounter.enemyIds,
+        verdict: encounter.verdict, requiredRatio: encounter.requiredRatio, enemyIds: encounter.enemyIds,
         threatId: target.fetchId(), threatName: target.fetchName?.(),
         targets: threats.map(entry => entry.actor.fetchId()),
         allies: context.members.filter(member => member !== session).map(member => member.actor.fetchId()),

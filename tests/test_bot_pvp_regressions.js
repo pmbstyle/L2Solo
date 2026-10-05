@@ -53,7 +53,8 @@ function actor(id, options = {}) {
             fetchCombats: () => true },
         automation: { abortAll() { value.moving = false; }, replenishVitals() {} },
         skillset: { fetchSkills: () => value.skills, get skills() { return value.skills; }, fetchSkill: id => value.skills.find(skill => skill.fetchSelfId() === id) },
-        backpack: { fetchItems: () => [{ fetchSelfId: () => 999999, fetchPrice: () => value.gear, fetchEquipped: () => true }],
+        backpack: { fetchItems: () => [{ fetchSelfId: () => 999999, fetchPrice: () => value.gear, fetchEquipped: () => true,
+            fetchSlot: () => 7, fetchRank: () => value.rank || 'none' }],
             fetchEquippedArmors: () => [] }
     });
 }
@@ -120,10 +121,12 @@ Potions.tryUseInCombat = () => false;
     assert(!own.pvpDefense);
 }
 {
-    const { bot, own, enemy } = setup({ level: 80 });
+    // U26: the fight is decided one against one (levels are hidden); the second
+    // attacker joins the encounter already under way.
+    const { bot, own, enemy } = setup({ cp: 100 });
     const extra = actor(nextId++, { level: 45, flag: 1 });
     World.user.sessions.push(session(extra, { accountId: 'player', aiActive: false }));
-    Threats.record(bot, enemy, now); Threats.record(bot, extra, now); tick(own);
+    Threats.record(bot, enemy, now); tick(own); Threats.record(bot, extra, now); tick(own);
     extra.hp = 20;
     extra.effects.sleep = { key: 'sleep', type: 'debuff', expiresAt: Date.now() + 10000 };
     tick(own);
@@ -170,7 +173,9 @@ Potions.tryUseInCombat = () => false;
 }
 {
     Chat.reset(); Ambient.reset();
-    const { bot, own, enemy } = setup(); enemy.level = 10;
+    // U26: the remembered killer is feared; a visibly better weapon (not a hidden
+    // level) is what makes the revenge winnable.
+    const { bot, own, enemy } = setup({ rank: 'c' });
     grievance(own, enemy);
     Ambient.record(own, 'conversation', now);
     assert(Chat.canSend(own, 'revenge', now), 'ordinary conversation does not consume the conflict budget');
@@ -209,7 +214,7 @@ Potions.tryUseInCombat = () => false;
         Chat.reset();
         const { bot, own, enemy } = setup(); enemy.level = 10;
         grievance(own, enemy);
-        const strong = actor(nextId++, { level: 80, gear: 10000000, flag: 1 });
+        const strong = actor(nextId++, { rank: 'c', flag: 1 }); // U26: visibly stronger, not a hidden level and price
         World.user.sessions.push(session(strong, { accountId: 'player2' }));
         Chat.record(session(actor(nextId++)), 'revenge', now);
         Revenge.request(own, enemy, 'revenge', ['Pending revenge warning.'], true, now, () => 0);
@@ -230,7 +235,7 @@ Potions.tryUseInCombat = () => false;
     Chat.reset();
 }
 {
-    const { bot, own, enemy } = setup({ level: 10 }); enemy.level = 80;
+    const { bot, own, enemy } = setup(); enemy.rank = 'c'; // U26: visibly stronger, not a hidden level
     const summon = actor(nextId++, { level: 10, x: 400, controlMode: 'attack', attackTargetId: 12345, hits: true, moving: true });
     summon.fetchOwnerId = () => bot.id;
     summon.fetchKind = () => 'Summon';

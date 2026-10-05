@@ -26,7 +26,8 @@ function character(bot = true, level = 40) {
             fetchTowards: () => false, setHits() {}, setCasts() {} },
         automation: { abortAll() {} },
         skillset: { fetchSkills: () => [] },
-        backpack: { fetchItems: () => [{ fetchEquipped: () => true, fetchSelfId: () => 999999, fetchPrice: () => a.gear }] }
+        backpack: { fetchItems: () => [{ fetchEquipped: () => true, fetchSelfId: () => 999999, fetchPrice: () => a.gear,
+            fetchSlot: () => 7, fetchRank: () => a.rank || 'none' }] }
     };
     a.session = { actor: a, aiActive: bot, accountId: bot ? `bot_${a.id}` : 'player', plan: 'hunting',
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } },
@@ -115,9 +116,10 @@ try {
     bot.fakeDeath = true;
     assert(!Revenge.tryStart(bot.session, now, () => 0), 'incapacitated bots must not announce or initiate revenge');
     bot.fakeDeath = false;
-    bot.level = 1; foe.level = 80;
-    assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge must use the same level and gear risk evaluation');
-    bot.level = 80; foe.level = 1; bot.session.nextRevengeScanAt = 0;
+    // U26: levels are hidden; a visibly higher weapon grade is what a player sees.
+    bot.rank = 'none'; foe.rank = 'c'; bot.backpack.visibleLook = foe.backpack.visibleLook = null;
+    assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge must use the same visible-strength risk evaluation');
+    bot.rank = 'c'; foe.rank = 'none'; bot.backpack.visibleLook = foe.backpack.visibleLook = null; bot.session.nextRevengeScanAt = 0;
     bot.session.persona.traits = { caution: 0.9, assertiveness: 0.1, empathy: 0.9 };
     assert(!Revenge.tryStart(bot.session, now, () => 0), 'a PvP-averse personality must refuse revenge');
     bot.session.persona.traits = { caution: 0.3, assertiveness: 0.8, empathy: 0.4 };

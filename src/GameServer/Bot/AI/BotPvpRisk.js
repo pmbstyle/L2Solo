@@ -114,40 +114,64 @@ function combatStrength(actor, { includeSummon = true } = {}) {
     return { level, gearValue, hpRatio, mpRatio, cpRatio, combatFactor, supplyFactor, summonPower, power };
 }
 
-function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
+// The threats and their party members near them: the people a defender sees.
+function opponentsOf(session, threats) {
     const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
-    const own = combatStrength(session.actor);
-    const allies = Threats.members(session).filter(member => member !== session && allyAllowed(member) &&
-        !Threats.inPeace(member.actor) && Threats.distance(session.actor, member.actor) <= Threats.PARTY_RADIUS);
     const opponents = new Map(threats.map(actor => [actorId(actor), actor]));
     for (const threat of threats) for (const member of Threats.members(threat.session)) {
         if (member.actor !== session.actor && !sameParty(session, member) && !sameClan(session.actor, member.actor) &&
             !Threats.inPeace(member.actor) && Threats.distance(threat, member.actor) <= Threats.PARTY_RADIUS) opponents.set(actorId(member.actor), member.actor);
     }
-    const enemies = [...opponents.values()].map(actor => combatStrength(actor));
-    const enemyPower = enemies.reduce((sum, entry) => sum + entry.power, 0);
-    const allyPower = allies.reduce((sum, member) => sum + combatStrength(member.actor).power, 0);
-    const strengthRatio = (own.power + allyPower) / Math.max(1, enemyPower);
+    return opponents;
+}
+
+// One's own condition, exact (Social/VisibleStrength.condition).
+function condition(actor) {
+    const maxCp = Number(actor?.fetchMaxCp?.() || 0);
+    return Visible.condition(ratio(actor?.fetchHp?.(), actor?.fetchMaxHp?.()), ratio(actor?.fetchCp?.(), maxCp, 0),
+        ratio(actor?.fetchMp?.(), actor?.fetchMaxMp?.()), invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(actor), maxCp > 0);
+}
+
+// How much the bot fears the most feared of these characters (interaction memory).
+function fearOf(actor, others, now = Date.now()) {
+    const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
+    const self = actorId(actor);
+    let fear = 0;
+    for (const other of others) {
+        const id = actorId(other);
+        if (self > 0 && id > 0 && id !== self) fear = Math.max(fear, Visible.fear(Memory.assess({ id: self }, { id }, {}, now)));
+    }
+    return fear;
+}
+
+// Can I win? Own side exactly, the other side by what a player sees (U26).
+function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
+    const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
+    const allies = Threats.members(session).filter(member => member !== session && allyAllowed(member) &&
+        !Threats.inPeace(member.actor) && Threats.distance(session.actor, member.actor) <= Threats.PARTY_RADIUS);
+    const opponents = opponentsOf(session, threats);
     const voice = invoke('GameServer/Bot/AI/BotChatVoice');
-    const caution = voice.trait(session, 'caution');
-    const assertiveness = voice.trait(session, 'assertiveness');
-    const empathy = voice.trait(session, 'empathy');
-    const avoidsPvp = Visible.avoidsPvp({ caution, assertiveness, empathy });
-    const requiredRatio = avoidsPvp ? Infinity : (0.9 + 0.55 * caution - 0.35 * assertiveness)
-        * Aggression.retreatMultiplier(Config.pvpAggression);
+    const traits = { caution: voice.trait(session, 'caution'), assertiveness: voice.trait(session, 'assertiveness'),
+        empathy: voice.trait(session, 'empathy') };
+    const avoidsPvp = Visible.avoidsPvp(traits);
+    const own = [session.actor, ...allies.map(member => member.actor)];
+    const verdict = Visible.canWin({
+        own: { look: Visible.best(own.map(Visible.actorLook)), people: own.length,
+            strength: own.reduce((sum, actor) => sum + condition(actor), 0) },
+        other: { look: Visible.best([...opponents.values()].map(Visible.actorLook)), people: opponents.size },
+        traits, fear: fearOf(session.actor, threats) });
+    const fight = !avoidsPvp && verdict.fight;
     return {
-        action: strengthRatio >= requiredRatio ? 'fight' : 'flee',
-        score: Math.round(strengthRatio * 100) / 100,
-        own,
-        allyPower,
+        action: fight ? 'fight' : 'flee',
+        score: verdict.ratio,
+        verdict: verdict.verdict,
         allyIds: allies.map(member => actorId(member.actor)),
         enemyIds: [...opponents.keys()],
-        enemies,
-        requiredRatio: Number.isFinite(requiredRatio) ? requiredRatio : null,
-        reasons: [avoidsPvp ? 'avoids_pvp' : strengthRatio >= requiredRatio ? 'can_win' : 'outmatched', 'self_defense'],
-        criticalFleeChance: Aggression.retreatChance(0.15 + 0.45 * caution
+        requiredRatio: avoidsPvp ? null : verdict.required,
+        reasons: [avoidsPvp ? 'avoids_pvp' : fight ? 'can_win' : 'outmatched', 'self_defense'],
+        criticalFleeChance: Aggression.retreatChance(0.15 + 0.45 * traits.caution
             + 0.25 * (1 - voice.trait(session, 'resilience')), Config.pvpAggression)
     };
 }
 
-module.exports = { evaluate, isCombatAlly, sameClan, sameParty, combatStrength, defenseDecision };
+module.exports = { evaluate, isCombatAlly, sameClan, sameParty, combatStrength, defenseDecision, opponentsOf, fearOf };

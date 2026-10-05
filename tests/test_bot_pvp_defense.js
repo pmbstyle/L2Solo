@@ -45,7 +45,8 @@ function actor(id, options = {}) {
             fetchCombats: () => true },
         automation: { abortAll() { value.moving = false; }, replenishVitals() {} },
         skillset: { fetchSkills: () => value.skills, get skills() { return value.skills; }, fetchSkill: id => value.skills.find(skill => skill.fetchSelfId() === id) },
-        backpack: { fetchItems: () => [{ fetchSelfId: () => 999999, fetchPrice: () => value.gear, fetchEquipped: () => true }],
+        backpack: { fetchItems: () => [{ fetchSelfId: () => 999999, fetchPrice: () => value.gear, fetchEquipped: () => true,
+            fetchSlot: () => 7, fetchRank: () => value.rank || 'none' }],
             fetchEquippedArmors: () => [] }
     });
 }
@@ -84,11 +85,13 @@ assert.strictEqual(GearValue.equipmentValue([{ selfId: 999999, price: 123 }]), O
 {
     const { own, bot, enemy } = setup();
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'fight');
-    enemy.gear = 100000000;
+    // U26: the price of his kit and his level are hidden; his weapon grade shows.
+    enemy.gear = 100000000; enemy.level = 60;
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'fight');
+    enemy.rank = 'c'; enemy.backpack.visibleLook = null;
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee');
-    enemy.gear = bot.gear; enemy.level = 60;
-    assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee');
-    enemy.level = bot.level; bot.hp = 20;
+    enemy.gear = bot.gear; enemy.level = bot.level; enemy.rank = 'none'; enemy.backpack.visibleLook = null;
+    bot.hp = 20;
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee');
     bot.hp = 100; bot.classId = 10; bot.mp = 5;
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee');

@@ -29,7 +29,8 @@ function character(bot = true, level = 40) {
             fetchTowards: () => false, setHits() {}, setCasts() {} },
         automation: { abortAll() {} },
         skillset: { fetchSkills: () => [] },
-        backpack: { fetchItems: () => [{ fetchEquipped: () => true, fetchSelfId: () => 999999, fetchPrice: () => a.gear }] }
+        backpack: { fetchItems: () => [{ fetchEquipped: () => true, fetchSelfId: () => 999999, fetchPrice: () => a.gear,
+            fetchSlot: () => 7, fetchRank: () => a.rank || 'none' }] }
     };
     a.session = { actor: a, aiActive: bot, accountId: bot ? `bot_${a.id}` : 'player', plan: 'hunting',
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } },
@@ -282,7 +283,7 @@ try {
         'player-led companions preserve their existing combat coordination');
     for (const mode of ['outmatched', 'pvp_averse']) {
         const x = setup();
-        if (mode === 'outmatched') { x.bot.level = 1; x.rival.level = 80; }
+        if (mode === 'outmatched') x.rival.rank = 'c'; // U26: a visibly higher grade, not a hidden level
         else x.bot.session.persona.traits = { assertiveness: 0.1, caution: 0.9, empathy: 0.9 };
         Competition.record(x.bot, x.mob, now);
         assert(!Competition.record(x.rival, x.mob, now + 1, () => 0), mode);
