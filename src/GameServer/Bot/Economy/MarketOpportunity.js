@@ -315,6 +315,24 @@ function supplyCatalog(limit = 96, origin = null) {
         .slice(0, Math.max(1, Number(limit) || 96));
 }
 
+// Where a hot bot goes to deal with an offer: a stall's actor (a shop, a
+// live private store), or a board record without a stall (an ad), dealt
+// with by record at its place (D6: hot bots take ads by records like cold
+// ones). { actorId, recordId, sourceId, name, locX, locY, locZ, town }.
+function offerTarget(offer, town = null) {
+    const actor = offer?.projection?.actor || offer?.session?.actor || null;
+    return {
+        actorId: actor ? Number(actor.fetchId()) : null,
+        recordId: actor ? null : Number(offer.recordId || 0) || null,
+        sourceId: Number(offer.sourceId || 0),
+        name: offer.sourceName || actor?.fetchName?.() || 'Trader',
+        locX: Number(actor ? actor.fetchLocX() : offer.locX),
+        locY: Number(actor ? actor.fetchLocY() : offer.locY),
+        locZ: Number(actor ? actor.fetchLocZ() : offer.locZ),
+        town: offer.town || town || null
+    };
+}
+
 function reserve(offer, qty = 1) {
     const count = Math.max(1, Number(qty) || 1);
     if (!offer?.available || Number(offer.price) <= 0) return false;
@@ -350,6 +368,7 @@ module.exports = {
     privateOffers,
     resolveSupplyItem,
     supplyCatalog,
+    offerTarget,
     release,
     reserve
 };

@@ -215,17 +215,9 @@ function companionTownErrand(session, bot, player, BotAI) {
     });
     const afkBuyer = TradeService.findAfkBuyerForActor(bot, town, session.coldLifeState);
     if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
-        const offer = afkBuyer.offer;
         return {
             kind: 'sell_resources',
-            target: {
-                actorId: offer.projection.actor.fetchId(),
-                name: offer.sourceName,
-                locX: offer.locX,
-                locY: offer.locY,
-                locZ: offer.locZ,
-                town: offer.town || town.name
-            }
+            target: invoke('GameServer/Bot/Economy/MarketOpportunity').offerTarget(afkBuyer.offer, town.name)
         };
     }
     if (buyer) {

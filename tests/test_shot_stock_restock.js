@@ -74,7 +74,7 @@ const originalFetchItems = Database.fetchItems;
     try {
         // Level 1: the reserve is max(500, 250, 10% of the wallet) = 2,000 of 20,000.
         const funded = currentActor = actorWith({ shots: 999, adena: 20000 });
-        const purchased = await ShotStock.purchaseActorRestock(funded, { plan, unitPrice: 7 });
+        const purchased = await ShotStock.purchaseActorRestock(funded, { plan, unitPrice: 7, town: 'Giran' });
         assert.strictEqual(purchased.ok, true);
         assert.strictEqual(purchased.delta, 2001, 'a funded bot below 1000 shots buys up to 3000');
         assert.strictEqual(purchased.amount, 3000);
@@ -87,14 +87,14 @@ const originalFetchItems = Database.fetchItems;
 
         updates.length = 0;
         const atThreshold = currentActor = actorWith({ shots: 1000, adena: 20000 });
-        const skipped = await ShotStock.purchaseActorRestock(atThreshold, { plan, unitPrice: 7 });
+        const skipped = await ShotStock.purchaseActorRestock(atThreshold, { plan, unitPrice: 7, town: 'Giran' });
         assert.strictEqual(skipped.changed, false, 'a bot at 1000 shots does not restock');
         assert.strictEqual(skipped.cost, 0);
         assert.deepStrictEqual(updates, []);
 
         // 7,000 adena keeps a 700 reserve: 900 shots, never the whole wallet.
         const partiallyFunded = currentActor = actorWith({ shots: 0, adena: 7000 });
-        const partialPurchase = await ShotStock.purchaseActorRestock(partiallyFunded, { plan, unitPrice: 7 });
+        const partialPurchase = await ShotStock.purchaseActorRestock(partiallyFunded, { plan, unitPrice: 7, town: 'Giran' });
         assert.strictEqual(partialPurchase.ok, true);
         assert.strictEqual(partialPurchase.delta, 900, 'a short wallet buys what is above its reserve');
         assert.strictEqual(partiallyFunded.backpack.fetchItemFromSelfId(57).fetchAmount(), 700,
@@ -102,7 +102,7 @@ const originalFetchItems = Database.fetchItems;
 
         updates.length = 0;
         const unfunded = currentActor = actorWith({ shots: 100, adena: 500 });
-        const skippedWithoutAdena = await ShotStock.purchaseActorRestock(unfunded, { plan, unitPrice: 7 });
+        const skippedWithoutAdena = await ShotStock.purchaseActorRestock(unfunded, { plan, unitPrice: 7, town: 'Giran' });
         assert.strictEqual(skippedWithoutAdena.ok, false, 'a wallet at its reserve buys nothing');
         assert.strictEqual(skippedWithoutAdena.reason, 'not_enough_adena');
         assert.strictEqual(unfunded.backpack.fetchItemFromSelfId(1835).fetchAmount(), 100);
@@ -112,7 +112,7 @@ const originalFetchItems = Database.fetchItems;
         offers = [{ store: 'b', price: 6, count: 500 }, { store: 'a', price: 5, count: 1000 },
             { store: 'c', price: 7, count: 5000 }, { store: 'd', price: 6, count: 600 }];
         const shopper = currentActor = actorWith({ shots: 0, adena: 100000 });
-        const shopped = await ShotStock.purchaseActorRestock(shopper, { plan, unitPrice: 7 });
+        const shopped = await ShotStock.purchaseActorRestock(shopper, { plan, unitPrice: 7, town: 'Giran' });
         assert.deepStrictEqual(shopBuys.map((buy) => [buy.store, buy.amount, buy.price]),
             [['a', 1000, 5], ['b', 500, 6], ['d', 600, 6]], 'shops below the NPC price, cheapest first');
         assert.strictEqual(shopped.delta, 3000, 'the NPC sells the rest');
@@ -125,7 +125,7 @@ const originalFetchItems = Database.fetchItems;
         failingStores.add('b');
         offers = [{ store: 'a', price: 5, count: 1000 }, { store: 'b', price: 6, count: 2500 }];
         const partlyFailed = currentActor = actorWith({ shots: 0, adena: 100000 });
-        const afterFailedLine = await ShotStock.purchaseActorRestock(partlyFailed, { plan, unitPrice: 7 });
+        const afterFailedLine = await ShotStock.purchaseActorRestock(partlyFailed, { plan, unitPrice: 7, town: 'Giran' });
         assert.deepStrictEqual(shopBuys.map((buy) => [buy.store, buy.amount]), [['a', 1000]]);
         assert.deepStrictEqual([afterFailedLine.ok, afterFailedLine.delta, afterFailedLine.cost], [true, 3000, 5000 + 2000 * 7],
             'the NPC sells what the failed shop line did not');
@@ -133,7 +133,7 @@ const originalFetchItems = Database.fetchItems;
         shopBuys.length = 0;
         offers = [{ store: 'b', price: 6, count: 5000 }];
         const allFailed = currentActor = actorWith({ shots: 0, adena: 100000 });
-        const afterFailedShop = await ShotStock.purchaseActorRestock(allFailed, { plan, unitPrice: 7 });
+        const afterFailedShop = await ShotStock.purchaseActorRestock(allFailed, { plan, unitPrice: 7, town: 'Giran' });
         assert.deepStrictEqual([afterFailedShop.ok, afterFailedShop.delta, afterFailedShop.cost], [true, 3000, 3000 * 7],
             'a bot whose only shop failed buys its restock from the NPC');
         assert.strictEqual(allFailed.backpack.fetchItemFromSelfId(57).fetchAmount(), 100000 - 3000 * 7);
@@ -181,7 +181,7 @@ const originalFetchItems = Database.fetchItems;
         const hotPotions = await Potions.purchaseActorRestock(shortHot, { unitPrice: 200 });
         assert.deepStrictEqual([hotPotions.ok, hotPotions.amount], [true, 8]);
         currentActor = shortHot;
-        const hotShots = await ShotStock.purchaseActorRestock(shortHot, { plan: dPlan, unitPrice: 100, potionUnitPrice: 200 });
+        const hotShots = await ShotStock.purchaseActorRestock(shortHot, { plan: dPlan, unitPrice: 100, potionUnitPrice: 200, town: 'Giran' });
         assert.deepStrictEqual([hotShots.delta, hotItems.get(1061).fetchAmount(), hotItems.get(57).fetchAmount()],
             [9, 8, 7500], 'hot and cold end with the same potions, shots and wallet');
         // A bot with enough money buys both in full.

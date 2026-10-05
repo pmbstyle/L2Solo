@@ -22,6 +22,14 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 
+// The store a shopping target stands for: its stall's, or a board record's
+// (an ad has no stall: it is dealt with by record, MarketOpportunity.offerTarget).
+function targetStore(target) {
+    if (target?.recordId) return { store: invoke('GameServer/AfkTrade/AfkTradeService').recordStore(target.recordId), name: target.name };
+    const actor = findStoreSession(target?.actorId)?.actor;
+    return { store: actor?.fetchPrivateStore?.() || null, name: actor?.fetchName?.() || target?.name, actor };
+}
+
 function findStoreSession(actorId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     return BotManager.findSessionById(actorId)
@@ -300,15 +308,7 @@ module.exports = {
             const afkBuyer = TradeService.findAfkBuyerForActor(bot, closestTown, session.coldLifeState);
 
             if (afkBuyer && (!buyer || Number(afkBuyer.score) >= Number(buyer.preview?.totalAdena || 0))) {
-                const offer = afkBuyer.offer;
-                session.shoppingTarget = {
-                    actorId: offer.projection.actor.fetchId(),
-                    name: offer.sourceName,
-                    locX: offer.locX,
-                    locY: offer.locY,
-                    locZ: offer.locZ,
-                    town: offer.town || closestTown.name
-                };
+                session.shoppingTarget = MarketOpportunity.offerTarget(afkBuyer.offer, closestTown.name);
                 TownChatter.say(session, BotAI, 'buyer-selected', Speech.lines('town.buyer-selected', { merchant: session.shoppingTarget.name, town: session.shoppingTarget.town }));
             } else if (buyer) {
                 session.shoppingTarget = {
@@ -585,9 +585,7 @@ module.exports = {
 
         if (companionErrand?.kind === 'market_purchase') {
             let purchaseSucceeded = false;
-            const sellerSession = findStoreSession(companionErrand.target.actorId);
-            const seller = sellerSession?.actor;
-            const store = seller?.fetchPrivateStore?.();
+            const { store, name: sellerName } = targetStore(companionErrand.target);
             try {
                 const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId));
                 const bought = store?.afkTrade === true
@@ -607,11 +605,11 @@ module.exports = {
                     selfId: companionErrand.itemId,
                     price: boughtSummary.totalAdena / boughtSummary.qty,
                     sourceType: companionErrand.sourceType || 'private_store',
-                    sourceId: store?.ownerId || seller.fetchId()
+                    sourceId: store?.ownerId || companionErrand.target.actorId
                 });
-                session.lastTradeSummary = `bought ${boughtSummary.qty}x ${boughtSummary.name} from ${seller.fetchName()} for ${formatAdena(boughtSummary.totalAdena)}a`;
-                TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: seller.fetchName() }),
-                    { values: { item: boughtSummary.name, seller: seller.fetchName() } });
+                session.lastTradeSummary = `bought ${boughtSummary.qty}x ${boughtSummary.name} from ${sellerName} for ${formatAdena(boughtSummary.totalAdena)}a`;
+                TownChatter.say(session, BotAI, 'market-gear-purchased', Speech.lines('town.market-gear-purchased', { item: boughtSummary.name, seller: sellerName }),
+                    { values: { item: boughtSummary.name, seller: sellerName } });
                 purchaseSucceeded = true;
             } catch (err) {
                 deferEquipmentRetry(session);
@@ -671,10 +669,8 @@ module.exports = {
 
         let soldToBuyer = false;
 
-        if (session.shoppingTarget?.actorId) {
-            const buyerSession = findStoreSession(session.shoppingTarget.actorId);
-            const buyer = buyerSession?.actor;
-            const store = buyer && buyer.fetchPrivateStore ? buyer.fetchPrivateStore() : null;
+        if (session.shoppingTarget?.actorId || session.shoppingTarget?.recordId) {
+            const { store, actor: buyer, name: buyerName } = targetStore(session.shoppingTarget);
 
             if (store && store.storeType === 3) {
                 try {
@@ -688,8 +684,8 @@ module.exports = {
                     if (result.itemsSold > 0) {
                         soldToBuyer = true;
                         const sample = result.sold.slice(0, 3).map((line) => `${line.qty}x ${line.name}`).join(', ');
-                        session.lastTradeSummary = `sold ${result.itemsSold} to ${buyer.fetchName()} for ${formatAdena(result.totalAdena)}a`;
-                        TownChatter.say(session, BotAI, 'loot-sold', Speech.lines('town.loot-sold', { items: sample, buyer: buyer.fetchName(), adena: formatAdena(result.totalAdena) }));
+                        session.lastTradeSummary = `sold ${result.itemsSold} to ${buyerName} for ${formatAdena(result.totalAdena)}a`;
+                        TownChatter.say(session, BotAI, 'loot-sold', Speech.lines('town.loot-sold', { items: sample, buyer: buyerName, adena: formatAdena(result.totalAdena) }));
                     }
                 } catch (err) {
                     utils.infoWarn("Shopping", "buyer sale failed for %s: %s", bot.fetchName(), err);
@@ -739,7 +735,8 @@ module.exports = {
                 const scrollPrice = ScrollStock.localNpcPrice(potionTown);
                 if (scrollPrice > 0) await ScrollStock.purchaseActorRestock(bot, { unitPrice: scrollPrice });
 
-                const result = await ShotStock.purchaseActorRestock(bot, { plan, potionUnitPrice: potionPrice || undefined });
+                const result = await ShotStock.purchaseActorRestock(bot, { plan, town: potionTown || null,
+                    potionUnitPrice: potionPrice || undefined });
                 if (!result.ok) {
                     TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
                         { priority: 'coordination', values: { item: ShotStock.describe(plan) } });

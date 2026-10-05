@@ -36,7 +36,7 @@ const plan = { selfId: 1835, kind: 'soulshot', rank: 'none', price: 7, name: 'So
     StaticMerchantPricing.cheapestPurchase = (selfId) => (Number(selfId) === 1835 ? 7 : 0);
     const npcWrites = [];
     Database.updateItemAmount = (...args) => { npcWrites.push(args); return Promise.resolve({}); };
-    const result = await ShotStock.purchaseActorRestock(actor, { plan, targetAmount: 1000 });
+    const result = await ShotStock.purchaseActorRestock(actor, { plan, targetAmount: 1000, town: 'Giran' });
     assert.deepStrictEqual(purchases, [{ selfId: 1835, amount: 900 }], 'the cheaper AFK offer is bought first');
     assert.strictEqual(result.amount, 1642);
     assert.strictEqual(result.cost, 900 * 5 + 642 * 7);

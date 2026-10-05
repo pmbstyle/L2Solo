@@ -376,8 +376,11 @@ async function purchaseActorRestock(actor, options = {}) {
 
     const plan = options.plan || planForActor(actor);
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+    // The board's lines of the town the bot stands in (б5: a deal is made in
+    // the seller's town); away from a town, only the merchant's price.
+    const town = options.town ?? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
     const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice, potionUnitPrice: options.potionUnitPrice,
-        offers: AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId() }) });
+        offers: town ? AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId(), town }) : [] });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {
         return { ok: false, reason: 'not_enough_adena', plan, adena: restock.adena,
@@ -429,17 +432,18 @@ function needsActorRestock(actor, threshold = 0) {
     return shotAmount(actor) <= Number(threshold || 0);
 }
 
+// Where a hot bot goes for its shots in `town`: the best seller there, a
+// city merchant's or a shop's stall, or an ad dealt with by record at its
+// place (D6). The purchase itself is the restock (purchaseActorRestock).
 function restockTarget(actor, town, excludedIds = []) {
     const excluded = new Set(excludedIds.map(Number));
-    const offers = invoke('GameServer/Bot/Economy/MarketOpportunity')
-        .hotOffers(planForActor(actor).selfId, { town, buyerCharacterId: actor.fetchId() });
+    const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+    const offers = MarketOpportunity.hotOffers(planForActor(actor).selfId, { town, buyerCharacterId: actor.fetchId() });
     for (const offer of offers) {
         if (excluded.has(Number(offer.sourceId)) || Number(offer.sourceId) === Number(actor.fetchId())) continue;
         if (offer.sellerKind !== 'fixed' && !String(offer.sourceType).startsWith('afk_')) continue;
-        const seller = offer.projection?.actor || offer.session?.actor;
-        if (!seller) continue;
-        return { actorId: seller.fetchId(), sourceId: Number(offer.sourceId), name: offer.sourceName,
-            locX: seller.fetchLocX(), locY: seller.fetchLocY(), locZ: seller.fetchLocZ(), town };
+        if (offer.sellerKind === 'fixed' && !offer.session?.actor) continue;
+        return MarketOpportunity.offerTarget(offer, town);
     }
     return null;
 }

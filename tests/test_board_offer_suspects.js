@@ -46,18 +46,20 @@ function item(selfId, amount) {
         fetchPetLocked: () => false };
 }
 
-// E40: a hot bot carrying stems looks for a buyer in Giran. A buy ad stands
-// nowhere, so the trip may only take a buy shop (a record with a stall).
+// E40: a hot bot carrying stems looks for a buyer in Giran. A buy ad has no
+// stall: the bot sells into it by record at its place (D6, group C); a buy
+// shop's stall is walked to.
 check('E40', () => {
     record(992101, { kind: 'buy_ad', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 30 }] });
     const actor = { fetchId: () => 992100, backpack: { fetchItems: () => [item(STEM, 5)] } };
     const found = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' });
-    // ShoppingState.js and FollowingState.js walk to offer.projection.actor.
-    assert(!found || found.offer.projection?.actor, `E40: a sell trip got a buy ad without a stall (${found?.offer.recordKind})`);
-    record(992102, { kind: 'shop', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 20 }] });
+    assert.strictEqual(found?.offer.recordKind, 'buy_ad', 'the ad in town is answered');
+    const adTarget = MarketOpportunity.offerTarget(found.offer, 'Giran');
+    assert.deepStrictEqual([adTarget.actorId, adTarget.recordId], [null, found.offer.recordId], 'by record, at its place');
+    record(992102, { kind: 'shop', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 40 }] });
     const shop = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' });
-    assert.strictEqual(Number(shop?.offer.sourceId), 992102, 'E40: the trip walks to the buy shop');
-    assert(shop.offer.projection.actor.fetchId() > 0);
+    assert.strictEqual(Number(shop?.offer.sourceId), 992102, 'E40: the trip walks to the better buy shop');
+    assert(MarketOpportunity.offerTarget(shop.offer, 'Giran').actorId > 0);
 });
 
 // E41: the clan order picks the market only when a member can buy the item
