@@ -91,7 +91,8 @@ function isEquipped(item) {
 }
 
 // The equipped weapon among a bot's items, database rows or the cold inventory
-// summary, or null. With two equipped weapons the lowest item id wins.
+// summary, or null. With two equipped weapons the lowest template id (selfId)
+// wins: the summary has no item object id to compare.
 function equippedWeapon(items) {
     let weapon = null;
     for (const item of Object.values(items || {})) {
