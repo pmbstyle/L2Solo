@@ -94,17 +94,6 @@ function desiredMemberCount(level, options = {}) {
     return Math.min(hardLimit, Math.max(1, Math.floor(number(configured, hardLimit))));
 }
 
-function founderScore(candidate = {}) {
-    const weighted = (
-        trait(candidate, 'ambition') * 0.26
-        + trait(candidate, 'assertiveness') * 0.20
-        + trait(candidate, 'resilience') * 0.20
-        + trait(candidate, 'sociability') * 0.18
-        + trait(candidate, 'commitment') * 0.16
-    );
-    return clamp(weighted + (rosterRole(candidate) === 'tank' ? 0.03 : 0));
-}
-
 // A clan leader needs leadership (shown as "leadership" for assertiveness in the
 // bot status) and social traits.
 function leaderScore(candidate = {}) {
@@ -154,7 +143,7 @@ function founderEligibility(candidate = {}, options = {}) {
     return {
         ok: reasons.length === 0,
         reasons,
-        score: founderScore(candidate),
+        score: leaderScore(candidate),
         role: rosterRole(candidate),
         partyHistoryRuns: partyHistoryRuns(candidate),
         quorumCount
@@ -264,7 +253,7 @@ module.exports = {
     rosterNeeds,
     desiredMemberCount,
     partyHistoryRuns,
-    founderScore,
+    leaderScore,
     founderEligibility,
     clanSuitability,
     selectExistingClan,
