@@ -151,15 +151,15 @@ try {
 } finally { MarketOpportunity.hotOffers = originalHotOffers; }
 const ownSupply = { ...dwarf, inventory: { '129': {
     selfId: 129, amount: 1, equipped: true, slot: 7
-}, '1463': { selfId: 1463, amount: 1156, kind: 'Other.Shot' } } };
+}, '1463': { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT + 156, kind: 'Other.Shot' } } };
 assert(Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } } }),
     'leftover crafted shots must be admitted for a listing review');
 assert(!Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } },
-    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: 1000 } } }),
+    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT } } }),
     'the personal reserve alone must not trigger a surplus listing review');
 assert.strictEqual(ItemDisposition.saleCandidates(ownSupply, { unlimited: true })
     .find((item) => item.selfId === 1463)?.count, 156,
-    'a shot seller must keep enough stock for their own weapon');
+    'a shot seller must keep enough stock for their own weapon: what its restock fills it to');
 index.shotSupply.set(1463, 1000);
 assert.strictEqual(Shots.craftCandidate(dwarf, recipe, index), null,
     'existing shot supply must close the speculative crafting route');

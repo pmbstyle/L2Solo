@@ -107,10 +107,9 @@ async function buildMarketSnapshot(now) {
             }
         }
         if (state.stats?.shotCraft) {
-            const own = ShotStock.planForState(state).selfId;
+            const kept = ShotStock.keptAmounts(state);
             for (const id of SHOT_PRODUCT_IDS) {
-                const surplus = Math.max(0, Number(state.inventory?.[id]?.amount || 0)
-                    - (id === own ? ShotStock.DEFAULT_TARGET_AMOUNT : 0));
+                const surplus = Math.max(0, Number(state.inventory?.[id]?.amount || 0) - Number(kept[id] || 0));
                 unlistedSupply.set(id, (unlistedSupply.get(id) || 0) + surplus);
             }
         }
@@ -176,11 +175,10 @@ async function candidates(limit = 16, now = Date.now()) {
 
 function hasShotSurplus(state) {
     if (!state?.stats?.shotCraft) return false;
-    const ownShotId = ShotStock.planForState(state).selfId;
+    const kept = ShotStock.keptAmounts(state);
     // This is only a cheap admission check. The listing policy still applies
     // reservations, funded demand and competing supply before publishing.
-    return [...SHOT_PRODUCT_IDS].some(id => Number(state.inventory?.[id]?.amount || 0)
-        > (id === ownShotId ? ShotStock.DEFAULT_TARGET_AMOUNT : 0));
+    return [...SHOT_PRODUCT_IDS].some(id => Number(state.inventory?.[id]?.amount || 0) > Number(kept[id] || 0));
 }
 
 async function reviewDemand(state, now) {

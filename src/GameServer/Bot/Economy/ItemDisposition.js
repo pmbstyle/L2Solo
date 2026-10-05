@@ -424,13 +424,11 @@ function saleCandidates(state, options = {}) {
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
-    for (const [selfId, amount] of Object.entries(invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state))) {
+    for (const [selfId, amount] of Object.entries({
+        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state),
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state)
+    })) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
-    }
-    const ownShot = invoke('GameServer/Inventory/ShotStock').planForState(state);
-    if (Number(state?.inventory?.[String(ownShot.selfId)]?.amount || 0) > 0) {
-        reserved[ownShot.selfId] = Math.max(Number(reserved[ownShot.selfId] || 0),
-            invoke('GameServer/Inventory/ShotStock').DEFAULT_TARGET_AMOUNT);
     }
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const selfId = Number(item?.selfId || 0);

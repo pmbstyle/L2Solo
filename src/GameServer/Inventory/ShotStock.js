@@ -115,6 +115,15 @@ function planForState(state) {
     return { ...plan, perAction: Math.max(0, Number(count) || 0) };
 }
 
+// The shots a bot keeps, by selfId: its own shot up to the amount a restock
+// buys it to (restockPlan); any more of it, and shots of another grade, are
+// spare. One rule for the sale set (ItemDisposition.saleCandidates) and the
+// shot crafters' surplus (ColdShotEconomyService), so nothing the restock has
+// just bought is sold back.
+function keptAmounts(state) {
+    return { [planForState(state).selfId]: PURCHASE_TARGET_AMOUNT };
+}
+
 function planFor({ classId, rank = 'none' } = {}) {
     const normalizedRank = normalizeRank(rank);
     const kind = classWantsSpiritshots(classId) ? 'spiritshot' : 'soulshot';
@@ -464,6 +473,7 @@ module.exports = {
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,
+    keptAmounts,
     enableAutoShot,
     planForRows,
     shotAmount,
