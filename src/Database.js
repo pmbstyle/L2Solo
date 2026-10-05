@@ -5401,10 +5401,22 @@ const Database = {
         }, 'warehouse:deposit'));
     },
 
-    transferWarehouseToInventory(characterId, item) {
+    transferWarehouseToInventory(characterId, item, { coldState = null } = {}) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const source = one('SELECT id, amount, enchant, petData FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
-            if (!source || Number(source.amount) < Number(item.amount)) throw new Error('warehouse item changed');
+            if (coldState) {
+                const life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                // A queued flush can hand the bot to a worker or add a craft
+                // reservation after the caller planned the withdrawal.
+                if (!life || Number(coldState.characterId) !== Number(characterId)
+                    || life.phase !== 'cold' || life.simulationOwner !== LEGACY_SIMULATION_OWNER
+                    || life.partyId || !['hunting', 'resting'].includes(life.activity)
+                    || (coldState.simulation && Number(life.simulationRevision) !== Number(coldState.simulation.revision))
+                    || JSON.stringify(jsonObject(life.statsJson).equipmentPlan || null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
+                    throw new Error('economy_state_changed');
+                }
+            }
+            const source = one('SELECT id, selfId, amount, enchant, petData FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+            if (!source || Number(source.selfId) !== Number(item.selfId) || Number(source.amount) < Number(item.amount)) throw new Error('warehouse item changed');
             const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
             const target = item.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, item.selfId]) : null;
             const inventoryAmount = Number(target?.amount || 0) + Number(item.amount);
@@ -5413,7 +5425,9 @@ const Database = {
             const warehouseAmount = Number(source.amount) - Number(item.amount);
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
-            return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant };
+            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
+            return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
+                ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:withdraw'));
     },
 
