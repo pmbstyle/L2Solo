@@ -144,6 +144,34 @@ function rewardGroups(rows, itemName) {
     return { rewards, spoils };
 }
 
+// One Lisvus npc.sql row as a monster template; the weapon (from loaded items)
+// gives the random attack spread and accuracy.
+function npcTemplate(row, race, itemsById) {
+    const [
+        id, , name, , title, , , collisionRadius, collisionHeight, level, , ,
+        attackRange, hp, mp, hpRegen, mpRegen, str, con, dex, int, wit, men,
+        exp, sp, pAtk, pDef, mAtk, mDef, atkSpd, aggro, castSpd, rightHand, leftHand,
+        , walk, run, faction, helpRadius, undead
+    ] = row;
+    const weapon = itemsById.get(Number(rightHand));
+    return {
+        selfId: id,
+        template: { kind: 'Monster', name, title, level, hostile: Number(aggro) > 0 },
+        base: { str, dex, con, int, wit, men },
+        stats: {
+            pAtk, pAtkRnd: Number(weapon?.stats?.pAtkRnd ?? 30), pDef, mAtk, mDef,
+            accur: Number(weapon?.stats?.accur ?? 4.75), atkSpd, castSpd, atkRadius: attackRange
+        },
+        speed: { walk, run },
+        vitals: { maxHp: hp, maxMp: mp, revHp: hpRegen, revMp: mpRegen, corpseTime: 7000 },
+        collision: { radius: collisionRadius, size: collisionHeight },
+        equipment: { weapon: rightHand, shield: leftHand, reuseTime: 0 },
+        clan: { clanName: faction === 'NULL' ? '' : faction, helpRadius },
+        rewards: { exp: level > 0 ? round(exp / (level * level), 12) : 0, sp },
+        traits: { race, undead: Number(undead) !== 0 }
+    };
+}
+
 function generateC4MonsterLocation(config) {
     assertLisvusRevision();
 
@@ -213,31 +241,9 @@ function generateC4MonsterLocation(config) {
     const existingItemsById = new Map(existingItems.map((item) => [Number(item.selfId), item]));
     const sourceItemsById = vendorItems();
     const npcs = newMobIds.map((id) => npcRowsById.get(id)).map((row) => {
-        const [
-            id, , name, , title, , , collisionRadius, collisionHeight, level, , type,
-            attackRange, hp, mp, hpRegen, mpRegen, str, con, dex, int, wit, men,
-            exp, sp, pAtk, pDef, mAtk, mDef, atkSpd, aggro, castSpd, rightHand, leftHand,
-            , walk, run, faction, helpRadius, undead
-        ] = row;
-        const race = raceByNpc.get(id);
-        if (type !== 'L2Monster' || !race) throw new Error(`Invalid source NPC ${id}: type=${type} race=${race}`);
-        const weapon = existingItemsById.get(Number(rightHand));
-        return {
-            selfId: id,
-            template: { kind: 'Monster', name, title, level, hostile: Number(aggro) > 0 },
-            base: { str, dex, con, int, wit, men },
-            stats: {
-                pAtk, pAtkRnd: Number(weapon?.stats?.pAtkRnd ?? 30), pDef, mAtk, mDef,
-                accur: Number(weapon?.stats?.accur ?? 4.75), atkSpd, castSpd, atkRadius: attackRange
-            },
-            speed: { walk, run },
-            vitals: { maxHp: hp, maxMp: mp, revHp: hpRegen, revMp: mpRegen, corpseTime: 7000 },
-            collision: { radius: collisionRadius, size: collisionHeight },
-            equipment: { weapon: rightHand, shield: leftHand, reuseTime: 0 },
-            clan: { clanName: faction === 'NULL' ? '' : faction, helpRadius },
-            rewards: { exp: level > 0 ? round(exp / (level * level), 12) : 0, sp },
-            traits: { race, undead: Number(undead) !== 0 }
-        };
+        const race = raceByNpc.get(row[0]);
+        if (row[11] !== 'L2Monster' || !race) throw new Error(`Invalid source NPC ${row[0]}: type=${row[11]} race=${race}`);
+        return npcTemplate(row, race, existingItemsById);
     });
 
     const npcNameById = new Map(mobIds.map((id) => [id, npcRowsById.get(id)[2]]));
@@ -314,3 +320,4 @@ module.exports.assertExact = assertExact;
 module.exports.tuples = tuples;
 module.exports.rewardGroups = rewardGroups;
 module.exports.writeJson = writeJson;
+module.exports.npcTemplate = npcTemplate;
