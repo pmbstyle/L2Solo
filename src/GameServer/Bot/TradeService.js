@@ -30,6 +30,15 @@ function refreshStorePrices(store, actor = null) {
     return store;
 }
 
+// The retained static-buyer route until 3.6 is only for bot materials.
+// Preview and queued execution share this gate so neither buyer selection
+// nor a direct/stale arrival can liquidate gear through a static buyer.
+function acceptsSellerItem(actor, storeItem, inventoryItem) {
+    return !storeItem[staticPriceSource] || !isBotActor(actor)
+        || String(inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind || '')
+            .startsWith('Other.Material');
+}
+
 async function withTradeQueues(store, selfId, actors, operation) {
     if (!storePurchaseQueues.has(store)) storePurchaseQueues.set(store, new Map());
     const storeQueues = storePurchaseQueues.get(store);
@@ -299,6 +308,7 @@ function previewSaleToStore(actor, store, options = {}) {
         .forEach((inventoryItem) => {
             const storeItem = store.items.find((item) => item.selfId === inventoryItem.fetchSelfId() && item.count > 0);
             if (!storeItem) return;
+            if (!acceptsSellerItem(actor, storeItem, inventoryItem)) return;
 
             const qty = Math.min(inventoryItem.fetchAmount(), storeItem.count);
             if (qty <= 0) return;
@@ -426,6 +436,9 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                 throw new Error("Invalid quantity.");
             }
             const actorItem = sellableCopy(actor, selfId, options.objectId);
+            if (!acceptsSellerItem(actor, storeItem, actorItem)) {
+                throw new Error('Static buyer item is unavailable to bots.');
+            }
             const actorCount = actorItem ? actorItem.fetchAmount() : 0;
             const sellQty = Math.min(requestedQty, Number(actorCount), Number(storeItem.count));
             if (!Number.isSafeInteger(sellQty) || sellQty <= 0) {

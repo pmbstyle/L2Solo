@@ -101,6 +101,12 @@ function wallet(session) { return session.actor.backpack.fetchTotalAdena(); }
 function amount(session, selfId) { return session.actor.backpack.fetchItemFromSelfId(selfId)?.fetchAmount() || 0; }
 function materialLine(config) { return config.items.find(item => Number(item.selfId) === MATERIAL); }
 
+async function giveGear(session) {
+    const row = await Database.setItem(session.actor.fetchId(), { selfId: 219, amount: 1,
+        name: 'Sword Breaker', equipped: false, slot: 0 });
+    session.actor.backpack.insertItem(Number(row.insertId), 219, { amount: 1 });
+}
+
 test('BUY follows current shared board, excludes orders, falls back to C4 buy-back', () => {
     const config = Configs['4manda'];
     const source = materialLine(config);
@@ -299,6 +305,64 @@ test('legacy HTML cannot trade an AFK projection around its record and escrow', 
     assert.strictEqual(store.items[0].count, 3);
     assert.strictEqual(records.length, 0);
     assert.strictEqual(session.sent.filter(packet => packet.kind === 'actionFailed').length, 2);
+});
+
+test('bot gear sale to a static buyer is rejected before mutation; player and ordinary sales stay available', async () => {
+    const bot = await player('FHotGearSeller', { bot: true });
+    await giveGear(bot);
+    const store = staticStore(Configs.Veteranas, 219);
+    const count = store.items[0].count;
+    const money = wallet(bot);
+    const outcome = await TradeService.sellToStore(bot.actor, store, 219, 1)
+        .then(result => ({ result }), error => ({ error }));
+    assert(outcome.error, `static gear sale must reject: payout ${outcome.result?.totalAdena}, wallet ${wallet(bot)}, gear ${amount(bot, 219)}`);
+    assert.match(outcome.error.message, /static.*unavailable/i);
+    assert.strictEqual(wallet(bot), money);
+    assert.strictEqual(amount(bot, 219), 1);
+    assert.strictEqual(store.items[0].count, count);
+    const persisted = await Database.fetchItems(bot.actor.fetchId());
+    assert.strictEqual(persisted.find(item => item.selfId === 57).amount, money);
+    assert.strictEqual(persisted.find(item => item.selfId === 219).amount, 1);
+
+    const human = await player('FHumanGearSeller');
+    await giveGear(human);
+    const price = Pricing.priceFor(Configs.Veteranas, Configs.Veteranas.items.find(item => item.selfId === 219));
+    const humanMoney = wallet(human);
+    assert.strictEqual((await TradeService.sellToStore(human.actor, store, 219, 1)).totalAdena, price);
+    assert.strictEqual(wallet(human), humanMoney + price);
+    assert.strictEqual(amount(human, 219), 0);
+
+    const ordinary = { storeType: 3, items: [{ selfId: 219, count: 2, price: 17 }] };
+    assert.strictEqual((await TradeService.sellToStore(bot.actor, ordinary, 219, 1)).totalAdena, 17);
+    assert.strictEqual(wallet(bot), money + 17);
+    assert.strictEqual(amount(bot, 219), 0);
+});
+
+test('hot buyer selection and inventory sale keep only static materials at the old bot price', async () => {
+    const bot = await player('FHotMixedSeller', { bot: true });
+    await giveGear(bot);
+    const gear = staticStore(Configs.Veteranas, 219);
+    const gearBuyer = merchant(gear, 83001, 'Veteranas');
+    assert.strictEqual(TradeService.findBestBuyerForActor(bot.actor, [{ actor: gearBuyer, plan: 'merchant',
+        accountId: 'bot_f_static_gear' }]), null, 'a gear-only static buyer is not a hot bot destination');
+    const materials = staticStore(Configs['4manda']);
+    const store = { storeType: 3, items: [...gear.items, ...materials.items] };
+    line(80, 3, 9999);
+    TradeService.refreshStorePrices(store);
+    const oldPrice = Pricing.botPriceFor(Configs['4manda'], materialLine(Configs['4manda']));
+    const preview = TradeService.previewSaleToStore(bot.actor, store);
+    assert.deepStrictEqual(preview.lines.map(item => item.selfId), [MATERIAL]);
+    assert.strictEqual(preview.totalAdena, oldPrice * 20);
+    const money = wallet(bot);
+    const stock = gear.items[0].count;
+    // This is ShoppingState's actual arrival executor for a non-AFK buyer.
+    const result = await TradeService.sellInventoryToStore(bot.actor, store);
+    assert.strictEqual(result.itemsSold, 20);
+    assert.strictEqual(result.totalAdena, oldPrice * 20);
+    assert.strictEqual(wallet(bot), money + oldPrice * 20);
+    assert.strictEqual(amount(bot, MATERIAL), 0);
+    assert.strictEqual(amount(bot, 219), 1);
+    assert.strictEqual(gear.items[0].count, stock);
 });
 
 test('all four accepted native/HTML player trades persist once with executed prices', async () => {
