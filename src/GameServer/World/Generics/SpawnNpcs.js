@@ -234,10 +234,15 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
 
 function spawnNpcs() {
     this.npc.periodDefinitions = [];
+    // These templates are created only by the quest encounter handler. Keeping
+    // C4's old shared duel spawns would duplicate a player's personal opponent.
+    const exclusive = new Set(invoke('GameServer/Quest/QuestService').quests()
+        .flatMap(quest => quest.exclusiveSpawns || []));
     DataCache.npcSpawns.forEach((item) => {
         const bounds = item.bounds;
 
         item.spawns.forEach((spawn) => {
+            if (exclusive.has(Number(spawn.selfId))) return;
             DataCache.fetchNpcFromSelfId(spawn.selfId, (npc) => {
                 const definition = { npc, spawn: structuredClone(spawn), bounds: structuredClone(bounds) };
 

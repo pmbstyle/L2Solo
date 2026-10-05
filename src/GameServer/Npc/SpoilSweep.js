@@ -207,6 +207,8 @@ const SpoilSweep = {
 
             const festival = Number(skill.fetchSelfId?.()) === SPOIL_FESTIVAL_SKILL_ID;
             spoiled.forEach((npc) => markSpoiled(session, actor, npc, skill, { festival }));
+            for (const npc of spoiled) invoke('GameServer/Quest/QuestService').onSkillSee(session, npc, skill, actor)
+                .catch(error => utils.infoWarn('Quest', 'skill callback failed: %s', error.message));
             console.info('SpoilSweep :: %s spoiled %d targets with %s', actor.fetchName(), spoiled.length, skill.fetchName());
             ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
         });

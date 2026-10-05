@@ -164,14 +164,16 @@ class Automation extends SelectedModel {
         this.timer.replenish = undefined;
     }
 
-    ticksToMove(srcX, srcY, srcZ, dstX, dstY, dstZ, radius, speed) {
+    ticksToMove(srcX, srcY, srcZ, dstX, dstY, dstZ, radius, speed, { horizontal = false } = {}) {
         const stopRadius = Math.max(0, Number(radius) || 0);
-        const moveDistance = Math.max(0, new SpeckMath.Point3D(srcX, srcY, srcZ).distance(new SpeckMath.Point3D(dstX, dstY, dstZ)) - stopRadius);
+        const moveDistance = Math.max(0, new SpeckMath.Point3D(srcX, srcY, srcZ).distance(
+            new SpeckMath.Point3D(dstX, dstY, horizontal ? srcZ : dstZ)
+        ) - stopRadius);
         const duration = 1 + ((this.ticksPerSecond * moveDistance) / speed);
         return (1000 / this.ticksPerSecond) * duration;
     }
 
-    actionStopCoords(src, dst, radius) {
+    actionStopCoords(src, dst, radius, { horizontal = false } = {}) {
         const srcCoords = {
             locX: src.fetchLocX(),
             locY: src.fetchLocY(),
@@ -180,7 +182,7 @@ class Automation extends SelectedModel {
         const dstCoords = {
             locX: dst.fetchLocX(),
             locY: dst.fetchLocY(),
-            locZ: dst.fetchLocZ(),
+            locZ: horizontal ? srcCoords.locZ : dst.fetchLocZ(),
         };
         const stopRadius = Math.max(0, Number(radius) || 0);
 
@@ -295,23 +297,27 @@ class Automation extends SelectedModel {
         }
         // NPCs and summons also send movement through another actor's session.
         // Only the moving actor may replace that session's active route.
-        if (session?.actor === src) session.activeMoveGoal = null;
-        // Execute each time, or else creature is stuck
-        this.setDestId(dst.fetchId());
-        session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, movementRadius), src);
-        const stopCoords = this.actionStopCoords(src, dst, movementRadius);
-
-        // Calculate duration
-        src.state.setTowards(weaponAttack || radius === 0 ? 'melee' : 'remote');
-        const ticks = this.ticksToMove(
-            src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(), movementRadius, src.fetchCollectiveRunSpd()
-        );
-
         const movingSelf = session?.actor === src;
         const movingBot = movingSelf && (
             session.constructor.name === 'BotSession'
             || session.accountId?.startsWith('bot_')
         );
+        // Player movement follows the client floor. Match the horizontal
+        // attack range instead of timing a climb toward the target's Z.
+        const movementOptions = { horizontal: movingSelf && !movingBot };
+        if (movingSelf) session.activeMoveGoal = null;
+        // Execute each time, or else creature is stuck
+        this.setDestId(dst.fetchId());
+        session.dataSendToMeAndOthers(ServerResponse.moveToPawn(src, dst, movementRadius), src);
+        const stopCoords = this.actionStopCoords(src, dst, movementRadius, movementOptions);
+
+        // Calculate duration
+        src.state.setTowards(weaponAttack || radius === 0 ? 'melee' : 'remote');
+        const ticks = this.ticksToMove(
+            src.fetchLocX(), src.fetchLocY(), src.fetchLocZ(), dst.fetchLocX(), dst.fetchLocY(), dst.fetchLocZ(),
+            movementRadius, src.fetchCollectiveRunSpd(), movementOptions
+        );
+
         if (!movingSelf || movingBot) this.startMoveInterpolation(session, src, stopCoords, ticks);
 
         // Players report position intermittently. Keep the fallback arrival,
@@ -329,11 +335,14 @@ class Automation extends SelectedModel {
             this.stopMoveInterpolation();
             src.state.setTowards(false);
             this.clearDestId();
-            // A player's last ValidatePosition may describe an intermediate
-            // point. C4 need not acknowledge the final MoveToPawn position,
-            // so complete the server-owned approach for players as well.
-            // Movement cancellation already clears this arrival timer.
-            src.setLocXYZ(approach ? approach.stopCoords : stopCoords);
+            // C4 need not acknowledge the final MoveToPawn point, so complete
+            // the horizontal approach. A target's Z may belong to another
+            // floor: borrowing it makes the next player report look like a
+            // fall. Keep the player's latest accepted height at arrival.
+            const arrivalCoords = approach ? approach.stopCoords : stopCoords;
+            src.setLocXYZ(movingSelf && !movingBot
+                ? { ...arrivalCoords, locZ: src.fetchLocZ() }
+                : arrivalCoords);
             if (movingSelf) {
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);
@@ -404,12 +413,12 @@ class Automation extends SelectedModel {
         }
         const ticks = this.ticksToMove(actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ(),
             approach.dst.fetchLocX(), approach.dst.fetchLocY(), approach.dst.fetchLocZ(),
-            approach.movementRadius, actor.fetchCollectiveRunSpd());
+            approach.movementRadius, actor.fetchCollectiveRunSpd(), { horizontal: true });
         const dueAt = Date.now() + ticks;
         // Duplicated or older reports must not extend the original deadline.
         if (!Number.isFinite(dueAt) || dueAt >= approach.dueAt) return;
         approach.dueAt = dueAt;
-        approach.stopCoords = this.actionStopCoords(actor, approach.dst, approach.movementRadius);
+        approach.stopCoords = this.actionStopCoords(actor, approach.dst, approach.movementRadius, { horizontal: true });
         this.schedulePlayerAttackArrival(approach, ticks);
     }
 

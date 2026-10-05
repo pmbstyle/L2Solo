@@ -50,6 +50,80 @@ const DION_D_MARKET_PLAZA = Object.freeze({
 });
 const DION_D_STALL_EDGE_PADDING = 55;
 const DION_D_STALL_MIN_DISTANCE = 60;
+// Captured in-game around the Oren market. The concave inset stays
+// outside the trading area; all six corners are on the same level ground.
+const OREN_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [82942, 53245], [82946, 54161], [82181, 54163],
+        [82175, 53746], [81669, 53745], [81665, 53287]
+    ]),
+    bounds: Object.freeze({ minX: 81665, maxX: 82946, minY: 53245, maxY: 54163 }),
+    locZ: -1496
+});
+const OREN_STALL_EDGE_PADDING = 55;
+const OREN_STALL_MIN_DISTANCE = 60;
+// Captured in-game around Hunter's Village. Heights vary across the square,
+// so each chosen stall resolves its ground height through geodata.
+const HUNTERS_VILLAGE_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [117437, 76275], [116628, 75417], [116157, 75751],
+        [115910, 76188], [116395, 76915]
+    ]),
+    bounds: Object.freeze({ minX: 115910, maxX: 117437, minY: 75417, maxY: 76915 }),
+    center: Object.freeze({ locX: 116505, locY: 76109, locZ: -2717 }),
+    locZ: -2717
+});
+const HUNTERS_VILLAGE_STALL_EDGE_PADDING = 55;
+const HUNTERS_VILLAGE_STALL_MIN_DISTANCE = 60;
+// Captured in-game around the lower Aden trading square. Keep the measured
+// ground level rather than the higher town respawn terrace.
+const ADEN_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [146732, 26595], [146738, 27305], [148167, 27309], [148173, 26594]
+    ]),
+    bounds: Object.freeze({ minX: 146732, maxX: 148173, minY: 26594, maxY: 27309 }),
+    center: Object.freeze({ locX: 147453, locY: 26951, locZ: -2205 }),
+    locZ: -2205
+});
+const ADEN_STALL_EDGE_PADDING = 55;
+const ADEN_STALL_MIN_DISTANCE = 60;
+// Captured in-game around the Rune trading square. All four corners share
+// the same ground level; retain the slanted edges of the measured footprint.
+const RUNE_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [43248, -47812], [43329, -48311], [44978, -48312], [45006, -47721]
+    ]),
+    bounds: Object.freeze({ minX: 43248, maxX: 45006, minY: -48312, maxY: -47721 }),
+    center: Object.freeze({ locX: 44140, locY: -48039, locZ: -797 }),
+    locZ: -797
+});
+const RUNE_STALL_EDGE_PADDING = 55;
+const RUNE_STALL_MIN_DISTANCE = 60;
+// Captured in-game around Goddard, including the concave upper edge.
+// This footprint is recorded for later market routing and placement.
+const GODDARD_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [148750, -55483], [148257, -55709], [147976, -56081],
+        [147411, -56052], [147174, -55712], [146704, -55743],
+        [146855, -56198], [147622, -56624], [147789, -56569], [148642, -56101]
+    ]),
+    bounds: Object.freeze({ minX: 146704, maxX: 148750, minY: -56624, maxY: -55483 }),
+    locZ: -2781
+});
+const GODDARD_STALL_EDGE_PADDING = 55;
+// Captured in-game around Floran, including the central inset. Keep each
+// measured corner height for later placement on the uneven ground.
+const FLORAN_MARKET_PLAZA = Object.freeze({
+    boundary: Object.freeze([
+        [16933, 169872], [16777, 170253], [17382, 170559],
+        [18255, 170501], [18309, 170202], [17899, 170030],
+        [17672, 170355], [17402, 170300], [17518, 169837]
+    ]),
+    boundaryHeights: Object.freeze([-3495, -3498, -3502, -3499, -3496, -3499, -3508, -3507, -3501]),
+    bounds: Object.freeze({ minX: 16777, maxX: 18309, minY: 169837, maxY: 170559 }),
+    locZ: -3501
+});
+const FLORAN_STALL_EDGE_PADDING = 55;
 const TALKING_ISLAND_NO_GRADE_PLAZA = Object.freeze({
     boundary: Object.freeze([
         [-84242, 245018], [-83965, 244591], [-84553, 243951],
@@ -271,6 +345,92 @@ function chooseDionDMarketStall(random = Math.random, occupied = []) {
         }
     }
     return null;
+}
+
+function isInsetPolygonStallLocation(loc, plaza, edgePadding) {
+    const { boundary } = plaza;
+    if (!isInsidePolygon(loc, boundary)) return false;
+    // Keep the margin along every edge, including the concave corner,
+    // rather than only shrinking the polygon's enclosing rectangle.
+    return boundary.every(([ax, ay], index) => {
+        const [bx, by] = boundary[(index + 1) % boundary.length];
+        const dx = bx - ax;
+        const dy = by - ay;
+        const t = Math.max(0, Math.min(1,
+            ((loc.locX - ax) * dx + (loc.locY - ay) * dy) / (dx * dx + dy * dy)));
+        return Math.hypot(loc.locX - ax - t * dx, loc.locY - ay - t * dy) >= edgePadding;
+    });
+}
+
+function choosePolygonMarketStall(plaza, edgePadding, minDistance, random, occupied, useGeodata = false) {
+    const { bounds, locZ } = plaza;
+    const minX = bounds.minX + edgePadding;
+    const maxX = bounds.maxX - edgePadding;
+    const minY = bounds.minY + edgePadding;
+    const maxY = bounds.maxY - edgePadding;
+    const isFree = (loc) => isInsetPolygonStallLocation(loc, plaza, edgePadding)
+        && !occupied.some((other) => distance2d(loc, other) < minDistance);
+    const groundLocation = (loc) => useGeodata
+        ? { ...loc, locZ: GeodataEngine.getHeight(loc.locX, loc.locY, locZ) } : loc;
+    for (let attempt = 0; attempt < 128; attempt++) {
+        const loc = {
+            locX: Math.round(minX + random() * (maxX - minX)),
+            locY: Math.round(minY + random() * (maxY - minY)),
+            locZ
+        };
+        if (isFree(loc)) return groundLocation(loc);
+    }
+    for (let locX = minX; locX <= maxX; locX += minDistance) {
+        for (let locY = minY; locY <= maxY; locY += minDistance) {
+            const loc = { locX, locY, locZ };
+            if (isFree(loc)) return groundLocation(loc);
+        }
+    }
+    return null;
+}
+
+function isOrenMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, OREN_MARKET_PLAZA, OREN_STALL_EDGE_PADDING);
+}
+
+function chooseOrenMarketStall(random = Math.random, occupied = []) {
+    return choosePolygonMarketStall(OREN_MARKET_PLAZA, OREN_STALL_EDGE_PADDING,
+        OREN_STALL_MIN_DISTANCE, random, occupied);
+}
+
+function isHuntersVillageMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, HUNTERS_VILLAGE_MARKET_PLAZA, HUNTERS_VILLAGE_STALL_EDGE_PADDING);
+}
+
+function chooseHuntersVillageMarketStall(random = Math.random, occupied = []) {
+    return choosePolygonMarketStall(HUNTERS_VILLAGE_MARKET_PLAZA, HUNTERS_VILLAGE_STALL_EDGE_PADDING,
+        HUNTERS_VILLAGE_STALL_MIN_DISTANCE, random, occupied, true);
+}
+
+function isAdenMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, ADEN_MARKET_PLAZA, ADEN_STALL_EDGE_PADDING);
+}
+
+function chooseAdenMarketStall(random = Math.random, occupied = []) {
+    return choosePolygonMarketStall(ADEN_MARKET_PLAZA, ADEN_STALL_EDGE_PADDING,
+        ADEN_STALL_MIN_DISTANCE, random, occupied);
+}
+
+function isRuneMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, RUNE_MARKET_PLAZA, RUNE_STALL_EDGE_PADDING);
+}
+
+function chooseRuneMarketStall(random = Math.random, occupied = []) {
+    return choosePolygonMarketStall(RUNE_MARKET_PLAZA, RUNE_STALL_EDGE_PADDING,
+        RUNE_STALL_MIN_DISTANCE, random, occupied);
+}
+
+function isGoddardMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, GODDARD_MARKET_PLAZA, GODDARD_STALL_EDGE_PADDING);
+}
+
+function isFloranMarketStallLocation(loc) {
+    return isInsetPolygonStallLocation(loc, FLORAN_MARKET_PLAZA, FLORAN_STALL_EDGE_PADDING);
 }
 
 function isTalkingIslandNoGradeStallLocation(loc) {
@@ -1209,6 +1369,22 @@ module.exports = {
     GLUDIO_D_STALL_MIN_DISTANCE,
     DION_D_MARKET_PLAZA,
     DION_D_STALL_MIN_DISTANCE,
+    OREN_MARKET_PLAZA,
+    OREN_STALL_EDGE_PADDING,
+    OREN_STALL_MIN_DISTANCE,
+    HUNTERS_VILLAGE_MARKET_PLAZA,
+    HUNTERS_VILLAGE_STALL_EDGE_PADDING,
+    HUNTERS_VILLAGE_STALL_MIN_DISTANCE,
+    ADEN_MARKET_PLAZA,
+    ADEN_STALL_EDGE_PADDING,
+    ADEN_STALL_MIN_DISTANCE,
+    RUNE_MARKET_PLAZA,
+    RUNE_STALL_EDGE_PADDING,
+    RUNE_STALL_MIN_DISTANCE,
+    GODDARD_MARKET_PLAZA,
+    GODDARD_STALL_EDGE_PADDING,
+    FLORAN_MARKET_PLAZA,
+    FLORAN_STALL_EDGE_PADDING,
     TALKING_ISLAND_NO_GRADE_PLAZA,
     TALKING_ISLAND_STALL_MIN_DISTANCE,
     ELVEN_VILLAGE_NO_GRADE_PLAZA,
@@ -1232,6 +1408,10 @@ module.exports = {
     chooseGiranPlazaStall,
     chooseGludioDMarketStall,
     chooseDionDMarketStall,
+    chooseOrenMarketStall,
+    chooseHuntersVillageMarketStall,
+    chooseAdenMarketStall,
+    chooseRuneMarketStall,
     chooseTalkingIslandNoGradeStall,
     chooseElvenVillageNoGradeStall,
     chooseDarkElvenVillageNoGradeStall,
@@ -1240,6 +1420,12 @@ module.exports = {
     isGiranPlazaStallLocation,
     isGludioDMarketStallLocation,
     isDionDMarketStallLocation,
+    isOrenMarketStallLocation,
+    isHuntersVillageMarketStallLocation,
+    isAdenMarketStallLocation,
+    isRuneMarketStallLocation,
+    isGoddardMarketStallLocation,
+    isFloranMarketStallLocation,
     isTalkingIslandNoGradeStallLocation,
     isElvenVillageNoGradeStallLocation,
     isDarkElvenVillageNoGradeStallLocation,

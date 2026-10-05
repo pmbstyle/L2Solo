@@ -12,6 +12,11 @@ const QuestRegistry = require("./QuestRegistry");
 const quests = QuestRegistry.activeQuests();
 const byId = new Map(quests.map((quest) => [quest.id, quest]));
 const attackQuests = new Map();
+const skillQuests = new Map();
+for (const quest of quests) for (const npcId of quest.skillNpcs || []) {
+  if (!skillQuests.has(npcId)) skillQuests.set(npcId, []);
+  skillQuests.get(npcId).push(quest);
+}
 for (const quest of quests) for (const npcId of quest.attackNpcs || []) {
   if (!attackQuests.has(npcId)) attackQuests.set(npcId, []);
   attackQuests.get(npcId).push(quest);
@@ -58,9 +63,9 @@ function stateFor(session, quest) {
   return state;
 }
 
-function questForNpc(npc, session) {
+function talkQuests(npc, session) {
   const npcId = Number(npc.fetchSelfId());
-  const candidates = quests.filter((quest) => {
+  return quests.filter((quest) => {
     if (!quest.npcs.includes(npcId)) return false;
     const state = stateFor(session, quest);
     if (
@@ -71,21 +76,14 @@ function questForNpc(npc, session) {
       return false;
     return !quest.canTalk || quest.canTalk(state, npc);
   });
+}
+
+function questForNpc(npc, session) {
+  const candidates = talkQuests(npc, session);
   return (
     candidates.find((quest) => stateFor(session, quest).isStarted()) ||
     candidates.find((quest) => !stateFor(session, quest).isCompleted()) ||
     candidates[0]
-  );
-}
-
-function availableStartQuests(npc, session) {
-  const npcId = Number(npc.fetchSelfId());
-  return quests.filter(
-    (quest) =>
-      (quest.startNpcs || []).includes(npcId) &&
-      !stateFor(session, quest).isStarted() &&
-      !stateFor(session, quest).isCompleted() &&
-      (!quest.canTalk || quest.canTalk(stateFor(session, quest), npc)),
   );
 }
 
@@ -103,6 +101,12 @@ async function hasTalk(session, npc) {
 }
 
 function render(session, npc, html) {
+  // Some village masters lead directly with an existing quest (e.g. Jurek's
+  // Soul Crystal quest). Add the transfer branch without replacing that page.
+  const npcId = npc.fetchSelfId?.() ?? session.activeNpcTalk?.selfId;
+  if (invoke('GameServer/SecondProfession').handles(npcId) && !html.includes('bypass -h second-profession')) {
+    html = html.replace(/<\/body>/i, '<br><a action="bypass -h second-profession">Second profession trials</a><br></body>');
+  }
   session.dataSendToMe(ServerResponse.npcHtml(npc.fetchId(), html));
   session.dataSendToMe(ServerResponse.actionFailed());
 }
@@ -145,15 +149,18 @@ async function onTalk(session, npc) {
     const quest = questForNpc(npc, session);
     if (!quest) return false;
     const state = stateFor(session, quest);
-    const choices = availableStartQuests(npc, session);
+    const choices = talkQuests(npc, session).filter(quest => !stateFor(session, quest).isCompleted());
     if (!state.isStarted() && choices.length > 1) {
-      const html = `<html><body>Available quests:<br><br>${choices.map((quest) => `<a action="bypass -h quest ${quest.id} start">${quest.name}</a><br>`).join("")}</body></html>`;
+      const html = `<html><body>Available quests:<br><br>${choices.map((quest) => `<a action="bypass -h quest ${quest.id} ${stateFor(session, quest).isStarted() ? 'show_quest' : 'start'}">${quest.name}</a><br>`).join("")}</body></html>`;
       render(session, npc, html);
       return true;
     }
     const before = activeQuestSnapshot(session);
-    const html = await quest.onTalk(state, npc);
+    let html = await quest.onTalk(state, npc);
     if (!html) return false;
+    const alternatives = choices.filter(choice => choice !== quest);
+    if (alternatives.length) html = html.replace(/<\/body>/i, '<br>Other quests:<br>'
+      + alternatives.map(choice => `<a action="bypass -h quest ${choice.id} show_quest">${choice.name}</a><br>`).join('') + '</body>');
     if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
     render(session, npc, html);
     return true;
@@ -168,6 +175,20 @@ async function onEvent(session, event) {
     const eventName = String(event.name);
     if (!quest || !npc || !quest.npcs.includes(Number(npc.selfId)))
       return false;
+    const target = { fetchSelfId: () => Number(npc.selfId), fetchId: () => Number(npc.objectId) };
+    const actual = invoke('GameServer/World/NpcObjectIndex').find(World, target.fetchId());
+    if (actual?.questSpawn && (actual.questSpawn.ownerId !== session.actor.fetchId()
+        || actual.questSpawn.questId !== quest.id)) return false;
+    if (quest.personalNpcs?.includes(target.fetchSelfId()) && !quest.canTalk(stateFor(session, quest), target)) return false;
+    if (eventName === 'show_quest') {
+      if (!talkQuests(target, session).includes(quest)) return false;
+      const before = activeQuestSnapshot(session);
+      const html = await quest.onTalk(stateFor(session, quest), target);
+      if (!html) return false;
+      if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
+      render(session, target, html);
+      return true;
+    }
     const eventNpcs = quest.eventNpc?.(eventName);
     const permitted = Array.isArray(eventNpcs)
       ? eventNpcs.includes(Number(npc.selfId)) : eventNpcs === Number(npc.selfId);
@@ -343,7 +364,7 @@ function rewardExpSp(session, exp, sp) {
   ExperienceReward(session, session.actor, baseExp, baseSp);
 }
 
-async function onKill(session, npc) {
+async function onKill(session, npc, source = session?.actor) {
   return mutate(session, async () => {
     await ensureLoaded(session);
     await invoke("GameServer/Clan/ClanAllianceService").onKill(session, npc);
@@ -356,7 +377,7 @@ async function onKill(session, npc) {
       if (spawnedQuestId && spawnedQuestId !== quest.id) continue;
       if (!quest.killNpcs?.includes(npcId)) continue;
       const state = states(session).get(quest.id);
-      if (state?.isStarted()) await quest.onKill(state, npc);
+      if (state?.isStarted()) await quest.onKill(state, npc, source);
     }
     if (before !== activeQuestSnapshot(session)) syncActiveQuests(session);
   });
@@ -365,11 +386,46 @@ async function onKill(session, npc) {
 function onAttack(session, npc, source, damage) {
   const handlers = attackQuests.get(npc.fetchSelfId?.());
   if (!handlers || !session?.actor) return Promise.resolve();
+  // A foreign attacker can foul another player's personal summoning duel.
+  // Deliver the real source to the encounter owner without granting kill credit.
+  const ownerId = Number(npc.questSpawn?.ownerId) || 0;
+  if (ownerId && ownerId !== Number(session.actor.fetchId())) {
+    const owner = (World.user?.sessions || []).find(s => Number(s.actor?.fetchId?.()) === ownerId);
+    if (!owner) return Promise.resolve();
+    return onAttack(owner, npc, source, damage);
+  }
   return mutate(session, async () => {
     await ensureLoaded(session);
     for (const quest of handlers) {
       const state = states(session).get(quest.id);
       if (state?.isStarted()) await quest.onAttack(state, npc, source, damage);
+    }
+    syncActiveQuests(session);
+  });
+}
+
+function onSummonDeath(session, pet) {
+  if (!session?.actor) return Promise.resolve();
+  return mutate(session, async () => {
+    await ensureLoaded(session);
+    for (const quest of quests) {
+      const state = states(session).get(quest.id);
+      if (quest.onSummonDeath && state?.isStarted()) await quest.onSummonDeath(state, pet);
+    }
+    syncActiveQuests(session);
+  });
+}
+
+function onSkillSee(session, npc, skill, source = session?.actor) {
+  const handlers = skillQuests.get(npc.fetchSelfId?.());
+  if (!handlers || !session?.actor || source !== session.actor || npc.isDead?.()) return Promise.resolve();
+  return mutate(session, async () => {
+    await ensureLoaded(session);
+    if (npc.questSpawn?.ownerId && npc.questSpawn.ownerId !== session.actor.fetchId()) return;
+    for (const quest of handlers) {
+      if (npc.questSpawn?.questId && npc.questSpawn.questId !== quest.id) continue;
+      const state = states(session).get(quest.id);
+      if (state?.isStarted()) await quest.onSkillSee(state, npc, skill);
     }
     syncActiveQuests(session);
   });
@@ -407,6 +463,8 @@ module.exports = {
   rewardExpSp,
   questDropAmount,
   onAttack,
+  onSummonDeath,
+  onSkillSee,
   addRadar,
   removeRadar,
   clearRadars,
