@@ -53,7 +53,12 @@ for (const selfId of [57, 956, 1458, 1463, 5192, 5575, 4629]) {
     assert(!ItemDisposition.isSpareConsumable({ selfId }), `${selfId} is not a spare consumable`);
 }
 
-const npc = new Map(MarketListingPolicy.evaluate(state, { unlimited: true, states: [] }).npc
+// The enchant scroll is the market's (group E): with buyers of it on the
+// board, its own sale decides; it is never sold to the NPC as spare.
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const dealsAt = Date.now();
+for (let deal = 0; deal < 12; deal++) MarketCounters.deal(956, 6000, 1, dealsAt - (12 - deal) * 300000, 999999);
+const npc = new Map(MarketListingPolicy.evaluate(state, { unlimited: true, states: [], now: dealsAt }).npc
     .map((entry) => [entry.selfId, entry.count]));
 assert.deepStrictEqual([...npc.entries()].sort((a, b) => a[0] - b[0]),
     [[17, 500], [736, 1], [1060, 10], [1061, 30 - target], [1661, 2], [1831, 4]],
