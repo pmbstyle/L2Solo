@@ -3,6 +3,7 @@
 const Types = require('./BotPersonaTypes');
 
 const LEADER_TRIES = 64;
+const LEADER_PASSES = 5;
 
 function persona(row, archetype, salt = '') {
     return {
@@ -17,9 +18,9 @@ function persona(row, archetype, salt = '') {
 
 // A clan leader keeps the clan's drive (a dwarf's is wealth) and takes the
 // first type and roll, from the regular one on, that passes the author's
-// founder gate (leaderScore within the top founderTopShare of its drive,
-// thresholds of the regular result of the whole population); null when none
-// of the tries passes, and the regular result stays.
+// founder gate (leaderScore within the top founderTopShare of its drive) at
+// the given cut-offs; null when none of the tries passes, and the regular
+// result stays.
 function leaderPersona(row, regular, thresholds, total, Policy) {
     const drive = Types.isDwarf(row.classId) ? 'wealth' : row.primaryDrive;
     if (!(thresholds[drive] >= 0)) return null;
@@ -60,18 +61,32 @@ function apply(connection, timestamp = Date.now()) {
         result.set(Number(row.characterId), persona(row, archetype));
     }
 
+    // Leaders against the cut-offs of the final population (what the
+    // author's founderThresholds computes at run time): re-roll the leaders
+    // below them, recompute, until no leader changes (at most LEADER_PASSES).
     const Policy = invoke('GameServer/Clan/ClanSimulationPolicy');
-    const population = [...kept.map((row) => ({ primaryDrive: row.primaryDrive, traits: JSON.parse(row.traitsJson) })), ...result.values()];
-    const thresholds = Policy.founderThresholds(population);
+    const keptPersonas = kept.map((row) => ({ primaryDrive: row.primaryDrive, traits: JSON.parse(row.traitsJson) }));
     const leaders = new Set(connection.prepare('SELECT leaderId FROM clans WHERE leaderId > 0').all().map((row) => Number(row.leaderId)));
-    let leaderFallbacks = 0;
-    for (const row of todo) {
-        const id = Number(row.characterId);
-        if (!leaders.has(id)) continue;
-        const leader = leaderPersona(row, result.get(id), thresholds, rows.length, Policy);
-        if (leader) result.set(id, leader);
-        else leaderFallbacks++;
+    const leaderRows = todo.filter((row) => leaders.has(Number(row.characterId)));
+    const regular = new Map(leaderRows.map((row) => [Number(row.characterId), result.get(Number(row.characterId))]));
+    const below = (leader, thresholds) => !(Policy.leaderScore(leader) >= thresholds[leader.primaryDrive]);
+    let thresholds = Policy.founderThresholds([...keptPersonas, ...result.values()]);
+    let leaderPasses = 0;
+    for (let pass = 0; pass < LEADER_PASSES; pass++) {
+        let changed = 0;
+        for (const row of leaderRows) {
+            const id = Number(row.characterId);
+            if (!below(result.get(id), thresholds)) continue;
+            const next = leaderPersona(row, regular.get(id), thresholds, rows.length, Policy) || regular.get(id);
+            if (JSON.stringify(next) === JSON.stringify(result.get(id))) continue;
+            result.set(id, next);
+            changed++;
+        }
+        leaderPasses = pass + 1;
+        thresholds = Policy.founderThresholds([...keptPersonas, ...result.values()]);
+        if (!changed) break;
     }
+    const leaderFallbacks = leaderRows.filter((row) => below(result.get(Number(row.characterId)), thresholds)).length;
 
     const textCardFor = invoke('GameServer/Bot/AI/BotPersona').textCardFor;
     const update = connection.prepare(`UPDATE bot_personas SET version = 2, primaryDrive = ?, archetype = ?, traitsJson = ?,
@@ -82,7 +97,8 @@ function apply(connection, timestamp = Date.now()) {
     }
     const reset = connection.prepare(`UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.marketPricing')
         WHERE json_valid(statsJson) AND json_type(statsJson, '$.marketPricing') IS NOT NULL`).run();
-    return { migrated: result.size, leaders: leaders.size, leaderFallbacks, marketPricingReset: Number(reset.changes || 0) };
+    return { migrated: result.size, leaders: leaderRows.length, leaderFallbacks, leaderPasses, thresholds,
+        marketPricingReset: Number(reset.changes || 0) };
 }
 
-module.exports = { apply, LEADER_TRIES };
+module.exports = { apply, LEADER_TRIES, LEADER_PASSES };

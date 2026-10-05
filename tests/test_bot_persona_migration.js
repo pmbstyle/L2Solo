@@ -82,7 +82,8 @@ function rows(db) {
         copy.exec('COMMIT');
         assert.strictEqual(stats.migrated, BOTS);
         assert.strictEqual(stats.leaders, LEADERS.length + 1);
-        assert(stats.leaderFallbacks <= 2, `leaders without a type through the gate: ${stats.leaderFallbacks}`);
+        assert(stats.leaderFallbacks <= 2, `leaders below the final gate: ${stats.leaderFallbacks}`);
+        assert(stats.leaderPasses >= 1 && stats.leaderPasses <= Migration.LEADER_PASSES);
         assert.strictEqual(stats.marketPricingReset, BOTS / 2);
 
         Database.init();
@@ -115,8 +116,9 @@ function rows(db) {
         const withoutTime = (list) => JSON.stringify(list.map((row) => ({ ...row, updatedAt: 0 })));
         assert.strictEqual(withoutTime(rows(copy)), withoutTime(migrated));
         copy.close();
-        // Leaders keep their clan's drive (a dwarf's becomes wealth), except a
-        // fallback; how many pass the gate of the final population is reported.
+        // Leaders keep their clan's drive (a dwarf's becomes wealth) and pass the
+        // gate of the final population (the author's run-time cut-offs), except
+        // the fallbacks.
         const thresholds = Policy.founderThresholds(migrated.map((row) => ({ primaryDrive: row.primaryDrive, traits: JSON.parse(row.traitsJson) })));
         let passed = 0, keptDrive = 0;
         for (const id of [...LEADERS, DWARF_LEADER]) {
@@ -124,7 +126,9 @@ function rows(db) {
             keptDrive += Number(row.primaryDrive === (Types.isDwarf(row.classId) ? 'wealth' : oldDrive.get(id)));
             passed += Number(Policy.leaderScore({ traits: JSON.parse(row.traitsJson) }) >= thresholds[row.primaryDrive]);
         }
-        assert(keptDrive >= LEADERS.length + 1 - stats.leaderFallbacks, `leaders keep the clan drive: ${keptDrive}`);
+        assert.deepStrictEqual(thresholds, stats.thresholds, 'the reported cut-offs are the final population\'s');
+        assert.strictEqual(passed, LEADERS.length + 1 - stats.leaderFallbacks, `leaders through the final gate: ${passed}`);
+        assert(keptDrive >= passed, `leaders keep the clan drive: ${keptDrive}`);
         assert.strictEqual(migrated.find((row) => row.characterId === DWARF_LEADER).primaryDrive, 'wealth');
 
         // Idempotent: a second run changes nothing.
