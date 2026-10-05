@@ -304,6 +304,7 @@ const tests = [
     'tests/test_cold_wealth_craft.js',
     'tests/test_bot_spot_risk_baseline.js',
     'tests/test_bot_persona_party_decision.js',
+    'tests/test_persona_party_copies.js',
     'tests/test_bot_remote_chat_persona.js',
     'tests/test_cold_bot_chat.js',
     'tests/test_bot_friendship.js',
