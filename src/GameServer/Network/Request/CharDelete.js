@@ -17,7 +17,11 @@ function consume(session, data) {
     Shared.fetchCharacters(session.accountId).then((characters) => {
         const character = characters[data.characterSlot];
 
-        Database.deleteCharacter(session.accountId, character.name).then(() => {
+        // The leave rule (design 2.7, E49): the character's board records
+        // close first, so the board in memory and its index drop them.
+        invoke('GameServer/AfkTrade/AfkTradeService').leave(character.id).catch((error) => {
+            utils.infoWarn('CharDelete', 'board leave failed for %s: %s', character.name, error.message);
+        }).then(() => Database.deleteCharacter(session.accountId, character.name)).then(() => {
 
             // Clear database from all actor created content
             Database.deleteSkills   (character.id);
