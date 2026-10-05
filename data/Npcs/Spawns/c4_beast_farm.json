@@ -1,0 +1,434 @@
+[
+  {
+    "selfId": "c4-beast-farm",
+    "bounds": [],
+    "spawns": [
+      {
+        "selfId": 1443,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 52152,
+            "locY": -80134,
+            "locZ": -2928,
+            "head": 54461
+          },
+          {
+            "locX": 55119,
+            "locY": -78053,
+            "locZ": -3408,
+            "head": 20606
+          },
+          {
+            "locX": 57342,
+            "locY": -80496,
+            "locZ": -3216,
+            "head": 29112
+          },
+          {
+            "locX": 56891,
+            "locY": -76508,
+            "locZ": -3584,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1444,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 48018,
+            "locY": -78160,
+            "locZ": -3488,
+            "head": 32767
+          },
+          {
+            "locX": 50868,
+            "locY": -80748,
+            "locZ": -2960,
+            "head": 64097
+          },
+          {
+            "locX": 51419,
+            "locY": -77123,
+            "locZ": -3424,
+            "head": 60018
+          },
+          {
+            "locX": 48974,
+            "locY": -77375,
+            "locZ": -3544,
+            "head": 6956
+          },
+          {
+            "locX": 54791,
+            "locY": -79355,
+            "locZ": -3192,
+            "head": 0
+          },
+          {
+            "locX": 56296,
+            "locY": -80675,
+            "locZ": -3064,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1445,
+        "name": "Alpen Bandersnatch",
+        "coords": [
+          {
+            "locX": 46625,
+            "locY": -78651,
+            "locZ": -3504,
+            "head": 65175
+          },
+          {
+            "locX": 52609,
+            "locY": -85245,
+            "locZ": -2712,
+            "head": 56501
+          },
+          {
+            "locX": 55534,
+            "locY": -82913,
+            "locZ": -2824,
+            "head": 23690
+          },
+          {
+            "locX": 53687,
+            "locY": -88273,
+            "locZ": -2408,
+            "head": 52709
+          },
+          {
+            "locX": 57766,
+            "locY": -86946,
+            "locZ": -2248,
+            "head": 0
+          },
+          {
+            "locX": 57857,
+            "locY": -83375,
+            "locZ": -2648,
+            "head": 0
+          },
+          {
+            "locX": 58053,
+            "locY": -76672,
+            "locZ": -3376,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1446,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 49156,
+            "locY": -82332,
+            "locZ": -3184,
+            "head": 19520
+          },
+          {
+            "locX": 55643,
+            "locY": -85109,
+            "locZ": -2672,
+            "head": 57884
+          },
+          {
+            "locX": 57963,
+            "locY": -83835,
+            "locZ": -2640,
+            "head": 0
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1447,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 45939,
+            "locY": -79106,
+            "locZ": -3504,
+            "head": 21697
+          },
+          {
+            "locX": 50820,
+            "locY": -81269,
+            "locZ": -2912,
+            "head": 64513
+          },
+          {
+            "locX": 53480,
+            "locY": -85178,
+            "locZ": -2752,
+            "head": 36785
+          },
+          {
+            "locX": 53811,
+            "locY": -88457,
+            "locZ": -2408,
+            "head": 40391
+          },
+          {
+            "locX": 52639,
+            "locY": -90448,
+            "locZ": -2152,
+            "head": 41495
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1448,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 49838,
+            "locY": -80644,
+            "locZ": -3136,
+            "head": 15759
+          },
+          {
+            "locX": 58982,
+            "locY": -86583,
+            "locZ": -2248,
+            "head": 43307
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1449,
+        "name": "Raider of Pastureland",
+        "coords": [
+          {
+            "locX": 50108,
+            "locY": -80735,
+            "locZ": -3120,
+            "head": 25948
+          },
+          {
+            "locX": 51274,
+            "locY": -82484,
+            "locZ": -2800,
+            "head": 57277
+          },
+          {
+            "locX": 50651,
+            "locY": -83368,
+            "locZ": -2832,
+            "head": 15485
+          },
+          {
+            "locX": 52960,
+            "locY": -83991,
+            "locZ": -2720,
+            "head": 45377
+          },
+          {
+            "locX": 51347,
+            "locY": -84077,
+            "locZ": -2784,
+            "head": 0
+          },
+          {
+            "locX": 52090,
+            "locY": -84532,
+            "locZ": -2744,
+            "head": 4559
+          },
+          {
+            "locX": 48113,
+            "locY": -85229,
+            "locZ": -3048,
+            "head": 12932
+          },
+          {
+            "locX": 53173,
+            "locY": -83767,
+            "locZ": -2720,
+            "head": 46666
+          },
+          {
+            "locX": 53779,
+            "locY": -82811,
+            "locZ": -2736,
+            "head": 52660
+          },
+          {
+            "locX": 50544,
+            "locY": -86658,
+            "locZ": -2552,
+            "head": 4552
+          },
+          {
+            "locX": 50549,
+            "locY": -88434,
+            "locZ": -2440,
+            "head": 46609
+          },
+          {
+            "locX": 49654,
+            "locY": -90433,
+            "locZ": -2464,
+            "head": 13702
+          },
+          {
+            "locX": 49521,
+            "locY": -91080,
+            "locZ": -2424,
+            "head": 44487
+          },
+          {
+            "locX": 52695,
+            "locY": -92234,
+            "locZ": -2120,
+            "head": 26243
+          },
+          {
+            "locX": 46443,
+            "locY": -90786,
+            "locZ": -2664,
+            "head": 41347
+          },
+          {
+            "locX": 44207,
+            "locY": -93134,
+            "locZ": -2392,
+            "head": 17329
+          },
+          {
+            "locX": 44648,
+            "locY": -93247,
+            "locZ": -2392,
+            "head": 12309
+          },
+          {
+            "locX": 46388,
+            "locY": -86162,
+            "locZ": -2616,
+            "head": 54331
+          },
+          {
+            "locX": 59527,
+            "locY": -92704,
+            "locZ": -872,
+            "head": 63085
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      },
+      {
+        "selfId": 1450,
+        "name": "Alpen Grendel",
+        "coords": [
+          {
+            "locX": 52151,
+            "locY": -83783,
+            "locZ": -2720,
+            "head": 63661
+          },
+          {
+            "locX": 52375,
+            "locY": -80973,
+            "locZ": -2808,
+            "head": 57601
+          },
+          {
+            "locX": 47633,
+            "locY": -84478,
+            "locZ": -3072,
+            "head": 42313
+          },
+          {
+            "locX": 52629,
+            "locY": -84036,
+            "locZ": -2720,
+            "head": 2803
+          },
+          {
+            "locX": 49187,
+            "locY": -86848,
+            "locZ": -2760,
+            "head": 0
+          },
+          {
+            "locX": 51239,
+            "locY": -87878,
+            "locZ": -2536,
+            "head": 61716
+          },
+          {
+            "locX": 47189,
+            "locY": -87183,
+            "locZ": -2696,
+            "head": 6132
+          },
+          {
+            "locX": 50755,
+            "locY": -90790,
+            "locZ": -2368,
+            "head": 54584
+          },
+          {
+            "locX": 51991,
+            "locY": -92811,
+            "locZ": -2120,
+            "head": 19847
+          },
+          {
+            "locX": 46008,
+            "locY": -90912,
+            "locZ": -2672,
+            "head": 4655
+          },
+          {
+            "locX": 44524,
+            "locY": -93259,
+            "locZ": -2392,
+            "head": 42613
+          },
+          {
+            "locX": 46994,
+            "locY": -86761,
+            "locZ": -2640,
+            "head": 3355
+          },
+          {
+            "locX": 57909,
+            "locY": -92351,
+            "locZ": -888,
+            "head": 60509
+          }
+        ],
+        "total": 1,
+        "respawn": 60,
+        "bias": 0
+      }
+    ]
+  }
+]

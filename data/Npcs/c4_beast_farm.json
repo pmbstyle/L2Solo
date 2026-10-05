@@ -1,0 +1,490 @@
+[
+  {
+    "selfId": 1443,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 649,
+      "pAtkRnd": 20,
+      "pDef": 530,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 153,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.765180146133,
+      "sp": 633
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1444,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 63,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 741,
+      "pAtkRnd": 20,
+      "pDef": 530,
+      "mAtk": 560,
+      "mDef": 323,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3302,
+      "maxMp": 1251,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 153,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.483245149912,
+      "sp": 532
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1445,
+    "template": {
+      "kind": "Monster",
+      "name": "Alpen Bandersnatch",
+      "title": "",
+      "level": 64,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1302,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 18,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.4833984375,
+      "sp": 556
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1446,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 64,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 678,
+      "pAtkRnd": 20,
+      "pDef": 543,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 4,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 160,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.8251953125,
+      "sp": 684
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1447,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 738,
+      "pAtkRnd": 5,
+      "pDef": 570,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 229,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.765151515152,
+      "sp": 724
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1448,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 66,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 843,
+      "pAtkRnd": 5,
+      "pDef": 570,
+      "mAtk": 649,
+      "mDef": 348,
+      "accur": -3,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3546,
+      "maxMp": 1353,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 229,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.48347107438,
+      "sp": 608
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1449,
+    "template": {
+      "kind": "Monster",
+      "name": "Raider of Pastureland",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 800,
+      "pAtkRnd": 5,
+      "pDef": 598,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 55,
+      "run": 181
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 26
+    },
+    "equipment": {
+      "weapon": 234,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.825259515571,
+      "sp": 815
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1450,
+    "template": {
+      "kind": "Monster",
+      "name": "Alpen Grendel",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1690,
+      "pAtkRnd": 30,
+      "pDef": 449,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": 4.75,
+      "atkSpd": 200,
+      "castSpd": 182,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 170
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "nonpet_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.765138408304,
+      "sp": 789
+    },
+    "traits": {
+      "race": "animal",
+      "undead": false
+    }
+  }
+]
