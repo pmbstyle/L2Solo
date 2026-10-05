@@ -1,5 +1,7 @@
 const DEFAULTS = {
     enabled: true,
+    // Personal knowledge errors and learning by own actions share one switch.
+    knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,
     backgroundPartyEnabled: true,
     phasePolicyEnabled: true,
@@ -222,6 +224,7 @@ const DEFAULTS = {
 };
 
 const ENV_KEYS = {
+    knowledgeErrorsEnabled: 'BOT_KNOWLEDGE_ERRORS_ENABLED',
     pvpAggression: 'BOT_PVP_AGGRESSION',
     enabled: 'BOT_POPULATION_ENABLED',
     backgroundResolverEnabled: 'BOT_BACKGROUND_RESOLVER_ENABLED',

@@ -834,7 +834,8 @@ const tests = [
     'tests/test_npc_template_lookup.js',
     'tests/test_offer_query_callers.js',
     'tests/test_player_safe_preferred_parties.js',
-    'tests/test_price_belief_decision.js'
+    'tests/test_price_belief_decision.js',
+    'tests/test_knowledge_learning.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -876,6 +877,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and group F fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_knowledge_learning.js',
     'tests/test_group_f_player_pricing.js',
     'tests/test_group_f_bot_routing.js',
     'tests/test_group_f_companion_board_line.js',
