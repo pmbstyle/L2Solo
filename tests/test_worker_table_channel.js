@@ -157,7 +157,8 @@ async function unitChecks() {
         assert.strictEqual(w.mirror.version('test'), 2);
         w.same();
         // A detached worker gets nothing; a failed post suspends the worker
-        // until it asks for a resync, then the table goes in full.
+        // and the next flush tries once to send what it missed, in full (E60:
+        // the worker sees no gap in what it never got and would not ask).
         w.channel.detach(w.target);
         const pages = w.sent.length;
         w.change({ id: 3, price: 30 });
@@ -165,19 +166,29 @@ async function unitChecks() {
         assert.strictEqual(w.sent.length, pages);
         let fail = true;
         w.channel.attach(w.target, 'e3', (payload, bytes) => (fail ? false : w.deliver('e3')(payload, bytes)));
+        assert.strictEqual(w.channel.stats.failedPosts, 1);
+        assert.strictEqual(w.sent.length, pages, 'the failed post delivered nothing');
         fail = false;
         w.change({ id: 4, price: 40 });
         w.channel.flush();
-        assert.strictEqual(w.channel.stats.failedPosts, 1);
-        assert.strictEqual(w.sent.length, pages, 'a suspended worker gets nothing');
-        w.channel.resync(w.target, 'e3', []);
-        assert(w.sent.at(-1).payload.tables[0].full, 'after a failed post the table goes in full');
+        assert.strictEqual(w.channel.stats.retries, 1);
+        assert(w.sent.at(-1).payload.tables[0].full, 'the next flush sends the missed table in full');
+        w.same();
+        // Recovered: a later failure gets its own try again.
+        fail = true;
+        w.change({ id: 5, price: 50 });
+        w.channel.flush();
+        fail = false;
+        w.change({ id: 6, price: 60 });
+        w.channel.flush();
+        assert.strictEqual(w.channel.stats.retries, 2);
         w.same();
     }
 
     // A failed post while the worker is gone (a restart between its new epoch
-    // and its attach) costs one page, not a rebuild of every table per flush;
-    // only the tables it missed go in full when it is back.
+    // and its attach) costs one page and one try at the next flush, not a
+    // rebuild of every table per flush; only the tables it missed go in full
+    // when it is back.
     {
         const channel = new ColdTableChannel();
         const tables = { a: new Map(), b: new Map(), c: new Map() };
@@ -204,9 +215,10 @@ async function unitChecks() {
             set('b', { id: 2, price: flush });
             channel.flush();
         }
-        assert.strictEqual(posts, failed, 'a suspended worker is not posted to on every flush');
-        assert.strictEqual(channel.stats.failedPosts, 1);
-        assert.strictEqual(channel.stats.fulls, 3, 'no full table is rebuilt while the worker is gone');
+        assert.strictEqual(posts, failed + 1, 'a suspended worker gets one try, not a post on every flush');
+        assert.strictEqual(channel.stats.failedPosts, 2);
+        assert.strictEqual(channel.stats.retries, 1);
+        assert.strictEqual(channel.stats.fulls, 4, 'the try rebuilds the missed table once, then nothing while the worker is gone');
         gone = false;
         const sent = [];
         channel.attach(target, 'e1', (payload) => { sent.push(...payload.tables.map((piece) => `${piece.name}:${piece.full}`)); return post(payload); });

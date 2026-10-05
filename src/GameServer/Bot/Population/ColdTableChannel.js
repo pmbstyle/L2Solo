@@ -15,12 +15,14 @@ const REMOVED = Symbol('removed');
 // restart) gets every table in full when it attaches. A page that could not
 // be posted suspends the worker: the tables of that page and of the pages
 // after it, and every table that changes while it is suspended, go in full
-// once it attaches again or asks for a resync; the tables it got stay.
+// at the next flush, tried once (the worker sees no gap in what it never
+// got, so it would not ask); when that try fails too, they wait for a new
+// epoch or a resync. The tables it got stay.
 class ColdTableChannel {
     constructor() {
         this.tables = new Map();
         this.targets = new Map();
-        this.stats = { flushes: 0, pages: 0, rows: 0, fulls: 0, resyncs: 0, skipped: 0, failedPosts: 0, suspendedFlushes: 0 };
+        this.stats = { flushes: 0, pages: 0, rows: 0, fulls: 0, resyncs: 0, skipped: 0, failedPosts: 0, retries: 0, suspendedFlushes: 0 };
     }
 
     // key(row) gives a row's key; allRows() gives every current row.
@@ -52,7 +54,7 @@ class ColdTableChannel {
             current.post = post;
             return;
         }
-        this.targets.set(target, { epoch, post, synced: new Set(), suspended: false });
+        this.targets.set(target, { epoch, post, synced: new Set(), suspended: false, retried: false });
         this.flush();
     }
 
@@ -65,6 +67,7 @@ class ColdTableChannel {
         if (!entry || entry.epoch !== epoch) return;
         for (const name of names) entry.synced.delete(String(name));
         entry.suspended = false;
+        entry.retried = false;
         this.stats.resyncs += 1;
         this.flush();
     }
@@ -100,10 +103,16 @@ class ColdTableChannel {
         }
         let sharedPages = null;
         for (const target of this.targets.values()) {
-            if (target.suspended) {
+            if (target.suspended && target.retried) {
                 for (const delta of deltas) target.synced.delete(delta.name);
                 this.stats.suspendedFlushes += 1;
                 continue;
+            }
+            // The one try after a failed post: what it missed goes in full.
+            if (target.suspended) {
+                target.suspended = false;
+                target.retried = true;
+                this.stats.retries += 1;
             }
             // A table the worker does not hold yet goes in full; the full copy
             // already has this flush's changes.
@@ -132,6 +141,8 @@ class ColdTableChannel {
                 target.suspended = true;
                 break;
             }
+            // Every page went: a later failed post gets its own try again.
+            if (!target.suspended) target.retried = false;
         }
         if (deltas.length) {
             this.stats.flushes += 1;
