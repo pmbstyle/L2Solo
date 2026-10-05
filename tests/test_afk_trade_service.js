@@ -149,7 +149,7 @@ function sessionFor(accountId, row, items) {
         }
     });
     assert.strictEqual(
-        MarketOpportunity.findOffers(1865, { town: shops[0].town, buyerCharacterId: customerId })[0].sourceType,
+        MarketOpportunity.bestOffer(1865, { town: shops[0].town, buyerCharacterId: customerId }).sourceType,
         'afk_player_store',
         'equal-price bot offer must yield to the player AFK shop'
     );

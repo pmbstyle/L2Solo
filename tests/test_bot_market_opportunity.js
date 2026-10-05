@@ -7,6 +7,13 @@ const World = invoke('GameServer/World/World');
 DataCache.init();
 
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+// Every offer the one query weighs, in the order it meets them (an accept
+// that takes none).
+const candidates = (selfId, options = {}) => {
+    const seen = [];
+    MarketOpportunity.bestOffer(selfId, { ...options, accept: (offer) => { seen.push(offer); return false; } });
+    return seen;
+};
 const originalUser = World.user;
 
 try {
@@ -25,7 +32,7 @@ try {
 
     // A player's live store trades face to face (E14): a hot bot sees it, a
     // cold buyer does not.
-    const offers = MarketOpportunity.findOffers(2, { town: 'Giran' });
+    const offers = candidates(2, { town: 'Giran' });
     assert(!offers.some((offer) => offer.sourceType === 'private_store'), 'a cold buyer never buys from a live player store');
     assert(offers.some((offer) => offer.sourceType === 'npc'), 'Giran NPC shop should remain a valid source');
     const hot = MarketOpportunity.hotOffers(2, { town: 'Giran' });
@@ -44,14 +51,14 @@ try {
     World.user.sessions[0].accountId = 'bot_islandmats';
     World.user.sessions[0].actor.fetchName = () => 'IslandMats';
     assert.strictEqual(
-        MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
+        candidates(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
         'fixed',
         'configured liquidity merchants must not be counted as peer bots'
     );
     World.user.sessions[0].name = 'IslandMats';
     World.user.sessions[0].actor.fetchName = () => undefined;
     assert.strictEqual(
-        MarketOpportunity.findOffers(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
+        candidates(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
         'fixed',
         'session identity must keep configured merchants fixed when the actor name is temporarily unavailable'
     );

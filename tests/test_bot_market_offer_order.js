@@ -23,8 +23,12 @@ const ad = (ownerId, price, selfId = ITEM, account = `bot_${ownerId}`) => AfkTra
 [ad(990301, 100), ad(990302, 100), ad(990303, 90), ad(990304, 100)];
 const listed = AfkTrade.offers(ITEM, AfkTrade.SELL).map((offer) => offer.sourceId);
 assert.deepStrictEqual(listed, [990303, 990301, 990302, 990304], 'the board lists the best line first');
-assert.deepStrictEqual(MarketOpportunity.findOffers(ITEM).map((offer) => offer.sourceId),
-    [990303, 990301, 990302, 990304], 'equal-price bot asks must keep their listing order');
+// The one offer query takes them in the same order, one after another.
+const taken = [];
+for (let next = 0; next < 4; next++) {
+    taken.push(Number(MarketOpportunity.bestOffer(ITEM, { accept: (offer) => !taken.includes(Number(offer.sourceId)) }).sourceId));
+}
+assert.deepStrictEqual(taken, [990303, 990301, 990302, 990304], 'equal-price bot asks must keep their listing order');
 AfkTrade._resetForTests();
 
 // Hot bots sort live private stores with the same key.

@@ -185,26 +185,6 @@ function fixedStoreOffers() {
     return offers;
 }
 
-// What a cold bot can buy without meeting anyone: board records, NPC shops
-// and the configured city merchants. A player's or a bot's live private
-// store trades face to face only (E14, E22): a cold bot never buys from it
-// remotely.
-function sellOfferCandidates(selfId, options = {}) {
-    const town = options.town || null;
-    return [
-        ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
-        ...privateOffers(selfId, town).filter((offer) => offer.sellerKind === 'fixed'),
-        ...(town ? npcOffers(selfId, town) : [])
-    ].filter((offer) => offer.available);
-}
-
-// Every candidate in the one order (OfferOrder.compareOffers); options.cost
-// is the buyer's trip cost (OfferOrder.tripCost).
-function findOffers(selfId, options = {}) {
-    return sellOfferCandidates(selfId, options)
-        .sort((a, b) => OfferOrder.compareOffers(a, b, options.cost));
-}
-
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
     return [
@@ -215,8 +195,10 @@ function hotOffers(selfId, options = {}) {
         .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
-// The one offer query (OfferQuery) for a buyer on the main thread: the same
-// sources as sellOfferCandidates, in `town`, in each of `towns` or in every
+// The one offer query (OfferQuery) for a buyer on the main thread: what a
+// cold bot can buy without meeting anyone (board records, NPC shops and the
+// configured city merchants; a player's or a bot's live private store trades
+// face to face only, E14, E22), in `town`, in each of `towns` or in every
 // town (the board and the configured merchants only: an NPC shop is in a
 // town), the first in the one order within `budget` that `accept` takes.
 function bestOffer(selfId, options = {}) {
@@ -353,12 +335,10 @@ function release(offer, qty = 1) {
 }
 
 module.exports = {
-    sellOfferCandidates,
     bestOffer,
     bestBuyOffer,
     activeBuyDemandSelfIds,
     bestSupplyOffer,
-    findOffers,
     hotOffers,
     findBuyOffers,
     fixedStoreOffers,

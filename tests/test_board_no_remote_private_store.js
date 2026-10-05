@@ -12,6 +12,13 @@ const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+// Every offer the one query weighs, in the order it meets them (an accept
+// that takes none).
+const candidates = (selfId, options = {}) => {
+    const seen = [];
+    MarketOpportunity.bestOffer(selfId, { ...options, accept: (offer) => { seen.push(offer); return false; } });
+    return seen;
+};
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const PrivateStore = invoke('GameServer/PrivateStore');
 
@@ -85,7 +92,7 @@ function liveSession(account, id, name, stemRowId) {
 
     // E14: the live stores are not offered to a cold buyer, in any town.
     for (const town of ['Giran', 'Aden', null]) {
-        const offers = MarketOpportunity.findOffers(STEM, { town, buyerCharacterId: buyerId });
+        const offers = candidates(STEM, { town, buyerCharacterId: buyerId });
         assert(!offers.some((offer) => offer.sourceType === 'private_store' && offer.sellerKind !== 'fixed'),
             `E14: a cold buyer in ${town || 'any town'} sees no live player or bot store`);
     }
@@ -100,7 +107,7 @@ function liveSession(account, id, name, stemRowId) {
     // E22: a store closed with quit keeps its object on the actor; it is not
     // offered either.
     PrivateStore.quit?.(player);
-    assert(!MarketOpportunity.findOffers(STEM, { town: 'Aden', buyerCharacterId: buyerId })
+    assert(!candidates(STEM, { town: 'Aden', buyerCharacterId: buyerId })
         .some((offer) => Number(offer.sourceId) === playerId), 'E22: a quit store is never offered');
 
     await Database.close();
