@@ -81,7 +81,11 @@ async function run() {
     assert.strictEqual(linePrice(ownerId), 100, 'no fixed markdown: the kept line keeps its ask');
 
     const savedBefore = LifeState.snapshot(ownerId).updatedAt;
-    const looked = await BotAfkMarket.applyReview(ownerId, { reprices: [{ lineId, price: 88 }] });
+    const observedMove = (price) => {
+        const shop = AfkTrade.findOwnerProjection(ownerId).shop;
+        return { recordId: shop.id, lineId, price, expectedRevision: shop.revision };
+    };
+    const looked = await BotAfkMarket.applyReview(ownerId, { reprices: [observedMove(88)] });
     assert.strictEqual(looked.changed, 1);
     assert.strictEqual(LifeState.snapshot(ownerId).updatedAt, savedBefore, 'a price-only look moves nothing and saves no state (E59)');
     assert.strictEqual(Number(AfkTrade.findOwnerProjection(ownerId).shop.lines[0].id), lineId, 'the look updates the line in place');
@@ -91,14 +95,14 @@ async function run() {
     // A trade or a deal that changed the shop meanwhile wins: here a deal
     // took the whole line between the look and its application.
     await Database.execute(['UPDATE afk_trade_lines SET count = 0 WHERE id = ?', [lineId]]);
-    assert.strictEqual((await BotAfkMarket.applyReview(ownerId, { reprices: [{ lineId, price: 80 }] })).changed, 0);
+    assert.strictEqual((await BotAfkMarket.applyReview(ownerId, { reprices: [observedMove(80)] })).changed, 0);
     await Database.execute(['UPDATE afk_trade_lines SET count = 25 WHERE id = ?', [lineId]]);
     assert.strictEqual(linePrice(ownerId), 88, 'a changed shop keeps its price until the next look');
     assert.strictEqual(Number((await Database.execute(['SELECT price FROM afk_trade_lines WHERE id = ?', [lineId]]))[0].price), 88);
 
     // The NPC is now the best outcome: the line leaves the board, the items
     // come back to the bag for the next town visit.
-    const withdrawn = await BotAfkMarket.applyReview(ownerId, { withdrawals: [{ lineId }] });
+    const withdrawn = await BotAfkMarket.applyReview(ownerId, { withdrawals: [observedMove()] });
     assert.strictEqual(withdrawn.changed, 1);
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId)?.shop || null, null, 'the shop of that one line closes');
     const bag = await Database.fetchItems(ownerId);

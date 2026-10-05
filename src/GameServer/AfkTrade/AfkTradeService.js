@@ -709,18 +709,20 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
 
 // A bot's look reprices several of its lines (E59): one transaction, and the
 // syncs only when an item or Adena moved. Returns { changed, skipped }.
-async function repriceBotLines(ownerId, reprices = []) {
+async function repriceBotLines(ownerId, reprices = [], { withdrawals = [] } = {}) {
     const botLines = new Set();
     for (const entry of ownerEntries(ownerId)) {
         const store = entryStore(entry);
         if (store?.botOwned) for (const line of store.items || []) botLines.add(Number(line.afkTradeLineId));
     }
     const owned = reprices.filter((reprice) => botLines.has(Number(reprice.lineId)));
-    if (!owned.length) return { changed: 0, skipped: reprices.length };
-    const result = await Database.repriceBoardLines(ownerId, owned);
+    const leaving = withdrawals.filter((move) => botLines.has(Number(move.lineId)));
+    if (!owned.length && !leaving.length) return { changed: 0, skipped: reprices.length + withdrawals.length };
+    const result = await Database.repriceBoardLines(ownerId, owned, { withdrawals: leaving });
     await syncAfterReprice(ownerId, result);
     result.shops.forEach(refreshRecord);
-    return { changed: owned.length - result.skipped.length, skipped: reprices.length - owned.length + result.skipped.length };
+    return { changed: result.changed,
+        skipped: reprices.length - owned.length + withdrawals.length - leaving.length + result.skipped.length };
 }
 
 // A reprice that moved an item or Adena: the actor and the bot's cold state
@@ -949,17 +951,18 @@ async function init() {
             migrated.closedShops, migrated.closedLines, migrated.returnedEscrow, migrated.owners,
             migrated.cancelledStores, migrated.keptRecords);
     }
+    // NodeL2 starts this after history/DataCache and before player listeners
+    // or bot workers. Persist legacy checkpoints before any new deal, then
+    // refresh a cache already hydrated by another startup service.
+    const beliefs = await Database.migrateBoardBeliefCursors();
+    beliefs.rows.forEach((row) => LifeState.acceptLifecycleRow(row));
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
     // The market counters learn the board's last deals again (group E, E58).
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
-    try {
-        MarketCounters.reset();
-        MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }));
-    } catch (error) {
-        utils.infoWarn('AfkTrade', 'market counters start empty: %s', error.message);
-    }
+    MarketCounters.reset();
+    MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }));
     startTimers();
     return shops.length;
 }

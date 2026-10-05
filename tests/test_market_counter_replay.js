@@ -72,7 +72,7 @@ const replay = () => Database.fetchRecentBoardDeals({ perItem: MarketCounters.RE
     assert.strictEqual(MarketCounters.itemDeals(1872).prices.length, 21, 'the item keeps its last prices');
     assert.strictEqual(MarketCounters.itemDeals(1872).prices[20], 1039);
     const counter = MarketCounters.counter(MarketCounters.counterOf(1872), now);
-    assert.strictEqual(counter.deals, 32);
+    assert.strictEqual(counter.deals, 40, 'bounded price replay preserves the durable observation count');
     assert(counter.index !== null, 'the counter keeps its market index');
 
     // The day before the last board deal comes back whole: the buyers per

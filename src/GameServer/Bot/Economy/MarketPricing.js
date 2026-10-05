@@ -77,6 +77,7 @@ function adopt(book, belief, ctx, price) {
     belief.ask = Math.round(price);
     belief.seenItem = MarketCounters.itemDeals(id).deals;
     belief.seenCounter = counter.deals;
+    belief.cursorBasis = 2;
     belief.rival = ctx.board?.first(id, SELL, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0;
     return belief;
 }
@@ -176,7 +177,8 @@ function lookChance(state, lines, ctx, lookAt) {
 // price again where new evidence arrived: an ask for a sell line, a bid for
 // a buy ad (one system for both sides, group E follow-up; a bid that no
 // longer gains is withdrawn). Returns { book, reprices: [{ recordId,
-// lineId, selfId, price }], withdrawals: [{ recordId, lineId, selfId }] };
+// lineId, selfId, price, expectedRevision }], withdrawals: [{ recordId,
+// lineId, selfId, expectedRevision }] };
 // null when it did not look.
 function look(state, lines, ctx) {
     const book = PriceBelief.readBook(state.stats);
@@ -186,14 +188,15 @@ function look(state, lines, ctx) {
     const withdrawals = [];
     book.looks += 1;
     for (const line of lines) {
+        const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId, expectedRevision: line.revision };
         const known = PriceBelief.lookup(book, line.selfId, ctx);
         const belief = known || PriceBelief.ensure(book, line.selfId, ctx);
         if (!belief) continue;
         if (line.storeType === BUY) {
             const chosen = lookBid(book, belief, known, line, ctx);
-            if (chosen === null) withdrawals.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId });
+            if (chosen === null) withdrawals.push(move);
             else if (chosen && chosen.price !== line.price) {
-                reprices.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId, price: chosen.price });
+                reprices.push({ ...move, price: chosen.price });
                 belief.ask = chosen.price;
             }
             continue;
@@ -217,11 +220,11 @@ function look(state, lines, ctx) {
         const chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, ['ask', ctx.characterId, line.selfId, book.looks],
             line.price);
         if (chosen.npc) {
-            withdrawals.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId });
+            withdrawals.push(move);
             continue;
         }
         if (chosen.price !== line.price) {
-            reprices.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId, price: chosen.price });
+            reprices.push({ ...move, price: chosen.price });
             belief.ask = chosen.price;
         }
     }

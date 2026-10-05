@@ -666,27 +666,13 @@ async function withdraw(ownerId) {
 // buy ads no bid gains for (their escrow comes back). A line a deal or
 // another move changed meanwhile waits for the next look.
 async function applyReview(ownerId, review = {}) {
-    const id = Number(ownerId);
-    // All new prices of the look in one move; a line that changed or went
-    // meanwhile keeps its price until the next look.
-    let changed = (review.reprices || []).length ? (await AfkTrade.repriceBotLines(id, review.reprices)).changed : 0;
-    const leaving = new Set((review.withdrawals || []).map((line) => Number(line.lineId)));
-    for (const record of AfkTrade.ownerRecords(id)) {
-        const lines = (record.lines || []).filter((line) => Number(line.count) > 0);
-        if (!lines.some((line) => leaving.has(Number(line.id)))) continue;
-        try {
-            if (record.kind === 'sell_ad' || record.kind === 'buy_ad') {
-                await AfkTrade.closeBotRecord(id, record.id, { expectedRevision: record.revision });
-            } else if (record.kind === 'shop') {
-                await publishPrunedSellShop(AfkTrade.findOwnerProjection(id)?.shop || record,
-                    lines.filter((line) => !leaving.has(Number(line.id))));
-            }
-            changed += 1;
-        } catch (error) {
-            if (!staleMove(error)) throw error;
-        }
-    }
-    return { changed };
+    // Prices and withdrawals share one fence, including lines of the same
+    // record. Rows from an older worker have no revision and wait for a look
+    // from a worker that has the current board format.
+    const result = await AfkTrade.repriceBotLines(Number(ownerId), review.reprices || [], {
+        withdrawals: review.withdrawals || []
+    });
+    return { changed: result.changed };
 }
 
 module.exports = { applyReview, buyOrderEscrow, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,

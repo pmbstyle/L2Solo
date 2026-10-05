@@ -45,7 +45,7 @@ function removeFrom(list, line) {
 }
 
 // A record as the table carries it: [id, kind, storeType, ownerId, town,
-// botOwned, lines[[lineId, selfId, enchant, count, price]]], lines with stock
+// botOwned, lines[[lineId, selfId, enchant, count, price]], revision], lines with stock
 // only. `record` has the main thread's fields (AfkTradeService projectionStore
 // or a database record).
 function rowOf(record) {
@@ -57,13 +57,15 @@ function rowOf(record) {
             Number(line.price)]);
     }
     return [Number(record.shopId ?? record.id), String(record.kind || 'shop'), Number(record.storeType),
-        Number(record.ownerId), record.town || null, record.botOwned === true ? 1 : 0, lines];
+        Number(record.ownerId), record.town || null, record.botOwned === true ? 1 : 0, lines,
+        Number(record.revision ?? record.afkTradeRevision) || null];
 }
 
 function recordOf(row) {
     return {
         id: Number(row[0]), kind: row[1], storeType: Number(row[2]), ownerId: Number(row[3]), town: row[4] || null,
         botOwned: row[5] === 1 || row[5] === true,
+        revision: row[7] ?? null,
         lines: (row[6] || []).map(([lineId, selfId, enchant, count, price]) => ({ lineId, selfId, enchant, count, price }))
     };
 }
@@ -82,6 +84,7 @@ function offerFields(line, town = null) {
         town: line.town || town,
         recordKind: line.kind,
         recordId: line.recordId,
+        expectedRevision: line.revision,
         lineId: line.lineId,
         selfId: line.selfId,
         price: line.price,
@@ -135,6 +138,7 @@ class BoardIndex {
             if (!(count > 0)) continue;
             const line = {
                 recordId: id,
+                revision: record.revision ?? null,
                 lineId: Number(source.lineId),
                 kind: String(record.kind || 'shop'),
                 storeType,

@@ -199,6 +199,30 @@ function load(rows = []) {
         deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId, row.town || null,
             row.buyerCharacterId);
     }
+    // Prices and rates replay a bounded tail. Observation cursors use the
+    // world's durable totals, including items whose history was pruned.
+    const totals = new Map((rows.dealCounts || []).map(({ selfId, deals }) => [Number(selfId), Number(deals)]));
+    for (const row of rows) {
+        if (Number.isSafeInteger(row.totalDeals)) totals.set(Number(row.selfId), row.totalDeals);
+    }
+    if (totals.size) {
+        for (const [id, deals] of totals) {
+            const item = items.get(id) || { deals: 0, units: 1, prices: [], sellers: [], buyers: [] };
+            item.deals = deals;
+            items.set(id, item);
+        }
+        for (const value of counters.values()) value.deals = 0;
+        for (const [id, item] of items) {
+            const key = counterOf(id);
+            if (!counters.has(key)) counters.set(key, { deals: 0, rate: 0, at: 0, index: 0, indexed: false,
+                move: null, hourAt: 0, hourIndex: 0 });
+            counters.get(key).deals += item.deals;
+        }
+        if (channel) {
+            for (const [key, value] of counters) channel.changed('market', counterRow(key, value));
+            for (const [id, value] of items) channel.changed('market', itemRow(id, value));
+        }
+    }
     return rows.length;
 }
 

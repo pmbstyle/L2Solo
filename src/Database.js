@@ -326,13 +326,23 @@ async function inTransaction(work, operation = 'transaction') {
     return enqueue(() => {
         metrics.transactions += 1;
         connection.exec('BEGIN IMMEDIATE');
+        pendingSettlementUndo = new Map();
         try {
             const result = work();
             connection.exec('COMMIT');
             return result;
         } catch (error) {
-            connection.exec('ROLLBACK');
+            try {
+                connection.exec('ROLLBACK');
+            } finally {
+                for (const [ownerId, pending] of pendingSettlementUndo) {
+                    if (pending) pendingSettlementOwners.add(ownerId);
+                    else pendingSettlementOwners.delete(ownerId);
+                }
+            }
             throw error;
+        } finally {
+            pendingSettlementUndo = null;
         }
     }, { operation, read: false });
 }
@@ -2342,7 +2352,45 @@ function recordClanGoalEventUnsafe({ clanId, eventType, goalType = '', plan = ''
 
 // One market trade for the history file (market_trades); a repeated eventKey
 // is ignored there.
-function recordMarketTradeUnsafe(trade) {
+const BOARD_TRADE_SOURCES = new Set(['afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store']);
+const BOARD_DEAL_COUNT_PREFIX = 'boardDealCount:';
+
+function ensureBoardDealCountsUnsafe() {
+    if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) return;
+    // A queued world write freezes the outbox while one history query counts
+    // the union. Rows already transferred but not yet deleted count once.
+    const pending = all("SELECT payload FROM history_outbox WHERE kind = 'market_trade' ORDER BY id")
+        .map(({ payload }) => JSON.parse(payload));
+    const totals = History.all(`WITH pending AS (SELECT
+            json_extract(value, '$.eventKey') AS eventKey, json_extract(value, '$.selfId') AS selfId,
+            json_extract(value, '$.sourceType') AS sourceType, json_extract(value, '$.unitPrice') AS unitPrice,
+            json_extract(value, '$.quantity') AS quantity, CAST(key AS INTEGER) AS eventOrder FROM json_each(?)),
+        trades AS (SELECT eventKey, selfId, sourceType, unitPrice, quantity, 0 AS stage, id AS eventOrder FROM market_trades
+            UNION ALL SELECT eventKey, selfId, sourceType, unitPrice, quantity, 1 AS stage, eventOrder FROM pending),
+        canonical AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY eventKey ORDER BY stage, eventOrder) AS first FROM trades)
+        SELECT selfId, COUNT(*) AS deals FROM canonical
+        WHERE first = 1 AND sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
+            AND unitPrice > 0 AND quantity > 0 AND selfId != 57 GROUP BY selfId`, [JSON.stringify(pending)]);
+    for (const { selfId, deals } of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
+        [`${BOARD_DEAL_COUNT_PREFIX}${Number(selfId)}`, String(deals)]);
+    write("INSERT INTO world_meta (key, value) VALUES ('boardDealCountsReady', '1')");
+}
+
+function recordMarketTradeUnsafe(trade, { unique = false } = {}) {
+    // The observation count belongs to the world, not to the retained tail
+    // of its history. Bootstrap it on the first replay or deal, then advance it in
+    // the same transaction as each board deal. AFK event keys are new by
+    // construction; imported telemetry can repeat a key.
+    if (BOARD_TRADE_SOURCES.has(trade.sourceType) && Number(trade.selfId) !== 57
+        && Number(trade.unitPrice) > 0 && Number(trade.quantity) > 0) {
+        ensureBoardDealCountsUnsafe();
+        const duplicate = !unique && (History.one('SELECT id FROM market_trades WHERE eventKey = ?', [trade.eventKey])
+            || one(`SELECT id FROM history_outbox WHERE kind = 'market_trade'
+                AND json_extract(payload, '$.eventKey') = ? LIMIT 1`, [trade.eventKey]));
+        if (!duplicate) write(`INSERT INTO world_meta (key, value) VALUES (?, '1')
+            ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`,
+        [`${BOARD_DEAL_COUNT_PREFIX}${Number(trade.selfId)}`]);
+    }
     return historyOutboxUnsafe('market_trade', trade);
 }
 
@@ -2513,6 +2561,18 @@ function afkTradeTakeItemUnsafe(characterId, itemId, selfId, enchant, amount) {
 // Bot owners whose settlements wait for their next save; kept in memory so a
 // save looks only when there is something to merge (rebuilt at start).
 const pendingSettlementOwners = new Set();
+let pendingSettlementUndo = null;
+
+// The queue runs transaction work synchronously. Remember only the owners
+// touched by this transaction, so later moves see its changes and rollback
+// restores discovery along with the durable settlements.
+function setPendingSettlementUnsafe(ownerId, pending) {
+    if (pendingSettlementUndo && !pendingSettlementUndo.has(ownerId)) {
+        pendingSettlementUndo.set(ownerId, pendingSettlementOwners.has(ownerId));
+    }
+    if (pending) pendingSettlementOwners.add(ownerId);
+    else pendingSettlementOwners.delete(ownerId);
+}
 
 function isBotOwnerUnsafe(ownerId) {
     return BoardRules.isBotAccount(one('SELECT username FROM characters WHERE id = ?', [Number(ownerId)])?.username);
@@ -2537,7 +2597,7 @@ function creditRecordOwnerUnsafe(ownerId, item, amount, at = now()) {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [owner, selfId, selfId === 57 ? 'Adena' : String(item.name || `Item ${selfId}`),
             count, Math.max(0, Number(item.enchant || 0)), Number(item.slot || 0),
             selfId === 57 || Number(item.stackable || 0) === 1 ? 1 : 0, item.petData || null, at]);
-        pendingSettlementOwners.add(owner);
+        setPendingSettlementUnsafe(owner, true);
         return 'settlement';
     }
     if (selfId === 57) afkTradeCreditAdenaUnsafe(owner, count);
@@ -2783,7 +2843,7 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
     const id = Number(characterId);
     const rows = all('SELECT * FROM board_settlements WHERE ownerId = ? ORDER BY id', [id]);
     if (!rows.length) {
-        pendingSettlementOwners.delete(id);
+        setPendingSettlementUnsafe(id, false);
         return null;
     }
     const changedIds = new Set([57]);
@@ -2793,7 +2853,7 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
         changedIds.add(Number(row.selfId));
     }
     write('DELETE FROM board_settlements WHERE ownerId = ?', [id]);
-    pendingSettlementOwners.delete(id);
+    setPendingSettlementUnsafe(id, false);
     const life = one('SELECT phase, inventorySummary FROM bot_life_state WHERE characterId = ?', [id]);
     if (!life || life.phase !== 'cold') return { changedIds: [...changedIds], row: null };
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -3077,7 +3137,7 @@ const Database = {
             || !Number.isSafeInteger(totalPrice) || totalPrice < 0) {
             return Promise.reject(new Error('invalid_market_trade'));
         }
-        return enqueue(() => {
+        const record = () => {
             const id = recordMarketTradeUnsafe({
                 eventKey,
                 occurredAt,
@@ -3097,7 +3157,10 @@ const Database = {
             // The row reaches market_trades in the history file shortly; a
             // repeated eventKey is ignored there.
             return { queued: true, outboxId: id };
-        }, { operation: 'market:trade-record', read: false });
+        };
+        return BOARD_TRADE_SOURCES.has(trade.sourceType)
+            ? inTransaction(record, 'market:trade-record')
+            : enqueue(record, { operation: 'market:trade-record', read: false });
     },
 
     fetchMarketStoreHistory({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, recentLimit = 100 } = {}) {
@@ -3145,8 +3208,47 @@ const Database = {
     // own deals (the rows AfkTrade settlements write, the ones
     // MarketCounters.deal counts live); a private or configured merchant
     // store writes the same wts/wtb channels with its own source.
+    // Startup barrier, after DataCache is ready and before trading/workers.
+    // Legacy counts have no durable origin; preserve price knowledge and
+    // checkpoint every legacy belief once, including currently inactive ones.
+    migrateBoardBeliefCursors() {
+        return flushHistory().then(() => inTransaction(() => {
+            const DataCache = invoke('GameServer/DataCache');
+            if (!DataCache.items?.length) throw new Error('board_market_data_not_ready');
+            ensureBoardDealCountsUnsafe();
+            const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+            const counts = new Map(all('SELECT key, value FROM world_meta WHERE key LIKE ?', [`${BOARD_DEAL_COUNT_PREFIX}%`])
+                .map(({ key, value }) => [Number(key.slice(BOARD_DEAL_COUNT_PREFIX.length)), Number(value)]));
+            const counters = new Map();
+            for (const [selfId, deals] of counts) {
+                const key = MarketCounters.counterOf(selfId);
+                counters.set(key, Number(counters.get(key) || 0) + deals);
+            }
+            const rows = [];
+            for (const row of all(`SELECT * FROM bot_life_state
+                WHERE json_type(CASE WHEN json_valid(statsJson) THEN statsJson ELSE '{}' END, '$.priceBeliefs.b') = 'array'`)) {
+                const stats = JSON.parse(row.statsJson);
+                let changed = false;
+                for (const belief of stats.priceBeliefs.b) {
+                    if (!Array.isArray(belief) || Number(belief[13]) === 2) continue;
+                    const selfId = Number(belief[0]);
+                    belief[10] = Number(counts.get(selfId) || 0);
+                    belief[11] = Number(counters.get(MarketCounters.counterOf(selfId)) || 0);
+                    belief[13] = 2;
+                    changed = true;
+                }
+                if (!changed) continue;
+                write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1 WHERE characterId = ?',
+                    [JSON.stringify(stats), row.characterId]);
+                rows.push(normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [row.characterId])));
+            }
+            return { rows };
+        }, 'board:belief-cursors-migrate'));
+    },
+
     fetchRecentBoardDeals({ perItem = 32, rangeMs = 24 * 60 * 60 * 1000 } = {}) {
-        return readHistory(() => History.all(`WITH board AS (
+        return flushHistory().then(() => enqueue(() => {
+            const rows = History.all(`WITH board AS (
                 SELECT id, selfId, unitPrice, quantity, occurredAt, sellerCharacterId, buyerCharacterId, town
                 FROM market_trades
                 WHERE sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
@@ -3156,7 +3258,26 @@ const Database = {
             SELECT selfId, unitPrice, quantity, occurredAt, sellerCharacterId, buyerCharacterId, town FROM ranked
             WHERE recent <= ? OR occurredAt >= (SELECT MAX(occurredAt) FROM board) - ?
             ORDER BY occurredAt ASC, id ASC`, [Math.max(1, Math.floor(Number(perItem) || 32)),
-            Math.max(0, Number(rangeMs) || 0)]), 'market:recent-board-deals');
+            Math.max(0, Number(rangeMs) || 0)]);
+            // Initialize at the same queued boundary as the history snapshot,
+            // before later trades can advance these world-owned counts.
+            if (!one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) {
+                connection.exec('BEGIN IMMEDIATE');
+                try {
+                    ensureBoardDealCountsUnsafe();
+                    connection.exec('COMMIT');
+                } catch (error) {
+                    connection.exec('ROLLBACK');
+                    throw error;
+                }
+            }
+            const counts = all('SELECT key, value FROM world_meta WHERE key LIKE ?', [`${BOARD_DEAL_COUNT_PREFIX}%`])
+                .map(({ key, value }) => ({ selfId: Number(key.slice(BOARD_DEAL_COUNT_PREFIX.length)), deals: Number(value) }));
+            const byItem = new Map(counts.map(({ selfId, deals }) => [selfId, deals]));
+            for (const row of rows) row.totalDeals = byItem.get(Number(row.selfId)) || 0;
+            rows.dealCounts = counts;
+            return rows;
+        }, { operation: 'market:recent-board-deals', read: false }));
     },
 
     fetchMarketTradeHistory(selfId, { timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, bucketMs = 60 * 60 * 1000 } = {}) {
@@ -3277,7 +3398,11 @@ const Database = {
             if (expected) {
                 const seen = Object.keys(expected).map(Number);
                 if (seen.length !== closed.length) throw new Error('afk_trade_shop_changed');
-                closed.forEach((shop) => checkRecordRevisionUnsafe(shop, expected[shop.id]));
+                closed.forEach((shop) => {
+                    if (!Object.hasOwn(expected, shop.id) || !Number.isSafeInteger(Number(expected[shop.id]))
+                        || Number(expected[shop.id]) < 1) throw new Error('afk_trade_shop_changed');
+                    checkRecordRevisionUnsafe(shop, expected[shop.id]);
+                });
             }
             const changedIds = [57];
             closed.forEach((shop) => changedIds.push(...closeBoardRecordUnsafe(shop, { ownMove: true, at: timestamp })));
@@ -3455,7 +3580,7 @@ const Database = {
     // (skipped: [{ lineId, reason }]); the others go on. Returns { shops (the
     // records after the moves), skipped, ownerInventory, coldLifeRows } as
     // repriceAfkTradeShop does.
-    repriceBoardLines(ownerId, reprices = []) {
+    repriceBoardLines(ownerId, reprices = [], { withdrawals = [] } = {}) {
         const characterId = Number(ownerId);
         if (!characterId) return Promise.reject(new Error('invalid_afk_trade_price'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
@@ -3463,6 +3588,23 @@ const Database = {
             const skipped = [];
             const changedIds = [];
             let moved = false;
+            let changed = 0;
+            const observed = new Map();
+            const reviewRecord = (move) => {
+                const lineId = Number(move.lineId);
+                const shop = one(`SELECT shops.* FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
+                    WHERE lines.id = ? AND lines.count > 0 AND shops.ownerId = ? AND shops.status = 'active'`, [lineId, characterId]);
+                if (!shop) throw new Error('afk_trade_line_unavailable');
+                if (!observed.has(Number(shop.id))) observed.set(Number(shop.id), Number(shop.revision));
+                if (Number(move.recordId) !== Number(shop.id) || !Number.isSafeInteger(move.expectedRevision)
+                    || move.expectedRevision !== observed.get(Number(shop.id))) throw new Error('afk_trade_shop_changed');
+                return shop;
+            };
+            const skip = (move, error) => {
+                if (!['afk_trade_shop_unavailable', 'afk_trade_line_unavailable', 'afk_trade_shop_changed',
+                    'not_enough_adena', 'invalid_afk_trade_budget'].includes(error.message)) throw error;
+                skipped.push({ lineId: Number(move.lineId), reason: error.message });
+            };
             for (const reprice of reprices) {
                 const id = Number(reprice.lineId);
                 const unitPrice = Math.floor(Number(reprice.price));
@@ -3472,19 +3614,56 @@ const Database = {
                 }
                 let repriced;
                 try {
-                    // Each check of a line comes before its first write.
+                    // Fence the original snapshot once per record. Our earlier
+                    // lines in this transaction can advance its revision.
+                    reviewRecord(reprice);
                     repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, null, null);
                 } catch (error) {
-                    if (!['afk_trade_shop_unavailable', 'afk_trade_line_unavailable', 'not_enough_adena',
-                        'invalid_afk_trade_budget'].includes(error.message)) throw error;
-                    skipped.push({ lineId: id, reason: error.message });
+                    skip(reprice, error);
                     continue;
                 }
                 shops.set(Number(repriced.shop.id), repriced.shop);
                 changedIds.push(...repriced.changedIds);
                 moved = moved || repriced.moved;
+                changed += 1;
             }
-            return { shops: [...shops.values()], skipped, ...afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) };
+            const leaving = new Map();
+            for (const withdrawal of withdrawals) {
+                try {
+                    const shop = reviewRecord(withdrawal);
+                    if (!leaving.has(Number(shop.id))) leaving.set(Number(shop.id), new Set());
+                    leaving.get(Number(shop.id)).add(Number(withdrawal.lineId));
+                } catch (error) { skip(withdrawal, error); }
+            }
+            for (const [recordId, lineIds] of leaving) {
+                const shop = afkTradeShopUnsafe(recordId);
+                const lines = shop.lines.filter((line) => Number(line.count) > 0);
+                const timestamp = now();
+                if (shop.kind !== 'shop' || lines.every((line) => lineIds.has(Number(line.id)))) {
+                    changedIds.push(...closeBoardRecordUnsafe(shop, { at: timestamp }));
+                    if (Number(shop.storeType) === BoardRules.BUY) changedIds.push(57);
+                    shops.set(recordId, closedRecord(shop, 'closed'));
+                } else {
+                    for (const line of lines.filter((line) => lineIds.has(Number(line.id)))) {
+                        if (Number(shop.storeType) === BoardRules.SELL) {
+                            afkTradeCreditItemUnsafe(characterId, line, line.count);
+                            changedIds.push(Number(line.selfId));
+                        } else {
+                            const refund = Number(line.price) * Number(line.count);
+                            afkTradeCreditAdenaUnsafe(characterId, refund);
+                            write('UPDATE afk_trade_shops SET escrowAdena = escrowAdena - ? WHERE id = ?', [refund, recordId]);
+                            changedIds.push(57);
+                        }
+                        write('UPDATE afk_trade_lines SET count = 0, updatedAt = ? WHERE id = ?', [timestamp, line.id]);
+                        write('DELETE FROM afk_trade_lines WHERE id = ?', [line.id]);
+                    }
+                    write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?', [timestamp, recordId]);
+                    shops.set(recordId, afkTradeShopUnsafe(recordId));
+                }
+                moved = true;
+                changed += 1;
+            }
+            return { shops: [...shops.values()], skipped, changed, ...afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) };
         }, 'afk-trade:reprice-lines'));
     },
 
@@ -3527,7 +3706,7 @@ const Database = {
                 quantity, unitPrice: line.price, totalPrice: total, town: shop.town,
                 sellerCharacterId: shop.ownerId, sellerName: owner?.name || null,
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
-            });
+            }, { unique: true });
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
@@ -3593,7 +3772,7 @@ const Database = {
                 quantity, unitPrice: line.price, totalPrice: total, town: shop.town,
                 sellerCharacterId: sellerId, sellerName: seller?.name || null,
                 buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
-            });
+            }, { unique: true });
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {

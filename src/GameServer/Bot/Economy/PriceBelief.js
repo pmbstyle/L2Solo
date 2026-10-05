@@ -38,14 +38,16 @@ const HALVING_DEALS = 3;
 
 // Stored compactly in stats.priceBeliefs: { t: own touches, at: last look,
 // n: looks, b: [[selfId, mu, K, confidence, tick, index, bias, own deals,
-// ask (or bid), rival, item deals seen, counter deals seen, worth of a bid]] }.
+// ask (or bid), rival, item deals seen, counter deals seen, worth of a bid,
+// cursor basis (2: durable world counts; absent: legacy process counts)]] }.
 function readBook(stats) {
     const stored = stats?.priceBeliefs;
     const beliefs = new Map();
     for (const row of stored?.b || []) {
         beliefs.set(Number(row[0]), {
             selfId: Number(row[0]), mu: row[1], K: row[2], c: row[3], tick: row[4], index: row[5], bias: row[6],
-            deals: row[7], ask: row[8], rival: row[9], seenItem: row[10], seenCounter: row[11], worth: Number(row[12] || 0)
+            deals: row[7], ask: row[8], rival: row[9], seenItem: row[10], seenCounter: row[11], worth: Number(row[12] || 0),
+            cursorBasis: Number(row[13] || 1)
         });
     }
     return { tick: Number(stored?.t || 0), lookAt: Number(stored?.at || 0), looks: Number(stored?.n || 0), beliefs };
@@ -57,7 +59,8 @@ function writeBook(book) {
     return { t: book.tick, at: book.lookAt, n: book.looks, b: [...book.beliefs.values()].map((belief) => [
         belief.selfId, round(belief.mu, 1e4), round(belief.K, 100), round(belief.c, 1e3), belief.tick,
         belief.index === null ? null : round(belief.index, 1e4), round(belief.bias, 1e4), belief.deals, Math.round(belief.ask || 0),
-        Math.round(belief.rival || 0), belief.seenItem, belief.seenCounter, Math.round(belief.worth || 0)]) };
+        Math.round(belief.rival || 0), belief.seenItem, belief.seenCounter, Math.round(belief.worth || 0),
+        belief.cursorBasis || 1]) };
 }
 
 function sigma(belief) {
@@ -221,7 +224,8 @@ function fresh(book, selfId, ctx) {
     if (!start) return null;
     const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
     return { selfId: id, mu: start.mu, K: start.K, c: 0, tick: book.tick, index: null, bias: start.bias,
-        deals: 0, ask: 0, rival: 0, seenItem: MarketCounters.itemDeals(id).deals, seenCounter: counter.deals };
+        deals: 0, ask: 0, rival: 0, seenItem: MarketCounters.itemDeals(id).deals, seenCounter: counter.deals,
+        cursorBasis: 2 };
 }
 
 // The bot's belief of an item: the one it holds, else a new one from the
@@ -300,6 +304,7 @@ function lookObservations(book, belief, ctx, { ask, lines }) {
     belief.rival = rival;
     belief.seenItem = item.deals;
     belief.seenCounter = counter.deals;
+    belief.cursorBasis = 2;
     return { observations, sales };
 }
 
@@ -331,6 +336,7 @@ function bidObservations(book, belief, ctx, { bid, lines }) {
     belief.rival = rival;
     belief.seenItem = item.deals;
     belief.seenCounter = counter.deals;
+    belief.cursorBasis = 2;
     return { observations, fills };
 }
 
