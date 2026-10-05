@@ -138,8 +138,9 @@ function nearBest(candidates, rollKey) {
     return near[near.length - 1];
 }
 
-// The ask: { price, value, npc } with npc true when the NPC buy-back now is
-// worth more than any ask (price is then the buy-back). value is per unit.
+// The ask: { price, value, money, npc } with npc true when the NPC buy-back
+// now is worth more than any ask (price is then the buy-back). value is the
+// bot's utility per unit, money the Adena per unit discounted by the wait.
 function chooseAsk(belief, market, trader, rollKey) {
     const width = PriceBelief.sigma(belief);
     const reference = Math.exp(belief.mu);
@@ -159,14 +160,15 @@ function chooseAsk(belief, market, trader, rollKey) {
         let ahead = 0;
         for (const rival of market.rivals) if (rival.landed < landed) ahead += rival.units;
         const wait = (deals + 1) / 2 / rate + ahead / (market.lot * market.buyersPerHour);
-        candidates.push({ price, value: saleUtility(price, reference, trader.caution) * Math.exp(-trader.wait * wait) });
+        const discount = Math.exp(-trader.wait * wait);
+        candidates.push({ price, value: saleUtility(price, reference, trader.caution) * discount, money: price * discount });
     }
     const npcValue = saleUtility(market.buyback, reference, trader.caution);
     const best = candidates.length ? nearBest(candidates, rollKey) : null;
     if (!best || Math.max(...candidates.map((candidate) => candidate.value)) <= npcValue) {
-        return { price: market.buyback, value: npcValue, npc: true, npcValue };
+        return { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue };
     }
-    return { price: best.price, value: best.value, npc: false, npcValue };
+    return { price: best.price, value: best.value, money: best.money, npc: false, npcValue };
 }
 
 // The bid of a buy ad: { price, value } or null when no bid gains anything.

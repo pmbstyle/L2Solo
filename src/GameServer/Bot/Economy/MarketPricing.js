@@ -65,25 +65,27 @@ function adopt(book, belief, ctx, price) {
 
 // What to do with `units` of an item the bot may sell (hold / board /
 // warehouse / NPC): one roll between the NPC buy-back now and the best use
-// of keeping it: the board at its best ask, else keeping it for a later sale
-// at its own value after one more buyer's wait (nothing while nobody buys its
-// kind), possible only with room where it keeps it. Values per unit, by the
-// same utility: a sale under the bot's own value is a loss. Returns { action:
-// 'list' | 'npc' | 'keep', priced, gain } with gain the board's value over
-// the NPC for all units; 'list' still needs a board slot.
+// of keeping it: the board at its best ask when it brings more Adena than
+// the NPC (the gain the board's slots compete by), else keeping it for a
+// later sale at its own value after one more buyer's wait (nothing while
+// nobody buys its kind), possible only with room where it keeps it. Values
+// per unit, by the bot's utility: a sale under its own value is a loss.
+// Returns { action: 'list' | 'npc' | 'keep', priced, gain } with gain the
+// board's Adena over the NPC for all units; 'list' still needs a slot.
 function disposition(book, item, ctx, { town = null, room = 1, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(book, item.selfId, ctx, { town, units, rollKey: [...rollKey, 'ask'] });
     if (!priced) return { action: 'keep', priced: null, gain: 0 };
     const { ask, market, belief } = priced;
+    const gain = ask.npc ? 0 : (ask.money - market.buyback) * units;
     const options = [{ action: 'npc', value: ask.npcValue }];
-    if (!ask.npc) options.push({ action: 'list', value: ask.value });
+    if (gain > 0) options.push({ action: 'list', value: ask.value });
     else if (room > 0) {
         const later = market.buyersPerHour > 0 ? Math.exp(-ctx.trader.wait / market.buyersPerHour) : 0;
         options.push({ action: 'keep', value: Math.exp(belief.mu) * later });
     }
     const chosen = PriceDecision.chooseByValue(options, rollKey);
-    return { action: chosen.action, priced, gain: chosen.action === 'list' ? (ask.value - ask.npcValue) * units : 0 };
+    return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0 };
 }
 
 // The bid of a buy ad for `units` worth `worth` a unit to the buyer, at most
