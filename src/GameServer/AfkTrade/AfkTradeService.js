@@ -208,6 +208,8 @@ function projectionStore(shop) {
             name: line.name || itemName(line.selfId),
             count: Number(line.count),
             price: Number(line.price),
+            ...(line.pricing ? { pricing: line.pricing } : {}),
+            fills: Number(line.fills || 0),
             enchant: Number(line.enchant || 0),
             slot: Number(line.slot || 0),
             stackable: Number(line.stackable || 0) === 1
@@ -583,6 +585,15 @@ async function settleOwners(ownerIds = []) {
 }
 
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    for (const [id, counts] of Object.entries(result.marketTrades || {})) {
+        LifeState.acceptMarketTrades(Number(id), counts);
+        const session = onlineSession(Number(id));
+        for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
+            if (session?.[key]) session[key] = { ...session[key], stats: { ...session[key].stats,
+                marketTrades: LifeState.snapshot(Number(id))?.stats?.marketTrades || counts } };
+        }
+    }
     MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount, Date.now(),
         kind === 'sale' ? result.shop?.ownerId : counterpartyId, result.shop?.town || null,
         kind === 'sale' ? counterpartyId : result.shop?.ownerId);
@@ -700,8 +711,12 @@ async function leave(ownerId) {
 async function repriceBot(ownerId, lineId, price, expectedRevision = null, quantity = null) {
     const current = ownerEntries(ownerId).find((entry) => (entryStore(entry)?.items || [])
         .some((line) => Number(line.afkTradeLineId) === Number(lineId)));
-    if (!entryStore(current)?.botOwned) throw new Error('bot_afk_trade_unavailable');
-    const result = await Database.repriceAfkTradeShop(ownerId, lineId, price, expectedRevision, quantity);
+    const store = entryStore(current);
+    if (!store?.botOwned) throw new Error('bot_afk_trade_unavailable');
+    const line = store.items.find(item => Number(item.afkTradeLineId) === Number(lineId));
+    const rival = board.first(Number(line.selfId), Number(store.storeType),
+        { excludeOwner: Number(ownerId), enchant: 0 })?.price || 0;
+    const result = await Database.repriceAfkTradeShop(ownerId, lineId, price, expectedRevision, quantity, rival);
     await syncAfterReprice(ownerId, result);
     refreshRecord(result.shop);
     return entriesById.get(Number(result.shop?.id))?.shop || null;
@@ -709,7 +724,7 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
 
 // A bot's look reprices several of its lines (E59): one transaction, and the
 // syncs only when an item or Adena moved. Returns { changed, skipped }.
-async function repriceBotLines(ownerId, reprices = [], { withdrawals = [] } = {}) {
+async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updates = [] } = {}) {
     const botLines = new Set();
     for (const entry of ownerEntries(ownerId)) {
         const store = entryStore(entry);
@@ -717,12 +732,15 @@ async function repriceBotLines(ownerId, reprices = [], { withdrawals = [] } = {}
     }
     const owned = reprices.filter((reprice) => botLines.has(Number(reprice.lineId)));
     const leaving = withdrawals.filter((move) => botLines.has(Number(move.lineId)));
-    if (!owned.length && !leaving.length) return { changed: 0, skipped: reprices.length + withdrawals.length };
-    const result = await Database.repriceBoardLines(ownerId, owned, { withdrawals: leaving });
+    const observations = updates.filter((move) => botLines.has(Number(move.lineId)));
+    if (!owned.length && !leaving.length && !observations.length) return { changed: 0, updated: 0,
+        skipped: reprices.length + withdrawals.length + updates.length };
+    const result = await Database.repriceBoardLines(ownerId, owned, { withdrawals: leaving, updates: observations });
     await syncAfterReprice(ownerId, result);
     result.shops.forEach(refreshRecord);
-    return { changed: result.changed,
-        skipped: reprices.length - owned.length + withdrawals.length - leaving.length + result.skipped.length };
+    return { changed: result.changed, updated: result.updated,
+        skipped: reprices.length - owned.length + withdrawals.length - leaving.length
+            + updates.length - observations.length + result.skipped.length };
 }
 
 // A reprice that moved an item or Adena: the actor and the bot's cold state
@@ -952,10 +970,8 @@ async function init() {
             migrated.cancelledStores, migrated.keptRecords);
     }
     // NodeL2 starts this after history/DataCache and before player listeners
-    // or bot workers. Persist legacy checkpoints before any new deal, then
-    // refresh a cache already hydrated by another startup service.
-    const beliefs = await Database.migrateBoardBeliefCursors();
-    beliefs.rows.forEach((row) => LifeState.acceptLifecycleRow(row));
+    // or bot workers. Migrated open lines begin at the durable world counts.
+    await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);

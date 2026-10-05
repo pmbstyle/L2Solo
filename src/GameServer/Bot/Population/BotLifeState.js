@@ -736,7 +736,7 @@ function save(row, options = {}) {
         row.characterName = current.name;
         row.statsJson = safeJson({ ...incomingStats, nameGeneratorVersion: current.stats.nameGeneratorVersion });
     }
-    return Database.execute([
+    return Database.saveBotLifeState([
         `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
             spotId, activity, phase, activityStartedAt, nextResolveAt,
@@ -770,7 +770,10 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
-            statsJson = excluded.statsJson,
+            statsJson = CASE WHEN json_type(${TABLE}.statsJson, '$.marketTrades') = 'object'
+                THEN json_set(json_remove(excluded.statsJson, '$.priceBeliefs'), '$.marketTrades',
+                    json(json_extract(${TABLE}.statsJson, '$.marketTrades')))
+                ELSE json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs') END,
             updatedAt = excluded.updatedAt
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
@@ -818,6 +821,7 @@ function save(row, options = {}) {
             throw error;
         }
         Metrics.recordDbFlush();
+        row.statsJson = result.statsJson;
         return enqueueEquipmentGoalAdvance(row.equipmentAdvance).then(() => result);
     });
 }
@@ -1565,6 +1569,19 @@ const BotLifeState = {
         return snapshot;
     },
 
+    // A committed deal publishes only learning here. A cold worker keeps its
+    // inventory/lease; delayed postcommit handlers cannot rewind later counts.
+    acceptMarketTrades(characterId, counts) {
+        const id = Number(characterId);
+        const current = cache.get(id);
+        if (!current) return null;
+        const merged = { ...(current.stats?.marketTrades || {}) };
+        for (const [key, value] of Object.entries(counts)) merged[key] = Math.max(Number(merged[key] || 0), Number(value));
+        const snapshot = { ...current, stats: { ...current.stats, marketTrades: merged } };
+        cache.set(id, snapshot);
+        return snapshot;
+    },
+
     partySessionSnapshot(session, state, phase, reason) {
         const snapshot = mergeSessionIntoLifeState(session, state, phase, reason, { physicalLocation: true });
         snapshot.activity = 'grouped';
@@ -2182,6 +2199,7 @@ const BotLifeState = {
         if (!prepared) return Promise.resolve(null);
 
         return save(prepared.row).then(() => {
+            prepared.snapshot = normalize(prepared.row);
             this.acceptPartyAssignments([prepared]);
             return prepared.snapshot;
         }).catch((err) => {

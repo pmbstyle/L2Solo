@@ -83,7 +83,8 @@ async function run() {
     const savedBefore = LifeState.snapshot(ownerId).updatedAt;
     const observedMove = (price) => {
         const shop = AfkTrade.findOwnerProjection(ownerId).shop;
-        return { recordId: shop.id, lineId, price, expectedRevision: shop.revision };
+        return { recordId: shop.id, lineId, price, expectedRevision: shop.revision,
+            previousPricing: shop.lines.find(line => Number(line.id) === lineId).pricing };
     };
     const looked = await BotAfkMarket.applyReview(ownerId, { reprices: [observedMove(88)] });
     assert.strictEqual(looked.changed, 1);

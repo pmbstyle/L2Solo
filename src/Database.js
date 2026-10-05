@@ -1387,6 +1387,19 @@ function applySchemaMigrations() {
         UPDATE afk_trade_shops SET expiresAt = 0 WHERE expiresAt > 0;
         DELETE FROM world_meta WHERE key = 'boardAliveAt';
     `)]);
+    // N79: observations belong to an open line, not to a bot's item book.
+    // Durable cursors are initialized after history/the catalogue are ready.
+    migrations.push([57, () => connection.exec(`
+        ALTER TABLE afk_trade_lines ADD COLUMN fills INTEGER NOT NULL DEFAULT 0 CHECK(fills >= 0);
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingPrice INTEGER;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenCounter INTEGER;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenItem INTEGER;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingRival INTEGER;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingWorth REAL;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenFills INTEGER;
+        UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.priceBeliefs')
+            WHERE json_valid(statsJson) AND json_type(statsJson, '$.priceBeliefs') IS NOT NULL;
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -1967,6 +1980,15 @@ function preserveColdVersionedStatsParsed(row, patch = {}) {
     const current = currentViews.plain;
     const incoming = next.statsJson === proposedRaw ? proposedViews.plain : jsonObject(next.statsJson);
     if (next.statsJson !== proposedRaw) stats = incoming;
+    // A worker may hold older stats while a trade commits its own-deal count.
+    if (current.marketTrades || incoming.marketTrades || incoming.priceBeliefs) {
+        if (current.marketTrades && typeof current.marketTrades === 'object' && !Array.isArray(current.marketTrades)) {
+            incoming.marketTrades = current.marketTrades;
+        } else delete incoming.marketTrades;
+        delete incoming.priceBeliefs;
+        next.statsJson = JSON.stringify(incoming);
+        stats = incoming;
+    }
     if (Number(current.nameGeneratorVersion || 0) > Number(incoming.nameGeneratorVersion || 0)) {
         incoming.nameGeneratorVersion = current.nameGeneratorVersion;
         next.statsJson = JSON.stringify(incoming);
@@ -2354,6 +2376,44 @@ function recordClanGoalEventUnsafe({ clanId, eventType, goalType = '', plan = ''
 // is ignored there.
 const BOARD_TRADE_SOURCES = new Set(['afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store']);
 const BOARD_DEAL_COUNT_PREFIX = 'boardDealCount:';
+const BOARD_COUNTER_COUNT_PREFIX = 'boardCounterDealCount:';
+const PRICING_FIELDS = Object.freeze(['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills']);
+const PRICING_COLUMNS = Object.freeze(['pricingPrice', 'pricingSeenCounter', 'pricingSeenItem',
+    'pricingRival', 'pricingWorth', 'pricingSeenFills']);
+
+function boardTradeEligible(trade) {
+    return Number(trade.selfId) > 0 && Number(trade.selfId) !== 57
+        && Number(trade.unitPrice) > 0 && Number(trade.quantity) > 0;
+}
+
+function linePricing(line) {
+    if (line.pricingPrice === null || line.pricingPrice === undefined) return undefined;
+    return Object.fromEntries(PRICING_FIELDS.map((field, index) => [field, Number(line[PRICING_COLUMNS[index]])]));
+}
+
+function pricingValues(pricing) {
+    const values = PRICING_FIELDS.map(field => pricing?.[field]);
+    if (values.some((value, index) => !(PRICING_FIELDS[index] === 'worth' ? Number.isFinite(value) : Number.isSafeInteger(value))
+        || value < 0)) throw new Error('invalid_board_pricing');
+    return values;
+}
+
+function checkLinePricingUnsafe(line, previousPricing) {
+    const current = linePricing(line);
+    if (!current || !previousPricing || PRICING_FIELDS.some(field => current[field] !== previousPricing[field])) {
+        throw new Error('afk_trade_pricing_changed');
+    }
+}
+
+function updateLinePricingUnsafe(line, pricing) {
+    const values = pricingValues(pricing);
+    if (pricing.seenFills > Number(line.fills)) throw new Error('invalid_board_pricing');
+    const current = linePricing(line);
+    if (current && PRICING_FIELDS.every((field, index) => current[field] === values[index])) return false;
+    write(`UPDATE afk_trade_lines SET ${PRICING_COLUMNS.map(column => `${column} = ?`).join(', ')}, updatedAt = ? WHERE id = ?`,
+        [...values, now(), line.id]);
+    return true;
+}
 
 function ensureBoardDealCountsUnsafe() {
     if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) return;
@@ -2376,20 +2436,67 @@ function ensureBoardDealCountsUnsafe() {
     write("INSERT INTO world_meta (key, value) VALUES ('boardDealCountsReady', '1')");
 }
 
+function ensureBoardCounterCountsUnsafe() {
+    ensureBoardDealCountsUnsafe();
+    if (one("SELECT value FROM world_meta WHERE key = 'boardCounterCountsReady'")) return;
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    if (!invoke('GameServer/DataCache').items?.length) throw new Error('board_market_data_not_ready');
+    const totals = new Map();
+    for (const { key, value } of all('SELECT key, value FROM world_meta WHERE key LIKE ?', [`${BOARD_DEAL_COUNT_PREFIX}%`])) {
+        const counter = MarketCounters.counterOf(Number(key.slice(BOARD_DEAL_COUNT_PREFIX.length)));
+        totals.set(counter, Number(totals.get(counter) || 0) + Number(value));
+    }
+    for (const [key, count] of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
+        [`${BOARD_COUNTER_COUNT_PREFIX}${key}`, String(count)]);
+    write("INSERT INTO world_meta (key, value) VALUES ('boardCounterCountsReady', '1')");
+}
+
+function initialLinePricingUnsafe(selfId, price, storeType) {
+    ensureBoardCounterCountsUnsafe();
+    const key = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(selfId);
+    return { price,
+        seenCounter: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_COUNTER_COUNT_PREFIX}${key}`])?.value || 0),
+        seenItem: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_DEAL_COUNT_PREFIX}${selfId}`])?.value || 0),
+        rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0 };
+}
+
+function learnBoardTradeUnsafe(trade) {
+    if (!boardTradeEligible(trade)) return {};
+    if (!invoke('GameServer/Bot/Economy/PriceLearning').knowledgeEnabled()) return {};
+    const counter = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(trade.selfId);
+    const rows = {};
+    for (const id of new Set([trade.sellerCharacterId, trade.buyerCharacterId].map(Number).filter(Boolean))) {
+        const row = one(`SELECT life.statsJson FROM bot_life_state life JOIN characters c ON c.id = life.characterId
+            WHERE life.characterId = ? AND substr(c.username, 1, 4) = 'bot_'`, [id]);
+        if (!row) continue;
+        const stats = jsonObject(row.statsJson);
+        const counts = stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)
+            ? { ...stats.marketTrades } : {};
+        counts[counter] = Math.max(0, Number(counts[counter]) || 0) + 1;
+        stats.marketTrades = counts;
+        write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), id]);
+        rows[id] = counts;
+    }
+    return rows;
+}
+
 function recordMarketTradeUnsafe(trade, { unique = false } = {}) {
     // The observation count belongs to the world, not to the retained tail
     // of its history. Bootstrap it on the first replay or deal, then advance it in
     // the same transaction as each board deal. AFK event keys are new by
     // construction; imported telemetry can repeat a key.
-    if (BOARD_TRADE_SOURCES.has(trade.sourceType) && Number(trade.selfId) !== 57
-        && Number(trade.unitPrice) > 0 && Number(trade.quantity) > 0) {
-        ensureBoardDealCountsUnsafe();
+    if (BOARD_TRADE_SOURCES.has(trade.sourceType) && boardTradeEligible(trade)) {
+        ensureBoardCounterCountsUnsafe();
         const duplicate = !unique && (History.one('SELECT id FROM market_trades WHERE eventKey = ?', [trade.eventKey])
             || one(`SELECT id FROM history_outbox WHERE kind = 'market_trade'
                 AND json_extract(payload, '$.eventKey') = ? LIMIT 1`, [trade.eventKey]));
-        if (!duplicate) write(`INSERT INTO world_meta (key, value) VALUES (?, '1')
-            ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`,
-        [`${BOARD_DEAL_COUNT_PREFIX}${Number(trade.selfId)}`]);
+        if (!duplicate) {
+            const key = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(trade.selfId);
+            for (const aggregate of [`${BOARD_DEAL_COUNT_PREFIX}${Number(trade.selfId)}`, `${BOARD_COUNTER_COUNT_PREFIX}${key}`]) {
+                write(`INSERT INTO world_meta (key, value) VALUES (?, '1')
+                    ON CONFLICT(key) DO UPDATE SET value = CAST(value AS INTEGER) + 1`, [aggregate]);
+            }
+        }
     }
     return historyOutboxUnsafe('market_trade', trade);
 }
@@ -2410,6 +2517,7 @@ function afkTradeShopUnsafe(shopId) {
         ...shop,
         appearance: jsonObject(shop.appearanceJson),
         lines: all('SELECT * FROM afk_trade_lines WHERE shopId = ? ORDER BY id', [shopId])
+            .map(line => ({ ...line, ...(linePricing(line) ? { pricing: linePricing(line) } : {}) }))
     };
 }
 
@@ -2425,7 +2533,7 @@ function afkTradeAdenaRowsUnsafe(characterId) {
 // a smaller count: the rest goes back to the bag). The record's escrow
 // follows a buy line's bid. Every check comes before the line's first write.
 // Returns { shop, changedIds, moved }: moved when an item or Adena moved.
-function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity) {
+function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity, { checkpoint = true, rival = null } = {}) {
     const shop = one(`SELECT shops.* FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
         WHERE lines.id = ? AND shops.ownerId = ? AND shops.status = 'active'`, [id, characterId]);
     if (!shop) throw new Error('afk_trade_shop_unavailable');
@@ -2456,6 +2564,12 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     write(`UPDATE afk_trade_shops SET escrowAdena = ?, revision = revision + 1,
         updatedAt = ? WHERE id = ?`, [reserved, timestamp, shop.id]);
     const owner = one('SELECT username FROM characters WHERE id = ?', [characterId]);
+    if (checkpoint && unitPrice !== Number(line.price) && BoardRules.isBotAccount(owner?.username)) {
+        const previous = linePricing(line);
+        const pricing = initialLinePricingUnsafe(Number(line.selfId), unitPrice, shop.storeType);
+        updateLinePricingUnsafe(line, { ...pricing, rival: rival ?? previous?.rival ?? 0,
+            worth: previous?.worth ?? pricing.worth, seenFills: Number(line.fills) });
+    }
     const current = afkTradeShopUnsafe(shop.id);
     const filled = completeAfkTradeIfFilledUnsafe(shop.id, timestamp, BoardRules.isBotAccount(owner?.username));
     return {
@@ -2782,6 +2896,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
     // same item from another stack serves. A player's new shop names its own.
     const flexible = !!active || kind !== 'shop';
     const sourceIds = new Set();
+    const botOwned = isBotOwnerUnsafe(characterId);
     rows.forEach((line) => {
         const selfId = Number(line.selfId);
         const count = Math.floor(Number(line.count));
@@ -2792,6 +2907,11 @@ function openBoardRecordUnsafe(characterId, config, rows) {
             || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
             throw new Error('invalid_afk_trade_line');
         }
+        const fills = botOwned ? (line.fills ?? 0) : 0;
+        if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
+        const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
+        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(() => null);
+        if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
 
         let source = null;
         if (storeType === BoardRules.SELL) {
@@ -2814,8 +2934,9 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         }
         write(`INSERT INTO afk_trade_lines(
             shopId, sourceObjectId, selfId, name, count, initialCount, price,
-            enchant, slot, stackable, petData, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+            enchant, slot, stackable, petData, createdAt, updatedAt, fills,
+            ${PRICING_COLUMNS.join(', ')}
+        ) VALUES (${Array(20).fill('?').join(', ')})`, [
             shopId,
             source ? Number(source.id) : null,
             selfId,
@@ -2828,7 +2949,9 @@ function openBoardRecordUnsafe(characterId, config, rows) {
             line.stackable ? 1 : 0,
             source?.petData || line.petData || null,
             timestamp,
-            timestamp
+            timestamp,
+            fills,
+            ...observations
         ]);
     });
     return { shop: afkTradeShopUnsafe(shopId), changedIds };
@@ -3015,6 +3138,15 @@ const Database = {
 
     execute(statement, operation = 'raw') {
         return run(statement[0], statement[1] || [], operation, statement[2]?.read ?? null, statement[2]?.onTiming);
+    },
+
+    // The lifecycle save's protected stats and its cache row are read from
+    // the same queued statement; a later trade cannot slip between them.
+    saveBotLifeState(statement) {
+        return enqueue(() => {
+            const row = one(`${statement[0]} RETURNING statsJson`, statement[1] || []);
+            return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
+        }, { operation: 'bot-life:save', read: false });
     },
 
     transferBuffServiceAdena({ payerId, providerId, amount, expectedSpotId = null } = {}) {
@@ -3208,42 +3340,68 @@ const Database = {
     // own deals (the rows AfkTrade settlements write, the ones
     // MarketCounters.deal counts live); a private or configured merchant
     // store writes the same wts/wtb channels with its own source.
-    // Startup barrier, after DataCache is ready and before trading/workers.
-    // Legacy counts have no durable origin; preserve price knowledge and
-    // checkpoint every legacy belief once, including currently inactive ones.
-    migrateBoardBeliefCursors() {
+    // Startup barrier after DataCache/history, before workers. Only migrated
+    // lines without state are initialized; later restarts do not consume evidence.
+    initializeBoardPricing() {
+        return inTransaction(() => {
+            ensureBoardCounterCountsUnsafe();
+            const lines = all(`SELECT lines.*, shops.storeType FROM afk_trade_lines lines
+                JOIN afk_trade_shops shops ON shops.id = lines.shopId
+                JOIN characters c ON c.id = shops.ownerId
+                WHERE shops.status = 'active' AND lines.count > 0 AND lines.pricingPrice IS NULL
+                    AND substr(c.username, 1, 4) = 'bot_'`);
+            for (const line of lines) updateLinePricingUnsafe(line, initialLinePricingUnsafe(line.selfId, line.price, line.storeType));
+            return { initialized: lines.length };
+        }, 'board:pricing-initialize');
+    },
+
+    // The caller chooses the old world's experience explicitly. This API is
+    // independent of line migration and never runs implicitly at startup.
+    initializeBotMarketTrades(mode) {
+        if (!['zero', 'history'].includes(mode)) return Promise.reject(new Error('invalid_market_trades_seed'));
         return flushHistory().then(() => inTransaction(() => {
-            const DataCache = invoke('GameServer/DataCache');
-            if (!DataCache.items?.length) throw new Error('board_market_data_not_ready');
-            ensureBoardDealCountsUnsafe();
+            const marker = one("SELECT value FROM world_meta WHERE key = 'botMarketTradesInitialized'");
+            if (marker) return { skipped: true, mode: marker.value, rows: [] };
             const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-            const counts = new Map(all('SELECT key, value FROM world_meta WHERE key LIKE ?', [`${BOARD_DEAL_COUNT_PREFIX}%`])
-                .map(({ key, value }) => [Number(key.slice(BOARD_DEAL_COUNT_PREFIX.length)), Number(value)]));
-            const counters = new Map();
-            for (const [selfId, deals] of counts) {
-                const key = MarketCounters.counterOf(selfId);
-                counters.set(key, Number(counters.get(key) || 0) + deals);
+            if (!invoke('GameServer/DataCache').items?.length) throw new Error('board_market_data_not_ready');
+            const totals = new Map();
+            if (mode === 'history') {
+                const pending = all("SELECT payload FROM history_outbox WHERE kind = 'market_trade' ORDER BY id")
+                    .map(row => JSON.parse(row.payload));
+                const trades = History.all(`WITH pending AS (SELECT json_extract(value, '$.eventKey') AS eventKey,
+                        json_extract(value, '$.selfId') AS selfId, json_extract(value, '$.sourceType') AS sourceType,
+                        json_extract(value, '$.unitPrice') AS unitPrice, json_extract(value, '$.quantity') AS quantity,
+                        json_extract(value, '$.sellerCharacterId') AS sellerCharacterId,
+                        json_extract(value, '$.buyerCharacterId') AS buyerCharacterId, CAST(key AS INTEGER) AS eventOrder
+                        FROM json_each(?)),
+                    trades AS (SELECT eventKey, selfId, sourceType, unitPrice, quantity, sellerCharacterId,
+                        buyerCharacterId, 0 AS stage, id AS eventOrder FROM market_trades
+                        UNION ALL SELECT eventKey, selfId, sourceType, unitPrice, quantity, sellerCharacterId,
+                            buyerCharacterId, 1 AS stage, eventOrder FROM pending),
+                    canonical AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY eventKey ORDER BY stage, eventOrder) AS first FROM trades)
+                    SELECT selfId, sellerCharacterId, buyerCharacterId, COUNT(*) AS deals FROM canonical
+                    WHERE first = 1 AND sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
+                        AND unitPrice > 0 AND quantity > 0 AND selfId != 57
+                    GROUP BY selfId, sellerCharacterId, buyerCharacterId`, [JSON.stringify(pending)]);
+                for (const trade of trades) for (const id of new Set([trade.sellerCharacterId, trade.buyerCharacterId].map(Number).filter(Boolean))) {
+                    const counts = totals.get(id) || {};
+                    const key = MarketCounters.counterOf(trade.selfId);
+                    counts[key] = Number(counts[key] || 0) + Number(trade.deals);
+                    totals.set(id, counts);
+                }
             }
             const rows = [];
-            for (const row of all(`SELECT * FROM bot_life_state
-                WHERE json_type(CASE WHEN json_valid(statsJson) THEN statsJson ELSE '{}' END, '$.priceBeliefs.b') = 'array'`)) {
-                const stats = JSON.parse(row.statsJson);
-                let changed = false;
-                for (const belief of stats.priceBeliefs.b) {
-                    if (!Array.isArray(belief) || Number(belief[13]) === 2) continue;
-                    const selfId = Number(belief[0]);
-                    belief[10] = Number(counts.get(selfId) || 0);
-                    belief[11] = Number(counters.get(MarketCounters.counterOf(selfId)) || 0);
-                    belief[13] = 2;
-                    changed = true;
-                }
-                if (!changed) continue;
-                write('UPDATE bot_life_state SET statsJson = ?, simulationRevision = simulationRevision + 1 WHERE characterId = ?',
-                    [JSON.stringify(stats), row.characterId]);
-                rows.push(normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [row.characterId])));
+            for (const life of all(`SELECT life.characterId, life.statsJson FROM bot_life_state life
+                JOIN characters c ON c.id = life.characterId WHERE substr(c.username, 1, 4) = 'bot_'`)) {
+                const stats = jsonObject(life.statsJson);
+                if (stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)) continue;
+                stats.marketTrades = totals.get(Number(life.characterId)) || {};
+                write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), life.characterId]);
+                rows.push(normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [life.characterId])));
             }
-            return { rows };
-        }, 'board:belief-cursors-migrate'));
+            write("INSERT INTO world_meta (key, value) VALUES ('botMarketTradesInitialized', ?)", [mode]);
+            return { skipped: false, mode, rows };
+        }, 'board:own-trades-initialize'));
     },
 
     fetchRecentBoardDeals({ perItem = 32, rangeMs = 24 * 60 * 60 * 1000 } = {}) {
@@ -3561,15 +3719,16 @@ const Database = {
 
     // The owner changes the price (and count) of one of its lines: a sell
     // line gives back the rest of its stock, a buy line's escrow follows.
-    repriceAfkTradeShop(ownerId, lineId, price, expectedRevision = null, quantity = null) {
+    repriceAfkTradeShop(ownerId, lineId, price, expectedRevision = null, quantity = null, rival = null) {
         const characterId = Number(ownerId);
         const id = Number(lineId);
         const unitPrice = Math.floor(Number(price));
-        if (!characterId || !id || !Number.isSafeInteger(unitPrice) || unitPrice < 1) {
+        if (!characterId || !id || !Number.isSafeInteger(unitPrice) || unitPrice < 1
+            || (rival !== null && (!Number.isSafeInteger(rival) || rival < 0))) {
             return Promise.reject(new Error('invalid_afk_trade_price'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity);
+            const repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity, { rival });
             return { shop: repriced.shop, ...afkTradeRepriceMovesUnsafe(characterId, repriced.changedIds, repriced.moved) };
         }, 'afk-trade:reprice'));
     },
@@ -3580,7 +3739,7 @@ const Database = {
     // (skipped: [{ lineId, reason }]); the others go on. Returns { shops (the
     // records after the moves), skipped, ownerInventory, coldLifeRows } as
     // repriceAfkTradeShop does.
-    repriceBoardLines(ownerId, reprices = [], { withdrawals = [] } = {}) {
+    repriceBoardLines(ownerId, reprices = [], { withdrawals = [], updates = [] } = {}) {
         const characterId = Number(ownerId);
         if (!characterId) return Promise.reject(new Error('invalid_afk_trade_price'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
@@ -3589,6 +3748,7 @@ const Database = {
             const changedIds = [];
             let moved = false;
             let changed = 0;
+            let updated = 0;
             const observed = new Map();
             const reviewRecord = (move) => {
                 const lineId = Number(move.lineId);
@@ -3602,7 +3762,7 @@ const Database = {
             };
             const skip = (move, error) => {
                 if (!['afk_trade_shop_unavailable', 'afk_trade_line_unavailable', 'afk_trade_shop_changed',
-                    'not_enough_adena', 'invalid_afk_trade_budget'].includes(error.message)) throw error;
+                    'afk_trade_pricing_changed', 'not_enough_adena', 'invalid_afk_trade_budget'].includes(error.message)) throw error;
                 skipped.push({ lineId: Number(move.lineId), reason: error.message });
             };
             for (const reprice of reprices) {
@@ -3617,7 +3777,15 @@ const Database = {
                     // Fence the original snapshot once per record. Our earlier
                     // lines in this transaction can advance its revision.
                     reviewRecord(reprice);
-                    repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, null, null);
+                    const line = one('SELECT * FROM afk_trade_lines WHERE id = ?', [id]);
+                    checkLinePricingUnsafe(line, reprice.previousPricing);
+                    if (reprice.pricing) {
+                        pricingValues(reprice.pricing);
+                        if (reprice.pricing.seenFills > Number(line.fills)) throw new Error('invalid_board_pricing');
+                    }
+                    repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, null, null,
+                        { checkpoint: !reprice.pricing });
+                    if (reprice.pricing && updateLinePricingUnsafe(line, reprice.pricing)) updated += 1;
                 } catch (error) {
                     skip(reprice, error);
                     continue;
@@ -3627,10 +3795,23 @@ const Database = {
                 moved = moved || repriced.moved;
                 changed += 1;
             }
+            for (const update of updates) {
+                try {
+                    const shop = reviewRecord(update);
+                    const line = one('SELECT * FROM afk_trade_lines WHERE id = ?', [Number(update.lineId)]);
+                    checkLinePricingUnsafe(line, update.previousPricing);
+                    if (updateLinePricingUnsafe(line, update.pricing)) {
+                        shops.set(Number(shop.id), afkTradeShopUnsafe(shop.id));
+                        updated += 1;
+                    }
+                } catch (error) { skip(update, error); }
+            }
             const leaving = new Map();
             for (const withdrawal of withdrawals) {
                 try {
                     const shop = reviewRecord(withdrawal);
+                    const line = one('SELECT * FROM afk_trade_lines WHERE id = ?', [Number(withdrawal.lineId)]);
+                    checkLinePricingUnsafe(line, withdrawal.previousPricing);
                     if (!leaving.has(Number(shop.id))) leaving.set(Number(shop.id), new Set());
                     leaving.get(Number(shop.id)).add(Number(withdrawal.lineId));
                 } catch (error) { skip(withdrawal, error); }
@@ -3663,7 +3844,8 @@ const Database = {
                 moved = true;
                 changed += 1;
             }
-            return { shops: [...shops.values()], skipped, changed, ...afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) };
+            return { shops: [...shops.values()].map(shop => shop.status === 'active' ? afkTradeShopUnsafe(shop.id) : shop),
+                skipped, changed, updated, ...afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) };
         }, 'afk-trade:reprice-lines'));
     },
 
@@ -3691,7 +3873,7 @@ const Database = {
             afkTradeDebitAdenaUnsafe(buyerId, total);
             afkTradeCreditItemUnsafe(buyerId, line, quantity);
             creditRecordOwnerUnsafe(shop.ownerId, { selfId: 57 }, total, timestamp);
-            write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
+            write('UPDATE afk_trade_lines SET count = count - ?, fills = fills + 1, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
             write('UPDATE afk_trade_shops SET revision = revision + 1, updatedAt = ? WHERE id = ?', [timestamp, shopId]);
             const eventId = Number(recordAfkTradeEventUnsafe({
                 shopId, ownerId: shop.ownerId, counterpartyId: buyerId, kind: 'sale', selfId: line.selfId,
@@ -3707,16 +3889,19 @@ const Database = {
                 sellerCharacterId: shop.ownerId, sellerName: owner?.name || null,
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
             }, { unique: true });
+            const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
+                sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId });
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
                 coldLifeRows: fenceAfkTradePartiesUnsafe([buyerId], [line.selfId]),
                 settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
+                marketTrades,
                 filled,
                 amount: quantity,
                 totalPrice: total,
-                line: { ...line, count: Number(line.count) - quantity },
+                line: { ...line, count: Number(line.count) - quantity, fills: Number(line.fills) + 1 },
                 shop: filled ? closedRecord(before) : afkTradeShopUnsafe(shopId),
                 ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
                 counterpartyInventory: afkTradeInventoryUnsafe(buyerId)
@@ -3755,7 +3940,7 @@ const Database = {
             );
             creditRecordOwnerUnsafe(shop.ownerId, { ...source, stackable: Number(line.stackable || 0) }, quantity, timestamp);
             afkTradeCreditAdenaUnsafe(sellerId, total);
-            write('UPDATE afk_trade_lines SET count = count - ?, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
+            write('UPDATE afk_trade_lines SET count = count - ?, fills = fills + 1, updatedAt = ? WHERE id = ?', [quantity, timestamp, lineId]);
             write(`UPDATE afk_trade_shops
                 SET escrowAdena = escrowAdena - ?, revision = revision + 1, updatedAt = ?
                 WHERE id = ?`, [total, timestamp, shopId]);
@@ -3773,16 +3958,19 @@ const Database = {
                 sellerCharacterId: sellerId, sellerName: seller?.name || null,
                 buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
             }, { unique: true });
+            const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
+                sellerCharacterId: sellerId, buyerCharacterId: shop.ownerId });
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
                 coldLifeRows: fenceAfkTradePartiesUnsafe([sellerId], [line.selfId]),
                 settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
+                marketTrades,
                 filled,
                 amount: quantity,
                 totalPrice: total,
-                line: { ...line, count: Number(line.count) - quantity },
+                line: { ...line, count: Number(line.count) - quantity, fills: Number(line.fills) + 1 },
                 shop: filled ? closedRecord(before) : afkTradeShopUnsafe(shopId),
                 ownerInventory: afkTradeInventoryUnsafe(shop.ownerId),
                 counterpartyInventory: afkTradeInventoryUnsafe(sellerId)
@@ -3809,7 +3997,8 @@ const Database = {
             const byShop = new Map();
             lines.forEach((line) => {
                 const shopLines = byShop.get(Number(line.shopId)) || [];
-                shopLines.push(line);
+                const pricing = linePricing(line);
+                shopLines.push({ ...line, ...(pricing ? { pricing } : {}) });
                 byShop.set(Number(line.shopId), shopLines);
             });
             return shops.map((shop) => ({

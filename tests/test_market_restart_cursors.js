@@ -1,49 +1,47 @@
-// Persisted beliefs and bounded replay agree across DB restarts. Legacy
-// knowledge is kept; ambiguous old evidence is checkpointed before trading.
+// N79 line observations survive bounded history replay, backlog and retention.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 const Database = invoke('Database');
+const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-const { ColdTableChannel } = require('../src/GameServer/Bot/Population/ColdTableChannel');
+const { shared: channel } = require('../src/GameServer/Bot/Population/ColdTableChannel');
 const TableMirror = require('../src/GameServer/Bot/Population/TableMirror');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-market-restart-cursors.sqlite');
 const historyPath = databasePath.replace(/\.sqlite$/, '.history.sqlite');
 const old = Date.now() - 48 * 3600000;
-let owner;
-let buyer;
+const PRICING_COLUMNS = ['fills', 'pricingPrice', 'pricingSeenCounter', 'pricingSeenItem', 'pricingRival',
+    'pricingWorth', 'pricingSeenFills'];
+
 function clean() {
-    for (const file of [databasePath, historyPath]) {
-        for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
+    for (const file of [databasePath, historyPath]) for (const suffix of ['', '-wal', '-shm']) {
+        fs.rmSync(file + suffix, { force: true });
     }
 }
-async function bot(label) {
-    const account = `bot_cursor_${label}`;
+async function bot(label, { player = false } = {}) {
+    const account = `${player ? 'player' : 'bot'}_cursor_${label}`;
     await Database.createAccount(account, 'pw');
     const id = Number((await Database.createCharacter(account, { name: `Cursor${label}`, race: 0, classId: 0,
         maxHp: 100, maxMp: 100, sex: 0, face: 0, hair: 0, hairColor: 0, locX: 83000, locY: 148000, locZ: -3466 })).insertId);
-    await LifeState.upsertState({ characterId: id, accountName: account, name: `Cursor${label}`,
-        phase: 'cold', activity: 'hunting', level: 40, adena: 0, inventory: {}, currentRegion: 'Giran',
+    await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 10000, equipped: false, enchant: 0, slot: 0 });
+    const stock = Number((await Database.setItem(id, { selfId: 1864, name: 'Stem', amount: 10,
+        equipped: false, enchant: 0, slot: 0 })).insertId);
+    if (!player) await LifeState.upsertState({ characterId: id, accountName: account, name: `Cursor${label}`,
+        phase: 'cold', activity: 'hunting', level: 40, adena: 10000,
+        inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(id)), currentRegion: 'Giran',
         loc: { locX: 83000, locY: 148000, locZ: -3466 }, stats: { generatedCold: true }, timing: {},
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }, 'cursor_seed');
-    return id;
+    return { id, stock };
 }
-async function saveBook(id, book) {
-    const state = LifeState.cachedState(id);
-    await LifeState.upsertState({ ...state, stats: { ...state.stats, priceBeliefs: book, otherKnowledge: { marker: 17 } } }, 'market_cursor_save');
+async function storedStats(id) {
+    return JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0].statsJson);
 }
-async function storedBook(id) {
-    const row = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0];
-    const stats = JSON.parse(row.statsJson);
-    assert.deepStrictEqual(stats.otherKnowledge, { marker: 17 });
-    return stats.priceBeliefs;
-}
+async function storedShop(id) { return (await Database.fetchAfkTradeShops(id))[0]; }
 async function trade(eventKey, occurredAt, fields = {}) {
     return Database.recordMarketTrade({ eventKey, occurredAt, selfId: 1864, unitPrice: 100, quantity: 1,
         sourceType: 'afk_bot_store', channel: 'bot_wts', town: 'Giran', sellerCharacterId: 999, buyerCharacterId: 998, ...fields });
@@ -52,182 +50,187 @@ async function restart() {
     AfkTrade._resetForTests();
     await Database.close();
     Database.init();
-    // Isolated startup barrier; no listeners or population workers.
+    assert(Database.isReady());
+    for (const row of await Database.execute(['SELECT * FROM bot_life_state'])) LifeState.acceptLifecycleRow(row);
     await AfkTrade.init();
     return Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS });
-}
-function context(characterId, timestamp = old + 5000) {
-    return { characterId, understanding: 0.5, timestamp, board: new BoardIndex({ groupOf: MarketCounters.counterOf }) };
-}
-function observe(saved, side, timestamp = old + 5000) {
-    const book = PriceBelief.readBook({ priceBeliefs: saved });
-    const belief = book.beliefs.get(1864);
-    const result = side === 'sell'
-        ? PriceBelief.lookObservations(book, belief, context(owner, timestamp), { ask: 100, lines: 1 })
-        : PriceBelief.bidObservations(book, belief, context(buyer, timestamp), { bid: 100, lines: 1 });
-    book.lookAt = timestamp;
-    return { result, saved: PriceBelief.writeBook(book) };
-}
-
-function proveLegacyAmbiguity() {
-    const histories = [true, false].map(alreadySeen => {
-        MarketCounters.reset();
-        const history = Array.from({ length: 100 }, (_, index) => ({ selfId: 1864, unitPrice: 100, quantity: 1,
-            occurredAt: index === 99 ? old + 1000 : old - (100 - index) * 60000,
-            sellerCharacterId: index === 99 ? 555001 : 999 }));
-        MarketCounters.load((alreadySeen ? history : history.slice(0, 99)).slice(-32));
-        MarketCounters.deal(123, 5000, 1, old - 1000, 999);
-        const book = PriceBelief.readBook({});
-        PriceBelief.ensure(book, 1864, context(555001, alreadySeen ? old + 2000 : old)).ask = 100;
-        if (!alreadySeen) MarketCounters.deal(1864, 100, 1, old + 1000, 555001);
-        PriceBelief.ensure(book, 123, context(555001, old + 5000)).ask = 5000;
-        book.lookAt = old + 5000;
-        const checkpointed = PriceBelief.writeBook(book);
-        const legacy = structuredClone(checkpointed);
-        legacy.b = legacy.b.map(row => row.slice(0, 13));
-        return { legacy, observedA: alreadySeen ? old + 2000 : old, expectedUnseenA: alreadySeen ? 0 : 1 };
-    });
-    assert.deepStrictEqual(histories[0].legacy, histories[1].legacy, 'identical old books can require opposite unseen outcomes');
-    assert.notStrictEqual(histories[0].observedA, histories[1].observedA);
-    assert.notStrictEqual(histories[0].expectedUnseenA, histories[1].expectedUnseenA);
-    MarketCounters.reset();
 }
 async function run() {
     clean();
     options.default.Database.path = path.relative(process.cwd(), databasePath);
     Database.init();
-    invoke('GameServer/DataCache').init();
-    proveLegacyAmbiguity();
+    assert(Database.isReady());
+    DataCache.init();
     invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
     await LifeState.init();
-    owner = await bot('Seller');
-    buyer = await bot('Buyer');
+    const owner = await bot('Owner');
+    const buyer = await bot('Buyer');
     const inactive = await bot('Inactive');
-    for (let index = 0; index < 100; index++) await trade(`cursor:old:${index}`, old - (100 - index) * 60000,
-        { sellerCharacterId: owner, buyerCharacterId: buyer });
-    await trade('cursor:other', Date.now(), { selfId: 1865 });
-    const rows = await restart();
-    assert.strictEqual(rows.filter(row => row.selfId === 1864).length, 32);
-    assert.strictEqual(MarketCounters.itemDeals(1864).deals, 100);
-    const book = PriceBelief.readBook({});
-    PriceBelief.ensure(book, 1864, context(owner, old)).ask = 100;
-    PriceBelief.ensure(book, 123, context(owner, old + 3000)).ask = 5000;
-    book.lookAt = old + 3000;
-    const legacy = PriceBelief.writeBook(book);
-    legacy.b = legacy.b.map(row => row.slice(0, 13));
-    legacy.b.find(row => row[0] === 1864)[10] = 32;
-    legacy.b.find(row => row[0] === 1864)[11] = 33;
-    const inactiveLegacy = { ...legacy, b: Array.from({ length: PriceBelief.BOUND }, (_, index) => {
-        const row = [...legacy.b[0]];
-        row[0] = 1864 + index;
-        return row;
-    }) };
-    const legacyByOwner = new Map([[owner, legacy], [buyer, legacy], [inactive, inactiveLegacy]]);
-    for (const [id, original] of legacyByOwner) await saveBook(id, original);
-    // A later row failure aborts the whole startup checkpoint, so no owner
-    // can be partially normalized and no worker cache sees a partial result.
-    AfkTrade._resetForTests();
-    await Database.execute([`CREATE TEMP TRIGGER cursor_migration_failure
-        BEFORE UPDATE OF statsJson ON main.bot_life_state WHEN NEW.characterId = ${buyer}
-        BEGIN SELECT RAISE(ABORT, 'injected cursor migration failure'); END`]);
-    try { await assert.rejects(AfkTrade.init(), /injected cursor migration failure/); }
-    finally { await Database.execute(['DROP TRIGGER temp.cursor_migration_failure']); }
-    for (const id of [owner, buyer, inactive]) {
-        assert.deepStrictEqual(await storedBook(id), legacyByOwner.get(id));
-        assert.deepStrictEqual(LifeState.cachedState(id).stats.priceBeliefs, legacyByOwner.get(id));
+    const player = await bot('Player', { player: true });
+    for (let i = 0; i < 100; i++) await trade(`cursor:old:${i}`, old - (100 - i) * 60000);
+    await trade('cursor:other', old + 3000, { selfId: 1865 });
+    const sell = await Database.createAfkTradeShop(owner.id, { storeType: 1, town: 'Giran',
+        lines: [{ objectId: owner.stock, selfId: 1864, name: 'Stem', count: 10, price: 100, stackable: true }] });
+    await Database.createAfkTradeShop(buyer.id, { kind: 'buy_ad', storeType: 3, town: 'Giran',
+        lines: [{ selfId: 1864, name: 'Stem', count: 10, price: 90, stackable: true }] });
+    await Database.createAfkTradeShop(player.id, { storeType: 1, town: 'Giran',
+        lines: [{ objectId: player.stock, selfId: 1864, name: 'Stem', count: 10, price: 100, stackable: true }] });
+    const legacy = { t: 48, at: old, n: 3, b: Array.from({ length: 48 }, (_, i) =>
+        [1864 + i, 4.6, 5, 1, 48, 0, 0.1, 3, 100, 90, 32, 33, 120]) };
+    for (const { id } of [owner, buyer, inactive]) await Database.execute([
+        "UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.priceBeliefs', json(?), '$.otherKnowledge', json(?)) WHERE characterId = ?",
+        [JSON.stringify(legacy), JSON.stringify({ marker: 17 }), id]
+    ]);
+    await Database.close();
+    // Only the disposable fixture returns to schema56 before migration57.
+    const fixture = new DatabaseSync(databasePath);
+    fixture.prepare('DELETE FROM schema_migrations WHERE version = 57').run();
+    const columns = new Set(fixture.prepare('PRAGMA table_info(afk_trade_lines)').all().map(column => column.name));
+    for (const column of PRICING_COLUMNS) if (columns.has(column)) fixture.exec(`ALTER TABLE afk_trade_lines DROP COLUMN ${column}`);
+    fixture.exec(`CREATE TRIGGER cursor_migration_failure BEFORE UPDATE OF statsJson ON bot_life_state
+        WHEN NEW.characterId = ${buyer.id} BEGIN SELECT RAISE(ABORT, 'injected N79 migration failure'); END`);
+    fixture.close();
+    // Keep the fatal reporter from exiting before the native rollback can be
+    // inspected. The migration/connection cleanup itself runs unchanged.
+    const fatal = utils.infoFail;
+    utils.infoFail = (_prefix, message, error) => assert.match(`${message} ${error}`, /injected N79 migration failure/);
+    try { Database.init(); } finally { utils.infoFail = fatal; }
+    assert.strictEqual(Database.isReady(), false, 'numbered migration failure must close the connection');
+    process.exitCode = 0;
+    await Database.close();
+    const rolledBack = new DatabaseSync(databasePath);
+    assert.strictEqual(rolledBack.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE version = 57').get().n, 0);
+    assert(!rolledBack.prepare('PRAGMA table_info(afk_trade_lines)').all().some(column => column.name === 'fills'));
+    for (const { id } of [owner, buyer, inactive]) {
+        assert.deepStrictEqual(JSON.parse(rolledBack.prepare('SELECT statsJson FROM bot_life_state WHERE characterId = ?').get(id).statsJson).priceBeliefs,
+            legacy, 'failed migration must not delete only some bot books');
     }
-    // All legacy beliefs are saved before trading, including inactive ones.
-    await restart();
-    const checkpoint = await storedBook(owner);
-    for (const id of [owner, buyer, inactive]) {
-        const saved = await storedBook(id);
-        const original = legacyByOwner.get(id);
-        assert.deepStrictEqual([saved.t, saved.at, saved.n], [original.t, original.at, original.n]);
-        for (let index = 0; index < saved.b.length; index++) {
-            assert.deepStrictEqual(saved.b[index].slice(0, 10), original.b[index].slice(0, 10));
-            assert.strictEqual(saved.b[index][12], original.b[index][12]);
-            assert.strictEqual(saved.b[index][13], 2);
-        }
-        assert.strictEqual(saved.b.find(row => row[0] === 1864)[10], 100);
-        assert.strictEqual(saved.b.find(row => row[0] === 1864)[11], 101);
-        assert.deepStrictEqual(LifeState.cachedState(id).stats.priceBeliefs, saved, 'main cache follows durable migration');
+    rolledBack.exec('DROP TRIGGER cursor_migration_failure');
+    rolledBack.close();
+    Database.init();
+    assert(Database.isReady());
+    for (const row of await Database.execute(['SELECT * FROM bot_life_state'])) LifeState.acceptLifecycleRow(row);
+    await AfkTrade.init();
+    for (const { id } of [owner, buyer, inactive]) {
+        const stats = await storedStats(id);
+        assert.strictEqual(stats.priceBeliefs, undefined);
+        assert.deepStrictEqual(stats.otherKnowledge, { marker: 17 });
+        assert.strictEqual(LifeState.cachedState(id).stats.priceBeliefs, undefined);
     }
-    const largeCheckpoint = await storedBook(inactive);
-    assert.strictEqual(largeCheckpoint.b.length, 48);
-    console.log(JSON.stringify({ case: '48 legacy beliefs payload', legacyBytes: JSON.stringify(inactiveLegacy).length,
-        checkpointBytes: JSON.stringify(largeCheckpoint).length, deltaBytes: JSON.stringify(largeCheckpoint).length
-            - JSON.stringify(inactiveLegacy).length, basisFieldBytes: 2 * 48 }));
-    assert.deepStrictEqual(observe(checkpoint, 'sell').result, { observations: [], sales: 0 });
-    assert.deepStrictEqual(observe(checkpoint, 'buy').result, { observations: [], fills: 0 });
-    assert.deepStrictEqual((await Database.migrateBoardBeliefCursors()).rows, [], 'migration applies once');
-    // Sale before the first legacy look; restart twice before observing it.
-    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner, buyerCharacterId: buyer });
-    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner, buyerCharacterId: buyer });
+    const migrated = await storedShop(owner.id);
+    assert.strictEqual(migrated.id, sell.shop.id);
+    const checkpoint = { price: 100, seenCounter: 101, seenItem: 100, rival: 0, worth: 0, seenFills: 0 };
+    assert.deepStrictEqual(migrated.lines[0].pricing, checkpoint);
+    assert.strictEqual(migrated.revision, 1);
+    assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900);
+    assert.strictEqual((await storedShop(buyer.id)).lines[0].pricing.worth, 90,
+        'migrated BUY keeps its authored bid as a conservative worth floor');
+    assert.strictEqual((await storedShop(player.id)).lines[0].pricing, undefined);
+    assert.strictEqual((await Database.initializeBoardPricing()).initialized, 0);
+    assert.strictEqual((await Database.execute(["SELECT COUNT(*) AS n FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].n, 0,
+        'line migration must not silently choose historical or zero own experience');
+    console.log('schema57 rollback, single book removal, unrelated stats and durable line initialization: pass');
+    await Database.buyFromAfkTradeShop(buyer.id, { shopId: migrated.id, ownerId: owner.id,
+        lineId: migrated.lines[0].id, amount: 1, expectedPrice: 100, expectedRevision: 1 });
+    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
+    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
     await Database.flushHistory();
-    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner, buyerCharacterId: buyer });
+    await trade('cursor:unseen', old + 4000, { sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
     for (let round = 0; round < 2; round++) {
-        await restart();
-        assert.strictEqual(MarketCounters.itemDeals(1864).deals, 101);
-        assert.deepStrictEqual(await storedBook(owner), checkpoint, 'later startup cannot move the first checkpoint');
-        assert.strictEqual(observe(await storedBook(owner), 'sell').result.sales, 1);
-        assert.strictEqual(observe(await storedBook(buyer), 'buy').result.fills, 1);
+        const replay = await restart();
+        assert.strictEqual(replay.filter(row => Number(row.selfId) === 1864).length, MarketCounters.REPLAY_DEALS);
+        assert.strictEqual(MarketCounters.itemDeals(1864).deals, 102);
+        assert.strictEqual(MarketCounters.counter('material none').deals, 103);
+        assert.deepStrictEqual((await storedShop(owner.id)).lines[0].pricing, checkpoint);
+        assert.strictEqual((await storedShop(owner.id)).lines[0].fills, 1);
+        assert.strictEqual((await storedStats(owner.id)).marketTrades['material none'], 1,
+            'journal import/dedup must not fabricate actual own deals');
     }
-    // A later look at B cannot consume the still-unseen sale of A.
-    const otherBook = PriceBelief.readBook({ priceBeliefs: checkpoint });
-    const a = otherBook.beliefs.get(1864);
-    const oldACursors = [a.seenItem, a.seenCounter, a.cursorBasis];
-    PriceBelief.lookObservations(otherBook, otherBook.beliefs.get(123), context(owner, old + 4500), { ask: 5000, lines: 1 });
-    otherBook.lookAt = old + 4500;
-    assert.deepStrictEqual([a.seenItem, a.seenCounter, a.cursorBasis], oldACursors);
-    assert.strictEqual(observe(PriceBelief.writeBook(otherBook), 'sell').result.sales, 1);
-    const channel = new ColdTableChannel();
+    const worker = new BoardIndex();
     const mirror = new TableMirror();
+    mirror.watch('board', worker.follower());
     channel.attach('cursor-worker', '1', payload => { mirror.apply(payload.tables); return true; });
-    MarketCounters.publish(channel);
     channel.flush();
-    const main = observe(checkpoint, 'sell');
-    MarketCounters.useTable(() => mirror.rows('market'));
-    const worker = observe(LifeState.cachedState(owner).stats.priceBeliefs, 'sell');
-    assert.deepStrictEqual(worker.result, main.result);
-    assert.deepStrictEqual(worker.saved, main.saved);
-    const consumedSale = worker.saved;
-    const consumedBuy = observe(await storedBook(buyer), 'buy').saved;
-    await saveBook(owner, consumedSale);
-    await saveBook(buyer, consumedBuy);
+    const line = AfkTrade.boardIndex().ownerLines(owner.id)[0];
+    assert.deepStrictEqual(worker.ownerLines(owner.id)[0].pricing, line.pricing);
+    assert.strictEqual(worker.ownerLines(owner.id)[0].fills, 1);
+    const consumed = { ...checkpoint, seenCounter: 103, seenItem: 102, seenFills: 1 };
+    const updated = await AfkTrade.repriceBotLines(owner.id, [], { updates: [{ recordId: line.recordId,
+        lineId: line.lineId, expectedRevision: line.revision, previousPricing: line.pricing, pricing: consumed }] });
+    assert.strictEqual(updated.changed, 0);
+    assert.strictEqual(updated.updated, 1);
+    const buyLine = AfkTrade.boardIndex().ownerLines(buyer.id)[0];
+    const buyState = { ...buyLine.pricing, seenCounter: 103, seenItem: 102 };
+    await AfkTrade.repriceBotLines(buyer.id, [], { updates: [{ recordId: buyLine.recordId, lineId: buyLine.lineId,
+        expectedRevision: buyLine.revision, previousPricing: buyLine.pricing, pricing: buyState }] });
+    assert.strictEqual((await storedShop(buyer.id)).lines[0].pricing.worth, 90);
+    assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900, 'first counter observation cannot lose a migrated BUY escrow');
+    channel.flush();
+    assert.deepStrictEqual(worker.ownerLines(owner.id)[0].pricing, consumed, 'worker receives metadata-only change');
+    channel.detach('cursor-worker');
     for (let round = 0; round < 2; round++) {
         await restart();
-        assert.deepStrictEqual(observe(await storedBook(owner), 'sell', old + 6000).result, { observations: [], sales: 0 });
-        assert.deepStrictEqual(observe(await storedBook(buyer), 'buy', old + 6000).result, { observations: [], fills: 0 });
+        assert.deepStrictEqual((await storedShop(owner.id)).lines[0].pricing, consumed);
+        assert.strictEqual((await storedShop(owner.id)).lines[0].fills - consumed.seenFills, 0);
     }
-    // Bootstrap history plus pending outbox, including a duplicate with a
-    // different item. Only this fixture's metadata is removed.
-    await Database.execute(["DELETE FROM world_meta WHERE key = 'boardDealCountsReady' OR key LIKE 'boardDealCount:%'"]);
+    await Database.execute(["DELETE FROM world_meta WHERE key IN ('boardDealCountsReady', 'boardCounterCountsReady') OR key LIKE 'boardDealCount:%' OR key LIKE 'boardCounterDealCount:%'"]);
     const pending = (eventKey, selfId = 1864) => ({ eventKey, occurredAt: old + 6500, selfId, unitPrice: 100,
-        quantity: 1, sourceType: 'afk_bot_store', sellerCharacterId: owner, buyerCharacterId: buyer });
+        quantity: 1, sourceType: 'afk_bot_store', sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
     await Database.execute(["INSERT INTO history_outbox (kind, payload) VALUES ('market_trade', ?), ('market_trade', ?)",
         [JSON.stringify(pending('cursor:unseen', 1872)), JSON.stringify(pending('cursor:pending'))]]);
-    await trade('cursor:bootstrap-live', old + 6600, { sellerCharacterId: owner, buyerCharacterId: buyer });
+    await trade('cursor:bootstrap-live', old + 6600, { sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
     await restart();
-    assert.strictEqual(MarketCounters.itemDeals(1864).deals, 103);
+    assert.strictEqual(MarketCounters.itemDeals(1864).deals, 104);
     assert.strictEqual(MarketCounters.itemDeals(1872).deals, 0);
-    assert.strictEqual(observe(consumedSale, 'sell', old + 6800).result.sales, 2);
-    const afterBootstrap = observe(consumedSale, 'sell', old + 6800).saved;
+    assert.strictEqual(MarketCounters.counter('material none').deals, 105);
+    assert.deepStrictEqual((await storedShop(owner.id)).lines[0].pricing, consumed);
     await Database.close();
     const history = new DatabaseSync(historyPath);
     history.prepare("DELETE FROM market_trades WHERE eventKey LIKE 'cursor:old:%'").run();
     history.close();
     Database.init();
+    assert(Database.isReady());
     await AfkTrade.init();
-    assert.strictEqual(MarketCounters.itemDeals(1864).deals, 103);
-    assert.strictEqual(MarketCounters.counter('material none').deals, 104);
-    assert.deepStrictEqual(observe(afterBootstrap, 'sell', old + 6900).result, { observations: [], sales: 0 });
-    await trade('cursor:after-prune', old + 7000, { sellerCharacterId: owner, buyerCharacterId: buyer });
-    await restart();
     assert.strictEqual(MarketCounters.itemDeals(1864).deals, 104);
-    assert.strictEqual(observe(afterBootstrap, 'sell', old + 8000).result.sales, 1);
-    console.log('Market restart cursors: startup legacy checkpoint, preserved knowledge/cache, sale before first look, repeated restarts, worker mirror, bootstrap, retention and deduplication passed');
+    assert.strictEqual(MarketCounters.counter('material none').deals, 105);
+    await trade('cursor:after-prune', old + 7000, { sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
+    await restart();
+    assert.strictEqual(MarketCounters.itemDeals(1864).deals, 105);
+    assert.strictEqual(MarketCounters.counter('material none').deals, 106);
+    assert.deepStrictEqual((await storedShop(owner.id)).lines[0].pricing, consumed);
+    console.log('N79 restart cursors: bounded replay, line fills, worker metadata, backlog deduplication and retention: pass');
+
+    // Seed policy is explicit and independent. These are two disposable
+    // scenarios, not a choice for the running world.
+    const legacyOwner = await bot('HistorySeed');
+    await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });
+    await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });
+    await Database.execute([`CREATE TEMP TRIGGER cursor_seed_failure BEFORE UPDATE OF statsJson ON main.bot_life_state
+        WHEN NEW.characterId = ${legacyOwner.id} BEGIN SELECT RAISE(ABORT, 'injected seed failure'); END`]);
+    try { await assert.rejects(Database.initializeBotMarketTrades('history'), /injected seed failure/); }
+    finally { await Database.execute(['DROP TRIGGER temp.cursor_seed_failure']); }
+    assert.strictEqual((await storedStats(inactive.id)).marketTrades, undefined, 'seed rollback must include earlier bot rows');
+    assert.strictEqual((await Database.execute(["SELECT COUNT(*) AS n FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].n, 0);
+    const seeded = await Database.initializeBotMarketTrades('history');
+    assert.strictEqual(seeded.skipped, false);
+    assert.strictEqual((await storedStats(legacyOwner.id)).marketTrades['material none'], 1, 'historical seed counts canonical deals once');
+    assert.strictEqual((await storedStats(owner.id)).marketTrades['material none'], 1, 'seed cannot replace already committed own counts');
+    assert.strictEqual((await Database.initializeBotMarketTrades('history')).skipped, true);
+    assert.strictEqual((await Database.initializeBotMarketTrades('zero')).mode, 'history', 'later calls cannot silently change a chosen seed');
+    await assert.rejects(Database.initializeBotMarketTrades(undefined), /invalid_market_trades_seed/);
+    await Database.close();
+    clean();
+    Database.init();
+    assert(Database.isReady());
+    const zeroOwner = await bot('ZeroSeed');
+    await trade('cursor:zero-seed', old, { sellerCharacterId: zeroOwner.id });
+    assert.strictEqual((await Database.initializeBotMarketTrades('zero')).skipped, false);
+    assert.deepStrictEqual((await storedStats(zeroOwner.id)).marketTrades, {}, 'zero seed deliberately ignores historical deals');
+    assert.strictEqual((await Database.initializeBotMarketTrades('zero')).skipped, true);
+    console.log('Explicit own-trade seed: history/zero, canonical identity, rollback and idempotency: pass');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    channel.detach('cursor-worker');
     AfkTrade._resetForTests();
     MarketCounters.reset();
     await Database.close();
