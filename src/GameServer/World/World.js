@@ -35,6 +35,14 @@ function actorLoc(actor) {
     };
 }
 
+function indexedActorLoc(actor) {
+    return {
+        locX: Number(actor.fetchLocX?.()),
+        locY: Number(actor.fetchLocY?.()),
+        locZ: Number(actor.fetchLocZ?.())
+    };
+}
+
 function actorIdForTarget(target) {
     return Number(target?.actor?.fetchId?.() || target?.characterId || target?.coldLifeState?.characterId || 0);
 }
@@ -221,12 +229,19 @@ const World = {
         const id = actor.fetchId?.();
         const previous = runtime.index.get(id);
         if (membership.actor === actor && membership.id !== id) runtime.index.remove(membership.id, actor);
+        const loc = indexedActorLoc(actor);
+        if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY) || !Number.isFinite(loc.locZ)) {
+            runtime.index.remove(id, actor);
+            membership.actor = actor;
+            membership.id = id;
+            return false;
+        }
         const realPlayer = PlayerActivitySignal.isRealPlayerSession(session);
         if (previous?.source === actor && previous.session === session) {
             previous.realPlayer = realPlayer;
             runtime.index.update(id, actor);
         } else {
-            runtime.index.put({ id, source: actor, phase: 'hot', realPlayer, loc: () => actorLoc(actor), session });
+            runtime.index.put({ id, source: actor, phase: 'hot', realPlayer, loc: () => indexedActorLoc(actor), session });
             if (previous && previous.source !== actor) {
                 // Only a successful replacement retires the old source. Its
                 // delayed movement must not reclaim the character ID.

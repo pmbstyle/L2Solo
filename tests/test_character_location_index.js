@@ -113,4 +113,56 @@ assert.strictEqual(index.get(500), null);
 assert.deepStrictEqual(index.near(location(0), 100000, { kind: 'player' }), []);
 assert.deepStrictEqual(index.inSpot('0_0'), []);
 assert.strictEqual(index.update(local.id, local.source), false, 'reset drops old memberships');
+
+// Exercise only the actual World's runtime adapter, without Global, listeners,
+// databases or World.init. Native Model/Coordinator integration has its own fixture.
+const fs = require('fs');
+const vm = require('vm');
+const { createRequire } = require('module');
+const worldFile = require.resolve('../src/GameServer/World/World');
+const isolatedModule = { exports: {} };
+vm.runInNewContext(fs.readFileSync(worldFile, 'utf8'), {
+    module: isolatedModule,
+    require: createRequire(worldFile),
+    path: { world: 'GameServer/World/' },
+    invoke(name) {
+        if (name === 'GameServer/World/WorldConstants') return require('../src/GameServer/World/WorldConstants');
+        return { invalidate() {}, broadcastMemberPresence() {} };
+    }
+}, { filename: worldFile });
+const World = isolatedModule.exports;
+World.user = { sessions: [], revision: 0 };
+const model = { id: 700, ...location(10, 20, 30), isOnline: true };
+const actor = {
+    fetchId: () => model.id,
+    fetchLocX: () => model.locX,
+    fetchLocY: () => model.locY,
+    fetchLocZ: () => model.locZ,
+    fetchIsOnline: () => model.isOnline
+};
+const session = { actor, accountId: 'player_location_fixture', fetchAccountId() { return this.accountId; } };
+World.insertUser(session);
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0)[0], session);
+for (const key of ['locX', 'locY', 'locZ']) {
+    const old = model[key];
+    model[key] = NaN;
+    assert.doesNotThrow(() => World.updateUserLocation(session, actor), 'malformed live actor is skipped without failing its setter');
+    assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 100).length, 0);
+    assert.strictEqual(model.isOnline, true, 'invalid location does not change online status');
+    model[key] = old;
+    assert.strictEqual(World.updateUserLocation(session, actor), true, 'valid native update recovers the same source without re-registration');
+    assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0)[0], session);
+}
+Object.assign(model, { locX: '10', locY: '20', locZ: '30' });
+assert.doesNotThrow(() => World.updateUserLocation(session, actor), 'native actor coordinates retain the original Number normalization');
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0)[0], session);
+World.removeUser(session);
+const partialActor = { fetchId: () => 701, fetchIsOnline: () => true };
+const partialSession = { actor: partialActor, accountId: 'player_without_coordinates', fetchAccountId() { return this.accountId; } };
+assert.doesNotThrow(() => World.insertUser(partialSession), 'existing non-location World consumers may register partial native actors');
+assert.strictEqual(World.realPlayerSessionsNear(location(0), 100).length, 0, 'missing getters skip rather than inventing a location');
+Object.assign(partialActor, { fetchLocX: () => 1, fetchLocY: () => 2, fetchLocZ: () => 3 });
+assert.strictEqual(World.updateUserLocation(partialSession), true, 'a partial source can recover when real coordinates become available');
+assert.strictEqual(World.realPlayerSessionsNear(location(1, 2), 0)[0], partialSession);
+World.removeUser(partialSession);
 console.log('character_location_index: PASS');
