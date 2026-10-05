@@ -1,0 +1,71 @@
+// A consumable bought from the NPC on a restock, one form for every stock
+// (healing potions, Scrolls of Escape): a line { selfId, name, currentAmount,
+// amount, unitPrice, cost, adena } is written into a cold state (inventory
+// summary and Adena) or into a hot actor's backpack (item row and Adena row).
+const Database = invoke('Database');
+
+function coldPatch(state, line) {
+    const inventory = { ...(state.inventory || {}) };
+    const key = String(line.selfId);
+    inventory[key] = {
+        ...(inventory[key] || {}),
+        selfId: line.selfId,
+        name: line.name,
+        amount: line.currentAmount + line.amount
+    };
+    inventory['57'] = {
+        ...(inventory['57'] || {}),
+        selfId: 57,
+        name: 'Adena',
+        amount: line.adena - line.cost
+    };
+    return {
+        adena: line.adena - line.cost,
+        inventory,
+        purchase: {
+            selfId: line.selfId,
+            name: line.name,
+            amount: line.amount,
+            unitPrice: line.unitPrice,
+            cost: line.cost,
+            at: Date.now()
+        }
+    };
+}
+
+function ensureActorStock(actor, line) {
+    const current = actor.backpack.fetchItemFromSelfId(line.selfId);
+    const nextAmount = line.currentAmount + line.amount;
+    if (current) {
+        return Database.updateItemAmount(actor.fetchId(), current.fetchId(), nextAmount).then(() => {
+            current.setAmount(nextAmount);
+            return nextAmount;
+        });
+    }
+    return Database.setItem(actor.fetchId(), {
+        selfId: line.selfId,
+        name: line.name,
+        amount: nextAmount,
+        equipped: false,
+        slot: 0
+    }).then((packet) => {
+        actor.backpack.insertItem(Number(packet.insertId), line.selfId, { amount: nextAmount });
+        return nextAmount;
+    });
+}
+
+// Pays the line's cost from the Adena row, then adds the items. Resolves
+// { ok, nextAdena, nextAmount } or { ok: false, reason: 'missing_adena' }.
+function buyForActor(actor, line) {
+    const adenaItem = actor.backpack.fetchItemFromSelfId(57);
+    if (!adenaItem) return Promise.resolve({ ok: false, reason: 'missing_adena' });
+    const nextAdena = line.adena - line.cost;
+    return Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
+        .then(() => {
+            adenaItem.setAmount(nextAdena);
+            return ensureActorStock(actor, line);
+        })
+        .then((nextAmount) => ({ ok: true, nextAdena, nextAmount }));
+}
+
+module.exports = { coldPatch, buyForActor };

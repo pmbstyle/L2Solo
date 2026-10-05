@@ -1,5 +1,5 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
-const Database = invoke('Database');
+const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
 const DataCache = invoke('GameServer/DataCache');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -169,25 +169,10 @@ function restockPlan(value, options = {}) {
     };
 }
 
-function ensureActorStock(actor, plan) {
-    const current = actor.backpack.fetchItemFromSelfId(plan.potion.selfId);
-    const nextAmount = plan.currentAmount + plan.amount;
-    if (current) {
-        return Database.updateItemAmount(actor.fetchId(), current.fetchId(), nextAmount).then(() => {
-            current.setAmount(nextAmount);
-            return nextAmount;
-        });
-    }
-    return Database.setItem(actor.fetchId(), {
-        selfId: plan.potion.selfId,
-        name: plan.potion.name,
-        amount: nextAmount,
-        equipped: false,
-        slot: 0
-    }).then((packet) => {
-        actor.backpack.insertItem(Number(packet.insertId), plan.potion.selfId, { amount: nextAmount });
-        return nextAmount;
-    });
+// The plan's purchase as a restock line (Inventory/ConsumableRestock).
+function purchaseLine(plan) {
+    return { selfId: plan.potion.selfId, name: plan.potion.name, currentAmount: plan.currentAmount,
+        amount: plan.amount, unitPrice: plan.unitPrice, cost: plan.cost, adena: plan.adena };
 }
 
 function purchaseActorRestock(actor, options = {}) {
@@ -197,16 +182,9 @@ function purchaseActorRestock(actor, options = {}) {
     const plan = restockPlan(actor, options);
     if (!plan.needed) return Promise.resolve({ ok: true, changed: false, ...plan });
     if (!plan.affordable) return Promise.resolve({ ok: false, reason: 'wallet_reserve', ...plan });
-
-    const adenaItem = actor.backpack.fetchItemFromSelfId(57);
-    if (!adenaItem) return Promise.resolve({ ok: false, reason: 'missing_adena', ...plan });
-    const nextAdena = plan.adena - plan.cost;
-    return Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
-        .then(() => {
-            adenaItem.setAmount(nextAdena);
-            return ensureActorStock(actor, plan);
-        })
-        .then((amount) => ({ ok: true, changed: true, ...plan, nextAdena, nextAmount: amount }));
+    return ConsumableRestock.buyForActor(actor, purchaseLine(plan)).then((bought) => (bought.ok
+        ? { ok: true, changed: true, ...plan, nextAdena: bought.nextAdena, nextAmount: bought.nextAmount }
+        : { ok: false, reason: bought.reason, ...plan }));
 }
 
 function activePotionHot(actor) {
@@ -325,32 +303,7 @@ function coldEffectFor(potion, usedAt = 0) {
 function coldPurchasePatch(state, options = {}) {
     const plan = restockPlan(state, { ...options, inventory: state?.inventory || {} });
     if (!plan.affordable) return null;
-    const inventory = { ...(state.inventory || {}) };
-    const key = String(plan.potion.selfId);
-    inventory[key] = {
-        ...(inventory[key] || {}),
-        selfId: plan.potion.selfId,
-        name: plan.potion.name,
-        amount: plan.currentAmount + plan.amount
-    };
-    inventory['57'] = {
-        ...(inventory['57'] || {}),
-        selfId: 57,
-        name: 'Adena',
-        amount: plan.adena - plan.cost
-    };
-    return {
-        adena: plan.adena - plan.cost,
-        inventory,
-        purchase: {
-            selfId: plan.potion.selfId,
-            name: plan.potion.name,
-            amount: plan.amount,
-            unitPrice: plan.unitPrice,
-            cost: plan.cost,
-            at: Date.now()
-        }
-    };
+    return ConsumableRestock.coldPatch(state, purchaseLine(plan));
 }
 
 module.exports = {
