@@ -865,6 +865,12 @@ const optionalGeodataTests = new Set([
     'tests/test_pathfinding_worker_pool.js'
 ]);
 const geodataOnly = process.argv.includes('--geodata');
+// Recovery fixtures reject local/shared configuration before loading Global.
+const defaultConfigTests = new Set([
+    'tests/test_history_database_recovery.js',
+    'tests/test_saved_games_history_recovery.js',
+    'tests/test_database_restore_protocol.js'
+]);
 const selectedTests = tests.filter((testFile) => geodataOnly
     ? geodataTests.has(testFile) || optionalGeodataTests.has(testFile)
     : !geodataTests.has(testFile));
@@ -876,9 +882,14 @@ if (process.argv.includes('--list')) {
 fs.mkdirSync('tmp', { recursive: true });
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
+    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' };
+    if (defaultConfigTests.has(testFile)) {
+        env.L2NODE_CONFIG_FILE = 'config/default.ini';
+        delete env.L2NODE_SHARED_CONFIG_FILE;
+    }
     const result = spawnSync(process.execPath, [testFile], {
         cwd: process.cwd(),
-        env: { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' },
+        env,
         stdio: 'inherit'
     });
 
