@@ -140,11 +140,12 @@ function answers(state, options = {}) {
 
 // A bot in a town sells into the buy ads there it chose to answer: one deal
 // per ad on the board, from its bag, the escrow paying it at once.
+// options.answers: the visit's decision when the caller made it.
 async function sellToBestBuyer(state, town = state?.currentRegion, options = {}) {
     let seller = state;
     const sales = [];
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-    for (const answer of answers(state, options)) {
+    for (const answer of options.answers || answers(state, options)) {
         if (answer.line.town !== town) continue;
         const offer = AfkTrade.offerOf(answer.line, town);
         if (!offer) continue;

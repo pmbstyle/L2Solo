@@ -128,15 +128,17 @@ function open(state, options = {}) {
     // GoalExecutor chooses the best buyer town before travel. At this stage
     // the bot must trade only with the city it has actually reached.
     const town = marketTown(options.town || state.currentRegion || targetMarketTownName(state, initialItems));
-    return BuyStoreService.sellToBestBuyer(state, town?.name).then((dynamicBuyerSale) => StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
+    // One sale decision for the visit (one decision point, evaluated once):
+    // the buy ads it answers here, the NPC sale, the board's listings.
+    const market = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(state, options);
+    const initialMarket = market;
+    return BuyStoreService.sellToBestBuyer(state, town?.name, { answers: market.answers }).then((dynamicBuyerSale) => StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
     const saleState = buyerSale.state || dynamicBuyerSale.state || state;
-    const initialMarket = MarketListingPolicy.evaluate(saleState, options);
-    return LifeState.applyNpcLiquidation(saleState, initialMarket.npc, {
+    return LifeState.applyNpcLiquidation(saleState, market.npc, {
         source: 'pre_market_junk',
         town: town?.name || saleState.currentRegion || null
     }).then((liquidatedState) => {
     const marketState = liquidatedState || saleState;
-    const market = MarketListingPolicy.evaluate(marketState, options);
     const items = market.listings;
     if (!items.length) {
         return BotWarehouse.depositCold(marketState).then((warehouse) => ({
@@ -160,7 +162,7 @@ function open(state, options = {}) {
     // The board replaced the stall (step 3.3): the listings go to the bot's
     // shop and, past its lines, to sell ads; their items leave the bag into
     // the records. The bot then goes back to its hunt.
-    return invoke('GameServer/Bot/Economy/BotAfkMarketService').listOnBoard(marketState, options).then((board) => {
+    return invoke('GameServer/Bot/Economy/BotAfkMarketService').listOnBoard(marketState, { ...options, decided: market }).then((board) => {
         const boardState = board.state || marketState;
         if (board.shopTown) return travelToShopTown(boardState, board, timestamp);
         if (!board.listed) {

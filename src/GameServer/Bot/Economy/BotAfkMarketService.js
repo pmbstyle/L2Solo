@@ -192,12 +192,7 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
             stackable: Number(line.stackable) === 1,
             petData: line.petData || null
         })) : [];
-    const saleState = stateWithEscrow(state, stock);
-    const ads = AfkTrade.ownerRecords(Number(state.characterId)).filter((record) => record.kind === 'sell_ad').length;
-    const classified = ListingPolicy.evaluate(saleState, {
-        ...evaluateOptions, slots: Math.max(0, ListingPolicy.BOARD_SLOTS - ads),
-        kept: new Map(existing.map((line) => [line.selfId, line.price]))
-    });
+    const classified = evaluateOptions.decided || decide(state, stock, existing, evaluateOptions);
     const listings = classified.listings;
     const priorityMarketItems = new Set(classified.listings
         .filter((item) => String(item.kind || '').startsWith('Other.Shot'))
@@ -255,6 +250,28 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
 
 // The bot's buy ad lines for its goal, with the beliefs that keep its bid
 // (lines.book, saved when the ad is published).
+// The sale decision (MarketListingPolicy.evaluate) over the bot's bag and its
+// shop's stock: the shop's lines keep their slot and price, its sell ads
+// take their slots.
+function decide(state, stock, existing, options = {}) {
+    const ads = AfkTrade.ownerRecords(Number(state.characterId)).filter((record) => record.kind === 'sell_ad').length;
+    return ListingPolicy.evaluate(stateWithEscrow(state, stock), {
+        ...options, slots: Math.max(0, ListingPolicy.BOARD_SLOTS - ads),
+        kept: new Map(existing.map((line) => [line.selfId, line.price]))
+    });
+}
+
+// A market visit's one sale decision (one decision point, evaluated once):
+// what goes into the buy ads of the town, to the NPC, onto the board
+// (listOnBoard takes it as options.decided).
+function saleDecision(state, options = {}) {
+    const shop = AfkTrade.findOwnerProjection(state.characterId)?.shop;
+    const stock = Number(shop?.storeType) === AfkTrade.SELL ? shop : null;
+    const existing = stock ? stock.lines.filter((line) => Number(line.count) > 0)
+        .map((line) => ({ selfId: Number(line.selfId), price: Number(line.price) })) : [];
+    return decide(state, stock, existing, options);
+}
+
 function buyLines(state, goal) {
     const bid = BuyStoreService.bidFor(state, goal);
     if (!bid) return [];
@@ -679,5 +696,6 @@ async function applyReview(ownerId, review = {}) {
 }
 
 module.exports = { applyReview, buyOrderEscrow, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,
+    saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };
