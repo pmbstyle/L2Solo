@@ -2,6 +2,7 @@ const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -88,11 +89,12 @@ function marketMembers(clan, memberIds = null) {
 }
 
 // What one member may buy for the clan: in its town (Giran without one),
-// never from its own records, within its money and `cap`.
+// never from its own records, within what it may spend
+// (PurchaseFunding.spendable) and `cap`.
 function memberOffer(state, itemId, cap = Infinity) {
     return MarketOpportunity.bestOffer(itemId, {
         town: state.currentRegion || 'Giran',
-        budget: Math.min(number(state.adena), cap),
+        budget: Math.min(PurchaseFunding.spendable(state), cap),
         buyerCharacterId: state.characterId
     });
 }

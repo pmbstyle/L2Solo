@@ -1,4 +1,5 @@
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
@@ -149,9 +150,12 @@ const ColdMarketService = {
         }
 
         const lowTierGearPurchase = activeGearPurchase && Number(state.level || 1) < 40;
+        // What the bot may spend (PurchaseFunding.spendable): its wallet above
+        // the operating reserve, as the planner priced the purchase. A buy ad's
+        // escrow is not in the wallet a shop is paid from.
         const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
-            budget: state.adena,
+            budget: PurchaseFunding.spendable(state),
             buyerCharacterId: state.characterId
         });
         if (!offer) {

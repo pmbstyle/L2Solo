@@ -67,7 +67,7 @@ function canTradeRemotely(state, goal) {
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
-            budget: budgetState.adena,
+            budget: PurchaseFunding.spendable(state, reserved),
             buyerCharacterId: state.characterId
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;

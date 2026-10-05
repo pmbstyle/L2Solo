@@ -114,7 +114,15 @@ async function run() {
         timing: {}
     };
     const goal = { type: 'upgrade_gear', target: { itemId: 2 } };
-    const result = await ColdMarketService.tryPurchase(state, goal);
+    // The buyer keeps its operating reserve (PurchaseFunding.spendable): with
+    // only the price in its wallet it does not buy.
+    const unfunded = await ColdMarketService.tryPurchase(state, goal);
+    assert.strictEqual(unfunded.purchased, false, 'a purchase keeps the operating reserve');
+    assert.strictEqual(playerStore.items[0].count, 1);
+    calls.length = 0;
+    // The purchase itself may spend the last Adena (a clan pays the rest).
+    const offer = MarketOpportunity.bestOffer(2, { town: 'Giran', buyerCharacterId: 77 });
+    const result = await ColdMarketService.buyOffer(state, { ...offer, buyerCharacterId: 77, equipSlot: 7 });
 
     assert.strictEqual(result.purchased, true);
     assert.strictEqual(result.state.adena, 0);
@@ -131,7 +139,12 @@ async function run() {
     assert.strictEqual(weaponSync.inventory['57'].amount, 0, 'the optimized sync must persist spent adena');
     assert.strictEqual(weaponSync.inventory['1'].equipped, false, 'the optimized sync must persist the replaced weapon');
     assert.strictEqual(weaponSync.inventory['2'].equipped, true, 'the optimized sync must persist the new weapon');
-    assert(calls.some((call) => call.type === 'goal' && call.characterId === 77 && call.status === 'completed'));
+    // Funded above its reserve, the shopping bot buys and completes its goal.
+    playerStore.items[0].count = 1;
+    const funded = await ColdMarketService.tryPurchase({ ...state, characterId: 777, adena: 11000,
+        inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 11000 } } }, goal);
+    assert.strictEqual(funded.purchased, true);
+    assert(calls.some((call) => call.type === 'goal' && call.characterId === 777 && call.status === 'completed'));
     const playerTransactions = MarketTelemetry.transactions();
     const purchaseTrade = playerTransactions.recentPlayerTrades[0];
     assert.strictEqual(purchaseTrade.channel, 'fixed_wts');
