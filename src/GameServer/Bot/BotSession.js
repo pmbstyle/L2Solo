@@ -13,6 +13,7 @@ class BotSession {
     }
 
     setActor(properties) {
+        World.retireUserActor(this, this.actor);
         this.actor = new Actor(this, properties);
     }
 

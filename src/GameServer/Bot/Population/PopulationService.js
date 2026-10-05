@@ -1366,6 +1366,10 @@ const PopulationService = {
         return (World.user?.sessions || []).filter(PlayerActivitySignal.isRealPlayerSession);
     },
 
+    realPlayerSessionsNear(loc, radius) {
+        return invoke('GameServer/World/World').realPlayerSessionsNear(loc, radius);
+    },
+
     playerActivityProfile(timestamp = Date.now()) {
         let sessions = [];
         let realPlayers = [];

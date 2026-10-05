@@ -18,7 +18,7 @@ function playerAt(locX, locY, locZ) {
 (async () => {
     const coordinator = new ColdSimulationCoordinator();
     coordinator.population = {
-        realPlayerSessions: () => [playerAt(1000, 2000, -4976)]
+        realPlayerSessionsNear: () => [playerAt(1000, 2000, -4976)]
     };
     const visible = {
         characterId: 7001,
@@ -45,7 +45,7 @@ function playerAt(locX, locY, locZ) {
     assert.strictEqual(coordinator.visibleToRealPlayer({ ...visible, activity: 'traveling' }), false,
         'persisted travel remains event-scheduled until hot route materialization exists');
 
-    coordinator.population = { realPlayerSessions: () => [] };
+    coordinator.population = { realPlayerSessionsNear: () => [] };
     const transitioning = {
         ...visible,
         party: { partyId: 'visible-party', leaderId: visible.characterId }

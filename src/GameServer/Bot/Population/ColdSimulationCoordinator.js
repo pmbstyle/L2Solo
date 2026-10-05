@@ -1297,11 +1297,16 @@ class ColdSimulationCoordinator {
 
     visibleToRealPlayer(state) {
         if (!state || ['pk_hunting', 'traveling'].includes(state.activity) || state.stats?.supplyErrand) return false;
-        const players = this.population?.realPlayerSessions?.() || [];
-        if (!players.length) return false;
         const candidateLoc = state.stats?.craftShop?.loc || state.loc;
         if (!candidateLoc) return false;
+        const queryLoc = { locX: Number(candidateLoc.locX), locY: Number(candidateLoc.locY), locZ: Number(candidateLoc.locZ) };
+        if (![queryLoc.locX, queryLoc.locY].every(Number.isFinite)) return false;
+        // The index searches XY; the original candidate still reaches the
+        // floor policy, including its missing-height fallback.
+        if (!Number.isFinite(queryLoc.locZ)) queryLoc.locZ = 0;
         const radius = Math.max(1, Number(Config.activationRadius) || 9000);
+        const players = this.population?.realPlayerSessionsNear?.(queryLoc, radius) || [];
+        if (!players.length) return false;
         const floor = invoke('GameServer/Bot/Population/FloorAwareActivationPolicy');
         return players.some((playerSession) => {
             const actor = playerSession?.actor;

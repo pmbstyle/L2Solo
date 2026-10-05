@@ -175,6 +175,7 @@ class Session {
     }
 
     setActor(properties) {
+        World.retireUserActor(this, this.actor);
         // The connection survives returning to character selection.
         invoke('GameServer/World/Generics/NativeUiSession').reset(this);
         this.questStates = new Map();
