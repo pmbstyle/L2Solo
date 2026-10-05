@@ -108,8 +108,9 @@ function lootRateFactor(spot, dropRate) {
 }
 
 // The C4 exp/SP penalty for monsters far below the killer (problem E11) is
-// not in the author's combat today; step 3.5(a) puts its factor here.
-function expGapFactor(_gap) {
+// not in the author's combat today; step 3.5(a) puts its factor of the level
+// gap (the callers' argument) here.
+function expGapFactor() {
     return 1;
 }
 
