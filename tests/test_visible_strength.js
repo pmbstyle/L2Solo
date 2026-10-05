@@ -65,7 +65,11 @@ assert.strictEqual(V.actorSeen(live(60, { fetchCombats: () => true })), 0.75, 'i
 assert.strictEqual(V.actorSeen(live(70, {}, 1)), 0.75, 'a purple name');
 assert.strictEqual(V.actorSeen(live(90, {}, 1)), 1, 'slightly hurt looks healthy');
 const coldOf = (hp, extra = {}) => ({ vitals: { hp, maxHp: 100 }, activity: 'hunting', stats: {}, ...extra });
-assert.strictEqual(V.stateSeen(coldOf(40), 1000), 1, 'cold hunting is no cue');
+assert.strictEqual(V.stateSeen(coldOf(40), 1000), 1, 'cold hunting off a spot is no cue');
+assert.strictEqual(V.stateSeen(coldOf(40, { spotId: 's' }), 1000), 0.5, 'cold hunting on a spot: fighting mobs there, seen');
+assert.strictEqual(V.stateSeen(coldOf(60, { activity: 'grouped', spotId: 's' }), 1000), 0.75, 'party hunting on a spot, seen');
+assert.strictEqual(V.stateSeen(coldOf(90, { spotId: 's' }), 1000), 1, 'slightly hurt hunter looks healthy');
+assert.strictEqual(V.stateSeen(coldOf(40, { activity: 'traveling', spotId: 's' }), 1000), 1, 'travelling is no cue');
 assert.strictEqual(V.stateSeen(coldOf(40, { activity: 'resting' }), 1000), 0.5, 'cold resting');
 assert.strictEqual(V.stateSeen(coldOf(60, { stats: { coldPvp: { until: 2000 } } }), 1000), 0.75, 'a cold skirmish just ended');
 assert.strictEqual(V.stateSeen(coldOf(60, { stats: { coldPvp: { until: 500 } } }), 1000), 1, 'long ago');

@@ -114,11 +114,13 @@ function actorSeen(actor) {
     return seen(Number(actor?.fetchHp?.()) / Math.max(1, Number(actor?.fetchMaxHp?.()) || 1), cue);
 }
 
-// Cold cues: resting, or a skirmish that ended within its flag time
-// (ColdPvpResolver writes coldPvp.until = end + 15 s). Hunting is abstract in
-// cold: no momentary mob-fight cue.
+// Cold cues: hunting on a spot, alone or in a party (it is fighting mobs
+// there, as a player would see), resting, or a skirmish that ended within its
+// flag time (ColdPvpResolver writes coldPvp.until = end + 15 s).
+const SEEN_ACTIVITIES = new Set(['hunting', 'grouped', 'resting']);
 function stateCue(state, timestamp) {
-    return state?.activity === 'resting' || Number(state?.stats?.coldPvp?.until || 0) > timestamp;
+    return SEEN_ACTIVITIES.has(state?.activity) && (state.activity === 'resting' || !!state.spotId)
+        || Number(state?.stats?.coldPvp?.until || 0) > timestamp;
 }
 
 function stateSeen(state, timestamp, vitals = state?.vitals) {
