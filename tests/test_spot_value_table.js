@@ -1,4 +1,5 @@
 const assert = require('assert');
+const fs = require('fs');
 const path = require('path');
 
 require('../src/Global');
@@ -54,5 +55,32 @@ near(Table.value('S', 'dps', 24, true).loot, ref.loot * 50 * 0.6, 'and at x50');
 near(Table.value('T', 'dps', 24, true).loot, Table.value('T', 'dps', 24, true).kills * 20 * 50, 'a spot whose drops scale fully');
 process.env.L2NODE_PROGRESSION_RATE = 'x1';
 
+// ---------------------------------------------------------------- the committed table
+const raw = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8'));
+assert.strictEqual(raw.rows.length, raw.spots.length, 'one row set per spot');
+assert(raw.rows.every((rows) => rows.length === raw.roles.length * raw.shots.length), 'every spot has a row per role and shots');
+assert(raw.rows.flat().every((row) => row === null || row.length === raw.rowFields.length), 'every row has every field');
+assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.huntableRows, 'header counts the huntable rows');
+assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
+assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
+
+// A few spots of the committed table (rate x1). Bearded Keltir fields (level 2): every role hunts it;
+// a dps kills more with shots, more at a higher level, and never more than the spot allows.
 Table.useFile();
-console.log('Spot value table lookups, curves, caps and rates passed');
+const keltir = Table.value('-15_42', 'dps', 5, true);
+assert(keltir && keltir.kills > 100 && keltir.kills <= 275.2 && keltir.exp > 0 && keltir.adena > 0, 'a low field gives a dps kills, exp and adena');
+assert(Table.value('-15_42', 'dps', 5, false).kills <= keltir.kills, 'shots do not slow a dps');
+assert(Table.value('-15_42', 'dps', 12, true).kills >= keltir.kills, 'a higher dps kills at least as fast');
+assert(raw.roles.every((role) => Table.value('-15_42', role, 8, true)), 'every role hunts the newbie field');
+// Level 44 spot 7_34: the dps row was measured six levels up; far below the spot there is no solo hunt.
+assert.strictEqual(Table.referenceLevel('7_34', 'dps'), 50);
+assert(Table.value('7_34', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
+assert.strictEqual(Table.value('7_34', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
+// Seven Signs catacombs are not solo hunting grounds in the author's rules.
+assert(raw.roles.every((role) => Table.value('8_23:catacomb_of_the_heretics', role, 50) === null), 'catacombs: no solo row');
+process.env.L2NODE_PROGRESSION_RATE = 'x10';
+const keltirX10 = Table.value('-15_42', 'dps', 5, true);
+near(keltirX10.exp, keltir.exp * 10, 'the committed table scales exp with the rate');
+process.env.L2NODE_PROGRESSION_RATE = 'x1';
+
+console.log('Spot value table lookups, curves, caps, rates and the committed table passed');
