@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const { BUY } = require('../../AfkTrade/BoardIndex');
 
 function templateFor(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
@@ -167,7 +168,11 @@ async function sellToBestBuyer(state, town = state?.currentRegion, options = {})
 
 // The town of the buy ads a bot chose to answer that pay it most: where its
 // sale trip goes (the side that acts travels, E45). { town, value } or null.
+// The sale decision runs only when the board has a buy ad for something in
+// the bag (O(bag) index reads); the visit makes its own decision on arrival.
 function bestTownFor(state, options = {}) {
+    const board = options.board ?? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
+    if (!board || !Object.keys(state?.inventory || {}).some((selfId) => board.list(Number(selfId), BUY).length)) return null;
     const value = new Map();
     for (const answer of answers(state, options)) {
         const town = answer.line.town;

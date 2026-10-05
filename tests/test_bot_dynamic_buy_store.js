@@ -116,6 +116,17 @@ async function run() {
         [{ selfId: chantOfRevenge.selfId, name: chantOfRevenge.template.name, amount: 1 }]);
     assert.strictEqual(BuyStoreService.bestTownFor(bookSeller), null,
         'NPC-only skill books must ignore peer buy-ad demand');
+    // A bag with nothing the buy ads ask for makes no sale decision for its trip.
+    const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+    const evaluate = ListingPolicy.evaluate;
+    let evaluated = 0;
+    ListingPolicy.evaluate = (...args) => { evaluated += 1; return evaluate(...args); };
+    try {
+        assert.strictEqual(BuyStoreService.bestTownFor(bookBuyer), null);
+        assert.strictEqual(evaluated, 0, 'no buy ad for the bag: no sale decision');
+    } finally {
+        ListingPolicy.evaluate = evaluate;
+    }
     const bookSale = await BuyStoreService.sellToBestBuyer(bookSeller, town);
     assert.strictEqual(bookSale.sold, false, 'Amulet: Chant of Revenge must wait for NPC liquidation');
 
