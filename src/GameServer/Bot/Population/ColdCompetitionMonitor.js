@@ -7,11 +7,7 @@ const INTERVAL_MS = 30000;
 const PAIR_COOLDOWN_MS = 2 * 60000;
 const BOT_COOLDOWN_MS = 2 * 60000;
 const unitKeyOf = (partyId, id) => partyId || `solo:${id}`;
-function seeded(seed) {
-    let h = 2166136261;
-    for (const c of seed) h = Math.imul(h ^ c.charCodeAt(0), 16777619);
-    return () => { h += 0x6D2B79F5; let t = Math.imul(h ^ h >>> 15, 1 | h); t ^= t + Math.imul(t ^ t >>> 7, 61 | t); return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
+const { seeded } = require('../AI/TendencyRoll');
 class ColdCompetitionMonitor {
     constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true }) {
         this.capacityForSpot = capacityForSpot;
