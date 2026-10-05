@@ -592,11 +592,13 @@ module.exports = {
             let purchaseSucceeded = false;
             const { store, name: sellerName } = targetStore(companionErrand.target);
             try {
-                const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId));
+                const storeItem = store?.items?.find((item) => Number(item.selfId) === Number(companionErrand.itemId)
+                    && (store.afkTrade !== true || Number(item.afkTradeLineId) === Number(companionErrand.lineId)));
+                if (store?.afkTrade === true && !storeItem) throw new Error('afk_trade_stock_changed');
                 const bought = store?.afkTrade === true
                     ? await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
                         bot.fetchId(), store, companionErrand.itemId, 1,
-                        { expectedPrice: companionErrand.price, coldState: session.coldLifeState }
+                        { lineId: companionErrand.lineId, expectedPrice: companionErrand.price, coldState: session.coldLifeState }
                     )
                     : await TradeService.buyFromStore(bot, store, companionErrand.itemId, 1);
                 const boughtSummary = store?.afkTrade === true

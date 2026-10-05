@@ -12,6 +12,9 @@ const SHOT_IDS = new Set([
     2509, 2510, 2511, 2512, 2513, 2514,
     3947, 3948, 3949, 3950, 3951, 3952
 ]);
+// These offers are bot purchase plans. The shared accessor only needs this
+// price context; resolving a buyer actor here would add a world lookup.
+const BOT_PRICE_CONTEXT = Object.freeze({ session: Object.freeze({ botSession: true }) });
 
 function itemName(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || `Item ${selfId}`;
@@ -102,7 +105,9 @@ function storeOffer(session, store, item, town) {
         town: store.town || town || null,
         selfId: Number(item.selfId),
         itemName: itemName(item.selfId),
-        price: Number(item.price),
+        price: sellerKind === 'fixed' && SHOT_IDS.has(Number(item.selfId))
+            ? invoke('GameServer/Bot/TradeService').storeItemPrice(store, item, BOT_PRICE_CONTEXT)
+            : Number(item.price),
         count: Number(item.count),
         available: true,
         session,
@@ -135,7 +140,7 @@ let fixedRows = null;
 let fixedByItem = new Map();
 const EMPTY_OFFERS = Object.freeze([]);
 function fixedStoreOffers(selfId = null) {
-    const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+    const rate = invoke('GameServer/Bot/Economy/BotEconomyPricing').economyRate();
     if (!fixedRows || fixedRate !== rate) {
         fixedRate = rate;
         fixedByItem = new Map();

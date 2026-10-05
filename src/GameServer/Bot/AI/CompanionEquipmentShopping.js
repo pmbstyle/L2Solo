@@ -137,6 +137,7 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
         kind: offer.sourceType === 'npc' ? 'npc_equipment_purchase' : 'market_purchase',
         sourceType: offer.sourceType,
         sourceId: offer.sourceId,
+        lineId: Number(offer.lineId || 0) || null,
         itemId: Number(plan.target.selfId),
         itemName: offer.itemName || plan.target.name,
         slot: Number(plan.target.slot || 0),

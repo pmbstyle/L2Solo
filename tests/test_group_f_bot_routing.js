@@ -93,6 +93,64 @@ function privateSession(name, id, selfId) {
             assert(Market.hotOffers(SHOT, { town: 'Giran' }).some((offer) => offer.sourceId === 987203));
             World.user = { sessions: [] };
         });
+        await check('player display refresh cannot change hot configured bot shot quotes', () => {
+            const configs = invoke('GameServer/Bot/MerchantStoreConfigs');
+            const pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+            const [name, config] = Object.entries(configs).find(([, store]) => store.storeType === 1
+                && store.items.some(line => line.selfId === SHOT));
+            const source = config.items.find(line => line.selfId === SHOT);
+            const cfg = { ...config, items: [source] };
+            const store = { storeType: 1, town: config.town, items: Trade.normalizeStoreItems(cfg, { staticStore: true }) };
+            const quote = pricing.sellersOf(SHOT).find(row => row.sourceName === name).price;
+            record(987501, SHOT, quote + 100, 10, config.town);
+            if (Trade.refreshStorePrices) Trade.refreshStorePrices(store);
+            else store.items[0].price = quote + 100; // Isolated routing slice precedes the shared player accessor.
+            assert.strictEqual(store.items[0].price, quote + 100, 'fixture is a refreshed player window');
+            const originalPrice = Trade.storeItemPrice;
+            let quoted = 0;
+            Trade.storeItemPrice = (activeStore, line, actor) => {
+                quoted++;
+                assert.strictEqual(actor.session.botSession, true, 'bot quote has the shared bot price context');
+                return originalPrice ? originalPrice(activeStore, line, actor) : quote;
+            };
+            const physical = privateSession(name, 987502, SHOT);
+            physical.actor.fetchPrivateStore = () => store;
+            const ordinary = privateSession('HumanShotTrader', 987503, SHOT);
+            ordinary.accountId = 'human_shot_trader';
+            ordinary.actor.fetchPrivateStore().town = config.town;
+            try {
+                World.user = { sessions: [physical, ordinary] };
+                const offers = Market.hotOffers(SHOT, { town: config.town });
+                const hot = offers.find(offer => offer.sourceId === 987502);
+                assert.strictEqual(hot.price, quote);
+                assert.strictEqual(hot.price, Market.fixedStoreOffers(SHOT).find(row => row.sourceName === name).price);
+                assert.strictEqual(offers.find(offer => offer.sourceId === 987503).price, 1,
+                    'ordinary physical player pricing is retained');
+                assert.strictEqual(store.items[0].price, quote + 100, 'quoting does not mutate the player display row');
+                assert.strictEqual(quoted, 1, 'only the configured shot line needs the shared bot price');
+            } finally {
+                if (originalPrice) Trade.storeItemPrice = originalPrice;
+                else delete Trade.storeItemPrice;
+                World.user = { sessions: [] };
+            }
+        });
+        await check('fixed bot shot table follows effective Adena at the same progression multiplier', () => {
+            const progression = invoke('GameServer/ProgressionRates');
+            const pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+            const originalProfile = progression.profile;
+            const profile = originalProfile();
+            try {
+                progression.profile = () => ({ ...profile, multiplier: 1, adena: 1 });
+                const first = Market.fixedStoreOffers(SHOT);
+                progression.profile = () => ({ ...profile, multiplier: 1, adena: 2 });
+                const second = Market.fixedStoreOffers(SHOT);
+                assert.notStrictEqual(second, first, 'effective Adena invalidates the immutable table');
+                for (const row of second) {
+                    assert.strictEqual(row.price, pricing.sellersOf(SHOT).find(offer => offer.sourceName === row.sourceName).price);
+                }
+                assert.strictEqual(Market.fixedStoreOffers(SHOT), second, 'unchanged rate reuses the rebuilt table');
+            } finally { progression.profile = originalProfile; }
+        });
         await check('stale configured non-shot direct purchases are rejected before paying', async () => {
             const originalBlocker = LifeState.marketPurchaseBlocker;
             const originalApply = LifeState.applyMarketPurchase;
