@@ -62,11 +62,11 @@ async function parityAndIntegration() {
             assert.deepEqual(await worker.plan({ member: swordMember, spots: [], warehouseRows: [],
                 options: {}, context: swordContext }, DataCache), unfunded);
 
+            // A repriced or sold-out record reaches the worker through the
+            // board table before the next plan (ClanPlanningCoordinator.plan).
             swordLine.price = 10000000;
             record(990111, 990011, 'Sword Seller', 'Heine', swordLine);
-            const affordableContext = { ...swordContext, offers: swordContext.offers.map((offer) => (
-                offer.selfId === 79 && offer.sourceId === 990011 ? { ...offer, price: swordLine.price } : offer
-            )) };
+            const affordableContext = swordContext;
             const repriced = planForMember(swordMember);
             assert.equal(repriced.strategy, 'market');
             assert.equal(repriced.target.selfId, 79, 'the funded listing must retain the requested sword');
@@ -77,9 +77,7 @@ async function parityAndIntegration() {
 
             swordLine.count = 0;
             record(990111, 990011, 'Sword Seller', 'Heine', swordLine);
-            const soldOutContext = { ...affordableContext, offers: affordableContext.offers.filter((offer) => (
-                offer.selfId !== 79 || offer.sourceId !== 990011
-            )) };
+            const soldOutContext = swordContext;
             const soldOut = planForMember(swordMember);
             assert.notEqual(soldOut.strategy === 'market' && soldOut.target?.selfId === 79, true,
                 'a sold-out listing must release the clan goal');

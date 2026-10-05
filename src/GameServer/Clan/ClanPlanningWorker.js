@@ -1,16 +1,20 @@
 const { parentPort } = require('node:worker_threads');
 require('../../Global');
-const OfferOrder = require('../Bot/Economy/OfferOrder');
+const OfferQuery = require('../Bot/Economy/OfferQuery');
 const TableMirror = require('../Bot/Population/TableMirror');
+const { BoardIndex } = require('../AfkTrade/BoardIndex');
 
 // Only immutable catalogs and per-request snapshots enter this process.
 const catalogs = { items: [], npcs: [], npcRewards: [] };
 let context = {};
 let planner;
-let offers = new Map();
+let fixedOffers = new Map();
 let npcOffers = new Map();
 // Tables from the main thread's ColdTableChannel; pages are not answered.
+// The board's offers come from the 'board' table, indexed as it changes.
 const tables = new TableMirror();
+const boardIndex = new BoardIndex();
+tables.watch('board', boardIndex.follower());
 const originalInvoke = global.invoke;
 const indexOffers = (rows = []) => {
     const index = new Map();
@@ -24,17 +28,18 @@ const indexOffers = (rows = []) => {
 const market = {
     get TOWN_NPC_SELLERS() { return context.towns || {}; },
     npcOffersAll: (id) => npcOffers.get(Number(id)) || [],
+    // MarketOpportunity.bestOffer over the same sources: the board, the
+    // configured merchants (with the plan) and the NPC shops in the towns.
     bestOffer(id, options = {}) {
         const towns = options.town ? [options.town] : options.towns || null;
-        return OfferOrder.best([...(offers.get(Number(id)) || []), ...(npcOffers.get(Number(id)) || [])]
-            .filter((offer) => offer.available !== false && Number(offer.count ?? 1) > 0
-                && Number(offer.price) > 0
-                && (!offer.town || !towns || towns.includes(offer.town))
-                && (!['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)
-                    || Number(offer.sourceId) !== Number(options.buyerCharacterId))
-                && (!options.accept || options.accept(offer)))
-            .map((offer) => offer.town || towns?.length !== 1 ? offer : { ...offer, town: towns[0] }),
-        { budget: Number(options.budget ?? Infinity), cost: options.cost });
+        return OfferQuery.bestSellOffer(tables.ready('board') ? boardIndex : null, Number(id), {
+            towns,
+            excludeOwner: options.buyerCharacterId,
+            budget: options.budget,
+            cost: options.cost,
+            accept: options.accept,
+            others: OfferQuery.othersIn(towns, fixedOffers.get(Number(id)) || [], npcOffers.get(Number(id)) || [])
+        });
     }
 };
 const stubs = new Map([
@@ -77,7 +82,7 @@ parentPort.on('message', (message) => {
             global.options.default.General = context.general;
             if (context.progressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
             else process.env.L2NODE_PROGRESSION_RATE = context.progressionRate;
-            offers = indexOffers(context.offers);
+            fixedOffers = indexOffers(context.fixedOffers);
             npcOffers = indexOffers(context.npcOffers);
             invoke('GameServer/Bot/Economy/BotMarketPricing').useNpcOfferSnapshot(context.npcOffers);
             planner ||= require('./ClanEquipmentPlanner');

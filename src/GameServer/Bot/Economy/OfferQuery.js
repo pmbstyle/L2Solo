@@ -35,4 +35,14 @@ function bestSellOffer(index, selfId, options = {}) {
     return OfferOrder.best(offers, { budget, cost: options.cost || null });
 }
 
-module.exports = { bestSellOffer };
+// The other sources a buyer sees in `towns` (null: every town): the
+// configured merchants there (or without a town), the NPC shops only in a
+// named town.
+function othersIn(towns, fixed = [], npc = []) {
+    return [
+        ...fixed.filter((offer) => !towns || !offer.town || towns.includes(offer.town)),
+        ...(towns ? npc.filter((offer) => towns.includes(offer.town)) : [])
+    ].filter((offer) => offer.available !== false);
+}
+
+module.exports = { bestSellOffer, othersIn };

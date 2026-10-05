@@ -46,10 +46,21 @@ function fromPlayer(offer) {
 // farming place, else its position) as the bot's trip builder plans it
 // (ColdTrip.townPlan). A function of the town's name, each town computed once;
 // null for a buyer without a location (no trip to weigh). A town no gatekeeper
-// route reaches costs Infinity.
+// route reaches costs Infinity. Kept per state object and origin: a plan
+// weighs many items for one state.
+const tripCosts = new WeakMap();
 function tripCost(state, { origin = null, timestamp = Date.now() } = {}) {
     const from = origin || state?.loc;
-    if (!state || !from || (!Number(from.locX) && !Number(from.locY))) return null;
+    if (!state || typeof state !== 'object' || !from || (!Number(from.locX) && !Number(from.locY))) return null;
+    const key = `${Number(from.locX)}:${Number(from.locY)}`;
+    const cached = tripCosts.get(state);
+    if (cached?.key === key) return cached.cost;
+    const cost = townCosts(state, from, timestamp);
+    tripCosts.set(state, { key, cost });
+    return cost;
+}
+
+function townCosts(state, from, timestamp) {
     const traveller = from === state.loc ? state : { ...state, loc: from };
     const hour = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, timestamp).perHour;
     const costs = new Map();

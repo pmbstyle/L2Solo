@@ -228,6 +228,16 @@ class BoardIndex {
     get size() {
         return this.records.size;
     }
+
+    // A worker's index follows its 'board' table (TableMirror.watch): every
+    // row as it arrives, nothing rebuilt.
+    follower() {
+        return {
+            reset: () => this.clear(),
+            put: (_key, row) => this.put(recordOf(row)),
+            remove: (key) => this.remove(key)
+        };
+    }
 }
 
 module.exports = { BoardIndex, SELL, BUY, compareLines, offerFields, rowOf, recordOf };

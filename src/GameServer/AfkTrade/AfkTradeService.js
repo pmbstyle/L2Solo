@@ -2,6 +2,7 @@ const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
 const BoardExpiryQueue = require('./BoardExpiryQueue');
 const { BoardIndex, offerFields, rowOf, recordOf } = require('./BoardIndex');
+const TableChannel = require('../Bot/Population/ColdTableChannel');
 const Actor = invoke('GameServer/Actor/Actor');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -26,6 +27,19 @@ const entriesByOwner = new Map();
 const pendingMatchContinuations = new Set();
 let matchGeneration = 0;
 const board = new BoardIndex();
+// The board goes to the planning workers as the 'board' table (ColdTableChannel):
+// a record with stock is one row (BoardIndex.rowOf), its key the record id;
+// each worker builds the same index from it.
+TableChannel.shared.register('board', {
+    key: (row) => row[0],
+    allRows: () => boardRows()
+});
+
+function boardRows() {
+    const rows = [];
+    for (const entry of entriesById.values()) if (entry.boardRow) rows.push(entry.boardRow);
+    return rows;
+}
 // Record deadlines (12 h of server uptime), checked every EXPIRY_TICK_MS on
 // the main thread; the clock beat records the server alive every BEAT_MS.
 const expiryQueue = new BoardExpiryQueue();
@@ -47,20 +61,26 @@ function entryStore(entry) {
     return entry?.actor ? entry.actor.fetchPrivateStore() : entry?.store;
 }
 
-// A record leaves the offer index (its id is kept on the entry: a shop's
-// projection may have carried an older record).
+// A record leaves the offer index and the board table (its id is kept on the
+// entry: a shop's projection may have carried an older record).
 function unindexProjection(projection) {
     const recordId = projection?.indexedRecordId;
     if (!recordId) return;
     board.remove(recordId);
+    TableChannel.shared.changed('board', { key: recordId, removed: true });
     projection.indexedRecordId = null;
+    projection.boardRow = null;
 }
 
 function indexProjection(projection) {
     const store = entryStore(projection);
     if (![SELL, BUY].includes(Number(store?.storeType))) return;
-    board.put(recordOf(rowOf(store)), projection);
-    projection.indexedRecordId = Number(store.shopId);
+    const row = rowOf(store);
+    if (!row[6].length) return;
+    board.put(recordOf(row), projection);
+    TableChannel.shared.changed('board', row);
+    projection.indexedRecordId = row[0];
+    projection.boardRow = row;
 }
 
 // Every record, shop or ad, by id and by owner; its deadline in the queue.
@@ -992,6 +1012,9 @@ function activeDemandSelfIds() {
 
 function clearBoard() {
     stopTimers();
+    for (const entry of entriesById.values()) {
+        if (entry.indexedRecordId) TableChannel.shared.changed('board', { key: entry.indexedRecordId, removed: true });
+    }
     projectionsByOwner.forEach((projection) => ShopPlaces.release(ShopPlaces.afkOwner(projection.shop.ownerId)));
     projectionsById.clear();
     projectionsByOwner.clear();

@@ -685,19 +685,9 @@ function offerOrigin(state, options) {
     return options.origin || OfferOrder.farmingOrigin(state, (spotId) => SpotIndex.spotById(options.spots, spotId));
 }
 
-// The buyer's trip cost to each town (OfferOrder.tripCost) from where it
-// buys, kept per state object and origin: a plan weighs many items for one
-// state.
-const tripCosts = new WeakMap();
+// The buyer's trip cost to each town (OfferOrder.tripCost) from where it buys.
 function offerTripCost(state, options) {
-    if (!state || typeof state !== 'object') return null;
-    const origin = offerOrigin(state, options);
-    const key = `${Number(origin?.locX || 0)}:${Number(origin?.locY || 0)}`;
-    const cached = tripCosts.get(state);
-    if (cached?.key === key) return cached.cost;
-    const cost = OfferOrder.tripCost(state, { origin });
-    tripCosts.set(state, { key, cost });
-    return cost;
+    return OfferOrder.tripCost(state, { origin: offerOrigin(state, options) });
 }
 
 function marketOfferForTarget(target, state = {}, options = {}) {

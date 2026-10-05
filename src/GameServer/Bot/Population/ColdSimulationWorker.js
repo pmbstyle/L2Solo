@@ -38,8 +38,18 @@ const stubs = new Map([
             || String(target?.template?.kind || '').toLowerCase() === 'boss'
             || Number(target?.minionBossObjectId || target?.minionBossTemplateId || 0) > 0
     }],
+    // The board comes from the 'board' table (boardIndex below); NPC rows from
+    // the planning catalog (ColdNpcPlanningCatalog).
     ['GameServer/Bot/Economy/MarketOpportunity', {
-        TOWN_NPC_SELLERS: {}, bestOffer: () => null, npcOffersAll: () => []
+        TOWN_NPC_SELLERS: {},
+        npcOffersAll: () => [],
+        bestOffer: (selfId, options = {}) => require('../Economy/OfferQuery').bestSellOffer(boardReady(), selfId, {
+            towns: options.town ? [options.town] : options.towns || null,
+            excludeOwner: options.buyerCharacterId,
+            budget: options.budget,
+            cost: options.cost,
+            accept: options.accept
+        })
     }],
     // Immutable map boundaries only; no live World, geodata or database access.
     ['GameServer/World/WorldAreaCatalog', { resolve: originalInvoke('GameServer/World/WorldAreaCatalog').resolve }],
@@ -76,6 +86,7 @@ const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
+const { BoardIndex } = require('../../AfkTrade/BoardIndex');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -96,10 +107,16 @@ let competitionReady = false;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
-let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup();
+const tables = new TableMirror();
+// The board's offers, built from the main thread's 'board' table as it changes.
+const boardIndex = new BoardIndex();
+tables.watch('board', boardIndex.follower());
+function boardReady() {
+    return tables.ready('board') ? boardIndex : null;
+}
+let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 let planningOccupancyCache = null;
 let planningOccupancyCachedAt = 0;
-const tables = new TableMirror();
 // Personas come from the main thread's 'personas' table (BotPersona.loadAll).
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
@@ -289,7 +306,7 @@ async function handle(message) {
             planningNpcOfferRows.push(...(payload.rows || []));
             if (payload.done) {
                 BotMarketPricing.useNpcOfferSnapshot(planningNpcOfferRows);
-                planningNpcCatalog = ColdNpcPlanningCatalog.createLookup(planningNpcOfferRows);
+                planningNpcCatalog = ColdNpcPlanningCatalog.createLookup(planningNpcOfferRows, boardReady);
                 planningNpcOfferRows = [];
             }
         } else {

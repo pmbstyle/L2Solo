@@ -1,4 +1,5 @@
 const OfferOrder = require('../Economy/OfferOrder');
+const OfferQuery = require('../Economy/OfferQuery');
 
 const LOW_TIER_RANKS = new Set(['none', 'd']);
 const EMPTY_OFFERS = Object.freeze([]);
@@ -48,7 +49,10 @@ function buildRows(options = {}) {
         .map((offer) => Object.freeze(offer)));
 }
 
-function createLookup(rows = []) {
+// The cold planner's offers: the NPC rows (none and D-grade gear, buildRows)
+// and the board, read from `board()` (the worker's BoardIndex, null while its
+// table is not whole). Both in the one order of OfferOrder with the bot's trip.
+function createLookup(rows = [], board = () => null) {
     const offersByItem = new Map();
     (rows || []).forEach((row) => {
         const selfId = Number(row?.selfId || 0);
@@ -74,20 +78,18 @@ function createLookup(rows = []) {
     });
 
     const offersFor = (target) => offersByItem.get(Number(target?.selfId ?? target)) || EMPTY_OFFERS;
-    // Offers are sorted by price, so only the cheapest run competes on
-    // distance to the buyer.
-    const bestOffer = (target, state, origin) => {
-        const offers = offersFor(target);
-        let best = offers[0] || null;
-        for (const offer of offers) {
-            if (offer.price !== best.price) break;
-            if (OfferOrder.compareDistance(offer, best, origin) < 0) best = offer;
-        }
-        return best;
-    };
+    const bestOffer = (target, state, origin) => OfferOrder.best(offersFor(target),
+        { cost: OfferOrder.tripCost(state, { origin }) });
+    // A board line at price 0 is no purchase (GearAcquisitionPlanner: usable).
+    const findMarketOffer = (target, state, origin) => OfferQuery.bestSellOffer(board(), Number(target?.selfId ?? target), {
+        excludeOwner: state?.characterId,
+        cost: OfferOrder.tripCost(state, { origin }),
+        accept: (offer) => Number(offer.price) > 0,
+        others: offersFor(target)
+    });
     const plannerOptions = Object.freeze({
         findNpcOffer: bestOffer,
-        findMarketOffer: bestOffer
+        findMarketOffer
     });
 
     return Object.freeze({
@@ -95,6 +97,7 @@ function createLookup(rows = []) {
         offerCount: [...offersByItem.values()].reduce((sum, offers) => sum + offers.length, 0),
         offersFor,
         bestOffer,
+        findMarketOffer,
         plannerOptions
     });
 }

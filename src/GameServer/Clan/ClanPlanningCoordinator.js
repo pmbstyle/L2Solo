@@ -150,8 +150,8 @@ const staticMarketBuilds = new Map();
 
 function offerRow(offer) {
     // Live sessions, actors and mutable store entries never cross the boundary.
-    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority, recordId, lineId } = offer;
-    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority, recordId, lineId };
+    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority } = offer;
+    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority };
 }
 
 async function context() {
@@ -173,17 +173,15 @@ async function context() {
         try { staticMarkets.set(rate, await staticMarketBuilds.get(rate)); }
         finally { staticMarketBuilds.delete(rate); }
     }
-    const offers = [];
-    for (let i = 0; i < items.length; i++) {
-        offers.push(...market.sellOfferCandidates(items[i].selfId).map(offerRow));
-        if (i % 8 === 7) await yieldLoop();
-    }
+    // The board reaches the worker as its 'board' table; the configured
+    // merchants' live stores come with each plan.
+    const fixedOffers = market.fixedStoreOffers().map(offerRow);
     const recipes = [...craft.publishedStationRecipes().recipes];
     const general = {};
     for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate']) {
         general[key] = global.options.default.General?.[key];
     }
-    return { ...staticMarkets.get(rate), offers, recipes, general, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
+    return { ...staticMarkets.get(rate), fixedOffers, recipes, general, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
 }
 
 module.exports = {

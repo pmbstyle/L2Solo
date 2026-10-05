@@ -145,36 +145,64 @@ function configuredStoreOffers(selfId) {
         });
 }
 
+// A live private store's line as an offer: a configured city merchant is
+// 'fixed', else a bot's or a player's.
+function storeOffer(session, store, item, town) {
+    const actor = session.actor;
+    const actorName = actor.fetchName?.() || session.name || 'Private Store';
+    const sellerKind = MerchantStoreConfigs[actorName]
+        ? 'fixed'
+        : String(session.accountId || '').startsWith('bot_')
+            ? 'bot'
+            : 'player';
+    return {
+        sourceType: 'private_store',
+        sourceId: Number(actor.fetchId?.() || 0),
+        sourceName: actorName,
+        sellerKind,
+        town: store.town || town || null,
+        selfId: Number(item.selfId),
+        itemName: itemName(item.selfId),
+        price: Number(item.price),
+        count: Number(item.count),
+        available: true,
+        session,
+        store,
+        storeItem: item
+    };
+}
+
+function sellingStore(session) {
+    const store = session?.actor?.fetchPrivateStore?.();
+    return store && Number(store.storeType) === 1 ? store : null;
+}
+
 function privateOffers(selfId, town) {
     return (World.user?.sessions || []).flatMap((session) => {
-        const actor = session?.actor;
-        const store = actor?.fetchPrivateStore?.();
-        if (!actor || !store || Number(store.storeType) !== 1) return [];
+        const store = sellingStore(session);
+        if (!store) return [];
         if (town && store.town && store.town !== town) return [];
         const item = (store.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
         if (!item || Number(item.price) <= 0) return [];
-        const actorName = actor.fetchName?.() || session.name || 'Private Store';
-        const sellerKind = MerchantStoreConfigs[actorName]
-            ? 'fixed'
-            : String(session.accountId || '').startsWith('bot_')
-                ? 'bot'
-                : 'player';
-        return [{
-            sourceType: 'private_store',
-            sourceId: Number(actor.fetchId?.() || 0),
-            sourceName: actorName,
-            sellerKind,
-            town: store.town || town || null,
-            selfId: Number(selfId),
-            itemName: itemName(selfId),
-            price: Number(item.price),
-            count: Number(item.count),
-            available: true,
-            session,
-            store,
-            storeItem: item
-        }];
+        return [storeOffer(session, store, item, town)];
     });
+}
+
+// Every line of the configured city merchants' live stores, in one pass over
+// the sessions (the clan planning worker gets them with its plan).
+function fixedStoreOffers() {
+    const offers = [];
+    for (const session of World.user?.sessions || []) {
+        const store = sellingStore(session);
+        if (!store) continue;
+        for (const item of store.items || []) {
+            if (Number(item.count) <= 0 || Number(item.price) <= 0) continue;
+            const offer = storeOffer(session, store, item, null);
+            if (offer.sellerKind !== 'fixed') break;
+            offers.push(offer);
+        }
+    }
+    return offers;
 }
 
 function indexColdStore(state) {
@@ -236,7 +264,7 @@ function hotOffers(selfId, options = {}) {
 function bestOffer(selfId, options = {}) {
     const towns = options.town ? [options.town] : options.towns || null;
     const fixed = privateOffers(selfId, towns?.length === 1 ? towns[0] : null)
-        .filter((offer) => offer.sellerKind === 'fixed' && (!towns || !offer.town || towns.includes(offer.town)));
+        .filter((offer) => offer.sellerKind === 'fixed');
     const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
     return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
         towns,
@@ -245,7 +273,7 @@ function bestOffer(selfId, options = {}) {
         cost: options.cost,
         accept: options.accept,
         toOffer: AfkTrade.offerOf,
-        others: [...fixed, ...npc].filter((offer) => offer.available)
+        others: OfferQuery.othersIn(towns, fixed, npc)
     });
 }
 
@@ -357,6 +385,7 @@ module.exports = {
     findOffers,
     hotOffers,
     findBuyOffers,
+    fixedStoreOffers,
     indexColdStore,
     npcOffers,
     npcOffersAll,
