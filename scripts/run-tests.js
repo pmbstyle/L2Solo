@@ -805,6 +805,22 @@ const tests = [
     'tests/test_private_store_limits.js',
     'tests/test_update_environment_visibility.js',
     'tests/test_world_visible_users.js',
+    'tests/test_board_index.js',
+    'tests/test_board_merchant_packets.js',
+    'tests/test_board_offer_suspects.js',
+    'tests/test_board_trip_suspects.js',
+    'tests/test_board_trips.js',
+    'tests/test_bot_own_shot_reserve.js',
+    'tests/test_clan_market_trip.js',
+    'tests/test_cold_planner_board.js',
+    'tests/test_cold_summon_carry.js',
+    'tests/test_hunt_round_record.js',
+    'tests/test_market_counters.js',
+    'tests/test_market_counter_replay.js',
+    'tests/test_npc_template_lookup.js',
+    'tests/test_offer_query_callers.js',
+    'tests/test_player_safe_preferred_parties.js',
+    'tests/test_price_belief_decision.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
