@@ -73,11 +73,20 @@ function coldStart(opener, other, persona = calm) {
     const rng = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     return Pvp.resolve({ sides, roles: new Map(), timestamp: at, rng, personaFor: () => persona, openingSide: 1 });
 }
-assert(coldStart(coldState(11), coldState(12)).started, 'cold: equal sides start');
-assert.strictEqual(coldStart(coldState(11), coldState(12, { pAtk: 5000 })).reason, 'pvp_outmatched',
-    'cold: hidden attack power much higher on the other side refuses');
-assert(coldStart(coldState(11, { pAtk: 5000 }), coldState(12)).started, 'cold: the stronger opener starts');
-assert.strictEqual(coldStart(coldState(11, { hp: 100 }), coldState(12)).reason, 'pvp_outmatched', 'cold: an injured opener refuses');
+// U26: the opener sees its own side exactly and the other side by its look.
+const bold = { traits: { ...calm.traits, caution: 0, assertiveness: 1 } };
+const timid = { traits: { ...calm.traits, caution: 1, assertiveness: 0 } };
+const weapon = rank => ({ 1: { selfId: 1, amount: 1, rank, equipped: true, equippedSlots: [7], instances: [{ enchant: 0, equipped: true, slot: 7 }] } });
+assert(coldStart(coldState(11), coldState(12), bold).started, 'cold: an even look starts for the assertive');
+assert.strictEqual(coldStart(coldState(11), coldState(12)).reason, 'pvp_outmatched',
+    'cold: a calm opener short of full CP refuses an even look (the other is assumed fresh)');
+assert(coldStart(coldState(11), coldState(12, { pAtk: 5000 }), bold).started, 'cold: hidden attack power is not seen');
+assert(coldStart(coldState(11, { pAtk: 5000 }), coldState(12), bold).started, 'cold: the stronger opener starts');
+assert.strictEqual(coldStart(coldState(11, { hp: 100 }), coldState(12), bold).reason, 'pvp_outmatched', 'cold: an injured opener refuses');
+assert.strictEqual(coldStart(coldState(11, { inventory: weapon('d') }), coldState(12, { inventory: weapon('c') }), bold).reason,
+    'pvp_outmatched', 'cold: a visibly higher grade refuses even the assertive');
+assert(coldStart(coldState(11, { inventory: weapon('c') }), coldState(12, { inventory: weapon('d') }), timid).started,
+    'cold: a visibly lower grade is attacked even by the cautious');
 
 // ---- 3. Hot defense decision.
 let nextId = 3100000;

@@ -97,8 +97,12 @@ async function main() {
     function firstModeAction(fighter, inParty = false) {
         const opponent = { ...structuredClone(fighter), characterId: 95 };
         const companion = { ...structuredClone(fighter), characterId: 90 };
+        // A visibly better weapon (no template, so the profile is unchanged): a caster
+        // at its last MP still opens (U26 judges own MP).
+        const opener = { ...fighter, inventory: { ...fighter.inventory, 999999: { selfId: 999999, amount: 1, rank: 'c', equipped: true, equippedSlots: [7],
+            instances: [{ enchant: 0, equipped: true, slot: 7 }] } } };
         const result = Pvp.resolve({
-            sides: [{ principal: fighter, members: inParty ? [fighter, companion] : [fighter] },
+            sides: [{ principal: opener, members: inParty ? [opener, companion] : [opener] },
                 { principal: opponent, members: [opponent] }],
             roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('class-mode'), personaFor,
             openingSide: 0, step: { until: at + 1, expiresAt: at + 30000, maxActions: 1 }

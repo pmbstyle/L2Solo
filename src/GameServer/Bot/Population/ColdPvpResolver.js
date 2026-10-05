@@ -5,6 +5,8 @@ const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Aid = require('../../Social/OpponentAidPolicy');
 const Config = require('./PopulationConfig');
 const Aggression = require('../../Social/PvpAggression');
+const Visible = require('../../Social/VisibleStrength');
+const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const DeathExperience = invoke('GameServer/Progression/DeathExperience');
 const { MAX_ACTIONS, INITIAL_MS: MAX_DURATION_MS } = require('./PvpEncounterBudget');
 const FLAG_MS = 15000;
@@ -21,7 +23,19 @@ function allowed(sides) {
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
-function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1 }) {
+function canOpen(fighters, openingSide, traits, fear) {
+    const own = fighters.filter(f => f.side === openingSide), other = fighters.filter(f => f.side !== openingSide);
+    const condition = f => Visible.condition(f.vitals.hp / f.vitals.maxHp, f.profile.maxCp > 0 ? f.cp / f.profile.maxCp : 0,
+        f.vitals.mp / f.vitals.maxMp, Roles.shouldRestForMana(f.state), f.profile.maxCp > 0);
+    return Visible.canWin({
+        own: { look: Visible.best(own.map(f => Visible.stateLook(f.state))), people: own.length,
+            strength: own.reduce((sum, f) => sum + condition(f), 0) },
+        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length },
+        traits, fear }).fight;
+}
+
+// fear: the opener's fear of the other side's principal (interaction memory).
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, fear = 0 }) {
     if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
     if (!step?.resuming && Aggression.normalize(Config.pvpAggression) === 0) return { started: false, reason: 'pvp_passive' };
     const fighters = sides.flatMap((side, index) => side.members
@@ -41,12 +55,11 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                 ...combat.coldChargeState(state, timestamp),
                 kills: [], attacks: 0, skills: 0, heals: 0, preparations: 0 };
         }));
-    const power = side => fighters.filter(f => f.side === side).reduce((sum, f) => sum
-        + (f.vitals.hp + f.cp) * Math.sqrt(Math.max(f.profile.pAtk, f.profile.mAtk)
-            * (f.profile.pDef + f.profile.mDef)), 0);
     // Resource retaliation opens on side 1; an independent grievance opens on side 0.
-    if (!step?.resuming && power(openingSide) < power(1 - openingSide) * 0.6
-        * Aggression.retreatMultiplier(Config.pvpAggression)) return { started: false, reason: 'pvp_outmatched' };
+    // Can I win? The opener knows its own side exactly, the other only by look (U26).
+    if (!step?.resuming && !canOpen(fighters, openingSide, personaFor(sides[openingSide].principal)?.traits, fear)) {
+        return { started: false, reason: 'pvp_outmatched' };
+    }
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();

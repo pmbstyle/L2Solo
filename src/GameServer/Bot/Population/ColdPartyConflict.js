@@ -8,6 +8,7 @@ const clamp = (n, low = 0, high = 1) => Math.max(low, Math.min(high, n));
 const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 
 const { reaction, select } = require('../../Social/ConflictParticipationPolicy');
+const Visible = require('../../Social/VisibleStrength');
 
 async function apply({ event, life, owner, memory, parties, personaFor, participantAllowed,
     contestContextAllowed, onState, now, waitMs, cooldownMs, disputeCooldownMs = cooldownMs, pvpEnabled = () => false,
@@ -61,9 +62,12 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const step = incrementalPvp ? { resuming: !!resume, seen: resume?.seen || [],
         until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
+    const opener = revenge ? 0 : 1;
+    const fear = () => Visible.fear(memory.assess({ id: sides[opener].principal.characterId },
+        { id: sides[1 - opener].principal.characterId }, {}, now()));
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
-            rng, personaFor, step, openingSide: revenge ? 0 : 1 }) : null;
+            rng, personaFor, step, openingSide: opener, fear: resume ? 0 : fear() }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
     const involved = side => side.members.filter(s => s.characterId === side.principal.characterId || roles.get(s.characterId) === 'support');
