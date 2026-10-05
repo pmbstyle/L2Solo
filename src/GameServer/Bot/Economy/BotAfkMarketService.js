@@ -5,7 +5,6 @@ const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');

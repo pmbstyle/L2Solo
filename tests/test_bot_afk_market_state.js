@@ -11,7 +11,6 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
-const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketSnapshot = invoke('GameServer/Bot/Economy/MarketSnapshot');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
