@@ -1,0 +1,429 @@
+[
+  {
+    "selfId": 1084,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Lady",
+      "title": "",
+      "level": 60,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 946,
+      "pAtkRnd": 30,
+      "pDef": 335,
+      "mAtk": 478,
+      "mDef": 299,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3054,
+      "maxMp": 1150,
+      "revHp": 30.81,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 40
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "cave_servant_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.142222222222,
+      "sp": 357
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1085,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Sniper",
+      "title": "",
+      "level": 71,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3332,
+      "pAtkRnd": 30,
+      "pDef": 437,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": 4.75,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 17,
+      "size": 55
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.105732989486,
+      "sp": 559
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1086,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Liviona",
+      "title": "",
+      "level": 72,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1413,
+      "pAtkRnd": 30,
+      "pDef": 491,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 28
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.073688271605,
+      "sp": 565
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1087,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Knight",
+      "title": "",
+      "level": 73,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1770,
+      "pAtkRnd": 10,
+      "pDef": 415,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 29,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 137,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.676111840871,
+      "sp": 919
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1088,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Banshee",
+      "title": "",
+      "level": 74,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1513,
+      "pAtkRnd": 10,
+      "pDef": 512,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.073593864134,
+      "sp": 612
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1089,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Lord",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 30,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 67.15,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 25,
+      "size": 90
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.211911111111,
+      "sp": 719
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1090,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Guardian",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 10,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 40.29,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.552711111111,
+      "sp": 921
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  }
+]
