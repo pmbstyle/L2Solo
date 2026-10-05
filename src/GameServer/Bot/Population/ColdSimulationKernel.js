@@ -915,7 +915,7 @@ class ColdSimulationKernel {
                     assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                     chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
                     roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
-                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').generate(state) : state.persona,
+                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').of(state) : state.persona,
                     requiresWeaponBridge: this.requiresWeaponBridge,
                     equipmentBridgeReason: this.equipmentBridgeReason,
                     spot: run.spot

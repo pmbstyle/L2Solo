@@ -5,7 +5,7 @@ const EARLY_SALE_VALUE = 600;
 const WEALTH_SALE_PRIORITY_BONUS = 12;
 
 function personaFor(state = {}) {
-    return state?.persona?.traits ? state.persona : BotPersona.generate(state);
+    return BotPersona.of(state);
 }
 
 function wealthSaleOpportunity(state = {}, sale = {}) {

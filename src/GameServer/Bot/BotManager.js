@@ -237,7 +237,7 @@ const BotManager = {
         const lead = state.stats?.marketLead;
         const wanted = state.stats?.marketWanted;
         const history = Object.values(state.stats?.partyHistory || {});
-        const persona = BotPersona.generate(state);
+        const persona = BotPersona.of(state);
         const traits = personaTraits(persona);
         const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
             ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`
@@ -626,6 +626,7 @@ const BotManager = {
                     if (!staticService) {
                         BotPersona.ensure({
                             characterId: character.id,
+                            classId: character.classId,
                             stats: botData.coldLifeState?.stats || {}
                         }).then((persona) => {
                             session.persona = persona;

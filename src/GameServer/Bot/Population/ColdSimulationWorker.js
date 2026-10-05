@@ -100,6 +100,9 @@ let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup();
 let planningOccupancyCache = null;
 let planningOccupancyCachedAt = 0;
 const tables = new TableMirror();
+// Personas come from the main thread's 'personas' table (BotPersona.loadAll).
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
@@ -241,7 +244,7 @@ function startKernel(config = {}) {
             && !invoke('GameServer/Bot/AI/BotRaidSafety').isProtectedRaidEntity(npc)).map(npc => Number(npc.selfId)));
         competition = new ColdCompetitionMonitor({
             capacityForSpot: invoke('GameServer/Bot/AI/LevelingRoutes').capacityForSpot,
-            personaFor: state => state.persona?.traits ? state.persona : invoke('GameServer/Bot/AI/BotPersona').generate(state),
+            personaFor: state => BotPersona.of(state),
             isTargetAllowed: id => allowed.has(id)
         });
     }

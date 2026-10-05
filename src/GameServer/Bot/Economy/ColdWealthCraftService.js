@@ -39,8 +39,7 @@ function eligible(state) {
             && (ownShop.items || []).some((item) => Number(item.selfId) === outputId && Number(item.count) > 0);
         if (inInventory || inShop) return false;
     }
-    return (state.persona?.primaryDrive || BotPersona.snapshot(state.characterId)?.primaryDrive
-        || BotPersona.generate(state)?.primaryDrive) === 'wealth';
+    return BotPersona.of(state)?.primaryDrive === 'wealth';
 }
 
 function staticExits(recipe, template) {

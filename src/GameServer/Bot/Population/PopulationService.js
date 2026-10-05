@@ -681,7 +681,7 @@ function hydratePartyCandidates(candidates = []) {
 async function commitPartyReview(party, members, timestamp) {
     const review = BackgroundPartyLifecycle.review(party, members, timestamp, {
         ...Config, chooseLeader: PartyComposition.chooseLeader, roleCoverage: PartyComposition.roleCoverage,
-        personaFor: BotPersona.generate,
+        personaFor: BotPersona.of,
         assessRelationship: invoke('GameServer/Social/InteractionMemoryRuntime').assess.bind(invoke('GameServer/Social/InteractionMemoryRuntime'))
     });
     const preparedParty = BackgroundPartyState.prepareCommit(review.party);

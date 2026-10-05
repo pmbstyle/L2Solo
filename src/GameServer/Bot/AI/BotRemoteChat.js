@@ -72,7 +72,7 @@ function stateSummary(state) {
 }
 
 function personaForState(state) {
-    const persona = BotPersona.generate(state);
+    const persona = BotPersona.of(state);
     if (!persona) return null;
     return {
         primaryDrive: persona.primaryDrive,

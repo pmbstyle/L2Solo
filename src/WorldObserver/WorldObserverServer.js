@@ -1834,7 +1834,7 @@ function compactColdDetail(state, leaderState = null) {
         plan: compactColdPlan(state),
         travel: stats.travel || null,
         goal: stats.goal || null,
-        persona: BotPersona.generate(state),
+        persona: BotPersona.of(state),
         updatedAt: state.updatedAt || 0
     };
 }

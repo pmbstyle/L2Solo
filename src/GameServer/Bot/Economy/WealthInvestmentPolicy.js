@@ -8,7 +8,7 @@ const MIN_ADENA_RESERVE = 500;
 const RESERVE_RATE = 0.2;
 
 function personaFor(state = {}) {
-    return state?.persona?.traits ? state.persona : BotPersona.generate(state);
+    return BotPersona.of(state);
 }
 
 // The baseline is stamped by BotLifeState when a resolver actually puts the

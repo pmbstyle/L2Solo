@@ -71,7 +71,7 @@ function relationshipFor(player, bot) {
 }
 
 function personaFor(bot) {
-    const persona = bot?.persona || BotPersona.generate({ characterId: actorId(bot) });
+    const persona = bot?.persona || BotPersona.of(actorId(bot));
     const traits = persona?.traits || {};
     return {
         primaryDrive: ['progression', 'wealth', 'social'].includes(persona?.primaryDrive) ? persona.primaryDrive : 'progression',

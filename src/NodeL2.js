@@ -99,6 +99,10 @@ Database.init(() => {
         await invoke('GameServer/ClanHall/Runtime').start();
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
         await AfkTrade.init();
+        // Every bot's persona before any bot decides (BotPersona.of).
+        await invoke('GameServer/Bot/AI/BotPersona').loadAll().then((count) => {
+            utils.infoSuccess('BotPersona', 'loaded %d personas', count);
+        }).catch((error) => utils.infoWarn('BotPersona', 'persona load failed: %s', error.message));
 
         invoke('GameServer/World/Generics/NativeKnowledgeBase').warmup();
 

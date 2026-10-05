@@ -97,7 +97,7 @@ const BotFriendship = {
             const accepted = !reason;
             return Database.execute([`INSERT INTO bot_friendships (playerId, botId, status, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(playerId, botId) DO UPDATE SET status = excluded.status, updatedAt = excluded.updatedAt`, [playerId, botId, accepted ? 'accepted' : 'declined', now, now]])
-                .then(() => ({ ok: accepted, reason: accepted ? 'accepted' : reason, trust, persona: BotPersona.generate(state) }));
+                .then(() => ({ ok: accepted, reason: accepted ? 'accepted' : reason, trust, persona: BotPersona.of(state) }));
         });
     },
     toggleConst(player, botId) {

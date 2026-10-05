@@ -6,7 +6,7 @@ function supportCount(coverage = {}) {
 }
 
 function profileFor(state) {
-    return state?.persona?.traits ? state.persona : BotPersona.generate(state);
+    return BotPersona.of(state);
 }
 
 function backgroundIntent(state = {}) {

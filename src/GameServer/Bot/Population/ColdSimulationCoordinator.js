@@ -163,7 +163,7 @@ class ColdSimulationCoordinator {
             life: LifeState, owner: ColdSimulationOwner,
             memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
             parties: BackgroundPartyState,
-            personaFor: state => invoke('GameServer/Bot/AI/BotPersona').generate(state),
+            personaFor: state => invoke('GameServer/Bot/AI/BotPersona').of(state),
             conflictsEnabled: () => Config.coldCompetitionConflictsEnabled === true,
             pvpEnabled: () => Config.coldCompetitionPvpEnabled === true,
             incrementalPvp: true,

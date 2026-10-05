@@ -61,7 +61,7 @@ function hot(session, target, tab) {
 }
 function cold(state, tab) {
     const stats = state.stats || {}, travel = stats.travel, lead = stats.marketLead, wanted = stats.marketWanted;
-    const persona = invoke('GameServer/Bot/AI/BotPersona').generate(state);
+    const persona = invoke('GameServer/Bot/AI/BotPersona').of(state);
     const goal = invoke('GameServer/Bot/Goals/GoalState').snapshot(state.characterId)?.current;
     const goalLabel = !goal ? 'none' : goal.plan?.personaDrive === 'wealth'
         ? `${goal.type}: wealth / ${goal.target?.focusItem?.itemName || 'best surplus'}`

@@ -11,7 +11,7 @@ const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
-const original = { execute: Database.execute, snapshot: Persona.snapshot, random: Math.random,
+const original = { execute: Database.execute, random: Math.random,
     line: Voice.line, user: World.user, speak: Response.speak, info: console.info, config: { ...Config } };
 function character(characterId, traits = {}, primaryDrive = 'social') {
     return { characterId, name: `Person${characterId}`, phase: 'cold', activity: 'resting', vitals: { hp: 100 },
@@ -23,13 +23,13 @@ try {
     Voice.reset();
     const cold = { characterId: 123, stats: { generatedIndex: 456 } };
     const hot = { actor: { fetchId: () => 123 }, coldLifeState: cold };
-    assert.deepStrictEqual(Voice.profile(cold), Persona.generate(cold));
-    assert.strictEqual(Voice.profile(cold), Voice.profile(hot), 'activation preserves the generated seed and personality');
-    const saved = character(123, { empathy: 0.97 }).persona;
-    Persona.snapshot = () => saved;
-    assert.strictEqual(Voice.profile(cold), saved, 'persisted cache wins over generated fallback, even after a fallback was cached');
+    assert.strictEqual(Voice.profile(cold), null, 'a bot without a stored persona is not given a generated one');
+    const saved = Persona.generate(cold);
+    Persona.useRowSource((id) => (id === 123 ? Persona.tableRow(saved) : null));
+    assert.deepStrictEqual(Voice.profile(cold).traits, saved.traits, 'the stored persona is the voice');
+    assert.strictEqual(Voice.profile(cold), Voice.profile(hot), 'activation keeps the same stored persona');
     assert.strictEqual(Voice.profile({ ...cold, persona: character(123).persona }).traits.empathy, 0.5, 'attached persona takes precedence');
-    Persona.snapshot = original.snapshot;
+    Persona.reset();
     assert.strictEqual(Voice.trait({}, 'empathy'), 0.5, 'missing personality is neutral, not zero');
 
     const warm = character(1, { sociability: 0.95, empathy: 0.95, caution: 0.8, assertiveness: 0.2 });
@@ -119,11 +119,9 @@ try {
     assert.strictEqual(used.find(entry => entry.key.endsWith('.close')).persona, warm.persona, 'native local closer also uses the initiator');
 
     Voice.line = original.line;
-    for (let n = 0; n < Voice.CACHE_LIMIT + 20; n++) Voice.profile({ characterId: n + 10000 });
-    assert(Voice.snapshot().profiles <= Voice.CACHE_LIMIT, 'generated voice cache is bounded');
     process.stdout.write(`Chat voice checks passed: identity, weighted wording, stable participation (${counts.join('/')}) and speaker ownership.\n`);
 } finally {
-    Database.execute = original.execute; Persona.snapshot = original.snapshot; Math.random = original.random;
+    Database.execute = original.execute; Persona.reset(); Math.random = original.random;
     Voice.line = original.line; World.user = original.user; Response.speak = original.speak;
     console.info = original.info; Object.assign(Config, original.config); Chat.reset(); Voice.reset();
 }

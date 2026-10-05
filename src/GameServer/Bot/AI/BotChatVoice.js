@@ -1,23 +1,12 @@
 const Persona = invoke('GameServer/Bot/AI/BotPersona');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 
-const CACHE_LIMIT = 2048;
-const generated = new Map();
 const recent = new Map();
 
+// The bot's stored persona (BotPersona.of); null for a static service bot,
+// whose speech stays neutral.
 function profile(source = {}) {
-    if (source.persona?.traits) return source.persona;
-    const characterId = Number(source.actor?.fetchId?.() || source.characterId || 0);
-    const saved = Persona.snapshot(characterId);
-    if (saved) return saved;
-    if (!characterId) return null;
-    const stats = source.coldLifeState?.stats || source.stats || {};
-    const key = `${characterId}:${stats.generatedIndex ?? ''}`;
-    if (!generated.has(key)) {
-        if (generated.size >= CACHE_LIMIT) generated.delete(generated.keys().next().value);
-        generated.set(key, Persona.generate({ characterId, stats }));
-    }
-    return generated.get(key);
+    return Persona.of(source);
 }
 
 function trait(source, key) {
@@ -95,6 +84,6 @@ function willingToReply(source, scene) {
 
 module.exports = {
     profile, trait, styleWeight, topicWeight, pick, line, initiation, closeChance, willingToReply,
-    CACHE_LIMIT, snapshot() { return { profiles: generated.size, histories: recent.size }; },
-    reset() { generated.clear(); recent.clear(); }
+    snapshot() { return { histories: recent.size }; },
+    reset() { recent.clear(); }
 };

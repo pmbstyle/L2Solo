@@ -62,17 +62,13 @@ function socialRelations(characterId, now = Date.now()) {
 
 function normalizeCandidate(row = {}) {
     const stats = parseJson(row.statsJson, {});
-    const generatedPersona = BotPersona.generate({
-        characterId: row.characterId,
-        stats: { ...stats, generatedIndex: stats.generatedIndex ?? row.characterId }
-    });
     const storedPersona = row.traitsJson
         ? {
             characterId: Number(row.characterId),
-            primaryDrive: String(row.primaryDrive || generatedPersona?.primaryDrive || ''),
-            traits: parseJson(row.traitsJson, generatedPersona?.traits || {})
+            primaryDrive: String(row.primaryDrive || ''),
+            traits: parseJson(row.traitsJson, {})
         }
-        : generatedPersona;
+        : BotPersona.of(row.characterId);
     return {
         characterId: number(row.characterId),
         id: number(row.characterId),

@@ -4,9 +4,7 @@ const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const ACCEPT_SCORE = 45;
 
 function personaFor(subject = {}) {
-    if (subject?.persona?.traits) return subject.persona;
-    const characterId = Number(subject?.characterId || subject?.id || subject?.actor?.fetchId?.() || 0);
-    return BotPersona.generate({ ...subject, characterId });
+    return BotPersona.of(subject);
 }
 
 function clamp(value, min, max) {

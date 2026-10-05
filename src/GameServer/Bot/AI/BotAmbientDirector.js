@@ -61,9 +61,7 @@ function trait(session, name, fallback = 0.5) {
 
 function personaFor(session) {
     if (session?.persona?.primaryDrive) return session.persona;
-    const id = actorId(session);
-    if (!id) return null;
-    try { return BotPersona.generate({ characterId: id }); } catch (_) { return null; }
+    return BotPersona.of(actorId(session));
 }
 
 function ratio(actor, current, maximum) {

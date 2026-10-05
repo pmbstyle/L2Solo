@@ -33,7 +33,17 @@ for (const [memory, accept] of [[{ trust: 0, familiarity: 5 }, true], [{ trust: 
 }
 assert(Policy.reply(soloDecision).includes('get to know'), 'a refusal should explain how the player can improve the relationship');
 
-const hotFallback = Policy.evaluate({ actor: { fetchId: () => 42 } }, { trust: 0, familiarity: 0 });
-assert.strictEqual(hotFallback.persona.characterId, 42, 'a newly spawned hot bot must use its actor id before async persona loading finishes');
+// A hot bot is known by its actor id: it answers with its stored persona,
+// never a regenerated one; without a stored persona it is simply available.
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const unknown = Policy.evaluate({ actor: { fetchId: () => 42 } }, { trust: 0, familiarity: 0 });
+assert.strictEqual(unknown.persona, null, 'no persona is generated for a bot without a stored one');
+assert.strictEqual(unknown.accept, true);
+const stored = { ...BotPersona.generate({ characterId: 42 }), primaryDrive: 'wealth', traits: { ...wealth.traits } };
+BotPersona.useRowSource((id) => (id === 42 ? BotPersona.tableRow(stored) : null));
+const hot = Policy.evaluate({ actor: { fetchId: () => 42 } }, { trust: 0, familiarity: 0 });
+assert.strictEqual(hot.persona.characterId, 42, 'a hot bot uses its actor id to find its stored persona');
+assert.strictEqual(hot.accept, false, 'the stored reserved wealth persona decides');
+BotPersona.reset();
 
 console.log('Bot persona party decision checks passed');
