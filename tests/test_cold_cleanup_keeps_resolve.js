@@ -70,7 +70,10 @@ const fightResult = () => ({
         assert(prepared?.stats?.forcedMarketCleanup, 'the bot still starts its forced cleanup trip');
         assert.strictEqual(prepared.activity, 'traveling');
         assert.strictEqual(prepared.exp, base.exp + 500, 'the fight\'s exp is kept');
-        assert.strictEqual(prepared.adena, base.adena + 600, 'the fight\'s adena is kept');
+        // The trip goes to the town its shop-town roll chose (group C) and may
+        // pay a gatekeeper on the way: the fee is the trip's, not the fight's.
+        const tripFee = (state) => Number(state.stats?.travel?.paid?.fee || 0);
+        assert.strictEqual(prepared.adena, base.adena + 600 - tripFee(prepared), 'the fight\'s adena is kept');
         assert.strictEqual(proposal.result.events.length, 1, 'the fight\'s events are still recorded');
         assert.strictEqual(prepared.simulation?.leaseId, token.leaseId, 'the commit keeps the worker lease');
 
@@ -127,7 +130,7 @@ const fightResult = () => ({
         assert(command.state.stats?.forcedMarketCleanup, 'the cleanup trip starts after it');
         assert.strictEqual(command.state.activity, 'traveling');
         assert.strictEqual(command.state.exp, commandState.exp + 500);
-        assert.strictEqual(command.state.adena, commandState.adena + 600);
+        assert.strictEqual(command.state.adena, commandState.adena + 600 - tripFee(command.state));
         assert.strictEqual(recorded.length, 1);
 
         console.log('Cold cleanup keeps the resolve checks passed');
