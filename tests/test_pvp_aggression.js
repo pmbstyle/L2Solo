@@ -57,7 +57,8 @@ try {
     }
     assert.deepStrictEqual(decisions, [false, false, true, true, true]);
     Config.pvpAggression = 0;
-    const context = { botLevel: 40, threatLevel: 1, hpRatio: 1, mpRatio: 1, role: 'dps' };
+    // U26: a visibly stronger bot (higher weapon grade), not a hidden level gap.
+    const context = { ownLook: { weapon: 2, glow: 0, body: 0 }, threatLook: { weapon: 0, glow: 0, body: 0 }, hpRatio: 1, mpRatio: 1, role: 'dps' };
     assert.strictEqual(Risk.evaluate(context).action, 'flee', 'zero aggression cannot initiate PK pursuit');
     assert.strictEqual(Risk.evaluate({ ...context, targetedByThreat: true }).action, 'fight', 'self-defense remains possible');
     const actor = id => ({ fetchId: () => id, fetchLevel: () => 40, fetchClassId: () => 0,

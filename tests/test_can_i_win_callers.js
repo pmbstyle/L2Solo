@@ -147,11 +147,45 @@ assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0
 }
 
 // ---- 4. Hot PK sighting.
-const sighting = (botLevel, threatLevel, extra = {}) => Risk.evaluate({ botLevel, threatLevel, hpRatio: 1, mpRatio: 1, role: 'dps', ...extra });
-assert.strictEqual(sighting(40, 40).action, 'fight', 'sighting: equal level fights');
-assert.strictEqual(sighting(40, 41).action, 'flee', 'sighting: one level above flees');
-assert.strictEqual(sighting(40, 43, { allies: 3 }).action, 'fight', 'sighting: three allies beat three levels');
-assert.strictEqual(sighting(40, 30, { hpRatio: 0.2 }).action, 'fight', 'sighting: much lower PK is fought even at critical HP');
+// U26: the PK by his look, the people with him and the bot's fear; levels are hidden.
+// The bot's own HP, MP, role and allies keep the author's score terms.
+const sighting = (extra = {}) => Risk.evaluate({ hpRatio: 1, mpRatio: 1, role: 'dps', ...extra });
+assert.strictEqual(sighting().action, 'fight', 'sighting: an even look fights (calm)');
+assert.strictEqual(sighting({ botLevel: 40, threatLevel: 41 }).action, 'fight', 'sighting: a hidden higher level is not seen');
+assert.strictEqual(sighting({ threatLook: C, ownLook: D }).action, 'flee', 'sighting: a visibly higher grade flees');
+assert.strictEqual(sighting({ threatLook: C, ownLook: D, allies: 3 }).action, 'fight', 'sighting: three allies beat a visible gap');
+assert.strictEqual(sighting({ threatLook: D, ownLook: C, hpRatio: 0.2 }).action, 'fight', 'sighting: a visibly weaker PK is fought even at critical HP');
+assert.strictEqual(sighting({ hpRatio: 0.2 }).action, 'flee', 'sighting: critical HP flees an even look');
+assert.strictEqual(sighting({ threatPeople: 2 }).action, 'flee', 'sighting: a PK with a friend');
+assert.strictEqual(sighting({ traits: { caution: 0.8, assertiveness: 0.3 } }).action, 'flee', 'sighting: the cautious flee an even look');
+assert.strictEqual(sighting({ fear: 0.2 }).action, 'flee', 'sighting: fear of him');
+assert.deepStrictEqual(sighting().reasons, ['visible:even']);
+{
+    // What HuntingState passes: the hunter's look, the PK's look and people, traits, fear.
+    const own = hotSession(hotActor(armed('d')), { caution: 0.8, assertiveness: 0.3 });
+    const pk = hotActor(armed('c'));
+    hotSession(pk);
+    World.user = { sessions: [own, pk.session] };
+    invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+    const seen = Risk.sighting(own, pk);
+    assert.deepStrictEqual([seen.ownLook.weapon, seen.threatLook.weapon, seen.threatPeople, seen.traits.caution, seen.fear], [1, 2, 1, 0.8, 0]);
+    assert.strictEqual(sighting(seen).action, 'flee');
+}
+
+// One pair, one verdict: a visibly equal pair is decided by traits in all four places.
+{
+    const pairs = [[{ caution: 0.5, assertiveness: 0.5, empathy: 0.5 }, true], [{ caution: 0.8, assertiveness: 0.3, empathy: 0.3 }, false]];
+    for (const [traits, fights] of pairs) {
+        const persona = { traits: { ...calm.traits, ...traits } };
+        const solo40 = solo(40, { look: D });
+        assert.strictEqual(dispute(solo40, solo(40, { look: D }), persona).reason === 'outmatched', !fights, 'dispute');
+        const coldA = coldState(21, { hp: 1e6 }), coldB = coldState(22);
+        coldA.stats.coldCombat.cp = 1e6; coldA.vitals.mp = 1e6; // fresh: clamped to the profile maxima
+        assert.strictEqual(coldStart(coldA, coldB, persona).started === true, fights, 'cold start');
+        assert.strictEqual(defense(fresh, {}, traits).action === 'fight', fights, 'defense');
+        assert.strictEqual(sighting({ traits }).action === 'fight', fights, 'sighting');
+    }
+}
 
 Config.pvpAggression = savedAggression;
 console.log('can-I-win caller checks passed');

@@ -42,9 +42,10 @@ assert.strictEqual(BotPvpRisk.evaluate({
     role: 'dps'
 }).action, 'flee', 'critical HP bot should flee without real support');
 
+// U26: the PK looks stronger (higher weapon grade); levels are hidden.
 assert.strictEqual(BotPvpRisk.evaluate({
-    botLevel: 20,
-    threatLevel: 23,
+    ownLook: { weapon: 1, glow: 0, body: 1 },
+    threatLook: { weapon: 2, glow: 0, body: 1 },
     hpRatio: 0.9,
     mpRatio: 0.9,
     allies: 3,

@@ -34,14 +34,21 @@ function isCombatAlly(botSession, otherSession, threat) {
     return Number(otherSession.currentTargetId || other.fetchDestId?.() || 0) === threatId;
 }
 
+// A visible gap is worth the author's dispute margin: 3 levels at 1.25 each.
+const VISIBLE_GAP = 3 * 1.25;
+
+// Seeing a PK: the PK side by what a player sees (his look, the people with
+// him, the bot's fear of him; Social/VisibleStrength) against this bot alone.
+// The bot's own HP, MP, role and allies keep the author's terms below.
 function evaluate(context = {}) {
-    const botLevel = Math.max(1, Number(context.botLevel) || 1);
-    const threatLevel = Math.max(1, Number(context.threatLevel) || 1);
     const hpRatio = Math.max(0, Math.min(1, Number(context.hpRatio) || 0));
     const mpRatio = Math.max(0, Math.min(1, Number(context.mpRatio) || 0));
     const allies = Math.max(0, Number(context.allies) || 0);
     const reasons = [];
-    let score = (botLevel - threatLevel) * 1.25 + allies * 1.4;
+    const visible = Visible.canWin({ own: { look: context.ownLook, people: 1 },
+        other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1) },
+        traits: context.traits, fear: context.fear || 0 });
+    let score = (visible.verdict === 'stronger' ? VISIBLE_GAP : visible.fight ? 0 : -VISIBLE_GAP) + allies * 1.4;
 
     if (context.targetedByThreat) {
         score += 0.75;
@@ -63,7 +70,7 @@ function evaluate(context = {}) {
         reasons.push('support_role');
     }
     if (allies > 0) reasons.push(`allies:${allies}`);
-    reasons.push(`level_delta:${botLevel - threatLevel}`);
+    reasons.push(`visible:${visible.verdict}`);
     const aggression = Aggression.normalize(Config.pvpAggression);
     score += (aggression - 0.5) * 1.5;
     const noInitiation = aggression === 0 && !context.targetedByThreat;
@@ -174,4 +181,12 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
     };
 }
 
-module.exports = { evaluate, isCombatAlly, sameClan, sameParty, combatStrength, defenseDecision, opponentsOf, fearOf };
+// What a hunter sees of a PK, for evaluate().
+function sighting(session, pk, now = Date.now()) {
+    const opponents = [...opponentsOf(session, [pk]).values()];
+    return { ownLook: Visible.actorLook(session.actor), threatLook: Visible.best(opponents.map(Visible.actorLook)),
+        threatPeople: opponents.length, traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
+        fear: fearOf(session.actor, [pk], now) };
+}
+
+module.exports = { evaluate, sighting, isCombatAlly, sameClan, sameParty, combatStrength, defenseDecision, opponentsOf, fearOf };

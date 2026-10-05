@@ -588,8 +588,7 @@ module.exports = {
                 return dist < 1000;
             });
             const pvpDecision = BotPvpRisk.evaluate({
-                botLevel: bot.fetchLevel(),
-                threatLevel: spottedPk.fetchLevel(),
+                ...BotPvpRisk.sighting(session, spottedPk),
                 hpRatio: bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
                 mpRatio: bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
                 allies: allies.length,
