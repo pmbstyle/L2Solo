@@ -111,7 +111,12 @@ const HotActivation = {
                 && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
-            if (state.activity === 'traveling' && options.interruptBackgroundActivity !== true) {
+            // With honest travel a traveller a player invites or calls leaves its
+            // trip, as a hunter leaves its spot (design 5.9).
+            const leavesTrip = options.interruptBackgroundActivity === true
+                || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
+                    && invoke('GameServer/Bot/Population/ColdTrip').travellerAnswers(state));
+            if (state.activity === 'traveling' && !leavesTrip) {
                 return { ok: false, reason: 'in_transit', state };
             }
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
@@ -154,8 +159,7 @@ const HotActivation = {
                         leaseUntil: handoff.leaseUntil
                     }
                 };
-                if (options.interruptBackgroundActivity === true
-                    && ['traveling', 'pk_hunting'].includes(state.activity)) {
+                if (leavesTrip && ['traveling', 'pk_hunting'].includes(state.activity)) {
                     state = {
                         ...state,
                         activity: 'hunting',

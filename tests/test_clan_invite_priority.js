@@ -19,7 +19,9 @@ const dependencies = {
     },
     'GameServer/SpeckMath': { Point3D: class { distance() { return 100000; } } },
     'GameServer/Social/InteractionMemoryRuntime': { assess: () => ({ ready: true }) },
-    'GameServer/Clan/ClanService': { findById: id => id === 77 ? { members } : null }
+    'GameServer/Clan/ClanService': { findById: id => id === 77 ? { members } : null },
+    // Honest travel off (the default): a trip stays a busy reason.
+    'GameServer/Bot/Population/ColdTrip': { travellerAnswers: () => false, positionAt: state => state.loc }
 };
 const context = {
     module: { exports: {} },

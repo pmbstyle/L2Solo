@@ -160,7 +160,11 @@ const BotAvailability = {
         if (!player || !state) return result;
         const refusal = options.forceFriend ? null : socialRefusal(result.memory, timestamp);
 
-        result.distance = distance(actorLocation(player), state.loc);
+        // With honest travel a trip is no "busy" reason (design 5.9): the
+        // traveller answers from where it is now on its road.
+        const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
+        const traveller = ColdTrip.travellerAnswers(state);
+        result.distance = distance(actorLocation(player), traveller ? ColdTrip.positionAt(state, timestamp) : state.loc);
         result.clanmate = sameClan(player, state);
         const staticService = BotServiceIdentity.isStaticService(state);
 
@@ -168,7 +172,7 @@ const BotAvailability = {
         if (staticService) reason = 'merchant_duty';
         else if (result.clanmate) reason = 'available';
         else if (!options.forceFriend && result.relationshipReason) reason = result.relationshipReason;
-        else if (!options.forceFriend && state.activity === 'traveling') reason = 'in_transit';
+        else if (!options.forceFriend && state.activity === 'traveling' && !traveller) reason = 'in_transit';
         else if (!options.forceFriend && state.activity === 'pk_hunting') reason = 'pk_encounter_only';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
         else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
