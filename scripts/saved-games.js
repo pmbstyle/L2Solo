@@ -217,7 +217,7 @@ function perform({ operation, databasePath, historyPath = HistoryStore.pathFor(d
             fs.writeFileSync(path.join(pending, 'save.json'), JSON.stringify({
                 name: trimmed || `Save — ${new Date(createdAt).toLocaleString('en-GB')}`,
                 createdAt, formatVersion: SAVE_FORMAT_VERSION, hasHistory: !!history,
-                files: Object.fromEntries(copies.map(([_source, target]) => [target, digestFile(path.join(pending, target))]))
+                files: Object.fromEntries(copies.map(([, target]) => [target, digestFile(path.join(pending, target))]))
             }, null, 2));
             Restore.flushFile(path.join(pending, 'save.json'));
             fs.renameSync(pending, directory);

@@ -23,7 +23,9 @@ const resurrectionScroll = DataCache.items.find((item) => Number(item?.selfId) =
 assert(escapeScroll?.template?.kind === 'Other.Scroll' && resurrectionScroll?.template?.kind === 'Other.Scroll',
     'the datapack must contain ordinary consumable scroll fixtures');
 
-const now = Date.now();
+// The market decision includes the timestamp in its tendency roll. Pin this
+// fixture's decision point so its warehouse case cannot choose a rare NPC sale.
+const now = 1791228120000;
 const state = {
     characterId: 7002,
     name: 'OverloadedBot',
