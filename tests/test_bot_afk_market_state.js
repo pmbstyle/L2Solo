@@ -78,8 +78,7 @@ async function run() {
     assert.deepStrictEqual(opened.state.loc, hunting.loc);
     assert.strictEqual(opened.state.timing.nextResolveAt, hunting.timing.nextResolveAt);
     assert.strictEqual(opened.shop.storeType, AfkTrade.SELL);
-    assert(Math.abs(Number(opened.shop.expiresAt) - (Date.now() + 12 * 60 * 60 * 1000)) < 60000,
-        'the shop lives 12 hours of server uptime (the board)');
+    assert.strictEqual(Number(opened.shop.expiresAt), 0, 'the shop has no deadline: it closes by events (the board)');
     assert.strictEqual(opened.shop.town, 'Talking Island');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wts, 1,
         'world status should count bot AFK shops');

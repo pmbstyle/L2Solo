@@ -1359,6 +1359,12 @@ function applySchemaMigrations() {
             AND (partyId IS NULL OR partyId = '')
             AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting');
     `)]);
+    // Board records close by events only (user, 2026-10-05): the 12-hour
+    // lifetime of a world that ran with it ends, and the uptime clock with it.
+    migrations.push([56, () => connection.exec(`
+        UPDATE afk_trade_shops SET expiresAt = 0 WHERE expiresAt > 0;
+        DELETE FROM world_meta WHERE key = 'boardAliveAt';
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -2578,17 +2584,16 @@ function validBoardRecord(kind, storeType, rows) {
 }
 
 // Opens one record inside the caller's transaction (see createAfkTradeShop).
-// A shop replaces the owner's shop when `replace` is set and keeps its
-// deadline (its life runs from its first publication); an ad is one item and
-// one per item. `expectedRevision` names the shop it replaces. Returns
-// { shop, changedIds }.
+// A shop replaces the owner's shop when `replace` is set; an ad is one item
+// and one per item. `expectedRevision` names the shop it replaces. No kind
+// has a deadline (expiresAt 0): records close by events (user, 2026-10-05).
+// Returns { shop, changedIds }.
 function openBoardRecordUnsafe(characterId, config, rows) {
     const kind = config.kind;
     const storeType = BoardRules.storeTypeFor(kind, config.storeType);
     const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
     if (!owner) throw new Error('afk_trade_owner_missing');
     const timestamp = now();
-    let expiresAt = timestamp + BoardRules.LIFETIME_MS;
     const changedIds = [];
     let active = null;
     if (kind === 'shop') {
@@ -2601,7 +2606,6 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         // Replacing a remote shop returns its escrow and reserves the new
         // stock in the same transaction. A failed publish restores both.
         if (active) {
-            if (Number(active.expiresAt) > 0) expiresAt = Number(active.expiresAt);
             changedIds.push(...closeBoardRecordUnsafe(active, { ownMove: true, at: timestamp }));
         }
     } else {
@@ -2629,7 +2633,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
     const shopId = Number(write(`INSERT INTO afk_trade_shops(
         ownerId, storeType, status, title, town, locX, locY, locZ, head,
         appearanceJson, packageSale, escrowAdena, revision, createdAt, updatedAt, kind, expiresAt
-    ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`, [
+    ) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)`, [
         characterId,
         storeType,
         String(config.title || '').slice(0, 52),
@@ -2644,8 +2648,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         escrowAdena,
         timestamp,
         timestamp,
-        kind,
-        expiresAt
+        kind
     ]).insertId);
 
     // A replaced shop or an ad may name a stack the bag has merged since: the
@@ -3256,30 +3259,6 @@ const Database = {
         }, 'board:close'));
     },
 
-    // Records whose deadline passed close; what they hold goes to their owners
-    // (a cold bot gets it at its next save). Returns the closed records as
-    // they stood and the owners left with settlements.
-    expireBoardRecords(recordIds = [], at = now()) {
-        const ids = [...new Set((recordIds || []).map(Number).filter(Boolean))];
-        if (!ids.length) return Promise.resolve({ closed: [], settlementOwners: [] });
-        return inTransaction(() => {
-            const closed = [];
-            for (const id of ids) {
-                const shop = afkTradeShopUnsafe(id);
-                if (!shop || Number(shop.expiresAt) <= 0 || Number(shop.expiresAt) > Number(at)) continue;
-                closeBoardRecordUnsafe(shop, { ownMove: false, at });
-                closed.push(closedRecord(shop, 'expired'));
-            }
-            return {
-                closed,
-                settlementOwners: [...new Set(closed.map((shop) => Number(shop.ownerId)))]
-                    .filter((ownerId) => pendingSettlementOwners.has(ownerId)),
-                ownerInventories: Object.fromEntries([...new Set(closed.map((shop) => Number(shop.ownerId)))]
-                    .map((ownerId) => [ownerId, afkTradeInventoryUnsafe(ownerId)]))
-            };
-        }, 'board:expire');
-    },
-
     // The leave rule (design 2.7): an owner leaving the game closes every
     // record it holds, of every kind; items and escrow go back to it.
     closeOwnerBoardRecords(ownerId) {
@@ -3317,40 +3296,13 @@ const Database = {
         return [...pendingSettlementOwners];
     },
 
-    // The board's clock runs with the server (records live 12 hours of
-    // uptime): `boardAliveAt` is the last moment the server was seen running.
-    fetchBoardAliveAt() {
-        return run("SELECT value FROM world_meta WHERE key = 'boardAliveAt'", [], 'board:clock', true)
-            .then((rows) => Number(rows[0]?.value || 0));
-    },
-
-    // Moves every deadline by `ms` (the downtime) and records `aliveAt`.
-    shiftBoardDeadlines(ms, aliveAt = now()) {
-        const shift = Math.max(0, Math.floor(Number(ms) || 0));
-        return enqueue(() => {
-            connection.exec('BEGIN IMMEDIATE');
-            try {
-                const moved = shift > 0
-                    ? Number(write('UPDATE afk_trade_shops SET expiresAt = expiresAt + ? WHERE expiresAt > 0', [shift]).affectedRows || 0)
-                    : 0;
-                write(`INSERT INTO world_meta (key, value) VALUES ('boardAliveAt', ?)
-                    ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(Math.floor(Number(aliveAt)))]);
-                connection.exec('COMMIT');
-                return { moved, shift };
-            } catch (error) {
-                connection.exec('ROLLBACK');
-                throw error;
-            }
-        }, { operation: 'board:shift-deadlines' });
-    },
-
     // The old world at the first start of the board (Q8 B, user 2026-10-05):
     // every bot record closes once and gives back what it holds; the bots
     // relist under the board's rules at their next review. A physical cold
     // store or a budget-backed buy store in a bot's state is cancelled (its
     // stock and money never left the bag). Players' AFK shops stay as they
-    // are and get a deadline. One transaction, once: migration 54 marks a world
-    // that traded before the board (boardMigrationPending).
+    // are. One transaction, once: migration 54 marks a world that traded
+    // before the board (boardMigrationPending).
     migrateBoardWorld(at = now()) {
         return inTransaction(() => {
             if (!one("SELECT value FROM world_meta WHERE key = 'boardMigrationPending'")) return { skipped: true };
@@ -3380,8 +3332,7 @@ const Database = {
                     updatedAt = ? WHERE characterId = ?`, [JSON.stringify(stats),
                     merchant ? (stats.marketReturn ? 'shopping' : 'hunting') : row.activity, merchant ? 1 : 0, at, at, row.characterId]);
             }
-            const kept = Number(write('UPDATE afk_trade_shops SET expiresAt = ? WHERE expiresAt <= 0',
-                [at + BoardRules.LIFETIME_MS]).affectedRows || 0);
+            const kept = Number(one("SELECT COUNT(*) AS count FROM afk_trade_shops WHERE status = 'active'").count || 0);
             write("DELETE FROM world_meta WHERE key = 'boardMigrationPending'");
             write(`INSERT INTO world_meta (key, value) VALUES ('boardMigrated', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(at)]);

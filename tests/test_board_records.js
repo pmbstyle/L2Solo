@@ -1,16 +1,15 @@
 // The board's records (step 3.3, group A): a move between a bag and a record
 // is one transaction (a failure moves nothing, a replay moves nothing twice);
 // per-bot caps refuse a record and leave the item or the money where it was;
-// the leave rule closes every record of an owner; a record lives 12 hours of
-// server uptime (deadlines move by the downtime) and closes from one queue;
-// what the board owes a bot survives a restart.
+// the leave rule closes every record of an owner; a record has no deadline
+// and closes by events only (user, 2026-10-05); what the board owes a bot
+// survives a restart.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 require('../src/Global');
 
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-const BoardExpiryQueue = require('../src/GameServer/AfkTrade/BoardExpiryQueue');
 const BoardRules = require('../src/GameServer/AfkTrade/BoardRules');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -98,13 +97,6 @@ async function run() {
     await LifeState.init();
     await AfkTrade.init();
 
-    // The queue: deadlines come out in order whatever order they went in.
-    const queue = new BoardExpiryQueue();
-    [50, 10, 40, 30, 20, 10].forEach((deadline, index) => queue.push(deadline, index + 1));
-    const popped = [];
-    while (queue.size) popped.push(queue.pop().deadline);
-    assert.deepStrictEqual(popped, [10, 10, 20, 30, 40, 50]);
-
     // A move that fails half way moves nothing: the bag keeps the stems, no
     // record stands.
     const mover = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }, ...MATERIALS.map((selfId) => ({ selfId, name: `Item ${selfId}`, amount: 20 }))]);
@@ -169,36 +161,19 @@ async function run() {
     assert.deepStrictEqual(Database.boardSettlementOwners(), []);
     assert.strictEqual(LifeState.cachedState(mover).adena, start[57], 'its cold state follows');
 
-    // Expiry in server uptime: a record whose wall-clock deadline passed
-    // while the server was down lives on by the downtime.
-    const expiring = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
-    const ad = await AfkTrade.publishBot(expiring, await sellAd(expiring, 1864));
-    assert(Math.abs(Number(ad.expiresAt) - (Date.now() + BoardRules.LIFETIME_MS)) < 60000, 'a record lives 12 hours');
-    const now = Date.now();
-    await Database.execute(['UPDATE afk_trade_shops SET expiresAt = ? WHERE id = ?', [now - HOUR, ad.id]]);
-    await Database.execute(["UPDATE world_meta SET value = ? WHERE key = 'boardAliveAt'", [String(now - 3 * HOUR)]]);
+    // No lifetime: a record older than 12 hours of uptime stays open, across
+    // a restart too; a deadline a world ran with is gone (migration 56).
+    const keeper = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
+    const ad = await AfkTrade.publishBot(keeper, await sellAd(keeper, 1864));
+    assert.strictEqual(Number(ad.expiresAt), 0, 'a new record has no deadline');
+    await Database.execute(['UPDATE afk_trade_shops SET createdAt = ?, updatedAt = ? WHERE id = ?',
+        [Date.now() - 13 * HOUR, Date.now() - 13 * HOUR, ad.id]]);
     await AfkTrade._resetForTests();
     assert.strictEqual(await AfkTrade.init(), 1);
-    const shifted = (await Database.fetchAfkTradeShops(expiring))[0];
-    assert(Math.abs(Number(shifted.expiresAt) - (now + 2 * HOUR)) < 60000, 'the deadline moved by the 3 hours of downtime');
-    assert.strictEqual(await AfkTrade.expireDue(Date.now()), 0, 'nothing expires before its uptime ran out');
-    assert.strictEqual(await AfkTrade.expireDue(Number(shifted.expiresAt) + 1), 1);
-    assert.strictEqual((await Database.fetchAfkTradeShops(expiring)).length, 0, 'an expired record is deleted');
-    assert.strictEqual((await bag(expiring))[1864], 10, 'its stems are back in the bag');
-    assert.strictEqual(LifeState.cachedState(expiring).inventory['1864'].amount, 10);
-
-    // A sleep of the machine is downtime too: the clock beat moves the
-    // deadlines by the gap.
-    const sleeper = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
-    const sleeping = await AfkTrade.publishBot(sleeper, await sellAd(sleeper, 1864));
-    const deadline = Number(sleeping.expiresAt);
-    const beatAt = Date.now();
-    await AfkTrade.beat(beatAt);
-    const gap = await AfkTrade.beat(beatAt + 61 * 1000 + 2 * HOUR);
-    assert(gap >= 2 * HOUR, 'a late beat is a gap the server did not run');
-    const slept = (await Database.fetchAfkTradeShops(sleeper))[0];
-    assert.strictEqual(Number(slept.expiresAt), deadline + gap);
-    assert.strictEqual(await AfkTrade.expireDue(deadline + 1), 0, 'the old deadline no longer closes it');
+    assert.strictEqual((await Database.fetchAfkTradeShops(keeper)).length, 1, 'a record 13 hours old stays open');
+    assert(AfkTrade.ownerRecords(keeper).length === 1 && AfkTrade.offers(1864, AfkTrade.SELL).length === 1,
+        'and stays on the board');
+    assert.strictEqual((await bag(keeper))[1864], undefined, 'its stems stay in the record');
 
     // What the board owes a bot survives a restart: a deal on a record of a
     // bot the worker holds waits; after a restart (the lease recovered) the
@@ -226,7 +201,7 @@ async function run() {
     await AfkTrade._resetForTests();
     await Database.close();
     clean();
-    console.log('Board records: moves, caps, leave, uptime expiry and restart checks passed');
+    console.log('Board records: moves, caps, leave, no lifetime and restart checks passed');
 }
 
 run().catch(async (error) => {

@@ -2,15 +2,15 @@
 // bot record closes once and gives back what it holds (stock to the bag,
 // escrow to the wallet); a bot's physical stall or budget-backed buy stall
 // is cancelled (its stock and money never left the bag); players' AFK shops
-// stay as they are and get a deadline. Totals over every owner do not move,
-// and a second start does nothing.
+// stay as they are, without a deadline. Totals over every owner do not move,
+// and a second start does nothing. A world that ran with the 12-hour lifetime
+// loses its deadlines once (migration 56).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 require('../src/Global');
 
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-const BoardRules = require('../src/GameServer/AfkTrade/BoardRules');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -117,7 +117,7 @@ async function run() {
     assert.deepStrictEqual(records.map((record) => record.id), [playerShop.shop.id], 'only the player\'s shop stands');
     assert.deepStrictEqual(records[0].lines.map((line) => [line.selfId, line.count, line.price]), [[1864, 8, 77]],
         'the player\'s shop keeps its stock and its prices');
-    assert(Math.abs(Number(records[0].expiresAt) - (Date.now() + BoardRules.LIFETIME_MS)) < 60000, 'and gets a deadline');
+    assert.strictEqual(Number(records[0].expiresAt), 0, 'and has no deadline');
     assert(AfkTrade.findOwnerProjection(player), 'and stands in the world');
 
     // A second start finds nothing to do.
@@ -126,6 +126,19 @@ async function run() {
     assert.strictEqual(again.skipped, true);
     assert.strictEqual(await AfkTrade.init(), 1);
     assert.deepStrictEqual(await totals(), before);
+
+    // A world that ran with the lifetime: its deadlines go once.
+    await AfkTrade._resetForTests();
+    await Database.execute(['UPDATE afk_trade_shops SET expiresAt = ?', [Date.now() - 1000]]);
+    await Database.execute(["INSERT INTO world_meta (key, value) VALUES ('boardAliveAt', '1')"]);
+    await Database.execute(['DELETE FROM schema_migrations WHERE version = 56']);
+    await Database.close();
+    Database.init();
+    const [deadlines] = await Database.execute(['SELECT COUNT(*) AS count FROM afk_trade_shops WHERE expiresAt > 0']);
+    assert.strictEqual(Number(deadlines.count), 0, 'migration 56 clears every deadline');
+    assert.strictEqual(await AfkTrade.init(), 1, 'the record stays open');
+    const [clock] = await Database.execute(["SELECT COUNT(*) AS count FROM world_meta WHERE key = 'boardAliveAt'"]);
+    assert.strictEqual(Number(clock.count), 0, 'and the uptime clock is gone');
 
     await AfkTrade._resetForTests();
     await Database.close();

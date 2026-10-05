@@ -7,9 +7,8 @@ const SELL = 1;
 const BUY = 3;
 const KINDS = ['shop', 'sell_ad', 'buy_ad', 'order'];
 
-// Every record lives 12 hours of server uptime (user, 2026-10-05): the
-// deadlines move by the downtime at start (Database.shiftBoardDeadlines).
-const LIFETIME_MS = 12 * 60 * 60 * 1000;
+// Records close by events only: sold out or filled, the owner's review or
+// removal, the leave rule (user, 2026-10-05). No kind has a deadline yet.
 
 // Per-bot caps (user, 2026-10-05): 3 shop lines + 5 sell ads + 5 buy ads +
 // 1 order. A record over its cap is refused; the caller keeps the item or
@@ -32,4 +31,4 @@ function isBotAccount(account) {
     return String(account || '').startsWith('bot_');
 }
 
-module.exports = { SELL, BUY, KINDS, LIFETIME_MS, BOT_SHOP_LINES, BOT_RECORDS, isKind, storeTypeFor, isBotAccount };
+module.exports = { SELL, BUY, KINDS, BOT_SHOP_LINES, BOT_RECORDS, isKind, storeTypeFor, isBotAccount };

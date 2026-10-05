@@ -1,6 +1,5 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
-const BoardExpiryQueue = require('./BoardExpiryQueue');
 const { BoardIndex, offerFields, rowOf, recordOf } = require('./BoardIndex');
 const TableChannel = require('../Bot/Population/ColdTableChannel');
 const Actor = invoke('GameServer/Actor/Actor');
@@ -40,17 +39,12 @@ function boardRows() {
     for (const entry of entriesById.values()) if (entry.boardRow) rows.push(entry.boardRow);
     return rows;
 }
-// Record deadlines (12 h of server uptime), checked every EXPIRY_TICK_MS on
-// the main thread; the clock beat records the server alive every BEAT_MS.
-const expiryQueue = new BoardExpiryQueue();
-const EXPIRY_TICK_MS = 5000;
-const EXPIRY_BATCH = 64;
-const BEAT_MS = 60 * 1000;
-let expiryTimer = null;
-let beatTimer = null;
-let lastBeatAt = 0;
-let expiring = false;
-let expiryRun = Promise.resolve(0);
+// Records close by events only (user, 2026-10-05): no deadline. What a deal
+// left on the board for cold bots the worker does not lease is merged every
+// SETTLE_TICK_MS on the main thread, one run at a time.
+const SETTLE_TICK_MS = 5000;
+let settleTimer = null;
+let settling = false;
 
 function kindOf(shop) {
     return shop?.kind || 'shop';
@@ -83,7 +77,7 @@ function indexProjection(projection) {
     projection.boardRow = row;
 }
 
-// Every record, shop or ad, by id and by owner; its deadline in the queue.
+// Every record, shop or ad, by id and by owner.
 function rememberEntry(entry) {
     const id = Number(entry.shop.id);
     const ownerId = Number(entry.shop.ownerId);
@@ -91,11 +85,6 @@ function rememberEntry(entry) {
     const owned = entriesByOwner.get(ownerId) || new Map();
     owned.set(id, entry);
     entriesByOwner.set(ownerId, owned);
-    const deadline = Number(entry.shop.expiresAt || 0);
-    if (deadline > 0 && entry.queuedDeadline !== deadline) {
-        expiryQueue.push(deadline, id);
-        entry.queuedDeadline = deadline;
-    }
 }
 
 function forgetEntry(entry) {
@@ -360,7 +349,6 @@ function refreshProjection(shop) {
     invalidateTradeWindows(actor);
     unindexProjection(projection);
     forgetEntry(projection);
-    if (Number(projection.shop?.id) !== Number(shop.id)) projection.queuedDeadline = null;
     projection.shop = shop;
     if (store.botOwned) {
         projection.session.coldMarketState = { characterId: Number(shop.ownerId),
@@ -1021,13 +1009,11 @@ function clearBoard() {
     projectionsByCell.clear();
     entriesById.clear();
     entriesByOwner.clear();
-    expiryQueue.clear();
     board.clear();
 }
 
 // Restores the board at start. The old world's bot records close once
-// (Database.migrateBoardWorld); the deadlines move by the downtime, so a record
-// lives 12 hours of server uptime; then every record comes back into memory.
+// (Database.migrateBoardWorld); then every record comes back into memory.
 async function init() {
     clearBoard();
     const migrated = await Database.migrateBoardWorld();
@@ -1039,93 +1025,28 @@ async function init() {
             migrated.closedShops, migrated.closedLines, migrated.returnedEscrow, migrated.owners,
             migrated.cancelledStores, migrated.keptRecords);
     }
-    const startedAt = Date.now();
-    const aliveAt = await Database.fetchBoardAliveAt();
-    const shifted = await Database.shiftBoardDeadlines(aliveAt > 0 ? Math.max(0, startedAt - aliveAt) : 0, startedAt);
-    if (shifted.moved) utils.infoSuccess('AfkTrade', 'board deadlines moved by the downtime %d s (%d records)',
-        Math.round(shifted.shift / 1000), shifted.moved);
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
-    startTimers(startedAt);
+    startTimers();
     return shops.length;
 }
 
-function startTimers(at = Date.now()) {
+function startTimers() {
     stopTimers();
-    lastBeatAt = at;
-    expiryTimer = setInterval(() => {
-        if (expiring) return;
-        expireDue().catch((error) => utils.infoWarn('AfkTrade', 'board expiry failed: %s', error.message));
-    }, EXPIRY_TICK_MS);
-    expiryTimer.unref?.();
-    beatTimer = setInterval(() => {
-        beat().catch((error) => utils.infoWarn('AfkTrade', 'board clock failed: %s', error.message));
-    }, BEAT_MS);
-    beatTimer.unref?.();
+    settleTimer = setInterval(() => {
+        if (settling) return;
+        settling = true;
+        settlePending()
+            .catch((error) => utils.infoWarn('AfkTrade', 'board settlement failed: %s', error.message))
+            .finally(() => { settling = false; });
+    }, SETTLE_TICK_MS);
+    settleTimer.unref?.();
 }
 
 function stopTimers() {
-    clearInterval(expiryTimer);
-    clearInterval(beatTimer);
-    expiryTimer = null;
-    beatTimer = null;
-}
-
-// The board's clock beat: the server is alive. A beat that comes far too
-// late means the server did not run in between (the machine slept); no
-// record lives through that time, so every deadline moves by it.
-async function beat(at = Date.now()) {
-    const gap = lastBeatAt > 0 ? at - lastBeatAt - BEAT_MS : 0;
-    lastBeatAt = at;
-    const shift = gap > BEAT_MS ? gap : 0;
-    await Database.shiftBoardDeadlines(shift, at);
-    if (!shift) return 0;
-    expiryQueue.clear();
-    entriesById.forEach((entry) => {
-        if (Number(entry.shop.expiresAt) > 0) entry.shop.expiresAt = Number(entry.shop.expiresAt) + shift;
-        entry.queuedDeadline = null;
-        rememberEntry(entry);
-    });
-    return shift;
-}
-
-// Closes the records whose deadline passed, a batch per tick; then merges
-// what waits on the board for bots the worker does not lease. One run at a
-// time: a call during a run waits for it.
-function expireDue(at = Date.now()) {
-    const run = expiryRun.then(() => expireOnce(at));
-    expiryRun = run.catch(() => 0);
-    return run;
-}
-
-async function expireOnce(at) {
-    expiring = true;
-    try {
-        const due = [];
-        while (expiryQueue.peekDeadline() <= at && due.length < EXPIRY_BATCH) {
-            const next = expiryQueue.pop();
-            const entry = entriesById.get(next.id);
-            if (!entry || Number(entry.shop.expiresAt) !== next.deadline) continue;
-            entry.queuedDeadline = null;
-            due.push(next.id);
-        }
-        let closed = [];
-        if (due.length) {
-            const result = await Database.expireBoardRecords(due, at);
-            closed = result.closed;
-            closed.forEach((shop) => {
-                refreshRecord(shop);
-                const owner = onlineSession(shop.ownerId);
-                syncOnlineInventory(shop.ownerId, result.ownerInventories?.[shop.ownerId]);
-                if (owner && !isBotSession(owner)) commandMessage(owner, 'AFK trade expired. Reserved assets returned.');
-            });
-        }
-        await settlePending();
-        return closed.length;
-    } finally {
-        expiring = false;
-    }
+    clearInterval(settleTimer);
+    settleTimer = null;
 }
 
 // The owners with settlements still on the board (a lease ended without a
@@ -1174,13 +1095,11 @@ module.exports = {
     offerOf,
     activeDemandSelfIds,
     activate,
-    beat,
     begin,
     buyFromShop,
     closeBotRecord,
     committedTrade,
     deliverNotifications,
-    expireDue,
     findOwnerProjection,
     findProjection,
     init,

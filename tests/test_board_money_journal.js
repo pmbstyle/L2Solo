@@ -117,11 +117,10 @@ async function run() {
     await AfkTrade.publishBot(leaver, ad('buy_ad', [{ selfId: 1865, name: 'Varnish', count: 10, price: 400, stackable: true }]));
     const standing = AfkTrade.activeShops().length;
     assert.strictEqual(standing, 5, 'the seller\'s shop and ad, the leased ad, the leaver\'s two ads');
-    const lastDeadline = Math.max(...AfkTrade.activeShops().map((record) => Number(record.expiresAt)));
-    assert(lastDeadline >= Number(expiring.expiresAt));
-    assert.strictEqual(await AfkTrade.expireDue(lastDeadline + 1), standing,
-        'every record of the run closes at its deadline');
-    await AfkTrade.leave(buyer);
+    // Records close by events: the owners leave (the leave rule).
+    assert.strictEqual(Number(expiring.expiresAt), 0, 'no record has a deadline');
+    for (const owner of [seller, leased, leaver, buyer]) await AfkTrade.leave(owner);
+    assert.strictEqual(AfkTrade.activeShops().length, 0, 'every record of the run is closed');
 
     const heldChange = difference(await held(), heldBefore);
     const journalChange = difference(await journal(), journalBefore);
