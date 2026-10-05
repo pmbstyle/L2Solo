@@ -151,6 +151,7 @@ const tests = [
     'tests/test_admin_saved_locations.js',
     'tests/test_auto_soulshots.js',
     'tests/test_shot_stock_restock.js',
+    'tests/test_shot_stock_weapon_rank.js',
     'tests/test_shot_stock_restart_persistence.js',
     'tests/test_shot_economy.js',
     'tests/test_shot_market_restock.js',
