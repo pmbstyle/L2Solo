@@ -231,7 +231,7 @@ async function acquire(state, selfId, amount, options = {}) {
     }
     const errand = { selfId: Number(selfId), amount: Number(amount), town: plan.town, money: Number.isFinite(plan.money) ? plan.money : null,
         maxPrice: Number.isFinite(options.maxPrice) ? options.maxPrice : null, purpose: options.purpose || 'supply',
-        at: Number(options.timestamp || Date.now()) };
+        tag: options.tag || null, at: Number(options.timestamp || Date.now()) };
     const withErrand = { ...state, stats: { ...(state.stats || {}), marketErrand: errand } };
     const from = state.activity === 'shopping' ? { ...withErrand, activity: 'hunting' } : withErrand;
     const travel = state.party?.partyId || state.partyId ? null : GoalExecutor.beginMarketTravel(from, errandGoal(errand));
@@ -243,8 +243,9 @@ async function acquire(state, selfId, amount, options = {}) {
 }
 
 // On arrival: the errand of the town the bot stands in, bought there (the
-// plan made again for this town, as the board stands now). Returns null
-// without one.
+// plan made again for this town, as the board stands now); what it bought
+// stays as stats.lastErrand for the job that sent it (a clan's order).
+// Returns null without one.
 async function buyErrand(state) {
     const errand = state?.stats?.marketErrand;
     if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
@@ -252,7 +253,8 @@ async function buyErrand(state) {
         money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity });
     const bought = plan ? await buyHere(state, plan) : { state, units: 0, hot: false };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
-    const cleared = { ...bought.state, stats: { ...(bought.state.stats || {}), marketErrand: null } };
+    const cleared = { ...bought.state, stats: { ...(bought.state.stats || {}), marketErrand: null,
+        lastErrand: { purpose: errand.purpose, selfId: errand.selfId, units: bought.units, tag: errand.tag || null, at: Date.now() } } };
     const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
     await GoalState.clear(state.characterId, 'completed').catch(() => null);
     return { state: saved || cleared, purchased: bought.units > 0, units: bought.units,

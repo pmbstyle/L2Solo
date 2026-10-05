@@ -53,6 +53,22 @@ async function resolveClan(clan) {
         : Infinity;
     const maxUnitPrice = order ? number(order.maxUnitPrice) : Infinity;
     const candidates = ClanOrderService.marketMembers(clan, [...assigned]);
+    // A member on its errand for the clan is on its way; one back from it
+    // holds the item and deposits it (the purchase was made in the seller's
+    // town, the one purchase path, ColdMarketService.acquire).
+    for (const candidate of candidates) {
+        const state = await stateFor(candidate.characterId);
+        const errand = state?.stats?.marketErrand;
+        if (errand?.purpose === 'clan' && Number(errand.tag?.clanId) === Number(clan.id)) {
+            recordReason('market_buyer_traveling');
+            return { ok: true, skipped: true, reason: 'market_buyer_traveling' };
+        }
+        const last = state?.stats?.lastErrand;
+        if (state?.phase === 'cold' && last?.purpose === 'clan' && Number(last.tag?.clanId) === Number(clan.id)
+            && Number(last.selfId) === itemId && Number(state.inventory?.[itemId]?.amount || 0) > 0) {
+            return deposit(clan, goal, itemId, state, { state }, last.tag.offer, { playerControlled, order });
+        }
+    }
     let offer = null;
     let buyer = null;
     for (const candidate of candidates) {
@@ -71,29 +87,29 @@ async function resolveClan(clan) {
         return { ok: true, skipped: true, reason: Contracts.REASON_CODES.MARKET_NO_OFFER };
     }
 
-    const shoppingState = {
-        ...buyer,
-        activity: 'shopping',
-        currentRegion: offer.town || buyer.currentRegion || 'Giran'
-    };
-    const purchaseGoal = {
-        type: 'buy_craft_material',
-        status: 'active',
-        target: { itemId, itemName: goal.target?.itemName || 'Blood Mark' },
-        plan: {
-            expectedBenefit: 'market_buy_craft_material',
-            marketTown: shoppingState.currentRegion
+    // The member buys in the offer's town (б5): at once when it stands there,
+    // else it goes there with an errand and deposits at a later resolve.
+    const placed = { price: Number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
+    const purchase = await ColdMarketService.acquire(buyer, itemId, 1, {
+        towns: offer.town ? [offer.town] : null, maxPrice: Number(offer.price), npc: offer.sourceType === 'npc',
+        purpose: 'clan', tag: { clanId: clan.id, offer: placed }
+    });
+    if (!purchase.bought || !purchase.state) {
+        if (purchase.traveling || purchase.state?.stats?.marketErrand) {
+            recordReason('market_buyer_traveling');
+            return { ok: true, skipped: true, reason: 'market_buyer_traveling' };
         }
-    };
-    const purchase = await ColdMarketService.tryPurchase(shoppingState, purchaseGoal);
-    if (!purchase?.purchased || !purchase.state) {
         metrics.blocked += 1;
-        recordReason(purchase?.reason || Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE);
-        return { ok: false, code: purchase?.reason || Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE, purchase };
+        recordReason(Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE);
+        return { ok: false, code: Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE, purchase };
     }
     metrics.purchases += 1;
     recordReason('market_purchase');
+    return deposit(clan, goal, itemId, buyer, purchase, placed, { playerControlled, order });
+}
 
+// The member's purchase goes to the clan warehouse and advances its goal.
+async function deposit(clan, goal, itemId, buyer, purchase, offer, { playerControlled, order }) {
     const inventoryRows = await Database.fetchItems(buyer.characterId);
     const item = (inventoryRows || []).find((row) => Number(row.selfId) === itemId && Number(row.amount) > 0);
     if (!item) {
