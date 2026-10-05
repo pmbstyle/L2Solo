@@ -68,7 +68,10 @@ const ROLE_CLASSES = {
 const ROLES = Object.keys(ROLE_CLASSES);
 const SHOTS = [1, 0];
 const ROW_FIELDS = ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions'];
-const CURVE_FIELDS = ['kph', 'busy', 'deaths', 'exp', 'adena', 'loot'];
+// Loot has no curve of its own: one rare drop in an hour of a curve spot
+// would swing it; it follows the adena curve (same drop groups, same
+// deep-blue rule, same monsters).
+const CURVE_FIELDS = ['kph', 'busy', 'deaths', 'exp', 'adena'];
 const START = 1_750_000_000_000;
 
 function args() {
@@ -379,42 +382,31 @@ function poolRowLoot(rows) {
     return rows;
 }
 
-// The same for the curves: one loot curve per band for the roles that do not
-// spoil, the mean of their own curves.
-function poolCurveLoot(curves) {
-    const bands = new Set(Object.values(curves).flatMap((byBand) => Object.keys(byBand)));
-    for (const band of bands) {
-        const shared = ROLES.filter((role) => role !== 'spoiler' && curves[role]?.[band]).map((role) => curves[role][band]);
-        const loot = GAPS.map((_, index) => {
-            const values = shared.map((curve) => curve.loot[index]).filter((value) => value !== null);
-            return values.length ? round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
-        });
-        for (const curve of shared) curve.loot = loot;
-    }
-    return curves;
-}
-
 function packRow(row) {
     return row ? ROW_FIELDS.map((field) => round(row[field])) : null;
 }
 
-// Per role and band: for each gap the mean over the band's curve spots of the
-// value at that gap relative to the value at REF_GAP (deaths per kill as the
-// difference instead: a spot without deaths at the reference still shows the
-// deaths of a lower level).
+// Per role and band: for each gap the sum over the band's curve spots of the
+// value at that gap over their sum at REF_GAP, on the spots that hunt at both
+// (deaths per kill as the mean difference instead: a spot without deaths at
+// the reference still shows the deaths of a lower level).
 function curveFor(points) {
+    const refIndex = GAPS.indexOf(REF_GAP);
     const out = {};
     for (const field of CURVE_FIELDS) {
         out[field] = GAPS.map((gap, index) => {
-            const values = [];
+            let at = 0;
+            let ref = 0;
+            let count = 0;
             for (const spot of points) {
-                const ref = spot[GAPS.indexOf(REF_GAP)];
-                const at = spot[index];
-                if (!ref || !at) continue;
-                if (field === 'deaths') values.push(at.deaths - ref.deaths);
-                else if (ref[field] > 0) values.push(at[field] / ref[field]);
+                if (!spot[refIndex] || !spot[index]) continue;
+                at += spot[index][field];
+                ref += spot[refIndex][field];
+                count += 1;
             }
-            return values.length ? round(values.reduce((sum, value) => sum + value, 0) / values.length) : null;
+            if (!count) return null;
+            if (field === 'deaths') return round((at - ref) / count);
+            return ref > 0 ? round(at / ref) : null;
         });
     }
     return out;
@@ -435,6 +427,7 @@ async function main() {
     const options = args();
     if (options.child) return runChild(options.child);
     const started = Date.now();
+    const revision = gitRevision();
     const catalogue = buildCatalogue();
     let spots = catalogue.profiles.filter((spot) => spot.raidBoss !== true)
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -483,7 +476,6 @@ async function main() {
             curves[role][band] = curveFor(points);
             curveCount += 1;
         }
-        poolCurveLoot(curves);
 
         const BR = invoke('GameServer/Bot/Population/BackgroundResolver');
         // Kills per hour a spot's monster count allows: the author's fights per
@@ -502,7 +494,7 @@ async function main() {
             header: {
                 schema: SCHEMA_VERSION,
                 generator: 'scripts/generate-spot-table.js',
-                revision: gitRevision(),
+                revision,
                 inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED,
                     periodMode: PERIOD_MODE, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
                     curveSpots: CURVE_SPOTS, unlimitedDensity: UNLIMITED_DENSITY, roleClasses: ROLE_CLASSES,
