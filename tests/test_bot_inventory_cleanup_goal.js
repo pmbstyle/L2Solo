@@ -252,8 +252,17 @@ assert(ItemDisposition.saleCandidates(scrollState).some((item) => Number(item.se
     'valuable scroll surplus must enter the sale/disposition lifecycle');
 assert.strictEqual(ItemDisposition.isWarehouseCandidate(scrollState.inventory[dEnchantScroll.selfId]), true,
     'valuable scrolls without demand must be removable from the backpack into the warehouse');
-assert.strictEqual(MarketListingPolicy.evaluate(scrollState).warehouse[0]?.selfId, dEnchantScroll.selfId,
-    'scroll cleanup must choose warehouse retention when no buyer demand exists');
+// The sale decision is the expected value (group E): keeping is worth nothing
+// while nobody buys the item's kind, so with no deals at all the NPC buys it;
+// with buyers but no free board slot the bot keeps it in the warehouse.
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+MarketCounters.reset();
+assert.strictEqual(MarketListingPolicy.evaluate(scrollState, { now }).npc[0]?.selfId, dEnchantScroll.selfId,
+    'with no buyers of its kind the scroll goes to the NPC buy-back');
+for (let deal = 0; deal < 12; deal++) MarketCounters.deal(dEnchantScroll.selfId, 6000, 1, now - (12 - deal) * 300000, 999999);
+assert.strictEqual(MarketListingPolicy.evaluate(scrollState, { now, slots: 0 }).warehouse[0]?.selfId, dEnchantScroll.selfId,
+    'scroll cleanup must choose warehouse retention when the board has buyers but no slot');
+MarketCounters.reset();
 // No bot spends these scrolls: the town escape and the party revival are casts
 // without an item (BotTownTravel.beginEscape, PartyRevivalService). They are NPC
 // junk for a bot (user, 2026-10-03: sold until bots use consumables, H13).
