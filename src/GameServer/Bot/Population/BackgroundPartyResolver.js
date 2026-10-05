@@ -37,8 +37,9 @@ function estimateFightCount({ party, members, spot, elapsedMs }) {
     const cohesionFactor = clamp(Number(party.cohesion || 0.65), 0.35, 1.15);
 
     // Party actions are individually simulated, so party size must not
-    // multiply work.  Keep the same short active window as solo combat.
-    return Math.max(1, Math.min(4, Math.round(baseWindows * densityFactor * cohesionFactor)));
+    // multiply work.  Keep the same short active window as solo combat:
+    // at most one fight per 12-second window of the elapsed time, as solo.
+    return Math.max(1, Math.min(baseWindows, Math.round(baseWindows * densityFactor * cohesionFactor)));
 }
 
 function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], pressure, rng, timestamp }) {
