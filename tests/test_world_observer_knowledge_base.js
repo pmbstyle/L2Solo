@@ -52,7 +52,8 @@ try {
     assert.ok(fireAndX2.items.every((npc) => npc.weaknesses.includes('fire') && npc.hpMultiplier === 2));
     assert.ok(fireAndX2.items.some((npc) => npc.id === 81), 'Ant Overseer must match its passive fire weakness and x2 HP');
     const halfHp = service.listNpcs({ hpMultiplier: '0.5', limit: 100 });
-    assert.strictEqual(halfHp.total, 44);
+    // 44 before the high-grade C4 slices added 11 half-HP group leaders.
+    assert.strictEqual(halfHp.total, 55);
     assert.ok(halfHp.items.every((npc) => npc.hpMultiplier === 0.5));
     assert.strictEqual(service.listNpcs({ q: 'Marsh Stalker', weakness: 'fire' }).total, 0,
         'an active fire-weakness debuff must not be treated as the caster weakness');
