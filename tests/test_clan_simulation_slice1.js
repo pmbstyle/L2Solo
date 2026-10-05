@@ -31,7 +31,7 @@ function seedDatabase() {
         inventorySummary, statsJson, updatedAt
     ) VALUES (?, ?, ?, 20, 'hunting', 'cold', '{}', ?, ?)`);
     const insertPersona = seed.prepare(`INSERT INTO bot_personas(characterId, version, seed, primaryDrive, archetype, traitsJson,
-        textCard, createdAt, updatedAt) VALUES (?, 1, 1, 'progression', 'steady_achiever', ?, '', 0, 0)`);
+        textCard, createdAt, updatedAt) VALUES (?, 2, 1, 'progression', 'steady_achiever', ?, '', 0, 0)`);
     for (let index = 1; index <= 10; index += 1) {
         const id = 4100000 + index;
         const classId = index === 1 ? 4 : index === 2 ? 15 : index === 3 ? 21 : index === 4 ? 11 : index === 5 ? 54 : 1;

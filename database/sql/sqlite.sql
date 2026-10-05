@@ -467,6 +467,7 @@ CREATE TABLE IF NOT EXISTS bot_personas (
     primaryDrive TEXT NOT NULL,
     archetype TEXT NOT NULL,
     traitsJson TEXT NOT NULL,
+    inclinationsJson TEXT NOT NULL DEFAULT '{}',
     textCard TEXT NOT NULL DEFAULT '',
     createdAt INTEGER NOT NULL DEFAULT 0,
     updatedAt INTEGER NOT NULL DEFAULT 0

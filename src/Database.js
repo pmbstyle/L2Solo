@@ -1312,6 +1312,9 @@ function applySchemaMigrations() {
         `);
         require('./DatabasePartyCandidateProjection').createIndex(connection);
     }]);
+    // Personas v2 (step 3.1, N6a): eleven types by class and share, clan
+    // leaders through the author's founder gate, remembered listing prices reset.
+    migrations.push([52, () => invoke('GameServer/Bot/AI/BotPersonaMigration').apply(connection, now())]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;

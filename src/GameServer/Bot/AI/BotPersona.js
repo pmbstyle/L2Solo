@@ -1,28 +1,25 @@
 const Database = invoke('Database');
 
+const Types = require('./BotPersonaTypes');
+const TableChannel = require('../Population/ColdTableChannel');
+
 const TABLE = 'bot_personas';
-const VERSION = 1;
-const TRAITS = Object.freeze(['sociability', 'commitment', 'caution', 'ambition', 'assertiveness', 'empathy', 'resilience']);
+// 2: eleven types chosen by class and share, +-0.2 triangular spread,
+// inclinations (step 3.1, N6a; migration 52 rewrote the v1 rows).
+const VERSION = 2;
+const TRAITS = Types.TRAITS;
+const INCLINATIONS = Types.INCLINATIONS;
 const PRIMARY_DRIVES = Object.freeze(['progression', 'wealth', 'social']);
+const COLUMNS = 'characterId, version, seed, primaryDrive, archetype, traitsJson, inclinationsJson, textCard, createdAt, updatedAt';
 
-// Archetypes provide coherent starting clusters. Small deterministic variance
-// keeps a population from looking like copied templates.
-const ARCHETYPES = Object.freeze({
-    progression: [
-        { id: 'steady_achiever', traits: { sociability: 0.48, commitment: 0.65, caution: 0.60, ambition: 0.78, assertiveness: 0.53, empathy: 0.55, resilience: 0.68 } },
-        { id: 'competitive_climber', traits: { sociability: 0.60, commitment: 0.40, caution: 0.38, ambition: 0.88, assertiveness: 0.80, empathy: 0.35, resilience: 0.68 } }
-    ],
-    wealth: [
-        { id: 'pragmatic_earner', traits: { sociability: 0.36, commitment: 0.45, caution: 0.62, ambition: 0.78, assertiveness: 0.48, empathy: 0.38, resilience: 0.72 } },
-        { id: 'patient_crafter', traits: { sociability: 0.42, commitment: 0.62, caution: 0.72, ambition: 0.60, assertiveness: 0.33, empathy: 0.64, resilience: 0.75 } }
-    ],
-    social: [
-        { id: 'steadfast_helper', traits: { sociability: 0.72, commitment: 0.86, caution: 0.64, ambition: 0.56, assertiveness: 0.46, empathy: 0.90, resilience: 0.75 } },
-        { id: 'party_regular', traits: { sociability: 0.82, commitment: 0.66, caution: 0.48, ambition: 0.58, assertiveness: 0.55, empathy: 0.66, resilience: 0.62 } }
-    ]
-});
-
+// The one persona source (BotPersona.of): every stored row, loaded at boot on
+// the main thread (loadAll); in the cold worker filled from the 'personas'
+// table of ColdTableChannel (useRowSource).
 const cache = new Map();
+// Stored personas per type, for the share of a new bot's type.
+let typeCounts = {};
+let rowSource = null;
+const pending = new Map();
 let initialized = false;
 let initPromise = null;
 
@@ -39,26 +36,18 @@ function text(value) { return typeof value === 'string' ? value.trim() : ''; }
 function seedFor(subject = {}) {
     const generated = subject?.stats?.generatedIndex;
     if (generated !== undefined && generated !== null && generated !== '') return String(generated);
-    return String(subject.characterId || subject.id || '0');
+    return String(idOf(subject) || '0');
 }
 
-function hash(seed, salt = '') {
-    let value = 2166136261;
-    const source = `${seed}:${salt}`;
-    for (let index = 0; index < source.length; index++) {
-        value ^= source.charCodeAt(index);
-        value = Math.imul(value, 16777619);
-    }
-    value += value << 13;
-    value ^= value >>> 7;
-    value += value << 3;
-    value ^= value >>> 17;
-    value += value << 5;
-    return value >>> 0;
+function idOf(subject) {
+    if (typeof subject === 'number' || typeof subject === 'string') return Number(subject) || 0;
+    return Number(subject?.characterId || subject?.actor?.fetchId?.() || subject?.id || 0);
 }
 
-function random(seed, salt) { return hash(seed, salt) / 4294967296; }
-function pick(seed, salt, values) { return values[Math.min(values.length - 1, Math.floor(random(seed, salt) * values.length))]; }
+function classIdOf(subject = {}) {
+    const classId = subject.classId ?? subject.stats?.classId ?? subject.actor?.fetchClassId?.();
+    return classId === undefined || classId === null ? null : Number(classId);
+}
 
 function driveLabel(drive) {
     return ({
@@ -95,7 +84,12 @@ function dialogueVoice(persona) {
         pragmatic_earner: 'Shrewd and dryly funny about prices and wasted effort. Warmth can be practical, but you can enjoy a conversation without pitching a sale. A hard bargain is not a completed deal.',
         patient_crafter: 'Patient, quietly opinionated, and proud of the craft. Appreciates regulars and a fair deal; can get annoyed by lowball offers without becoming a shop assistant.',
         steadfast_helper: 'Warm and loyal to familiar people, with personal opinions and limits. Can tease friends or say no; does not automatically offer help with everything.',
-        party_regular: 'Sociable and informal; likes shared jokes, group gossip grounded in actual events, and hearing what others think. Leave room for short replies instead of interviewing the player.'
+        party_regular: 'Sociable and informal; likes shared jokes, group gossip grounded in actual events, and hearing what others think. Leave room for short replies instead of interviewing the player.',
+        brawler: 'Hot-headed and proud of a good scrap; likes talking about fights, contested spots, and who backed down. Can provoke or boast, and respects someone who stands their ground. Do not fabricate PvP wins or enemies.',
+        lone_wolf: 'Self-reliant and terse; prefers hunting alone and talking about routes, pulls, and gear that keeps a solo run going. Can warm up slowly, but does not pretend to want a party.',
+        speculator: 'Sharp-eyed about prices and timing; enjoys talk of what is cheap now and dear later, and is a little smug about a good buy. A price guess is not a promise, and a hard bargain is not a completed deal.',
+        clan_loyalist: 'Proud of the clan and loyal to clanmates; talks about the clan standing, rivals, and shared fights. Can hold a grudge on the clan behalf, but does not invent wars or enemies.',
+        justice_keeper: 'Principled and protective; dislikes players who prey on the weak and respects a fair fight. Can be stern about player killers without lecturing every conversation or inventing crimes.'
     };
     const traits = persona.traits;
     return [
@@ -105,56 +99,112 @@ function dialogueVoice(persona) {
     ].filter(Boolean).join(' ');
 }
 
+// Values derived from the stored traits when a persona is cached, never
+// stored: the text card when the row has none, the dialogue voice and the
+// combat talents (combat-skills brief B).
+function withDerived(persona) {
+    return {
+        ...persona,
+        talents: Types.talents(persona.traits),
+        textCard: persona.textCard || buildTextCard(persona),
+        dialogueVoice: dialogueVoice(persona)
+    };
+}
+
+function numbers(values, names, fallback = {}) {
+    return Object.fromEntries(names.map((name) => [name, clamp(values?.[name] ?? fallback[name])]));
+}
+
 function normalize(row) {
     const characterId = Number(row?.characterId || 0);
     const primaryDrive = PRIMARY_DRIVES.includes(row?.primaryDrive) ? row.primaryDrive : null;
     const archetype = text(row?.archetype);
     const traits = parseJson(row?.traitsJson, {});
     if (!characterId || !primaryDrive || !archetype || !TRAITS.every((trait) => Number.isFinite(Number(traits[trait])))) return null;
-    const normalizedTraits = Object.fromEntries(TRAITS.map((trait) => [trait, clamp(traits[trait])]));
-    const persona = {
+    return withDerived({
         characterId,
         version: Math.max(1, Number(row.version) || VERSION),
         seed: text(row.seed),
         primaryDrive,
         archetype,
-        traits: normalizedTraits,
+        traits: numbers(traits, TRAITS),
+        inclinations: numbers(parseJson(row.inclinationsJson, {}), INCLINATIONS, Types.TYPES[archetype]?.inclinations),
+        textCard: text(row.textCard),
         createdAt: Number(row.createdAt || 0),
         updatedAt: Number(row.updatedAt || 0)
-    };
-    return { ...persona, textCard: text(row.textCard) || buildTextCard(persona), dialogueVoice: dialogueVoice(persona) };
+    });
 }
 
-function generated(subject = {}) {
-    const characterId = Number(subject.characterId || subject.id || 0);
+// The row the cold worker receives: [characterId, seed, drive, type, 7 traits, 3 inclinations].
+function tableRow(persona) {
+    return [persona.characterId, persona.seed, persona.primaryDrive, persona.archetype,
+        ...TRAITS.map((trait) => persona.traits[trait]), ...INCLINATIONS.map((name) => persona.inclinations[name])];
+}
+
+function fromTableRow(row) {
+    const [characterId, seed, primaryDrive, archetype] = row;
+    return withDerived({
+        characterId,
+        version: VERSION,
+        seed,
+        primaryDrive,
+        archetype,
+        traits: Object.fromEntries(TRAITS.map((trait, index) => [trait, row[4 + index]])),
+        inclinations: Object.fromEntries(INCLINATIONS.map((name, index) => [name, row[4 + TRAITS.length + index]])),
+        textCard: ''
+    });
+}
+
+// A persona for a new bot: its type by its class and the deficit of each type
+// against its share (counts: stored personas per type; total: the population
+// the shares are of), then traits and inclinations rolled by its seed.
+function generated(subject = {}, { counts = {}, total = 1 } = {}) {
+    const characterId = idOf(subject);
     if (!characterId) return null;
     const seed = seedFor(subject);
-    const primaryDrive = pick(seed, 'drive', PRIMARY_DRIVES);
-    const archetype = pick(seed, 'archetype', ARCHETYPES[primaryDrive]);
-    const traits = Object.fromEntries(TRAITS.map((trait) => {
-        const variance = (random(seed, `trait:${trait}`) - 0.5) * 0.22;
-        return [trait, Math.round(clamp(archetype.traits[trait] + variance) * 100) / 100];
-    }));
-    const persona = { characterId, version: VERSION, seed, primaryDrive, archetype: archetype.id, traits };
-    return { ...persona, textCard: buildTextCard(persona), dialogueVoice: dialogueVoice(persona) };
+    const archetype = Types.chooseType(classIdOf(subject), seed, counts, total);
+    return withDerived({
+        characterId,
+        version: VERSION,
+        seed,
+        primaryDrive: Types.TYPES[archetype].drive,
+        archetype,
+        traits: Types.rollTraits(archetype, seed),
+        inclinations: Types.rollInclinations(archetype, seed),
+        textCard: ''
+    });
+}
+
+function remember(persona) {
+    const known = cache.has(persona.characterId);
+    cache.set(persona.characterId, persona);
+    if (known) return;
+    typeCounts[persona.archetype] = (typeCounts[persona.archetype] || 0) + 1;
+    TableChannel.shared.changed('personas', tableRow(persona));
+}
+
+// Shares are of the configured population, or of the stored one once larger.
+function populationTotal() {
+    const configured = Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0;
+    return Math.max(cache.size + 1, configured);
 }
 
 function save(persona) {
     return Database.execute([
-        `INSERT INTO ${TABLE} (
-            characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO ${TABLE} (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(characterId) DO NOTHING`,
         [persona.characterId, persona.version, persona.seed, persona.primaryDrive, persona.archetype,
-            JSON.stringify(persona.traits), persona.textCard, persona.createdAt, persona.updatedAt]
+            JSON.stringify(persona.traits), JSON.stringify(persona.inclinations), persona.textCard,
+            persona.createdAt, persona.updatedAt]
     ]);
 }
 
 const BotPersona = {
     VERSION,
     TRAITS,
+    INCLINATIONS,
     PRIMARY_DRIVES,
-    ARCHETYPES,
+    TYPES: Types.TYPES,
 
     init() {
         if (initialized) return Promise.resolve(true);
@@ -170,7 +220,54 @@ const BotPersona = {
         return initPromise;
     },
 
+    // Main thread, once at boot: every stored persona into the cache, the
+    // counts per type, and the 'personas' table for the background workers.
+    loadAll() {
+        return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE}`, []], 'bot-personas:load-all').then((rows) => {
+            cache.clear();
+            typeCounts = {};
+            for (const row of rows || []) {
+                const persona = normalize(row);
+                if (persona) remember(persona);
+            }
+            TableChannel.shared.register('personas', {
+                key: (row) => row[0],
+                allRows: () => [...cache.values()].map(tableRow)
+            });
+            initialized = true;
+            return cache.size;
+        });
+    },
+
+    // Cold worker: where a persona missing from the cache comes from.
+    useRowSource(source) {
+        rowSource = source;
+    },
+
+    // The bot's stored persona: subject.persona, else the cache by character
+    // id, else the row the worker received; null when the bot has none.
+    // Never generated: a persona is chosen once, when the bot is created.
+    of(subject) {
+        if (subject?.persona && typeof subject.persona === 'object') return subject.persona;
+        const id = idOf(subject);
+        if (!id) return null;
+        const cached = cache.get(id);
+        if (cached) return cached;
+        const row = rowSource?.(id);
+        if (!row) return null;
+        const persona = fromTableRow(row);
+        cache.set(id, persona);
+        return persona;
+    },
+
+    // A persona for a subject without a stored row (tests and tools; a new
+    // bot's row is made by ensure). options: { counts, total }.
     generate: generated,
+    tableRow,
+    fromTableRow,
+    textCardFor: buildTextCard,
+
+    typeCounts() { return { ...typeCounts }; },
 
     snapshot(characterId) { return cache.get(Number(characterId || 0)) || null; },
 
@@ -181,12 +278,9 @@ const BotPersona = {
         if (cached) return Promise.resolve(cached);
         return this.init().then((ready) => {
             if (!ready) return null;
-            return Database.execute([
-                `SELECT characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt
-                FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]
-            ]).then((rows) => {
+            return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]]).then((rows) => {
                 const persona = normalize(rows?.[0]);
-                if (persona) cache.set(id, persona);
+                if (persona) remember(persona);
                 return persona;
             });
         }).catch((err) => {
@@ -195,23 +289,27 @@ const BotPersona = {
         });
     },
 
+    // The stored persona, or a new bot's persona made and stored once.
     ensure(subject) {
-        const candidate = generated(subject);
-        if (!candidate) return Promise.resolve(null);
-        const cached = cache.get(candidate.characterId);
+        const id = idOf(subject);
+        if (!id) return Promise.resolve(null);
+        const cached = cache.get(id);
         if (cached) return Promise.resolve(cached);
-        return this.load(candidate.characterId).then((existing) => {
+        if (pending.has(id)) return pending.get(id);
+        const work = this.load(id).then((existing) => {
             if (existing) return existing;
             const timestamp = now();
-            const persisted = { ...candidate, createdAt: timestamp, updatedAt: timestamp };
-            return save(persisted).then(() => {
-                cache.set(persisted.characterId, persisted);
-                return persisted;
+            const persona = { ...generated(subject, { counts: typeCounts, total: populationTotal() }), createdAt: timestamp, updatedAt: timestamp };
+            return save(persona).then(() => {
+                remember(persona);
+                return persona;
             });
         }).catch((err) => {
-            utils.infoWarn('BotPersona', 'failed to persist persona for %d: %s', candidate.characterId, err.message);
+            utils.infoWarn('BotPersona', 'failed to persist persona for %d: %s', id, err.message);
             return null;
-        });
+        }).finally(() => pending.delete(id));
+        pending.set(id, work);
+        return work;
     },
 
     // Generated cold bots are the only population currently eligible here.
@@ -253,6 +351,9 @@ const BotPersona = {
 
     reset() {
         cache.clear();
+        pending.clear();
+        typeCounts = {};
+        rowSource = null;
         initialized = false;
         initPromise = null;
     }

@@ -42,7 +42,7 @@ function seedDatabase() {
         VALUES (57, 'Adena', 20000000, 0, 0, ?)`);
     const insertPersona = seed.prepare(`INSERT INTO bot_personas(
         characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt
-    ) VALUES (?, 1, ?, 'progression', 'steady_achiever', ?, 'slice6 validation persona', 0, 0)`);
+    ) VALUES (?, 2, ?, 'progression', 'steady_achiever', ?, 'slice6 validation persona', 0, 0)`);
     const traits = {
         ambition: 0.95,
         assertiveness: 0.90,

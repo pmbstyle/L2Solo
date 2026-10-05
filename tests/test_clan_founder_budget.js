@@ -31,7 +31,7 @@ function seedDatabase() {
     ) VALUES (?, 'bot_pop_budget', ?, 60, 'hunting', 'cold', '{}', ?, ?)`);
     const insertPersona = seed.prepare(`INSERT INTO bot_personas(
         characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt
-    ) VALUES (?, 1, ?, 'progression', 'steady_achiever', ?, 'budget persona', 0, 0)`);
+    ) VALUES (?, 2, ?, 'progression', 'steady_achiever', ?, 'budget persona', 0, 0)`);
     const traits = { ambition: 0.70, assertiveness: 0.60, resilience: 0.60, sociability: 0.50, commitment: 0.40 };
     for (let index = 1; index <= 8; index += 1) {
         const id = 4300000 + index;

@@ -44,7 +44,7 @@ function seed(clans) {
                 simulationOwner, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_gear', ?, 30, 0, 'hunting', 'cold', ?, ?, '{"classId":0}', 1)`)
                 .run(id, `Gear${id}`, giving && worker ? 'cold_simulation_owner' : 'legacy_main', JSON.stringify(inventory));
             db.prepare(`INSERT INTO bot_personas(characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt)
-                VALUES (?, 1, 1, 'social', 'party_regular', ?, '', 0, 0)`).run(id, JSON.stringify(giving ? traits : generous));
+                VALUES (?, 2, 1, 'social', 'party_regular', ?, '', 0, 0)`).run(id, JSON.stringify(giving ? traits : generous));
             if (giving) {
                 db.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Red Crescent Earring', 1, 0, 1, 1, ?)`).run(EARRING, id);
             }

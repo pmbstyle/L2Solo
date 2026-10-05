@@ -31,7 +31,7 @@ function seedDatabase() {
     ) VALUES (?, 'bot_pop_scan', ?, ?, 'hunting', 'cold', '{}', ?, ?)`);
     const insertPersona = seed.prepare(`INSERT INTO bot_personas(
         characterId, version, seed, primaryDrive, archetype, traitsJson, textCard, createdAt, updatedAt
-    ) VALUES (?, 1, ?, 'progression', 'steady_achiever', ?, 'scan regression persona', 0, 0)`);
+    ) VALUES (?, 2, ?, 'progression', 'steady_achiever', ?, 'scan regression persona', 0, 0)`);
 
     const blockedTraits = {
         ambition: 0.70,
