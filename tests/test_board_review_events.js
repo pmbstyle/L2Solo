@@ -136,4 +136,54 @@ assert.deepEqual(queue.take(0), []);
 assert.deepEqual(queue.take(-1), []);
 assert.deepEqual(queue.take(Infinity), []);
 
+// A newer delivered input can arrive before a zero-change command ack.
+// Retain that input for one retry, but never spin on the same rejection.
+{
+    const ackBoard = new BoardIndex({ groupOf });
+    let actual = 1;
+    const ackQueue = new BoardReviewEvents({ board: ackBoard, counter: () => actual });
+    ackBoard.put(record(8, 80, [line(81, 7, 0)]));
+    ackQueue.counterChanged('material none', 1);
+    assert.deepEqual(ackQueue.take(1), [80]);
+    actual = 2;
+    ackQueue.counterChanged('material none', 2);
+    assert.deepEqual(ackQueue.take(1), []);
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(10), [80], 'zero-change ack retains the newer counter input exactly once');
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(10), [], 'rejected retry without newer input stays deferred');
+    ackQueue.ownerChanged(80);
+    assert.deepEqual(ackQueue.take(1), [80]);
+    actual = 3;
+    ackQueue.counterChanged('material none', 3);
+    ackBoard.put(record(8, 80, [line(81, 7, 3)]));
+    ackQueue.ownerChanged(80);
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(10), [], 'caught-up metadata consumes the newer input without a retry');
+
+    ackBoard.put(record(8, 80, [line(81, 7, 2)]));
+    ackQueue.ownerChanged(80);
+    assert.deepEqual(ackQueue.take(1), [80]);
+    actual = 4;
+    ackQueue.counterChanged('material none', 4);
+    ackQueue.defer(80);
+    assert.deepEqual(ackQueue.take(1), [], 'ordinary busy/unknown defer is always plain');
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(1), [], 'plain defer clears any old command input flag');
+    ackQueue.ownerChanged(80);
+    assert.deepEqual(ackQueue.take(1), [80]);
+    actual = 5;
+    ackQueue.counterChanged('material none', 5);
+    ackQueue.forget(80);
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(1), [], 'forget removes a flagged stale command');
+    ackQueue.ownerChanged(80);
+    assert.deepEqual(ackQueue.take(1), [80]);
+    actual = 6;
+    ackQueue.counterChanged('material none', 6);
+    ackQueue.clear();
+    ackQueue.deferAfterCommand(80);
+    assert.deepEqual(ackQueue.take(1), [], 'full clear removes all command input flags');
+}
+
 console.log('Board review event queue checks passed');

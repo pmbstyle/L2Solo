@@ -9,6 +9,7 @@ class BoardReviewEvents {
         this.ready = new Set();
         this.pending = new Set();
         this.inFlight = new Set();
+        this.changedWhileInFlight = new Set();
     }
 
     clear() {
@@ -16,6 +17,7 @@ class BoardReviewEvents {
         this.ready.clear();
         this.pending.clear();
         this.inFlight.clear();
+        this.changedWhileInFlight.clear();
     }
 
     resetCounterHistory() {
@@ -25,7 +27,8 @@ class BoardReviewEvents {
     enqueue(ownerId) {
         if (!Number.isSafeInteger(ownerId) || ownerId <= 0) return;
         this.pending.add(ownerId);
-        if (!this.inFlight.has(ownerId)) this.ready.add(ownerId);
+        if (this.inFlight.has(ownerId)) this.changedWhileInFlight.add(ownerId);
+        else this.ready.add(ownerId);
     }
 
     counterChanged(key, deals) {
@@ -63,6 +66,7 @@ class BoardReviewEvents {
         const owners = [];
         for (const ownerId of this.ready) {
             this.ready.delete(ownerId);
+            this.changedWhileInFlight.delete(ownerId);
             this.inFlight.add(ownerId);
             owners.push(ownerId);
             if (owners.length === limit) break;
@@ -74,11 +78,20 @@ class BoardReviewEvents {
         if (!this.pending.has(ownerId)) return;
         this.ready.delete(ownerId);
         this.inFlight.delete(ownerId);
+        this.changedWhileInFlight.delete(ownerId);
+    }
+
+    // A zero-change command may have newer input already waiting. Retry that
+    // input once after ack; without it, defer until a fresh external signal.
+    deferAfterCommand(ownerId) {
+        if (this.changedWhileInFlight.has(ownerId)) this.rearm(ownerId);
+        else this.defer(ownerId);
     }
 
     rearm(ownerId) {
         if (!this.pending.has(ownerId)) return;
         this.inFlight.delete(ownerId);
+        this.changedWhileInFlight.delete(ownerId);
         if (this.ownerStatus(ownerId).behind) this.enqueue(ownerId);
         else this.forget(ownerId);
     }
@@ -87,6 +100,7 @@ class BoardReviewEvents {
         this.ready.delete(ownerId);
         this.pending.delete(ownerId);
         this.inFlight.delete(ownerId);
+        this.changedWhileInFlight.delete(ownerId);
     }
 }
 
