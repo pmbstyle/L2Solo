@@ -54,14 +54,14 @@ function isBotSession(session) {
     return session.constructor?.name === 'BotSession' || session.botSession === true;
 }
 
-function trait(session, name, fallback = 0.5) {
-    const value = Number(session?.persona?.traits?.[name]);
-    return Number.isFinite(value) ? value : fallback;
+// The session's persona, else the bot's stored one (BotPersona.of).
+function personaFor(session) {
+    return BotPersona.of(session?.persona ? session : actorId(session));
 }
 
-function personaFor(session) {
-    if (session?.persona?.primaryDrive) return session.persona;
-    return BotPersona.of(actorId(session));
+function trait(session, name, fallback = 0.5) {
+    const value = Number(personaFor(session)?.traits?.[name]);
+    return Number.isFinite(value) ? value : fallback;
 }
 
 function ratio(actor, current, maximum) {

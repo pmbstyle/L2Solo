@@ -5,11 +5,18 @@ require('../src/Global');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+
+// Every bot here has a stored persona (BotPersona.of reads it).
+BotPersona.useRowSource((id) => BotPersona.tableRow(BotPersona.generate({ characterId: id })));
 
 const tank = { characterId: 1, level: 15, party: { role: 'tank' } };
 const healer = { characterId: 2, level: 15, party: { role: 'healer' } };
-const familiarBuffer = { characterId: 3, level: 15, party: { role: 'buffer' }, stats: { partyHistory: { 1: { runs: 4, lastGroupedAt: 1 } } } };
-const strangerBuffer = { characterId: 4, level: 15, party: { role: 'buffer' } };
+// The same committed persona; only the party history differs.
+const committed = { ...BotPersona.generate({ characterId: 3 }) };
+committed.traits = { ...committed.traits, commitment: 0.7 };
+const familiarBuffer = { characterId: 3, level: 15, party: { role: 'buffer' }, persona: committed, stats: { partyHistory: { 1: { runs: 4, lastGroupedAt: 1 } } } };
+const strangerBuffer = { characterId: 4, level: 15, party: { role: 'buffer' }, persona: committed };
 
 const history = PartyAffinity.recordRun(tank, [tank, healer], 100);
 assert.deepStrictEqual(history, { 2: { runs: 1, lastGroupedAt: 100 } });
