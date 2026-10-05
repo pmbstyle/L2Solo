@@ -1,6 +1,7 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
 const BoardExpiryQueue = require('./BoardExpiryQueue');
+const { BoardIndex, rowOf, recordOf } = require('./BoardIndex');
 const Actor = invoke('GameServer/Actor/Actor');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -15,7 +16,8 @@ const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const VISIBILITY_CELL_SIZE = CLIENT_VISIBILITY_RADIUS;
 // The board in memory (design section 4). A shop stands in the world as a
 // projection (an actor drawn from its snapshot); an ad or an order is an entry
-// with its store object and no actor. Both are in the per-item offer index.
+// with its store object and no actor. Every line of both is in the offer
+// index (BoardIndex), sorted best first by item and town.
 const projectionsById = new Map();
 const projectionsByOwner = new Map();
 const projectionsByCell = new Map();
@@ -23,10 +25,7 @@ const entriesById = new Map();
 const entriesByOwner = new Map();
 const pendingMatchContinuations = new Set();
 let matchGeneration = 0;
-const projectionOffersByType = new Map([
-    [SELL, new Map()],
-    [BUY, new Map()]
-]);
+const board = new BoardIndex();
 // Record deadlines (12 h of server uptime), checked every EXPIRY_TICK_MS on
 // the main thread; the clock beat records the server alive every BEAT_MS.
 const expiryQueue = new BoardExpiryQueue();
@@ -48,33 +47,20 @@ function entryStore(entry) {
     return entry?.actor ? entry.actor.fetchPrivateStore() : entry?.store;
 }
 
+// A record leaves the offer index (its id is kept on the entry: a shop's
+// projection may have carried an older record).
 function unindexProjection(projection) {
-    const indexed = projection?.indexedOffers;
-    if (!indexed) return;
-    const byItem = projectionOffersByType.get(indexed.storeType);
-    indexed.selfIds.forEach((selfId) => {
-        const projections = byItem?.get(selfId);
-        if (!projections) return;
-        projections.delete(projection);
-        if (!projections.size) byItem.delete(selfId);
-    });
-    projection.indexedOffers = null;
+    const recordId = projection?.indexedRecordId;
+    if (!recordId) return;
+    board.remove(recordId);
+    projection.indexedRecordId = null;
 }
 
 function indexProjection(projection) {
     const store = entryStore(projection);
-    const byItem = projectionOffersByType.get(Number(store?.storeType));
-    if (!byItem) return;
-    const selfIds = new Set((store.items || [])
-        .filter((line) => Number(line.count) > 0)
-        .map((line) => Number(line.selfId))
-    );
-    selfIds.forEach((selfId) => {
-        const projections = byItem.get(selfId) || new Set();
-        projections.add(projection);
-        byItem.set(selfId, projections);
-    });
-    projection.indexedOffers = { storeType: Number(store.storeType), selfIds };
+    if (![SELL, BUY].includes(Number(store?.storeType))) return;
+    board.put(recordOf(rowOf(store)), projection);
+    projection.indexedRecordId = Number(store.shopId);
 }
 
 // Every record, shop or ad, by id and by owner; its deadline in the queue.
@@ -407,7 +393,7 @@ function refreshRecord(shop) {
     if (kindOf(shop) === 'shop') return refreshProjection(shop);
     dropAd(shop.id);
     if (shop.status !== 'active' || !(shop.lines || []).some((line) => Number(line.count) > 0)) return null;
-    const entry = { shop, store: projectionStore(shop), actor: null, indexedOffers: null };
+    const entry = { shop, store: projectionStore(shop), actor: null, indexedRecordId: null };
     indexProjection(entry);
     rememberEntry(entry);
     return entry;
@@ -717,6 +703,24 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
     return entriesById.get(Number(result.shop?.id))?.shop || null;
 }
 
+// The best line on the other side that crosses an own line's price: the same
+// item and enchant, another owner, a bot on at least one side. The other
+// side's list is sorted best price first, so the walk stops at the first
+// line whose price no longer crosses.
+function crossingOffer(ownStore, line, ownerId) {
+    const selling = ownStore.storeType === SELL;
+    const price = Number(line.price);
+    const enchant = Number(line.enchant || 0);
+    for (const other of board.list(line.selfId, selling ? BUY : SELL)) {
+        if (selling ? other.price < price : other.price > price) return null;
+        if (other.ownerId === Number(ownerId) || other.enchant !== enchant) continue;
+        if (!ownStore.botOwned && !other.botOwned) continue;
+        const offer = offerOf(other);
+        if (offer) return offer;
+    }
+    return null;
+}
+
 async function matchAfkOrders(ownerId, maxTrades = 64) {
     const batchLimit = Math.max(1, Math.min(64, Math.floor(Number(maxTrades) || 64)));
     const trades = [];
@@ -726,17 +730,8 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
         for (const own of ownerEntries(ownerId)) {
             const ownStore = entryStore(own);
             for (const line of ownStore?.items || []) {
-                const opposite = offers(line.selfId, ownStore.storeType === SELL ? BUY : SELL, {
-                    characterId: ownerId
-                }).filter((offer) => (ownStore.botOwned || offer.store.botOwned)
-                    && Number(offer.storeItem.enchant || 0) === Number(line.enchant || 0)
-                    && (ownStore.storeType === SELL
-                        ? Number(offer.price) >= Number(line.price)
-                        : Number(offer.price) <= Number(line.price)))
-                    .sort((left, right) => ownStore.storeType === SELL
-                        ? Number(right.price) - Number(left.price)
-                        : Number(left.price) - Number(right.price));
-                if (opposite.length) { pair = { ownStore, line, offer: opposite[0] }; break; }
+                const offer = crossingOffer(ownStore, line, ownerId);
+                if (offer) { pair = { ownStore, line, offer }; break; }
             }
             if (pair) break;
         }
@@ -942,46 +937,66 @@ function findOwnerProjection(ownerId) {
     return projectionsByOwner.get(Number(ownerId)) || null;
 }
 
+// An index line as the offer the callers read: the record's store object and
+// its line; a shop's projection, which stands in the world.
+function offerOf(line, town = null) {
+    const entry = line.ref;
+    const store = entryStore(entry);
+    const storeItem = (store?.items || []).find((item) => Number(item.afkTradeLineId) === line.lineId);
+    if (!storeItem) return null;
+    // A shop stands in the world; an ad has no actor and no place.
+    const projection = entry.actor ? entry : null;
+    const selling = line.storeType === SELL;
+    return {
+        sourceType: selling
+            ? (store.botOwned ? 'afk_bot_store' : 'afk_player_store')
+            : (store.botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store'),
+        sourceId: Number(store.ownerId),
+        sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
+        sellerKind: store.botOwned ? 'bot' : 'player',
+        playerPriority: !store.botOwned,
+        town: store.town || town,
+        recordKind: store.kind || 'shop',
+        recordId: line.recordId,
+        lineId: line.lineId,
+        selfId: line.selfId,
+        itemName: storeItem.name || itemName(line.selfId),
+        price: line.price,
+        count: line.count,
+        enchant: line.enchant,
+        available: true,
+        projection,
+        session: projection?.session || null,
+        store,
+        storeItem,
+        locX: projection ? projection.actor.fetchLocX() : Number(entry.shop.locX || 0),
+        locY: projection ? projection.actor.fetchLocY() : Number(entry.shop.locY || 0),
+        locZ: projection ? projection.actor.fetchLocZ() : Number(entry.shop.locZ || 0)
+    };
+}
+
+// The board's offers of an item on one side, every line of every record, best
+// first (BoardIndex order): in `town` (records without a town count in every
+// town) or in every town; never the `characterId`'s own; only `enchant` when
+// given; `accept(offer)` filters, `limit` stops early.
 function offers(selfId, storeType, options = {}) {
-    const town = options.town || null;
     const excluded = Number(options.characterId || 0);
-    const candidates = projectionOffersByType.get(Number(storeType))?.get(Number(selfId)) || [];
-    return [...candidates].flatMap((entry) => {
-        const store = entryStore(entry);
-        if (Number(store.storeType) !== Number(storeType) || Number(store.ownerId) === excluded) return [];
-        if (town && store.town && String(store.town) !== String(town)) return [];
-        const line = store.items.find((item) => Number(item.selfId) === Number(selfId) && Number(item.count) > 0);
-        if (!line) return [];
-        // A shop stands in the world; an ad has no actor and no place.
-        const projection = entry.actor ? entry : null;
-        return [{
-            sourceType: storeType === SELL
-                ? (store.botOwned ? 'afk_bot_store' : 'afk_player_store')
-                : (store.botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store'),
-            sourceId: Number(store.ownerId),
-            sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
-            sellerKind: store.botOwned ? 'bot' : 'player',
-            playerPriority: !store.botOwned,
-            town: store.town || town,
-            recordKind: store.kind || 'shop',
-            selfId: Number(line.selfId),
-            itemName: line.name || itemName(line.selfId),
-            price: Number(line.price),
-            count: Number(line.count),
-            available: true,
-            projection,
-            session: projection?.session || null,
-            store,
-            storeItem: line,
-            locX: projection ? projection.actor.fetchLocX() : Number(entry.shop.locX || 0),
-            locY: projection ? projection.actor.fetchLocY() : Number(entry.shop.locY || 0),
-            locZ: projection ? projection.actor.fetchLocZ() : Number(entry.shop.locZ || 0)
-        }];
-    });
+    const enchant = options.enchant === undefined || options.enchant === null ? null : Number(options.enchant);
+    const limit = Number(options.limit) > 0 ? Number(options.limit) : Infinity;
+    const result = [];
+    for (const line of board.list(selfId, storeType, options.town || null)) {
+        if (excluded && line.ownerId === excluded) continue;
+        if (enchant !== null && line.enchant !== enchant) continue;
+        const offer = offerOf(line, options.town || null);
+        if (!offer || (options.accept && !options.accept(offer))) continue;
+        result.push(offer);
+        if (result.length >= limit) break;
+    }
+    return result;
 }
 
 function activeDemandSelfIds() {
-    return [...(projectionOffersByType.get(BUY)?.keys() || [])];
+    return board.selfIds(BUY);
 }
 
 function clearBoard() {
@@ -993,7 +1008,7 @@ function clearBoard() {
     entriesById.clear();
     entriesByOwner.clear();
     expiryQueue.clear();
-    projectionOffersByType.forEach((byItem) => byItem.clear());
+    board.clear();
 }
 
 // Restores the board at start. The old world's bot records close once
@@ -1141,6 +1156,7 @@ module.exports = {
     SELL,
     restorePlace,
     activeShops,
+    boardIndex: () => board,
     activeDemandSelfIds,
     activate,
     beat,

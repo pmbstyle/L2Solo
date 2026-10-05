@@ -7,10 +7,10 @@ DataCache.init();
 
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 
-// Offers of equal price keep their listing order: the sort key is price,
-// then a player before a bot, then the NPC last. Bot asks of the same price
-// have no further key, so the comparator must call them equal. The asks are
-// board records (sell ads) in memory.
+// Offers of equal price keep a stable order: the sort key is price, then a
+// player before a bot, then the NPC last, then the record id (the order the
+// records were listed in). The asks are board records (sell ads) in memory;
+// the board itself lists them in that order.
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const ITEM = 1865;
 let recordId = 990000;
@@ -22,7 +22,7 @@ const ad = (ownerId, price, selfId = ITEM, account = `bot_${ownerId}`) => AfkTra
 
 [ad(990301, 100), ad(990302, 100), ad(990303, 90), ad(990304, 100)];
 const listed = AfkTrade.offers(ITEM, AfkTrade.SELL).map((offer) => offer.sourceId);
-assert.deepStrictEqual(listed, [990301, 990302, 990303, 990304]);
+assert.deepStrictEqual(listed, [990303, 990301, 990302, 990304], 'the board lists the best line first');
 assert.deepStrictEqual(MarketOpportunity.findOffers(ITEM).map((offer) => offer.sourceId),
     [990303, 990301, 990302, 990304], 'equal-price bot asks must keep their listing order');
 AfkTrade._resetForTests();
