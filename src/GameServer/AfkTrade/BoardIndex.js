@@ -108,6 +108,8 @@ class BoardIndex {
         this.groupOf = groupOf;
         // group -> open sell lines
         this.groupLines = new Map();
+        // counter -> priced bot owner -> number of surviving lines, on both sides
+        this.counterOwners = new Map();
     }
 
     clear() {
@@ -115,12 +117,28 @@ class BoardIndex {
         this.records.clear();
         this.owners.clear();
         this.groupLines.clear();
+        this.counterOwners.clear();
     }
 
     countGroup(line, step) {
         if (!this.groupOf || line.storeType !== SELL) return;
         const group = this.groupOf(line.selfId);
         this.groupLines.set(group, (this.groupLines.get(group) || 0) + step);
+    }
+
+    countPricedOwner(line, step) {
+        if (!this.groupOf || !line.botOwned || !line.pricing) return;
+        const counter = this.groupOf(line.selfId);
+        let owners = this.counterOwners.get(counter);
+        if (!owners) {
+            if (step < 0) return;
+            owners = new Map();
+            this.counterOwners.set(counter, owners);
+        }
+        const count = (owners.get(line.ownerId) || 0) + step;
+        if (count > 0) owners.set(line.ownerId, count);
+        else owners.delete(line.ownerId);
+        if (!owners.size) this.counterOwners.delete(counter);
     }
 
     // record: { id, kind, storeType, ownerId, town, botOwned, lines: [{ lineId,
@@ -168,6 +186,7 @@ class BoardIndex {
             insert(town, line);
             indexed.push(line);
             this.countGroup(line, 1);
+            this.countPricedOwner(line, 1);
         }
         if (!indexed.length) return;
         this.records.set(id, indexed);
@@ -186,6 +205,7 @@ class BoardIndex {
         if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
             this.countGroup(line, -1);
+            this.countPricedOwner(line, -1);
             const items = this.sides.get(line.storeType);
             const item = items.get(line.selfId);
             if (!item) continue;
@@ -270,6 +290,12 @@ class BoardIndex {
     // The open sell lines of a group (see groupOf).
     linesIn(group) {
         return this.groupLines.get(group) || 0;
+    }
+
+    // Unique bot owners with priced, stocked lines of this counter, SELL or
+    // BUY. A readonly iterator, so waking a counter costs O(affected owners).
+    ownersForCounter(counter) {
+        return this.counterOwners.get(counter)?.keys() || EMPTY;
     }
 
     // A worker's index follows its 'board' table (TableMirror.watch): every
