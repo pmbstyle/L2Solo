@@ -1,4 +1,5 @@
 const { decide } = require('./ColdCompetitionPolicy');
+const Visible = require('../../Social/VisibleStrength');
 const BotErrands = require('./BotErrands');
 // A party competes as one unit only when no member is on one of these errands.
 const PARTY_MEMBER_BUSY_FLAGS = ['pvpEncounter', 'supplyErrand', 'warehouseWorkflow', 'marketReturn'];
@@ -164,7 +165,8 @@ class ColdCompetitionMonitor {
             if (!ab.ready || !ba.ready) { this.report.skipped.memory++; continue; }
             const decisionRolls = Array.from({ length: 4 }, () => rng());
             let decisionIndex = 0;
-            const outcome = decide({ pressure: group.pressure, actor, peer, towardPeer: ab, towardActor: ba,
+            const look = unit => ({ ...unit, look: Visible.best(unit.members.map(Visible.stateLook)) });
+            const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++] });
             // Cooling down a conflict must not prevent leaving the spot or cooperating.
             if (outcome.action === 'contest' && conflictCooling) { this.report.skipped.conflictCooldown++; continue; }

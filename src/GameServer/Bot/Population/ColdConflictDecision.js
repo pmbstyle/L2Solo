@@ -1,4 +1,5 @@
 const Policy = require('../../Social/ResourceCompetitionPolicy');
+const Visible = require('../../Social/VisibleStrength');
 
 // A forecast lives for a few seconds. Reassess it against current participants
 // before taking leases; never turn ordinary state writes into cancelled meetings.
@@ -37,7 +38,8 @@ function refresh(event, { life, parties, memory, personaFor }, timestamp) {
             return { reason: 'invalid_decision_rolls' };
         }
         let index = 0;
-        decision = Policy.decide({ pressure: event.pressure, actor: a.participant, peer: b.participant,
+        const look = side => ({ ...side.participant, look: Visible.best(side.members.map(Visible.stateLook)) });
+        decision = Policy.decide({ pressure: event.pressure, actor: look(a), peer: look(b),
             actorPersona: personaFor(a.state), peerPersona: personaFor(b.state),
             towardPeer: ab, towardActor: ba, rng: () => rolls[index++] });
         if (decision.action !== 'contest') return { reason: 'decision_changed', decision: decision.action };

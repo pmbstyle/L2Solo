@@ -26,24 +26,35 @@ function dispute(actor, peer, persona = calm, toward = neutral) {
         towardPeer: toward, towardActor: neutral, rng: () => rolls.shift() });
 }
 const solo = (level, extra = {}) => ({ level, size: 1, partyId: null, ...extra });
+const V = require('../src/GameServer/Social/VisibleStrength');
+const C = V.look('c', 0, 'c'), D = V.look('d', 0, 'd');
 assert.strictEqual(dispute(solo(40), solo(40)).action, 'yield', 'equal: no retreat on a 0.1 roll');
-assert.strictEqual(dispute(solo(40), solo(43)).action, 'yield', 'three levels is inside the margin');
-assert.deepStrictEqual([dispute(solo(40), solo(44)).action, dispute(solo(40), solo(44)).reason], ['avoid', 'outmatched'],
-    'four levels above: outmatched');
-assert.strictEqual(dispute(solo(40), { level: 40, size: 2, partyId: 'p' }).reason, 'outmatched', 'a pair outmatches a solo of the same level');
+// U26: a level is not visible; a higher grade is.
+assert.strictEqual(dispute(solo(40, { look: D }), solo(44, { look: D })).action, 'yield', 'four hidden levels above look even');
+assert.deepStrictEqual([dispute(solo(40, { look: D }), solo(40, { look: C })).action, dispute(solo(40, { look: D }), solo(40, { look: C })).reason],
+    ['avoid', 'outmatched'], 'a visibly higher grade outmatches');
+assert.strictEqual(dispute(solo(40, { look: C }), solo(44, { look: D })).action, 'yield', 'a visibly lower grade does not');
+assert.strictEqual(dispute(solo(40), { level: 40, size: 2, partyId: 'p' }).reason, 'outmatched', 'a pair outmatches a solo of the same look');
+// U26: an even look falls to the author's defense threshold by traits.
+const wary = { traits: { ...calm.traits, caution: 0.8, assertiveness: 0.3 } };
+assert.strictEqual(dispute(solo(40), solo(40), wary).reason, 'outmatched', 'the cautious feel outmatched by an even look');
+assert.strictEqual(dispute(solo(40), solo(40), calm, { ready: true, personal: { fear: 6, affinity: 0, trust: 0, hostility: 0 } }).reason,
+    'outmatched', 'fear of him: outmatched by an even look');
 
 // The cold refresh re-asks the same question with the saved rolls.
 {
-    const cold = (id, level) => ({ characterId: id, level, party: null, simulation: { revision: 1 } });
-    const states = { 1: cold(1, 40), 2: cold(2, 44) };
+    const gear = rank => ({ 1: { selfId: 1, amount: 1, rank, equipped: true, equippedSlots: [7], instances: [{ enchant: 0, equipped: true, slot: 7 }] } });
+    const cold = (id, level, rank = 'd') => ({ characterId: id, level, party: null, simulation: { revision: 1 }, inventory: gear(rank) });
+    const states = { 1: cold(1, 40), 2: cold(2, 40, 'c') };
     const ctx = { life: { cachedState: id => states[id] }, parties: { find: () => null },
         memory: { assess: () => neutral }, personaFor: () => calm };
     const event = { contextVersion: 1, action: 'contest', pressure: 3, decisionRolls: [0.99, 0.1, 0.99, 0.99],
         actor: { id: 1 }, peer: { id: 2 } };
     assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'avoid' },
-        'cold refresh: four levels above is outmatched');
-    states[2] = cold(2, 40);
-    assert.strictEqual(Refresh.refresh(event, ctx, Date.now()).reason, 'decision_changed', 'cold refresh: equal yields');
+        'cold refresh: a visibly higher weapon grade outmatches');
+    states[2] = cold(2, 44);
+    assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'yield' },
+        'cold refresh: four hidden levels above look even');
 }
 
 // ---- 2. Cold PvP start (the opening side may refuse).

@@ -1,4 +1,5 @@
 const Policy = require('../../Social/ResourceCompetitionPolicy');
+const Visible = require('../../Social/VisibleStrength');
 const WAIT_MS = 15000, COOLDOWN_MS = 120000;
 const report = { decisions: {}, yields: 0, avoids: 0, parties: 0, recruits: 0, rejected: 0, recent: [] };
 const id = s => Number(s?.actor?.fetchId?.() || 0);
@@ -118,7 +119,8 @@ function beforeAttack(session, mob, now = Date.now(), rng = Math.random) {
     const supply = Math.max(1, nearby.filter(n => n.fetchKind?.() === 'Monster' && n.fetchSelfId() === npcId
         && threats().alive(n) && n.fetchHp() > 0 && Math.abs(n.fetchLocZ() - session.actor.fetchLocZ()) < 500).length);
     const unit = s => ({ partyId: s.party?.partyId, size: s.sessions.length,
-        level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length });
+        level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length,
+        look: Visible.best(s.sessions.map(m => Visible.actorLook(m.actor))) });
     const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
     const outcome = Policy.decide({ pressure: (all.length / supply), actor: unit(a), peer: unit(b),
         towardPeer: ab, towardActor: ba, actorPersona: Voice.profile(session), peerPersona: Voice.profile(claimant.session), rng });
