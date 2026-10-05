@@ -1,18 +1,12 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const DataCache = invoke('GameServer/DataCache');
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
 const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
-const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const OfferOrder = require('./OfferOrder');
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
-let rankIndexSource = null;
-let rankIndexSize = -1;
-let rankBySelfId = new Map();
-let kindBySelfId = new Map();
-let materialRanksBySelfId = new Map();
 
 // The starter villages and the captured plaza centre their market travel goes to.
 const NO_GRADE_MARKETS = Object.freeze(['Talking Island', 'Elven Village', 'Dark Elven Village', 'Orc Village', 'Dwarven Village']
@@ -38,33 +32,11 @@ function nearestNoGradeMarket(loc = {}) {
         .sort((a, b) => a.distance - b.distance)[0] || null;
 }
 
+// The grade of an item by the one static classifier (E47,
+// MarketCounters.counterOf); a row without an item id keeps its own rank.
 function rankOf(item) {
-    const selfId = Number(item?.selfId || 0);
-    const items = DataCache.items || [];
-    if (rankIndexSource !== items || rankIndexSize !== items.length) {
-        rankIndexSource = items;
-        rankIndexSize = items.length;
-        rankBySelfId = new Map(items.map((candidate) => [Number(candidate.selfId), candidate?.etc?.rank || 'none']));
-        kindBySelfId = new Map(items.map((candidate) => [Number(candidate.selfId), candidate?.template?.kind || '']));
-        materialRanksBySelfId = new Map();
-        Object.values(C4RecipeItems.loadRecipeItems()).forEach((recipe) => {
-            const productRank = String(rankBySelfId.get(Number(recipe.productId)) || 'none').toLowerCase();
-            (recipe.materials || []).forEach((material) => {
-                const id = Number(material.selfId);
-                if (!materialRanksBySelfId.has(id)) materialRanksBySelfId.set(id, new Set());
-                materialRanksBySelfId.get(id).add(productRank);
-            });
-        });
-    }
-    const directRank = String(item?.rank || rankBySelfId.get(selfId) || 'none').toLowerCase();
-    if (directRank !== 'none') return directRank;
-    if (ItemDisposition.isMarketRecipeItem(item)) return ItemDisposition.recipeProductRank(item);
-    const kind = String(item?.kind || kindBySelfId.get(selfId) || '');
-    if (!kind.startsWith('Other.Material')) return directRank;
-    const productRanks = materialRanksBySelfId.get(selfId);
-    // A part used for one equipment grade follows that grade. Shared crafting
-    // resources keep their no-grade routing because they serve many tiers.
-    return productRanks?.size === 1 ? [...productRanks][0] : directRank;
+    if (Number(item?.selfId) > 0) return MarketCounters.gradeOf(item.selfId);
+    return String(item?.rank || 'none').toLowerCase();
 }
 
 function dGradeMarketFor(state = {}) {

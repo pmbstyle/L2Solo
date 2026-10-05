@@ -41,7 +41,35 @@ function gradeInName(name) {
     return found ? found[1].toLowerCase() : 'none';
 }
 
-// The counter of an item: 'gear d', 'shot none', 'recipe c', 'material b'.
+// The grade of a recipe's product: its own rank, else the grade in its name (shots).
+function productGrade(productId) {
+    const product = template(productId);
+    return String(product?.etc?.rank || gradeInName(product?.template?.name) || 'none').toLowerCase();
+}
+
+// The author's rule for parts (MarketTownPolicy): a material used only by
+// products of one grade is of that grade; one shared by several grades has
+// none. selfId -> Set of product grades, built once.
+let productGradesByMaterial = null;
+function partGrade(selfId) {
+    if (!productGradesByMaterial) {
+        productGradesByMaterial = new Map();
+        for (const recipe of Object.values(C4RecipeItems.loadRecipeItems())) {
+            const grade = productGrade(recipe.productId);
+            for (const material of recipe.materials || []) {
+                const id = Number(material.selfId);
+                if (!productGradesByMaterial.has(id)) productGradesByMaterial.set(id, new Set());
+                productGradesByMaterial.get(id).add(grade);
+            }
+        }
+    }
+    const grades = productGradesByMaterial.get(Number(selfId));
+    return grades?.size === 1 ? [...grades][0] : 'none';
+}
+
+// The one static classifier of an item (E47): its counter 'kind grade', as
+// 'gear d', 'shot d', 'recipe c', 'material b'. The market counters and the
+// shop town (MarketTownPolicy) read it.
 function counterOf(selfId) {
     const id = Number(selfId);
     const cached = counterCache.get(id);
@@ -52,13 +80,19 @@ function counterOf(selfId) {
     if (item?.etc?.slot !== undefined) key = `gear ${String(item.etc.rank || 'none').toLowerCase()}`;
     else if (kind === 'Other.Shot') key = `shot ${gradeInName(item.template.name)}`;
     else if (kind.startsWith('Other.Recipe') && C4RecipeItems.resolve(id)) {
-        const product = template(C4RecipeItems.resolve(id).productId);
-        const rank = product?.etc?.rank || gradeInName(product?.template?.name);
-        key = `recipe ${String(rank || 'none').toLowerCase()}`;
-    } else key = `material ${/^(Crystal|Gemstone)/.test(String(item?.template?.name || '')) ? gradeInName(item.template.name) : 'none'}`;
+        key = `recipe ${productGrade(C4RecipeItems.resolve(id).productId)}`;
+    } else {
+        const named = /^(Crystal|Gemstone)/.test(String(item?.template?.name || '')) ? gradeInName(item.template.name) : 'none';
+        key = `material ${named === 'none' && kind.startsWith('Other.Material') ? partGrade(id) : named}`;
+    }
     if (!/ (none|d|c|b|a|s)$/.test(key)) key = `${key.split(' ')[0]} none`;
     counterCache.set(id, key);
     return key;
+}
+
+// The grade part of an item's counter: 'none', 'd'..'s'.
+function gradeOf(selfId) {
+    return counterOf(selfId).split(' ')[1];
 }
 
 function firstPriceOf(selfId, timestamp) {
@@ -222,5 +256,5 @@ function reset() {
     mirror = null;
 }
 
-module.exports = { STARTING_MOVE, COUNTER_KEYS, counterOf, deal, load, counter, moveOf, itemDeals, firstPrice, publish, useTable,
+module.exports = { STARTING_MOVE, COUNTER_KEYS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, firstPrice, publish, useTable,
     useSpots, reset };

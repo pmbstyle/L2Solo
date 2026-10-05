@@ -17,6 +17,11 @@ assert.strictEqual(MarketCounters.counterOf(1835), 'shot none');
 assert.strictEqual(MarketCounters.counterOf(1804), 'recipe d', 'Recipe: Soulshot: D-Grade makes a D shot');
 assert.strictEqual(MarketCounters.counterOf(1864), 'material none', 'Stem');
 assert.strictEqual(MarketCounters.counterOf(1458), 'material d', 'Crystal: D-Grade');
+// A part used only by products of one grade has that grade (the author's
+// MarketTownPolicy rule, one classifier since E47); a shared one has none.
+const part = invoke('GameServer/DataCache').items.find((item) => item.template?.name === 'Moonstone Earring Wire');
+assert.strictEqual(MarketCounters.counterOf(part.selfId), 'material c', 'a C-grade earring part');
+assert.strictEqual(MarketCounters.gradeOf(1463), 'd');
 
 const channel = new ColdTableChannel();
 const mirror = new TableMirror();
