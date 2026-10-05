@@ -1,0 +1,173 @@
+const fs = require('fs');
+const path = require('path');
+const ProgressionRates = invoke('GameServer/ProgressionRates');
+
+// The world spot table (market-sim step 3.3(c), N44): what an hour of solo
+// hunting on a spot gives a bot of a role and level, with shots or without.
+// scripts/generate-spot-table.js measures it offline with the author's cold
+// combat and writes data/Bots/spot-table.json; each thread (main and the cold
+// worker) loads that file once on first use. A lookup is O(1).
+//
+// Per spot, role and shots the file keeps one row measured at a reference
+// level; per role and spot level band a curve says how each value changes
+// with the bot's level over the spot's level. Kills are capped by what the
+// spot's monster count allows. Values are at rate x1; the server's rates are
+// applied here.
+const DEFAULT_FILE = path.resolve(__dirname, '../../../../data/Bots/spot-table.json');
+
+let table = null;
+let file = DEFAULT_FILE;
+
+// A curve with no value at a gap (no curve spot hunts there) takes the
+// nearest higher gap's value, else the nearest lower one.
+function filled(values, neutral) {
+    const out = values.slice();
+    for (let i = 0; i < out.length; i++) {
+        if (out[i] !== null) continue;
+        let j = i + 1;
+        while (j < out.length && values[j] === null) j++;
+        if (j < out.length) { out[i] = values[j]; continue; }
+        j = i - 1;
+        while (j >= 0 && values[j] === null) j--;
+        out[i] = j >= 0 ? values[j] : neutral;
+    }
+    return out;
+}
+
+function load() {
+    if (table) return table;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const field = (fields, name) => {
+        const index = fields.indexOf(name);
+        if (index < 0) throw new Error(`spot table: missing field ${name}`);
+        return index;
+    };
+    const roleIndex = new Map(raw.roles.map((role, index) => [role, index]));
+    const spotIndex = new Map(raw.spots.map((spot, index) => [String(spot[0]), index]));
+    // A role without any measured curve keeps its rows' values at every gap.
+    const neutral = Object.fromEntries(raw.curveFields.map((name) => [name, raw.gaps.map(() => (name === 'deaths' ? 0 : 1))]));
+    const maxBand = Math.max(0, ...raw.spots.map((spot) => Math.floor(spot[1] / raw.header.inputs.bandLevels)));
+    // curves[role][band]: every band takes its own curve, else the nearest
+    // measured band of the role, lower first.
+    const curves = raw.roles.map((role) => {
+        const measured = raw.curves[role] || {};
+        const byBand = new Map(Object.entries(measured).map(([band, curve]) => [Number(band), Object.fromEntries(
+            raw.curveFields.map((name) => [name, filled(curve[name], name === 'deaths' ? 0 : 1)]))]));
+        const out = [];
+        for (let band = 0; band <= maxBand; band++) {
+            let curve = null;
+            for (let distance = 0; !curve && distance <= maxBand + 1; distance++) {
+                curve = byBand.get(band - distance) || byBand.get(band + distance) || null;
+            }
+            out.push(curve || neutral);
+        }
+        return out;
+    });
+    table = {
+        header: raw.header,
+        roles: raw.roles,
+        roleIndex,
+        spotIndex,
+        spots: raw.spots,
+        rows: raw.rows,
+        curves,
+        gaps: raw.gaps,
+        shotsIndex: new Map(raw.shots.map((shots, index) => [Boolean(shots), index])),
+        bandLevels: raw.header.inputs.bandLevels,
+        maxLevel: raw.header.inputs.maxLevel,
+        f: {
+            minGap: field(raw.rowFields, 'minGap'), refGap: field(raw.rowFields, 'refGap'), kph: field(raw.rowFields, 'kph'),
+            busy: field(raw.rowFields, 'busy'), deaths: field(raw.rowFields, 'deaths'), exp: field(raw.rowFields, 'exp'),
+            sp: field(raw.rowFields, 'sp'), adena: field(raw.rowFields, 'adena'), loot: field(raw.rowFields, 'loot'),
+            shots: field(raw.rowFields, 'shots'), potions: field(raw.rowFields, 'potions')
+        }
+    };
+    return table;
+}
+
+// A curve's value at any gap: linear between the measured gaps, flat beyond.
+function at(values, gaps, gap) {
+    if (gap <= gaps[0]) return values[0];
+    const last = gaps.length - 1;
+    if (gap >= gaps[last]) return values[last];
+    const step = gaps[1] - gaps[0];
+    const index = Math.floor((gap - gaps[0]) / step);
+    const share = (gap - gaps[index]) / step;
+    return values[index] + (values[index + 1] - values[index]) * share;
+}
+
+// The C4 exp/SP penalty for monsters far below the killer (problem E11) is
+// not in the author's combat today; step 3.5(a) puts its factor here.
+function expGapFactor(_gap) {
+    return 1;
+}
+
+// What one hour of solo hunting gives: kills, deaths, exp, SP, adena, loot at
+// the NPC buy-back, shots and potions used, and the share of the hour spent in
+// combat and recovery (the bots' own records count only that share). Null
+// when the spot or role is unknown or the bot finds no target it may fight
+// alone there at this level.
+function value(spotId, role, level, shots = true) {
+    const t = load();
+    const s = t.spotIndex.get(String(spotId));
+    const r = t.roleIndex.get(role);
+    if (s === undefined || r === undefined) return null;
+    const row = t.rows[s][r * t.shotsIndex.size + t.shotsIndex.get(Boolean(shots))];
+    if (!row) return null;
+    const [, spotLevel, , spotCap, pull] = t.spots[s];
+    const gap = Math.min(t.maxLevel, Number(level)) - spotLevel;
+    if (!(gap >= row[t.f.minGap])) return null;
+    const curve = t.curves[r][Math.floor(spotLevel / t.bandLevels)];
+    const refGap = row[t.f.refGap];
+    const ratio = (name) => {
+        const reference = at(curve[name], t.gaps, refGap);
+        return reference > 0 ? at(curve[name], t.gaps, gap) / reference : 1;
+    };
+    const kills = Math.min(row[t.f.kph] * ratio('kph'), spotCap) * pull;
+    if (!(kills > 0)) return null;
+    const rates = ProgressionRates.profile();
+    const exp = row[t.f.exp] * ratio('exp') * expGapFactor(gap);
+    const busy = row[t.f.busy] * ratio('busy');
+    return {
+        kills,
+        deaths: kills * Math.max(0, row[t.f.deaths] + at(curve.deaths, t.gaps, gap) - at(curve.deaths, t.gaps, refGap)),
+        exp: kills * exp * rates.exp,
+        sp: kills * row[t.f.sp] * ratio('exp') * expGapFactor(gap) * rates.sp,
+        adena: kills * row[t.f.adena] * ratio('adena') * rates.adena,
+        // Loot follows the adena curve: same drop groups and deep-blue rule.
+        loot: kills * row[t.f.loot] * ratio('adena') * rates.drop,
+        shots: kills * row[t.f.shots] * ratio('busy'),
+        potions: kills * row[t.f.potions] * ratio('busy'),
+        busyShare: Math.min(1, kills * busy / 3600)
+    };
+}
+
+// The level of a spot in the table (its monsters' average), or null.
+function spotLevel(spotId) {
+    const t = load();
+    const s = t.spotIndex.get(String(spotId));
+    return s === undefined ? null : t.spots[s][1];
+}
+
+// The level the table measured the spot at for the role: where the role
+// hunts it in the author's combat.
+function referenceLevel(spotId, role, shots = true) {
+    const t = load();
+    const s = t.spotIndex.get(String(spotId));
+    const r = t.roleIndex.get(role);
+    if (s === undefined || r === undefined) return null;
+    const row = t.rows[s][r * t.shotsIndex.size + t.shotsIndex.get(Boolean(shots))];
+    return row ? t.spots[s][1] + row[t.f.refGap] : null;
+}
+
+function roles() {
+    return load().roles;
+}
+
+// Tests: read another file, or the default one again.
+function useFile(next = DEFAULT_FILE) {
+    file = next;
+    table = null;
+}
+
+module.exports = { value, spotLevel, referenceLevel, roles, useFile, expGapFactor, DEFAULT_FILE };

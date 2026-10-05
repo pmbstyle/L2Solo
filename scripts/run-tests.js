@@ -55,6 +55,8 @@ const tests = [
     'tests/test_bot_action_feedback.js',
     'tests/test_bot_armor_policy.js',
     'tests/test_bot_hunt_efficiency.js',
+    'tests/test_spot_value_table.js',
+    'tests/test_spot_table_generator.js',
     'tests/test_bot_solo_hunt_safety.js',
     'tests/test_bot_routing_thresholds.js',
     'tests/test_bot_pvp_focus_policy.js',
