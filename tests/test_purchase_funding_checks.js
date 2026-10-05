@@ -52,7 +52,9 @@ assert(fundedAt(minimum), 'planner: funded at the computed minimum');
 assert.strictEqual(fundedAt(minimum - 1), null, 'planner: one short');
 
 // 5. WTB bid: spendable = wallet - max(plan reserve, operating reserve).
-// (Before 2026-10-02: max(100, plan reserve, 10% of the wallet).)
+// (Before 2026-10-02: max(100, plan reserve, 10% of the wallet).) The bid
+// itself is the bot's belief (group E), never above the plan's price or
+// what it may spend.
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const template = DataCache.items.find((item) => Number(item.selfId) === Number(plan.target.selfId));
 const fair = BotMarketPricing.priceAt({ selfId: plan.target.selfId, basePrice: Number(template.template.price) }, 0.85);
@@ -61,8 +63,9 @@ const bidGoal = { type: 'upgrade_gear', target: { itemId: plan.target.selfId, ad
 for (const adena of [price, Math.floor(fair) + reserve - 5000]) {
     const bid = BuyStoreService.bidFor({ ...base, adena }, bidGoal);
     const spendable = adena - Math.max(reserve, 500, 30 * 250, Math.ceil(adena * 0.1));
-    assert.strictEqual(bid?.price, Math.floor(Math.min(fair, price, spendable)), `bid at ${adena}`);
+    assert(bid && bid.price * bid.count <= Math.min(price, spendable), `bid at ${adena}`);
 }
+assert.strictEqual(BuyStoreService.bidFor({ ...base, adena: reserve }, bidGoal), null, 'bid: nothing spendable, no bid');
 
 // 6. Party review: a member in the wrong armour class leaves to buy its NPC
 // replacement only when it can pay for it (was a closure in the cold worker).
