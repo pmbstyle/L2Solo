@@ -25,15 +25,16 @@ const market = {
     get TOWN_NPC_SELLERS() { return context.towns || {}; },
     npcOffersAll: (id) => npcOffers.get(Number(id)) || [],
     bestOffer(id, options = {}) {
-        return [...(offers.get(Number(id)) || []), ...(npcOffers.get(Number(id)) || [])]
+        const towns = options.town ? [options.town] : options.towns || null;
+        return OfferOrder.best([...(offers.get(Number(id)) || []), ...(npcOffers.get(Number(id)) || [])]
             .filter((offer) => offer.available !== false && Number(offer.count ?? 1) > 0
-                && Number(offer.price) > 0 && Number(offer.price) <= Number(options.budget ?? Infinity)
-                && (!offer.town || offer.town === options.town)
-                && !(offer.sourceType === 'cold_store' && !offer.town && options.town)
-                && (!['cold_store', 'afk_player_store', 'afk_bot_store'].includes(offer.sourceType)
-                    || Number(offer.sourceId) !== Number(options.buyerCharacterId)))
-            .map((offer) => offer.town ? offer : { ...offer, town: options.town || null })
-            .sort((a, b) => OfferOrder.compareOffers(a, b))[0] || null;
+                && Number(offer.price) > 0
+                && (!offer.town || !towns || towns.includes(offer.town))
+                && (!['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)
+                    || Number(offer.sourceId) !== Number(options.buyerCharacterId))
+                && (!options.accept || options.accept(offer)))
+            .map((offer) => offer.town || towns?.length !== 1 ? offer : { ...offer, town: towns[0] }),
+        { budget: Number(options.budget ?? Infinity), cost: options.cost });
     }
 };
 const stubs = new Map([

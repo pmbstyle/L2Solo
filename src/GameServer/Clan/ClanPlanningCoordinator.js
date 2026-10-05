@@ -150,8 +150,8 @@ const staticMarketBuilds = new Map();
 
 function offerRow(offer) {
     // Live sessions, actors and mutable store entries never cross the boundary.
-    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority } = offer;
-    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority };
+    const { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority, recordId, lineId } = offer;
+    return { selfId, sourceType, sourceId, town, price, count, available, sellerKind, playerPriority, recordId, lineId };
 }
 
 async function context() {

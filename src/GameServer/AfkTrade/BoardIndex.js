@@ -68,6 +68,29 @@ function recordOf(row) {
     };
 }
 
+// A line as an offer of the board, the fields every thread reads; the main
+// thread adds the record's store and stall (AfkTradeService).
+function offerFields(line, town = null) {
+    const selling = line.storeType === SELL;
+    return {
+        sourceType: selling
+            ? (line.botOwned ? 'afk_bot_store' : 'afk_player_store')
+            : (line.botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store'),
+        sourceId: line.ownerId,
+        sellerKind: line.botOwned ? 'bot' : 'player',
+        playerPriority: !line.botOwned,
+        town: line.town || town,
+        recordKind: line.kind,
+        recordId: line.recordId,
+        lineId: line.lineId,
+        selfId: line.selfId,
+        price: line.price,
+        count: line.count,
+        enchant: line.enchant,
+        available: true
+    };
+}
+
 class BoardIndex {
     constructor() {
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
@@ -172,6 +195,26 @@ class BoardIndex {
         return null;
     }
 
+    // The best line of each town the caller accepts (BoardIndex order), skipping
+    // `excludeOwner`: in `towns`, with the records without a town, or in every
+    // town. At most one line per town: O(T log n) for a buyer who weighs
+    // every town.
+    heads(selfId, storeType, { towns = null, excludeOwner = 0, accept = null } = {}) {
+        const item = this.sides.get(Number(storeType))?.get(Number(selfId));
+        if (!item) return [];
+        const keys = towns ? [...new Set([...towns, null])] : [...item.towns.keys()];
+        const heads = [];
+        for (const key of keys) {
+            for (const line of item.towns.get(key) || EMPTY) {
+                if (excludeOwner && line.ownerId === Number(excludeOwner)) continue;
+                if (accept && !accept(line)) continue;
+                heads.push(line);
+                break;
+            }
+        }
+        return heads;
+    }
+
     // The items with at least one line on a side.
     selfIds(storeType) {
         return [...(this.sides.get(Number(storeType))?.keys() || [])];
@@ -187,4 +230,4 @@ class BoardIndex {
     }
 }
 
-module.exports = { BoardIndex, SELL, BUY, compareLines, rowOf, recordOf };
+module.exports = { BoardIndex, SELL, BUY, compareLines, offerFields, rowOf, recordOf };

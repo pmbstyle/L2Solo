@@ -211,7 +211,7 @@ async function reviewDemand(state, now) {
     for (const line of restock.shops) {
         try {
             const trade = await AfkTrade.buyFromShop(state.characterId, line.offer.store, plan.selfId, line.amount,
-                { expectedPrice: line.price, coldState: state });
+                { lineId: line.offer.lineId, expectedPrice: line.price, coldState: state });
             boughtAmount += line.amount;
             spent += line.cost;
             if (trade.coldState) {
@@ -284,7 +284,7 @@ async function obtainRecipe(state, recipe, now) {
     if (!offer) return state;
     try {
         const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, itemId, 1,
-            { expectedPrice: Number(offer.price), coldState: state });
+            { lineId: offer.lineId, expectedPrice: Number(offer.price), coldState: state });
         if (!trade.coldState) return state;
         const learned = await LifeState.learnCraftableRecipes(trade.coldState) || trade.coldState;
         if (!(learned.stats?.lastRecipeBookLearning?.learned || [])
@@ -451,7 +451,7 @@ async function buyMaterial(state, selfId, amount, npcPrice, index, maxPrice = np
         const count = Math.min(missing, Number(offer.count));
         try {
             const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, selfId, count,
-                { expectedPrice: Number(offer.price), coldState: state });
+                { lineId: offer.lineId, expectedPrice: Number(offer.price), coldState: state });
             if (!trade.coldState) break;
             state = trade.coldState;
             missing -= count;
@@ -481,7 +481,8 @@ async function obtainCrystals(state, candidate, batches) {
                 && Number(row.count) >= needed - availableMaterial(state, candidate.crystalId));
         if (!offer) return null;
         const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, candidate.crystalId,
-            needed - availableMaterial(state, candidate.crystalId), { expectedPrice: gear.price, coldState: state, autoEquip: false });
+            needed - availableMaterial(state, candidate.crystalId),
+            { lineId: offer.lineId, expectedPrice: gear.price, coldState: state, autoEquip: false });
         return trade.coldState || null;
     }
     const [skill] = await Database.fetchSkill(state.characterId, 248);
@@ -508,7 +509,7 @@ async function obtainCrystals(state, candidate, batches) {
                 && Number(row.count) > 0 && !Number(row.storeItem?.enchant || 0));
         if (!offer) return null;
         const trade = await AfkTrade.buyFromShop(state.characterId, offer.store, gear.selfId, 1,
-            { expectedPrice: gear.price, coldState: state, autoEquip: false });
+            { lineId: offer.lineId, expectedPrice: gear.price, coldState: state, autoEquip: false });
         if (!trade.coldState) return null;
         state = trade.coldState;
     } else if (gear.source === 'npc') {

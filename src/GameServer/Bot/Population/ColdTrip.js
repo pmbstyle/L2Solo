@@ -166,5 +166,5 @@ function travellerAnswers(state) {
 
 module.exports = {
     AUTHOR_TRIP_MS, RUN_SPEED, TOWN_RADIUS, HOP_MS,
-    honest, authorWalkMs, runMs, point, toTown, toSpot, spotPlan, spotTripMs, positionAt, travellerAnswers
+    honest, authorWalkMs, runMs, point, townPlan, toTown, toSpot, spotPlan, spotTripMs, positionAt, travellerAnswers
 };

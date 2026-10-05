@@ -7,6 +7,7 @@ const TradeService = invoke('GameServer/Bot/TradeService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const TownNpcCatalog = require('./TownNpcCatalog');
 const OfferOrder = require('./OfferOrder');
+const OfferQuery = require('./OfferQuery');
 const coldStoreIndex = new Map();
 let coldStoreIndexHydrated = false;
 const SHOT_IDS = new Set([
@@ -211,9 +212,11 @@ function sellOfferCandidates(selfId, options = {}) {
     ].filter((offer) => offer.available);
 }
 
+// Every candidate in the one order (OfferOrder.compareOffers); options.cost
+// is the buyer's trip cost (OfferOrder.tripCost).
 function findOffers(selfId, options = {}) {
     return sellOfferCandidates(selfId, options)
-        .sort((a, b) => OfferOrder.compareOffers(a, b));
+        .sort((a, b) => OfferOrder.compareOffers(a, b, options.cost));
 }
 
 function hotOffers(selfId, options = {}) {
@@ -223,12 +226,27 @@ function hotOffers(selfId, options = {}) {
         ...privateOffers(selfId, town),
         ...(town ? npcOffers(selfId, town) : [])
     ].filter((offer) => offer.available)
-        .sort((left, right) => OfferOrder.compareOffers(left, right));
+        .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
+// The one offer query (OfferQuery) for a buyer on the main thread: the same
+// sources as sellOfferCandidates, in `town`, in each of `towns` or in every
+// town (the board and the configured merchants only: an NPC shop is in a
+// town), the first in the one order within `budget` that `accept` takes.
 function bestOffer(selfId, options = {}) {
-    const budget = Number.isFinite(Number(options.budget)) ? Number(options.budget) : Infinity;
-    return findOffers(selfId, options).find((offer) => offer.price <= budget) || null;
+    const towns = options.town ? [options.town] : options.towns || null;
+    const fixed = privateOffers(selfId, towns?.length === 1 ? towns[0] : null)
+        .filter((offer) => offer.sellerKind === 'fixed' && (!towns || !offer.town || towns.includes(offer.town)));
+    const npc = towns ? towns.flatMap((town) => npcOffers(selfId, town)) : [];
+    return OfferQuery.bestSellOffer(AfkTrade.boardIndex(), selfId, {
+        towns,
+        excludeOwner: options.buyerCharacterId,
+        budget: options.budget,
+        cost: options.cost,
+        accept: options.accept,
+        toOffer: AfkTrade.offerOf,
+        others: [...fixed, ...npc].filter((offer) => offer.available)
+    });
 }
 
 // The buy records of the board (escrow held): the budget-backed buy stores

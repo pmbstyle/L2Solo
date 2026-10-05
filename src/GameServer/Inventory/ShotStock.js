@@ -397,7 +397,7 @@ async function purchaseActorRestock(actor, options = {}) {
     for (const line of restock.shops) {
         try {
             await AfkTrade.buyFromShop(actor.fetchId(), line.offer.store, plan.selfId, line.amount,
-                { expectedPrice: line.price });
+                { lineId: line.offer.lineId, expectedPrice: line.price });
             delta += line.amount;
             cost += line.cost;
         } catch (_) {

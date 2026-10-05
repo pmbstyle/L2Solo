@@ -1,7 +1,7 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
 const BoardExpiryQueue = require('./BoardExpiryQueue');
-const { BoardIndex, rowOf, recordOf } = require('./BoardIndex');
+const { BoardIndex, offerFields, rowOf, recordOf } = require('./BoardIndex');
 const Actor = invoke('GameServer/Actor/Actor');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -896,6 +896,8 @@ async function activate(session, store) {
     }
 }
 
+// A deal on one line of a record: options.lineId names it (a record may hold
+// two lines of one item, at two enchants); without it the first with stock.
 async function buyFromShop(characterId, store, selfId, amount, options = {}) {
     const line = (store?.items || []).find((entry) => (
         Number(entry.selfId) === Number(selfId)
@@ -915,7 +917,11 @@ async function buyFromShop(characterId, store, selfId, amount, options = {}) {
 }
 
 async function sellToShop(characterId, store, selfId, amount, options = {}) {
-    const line = (store?.items || []).find((entry) => Number(entry.selfId) === Number(selfId) && Number(entry.count) > 0);
+    const line = (store?.items || []).find((entry) => (
+        Number(entry.selfId) === Number(selfId)
+        && Number(entry.count) > 0
+        && (!options.lineId || Number(entry.afkTradeLineId) === Number(options.lineId))
+    ));
     if (!store?.afkTrade || Number(store.storeType) !== BUY || !line) throw new Error('afk_trade_demand_changed');
     const result = await Database.sellToAfkTradeShop(characterId, {
         shopId: store.shopId,
@@ -946,25 +952,10 @@ function offerOf(line, town = null) {
     if (!storeItem) return null;
     // A shop stands in the world; an ad has no actor and no place.
     const projection = entry.actor ? entry : null;
-    const selling = line.storeType === SELL;
     return {
-        sourceType: selling
-            ? (store.botOwned ? 'afk_bot_store' : 'afk_player_store')
-            : (store.botOwned ? 'afk_bot_buy_store' : 'afk_player_buy_store'),
-        sourceId: Number(store.ownerId),
+        ...offerFields(line, town),
         sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
-        sellerKind: store.botOwned ? 'bot' : 'player',
-        playerPriority: !store.botOwned,
-        town: store.town || town,
-        recordKind: store.kind || 'shop',
-        recordId: line.recordId,
-        lineId: line.lineId,
-        selfId: line.selfId,
         itemName: storeItem.name || itemName(line.selfId),
-        price: line.price,
-        count: line.count,
-        enchant: line.enchant,
-        available: true,
         projection,
         session: projection?.session || null,
         store,
@@ -1157,6 +1148,7 @@ module.exports = {
     restorePlace,
     activeShops,
     boardIndex: () => board,
+    offerOf,
     activeDemandSelfIds,
     activate,
     beat,

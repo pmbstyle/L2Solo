@@ -165,7 +165,7 @@ async function execute(state, opportunity) {
     try {
         for (const purchase of opportunity.basket.purchases) {
             const trade = await AfkTrade.buyFromShop(current.characterId, purchase.offer.store,
-                purchase.selfId, purchase.count, { expectedPrice: purchase.price, coldState: current });
+                purchase.selfId, purchase.count, { lineId: purchase.offer.lineId, expectedPrice: purchase.price, coldState: current });
             const done = AfkTrade.committedTrade(trade, current.characterId);
             if (!done.committed) throw new Error('cold_inventory_sync_failed');
             spent += purchase.price * purchase.count;
@@ -266,7 +266,8 @@ async function execute(state, opportunity) {
         if (offer && productRow) {
             try {
                 const trade = await AfkTrade.sellToShop(current.characterId, offer.store, recipe.productId,
-                    Number(recipe.productCount), { objectId: Number(productRow.id), expectedPrice: Number(offer.price), coldState: current });
+                    Number(recipe.productCount), { objectId: Number(productRow.id), lineId: offer.lineId,
+                        expectedPrice: Number(offer.price), coldState: current });
                 const done = AfkTrade.committedTrade(trade, current.characterId);
                 const payout = Number(done.state?.adena || 0) - Number(current.adena || 0);
                 if (done.hot) {

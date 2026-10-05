@@ -685,6 +685,21 @@ function offerOrigin(state, options) {
     return options.origin || OfferOrder.farmingOrigin(state, (spotId) => SpotIndex.spotById(options.spots, spotId));
 }
 
+// The buyer's trip cost to each town (OfferOrder.tripCost) from where it
+// buys, kept per state object and origin: a plan weighs many items for one
+// state.
+const tripCosts = new WeakMap();
+function offerTripCost(state, options) {
+    if (!state || typeof state !== 'object') return null;
+    const origin = offerOrigin(state, options);
+    const key = `${Number(origin?.locX || 0)}:${Number(origin?.locY || 0)}`;
+    const cached = tripCosts.get(state);
+    if (cached?.key === key) return cached.cost;
+    const cost = OfferOrder.tripCost(state, { origin });
+    tripCosts.set(state, { key, cost });
+    return cost;
+}
+
 function marketOfferForTarget(target, state = {}, options = {}) {
     if (!target) return null;
     const maxPrice = options.maxMarketPrice === undefined ? Infinity : Math.max(0, Number(options.maxMarketPrice) || 0);
@@ -700,14 +715,13 @@ function marketOfferForTarget(target, state = {}, options = {}) {
         ...Object.keys(MarketOpportunity.TOWN_NPC_SELLERS || {}),
         'Giran'
     ].filter(Boolean))];
-    return towns
-        .map((town) => MarketOpportunity.bestOffer(target.selfId, {
-            town,
-            budget: maxPrice,
-            buyerCharacterId: state.characterId
-        }))
-        .filter(usable)
-        .sort((left, right) => OfferOrder.compareOffers(left, right, origin))[0] || null;
+    return MarketOpportunity.bestOffer(target.selfId, {
+        towns,
+        budget: maxPrice,
+        buyerCharacterId: state.characterId,
+        cost: offerTripCost(state, options),
+        accept: usable
+    });
 }
 
 // What one kill earns the bot: its measured hour value per kill.
@@ -770,10 +784,7 @@ function npcOfferForTarget(target, state = {}, options = {}) {
         const offer = options.findMarketOffer(target, state, origin);
         return offer?.sourceType === 'npc' ? offer : null;
     }
-    return (MarketOpportunity.npcOffersAll(target.selfId) || [])
-        .filter((offer) => offer.available !== false)
-        .sort((left, right) => OfferOrder.compareOffers(left, right, origin)
-            || String(left.town || '').localeCompare(String(right.town || '')))[0] || null;
+    return OfferOrder.best(MarketOpportunity.npcOffersAll(target.selfId) || [], { cost: offerTripCost(state, options) });
 }
 
 function staticNpcItems(options = {}) {

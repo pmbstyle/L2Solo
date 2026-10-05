@@ -101,7 +101,7 @@ async function settleLine(sellerState, line, town, options = {}) {
             offer.store,
             line.selfId,
             qty,
-            { objectId: line.objectId || line.id, expectedPrice: offer.price, coldState: sellerState }
+            { objectId: line.objectId || line.id, lineId: offer.lineId, expectedPrice: offer.price, coldState: sellerState }
         );
         done = AfkTrade.committedTrade(trade, sellerState.characterId);
         if (!done.committed) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };

@@ -90,7 +90,7 @@ function buyOffer(state, offer, options = {}) {
             offer.store,
             offer.selfId,
             1,
-            { expectedPrice: offer.price, coldState: state }
+            { lineId: offer.lineId, expectedPrice: offer.price, coldState: state }
         ).then((trade) => {
             const done = AfkTrade.committedTrade(trade, state.characterId);
             if (!done.committed) throw new Error('cold_state_sync_failed');
