@@ -1,0 +1,185 @@
+[
+  {
+    "selfId": 956,
+    "template": {
+      "kind": "Monster",
+      "name": "Past Knight",
+      "title": "",
+      "level": 64,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1031,
+      "pAtkRnd": 10,
+      "pDef": 408,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 150,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.8291015625,
+      "sp": 1060
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 959,
+    "template": {
+      "kind": "Monster",
+      "name": "Dark Guard",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1314,
+      "pAtkRnd": 10,
+      "pDef": 470,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 187
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 21,
+      "size": 31
+    },
+    "equipment": {
+      "weapon": 124,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.829183673469,
+      "sp": 1374
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 963,
+    "template": {
+      "kind": "Monster",
+      "name": "Bloody Lord",
+      "title": "",
+      "level": 68,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1217,
+      "pAtkRnd": 10,
+      "pDef": 382,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 5.93,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 9,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 3939,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "bloody_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.028979238754,
+      "sp": 906
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]
