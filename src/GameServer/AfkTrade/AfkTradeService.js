@@ -928,11 +928,11 @@ async function init() {
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
-    // The market counters learn the last day of deals again (group E).
+    // The market counters learn the board's last deals again (group E, E58).
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     try {
         MarketCounters.reset();
-        MarketCounters.load(await Database.fetchRecentBoardDeals());
+        MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }));
     } catch (error) {
         utils.infoWarn('AfkTrade', 'market counters start empty: %s', error.message);
     }

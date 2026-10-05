@@ -20,6 +20,11 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const HOUR_MS = 60 * 60 * 1000;
 const PRICES_KEPT = 21;
 const INDEX_DEALS = 32;
+// The deals of each item replayed at start (load), however long the stop:
+// as many as an item keeps prices and a counter's index weighs (a counter's
+// last deals are each among their item's last ones); with them, the day of
+// deals before the last one, which the buyers per hour and the move need.
+const REPLAY_DEALS = Math.max(PRICES_KEPT, INDEX_DEALS);
 const GRADE_IN_NAME = /(?:^|[\s:])(D|C|B|A|S)(?:[- ]?Grade|\b)/i;
 // The starting hourly move of a counter no deal has measured yet: the median
 // hourly move over the counters of the group E journal (e17, 44 h).
@@ -309,5 +314,5 @@ function reset() {
     mirror = null;
 }
 
-module.exports = { STARTING_MOVE, COUNTER_KEYS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, townDemand, firstPrice,
+module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, townDemand, firstPrice,
     publish, useTable, useSpots, reset };

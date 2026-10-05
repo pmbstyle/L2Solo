@@ -3068,18 +3068,25 @@ const Database = {
             GROUP BY selfId`, [since]), 'market:buyer-activity');
     },
 
-    // The board deals of the last day, oldest first: the market counters
-    // replay them at start (MarketCounters.load). Only the board's own deals
-    // (the rows AfkTrade settlements write, the ones MarketCounters.deal
-    // counts live); a private or configured merchant store writes the same
-    // wts/wtb channels with its own source.
-    fetchRecentBoardDeals({ timestamp = now(), rangeMs = 24 * 60 * 60 * 1000 } = {}) {
-        const since = Number(timestamp) - Math.max(1, Math.min(MARKET_TRADE_RETENTION_MS, Number(rangeMs) || 86400000));
-        return readHistory(() => History.all(`SELECT selfId, unitPrice, quantity, occurredAt, sellerCharacterId,
-            buyerCharacterId, town FROM market_trades
-            WHERE occurredAt >= ? AND unitPrice > 0
-                AND sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
-            ORDER BY occurredAt ASC, id ASC`, [since]), 'market:recent-board-deals');
+    // The board deals the market counters replay at start (MarketCounters.load),
+    // oldest first: the last `perItem` deals of every item and every deal in
+    // the `rangeMs` before the last one, however long ago the server stopped
+    // (the counters decay on uptime, not on the wall clock). Only the board's
+    // own deals (the rows AfkTrade settlements write, the ones
+    // MarketCounters.deal counts live); a private or configured merchant
+    // store writes the same wts/wtb channels with its own source.
+    fetchRecentBoardDeals({ perItem = 32, rangeMs = 24 * 60 * 60 * 1000 } = {}) {
+        return readHistory(() => History.all(`WITH board AS (
+                SELECT id, selfId, unitPrice, quantity, occurredAt, sellerCharacterId, buyerCharacterId, town
+                FROM market_trades
+                WHERE sourceType IN ('afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store')
+                    AND unitPrice > 0),
+            ranked AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY selfId ORDER BY occurredAt DESC, id DESC) AS recent
+                FROM board)
+            SELECT selfId, unitPrice, quantity, occurredAt, sellerCharacterId, buyerCharacterId, town FROM ranked
+            WHERE recent <= ? OR occurredAt >= (SELECT MAX(occurredAt) FROM board) - ?
+            ORDER BY occurredAt ASC, id ASC`, [Math.max(1, Math.floor(Number(perItem) || 32)),
+            Math.max(0, Number(rangeMs) || 0)]), 'market:recent-board-deals');
     },
 
     fetchMarketTradeHistory(selfId, { timestamp = now(), rangeMs = 24 * 60 * 60 * 1000, bucketMs = 60 * 60 * 1000 } = {}) {
