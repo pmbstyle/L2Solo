@@ -9,6 +9,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -426,20 +427,26 @@ async function reconcileOne(state, goal, candidates) {
 
     const loc = stock?.town === town
         ? { locX: stock.locX, locY: stock.locY, locZ: stock.locZ }
-        : ListingService.marketLocation({ name: town }, { state });
-    if (!loc) return { state, changed: false, reason: 'market_full' };
+        : ListingService.marketLocation({ name: town }, { state, owner: ShopPlaces.afkOwner(ownerId) });
+    if (!loc) return { state, changed: false, reason: ShopPlaces.fullReason(town) };
     const title = side === AfkTrade.SELL
         ? marketStoreTitle(lines)
         : marketBuyStoreTitle(lines);
-    const shop = await AfkTrade.publishBot(ownerId, {
-        storeType: side,
-        title,
-        town,
-        ...loc,
-        head: Number(row.head || 0),
-        appearance: appearance(row, inventory),
-        lines
-    });
+    let shop;
+    try {
+        shop = await AfkTrade.publishBot(ownerId, {
+            storeType: side,
+            title,
+            town,
+            ...loc,
+            head: Number(row.head || 0),
+            appearance: appearance(row, inventory),
+            lines
+        });
+    } catch (error) {
+        AfkTrade.restorePlace(ownerId);
+        throw error;
+    }
     return finishPublish(ownerId, state, shop);
 }
 
@@ -481,7 +488,7 @@ async function migrateRestoredShops() {
         const town = MarketTownPolicy.targetTownForItems(state, kept.length ? kept : lines);
         const relocate = town !== shop.town;
         const loc = relocate
-            ? ListingService.marketLocation({ name: town }, { state })
+            ? ListingService.marketLocation({ name: town }, { state, owner: ShopPlaces.afkOwner(shop.ownerId) })
             : { locX: shop.locX, locY: shop.locY, locZ: shop.locZ };
         if (!loc && kept.length) { skipped++; continue; }
         try {
@@ -501,6 +508,7 @@ async function migrateRestoredShops() {
                 moved++;
             }
         } catch (error) {
+            AfkTrade.restorePlace(shop.ownerId);
             skipped++;
             utils.infoWarn('BotMarket', 'AFK shop migration failed for %s: %s', shop.ownerName, error.message);
         }

@@ -9,6 +9,7 @@ const SELL = 1;
 const BUY = 3;
 const PROJECTION_ID_BASE = 900000000;
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const VISIBILITY_CELL_SIZE = CLIENT_VISIBILITY_RADIUS;
 const projectionsById = new Map();
 const projectionsByOwner = new Map();
@@ -109,9 +110,11 @@ function indexLocation(projection) {
     members.add(projection);
     projectionsByCell.set(key, members);
     projection.visibilityCell = key;
+    ShopPlaces.occupy(ShopPlaces.afkOwner(projection.shop.ownerId), projection.shop.town, projection.shop);
 }
 
 function unindexLocation(projection) {
+    if (projection?.shop) ShopPlaces.release(ShopPlaces.afkOwner(projection.shop.ownerId));
     const key = projection?.visibilityCell;
     const members = projectionsByCell.get(key);
     if (!members) return;
@@ -621,15 +624,12 @@ async function matchAfkOrders(ownerId, maxTrades = 64) {
     return { matched: trades.length > 0, trades };
 }
 
-function activeLocations(town, excludedOwnerId = 0) {
-    return [...projectionsByOwner.values()]
-        .filter((projection) => projection.shop?.town === town
-            && Number(projection.shop.ownerId) !== Number(excludedOwnerId))
-        .map((projection) => ({
-            locX: Number(projection.shop.locX),
-            locY: Number(projection.shop.locY),
-            locZ: Number(projection.shop.locZ)
-        }));
+// A failed publish or relocation leaves the owner's shop as it was: its place
+// goes back to where the shop still stands (or is freed when none stands).
+function restorePlace(ownerId) {
+    const projection = projectionsByOwner.get(Number(ownerId));
+    if (projection) ShopPlaces.occupy(ShopPlaces.afkOwner(ownerId), projection.shop.town, projection.shop);
+    else ShopPlaces.release(ShopPlaces.afkOwner(ownerId));
 }
 
 function activeShops() {
@@ -810,6 +810,7 @@ function activeDemandSelfIds() {
 }
 
 async function init() {
+    projectionsByOwner.forEach((projection) => ShopPlaces.release(ShopPlaces.afkOwner(projection.shop.ownerId)));
     projectionsById.clear();
     projectionsByOwner.clear();
     projectionsByCell.clear();
@@ -857,7 +858,7 @@ async function matchBotDemand() {
 module.exports = {
     BUY,
     SELL,
-    activeLocations,
+    restorePlace,
     activeShops,
     relocateBot,
     activeDemandSelfIds,

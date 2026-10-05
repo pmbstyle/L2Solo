@@ -1,5 +1,6 @@
 'use strict';
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
+const ShopPlaces = require('../Economy/ShopPlaces');
 // Bot location buckets: any size is correct. One visibility radius keeps a
 // coldNear search of that radius within 3x3 cells.
 const CELL_SIZE = require('../../World/WorldConstants').CLIENT_VISIBILITY_RADIUS;
@@ -63,6 +64,7 @@ class LifeStateCache extends Map {
         super.set(id, state);
         this.insertOrder(id, state, sequence);
         this.occupancy.update(state);
+        ShopPlaces.syncState(id, state);
         if (state.phase === 'cold' && state.activity !== 'pk_hunting') {
             const x = Number(state.loc?.locX || 0), y = Number(state.loc?.locY || 0);
             if (Number.isFinite(x) && Number.isFinite(y)) {
@@ -80,6 +82,7 @@ class LifeStateCache extends Map {
         this.removeCell(id);
         this.removeOrder(id);
         if (super.has(id)) this.occupancy.remove(stateKey(super.get(id)));
+        ShopPlaces.release(ShopPlaces.stateOwner(id));
         const removed = super.delete(id);
         if (removed) this.revision++;
         return removed;
@@ -88,6 +91,7 @@ class LifeStateCache extends Map {
     clear() {
         super.clear(); this.cells.clear(); this.cellById.clear();
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
+        ShopPlaces.releaseStates();
         this.revision++;
     }
 

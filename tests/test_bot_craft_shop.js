@@ -8,7 +8,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
-const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 
 DataCache.init();
 
@@ -104,7 +104,7 @@ async function run() {
 
     assert.strictEqual(CraftShopService.CraftStations.length, 31, 'Giran must expose the full D/C/B/A/S market, resources and progressive C weapons');
     assert.strictEqual(new Set(CraftShopService.GiranCraftStalls.map((loc) => `${loc.locX}:${loc.locY}:${loc.locZ}`)).size, 31, 'every craft station must have its own stall');
-    assert(CraftShopService.GiranCraftStalls.every((loc) => ColdMarketListingService.isGiranPlazaStallLocation(loc)), 'every craft station must remain in the actual sellable Giran plaza footprint');
+    assert(CraftShopService.GiranCraftStalls.every((loc) => ShopPlaces.isStallArea('Giran', loc)), 'every craft station must remain in the actual sellable Giran plaza footprint');
     const outer = { minX: 80971, maxX: 82887, minY: 147722, maxY: 149490 };
     const width = outer.maxX - outer.minX;
     const height = outer.maxY - outer.minY;

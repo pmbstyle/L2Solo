@@ -9,6 +9,7 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
@@ -206,13 +207,14 @@ async function run() {
     assert.strictEqual(cleanupDuringCooldown.state.stats.marketSellRetryAfter, 500000, 'cleanup must preserve the trading pause');
     assert.strictEqual(opened.state.stats.marketStore.title, marketItem.template.name.slice(0, 28), 'a dynamic store title should name its actual stock');
     assert(opened.state.stats.marketStore.title.length <= 28, 'a dynamic store title must fit the compact C4 store overlay');
-    assert(ListingService.isGiranPlazaStallLocation(opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
+    assert(ShopPlaces.isStallArea('Giran', opened.state.loc), 'a Giran store must use the captured trading square and avoid its central column');
     assert.deepStrictEqual(opened.state.stats.marketStore.loc, opened.state.loc, 'the stall coordinate must survive hot/cold transitions');
     assert(Number(opened.state.stats.marketStore.nextReviewAt) > 1000, 'WTS must schedule demand revalidation before expiry');
-    const secondStall = ListingService.chooseGiranPlazaStall(() => 0.1, [opened.state.loc]);
+    const secondStall = ShopPlaces.take('Giran', 'test:second');
     const dx = secondStall.locX - opened.state.loc.locX;
     const dy = secondStall.locY - opened.state.loc.locY;
-    assert(Math.sqrt(dx * dx + dy * dy) >= ListingService.GIRAN_STALL_MIN_DISTANCE, 'stores must not overlap on the Giran plaza');
+    assert(Math.sqrt(dx * dx + dy * dy) >= ShopPlaces.SPACING, 'stores must not overlap on the Giran plaza');
+    ShopPlaces.release('test:second');
 
     const partyOpened = await ListingService.open(
         { ...state, characterId: 94, name: 'PartySeller' },

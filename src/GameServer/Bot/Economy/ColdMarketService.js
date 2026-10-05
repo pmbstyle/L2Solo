@@ -176,7 +176,10 @@ const ColdMarketService = {
                 utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
                 return { opened: false };
             }).then((opened) => {
-                if (!opened.opened) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
+                if (!opened.opened) {
+                    const plazaFull = String(opened.reason || '').startsWith('plaza_full:');
+                    return retryAfterFailedPurchase(state, goal, plazaFull ? opened.reason : 'no_affordable_offer');
+                }
                 MarketTelemetry.noOffer();
                 return {
                     state: opened.state,

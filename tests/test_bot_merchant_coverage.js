@@ -4,16 +4,16 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
-const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
+const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 
 DataCache.init();
 
 const STARTER_MARKETS = [
-    { town: 'Talking Island', isStall: ListingService.isTalkingIslandNoGradeStallLocation },
-    { town: 'Elven Village', isStall: ListingService.isElvenVillageNoGradeStallLocation },
-    { town: 'Dark Elven Village', isStall: ListingService.isDarkElvenVillageNoGradeStallLocation },
-    { town: 'Orc Village', isStall: ListingService.isOrcVillageNoGradeStallLocation },
-    { town: 'Dwarven Village', isStall: ListingService.isDwarvenVillageNoGradeStallLocation }
+    { town: 'Talking Island', isStall: (loc) => ShopPlaces.isOnSquare('Talking Island', loc) },
+    { town: 'Elven Village', isStall: (loc) => ShopPlaces.isOnSquare('Elven Village', loc) },
+    { town: 'Dark Elven Village', isStall: (loc) => ShopPlaces.isOnSquare('Dark Elven Village', loc) },
+    { town: 'Orc Village', isStall: (loc) => ShopPlaces.isOnSquare('Orc Village', loc) },
+    { town: 'Dwarven Village', isStall: (loc) => ShopPlaces.isOnSquare('Dwarven Village', loc) }
 ];
 const SHOTS = new Set([1835, 2509, 3947]);
 

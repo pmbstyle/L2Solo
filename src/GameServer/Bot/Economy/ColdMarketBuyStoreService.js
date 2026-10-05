@@ -83,9 +83,12 @@ function open(state, goal, options = {}) {
     let marketTownRoutingVersion = 1;
     try {
         const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
-        loc = ListingService.marketLocation({ name: town, center: loc }, { state }) || loc;
+        loc = ListingService.marketLocation({ name: town, center: loc }, { state });
         marketTownRoutingVersion = Number(ListingService.MARKET_TOWN_ROUTING_VERSION || 1);
     } catch (_) {}
+    // A full square: no store now; the caller retries the purchase later, as
+    // a seller retries a full square.
+    if (!loc) return Promise.resolve({ state, opened: false, reason: invoke('GameServer/Bot/Economy/ShopPlaces').fullReason(town) });
     const store = {
         id: `${state.characterId}:buy:${timestamp}`,
         storeType: 3,
