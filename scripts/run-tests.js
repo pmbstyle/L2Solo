@@ -217,6 +217,7 @@ const tests = [
     'tests/test_board_records.js',
     'tests/test_board_deal_atomicity.js',
     'tests/test_board_money_journal.js',
+    'tests/test_board_world_migration.js',
     'tests/test_economy_journal.js',
     'tests/test_market_trade_history.js',
     'tests/test_history_database.js',

@@ -996,11 +996,20 @@ function clearBoard() {
     projectionOffersByType.forEach((byItem) => byItem.clear());
 }
 
-// Restores the board at start: the deadlines move by the downtime, so a
-// record lives 12 hours of server uptime; then every record comes back into
-// memory.
+// Restores the board at start. The old world's bot records close once
+// (Database.migrateBoardWorld); the deadlines move by the downtime, so a record
+// lives 12 hours of server uptime; then every record comes back into memory.
 async function init() {
     clearBoard();
+    const migrated = await Database.migrateBoardWorld();
+    // A cached bot state follows the bags and states the migration changed.
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    (migrated.rows || []).forEach((row) => LifeState.acceptLifecycleRow(row));
+    if (!migrated.skipped && (migrated.closedShops || migrated.cancelledStores)) {
+        utils.infoSuccess('AfkTrade', 'board started: bot records closed=%d lines=%d escrow=%d owners=%d, cold stores cancelled=%d, kept records=%d',
+            migrated.closedShops, migrated.closedLines, migrated.returnedEscrow, migrated.owners,
+            migrated.cancelledStores, migrated.keptRecords);
+    }
     const startedAt = Date.now();
     const aliveAt = await Database.fetchBoardAliveAt();
     const shifted = await Database.shiftBoardDeadlines(aliveAt > 0 ? Math.max(0, startedAt - aliveAt) : 0, startedAt);

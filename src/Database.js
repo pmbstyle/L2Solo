@@ -1335,6 +1335,16 @@ function applySchemaMigrations() {
             DELETE FROM afk_trade_shops WHERE status != 'active';
         `);
     }]);
+    // A world that traded before the board closes its bot records once at the
+    // board's first start (Database.migrateBoardWorld, which needs the item
+    // catalogue); a new world has nothing to close.
+    migrations.push([54, () => {
+        const traded = connection.prepare(`SELECT 1 FROM afk_trade_shops WHERE status = 'active' LIMIT 1`).get()
+            || connection.prepare(`SELECT 1 FROM bot_life_state WHERE json_extract(statsJson, '$.marketStore') IS NOT NULL LIMIT 1`).get();
+        if (traded) {
+            connection.prepare("INSERT OR IGNORE INTO world_meta (key, value) VALUES ('boardMigrationPending', ?)").run(String(now()));
+        }
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -3318,6 +3328,54 @@ const Database = {
                 throw error;
             }
         }, { operation: 'board:shift-deadlines' });
+    },
+
+    // The old world at the first start of the board (Q8 B, user 2026-10-05):
+    // every bot record closes once and gives back what it holds; the bots
+    // relist under the board's rules at their next review. A physical cold
+    // store or a budget-backed buy store in a bot's state is cancelled (its
+    // stock and money never left the bag). Players' AFK shops stay as they
+    // are and get a deadline. One transaction, once: migration 54 marks a world
+    // that traded before the board (boardMigrationPending).
+    migrateBoardWorld(at = now()) {
+        return inTransaction(() => {
+            if (!one("SELECT value FROM world_meta WHERE key = 'boardMigrationPending'")) return { skipped: true };
+            const shops = all(`SELECT shops.id FROM afk_trade_shops shops JOIN characters ON characters.id = shops.ownerId
+                WHERE substr(characters.username, 1, 4) = 'bot_' ORDER BY shops.id`).map((row) => afkTradeShopUnsafe(row.id));
+            const owners = new Map();
+            let lines = 0;
+            let escrow = 0;
+            for (const shop of shops) {
+                const ownerId = Number(shop.ownerId);
+                if (!owners.has(ownerId)) owners.set(ownerId, new Set([57]));
+                lines += shop.lines.filter((line) => Number(line.count) > 0).length;
+                escrow += Number(shop.escrowAdena || 0);
+                closeBoardRecordUnsafe(shop, { ownMove: true, at }).forEach((selfId) => owners.get(ownerId).add(selfId));
+            }
+            for (const [ownerId, changedIds] of owners) {
+                const row = one('SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [ownerId]);
+                if (row) writeColdInventorySnapshotUnsafe(ownerId, row, [...changedIds]);
+            }
+            const stores = all(`SELECT characterId, activity, statsJson FROM bot_life_state
+                WHERE json_extract(statsJson, '$.marketStore') IS NOT NULL`);
+            for (const row of stores) {
+                const stats = jsonObject(row.statsJson);
+                const merchant = row.activity === 'merchant';
+                delete stats.marketStore;
+                write(`UPDATE bot_life_state SET statsJson = ?, activity = ?, nextResolveAt = CASE WHEN ? THEN ? ELSE nextResolveAt END,
+                    updatedAt = ? WHERE characterId = ?`, [JSON.stringify(stats),
+                    merchant ? (stats.marketReturn ? 'shopping' : 'hunting') : row.activity, merchant ? 1 : 0, at, at, row.characterId]);
+            }
+            const kept = Number(write('UPDATE afk_trade_shops SET expiresAt = ? WHERE expiresAt <= 0',
+                [at + BoardRules.LIFETIME_MS]).affectedRows || 0);
+            write("DELETE FROM world_meta WHERE key = 'boardMigrationPending'");
+            write(`INSERT INTO world_meta (key, value) VALUES ('boardMigrated', ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(at)]);
+            const touched = [...new Set([...owners.keys(), ...stores.map((row) => Number(row.characterId))])];
+            return { closedShops: shops.length, closedLines: lines, returnedEscrow: escrow, owners: owners.size,
+                cancelledStores: stores.length, keptRecords: kept,
+                rows: touched.map((id) => normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id]))).filter(Boolean) };
+        }, 'board:migrate-world');
     },
 
     // The owner changes the price (and count) of one of its lines: a sell
