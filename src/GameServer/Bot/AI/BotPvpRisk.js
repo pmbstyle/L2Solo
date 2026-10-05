@@ -162,7 +162,6 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
     const voice = invoke('GameServer/Bot/AI/BotChatVoice');
     const traits = { caution: voice.trait(session, 'caution'), assertiveness: voice.trait(session, 'assertiveness'),
         empathy: voice.trait(session, 'empathy') };
-    const avoidsPvp = Visible.avoidsPvp(traits);
     const own = [session.actor, ...allies.map(member => member.actor)];
     // A summon or pet is one more person on its owner's side; one's own counts as fresh.
     const pets = actors => actors.reduce((sum, actor) => sum + Visible.actorPeople(actor) - 1, 0);
@@ -172,15 +171,15 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
             strength: own.reduce((sum, actor) => sum + condition(actor), 0) + pets(own) },
         other: Visible.actorSide(enemies),
         traits, fear: fearOf(session.actor, threats) });
-    const fight = !avoidsPvp && verdict.fight;
+    const fight = verdict.fight;
     return {
         action: fight ? 'fight' : 'flee',
         score: verdict.ratio,
         verdict: verdict.verdict,
         allyIds: allies.map(member => actorId(member.actor)),
         enemyIds: [...opponents.keys()],
-        requiredRatio: avoidsPvp ? null : verdict.required,
-        reasons: [avoidsPvp ? 'avoids_pvp' : fight ? 'can_win' : 'outmatched', 'self_defense'],
+        requiredRatio: verdict.required,
+        reasons: [fight ? 'can_win' : 'outmatched', 'self_defense'],
         criticalFleeChance: Aggression.retreatChance(0.15 + 0.45 * traits.caution
             + 0.25 * (1 - voice.trait(session, 'resilience')), Config.pvpAggression)
     };

@@ -135,9 +135,10 @@ assert.strictEqual(defense(fresh, { level: 60 }).action, 'fight', 'defense: a hi
 assert.strictEqual(defense(fresh, { gear: 100000000 }).action, 'fight', 'defense: a hidden expensive kit is not seen');
 assert.strictEqual(defense({ ...fresh, hp: 20 }, {}).action, 'flee', 'defense: own low HP flees');
 assert.strictEqual(defense(fresh, {}, { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'flee', 'defense: cautious flees from an even look');
-assert.strictEqual(defense(fresh, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).reasons[0], 'avoids_pvp', 'defense: the never-fight trio');
-assert.strictEqual(defense({ ...fresh, ...armed('c') }, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).action, 'flee',
-    'defense: the trio never fights, even visibly stronger');
+// No never-fight trio any more (user, 2026-10-05): it follows the threshold like everyone.
+assert.strictEqual(defense(fresh, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).reasons[0], 'outmatched', 'defense: the former trio, even look');
+assert.strictEqual(defense({ ...fresh, ...armed('c') }, {}, { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).action, 'fight',
+    'defense: the former trio fights when visibly stronger');
 assert.strictEqual(defense(fresh, armed('c'), { caution: 0, assertiveness: 1, empathy: 0 }).action, 'flee', 'defense: a visibly higher grade flees');
 assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d'), { caution: 0.8, assertiveness: 0.3, empathy: 0.3 }).action, 'fight',
     'defense: a visibly lower grade is fought even by the cautious');

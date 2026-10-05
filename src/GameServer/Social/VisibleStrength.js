@@ -154,11 +154,6 @@ function trait(traits, key) {
     return clamp(traits?.[key] ?? 0.5);
 }
 
-// The author's never-fight trio: cautious, meek and empathic.
-function avoidsPvp(traits) {
-    return trait(traits, 'caution') >= 0.7 && trait(traits, 'assertiveness') <= 0.4 && trait(traits, 'empathy') >= 0.6;
-}
-
 // The author's hot-defense threshold: a cautious bot wants an advantage, an
 // assertive one accepts even odds. Fear asks for more; aggression scales it.
 function required(traits, fearOf = 0) {
@@ -184,4 +179,4 @@ function canWin({ own, other, traits, fear: fearOf = 0 }) {
 
 module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, seen, actorSeen, stateCue, stateSeen, actorSide, stateSide,
     resources, condition,
-    fear, avoidsPvp, required, canWin };
+    fear, required, canWin };

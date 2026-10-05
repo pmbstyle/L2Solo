@@ -14,7 +14,6 @@ function evaluate(relation, persona = {}) {
     if (!personal || personal.hostility < 12 || personal.trust > -5) return no('no_personal_grievance');
     if (!feeling || feeling.hostility < 24 || feeling.trust > -5 || feeling.affinity > 0) return no('grievance_cooled');
     const t = key => clamp(persona.traits?.[key] ?? 0.5);
-    if (Visible.avoidsPvp(persona.traits)) return no('avoids_pvp');
     const hostility = clamp((feeling.hostility - 12) / 48);
     const resentment = clamp(-(feeling.affinity + feeling.trust) / 60);
     const fear = Visible.fear(relation);

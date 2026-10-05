@@ -96,8 +96,9 @@ assert.strictEqual(GearValue.equipmentValue([{ selfId: 999999, price: 123 }]), O
     bot.hp = 100; bot.classId = 10; bot.mp = 5;
     assert.strictEqual(Risk.defenseDecision(own, [enemy]).action, 'flee');
     bot.mp = 100;
+    // No never-fight trio (user, 2026-10-05): a cautious, meek, empathic bot follows the threshold.
     own.persona.traits = { caution: 0.9, assertiveness: 0.1, empathy: 0.9, resilience: 0.5 };
-    assert.strictEqual(Risk.defenseDecision(own, [enemy]).reasons[0], 'avoids_pvp');
+    assert.strictEqual(Risk.defenseDecision(own, [enemy]).reasons[0], 'outmatched');
 }
 
 // Real damage through CP wakes defenders. All idle/travel plans use the same

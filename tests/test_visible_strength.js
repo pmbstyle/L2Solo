@@ -120,10 +120,9 @@ assert.strictEqual(win(side(D), side(D)).fight, false);
 Config.pvpAggression = 1;
 assert.strictEqual(win(side(D), side(D), { caution: 1, assertiveness: 0 }).fight, true);
 Config.pvpAggression = 0.5;
-// The never-fight trio is the author's, unchanged.
-assert.strictEqual(V.avoidsPvp({ caution: 0.7, assertiveness: 0.4, empathy: 0.6 }), true);
-assert.strictEqual(V.avoidsPvp({ caution: 0.69, assertiveness: 0.4, empathy: 0.6 }), false);
-assert.strictEqual(V.avoidsPvp({}), false);
+// No never-fight trio (user, 2026-10-05): a cautious, meek, empathic bot follows the threshold.
+assert.strictEqual(V.avoidsPvp, undefined);
+assert.strictEqual(win(side(C), side(D), { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).fight, true);
 
 Config.pvpAggression = saved;
 console.log('visible strength checks passed');
