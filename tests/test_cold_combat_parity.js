@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const Module = require('module');
 require('../src/Global');
+// U26: the cold start gate rolls once (TendencyRoll); a middle roll keeps this pin about the fight.
+require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');

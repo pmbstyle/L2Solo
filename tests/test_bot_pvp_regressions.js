@@ -1,5 +1,9 @@
 const assert = require('assert');
 require('../src/Global');
+// U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
+// middle roll (0.49) makes each such decision the author's threshold (willing iff
+// chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
+require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
 const World = invoke('GameServer/World/World');
 const Defense = invoke('GameServer/Bot/AI/BotPvpDefense');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');

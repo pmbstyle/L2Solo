@@ -2,6 +2,10 @@ const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
 const { spawnSync } = require('child_process');
 require('../src/Global');
+// U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
+// middle roll (0.49) makes each such decision the author's threshold (willing iff
+// chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
+require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const Aggression = require('../src/GameServer/Social/PvpAggression');
 const Resource = require('../src/GameServer/Social/ResourceCompetitionPolicy');

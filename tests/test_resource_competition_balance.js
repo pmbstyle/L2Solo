@@ -31,7 +31,8 @@ for (const [name, sizes] of Object.entries({ solo: [1, 1], solo_party: [1, 3], p
             const outcome = Policy.decide({ pressure: 3,
                 actor: { level: 40, size: sizes[0], partyId: sizes[0] > 1 ? 'a' : null },
                 peer: { level: 40, size: sizes[1], partyId: sizes[1] > 1 ? 'b' : null },
-                actorPersona, peerPersona, towardPeer: relation, towardActor: relation, rng });
+                actorPersona, peerPersona, towardPeer: relation, towardActor: relation, rng,
+                key: `balance:${name}:${relationName}:${i}` }); // U26: one can-I-win roll per encounter
             pvp += Number(outcome.pvpIntent); contests += Number(outcome.action === 'contest');
         }
         counts[relationName] = { pvp, contests };

@@ -3,6 +3,10 @@
 // Each block pins what the caller decides for a small set of opponents.
 const assert = require('assert');
 require('../src/Global');
+// U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
+// middle roll (0.49) makes each such decision the author's threshold (willing iff
+// chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
+require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
 invoke('GameServer/DataCache').init();
 const World = invoke('GameServer/World/World');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
@@ -218,6 +222,19 @@ assert.strictEqual(sighting({ ownPeople: 2, threatPeople: 2 }).action, 'fight', 
         assert.strictEqual(defense(fresh, {}, traits).action === 'fight', fights, 'defense');
         assert.strictEqual(sighting({ traits }).action === 'fight', fights, 'sighting');
     }
+}
+
+// U26 (user, 2026-10-05): nothing absolute. A visibly stronger defender is willing with
+// chance 0.98, so a rare roll above it flees; a visibly weaker one fights on a roll under 0.02.
+{
+    const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+    const strong = defense({ ...fresh, ...armed('c') }, armed('d'));
+    assert.strictEqual(strong.chance, 0.98);
+    Tendency.roll = () => 0.985;
+    assert.strictEqual(defense({ ...fresh, ...armed('c') }, armed('d')).action, 'flee', 'defense: even a stronger bot rarely backs off');
+    Tendency.roll = () => 0.01;
+    assert.strictEqual(defense({ ...fresh, ...armed('d') }, armed('c')).action, 'fight', 'defense: even a weaker bot rarely stands');
+    Tendency.roll = () => 0.49;
 }
 
 Config.pvpAggression = savedAggression;

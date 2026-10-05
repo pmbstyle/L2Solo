@@ -40,7 +40,8 @@ function escalationChance(persona, towardOpponent) {
         - Math.max(0, relation.warmth) * 0.7 - relation.fear * 0.5, 0, 0.8) * disciplineRestraint(persona, towardOpponent);
     return scaleChance(chance, Config.pvpAggression);
 }
-function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, towardActor, rng }) {
+// key: the decision's key, for its one can-I-win roll.
+function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, towardActor, rng, key }) {
     // A moderate shortage is already noticeable; abundant resources never provoke a dispute.
     const shortage = Math.sqrt(clamp((pressure - 1) / 2));
     if (!shortage) return { action: 'coexist', pvpIntent: false, reason: 'resource_available' };
@@ -57,8 +58,8 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
             accepted: rng() < clamp(0.15 + b.sociability * 0.35 + b.empathy * 0.15 + ba.warmth * 0.3 - ba.hostility * 0.5, 0, 0.85) };
     }
     // Can I win? Only by what a player sees: gear look and people (U26).
-    const outmatched = !Visible.canWin({ own: { look: actor.look, people: actor.people ?? actor.size },
-        other: { look: peer.look, people: peer.people ?? peer.size, strength: peer.strength }, traits: a, fear: ab.fear }).fight;
+    const outmatched = !Visible.willing(Visible.canWin({ own: { look: actor.look, people: actor.people ?? actor.size },
+        other: { look: peer.look, people: peer.people ?? peer.size, strength: peer.strength }, traits: a, fear: ab.fear }), key, 'can_win');
     const retreat = clamp(a.caution * (outmatched ? 0.65 : 0.15) + ab.fear * 0.4 + hostile * a.caution * 0.2, 0, 0.85);
     if (rng() < retreatChance(retreat, Config.pvpAggression)) return { action: 'avoid', pvpIntent: false, reason: outmatched ? 'outmatched' : 'avoid_conflict' };
     const contest = clamp(shortage * (0.3 + a.ambition * 0.35 + a.assertiveness * 0.4

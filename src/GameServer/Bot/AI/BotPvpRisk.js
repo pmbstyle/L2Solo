@@ -50,7 +50,9 @@ function evaluate(context = {}) {
         other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1),
             strength: context.threatStrength },
         traits: context.traits, fear: context.fear || 0 });
-    let score = (visible.verdict === 'stronger' ? VISIBLE_GAP : visible.fight ? 0 : -VISIBLE_GAP) + allies * 1.4;
+    // One roll per sighting (context.key): unwilling counts as the gap against.
+    const willing = Visible.willing(visible, context.key, 'pk_sighting');
+    let score = (!willing ? -VISIBLE_GAP : visible.verdict === 'stronger' ? VISIBLE_GAP : 0) + allies * 1.4;
 
     if (context.targetedByThreat) {
         score += 0.75;
@@ -154,7 +156,9 @@ function fearOf(actor, others, now = Date.now()) {
 }
 
 // Can I win? Own side exactly, the other side by what a player sees (U26).
-function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
+// key: the decision's key parts, for its one roll (default: this bot, the
+// first threat, now).
+function defenseDecision(session, threats, { allyAllowed = () => true, key = null } = {}) {
     const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
     const allies = Threats.members(session).filter(member => member !== session && allyAllowed(member) &&
         !Threats.inPeace(member.actor) && Threats.distance(session.actor, member.actor) <= Threats.PARTY_RADIUS);
@@ -171,10 +175,11 @@ function defenseDecision(session, threats, { allyAllowed = () => true } = {}) {
             strength: own.reduce((sum, actor) => sum + condition(actor), 0) + pets(own) },
         other: Visible.actorSide(enemies),
         traits, fear: fearOf(session.actor, threats) });
-    const fight = verdict.fight;
+    const fight = Visible.willing(verdict, ...(key || ['defense', actorId(session.actor), actorId(threats[0]), Date.now()]));
     return {
         action: fight ? 'fight' : 'flee',
         score: verdict.ratio,
+        chance: verdict.chance,
         verdict: verdict.verdict,
         allyIds: allies.map(member => actorId(member.actor)),
         enemyIds: [...opponents.keys()],

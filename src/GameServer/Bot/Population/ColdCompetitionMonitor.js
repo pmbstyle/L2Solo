@@ -162,8 +162,9 @@ class ColdCompetitionMonitor {
             const decisionRolls = Array.from({ length: 4 }, () => rng());
             let decisionIndex = 0;
             const look = unit => ({ ...unit, ...Visible.stateSide(unit.members, timestamp) });
+            const key = `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${[actor.id, peer.id].sort((a, b) => a - b).join(':')}`;
             const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
-                actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++] });
+                actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key });
             // Cooling down a conflict must not prevent leaving the spot or cooperating.
             if (outcome.action === 'contest' && conflictCooling) { this.report.skipped.conflictCooldown++; continue; }
             this.pairs.set(pairKey, timestamp + PAIR_COOLDOWN_MS);
@@ -172,7 +173,7 @@ class ColdCompetitionMonitor {
             this.report.evaluated++; this.report.lastScanEvents++;
             this.report.outcomes[outcome.action] = (this.report.outcomes[outcome.action] || 0) + 1;
             if (outcome.pvpIntent) this.report.pvpIntents++;
-            const event = { at: timestamp, key: `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${[actor.id, peer.id].sort((a, b) => a - b).join(':')}`,
+            const event = { at: timestamp, key,
                 spotId: group.spotId, npcId: group.npcId, contextVersion: 1, decisionRolls,
                 demand: group.demand, capacity: group.capacity, pressure: group.pressure,
                 actor: { id: actor.id, name: actor.name, size: actor.size, activeSize: actor.hunters.length, partyId: actor.partyId,

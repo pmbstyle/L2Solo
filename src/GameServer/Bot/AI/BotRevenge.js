@@ -82,7 +82,7 @@ function flushPending(session, now = Date.now()) {
     Budget.record(session, pending.reason, now);
     session.nextPvpChatAt = now + ENCOUNTER_MS;
     delete session.pendingPvpProvocation;
-    if (!pending.attack || Risk.defenseDecision(session, [pending.target], {
+    if (!pending.attack || Risk.defenseDecision(session, [pending.target], { key: pending.key,
         allyAllowed: member => Participation.supports(pending.participation, member)
             && (!pending.participation || Participation.available(member, now))
     }).action !== 'fight') return false;
@@ -91,12 +91,18 @@ function flushPending(session, now = Date.now()) {
     return true;
 }
 
+// The one roll of a provoked fight: the check before the warning and the
+// check when the warning is sent read the same roll.
+function decisionKey(session, target, reason, now) {
+    return [reason, Number(session.actor.fetchId()), Number(target.fetchId()), now];
+}
+
 function request(session, target, reason, lines, attack = true, now = Date.now(), rng = Math.random, revengeRoll = null) {
     if (session.pendingPvpProvocation || session.pvpDefense || session.pvpRevenge || !eligible(session, target)) return false;
     const participation = attack ? Participation.prepare(session, target, now, rng) : null;
     if (participation) session.lastConflictParticipation = { ...participation, reason };
     session.pendingPvpProvocation = { target, reason, attack: attack && !participation?.blocked && !participation?.deescalated,
-        participation, revengeRoll, text: lines[Math.floor(rng() * lines.length)],
+        participation, revengeRoll, text: lines[Math.floor(rng() * lines.length)], key: decisionKey(session, target, reason, now),
         expiresAt: now + ENCOUNTER_MS };
     const started = flushPending(session, now);
     if (started || session.pendingPvpProvocation) invoke('GameServer/Bot/BotAI').promoteForPlayerInteraction(session, reason);
@@ -125,7 +131,7 @@ function tryStart(session, now = Date.now(), rng = Math.random) {
         if (!eligible(session, target) || Threats.distance(session.actor, target) > NOTICE_RADIUS) continue;
         const social = assessment(session, target, now);
         if (!(social.chance > 0)) continue;
-        const decision = Risk.defenseDecision(session, [target]);
+        const decision = Risk.defenseDecision(session, [target], { key: decisionKey(session, target, 'revenge', now) });
         if (decision.action !== 'fight') continue;
         session.nextRevengeAt = now + RETRY_MS;
         const roll = rng();
@@ -183,4 +189,4 @@ function onAttack(attacker, target, now = Date.now(), rng = Math.random) {
     }
 }
 
-module.exports = { request, flushPending, tryStart, onAttack, allows, eligible, SCAN_MS, RETRY_MS, ENCOUNTER_MS, NOTICE_RADIUS };
+module.exports = { decisionKey, request, flushPending, tryStart, onAttack, allows, eligible, SCAN_MS, RETRY_MS, ENCOUNTER_MS, NOTICE_RADIUS };

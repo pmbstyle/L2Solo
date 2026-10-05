@@ -72,7 +72,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
     const target = focus || threats[0].actor;
     let encounter = session.pvpDefense;
     if (!encounter) {
-        const decision = Risk.defenseDecision(session, threats.map(entry => entry.actor));
+        const decision = Risk.defenseDecision(session, threats.map(entry => entry.actor), { key: ['defense', bot.fetchId(), now] });
         if (context.members.length > 1) {
             decision.action = 'fight';
             decision.reasons = ['defend_party', 'weakest_aggressor_first'];
@@ -103,7 +103,7 @@ function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.rand
             chat(session, target, 'flee', BotAI, now, rng);
         }
     }
-    session.lastPvpDecision = { action: encounter.action, score: encounter.score, reasons: encounter.reasons,
+    session.lastPvpDecision = { action: encounter.action, score: encounter.score, chance: encounter.chance, reasons: encounter.reasons,
         verdict: encounter.verdict, requiredRatio: encounter.requiredRatio, enemyIds: encounter.enemyIds,
         threatId: target.fetchId(), threatName: target.fetchName?.(),
         targets: threats.map(entry => entry.actor.fetchId()),

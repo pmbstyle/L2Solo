@@ -5,6 +5,11 @@
 // prices and bags of other characters are never read here.
 const Config = require('../Bot/Population/PopulationConfig');
 const { retreatMultiplier } = require('./PvpAggression');
+const Tendency = require('../Bot/AI/TendencyRoll');
+
+// How steeply willingness rises with the odds around the threshold, in an even
+// look: 0.5 + SLOPE x (ratio - threshold). Tunable.
+const SLOPE = 2;
 
 const GRADE = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const WEAPON_SLOTS = Object.freeze([7, 14]); // one-handed, two-handed
@@ -164,19 +169,25 @@ function required(traits, fearOf = 0) {
 // own: { look, people, strength } where strength is own people weighted by
 // their exact condition; other: { look, people, strength } where strength is
 // what is seen of them (both default to people).
-// Visibly better gear and at least as many people = stronger; visibly worse
-// and no more people = weaker; anything else looks even and the bot's
-// character and memory decide by the head count.
+// Returns the chance that the bot is willing to fight, never 0 or 1:
+// visibly better gear and at least as many people = stronger, almost always;
+// visibly worse and no more people = weaker, almost never; anything else looks
+// even and the chance follows the odds against the author's threshold.
 function canWin({ own, other, traits, fear: fearOf = 0 }) {
     const people = own.people / Math.max(1, other.people);
     const gear = compare(own.look, other.look);
     const verdict = gear > 0 && people >= 1 ? 'stronger' : gear < 0 && people <= 1 ? 'weaker' : 'even';
     const ratio = (own.strength ?? own.people) / Math.max(0.25, other.strength ?? other.people);
     const need = required(traits, fearOf);
-    return { verdict, fight: verdict === 'stronger' || verdict === 'even' && ratio >= need,
-        ratio: Math.round(ratio * 100) / 100, required: need };
+    const chance = Tendency.chance(verdict === 'stronger' ? 1 : verdict === 'weaker' ? 0 : 0.5 + SLOPE * (ratio - need));
+    return { verdict, chance, ratio: Math.round(ratio * 100) / 100, required: need };
+}
+
+// One roll per decision: is the bot willing? key: the decision's key parts.
+function willing(result, ...key) {
+    return Tendency.roll(...key) < result.chance;
 }
 
 module.exports = { GRADE, NOTHING, glow, look, compare, best, actorLook, stateLook, actorPeople, statePeople, seen, actorSeen, stateCue, stateSeen, actorSide, stateSide,
     resources, condition,
-    fear, required, canWin };
+    fear, required, canWin, willing, SLOPE };

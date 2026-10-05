@@ -80,49 +80,61 @@ assert(Math.abs(V.condition(1, 0, 1, false, true) - 0.8) < 1e-12, 'lost CP count
 assert(V.condition(1, 1, 0.05, true, true) < 0.25, 'a caster without MP is weak');
 assert(Math.abs(V.resources(1, 1, 1, false) - 1.25) < 1e-12, 'the author\'s resource factor');
 
-// The verdict.
+// The verdict: a chance of being willing, never 0 or 1 (user, 2026-10-05).
+// Stronger 0.98, weaker 0.02, even 0.5 + SLOPE x (ratio - threshold), SLOPE = 2.
 const side = (look, people = 1, strength) => ({ look, people, strength });
 const calm = { caution: 0.5, assertiveness: 0.5, empathy: 0.5 };
 const C = L('c', 0, 'c'), D = L('d', 0, 'd');
 const win = (own, other, traits = calm, fear = 0) => V.canWin({ own, other, traits, fear });
-assert.deepStrictEqual([win(side(C), side(D)).verdict, win(side(C), side(D)).fight], ['stronger', true]);
-assert.deepStrictEqual([win(side(D), side(C)).verdict, win(side(D), side(C)).fight], ['weaker', false]);
-assert.strictEqual(win(side(D), side(C), { caution: 0, assertiveness: 1 }).fight, false, 'visibly weaker: traits do not help');
-assert.strictEqual(win(side(C), side(D), { caution: 1, assertiveness: 0 }).fight, true, 'visibly stronger: even the cautious fight');
-// Visibly equal: the author's threshold 0.9 + 0.55 caution - 0.35 assertiveness.
+const near = (a, b) => Math.abs(a - b) < 1e-9;
+assert.strictEqual(V.SLOPE, 2);
+assert.deepStrictEqual([win(side(C), side(D)).verdict, win(side(C), side(D)).chance], ['stronger', 0.98]);
+assert.deepStrictEqual([win(side(D), side(C)).verdict, win(side(D), side(C)).chance], ['weaker', 0.02]);
+assert.strictEqual(win(side(D), side(C), { caution: 0, assertiveness: 1 }).chance, 0.02, 'visibly weaker: traits do not help, but it is never 0');
+assert.strictEqual(win(side(C), side(D), { caution: 1, assertiveness: 0 }).chance, 0.98, 'visibly stronger: even the cautious, but never 1');
+// Visibly equal: around the author's threshold 0.9 + 0.55 caution - 0.35 assertiveness.
 assert.strictEqual(win(side(D), side(D)).required, 1);
-assert.deepStrictEqual([win(side(D), side(D)).verdict, win(side(D), side(D)).fight], ['even', true], 'calm accepts even odds');
-assert.strictEqual(win(side(D), side(D), { caution: 0.8, assertiveness: 0.3 }).fight, false, 'the cautious want an advantage');
-assert.strictEqual(win(side(D, 2), side(D), { caution: 0.8, assertiveness: 0.3 }).fight, true, 'two against one is an advantage');
-assert.strictEqual(win(side(D, 1, 0.6), side(D), { caution: 0, assertiveness: 1 }).fight, true, 'the assertive fight hurt (0.6 >= 0.55)');
-assert.strictEqual(win(side(D, 1, 0.5), side(D), { caution: 0, assertiveness: 1 }).fight, false);
+assert.deepStrictEqual([win(side(D), side(D)).verdict, win(side(D), side(D)).chance], ['even', 0.5], 'calm at even odds: a coin');
+assert(near(win(side(D), side(D), { caution: 0.8, assertiveness: 0.3 }).chance, 0.5 + 2 * (1 - 1.235)), 'the cautious want an advantage');
+assert.strictEqual(win(side(D, 2), side(D), { caution: 0.8, assertiveness: 0.3 }).chance, 0.98, 'two against one: capped');
+assert(near(win(side(D, 1, 0.6), side(D), { caution: 0, assertiveness: 1 }).chance, 0.6), 'the assertive hurt: 0.5 + 2 x (0.6 - 0.55)');
+assert(near(win(side(D, 1, 0.5), side(D), { caution: 0, assertiveness: 1 }).chance, 0.4));
+assert.strictEqual(win(side(D, 1, 0.1), side(D, 3)).chance, 0.02, 'hopeless odds: the floor, not zero');
 // People with him.
-assert.strictEqual(win(side(D), side(D, 2)).fight, false, 'one against two at equal gear');
+assert.strictEqual(win(side(D), side(D, 2)).chance, 0.02, 'one against two at equal gear: 0.5 + 2 x (0.5 - 1), floored');
 assert.strictEqual(win(side(C), side(D, 2)).verdict, 'even', 'better gear against more people cannot be told');
 assert.strictEqual(win(side(D, 2), side(C)).verdict, 'even', 'worse gear with more people cannot be told');
-assert.strictEqual(win(side(D, 2), side(C)).fight, true);
+assert.strictEqual(win(side(D, 2), side(C)).chance, 0.98);
 assert.strictEqual(win(side(C, 1, 0.3), side(D)).verdict, 'stronger', 'own wounds do not hide a visible gap');
 // A visibly worn opponent: the even case weighs his seen condition, the gear verdict does not.
 const cautious = { caution: 0.8, assertiveness: 0.3 };
-assert.strictEqual(win(side(D), side(D), cautious).fight, false);
-assert.strictEqual(win(side(D), side(D, 1, 0.75), cautious).fight, true, 'the cautious take on a visibly worn equal');
+assert(win(side(D), side(D, 1, 0.75), cautious).chance > win(side(D), side(D), cautious).chance + 0.5, 'the cautious take on a visibly worn equal');
 assert.strictEqual(win(side(D), side(C, 1, 0.25)).verdict, 'weaker', 'a worn but visibly stronger one still looks stronger');
 // Memory: fear asks for more.
 const feared = { ready: true, personal: { fear: 6 } };
 assert(Math.abs(V.fear(feared) - 0.2) < 1e-12);
 assert.strictEqual(V.fear({ ready: false, personal: { fear: 30 } }), 0);
 assert.strictEqual(V.fear({ ready: true, personal: { fear: 9 }, effective: { fear: 30 } }), 1, 'the effective feeling wins');
-assert.strictEqual(win(side(D), side(D), calm, V.fear(feared)).fight, false, 'one remembered death turns an even fight down');
-assert.strictEqual(win(side(C), side(D), calm, 1).fight, true, 'fear does not hide a visible gap');
+assert(near(win(side(D), side(D), calm, V.fear(feared)).chance, 0.1), 'one remembered death: 0.5 + 2 x (1 - 1.2)');
+assert.strictEqual(win(side(C), side(D), calm, 1).chance, 0.98, 'fear does not hide a visible gap');
 // Aggression scales the threshold as in the author's defense.
 Config.pvpAggression = 0.25;
-assert.strictEqual(win(side(D), side(D)).fight, false);
+assert(win(side(D), side(D)).chance < 0.5);
 Config.pvpAggression = 1;
-assert.strictEqual(win(side(D), side(D), { caution: 1, assertiveness: 0 }).fight, true);
+assert(win(side(D), side(D), { caution: 1, assertiveness: 0 }).chance > 0.5);
 Config.pvpAggression = 0.5;
 // No never-fight trio (user, 2026-10-05): a cautious, meek, empathic bot follows the threshold.
 assert.strictEqual(V.avoidsPvp, undefined);
-assert.strictEqual(win(side(C), side(D), { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).fight, true);
+assert.strictEqual(win(side(C), side(D), { caution: 0.9, assertiveness: 0.1, empathy: 0.9 }).chance, 0.98);
+// One roll per decision.
+const coin = win(side(D), side(D));
+assert.strictEqual(V.willing(coin, 'k', 1), V.willing(coin, 'k', 1), 'the same decision, the same answer');
+let yes = 0;
+for (let i = 0; i < 4000; i++) yes += V.willing(coin, 'coin', i);
+assert(yes > 1800 && yes < 2200, 'an even chance is a coin');
+let rare = 0;
+for (let i = 0; i < 20000; i++) rare += V.willing(win(side(D), side(C)), 'weaker', i);
+assert(rare > 200 && rare < 600, 'a visibly weaker bot still steps in, about 2% of the time');
 
 Config.pvpAggression = saved;
 console.log('visible strength checks passed');

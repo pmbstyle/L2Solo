@@ -580,6 +580,10 @@ module.exports = {
             }
         });
 
+        // One roll per sighting: the same PK seen on the following ticks keeps it.
+        if (session.pkSighting?.id !== spottedPk?.fetchId()) {
+            session.pkSighting = spottedPk ? { id: spottedPk.fetchId(), at: Date.now() } : null;
+        }
         if (spottedPk) {
             const allies = World.user.sessions.filter((otherSession) => {
                 const other = otherSession.actor;
@@ -589,6 +593,7 @@ module.exports = {
             });
             const pvpDecision = BotPvpRisk.evaluate({
                 ...BotPvpRisk.sighting(session, spottedPk),
+                key: ['pk', bot.fetchId(), session.pkSighting.id, session.pkSighting.at],
                 hpRatio: bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
                 mpRatio: bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
                 allies: allies.length,
