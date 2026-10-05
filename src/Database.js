@@ -5405,7 +5405,7 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             let life = null;
             if (coldState) {
-                life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
                 // A queued flush can hand the bot to a worker or add a craft
                 // reservation after the caller planned the withdrawal.
                 if (!life || Number(coldState.characterId) !== Number(characterId)
@@ -5414,6 +5414,19 @@ const Database = {
                     || (coldState.simulation && Number(life.simulationRevision) !== Number(coldState.simulation.revision))
                     || JSON.stringify(jsonObject(life.statsJson).equipmentPlan || null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
                     throw new Error('economy_state_changed');
+                }
+                // A resolve saves its lifecycle row before materializing loot.
+                // Hydration can see that row while physical items still lag.
+                const inventory = jsonObject(life.inventorySummary);
+                const physical = all(`SELECT selfId, SUM(amount) AS amount FROM items
+                    WHERE characterId = ? AND selfId IN (57, ?) GROUP BY selfId`, [characterId, item.selfId]);
+                const amounts = new Map(physical.map(row => [Number(row.selfId), Number(row.amount)]));
+                for (const selfId of new Set([57, Number(item.selfId)])) {
+                    const projected = Number(inventory[String(selfId)]?.amount || 0);
+                    if (projected !== Number(amounts.get(selfId) || 0)
+                        || projected !== Number(coldState.inventory?.[String(selfId)]?.amount || 0)) {
+                        throw new Error('economy_state_changed');
+                    }
                 }
             }
             const source = one('SELECT id, selfId, amount, enchant, petData FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
