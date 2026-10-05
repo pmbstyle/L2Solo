@@ -12,7 +12,7 @@ const ProgressionRates = invoke('GameServer/ProgressionRates');
 // level; per role and spot level band a curve says how each value changes
 // with the bot's level over the spot's level. Kills are capped by what the
 // spot's monster count allows. Values are at rate x1; the server's rates are
-// applied here.
+// applied here (loot with the spot's measured response to the drop rate).
 const DEFAULT_FILE = path.resolve(__dirname, '../../../../data/Bots/spot-table.json');
 
 let table = null;
@@ -96,6 +96,17 @@ function at(values, gaps, gap) {
     return values[index] + (values[index + 1] - values[index]) * share;
 }
 
+// Loot does not grow in proportion to the drop rate (a group stops at 100%
+// and then drops one item): the spot keeps its loot at drop rate 10 and 50
+// over rate x its loot at rate 1; other rates take the log-linear blend.
+function lootRateFactor(spot, dropRate) {
+    const [, , , , , at10, at50] = spot;
+    if (!(dropRate > 1)) return 1;
+    if (dropRate <= 10) return 1 + (at10 - 1) * Math.log10(dropRate);
+    if (dropRate <= 50) return at10 + (at50 - at10) * Math.log(dropRate / 10) / Math.log(5);
+    return at50;
+}
+
 // The C4 exp/SP penalty for monsters far below the killer (problem E11) is
 // not in the author's combat today; step 3.5(a) puts its factor here.
 function expGapFactor(_gap) {
@@ -135,7 +146,7 @@ function value(spotId, role, level, shots = true) {
         sp: kills * row[t.f.sp] * ratio('exp') * expGapFactor(gap) * rates.sp,
         adena: kills * row[t.f.adena] * ratio('adena') * rates.adena,
         // Loot follows the adena curve: same drop groups and deep-blue rule.
-        loot: kills * row[t.f.loot] * ratio('adena') * rates.drop,
+        loot: kills * row[t.f.loot] * ratio('adena') * rates.drop * lootRateFactor(t.spots[s], rates.drop),
         shots: kills * row[t.f.shots] * ratio('busy'),
         potions: kills * row[t.f.potions] * ratio('busy'),
         busyShare: Math.min(1, kills * busy / 3600)

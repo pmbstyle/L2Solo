@@ -37,8 +37,8 @@ try {
     assert(table.header.counts.catalogueSpots > 1500, 'the spawned world has its hunting spots');
     assert.strictEqual(table.header.inputs.rate, 'x1');
     assert(/^[0-9a-f]{7,}/.test(table.header.revision), 'the revision is recorded');
-    assert(table.spots.every((spot) => spot.length === 5 && spot[3] > 0 && spot[4] === 1),
-        'every spot has its level, density, kill cap and a pull of one monster');
+    assert(table.spots.every((spot) => spot.length === 7 && spot[3] > 0 && spot[4] === 1 && spot[5] > 0 && spot[5] <= 1
+        && spot[6] > 0 && spot[6] <= spot[5]), 'every spot has its level, density, kill cap, a pull of one monster and its loot response to the rate');
     for (const role of Object.keys(table.curves)) {
         for (const curve of Object.values(table.curves[role])) {
             assert(table.curveFields.every((field) => curve[field].length === table.gaps.length), 'a curve value per gap');

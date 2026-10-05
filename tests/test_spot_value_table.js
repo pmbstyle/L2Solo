@@ -40,14 +40,18 @@ near(Table.value('S', 'spoiler', 18).kills, 150, 'a role without a measured curv
 assert.strictEqual(Table.referenceLevel('S', 'spoiler'), 24, 'the level the row was measured at');
 assert.strictEqual(Table.spotLevel('T'), 18);
 
-// Rates: kills do not change, exp, SP, adena and loot scale with the server's rates.
+// Rates: kills do not change, exp, SP and adena scale with the server's rates, loot with the spot's
+// measured response to the drop rate (S keeps 0.8 of rate x loot at x10, 0.6 at x50).
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
 const x10 = Table.value('S', 'dps', 24, true);
 near(x10.kills, ref.kills, 'the rate does not change the fights');
 near(x10.exp, ref.exp * 10, 'exp x rate');
 near(x10.sp, ref.sp * 10, 'SP x rate');
 near(x10.adena, ref.adena * 10, 'adena x rate');
-near(x10.loot, ref.loot * 10, 'loot x rate');
+near(x10.loot, ref.loot * 10 * 0.8, 'loot x rate x the spot\'s response to the drop rate');
+process.env.L2NODE_PROGRESSION_RATE = 'x50';
+near(Table.value('S', 'dps', 24, true).loot, ref.loot * 50 * 0.6, 'and at x50');
+near(Table.value('T', 'dps', 24, true).loot, Table.value('T', 'dps', 24, true).kills * 20 * 50, 'a spot whose drops scale fully');
 process.env.L2NODE_PROGRESSION_RATE = 'x1';
 
 Table.useFile();

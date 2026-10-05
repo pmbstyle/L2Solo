@@ -6,8 +6,8 @@
   "rowFields": ["minGap", "refGap", "kph", "busy", "deaths", "exp", "sp", "adena", "loot", "shots", "potions"],
   "curveFields": ["kph", "busy", "deaths", "exp", "adena"],
   "spots": [
-    ["S", 18, 30, 250, 1],
-    ["T", 18, 3, 48, 1]
+    ["S", 18, 30, 250, 1, 0.8, 0.6],
+    ["T", 18, 3, 48, 1, 1, 1]
   ],
   "rows": [
     [[-2, 6, 200, 9, 0.001, 100, 5, 30, 20, 4, 0.1], null, [0, 6, 150, 12, 0.002, 100, 5, 30, 60, 0, 0.1], null],

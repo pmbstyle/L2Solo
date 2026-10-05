@@ -24,7 +24,8 @@
 //   spots of the band. The curve carries the kit grade steps of the band and
 //   the author's deep-blue drop rule; the C4 exp penalty (E11) is not in the
 //   author's combat and is not in the curve.
-// Everything is at rate x1: the reader applies the server's rates.
+// Everything is at rate x1: the reader applies the server's rates (for loot
+// with the spot's measured response to drop rates 10 and 50).
 //
 // Deterministic: every run is seeded from its spot, role, shots and level;
 // the spot catalogue is spawned with a seeded Math.random. The output does
@@ -412,6 +413,40 @@ function curveFor(points) {
     return out;
 }
 
+// Drops do not grow in proportion to the rate: a group's chance stops at
+// 100% and then only one of its items drops (the author's rewardGroupRoll and
+// selectDropItem). Per spot, the expected loot per kill at drop rate 10 and 50
+// over rate x the loot at rate 1, from the author's itemDropYield over the
+// spot's monsters (spawn weights, killer at the reference gap).
+function lootRateResponse(spot) {
+    const ItemTemplateIndex = require('../src/GameServer/Item/ItemTemplateIndex');
+    const DataCache = invoke('GameServer/DataCache');
+    const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+    const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
+    const lootAt = (preset) => {
+        process.env.L2NODE_PROGRESSION_RATE = preset;
+        let value = 0;
+        for (const entry of spot.npcEntries || []) {
+            const reward = ItemTemplateIndex.find(DataCache.npcRewards, entry.selfId);
+            if (!reward) continue;
+            const npcLevel = Number(ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.level || spot.avgLevel);
+            const context = { npcLevel, killerLevel: Math.min(MAX_LEVEL, Number(spot.avgLevel) + REF_GAP) };
+            const ids = new Set((reward.rewards || []).flatMap((group) => (group.items || []).map((item) => Number(item.selfId))));
+            for (const id of ids) {
+                if (id === 57) continue;
+                const price = Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0);
+                value += Number(entry.count || 1) * Planner.itemDropYield(reward, id, 'drop', context).expectedYield
+                    * NpcSellRules.npcBuyPrice(price);
+            }
+        }
+        return value;
+    };
+    const x1 = lootAt('x1');
+    const out = x1 > 0 ? [round(lootAt('x10') / (10 * x1)), round(lootAt('x50') / (50 * x1))] : [1, 1];
+    process.env.L2NODE_PROGRESSION_RATE = 'x1';
+    return out;
+}
+
 function gitRevision() {
     try {
         const head = childProcess.execSync('git rev-parse --short HEAD', { cwd: root }).toString().trim();
@@ -509,8 +544,10 @@ async function main() {
             gaps: GAPS,
             rowFields: ROW_FIELDS,
             curveFields: CURVE_FIELDS,
-            // [id, level, density, kills per hour the spot allows, monsters per pull]
-            spots: spots.map((spot) => [spot.id, Number(spot.avgLevel), Number(spot.density), round(spotCap(spot)), 1]),
+            // [id, level, density, kills per hour the spot allows, monsters per pull,
+            //  loot at drop rate 10 and 50 over rate x loot at rate 1]
+            spots: spots.map((spot) => [spot.id, Number(spot.avgLevel), Number(spot.density), round(spotCap(spot)), 1,
+                ...lootRateResponse(spot)]),
             rows: rowResults.map((rows) => poolRowLoot(rows).map(packRow)),
             curves
         };
