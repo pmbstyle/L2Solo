@@ -23,22 +23,22 @@ function allowed(sides) {
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
-function canOpen(fighters, openingSide, traits, fear, timestamp, sides) {
-    const own = fighters.filter(f => f.side === openingSide), other = fighters.filter(f => f.side !== openingSide);
-    const condition = f => Visible.condition(f.vitals.hp / f.vitals.maxHp, f.profile.maxCp > 0 ? f.cp / f.profile.maxCp : 0,
-        f.vitals.mp / f.vitals.maxMp, Roles.shouldRestForMana(f.state), f.profile.maxCp > 0);
-    // A servitor is one more person; one's own counts as fresh.
-    const pets = side => side.reduce((sum, f) => sum + Visible.statePeople(f.state, timestamp) - 1, 0);
-    return Visible.willing(Visible.canWin({
-        own: { look: Visible.best(own.map(f => Visible.stateLook(f.state))), people: own.length + pets(own),
-            strength: own.reduce((sum, f) => sum + condition(f), 0) + pets(own) },
-        other: { look: Visible.best(other.map(f => Visible.stateLook(f.state))), people: other.length + pets(other),
-            strength: other.reduce((sum, f) => sum + Visible.stateSeen(f.state, timestamp, f.vitals), 0) + pets(other) },
-        traits, fear }), 'cold_open', sides[openingSide].principal.characterId, sides[1 - openingSide].principal.characterId, timestamp);
+// A cold side as it knows itself: best look, people with servitors, and people
+// weighted by their exact condition (HP, CP, MP; a servitor counts fresh).
+function ownSide(states, timestamp) {
+    const condition = state => {
+        const p = Profile.profileFor(state, timestamp);
+        return Visible.condition(clamp(Number(state.vitals?.hp) || 0, 0, p.maxHp) / p.maxHp, p.maxCp > 0 ? p.cp / p.maxCp : 0,
+            clamp(Number(state.vitals?.mp) || 0, 0, p.maxMp) / p.maxMp, Roles.shouldRestForMana(state), p.maxCp > 0);
+    };
+    return { look: Visible.best(states.map(Visible.stateLook)),
+        people: states.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0),
+        strength: states.reduce((sum, s) => sum + condition(s) + Visible.statePeople(s, timestamp) - 1, 0) };
 }
 
-// fear: the opener's fear of the other side's principal (interaction memory).
-function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, fear = 0 }) {
+// openerWilling: the opener's one can-I-win roll, taken at the encounter's
+// decision (the dispute or the revenge) and carried here (U26).
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, openerWilling = true }) {
     if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
     if (!step?.resuming && Aggression.normalize(Config.pvpAggression) === 0) return { started: false, reason: 'pvp_passive' };
     const fighters = sides.flatMap((side, index) => side.members
@@ -60,9 +60,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         }));
     // Resource retaliation opens on side 1; an independent grievance opens on side 0.
     // Can I win? The opener knows its own side exactly, the other only by look (U26).
-    if (!step?.resuming && !canOpen(fighters, openingSide, personaFor(sides[openingSide].principal)?.traits, fear, timestamp, sides)) {
-        return { started: false, reason: 'pvp_outmatched' };
-    }
+    if (!step?.resuming && !openerWilling) return { started: false, reason: 'pvp_outmatched' };
     const windowMs = step ? Math.max(0, Math.min(1000, Math.min(step.until, step.expiresAt) - timestamp)) : MAX_DURATION_MS;
     let time = 0, actions = 0, losingSide = null, outcome = 'disengaged';
     const incidents = new Map();
@@ -189,4 +187,4 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             preparations: f.preparations, charges: f.charges, heals: f.heals, kills: f.kills })), actions };
 }
 
-module.exports = { resolve, allowed, MAX_ACTIONS, MAX_DURATION_MS, FLAG_MS, RECOVERY_MS };
+module.exports = { resolve, allowed, ownSide, MAX_ACTIONS, MAX_DURATION_MS, FLAG_MS, RECOVERY_MS };

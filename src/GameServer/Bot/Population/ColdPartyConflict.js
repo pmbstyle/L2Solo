@@ -7,7 +7,6 @@ const { seeded } = require('./ColdCompetitionMonitor');
 const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 
 const { reaction, select } = require('../../Social/ConflictParticipationPolicy');
-const Visible = require('../../Social/VisibleStrength');
 
 async function apply({ event, life, owner, memory, parties, personaFor, participantAllowed,
     contestContextAllowed, onState, now, waitMs, cooldownMs, disputeCooldownMs = cooldownMs, pvpEnabled = () => false,
@@ -62,31 +61,20 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
     const opener = revenge ? 0 : 1;
-    // Side index's fear of the other side's principal (interaction memory).
-    const fear = index => Visible.fear(memory.assess({ id: sides[index].principal.characterId },
-        { id: sides[1 - index].principal.characterId }, {}, now()));
+    // Each side's can-I-win was rolled once at the encounter's decision (the
+    // dispute, or the revenge) and travels on the event (U26); nothing rerolls.
+    const willing = event.willing || [];
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? require('./ColdPvpResolver').resolve({ sides, roles, timestamp: resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp,
-            rng, personaFor, step, openingSide: opener, fear: resume ? 0 : fear(opener) }) : null;
+            rng, personaFor, step, openingSide: opener, openerWilling: willing[opener] === true }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
     const involved = side => side.members.filter(s => s.characterId === side.principal.characterId || roles.get(s.characterId) === 'support');
-    // Who gives way without a fight: each principal asks the visible verdict (U26)
-    // for the people actually involved. One side willing and the other not: the
-    // willing side pushes with the author's bound 0.9 (or 0.1); both or neither
-    // willing: the author's even coin flip.
-    const willing = index => {
-        const own = involved(sides[index]), other = involved(sides[1 - index]);
-        const people = list => list.reduce((sum, s) => sum + Visible.statePeople(s, timestamp), 0);
-        return Visible.willing(Visible.canWin({ own: { look: Visible.best(own.map(Visible.stateLook)), people: people(own) },
-            other: Visible.stateSide(other, timestamp),
-            traits: personaFor(sides[index].principal)?.traits, fear: fear(index) }), event.key, 'give_way', index);
-    };
-    const pushChance = () => {
-        const first = willing(0), second = willing(1);
-        return first === second ? 0.5 : first ? 0.9 : 0.1;
-    };
-    const displaced = !deescalated && rng() < (pvp?.started ? 0.5 : pushChance());
+    // Who gives way without a fight, by the same willingness: one side willing
+    // and the other not, the willing side pushes with the author's bound 0.9 (or
+    // 0.1); both or neither willing: the author's even coin flip.
+    const pushChance = !!willing[0] === !!willing[1] ? 0.5 : willing[0] ? 0.9 : 0.1;
+    const displaced = !deescalated && rng() < (pvp?.started ? 0.5 : pushChance);
     const losingIndex = pvp?.started ? pvp.losingSide : displaced ? 1 : 0;
     const outcome = pvp?.started ? `pvp_${pvp.outcome}` : deescalated ? 'deescalated' : displaced ? 'displaced' : 'held_ground';
     const encounter = pvp?.ongoing ? EncounterBudget.extend({ key: event.key, startedAt: resume?.startedAt || timestamp,
@@ -97,7 +85,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         ...(revenge ? { reason: 'revenge' } : {}),
         spotId: event.spotId, npcId: event.npcId,
         sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
-        roles: [...roles], seen: [...(resume?.seen || [])] }, pvp, timestamp) : null;
+        roles: [...roles], seen: [...(resume?.seen || [])], willing }, pvp, timestamp) : null;
     const episode = { key: event.key, at: resume?.startedAt || timestamp, action: revenge ? 'revenge' : 'contest', npcId: event.npcId,
         conflictUntil: (resume?.startedAt || timestamp) + (pvp?.started ? cooldownMs : disputeCooldownMs), outcome };
     const wait = { start: timestamp, until: encounter ? timestamp + 1000 : pvp?.started ? Math.max(timestamp, pvp.until) : timestamp + waitMs,

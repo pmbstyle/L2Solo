@@ -33,7 +33,8 @@ function event(a, b, key = `handoff:${a}:${b}`) {
     const p = id => { const s = state(id), party = Parties.find(s.party?.partyId); return { id,
         partyId: party?.partyId || null, partyUpdatedAt: party?.updatedAt, size: party?.memberIds.length || 1,
         revision: s.simulation.revision, memoryRevision: Memory.snapshot(id).revision }; };
-    return { key, at: clock, pressure: 3, spotId: 'test', npcId: 10, actor: p(a), peer: p(b), action: 'contest', pvpIntent: true };
+    // U26: each side's can-I-win, rolled once at the dispute and carried on the event.
+    return { key, at: clock, pressure: 3, spotId: 'test', npcId: 10, actor: p(a), peer: p(b), action: 'contest', pvpIntent: true, willing: [true, true] };
 }
 async function party(ids) {
     const p = Parties.prepareCommit({ partyId: `enc-party-${ids[0]}`, leaderId: ids[0], memberIds: ids,

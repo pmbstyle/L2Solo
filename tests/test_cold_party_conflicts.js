@@ -136,17 +136,18 @@ async function run() {
     const evenPair = await apply(65, 66, { rng: () => 0.45 });
     assert.strictEqual(evenPair.outcome, 'displaced', 'two equal solos: a coin flip (chance 0.5)');
     {
-        // PIN (before one decision per encounter): a cold dispute with a PvP intent asks
-        // can-I-win again at the start gate and, when no fight starts, twice more for
-        // who gives way: three rolls in one encounter.
+        // One decision per encounter (user, 2026-10-05; was: the start gate and give-way
+        // rolled again, three rolls). Each side's willingness comes with the event from
+        // the dispute; the encounter rolls nothing more.
         const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
         const labels = [];
-        Tendency.roll = (...key) => { labels.push(key.find(part => ['cold_open', 'give_way'].includes(part))); return 0.99; };
-        const chained = await apply(67, 68, { pvpEnabled: () => true, event: { ...event(67, 68), pvpIntent: true } });
+        Tendency.roll = (...key) => { labels.push(key.join(':')); return 0.99; };
+        const chained = await apply(67, 68, { pvpEnabled: () => true, event: { ...event(67, 68), pvpIntent: true, willing: [true, false] } });
         Tendency.roll = () => 0.49;
         assert(chained.ok, JSON.stringify(chained));
-        assert.deepStrictEqual(labels, ['cold_open', 'give_way', 'give_way'], 'today: three rolls in one encounter');
-        assert.strictEqual(chained.outcome, 'displaced', 'a refused start; neither side willing: the coin, 0.2 < 0.5');
+        assert.deepStrictEqual(labels, [], 'no second or third roll in the encounter');
+        assert.strictEqual(chained.pvpReason, 'pvp_outmatched', 'the peer (the opener of a resource retaliation) was not willing');
+        assert.strictEqual(chained.outcome, 'displaced', 'the willing actor pushes the unwilling peer (0.9 > 0.2 roll)');
     }
     assert.strictEqual(bystander.participants.find(p => p.id === 32).role, 'stand_aside');
     assert.strictEqual(bystander.memoryEvents, 1);

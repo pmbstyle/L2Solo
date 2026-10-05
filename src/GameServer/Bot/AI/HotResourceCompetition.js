@@ -118,9 +118,12 @@ function beforeAttack(session, mob, now = Date.now(), rng = Math.random) {
     const nearby = invoke('GameServer/World/World').fetchNpcsInRadius(session.actor.fetchLocX(), session.actor.fetchLocY(), 1800);
     const supply = Math.max(1, nearby.filter(n => n.fetchKind?.() === 'Monster' && n.fetchSelfId() === npcId
         && threats().alive(n) && n.fetchHp() > 0 && Math.abs(n.fetchLocZ() - session.actor.fetchLocZ()) < 500).length);
-    const unit = s => ({ partyId: s.party?.partyId, size: s.sessions.length,
-        level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length,
-        ...Visible.actorSide(s.sessions.map(m => m.actor)) });
+    const unit = s => {
+        const seen = Visible.actorSide(s.sessions.map(m => m.actor));
+        return { partyId: s.party?.partyId, size: s.sessions.length,
+            level: s.sessions.reduce((sum, m) => sum + m.actor.fetchLevel(), 0) / s.sessions.length,
+            own: { look: seen.look, people: seen.people }, seen };
+    };
     const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
     const outcome = Policy.decide({ pressure: (all.length / supply), actor: unit(a), peer: unit(b),
         towardPeer: ab, towardActor: ba, actorPersona: Voice.profile(session), peerPersona: Voice.profile(claimant.session), rng,

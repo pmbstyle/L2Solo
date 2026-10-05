@@ -245,7 +245,8 @@ function startKernel(config = {}) {
         competition = new ColdCompetitionMonitor({
             capacityForSpot: invoke('GameServer/Bot/AI/LevelingRoutes').capacityForSpot,
             personaFor: state => BotPersona.of(state),
-            isTargetAllowed: id => allowed.has(id)
+            isTargetAllowed: id => allowed.has(id),
+            ownSide: invoke('GameServer/Bot/Population/ColdPvpResolver').ownSide
         });
     }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));

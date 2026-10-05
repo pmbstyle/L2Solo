@@ -9,7 +9,10 @@ const BOT_COOLDOWN_MS = 2 * 60000;
 const unitKeyOf = (partyId, id) => partyId || `solo:${id}`;
 const { seeded } = require('../AI/TendencyRoll');
 class ColdCompetitionMonitor {
-    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true }) {
+    // ownSide(states, timestamp): how a side knows itself (U26). The worker passes the
+    // exact one (ColdPvpResolver.ownSide); standalone tests see themselves as others do.
+    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true, ownSide = Visible.stateSide }) {
+        this.ownSide = ownSide;
         this.capacityForSpot = capacityForSpot;
         this.personaFor = personaFor;
         this.isTargetAllowed = isTargetAllowed;
@@ -161,7 +164,7 @@ class ColdCompetitionMonitor {
             if (!ab.ready || !ba.ready) { this.report.skipped.memory++; continue; }
             const decisionRolls = Array.from({ length: 4 }, () => rng());
             let decisionIndex = 0;
-            const look = unit => ({ ...unit, ...Visible.stateSide(unit.members, timestamp) });
+            const look = unit => ({ ...unit, own: this.ownSide(unit.members, timestamp), seen: Visible.stateSide(unit.members, timestamp) });
             const key = `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${[actor.id, peer.id].sort((a, b) => a - b).join(':')}`;
             const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key });
@@ -187,7 +190,7 @@ class ColdCompetitionMonitor {
         }
         this.cursor += Math.min(32, pressured.length);
         if (elapsed > 0) {
-            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`));
+            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`), this.ownSide);
             this.report.events.push(...revenge);
             this.report.recent = [...this.report.recent, ...revenge].slice(-12);
             this.report.revenge = { ...this.revenge.report };

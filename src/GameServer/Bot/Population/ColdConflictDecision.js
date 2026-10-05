@@ -38,10 +38,11 @@ function refresh(event, { life, parties, memory, personaFor }, timestamp) {
             return { reason: 'invalid_decision_rolls' };
         }
         let index = 0;
-        const look = side => ({ ...side.participant, ...Visible.stateSide(side.members, timestamp) });
+        const look = side => ({ ...side.participant, own: require('./ColdPvpResolver').ownSide(side.members, timestamp),
+            seen: Visible.stateSide(side.members, timestamp) });
         decision = Policy.decide({ pressure: event.pressure, actor: look(a), peer: look(b),
             actorPersona: personaFor(a.state), peerPersona: personaFor(b.state),
-            towardPeer: ab, towardActor: ba, rng: () => rolls[index++], key: event.key });
+            towardPeer: ab, towardActor: ba, rng: () => rolls[index++], key: event.key, willing: event.willing });
         if (decision.action !== 'contest') return { reason: 'decision_changed', decision: decision.action };
     }
     // Revenge has its own saved roll and is re-evaluated by ColdPartyConflict.

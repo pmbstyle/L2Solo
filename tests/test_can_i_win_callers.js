@@ -47,23 +47,25 @@ assert.strictEqual(dispute(solo(40), solo(40), wary).reason, 'outmatched', 'the 
 assert.strictEqual(dispute(solo(40), solo(40), calm, { ready: true, personal: { fear: 6, affinity: 0, trust: 0, hostility: 0 } }).reason,
     'outmatched', 'fear of him: outmatched by an even look');
 
-// The cold refresh re-asks the same question with the saved rolls.
+// The cold refresh re-asks the same question with the saved rolls and the willingness
+// rolled once at the dispute (one decision per encounter, user 2026-10-05).
 {
-    const gear = rank => ({ 1: { selfId: 1, amount: 1, rank, equipped: true, equippedSlots: [7], instances: [{ enchant: 0, equipped: true, slot: 7 }] } });
-    const cold = (id, level, rank = 'd') => ({ characterId: id, level, party: null, simulation: { revision: 1 }, inventory: gear(rank) });
-    const states = { 1: cold(1, 40), 2: cold(2, 40, 'c') };
+    const cold = (id, level) => ({ characterId: id, level, party: null, simulation: { revision: 1 } });
+    const states = { 1: cold(1, 40), 2: cold(2, 44) };
     const ctx = { life: { cachedState: id => states[id] }, parties: { find: () => null },
         memory: { assess: () => neutral }, personaFor: () => calm };
-    const event = { contextVersion: 1, action: 'contest', pressure: 3, decisionRolls: [0.99, 0.1, 0.99, 0.99],
-        actor: { id: 1 }, peer: { id: 2 } };
-    assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'avoid' },
-        'cold refresh: a visibly higher weapon grade outmatches');
-    states[2] = cold(2, 44);
-    assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'yield' },
-        'cold refresh: four hidden levels above look even');
-    states[2] = { ...cold(2, 40), stats: { coldCombat: { summon: { active: true, expiresAt: Date.now() + 60000 } } } };
-    assert.deepStrictEqual(Refresh.refresh(event, ctx, Date.now()), { reason: 'decision_changed', decision: 'avoid' },
-        'cold refresh: his servitor is one more person');
+    const event = willing => ({ contextVersion: 1, action: 'contest', pressure: 3, decisionRolls: [0.99, 0.1, 0.99, 0.99],
+        actor: { id: 1 }, peer: { id: 2 }, key: 'refresh-pin', willing });
+    assert.deepStrictEqual(Refresh.refresh(event([false, true]), ctx, Date.now()), { reason: 'decision_changed', decision: 'avoid' },
+        'cold refresh: the carried unwillingness is outmatched');
+    assert.deepStrictEqual(Refresh.refresh(event([true, true]), ctx, Date.now()), { reason: 'decision_changed', decision: 'yield' },
+        'cold refresh: carried willingness, four hidden levels above do not matter');
+    const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+    let rolls = 0;
+    Tendency.roll = () => { rolls++; return 0.49; };
+    Refresh.refresh(event([true, true]), ctx, Date.now());
+    Tendency.roll = () => 0.49;
+    assert.strictEqual(rolls, 0, 'the refresh reuses the rolls, it does not roll again');
 }
 
 // ---- 2. Cold PvP start (the opening side may refuse).
@@ -80,7 +82,11 @@ function coldStart(opener, other, persona = calm) {
     const sides = [{ principal: other, members: [other] }, { principal: opener, members: [opener] }];
     let seed = 7;
     const rng = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    return Pvp.resolve({ sides, roles: new Map(), timestamp: at, rng, personaFor: () => persona, openingSide: 1 });
+    // One decision per encounter: the opener's willingness is rolled at the dispute
+    // (own side exact, the other side as seen) and carried to the start.
+    const V = require('../src/GameServer/Social/VisibleStrength');
+    const openerWilling = V.willing(V.canWin({ own: Pvp.ownSide([opener], at), other: V.stateSide([other], at), traits: persona.traits }), 'pin');
+    return Pvp.resolve({ sides, roles: new Map(), timestamp: at, rng, personaFor: () => persona, openingSide: 1, openerWilling });
 }
 // U26: the opener sees its own side exactly and the other side by its look.
 const bold = { traits: { ...calm.traits, caution: 0, assertiveness: 1 } };
