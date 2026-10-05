@@ -129,6 +129,8 @@ function learnDeal(book, selfId, ctx, price) {
 
 // The bid of a buy ad for `units` worth `worth` a unit to the buyer, at most
 // `cap` a unit: the same belief, the mirrored decision. null: no bid gains.
+// The chosen bid is kept in the bot's beliefs with its worth (the buy ad's
+// own look reviews it, look), as a listing is (adopt).
 function bid(book, selfId, ctx, { units = 1, worth, cap, rollKey }) {
     const belief = PriceBelief.lookup(book, selfId, ctx) || PriceBelief.fresh(book, selfId, ctx);
     if (!belief) return null;
@@ -136,7 +138,12 @@ function bid(book, selfId, ctx, { units = 1, worth, cap, rollKey }) {
         board: ctx.board, ownerId: ctx.characterId, units, tripCost: ctx.tripCost,
         npcOffers: ctx.npcOffersFor(selfId), timestamp: ctx.timestamp
     });
-    return PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap }, rollKey);
+    const chosen = PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap }, rollKey);
+    if (chosen) {
+        adopt(book, belief, ctx, chosen.price);
+        belief.worth = Math.round(Number(worth) || 0);
+    }
+    return chosen;
 }
 
 // Attention (user, 2026-10-05): at a cold resolve the bot looks at its lines
@@ -162,11 +169,13 @@ function lookChance(state, lines, ctx, lookAt) {
     return TendencyRoll.chance(worth / Math.max(1e-9, worth + cost));
 }
 
-// The bot's look at its own sell lines (ColdSimulationWorker at a cold resolve): learns
-// from what happened since its last look and chooses each line's ask again
-// where new evidence arrived. Returns { book, reprices: [{ recordId, lineId,
-// selfId, price }], withdrawals: [{ recordId, lineId, selfId }] }; null when
-// it did not look.
+// The bot's look at its own lines (ColdSimulationWorker at a cold resolve):
+// learns from what happened since its last look and chooses each line's
+// price again where new evidence arrived: an ask for a sell line, a bid for
+// a buy ad (one system for both sides, group E follow-up; a bid that no
+// longer gains is withdrawn). Returns { book, reprices: [{ recordId,
+// lineId, selfId, price }], withdrawals: [{ recordId, lineId, selfId }] };
+// null when it did not look.
 function look(state, lines, ctx) {
     const book = PriceBelief.readBook(state.stats);
     const roll = TendencyRoll.roll('look', ctx.characterId, ctx.timestamp);
@@ -178,6 +187,15 @@ function look(state, lines, ctx) {
         const known = PriceBelief.lookup(book, line.selfId, ctx);
         const belief = known || PriceBelief.ensure(book, line.selfId, ctx);
         if (!belief) continue;
+        if (line.storeType === BUY) {
+            const chosen = lookBid(book, belief, known, line, ctx);
+            if (chosen === null) withdrawals.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId });
+            else if (chosen && chosen.price !== line.price) {
+                reprices.push({ recordId: line.recordId, lineId: line.lineId, selfId: line.selfId, price: chosen.price });
+                belief.ask = chosen.price;
+            }
+            continue;
+        }
         const ask = belief.ask > 0 ? belief.ask : line.price;
         const { observations, sales } = PriceBelief.lookObservations(book, belief, ctx, {
             ask, lines: ctx.board?.linesIn(MarketCounters.counterOf(line.selfId)) || 0
@@ -207,6 +225,33 @@ function look(state, lines, ctx) {
     }
     book.lookAt = ctx.timestamp;
     return { book, reprices, withdrawals };
+}
+
+// The look at one buy ad: learns from its fills and the sellers that went
+// elsewhere, then bids again (worth: the bid's worth kept with the belief,
+// else its own value; at most its bid plus what the bot holds a unit).
+// Returns the new { price } when evidence arrived, undefined when nothing
+// changed, null when no bid gains any more.
+function lookBid(book, belief, known, line, ctx) {
+    const bidNow = belief.ask > 0 ? belief.ask : line.price;
+    const { observations, fills } = PriceBelief.bidObservations(book, belief, ctx, {
+        bid: bidNow, lines: ctx.board?.list(line.selfId, BUY).length || 1
+    });
+    if (fills) {
+        PriceBelief.ownDeals(belief, fills);
+        PriceBelief.touch(book, belief, ctx, fills);
+    }
+    belief.ask = line.price;
+    if (known && !PriceBelief.learn(belief, observations)) return undefined;
+    if (!known) PriceBelief.learn(belief, observations);
+    const worth = belief.worth > 0 ? belief.worth : Math.exp(belief.mu);
+    const cap = Math.floor(Math.min(worth, line.price + ctx.adena / Math.max(1, line.count)));
+    const market = PriceDecision.marketFor(line.selfId, {
+        board: ctx.board, ownerId: ctx.characterId, units: line.count, tripCost: ctx.tripCost,
+        npcOffers: ctx.npcOffersFor(line.selfId), timestamp: ctx.timestamp
+    });
+    return PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap },
+        ['bid', ctx.characterId, line.selfId, book.looks], line.price);
 }
 
 module.exports = { traderContext, priceForSale, adopt, bestAnswer, disposition, bid, learnDeal, lookChance, look };

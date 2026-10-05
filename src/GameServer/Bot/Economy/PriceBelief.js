@@ -38,14 +38,14 @@ const HALVING_DEALS = 3;
 
 // Stored compactly in stats.priceBeliefs: { t: own touches, at: last look,
 // n: looks, b: [[selfId, mu, K, confidence, tick, index, bias, own deals,
-// ask, rival, item deals seen, counter deals seen]] }.
+// ask (or bid), rival, item deals seen, counter deals seen, worth of a bid]] }.
 function readBook(stats) {
     const stored = stats?.priceBeliefs;
     const beliefs = new Map();
     for (const row of stored?.b || []) {
         beliefs.set(Number(row[0]), {
             selfId: Number(row[0]), mu: row[1], K: row[2], c: row[3], tick: row[4], index: row[5], bias: row[6],
-            deals: row[7], ask: row[8], rival: row[9], seenItem: row[10], seenCounter: row[11]
+            deals: row[7], ask: row[8], rival: row[9], seenItem: row[10], seenCounter: row[11], worth: Number(row[12] || 0)
         });
     }
     return { tick: Number(stored?.t || 0), lookAt: Number(stored?.at || 0), looks: Number(stored?.n || 0), beliefs };
@@ -57,7 +57,7 @@ function writeBook(book) {
     return { t: book.tick, at: book.lookAt, n: book.looks, b: [...book.beliefs.values()].map((belief) => [
         belief.selfId, round(belief.mu, 1e4), round(belief.K, 100), round(belief.c, 1e3), belief.tick,
         belief.index === null ? null : round(belief.index, 1e4), round(belief.bias, 1e4), belief.deals, Math.round(belief.ask || 0),
-        Math.round(belief.rival || 0), belief.seenItem, belief.seenCounter]) };
+        Math.round(belief.rival || 0), belief.seenItem, belief.seenCounter, Math.round(belief.worth || 0)]) };
 }
 
 function sigma(belief) {
@@ -303,10 +303,41 @@ function lookObservations(book, belief, ctx, { ask, lines }) {
     return { observations, sales };
 }
 
+// The mirror for the bot's buy ad of the item (bidding `bid`; the buy side
+// learns as the sell side, group E follow-up): its fills say sellers accept
+// its bid (the price is no higher), the sellers of its counter that sold to
+// others say more, new deals of the item are prices, and the best rival bid
+// counts by the bot's understanding when it changed. lines: the open buy
+// lines of the item. Returns { observations, fills }.
+function bidObservations(book, belief, ctx, { bid, lines }) {
+    const id = belief.selfId;
+    const observations = [];
+    const item = MarketCounters.itemDeals(id);
+    const fresh = Math.min(item.prices.length, Math.max(0, item.deals - belief.seenItem));
+    let fills = 0;
+    for (let at = item.prices.length - fresh; at < item.prices.length; at++) {
+        if (Number(item.buyers?.[at]) === Number(ctx.characterId)) fills += 1;
+        else observations.push([Math.log(item.prices[at]), 1]);
+    }
+    const counter = MarketCounters.counter(MarketCounters.counterOf(id), ctx.timestamp);
+    const width = sigma(belief);
+    if (bid > 0 && fills) observations.push([Math.log(bid) - 0.5 * width, fills]);
+    const passed = Math.min(PASSED_MAX, Math.max(0, counter.deals - belief.seenCounter) / Math.max(1, lines) - fills);
+    if (bid > 0 && passed > 0) observations.push([Math.log(bid) + 0.5 * width, passed]);
+    const rival = ctx.board?.first(id, BUY, { excludeOwner: ctx.characterId, enchant: 0 })?.price || 0;
+    if (rival > 0 && !(belief.rival > 0 && Math.abs(rival / belief.rival - 1) <= RIVAL_CHANGE)) {
+        observations.push([Math.log(rival), 0.5 * Math.max(0.05, Number(ctx.understanding) || 0)]);
+    }
+    belief.rival = rival;
+    belief.seenItem = item.deals;
+    belief.seenCounter = counter.deals;
+    return { observations, fills };
+}
+
 function resetCaches() {
     demandCache.clear();
     recipesByMaterial = null;
 }
 
 module.exports = { S0, K_MAX, DROP, BOUND, FADE, readBook, writeBook, sigma, errorOf, confidence, lookup, prior, fresh,
-    ensure, keep, touch, learn, ownDeals, lookObservations, demandValue, resetCaches };
+    ensure, keep, touch, learn, ownDeals, lookObservations, bidObservations, demandValue, resetCaches };

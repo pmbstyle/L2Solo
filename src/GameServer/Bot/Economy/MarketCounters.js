@@ -110,10 +110,10 @@ function counterRow(key, counter) {
         counter.move === null ? null : Math.round(counter.move * 10000) / 10000];
 }
 
-// [key, deals, units per deal, prices..., sellers...]: the last prices and
-// who sold at each, oldest first.
+// [key, deals, units per deal, prices..., sellers..., buyers...]: the last
+// prices, who sold and who bought at each, oldest first.
 function itemRow(selfId, item) {
-    return [`i:${selfId}`, item.deals, Math.round(item.units * 100) / 100, ...item.prices, ...item.sellers];
+    return [`i:${selfId}`, item.deals, Math.round(item.units * 100) / 100, ...item.prices, ...item.sellers, ...item.buyers];
 }
 
 // [key, town, rate, at, town, rate, at, ...]: the counter's buyers per town.
@@ -136,7 +136,7 @@ function countTown(key, town, timestamp) {
 
 // One board deal: +1 on its counter (and on its town, where the deal was
 // made) and the item's price list.
-function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0, town = null) {
+function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0, town = null, buyerId = 0) {
     const id = Number(selfId);
     const price = Number(unitPrice);
     if (!id || id === 57 || !(price > 0) || !(Number(quantity) > 0)) return;
@@ -167,16 +167,18 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0,
     }
     let item = items.get(id);
     if (!item) {
-        item = { deals: 0, units: Number(quantity), prices: [], sellers: [] };
+        item = { deals: 0, units: Number(quantity), prices: [], sellers: [], buyers: [] };
         items.set(id, item);
     }
     item.deals += 1;
     item.units += (Number(quantity) - item.units) / INDEX_DEALS;
     item.prices.push(price);
     item.sellers.push(Number(sellerId) || 0);
+    item.buyers.push(Number(buyerId) || 0);
     if (item.prices.length > PRICES_KEPT) {
         item.prices.shift();
         item.sellers.shift();
+        item.buyers.shift();
     }
     const byTown = town ? countTown(key, String(town), timestamp) : null;
     if (channel) {
@@ -189,7 +191,8 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0,
 // The journal of the last day at start (oldest first): the same deals again.
 function load(rows = []) {
     for (const row of rows) {
-        deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId, row.town || null);
+        deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId, row.town || null,
+            row.buyerCharacterId);
     }
     return rows.length;
 }
@@ -255,18 +258,21 @@ function townDemand(key, timestamp = Date.now()) {
 }
 
 // The item's deals so far, the units a deal takes on average and its last
-// prices with their sellers, oldest first.
-const NO_DEALS = Object.freeze({ deals: 0, units: 1, prices: Object.freeze([]), sellers: Object.freeze([]) });
+// prices with their sellers and buyers, oldest first.
+const NO_DEALS = Object.freeze({ deals: 0, units: 1, prices: Object.freeze([]), sellers: Object.freeze([]),
+    buyers: Object.freeze([]) });
 function itemDeals(selfId) {
     const id = Number(selfId);
     if (mirror) {
         const row = mirror().get(`i:${id}`);
         if (!row) return NO_DEALS;
-        const kept = (row.length - 3) / 2;
-        return { deals: row[1], units: row[2], prices: row.slice(3, 3 + kept), sellers: row.slice(3 + kept) };
+        const kept = (row.length - 3) / 3;
+        return { deals: row[1], units: row[2], prices: row.slice(3, 3 + kept), sellers: row.slice(3 + kept, 3 + 2 * kept),
+            buyers: row.slice(3 + 2 * kept) };
     }
     const item = items.get(id);
-    return item ? { deals: item.deals, units: item.units, prices: item.prices, sellers: item.sellers } : NO_DEALS;
+    return item ? { deals: item.deals, units: item.units, prices: item.prices, sellers: item.sellers, buyers: item.buyers }
+        : NO_DEALS;
 }
 
 function firstPrice(selfId, timestamp = Date.now()) {

@@ -86,7 +86,7 @@ const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
-const { BoardIndex, SELL: SELL_SIDE } = require('../../AfkTrade/BoardIndex');
+const { BoardIndex } = require('../../AfkTrade/BoardIndex');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -127,14 +127,14 @@ BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
-// At each cold resolve a bot with sell lines on the board may look at them
-// (attention) and price them again (MarketPricing.look).
+// At each cold resolve a bot with lines on the board (sell lines and buy
+// ads) may look at them (attention) and price them again (MarketPricing.look).
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
 function reviewMarket(state, timestamp) {
     const board = boardReady();
     if (!board || state?.phase !== 'cold') return null;
-    const lines = board.ownerLines(state.characterId).filter((line) => line.storeType === SELL_SIDE);
+    const lines = board.ownerLines(state.characterId);
     if (!lines.length) return null;
     const ctx = MarketPricing.traderContext(state, {
         timestamp, board, persona: BotPersona.of(state),

@@ -214,4 +214,53 @@ Config.coldHonestTravel = false;
     AfkTrade._resetForTests();
 }
 
-console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands and landed material prices passed');
+// 8. One system for sell lines and buy ads (group E follow-up): the buy
+// ad's bid is kept in the bot's beliefs, and its own look learns from its
+// fills (sellers accept the bid: the price is no higher) and from the
+// sellers that sold to others (it is higher), then bids again.
+{
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const { BoardIndex, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const STEM = 1864;
+    const me = 997001;
+    const lookAt = (state, board, timestamp, lines) => {
+        const ctx = MarketPricing.traderContext(state, { board, persona: { traits: {}, understanding: 0.5 },
+            npcOffersFor: () => [], timestamp });
+        for (let tick = 0; tick < 50; tick++) {
+            const looked = MarketPricing.look(state, lines, { ...ctx, timestamp: timestamp + tick });
+            if (looked) return looked;
+        }
+        return null;
+    };
+    const run = (dealsBy) => {
+        MarketCounters.reset();
+        const t0 = 1800000000000;
+        for (let deal = 0; deal < 10; deal++) MarketCounters.deal(STEM, 200, 5, t0 + deal, 5, 'Giran', 5);
+        const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
+        const state = { characterId: me, level: 30, adena: 50000, activity: 'resting', loc: { ...SPOT }, inventory: {}, stats: {} };
+        const ctx = MarketPricing.traderContext(state, { board, persona: { traits: {}, understanding: 0.5 }, npcOffersFor: () => [],
+            timestamp: t0 + 100 });
+        const book = PriceBelief.readBook({});
+        const chosen = MarketPricing.bid(book, STEM, ctx, { units: 20, worth: 400, cap: 400, rollKey: ['b'] });
+        assert(chosen, 'a bid');
+        assert.strictEqual(book.beliefs.get(STEM).worth, 400, 'the bid is kept with its worth');
+        const before = book.beliefs.get(STEM).mu;
+        board.put({ id: 1, kind: 'buy_ad', storeType: BUY, ownerId: me, town: 'Giran', botOwned: true,
+            lines: [{ lineId: 10, selfId: STEM, count: 20, price: chosen.price }] });
+        for (let deal = 0; deal < 6; deal++) MarketCounters.deal(STEM, chosen.price, 2, t0 + 200 + deal, 9, 'Giran', dealsBy);
+        const looked = lookAt({ ...state, stats: { priceBeliefs: PriceBelief.writeBook(book) } }, board, t0 + 4000000,
+            board.ownerLines(me));
+        assert(looked, 'it looked');
+        return { before, after: looked.book.beliefs.get(STEM).mu };
+    };
+    const filled = run(me);
+    assert(filled.after < filled.before, `its fills say the price is no higher (${filled.before} -> ${filled.after})`);
+    const passed = run(5);
+    assert(passed.after > filled.after, 'sellers selling to others say it is higher');
+    MarketCounters.reset();
+}
+
+console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands, landed material'
+    + ' prices and the buy-ad look passed');

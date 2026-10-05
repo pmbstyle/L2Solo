@@ -54,7 +54,9 @@ function bidFor(state, goal) {
         kind: template.template?.kind || '',
         rank: template.etc?.rank || 'none',
         price,
-        count
+        count,
+        // The bot's beliefs with the bid kept: its buy ad's look reviews it.
+        book
     };
 }
 

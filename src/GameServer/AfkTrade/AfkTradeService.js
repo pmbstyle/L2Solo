@@ -584,7 +584,8 @@ async function settleOwners(ownerIds = []) {
 
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
     MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount, Date.now(),
-        kind === 'sale' ? result.shop?.ownerId : counterpartyId, result.shop?.town || null);
+        kind === 'sale' ? result.shop?.ownerId : counterpartyId, result.shop?.town || null,
+        kind === 'sale' ? counterpartyId : result.shop?.ownerId);
     syncOnlineInventory(result.shop.ownerId, result.ownerInventory);
     syncOnlineInventory(counterpartyId, result.counterpartyInventory);
     await settleOwners(result.settlementOwners);

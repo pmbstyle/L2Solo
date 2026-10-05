@@ -186,24 +186,32 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
 // most it may pay a unit. Sellers come at the same rate as buyers; a seller
 // takes q with the chance the belief gives that he asks no more. Before the
 // board shows any seller of the kind, the wait is unknown: a bid is worth its
-// gain by that chance alone.
-function chooseBid(belief, market, trader, { worth, cap }, rollKey) {
+// gain by that chance alone. `current`: the ad's bid now; it stands while
+// it is still among the near-best ones, as an ask does.
+function chooseBid(belief, market, trader, { worth, cap }, rollKey, current = 0) {
     const width = PriceBelief.sigma(belief);
     const reference = Math.exp(belief.mu);
     const centre = belief.mu - (trader.assertiveness - 0.5) * width;
     const deals = Math.ceil(market.units / market.lot);
+    const valueAt = (price) => {
+        const accepts = phi((Math.log(price) - centre) / width);
+        const gain = Number(worth) - purchaseCost(price, reference, trader.caution);
+        if (!(gain > 0) || !(accepts > 0)) return null;
+        const rate = market.buyersPerHour * accepts;
+        return { price, value: rate > 0 ? gain * Math.exp(-trader.wait * (deals + 1) / 2 / rate) : gain * accepts };
+    };
     const candidates = [];
     for (const z of GRID) {
         const price = Math.max(1, Math.round(Math.exp(belief.mu + z * width)));
         if (price > cap || candidates.some((candidate) => candidate.price === price)) continue;
-        const accepts = phi((Math.log(price) - centre) / width);
-        const gain = Number(worth) - purchaseCost(price, reference, trader.caution);
-        if (!(gain > 0) || !(accepts > 0)) continue;
-        const rate = market.buyersPerHour * accepts;
-        const value = rate > 0 ? gain * Math.exp(-trader.wait * (deals + 1) / 2 / rate) : gain * accepts;
-        candidates.push({ price, value });
+        const candidate = valueAt(price);
+        if (candidate) candidates.push(candidate);
     }
     if (!candidates.length) return null;
+    let bestValue = -Infinity;
+    for (const candidate of candidates) bestValue = Math.max(bestValue, candidate.value);
+    const standing = current > 0 && current <= cap ? valueAt(current) : null;
+    if (standing && standing.value >= bestValue - NEAR_BEST * Math.abs(bestValue)) return standing;
     return nearBest(candidates, rollKey);
 }
 

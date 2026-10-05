@@ -253,11 +253,13 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
     return { lines: next.filter(viableSellLine).slice(0, MAX_LINES), listed, listings, book: classified.book };
 }
 
+// The bot's buy ad lines for its goal, with the beliefs that keep its bid
+// (lines.book, saved when the ad is published).
 function buyLines(state, goal) {
     const bid = BuyStoreService.bidFor(state, goal);
     if (!bid) return [];
     const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
-    return [{
+    const lines = [{
         selfId: Number(bid.selfId),
         name: bid.name,
         count: Number(bid.count),
@@ -266,12 +268,15 @@ function buyLines(state, goal) {
         slot: Number(item?.etc?.slot || 0),
         stackable: item?.etc?.stackable === true
     }];
+    lines.book = bid.book;
+    return lines;
 }
 
+// The bot's buy ads ask for the same items and counts: their bids are the
+// bot's own look's (MarketPricing.look), as a kept sell line's ask is.
 function sameBuyOrder(stock, lines) {
     if (Number(stock?.storeType) !== AfkTrade.BUY || stock.lines.length !== lines.length) return false;
     return stock.lines.every((line, index) => Number(line.selfId) === Number(lines[index].selfId)
-        && Number(line.price) === Number(lines[index].price)
         && Number(line.count) === Number(lines[index].count));
 }
 
@@ -341,7 +346,7 @@ async function reconcileBuyAds(state, goal, candidates) {
         if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
         throw error;
     }
-    return finishPublish(ownerId, state, shop);
+    return finishPublish(ownerId, await keepBeliefs(state, wanted.book), shop);
 }
 
 // One buy ad per wanted item, in the town the item trades in. An ad stands
@@ -375,7 +380,7 @@ async function openBuyAd(state, goal, town) {
         }
         throw error;
     }
-    const saved = LifeState.snapshot(ownerId) || state;
+    const saved = await keepBeliefs(LifeState.snapshot(ownerId) || state, wanted.book);
     rememberInventory(ownerId, saved);
     return { state: saved, opened: !!store, item: wanted[0], store };
 }
@@ -638,9 +643,10 @@ async function withdraw(ownerId) {
 }
 
 // What the bot's own look decided (MarketPricing.look in the cold worker): new asks of
-// its lines, and lines whose best outcome is now the NPC (they leave the
-// board; the NPC buys them at the next town visit). A line a deal or another
-// move changed meanwhile waits for the next look.
+// its lines and new bids of its buy ads, lines whose best outcome is now the
+// NPC (they leave the board; the NPC buys them at the next town visit) and
+// buy ads no bid gains for (their escrow comes back). A line a deal or
+// another move changed meanwhile waits for the next look.
 async function applyReview(ownerId, review = {}) {
     const id = Number(ownerId);
     let changed = 0;
@@ -650,7 +656,7 @@ async function applyReview(ownerId, review = {}) {
             changed += 1;
         } catch (error) {
             if (!['afk_trade_shop_changed', 'afk_trade_line_unavailable', 'afk_trade_shop_unavailable',
-                'bot_afk_trade_unavailable'].includes(error.message)) throw error;
+                'bot_afk_trade_unavailable', 'not_enough_adena', 'afk_trade_budget_changed'].includes(error.message)) throw error;
         }
     }
     const leaving = new Set((review.withdrawals || []).map((line) => Number(line.lineId)));
@@ -658,8 +664,9 @@ async function applyReview(ownerId, review = {}) {
         const lines = (record.lines || []).filter((line) => Number(line.count) > 0);
         if (!lines.some((line) => leaving.has(Number(line.id)))) continue;
         try {
-            if (record.kind === 'sell_ad') await AfkTrade.closeBotRecord(id, record.id, { expectedRevision: record.revision });
-            else if (record.kind === 'shop') {
+            if (record.kind === 'sell_ad' || record.kind === 'buy_ad') {
+                await AfkTrade.closeBotRecord(id, record.id, { expectedRevision: record.revision });
+            } else if (record.kind === 'shop') {
                 await publishPrunedSellShop(AfkTrade.findOwnerProjection(id)?.shop || record,
                     lines.filter((line) => !leaving.has(Number(line.id))));
             }

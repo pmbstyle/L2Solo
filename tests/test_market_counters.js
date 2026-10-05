@@ -68,7 +68,7 @@ assert.deepStrictEqual(MarketCounters.itemDeals(1864), worker.item);
 const mirroredTowns = MarketCounters.townDemand('material none', end);
 assert.deepStrictEqual(mirroredTowns.map((entry) => entry.town), worker.towns.map((entry) => entry.town));
 mirroredTowns.forEach((entry, at) => assert(Math.abs(entry.perHour - worker.towns[at].perHour) < 0.01));
-assert.deepStrictEqual(MarketCounters.itemDeals(1), { deals: 0, units: 1, prices: [], sellers: [] });
+assert.deepStrictEqual(MarketCounters.itemDeals(1), { deals: 0, units: 1, prices: [], sellers: [], buyers: [] });
 
 // The journal replayed at start gives the same counters.
 MarketCounters.reset();
