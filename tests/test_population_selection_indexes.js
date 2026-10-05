@@ -16,7 +16,7 @@ if (process.argv[2] === '--bootstrap') {
     const databasePath = path.join(directory, 'states.sqlite');
     const indexNames = ['bot_goal_state_review_queue', 'bot_life_state_goal_review',
         'warehouse_items_positive_self_owner', 'bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand',
-        'bot_life_state_market_review'];
+        'bot_life_state_market_page'];
     const bootstrap = () => {
         const result = spawnSync(process.execPath, [__filename, '--bootstrap', databasePath], { encoding: 'utf8' });
         assert.strictEqual(result.status, 0, result.stdout + result.stderr);
@@ -39,7 +39,7 @@ if (process.argv[2] === '--bootstrap') {
                 'fresh databases must have ' + name);
             db.exec('DROP INDEX ' + name);
         }
-        db.exec('DELETE FROM schema_migrations WHERE version IN (33, 34, 35)');
+        db.exec('DELETE FROM schema_migrations WHERE version IN (33, 34, 35, 55)');
         // Query fixtures do not require a running world or player accounts.
         db.exec('PRAGMA foreign_keys = OFF; BEGIN');
         const stateInsert = db.prepare(`INSERT INTO bot_life_state
@@ -75,6 +75,9 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 35').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 55').get().n, 1);
+        assert(!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_market_review'").get(),
+            'the board drops the expression index every statsJson write maintained');
 
         function verify() {
             const states = db.prepare('SELECT * FROM bot_life_state').all();
@@ -158,7 +161,7 @@ if (process.argv[2] === '--bootstrap') {
         assert(goalPlan.some(row => row.detail.includes('bot_life_state_goal_review')));
         const reviewPlan = db.prepare('EXPLAIN QUERY PLAN ' + marketSql.replaceAll('${safeLimit}', '8'))
             .all(250, 0, 0, 0);
-        assert(reviewPlan.some(row => row.detail.includes('bot_life_state_market_review')),
+        assert(reviewPlan.some(row => row.detail.includes('bot_life_state_market_page')),
             'market cooldown filtering must use the compact eligible-state index');
         assert(reviewPlan.some(row => row.detail.includes('MATERIALIZE candidates')),
             'market selection must bound the candidate page before loading full state payloads');
@@ -181,6 +184,9 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 33').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 34').get().n, 1);
         assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 35').get().n, 1);
+        assert.strictEqual(db.prepare('SELECT count(*) n FROM schema_migrations WHERE version = 55').get().n, 1);
+        assert(!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_market_review'").get(),
+            'the board drops the expression index every statsJson write maintained');
         verify();
         console.log('Selection index migration, query parity, lifecycle transitions, and rollback checks passed');
     } finally {

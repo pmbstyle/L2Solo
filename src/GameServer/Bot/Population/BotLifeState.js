@@ -2623,7 +2623,7 @@ const BotLifeState = {
         const fetchAfter = (cursor) => Database.execute([
             `WITH candidates AS MATERIALIZED (
                 SELECT states.characterId, states.updatedAt FROM ${TABLE} states
-                INDEXED BY bot_life_state_market_review
+                INDEXED BY bot_life_state_market_page
                 WHERE states.phase = 'cold'
                 AND (states.partyId IS NULL OR states.partyId = '')
                 AND states.activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting')

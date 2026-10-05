@@ -263,8 +263,8 @@ async function migrateOldWorld({ ownerId, buyerId }) {
     await Database.close();
     // Turn the new world back into an old single-file one.
     const world = new DatabaseSync(oldWorld);
-    world.exec(`DROP TRIGGER market_store_insert; DROP TRIGGER market_store_update; DROP TABLE history_outbox;
-        DELETE FROM world_meta; DELETE FROM schema_migrations WHERE version = 50;`);
+    world.exec(`DROP TRIGGER IF EXISTS market_store_insert; DROP TRIGGER IF EXISTS market_store_update; DROP TABLE history_outbox;
+        DELETE FROM world_meta; DELETE FROM schema_migrations WHERE version IN (50, 55);`);
     world.exec(fs.readFileSync(path.join(__dirname, '../database/sql/history.sql'), 'utf8'));
     world.exec(`DROP TABLE history_meta; DROP INDEX clan_actions_clan_recent;
         INSERT INTO accounts(username, password) VALUES ('old_owner', 'pw');

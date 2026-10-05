@@ -330,7 +330,7 @@ try {
                 'the candidate CTE must return rows through the database read path');
             assert(!marketCandidates.sql.includes('goalJson LIKE'), 'market reconciliation must not trust stale goal metadata');
             assert(marketCandidates.sql.includes("'$.marketSellRetryAfter'"), 'market reconciliation must exclude sellers whose retry cooldown is still active');
-            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_review'),
+            assert(marketCandidates.sql.includes('INDEXED BY bot_life_state_market_page'),
                 'market reconciliation must use its keyset-compatible lifecycle index');
             assert(!marketCandidates.sql.includes('COALESCE(states.updatedAt'),
                 'a redundant updatedAt expression must not force a temporary sort');

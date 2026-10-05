@@ -1345,6 +1345,20 @@ function applySchemaMigrations() {
             connection.prepare("INSERT OR IGNORE INTO world_meta (key, value) VALUES ('boardMigrationPending', ?)").run(String(now()));
         }
     }]);
+    // The physical cold stores are gone with the board: their statsJson
+    // triggers (two json_extract on every statsJson write) and the expression
+    // index the market review paged through go too (perf 15). The review keeps
+    // its filter and pages through a plain index.
+    migrations.push([55, () => connection.exec(`
+        DROP TRIGGER IF EXISTS market_store_insert;
+        DROP TRIGGER IF EXISTS market_store_update;
+        DROP INDEX IF EXISTS bot_life_state_market_review;
+        CREATE INDEX IF NOT EXISTS bot_life_state_market_page
+            ON bot_life_state(updatedAt, characterId)
+            WHERE phase = 'cold'
+            AND (partyId IS NULL OR partyId = '')
+            AND activity NOT IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting');
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
