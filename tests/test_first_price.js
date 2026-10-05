@@ -105,5 +105,36 @@ if (plain.source === 'buyback') assert.strictEqual(plain.price, NpcSellRules.npc
 assert.strictEqual(FirstPrice.firstPrice(1804, { spots: [] }).price, NpcSellRules.npcBuyPrice(
     Number(DataCache.items.find((item) => Number(item.selfId) === 1804).template.price)), 'a recipe with no source: the buy-back');
 
+// A recipe chain deeper than the craft depth is cut where it gets too deep:
+// the cut price serves the item asked for, but the deep material's own price,
+// asked at the top, prices its whole chain (it is not kept from the cut).
+{
+    const loose = DataCache.items.filter((item) => Number(item.template?.price) > 0
+        && String(item.template?.kind || '').startsWith('Other.Recipe')
+        && !Number.isFinite(BotMarketPricing.npcPrice({ selfId: item.selfId })))
+        .sort((a, b) => Number(a.template.price) - Number(b.template.price));
+    const chain = [...loose.slice(0, 6), loose[loose.length - 1]].map((item) => Number(item.selfId));
+    assert.strictEqual(new Set(chain).size, 7, 'fixture: seven distinct items');
+    const resolve = Recipes.resolveByProductId;
+    Recipes.resolveByProductId = (id) => {
+        const at = chain.indexOf(Number(id));
+        return at >= 0 && at < chain.length - 1
+            ? { productId: chain[at], productCount: 1, level: 1, mpCost: 0, materials: [{ selfId: chain[at + 1], amount: 1 }] }
+            : resolve(id);
+    };
+    try {
+        FirstPrice.resetCache();
+        FirstPrice.cachedFirstPrice(chain[0], { spots: [] });
+        const deep = FirstPrice.cachedFirstPrice(chain[5], { spots: [] });
+        assert.strictEqual(deep, FirstPrice.firstPrice(chain[5], { spots: [] }).price,
+            'a material cut deep in another chain keeps no cut price');
+        assert(deep > NpcSellRules.npcBuyPrice(Number(DataCache.items.find((item) => Number(item.selfId) === chain[5]).template.price)),
+            'fixture: its full price is above the buy-back the cut gives');
+    } finally {
+        Recipes.resolveByProductId = resolve;
+        FirstPrice.resetCache();
+    }
+}
+
 Table.useFile();
 console.log('First price of drops, crafted items, crystals, shots and the rest, inside the NPC walls, passed');

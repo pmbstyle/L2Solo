@@ -135,7 +135,12 @@ function seatedMpPerSecond(level) {
 const MAX_CRAFT_DEPTH = 5;
 function craftPrice(id, item, options, depth) {
     const recipe = C4RecipeItems.resolveByProductId(id);
-    if (!recipe || depth >= MAX_CRAFT_DEPTH) return null;
+    if (!recipe) return null;
+    if (depth >= MAX_CRAFT_DEPTH) {
+        // Cut short: what is priced from here is no full price to keep.
+        options.cut = true;
+        return null;
+    }
     const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
     let materials = 0;
     for (const material of recipe.materials || []) {
@@ -207,7 +212,9 @@ function firstPrice(itemId, { spots = [], timestamp = Date.now() } = {}) {
 
 // The first price for the market's readers (PriceBelief) and of a recipe's
 // materials, kept an hour of this thread's clock: it moves only with the
-// level bands' hours.
+// level bands' hours. A price whose recipe chain was cut at MAX_CRAFT_DEPTH
+// (deep inside another item's materials) is used there but not kept: the
+// item's own price, asked at the top, prices its whole chain.
 const CACHE_MS = 60 * 60 * 1000;
 const cache = new Map();
 function cachedFirstPrice(itemId, options = {}, depth = 0) {
@@ -215,8 +222,10 @@ function cachedFirstPrice(itemId, options = {}, depth = 0) {
     const kept = cache.get(id);
     const clock = Date.now();
     if (kept && clock - kept.at < CACHE_MS) return kept.value;
-    const value = priceOf(id, { spots: options.spots || [], timestamp: Number(options.timestamp || clock) }, depth)?.price ?? null;
-    cache.set(id, { at: clock, value });
+    const own = { spots: options.spots || [], timestamp: Number(options.timestamp || clock), cut: false };
+    const value = priceOf(id, own, depth)?.price ?? null;
+    if (own.cut) options.cut = true;
+    else cache.set(id, { at: clock, value });
     return value;
 }
 
