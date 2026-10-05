@@ -1554,7 +1554,21 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     };
 }
 
+// A solo hunt cycle holds one fight per 12 seconds of the cycle, at most a
+// third of the spot's monsters. The spot table generator reads the same rule.
+function soloFightCount(spot, elapsedMs) {
+    const maxFights = Math.max(1, Math.floor(elapsedMs / 12000));
+    return Math.min(maxFights, Math.max(1, Math.ceil((spot.density || 1) / 3)));
+}
+
+// The wait before the next solo hunt cycle, from a roll in [0, 1).
+function huntCycleDelayMs(roll) {
+    return 30000 + Math.round(roll * 90000);
+}
+
 const BackgroundResolver = {
+    soloFightCount,
+    huntCycleDelayMs,
     combat: { chooseSkill, chooseChargeSkill, coldChargeState, expireCharges, addCharges, consumeCharges,
         spendSkill, settleCharges, attackDamage,
         chooseHeal, applyAllyHeal, applyPartyHotTicks, actionDelayMs, hitSucceeds, coldRaidControlCapacity, coldRaidMinionPressure,
@@ -1732,8 +1746,7 @@ const BackgroundResolver = {
             };
         }
 
-        const maxFights = Math.max(1, Math.floor(elapsedMs / 12000));
-        const fights = Math.min(maxFights, Math.max(1, Math.ceil((spot.density || 1) / 3)));
+        const fights = soloFightCount(spot, elapsedMs);
         // Spend the cycle's available combat time on the current monster before
         // starting another. Slow kills must not repeatedly reset at 12 seconds.
         // Retain the old action budget and cap simulated combat at one minute.
@@ -1891,7 +1904,7 @@ const BackgroundResolver = {
             patch,
             events,
             materialize,
-            nextResolveAt: patch.stats?.restUntil || timestamp + 30000 + Math.round(rng() * 90000),
+            nextResolveAt: patch.stats?.restUntil || timestamp + huntCycleDelayMs(rng()),
             debug: {
                 elapsedMs,
                 combatMs,
