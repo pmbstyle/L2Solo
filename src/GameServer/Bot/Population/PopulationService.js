@@ -142,6 +142,30 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
+// A walker a player comes near (honest travel, ColdTrip) shows itself at the
+// teleport point it ran from or at the spot edge it runs to, whichever is
+// nearer its place on the road, never on the straight line between them; the
+// author's hot movement takes over from there. At the spot edge the trip is
+// done (resolveTravel's arrival); at the teleport point the bot stands with
+// its destination spot and hunts or walks on as a hot bot decides.
+function walkerAppearance(state, timestamp = Date.now()) {
+    const travel = state?.stats?.travel;
+    const run = travel?.run;
+    if (state?.activity !== 'traveling' || !run) return null;
+    if ((timestamp - run.startAt) / Math.max(1, run.endAt - run.startAt) >= 0.5) {
+        const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
+        return { ...state, ...arrival.patch };
+    }
+    return {
+        ...state,
+        activity: travel.arrivalActivity || 'hunting',
+        loc: { ...run.from },
+        spotId: travel.spotId || state.spotId,
+        currentRegion: travel.regionName || state.currentRegion,
+        stats: { ...state.stats, travel: null, ...(travel.clearMarketReturn ? { marketReturn: null } : {}) }
+    };
+}
+
 // Main's trip to a spot it chose itself: the trip a coordinator route to the
 // same spot starts (beginHuntingTrip). A regroup is a party trip.
 function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
@@ -1913,7 +1937,7 @@ const PopulationService = {
                             playerLoc: loc,
                             reason: 'near_player'
                         }).accepted;
-                        return floorAware.reduce((stateChain, state) => (
+                        const shown = floorAware.reduce((stateChain, state) => (
                             stateChain.then(() => {
                                 const craft = state.activity === 'crafting' && state.stats?.craftShop;
                                 const size = state.party?.partyId ? BackgroundPartyState.find(state.party.partyId)?.memberIds.length || 1 : 1;
@@ -1941,11 +1965,31 @@ const PopulationService = {
                                 }
                             })
                         ), Promise.resolve());
+                        return Config.coldHonestTravel === true
+                            ? shown.then(() => this.showWalkersNear(loc, activated, ambientActivated))
+                            : shown;
                     });
             });
         });
 
         return chain.then(() => activated);
+    },
+
+    // Walkers near a player appear within the same activation budget
+    // (walkerAppearance). Only the small walker list is read.
+    showWalkersNear(loc, activated = [], ambientActivated = [], timestamp = Date.now()) {
+        return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
+            if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
+            if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
+            const shown = walkerAppearance(state, timestamp);
+            if (!shown) return null;
+            return this.requestActivation(shown, 'near_player', { readyOnActivation: true, preferAnchor: true })
+                .then((result) => {
+                    if (!result.ok) return;
+                    activated.push(result);
+                    ambientActivated.push(result);
+                });
+        }), Promise.resolve()).then(() => activated);
     },
 
     cooldownEligibleHot() {
@@ -3828,6 +3872,7 @@ PopulationService.arrivalPointForState = (state, spot) => SpotService.arrivalPoi
 PopulationService.beginPartySpotTravel = beginPartySpotTravel;
 PopulationService.finishPartySpotTravel = finishPartySpotTravel;
 PopulationService.finishPartyTravelRecord = finishPartyTravelRecord;
+PopulationService.walkerAppearance = walkerAppearance;
 PopulationService.marketListingIntent = marketListingIntent;
 PopulationService.canResumeAffordableMarketPlan = canResumeAffordableMarketPlan;
 PopulationService.partyLimitsForObjective = partyLimitsForObjective;

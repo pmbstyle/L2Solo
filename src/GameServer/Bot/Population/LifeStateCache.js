@@ -18,6 +18,10 @@ class LifeStateCache extends Map {
         this.orderEntries = new Map();
         this.nextSequence = 0;
         this.occupancy = new SpotOccupancyIndex();
+        // Walkers (honest travel, ColdTrip): cold bots running the last part of
+        // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
+        // Kept on every write like the cells; read only by walkersNear.
+        this.walkers = new Map();
     }
 
     orderIndex(at, sequence) {
@@ -65,6 +69,9 @@ class LifeStateCache extends Map {
         this.insertOrder(id, state, sequence);
         this.occupancy.update(state);
         ShopPlaces.syncState(id, state);
+        const run = state.phase === 'cold' && state.activity === 'traveling' ? state.stats?.travel?.run : null;
+        if (run) this.walkers.set(id, run);
+        else this.walkers.delete(id);
         if (state.phase === 'cold' && state.activity !== 'pk_hunting') {
             const x = Number(state.loc?.locX || 0), y = Number(state.loc?.locY || 0);
             if (Number.isFinite(x) && Number.isFinite(y)) {
@@ -80,6 +87,7 @@ class LifeStateCache extends Map {
 
     delete(id) {
         this.removeCell(id);
+        this.walkers.delete(id);
         this.removeOrder(id);
         if (super.has(id)) this.occupancy.remove(stateKey(super.get(id)));
         ShopPlaces.release(ShopPlaces.stateOwner(id));
@@ -89,7 +97,7 @@ class LifeStateCache extends Map {
     }
 
     clear() {
-        super.clear(); this.cells.clear(); this.cellById.clear();
+        super.clear(); this.cells.clear(); this.cellById.clear(); this.walkers.clear();
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         ShopPlaces.releaseStates();
         this.revision++;
@@ -101,6 +109,22 @@ class LifeStateCache extends Map {
 
     beyondRecent(limit) {
         return this.ordered.slice(limit).map((entry) => entry.state);
+    }
+
+    // Walkers whose place on their run at `timestamp` (the straight-line
+    // estimate between its ends) is within `radius` of `loc`. One pass over the
+    // walkers, nothing stored: positions exist only while this asks.
+    walkersNear(loc, radius, timestamp) {
+        const x = Number(loc.locX), y = Number(loc.locY);
+        const found = [];
+        for (const [id, run] of this.walkers) {
+            if (timestamp < run.startAt || timestamp > run.endAt) continue;
+            const progress = (timestamp - run.startAt) / Math.max(1, run.endAt - run.startAt);
+            const px = run.from.locX + (run.to.locX - run.from.locX) * progress;
+            const py = run.from.locY + (run.to.locY - run.from.locY) * progress;
+            if ((px - x) ** 2 + (py - y) ** 2 <= radius ** 2) found.push(this.get(id));
+        }
+        return found;
     }
 
     near(loc, radius, limit) {
