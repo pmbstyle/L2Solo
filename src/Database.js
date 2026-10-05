@@ -2361,6 +2361,61 @@ function afkTradeAdenaRowsUnsafe(characterId) {
     return all('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 AND amount > 0 ORDER BY id', [characterId]);
 }
 
+// One line of a bot's board record at a new price (and, for a sell line,
+// a smaller count: the rest goes back to the bag). The record's escrow
+// follows a buy line's bid. Every check comes before the line's first write.
+// Returns { shop, changedIds, moved }: moved when an item or Adena moved.
+function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity) {
+    const shop = one(`SELECT shops.* FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
+        WHERE lines.id = ? AND shops.ownerId = ? AND shops.status = 'active'`, [id, characterId]);
+    if (!shop) throw new Error('afk_trade_shop_unavailable');
+    if (expectedRevision !== null && Number(shop.revision) !== Number(expectedRevision)) {
+        throw new Error('afk_trade_shop_changed');
+    }
+    const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ? AND count > 0', [id, shop.id]);
+    if (!line) throw new Error('afk_trade_line_unavailable');
+    const count = quantity === null ? Number(line.count) : Math.floor(Number(quantity));
+    if (!Number.isSafeInteger(count) || count < 1 || count > Number(line.count)) {
+        throw new Error('invalid_afk_trade_quantity');
+    }
+    const returned = Number(line.count) - count;
+    const difference = Number(shop.storeType) === 3
+        ? unitPrice * count - Number(line.price) * Number(line.count) : 0;
+    const reserved = Number(shop.escrowAdena || 0) + difference;
+    if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
+    if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
+    if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
+    const changedIds = [];
+    if (returned > 0 && Number(shop.storeType) === 1) {
+        afkTradeCreditItemUnsafe(characterId, line, returned);
+        changedIds.push(Number(line.selfId));
+    }
+    const timestamp = now();
+    write('UPDATE afk_trade_lines SET price = ?, count = ?, updatedAt = ? WHERE id = ?',
+        [unitPrice, count, timestamp, id]);
+    write(`UPDATE afk_trade_shops SET escrowAdena = ?, revision = revision + 1,
+        updatedAt = ? WHERE id = ?`, [reserved, timestamp, shop.id]);
+    const owner = one('SELECT username FROM characters WHERE id = ?', [characterId]);
+    const current = afkTradeShopUnsafe(shop.id);
+    const filled = completeAfkTradeIfFilledUnsafe(shop.id, timestamp, BoardRules.isBotAccount(owner?.username));
+    return {
+        shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
+        changedIds,
+        moved: changedIds.length > 0 || difference !== 0
+    };
+}
+
+// What a reprice moved: the owner's bag and the fenced cold row when an item
+// or Adena moved; a price-only change reads nothing and leaves the worker's
+// lease alone (ownerInventory null: the callers have nothing to sync).
+function afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) {
+    if (!moved) return { ownerInventory: null, coldLifeRows: {} };
+    return {
+        ownerInventory: afkTradeInventoryUnsafe(characterId),
+        coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], changedIds)
+    };
+}
+
 function afkTradeDebitAdenaUnsafe(characterId, amount) {
     let remaining = Math.max(0, Math.floor(Number(amount) || 0));
     if (remaining === 0) return;
@@ -3374,46 +3429,48 @@ const Database = {
             return Promise.reject(new Error('invalid_afk_trade_price'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const shop = one(`SELECT shops.* FROM afk_trade_shops shops JOIN afk_trade_lines lines ON lines.shopId = shops.id
-                WHERE lines.id = ? AND shops.ownerId = ? AND shops.status = 'active'`, [id, characterId]);
-            if (!shop) throw new Error('afk_trade_shop_unavailable');
-            if (expectedRevision !== null && Number(shop.revision) !== Number(expectedRevision)) {
-                throw new Error('afk_trade_shop_changed');
-            }
-            const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ? AND count > 0', [id, shop.id]);
-            if (!line) throw new Error('afk_trade_line_unavailable');
-            const count = quantity === null ? Number(line.count) : Math.floor(Number(quantity));
-            if (!Number.isSafeInteger(count) || count < 1 || count > Number(line.count)) {
-                throw new Error('invalid_afk_trade_quantity');
-            }
-            const returned = Number(line.count) - count;
-            const changedIds = [];
-            if (returned > 0 && Number(shop.storeType) === 1) {
-                afkTradeCreditItemUnsafe(characterId, line, returned);
-                changedIds.push(Number(line.selfId));
-            }
-            const difference = Number(shop.storeType) === 3
-                ? unitPrice * count - Number(line.price) * Number(line.count) : 0;
-            const reserved = Number(shop.escrowAdena || 0) + difference;
-            if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
-            if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
-            if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
-            const timestamp = now();
-            write('UPDATE afk_trade_lines SET price = ?, count = ?, updatedAt = ? WHERE id = ?',
-                [unitPrice, count, timestamp, id]);
-            write(`UPDATE afk_trade_shops SET escrowAdena = ?, revision = revision + 1,
-                updatedAt = ? WHERE id = ?`, [reserved, timestamp, shop.id]);
-            const owner = one('SELECT username FROM characters WHERE id = ?', [characterId]);
-            const current = afkTradeShopUnsafe(shop.id);
-            const filled = completeAfkTradeIfFilledUnsafe(shop.id, timestamp, BoardRules.isBotAccount(owner?.username));
-            // A price-only change moves nothing and leaves the worker's lease alone.
-            const moved = changedIds.length > 0 || difference !== 0;
-            return {
-                shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
-                ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: moved ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
-            };
+            const repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision, quantity);
+            return { shop: repriced.shop, ...afkTradeRepriceMovesUnsafe(characterId, repriced.changedIds, repriced.moved) };
         }, 'afk-trade:reprice'));
+    },
+
+    // A bot's look reprices several of its board lines (BotAfkMarketService
+    // .applyReview): one transaction for all. A line whose record changed or
+    // closed meanwhile, or a bid the wallet cannot cover, is skipped
+    // (skipped: [{ lineId, reason }]); the others go on. Returns { shops (the
+    // records after the moves), skipped, ownerInventory, coldLifeRows } as
+    // repriceAfkTradeShop does.
+    repriceBoardLines(ownerId, reprices = []) {
+        const characterId = Number(ownerId);
+        if (!characterId) return Promise.reject(new Error('invalid_afk_trade_price'));
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const shops = new Map();
+            const skipped = [];
+            const changedIds = [];
+            let moved = false;
+            for (const reprice of reprices) {
+                const id = Number(reprice.lineId);
+                const unitPrice = Math.floor(Number(reprice.price));
+                if (!id || !Number.isSafeInteger(unitPrice) || unitPrice < 1) {
+                    skipped.push({ lineId: id, reason: 'invalid_afk_trade_price' });
+                    continue;
+                }
+                let repriced;
+                try {
+                    // Each check of a line comes before its first write.
+                    repriced = repriceAfkTradeLineUnsafe(characterId, id, unitPrice, null, null);
+                } catch (error) {
+                    if (!['afk_trade_shop_unavailable', 'afk_trade_line_unavailable', 'not_enough_adena',
+                        'invalid_afk_trade_budget'].includes(error.message)) throw error;
+                    skipped.push({ lineId: id, reason: error.message });
+                    continue;
+                }
+                shops.set(Number(repriced.shop.id), repriced.shop);
+                changedIds.push(...repriced.changedIds);
+                moved = moved || repriced.moved;
+            }
+            return { shops: [...shops.values()], skipped, ...afkTradeRepriceMovesUnsafe(characterId, changedIds, moved) };
+        }, 'afk-trade:reprice-lines'));
     },
 
     // A buyer in person (a player, or a bot acting now) buys from a sell

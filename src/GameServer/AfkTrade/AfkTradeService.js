@@ -702,14 +702,38 @@ async function repriceBot(ownerId, lineId, price, expectedRevision = null, quant
         .some((line) => Number(line.afkTradeLineId) === Number(lineId)));
     if (!entryStore(current)?.botOwned) throw new Error('bot_afk_trade_unavailable');
     const result = await Database.repriceAfkTradeShop(ownerId, lineId, price, expectedRevision, quantity);
-    syncOnlineInventory(ownerId, result.ownerInventory);
-    const ownerState = invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId);
-    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'bot_afk_trade_repriced', result.ownerInventory,
-        { coldLifeRows: result.coldLifeRows });
-    invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId,
-        invoke('GameServer/Bot/Population/BotLifeState').snapshot(ownerId));
+    await syncAfterReprice(ownerId, result);
     refreshRecord(result.shop);
     return entriesById.get(Number(result.shop?.id))?.shop || null;
+}
+
+// A bot's look reprices several of its lines (E59): one transaction, and the
+// syncs only when an item or Adena moved. Returns { changed, skipped }.
+async function repriceBotLines(ownerId, reprices = []) {
+    const botLines = new Set();
+    for (const entry of ownerEntries(ownerId)) {
+        const store = entryStore(entry);
+        if (store?.botOwned) for (const line of store.items || []) botLines.add(Number(line.afkTradeLineId));
+    }
+    const owned = reprices.filter((reprice) => botLines.has(Number(reprice.lineId)));
+    if (!owned.length) return { changed: 0, skipped: reprices.length };
+    const result = await Database.repriceBoardLines(ownerId, owned);
+    await syncAfterReprice(ownerId, result);
+    result.shops.forEach(refreshRecord);
+    return { changed: owned.length - result.skipped.length, skipped: reprices.length - owned.length + result.skipped.length };
+}
+
+// A reprice that moved an item or Adena: the actor and the bot's cold state
+// follow its bag (the author's sync after a publish). A price-only change
+// moved nothing: no inventory to read, no state to save.
+async function syncAfterReprice(ownerId, result) {
+    if (!result.ownerInventory) return;
+    syncOnlineInventory(ownerId, result.ownerInventory);
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const ownerState = LifeState.snapshot(ownerId);
+    if (ownerState) await syncColdCharacter(ownerId, ownerState, 'bot_afk_trade_repriced', result.ownerInventory,
+        { coldLifeRows: result.coldLifeRows });
+    invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId, LifeState.snapshot(ownerId));
 }
 
 // A failed publish or relocation leaves the owner's shop as it was: its place
@@ -990,6 +1014,7 @@ module.exports = {
     refreshRecord,
     replaceBotRecords,
     repriceBot,
+    repriceBotLines,
     refreshVisibility,
     renameOwner,
     sellToShop,

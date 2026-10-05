@@ -666,16 +666,9 @@ async function withdraw(ownerId) {
 // another move changed meanwhile waits for the next look.
 async function applyReview(ownerId, review = {}) {
     const id = Number(ownerId);
-    let changed = 0;
-    for (const reprice of review.reprices || []) {
-        try {
-            await AfkTrade.repriceBot(id, reprice.lineId, reprice.price);
-            changed += 1;
-        } catch (error) {
-            if (!['afk_trade_shop_changed', 'afk_trade_line_unavailable', 'afk_trade_shop_unavailable',
-                'bot_afk_trade_unavailable', 'not_enough_adena', 'afk_trade_budget_changed'].includes(error.message)) throw error;
-        }
-    }
+    // All new prices of the look in one move; a line that changed or went
+    // meanwhile keeps its price until the next look.
+    let changed = (review.reprices || []).length ? (await AfkTrade.repriceBotLines(id, review.reprices)).changed : 0;
     const leaving = new Set((review.withdrawals || []).map((line) => Number(line.lineId)));
     for (const record of AfkTrade.ownerRecords(id)) {
         const lines = (record.lines || []).filter((line) => Number(line.count) > 0);

@@ -80,21 +80,21 @@ async function run() {
     assert.strictEqual((await review(ownerId)).changed, false, 'the main review does not reprice a kept line');
     assert.strictEqual(linePrice(ownerId), 100, 'no fixed markdown: the kept line keeps its ask');
 
+    const savedBefore = LifeState.snapshot(ownerId).updatedAt;
     const looked = await BotAfkMarket.applyReview(ownerId, { reprices: [{ lineId, price: 88 }] });
     assert.strictEqual(looked.changed, 1);
+    assert.strictEqual(LifeState.snapshot(ownerId).updatedAt, savedBefore, 'a price-only look moves nothing and saves no state (E59)');
     assert.strictEqual(Number(AfkTrade.findOwnerProjection(ownerId).shop.lines[0].id), lineId, 'the look updates the line in place');
     assert.strictEqual(linePrice(ownerId), 88, 'the bot\'s own look sets its ask');
     assert.strictEqual(AfkTrade.findOwnerProjection(ownerId).shop.lines[0].count, 25);
 
-    // A trade or a deal that changed the shop meanwhile wins.
-    const originalReprice = AfkTrade.repriceBot;
-    AfkTrade.repriceBot = async () => { throw new Error('afk_trade_shop_changed'); };
-    try {
-        assert.strictEqual((await BotAfkMarket.applyReview(ownerId, { reprices: [{ lineId, price: 80 }] })).changed, 0);
-        assert.strictEqual(linePrice(ownerId), 88, 'a changed shop keeps its price until the next look');
-    } finally {
-        AfkTrade.repriceBot = originalReprice;
-    }
+    // A trade or a deal that changed the shop meanwhile wins: here a deal
+    // took the whole line between the look and its application.
+    await Database.execute(['UPDATE afk_trade_lines SET count = 0 WHERE id = ?', [lineId]]);
+    assert.strictEqual((await BotAfkMarket.applyReview(ownerId, { reprices: [{ lineId, price: 80 }] })).changed, 0);
+    await Database.execute(['UPDATE afk_trade_lines SET count = 25 WHERE id = ?', [lineId]]);
+    assert.strictEqual(linePrice(ownerId), 88, 'a changed shop keeps its price until the next look');
+    assert.strictEqual(Number((await Database.execute(['SELECT price FROM afk_trade_lines WHERE id = ?', [lineId]]))[0].price), 88);
 
     // The NPC is now the best outcome: the line leaves the board, the items
     // come back to the bag for the next town visit.
