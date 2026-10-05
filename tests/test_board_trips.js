@@ -297,6 +297,10 @@ Config.coldHonestTravel = false;
         const arrived = { ...hunter(), phase: 'cold', activity: 'shopping', currentRegion: 'Dion', loc: { ...town('Dion') },
             adena: 300000, stats: { marketErrand: { selfId: 1463, amount: 2000, town: 'Dion', money: 180000, maxPrice: null,
                 purpose: 'shots', at: Date.now() } } };
+        // An errand past its 30 minutes lapsed: nothing is bought for it.
+        const lapsed = { ...arrived, stats: { marketErrand: { ...arrived.stats.marketErrand, at: Date.now() - 31 * 60 * 1000 } } };
+        assert.strictEqual((await ColdMarketService.tryPurchase(lapsed, null)).purchased, false);
+        assert.deepStrictEqual(buys, [], 'a lapsed errand buys nothing');
         const result = await ColdMarketService.tryPurchase(arrived, null);
         assert.strictEqual(result.purchased, true);
         assert.deepStrictEqual(buys, [['line', 500, cheaper], ['merchant', 1500, merchant]], 'the cheaper line, then the merchant');

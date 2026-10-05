@@ -273,9 +273,10 @@ async function acquire(state, selfId, amount, options = {}) {
 // On arrival: the errand of the town the bot stands in, bought there (the
 // plan made again for this town, as the board stands now); what it bought
 // stays as stats.lastErrand for the job that sent it (a clan's order).
-// Returns null without one.
+// Returns null without one, or when it lapsed (ERRAND_MS: the job that sent
+// it plans again).
 async function buyErrand(state) {
-    const errand = state?.stats?.marketErrand;
+    const errand = pendingErrand(state);
     if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
     const plan = planPurchase(state, errand.selfId, errand.amount, { towns: [errand.town],
         money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity });
@@ -292,8 +293,8 @@ async function buyErrand(state) {
 const ColdMarketService = {
     tryPurchase(state, goal) {
         if (!state || state.phase === 'hot' || state.activity !== 'shopping') return Promise.resolve({ state, purchased: false, reason: 'not_shopping' });
-        if (state.stats?.marketErrand?.town === state.currentRegion) return buyErrand(state);
-        const errand = state.stats?.marketErrand;
+        const errand = pendingErrand(state);
+        if (errand?.town === state.currentRegion) return buyErrand(state);
         if (goal?.type === 'market_errand' && errand) {
             // The errand's town is another one: the bot goes on there.
             return acquire(state, errand.selfId, errand.amount, { money: errand.money ?? Infinity,
