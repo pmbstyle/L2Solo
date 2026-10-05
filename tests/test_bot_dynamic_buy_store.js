@@ -61,12 +61,13 @@ async function run() {
     MarketTelemetry.reset();
 
     // Level 2: the operating reserve every purchase keeps (PurchaseFunding:
-    // 500, 250 per level or 10%) leaves 500 of the 1,000 adena spendable.
-    const buyerSeed = await makeBot('bot_budget_buyer', 'BudgetBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 1000 }]);
+    // 500, 250 per level or 10%) leaves 1,500 of the 2,000 adena spendable,
+    // enough for the five stems at the bot's own belief of their price.
+    const buyerSeed = await makeBot('bot_budget_buyer', 'BudgetBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 2000 }]);
     const goal = { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 5 }, plan: {} };
     const bid = BuyStoreService.bidFor(buyerSeed, goal);
     assert(bid && bid.count > 0);
-    assert(bid.price * bid.count <= 500, 'a buy ad must preserve its operating reserve');
+    assert(bid.price * bid.count <= 1500, 'a buy ad must preserve its operating reserve');
 
     const opened = await BuyStoreService.open(buyerSeed, goal);
     assert.strictEqual(opened.opened, true);
@@ -75,8 +76,8 @@ async function run() {
     assert.strictEqual(opened.store.kind, 'buy_ad');
     const escrow = Number(opened.store.escrowAdena);
     assert.strictEqual(escrow, bid.price * bid.count, 'the ad holds the whole bid as escrow');
-    assert.strictEqual(await bagAmount(buyerSeed.characterId, 57), 1000 - escrow, 'the escrow left the wallet');
-    assert.strictEqual(opened.state.adena, 1000 - escrow);
+    assert.strictEqual(await bagAmount(buyerSeed.characterId, 57), 2000 - escrow, 'the escrow left the wallet');
+    assert.strictEqual(opened.state.adena, 2000 - escrow);
     assert.strictEqual(AfkTrade.findOwnerProjection(buyerSeed.characterId), null, 'an ad has no stall in the world');
     assert.deepStrictEqual(MarketOpportunity.activeBuyDemandSelfIds(), [1864],
         'a funded buy ad is demand the warehouse circulation can see');
