@@ -165,4 +165,35 @@ Object.assign(partialActor, { fetchLocX: () => 1, fetchLocY: () => 2, fetchLocZ:
 assert.strictEqual(World.updateUserLocation(partialSession), true, 'a partial source can recover when real coordinates become available');
 assert.strictEqual(World.realPlayerSessionsNear(location(1, 2), 0)[0], partialSession);
 World.removeUser(partialSession);
+
+let wasOnline = false;
+const offlineActor = { ...actor, fetchId: () => 702, fetchIsOnline: () => wasOnline };
+const offlineSession = { actor: offlineActor, accountId: 'player_offline_hall', fetchAccountId() { return this.accountId; } };
+World.insertUser(offlineSession);
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0).length, 0, 'never-online actor has no spatial membership');
+const retiredOffline = World.retireUserActor(offlineSession, offlineActor);
+wasOnline = true;
+const lateUpdate = World.updateUserLocation(offlineSession, offlineActor);
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0).length, 0,
+    'late online after terminal hall cannot add the retired offline actor');
+assert.strictEqual(retiredOffline, true, 'the exact registered actor retires before its first online entry');
+assert.strictEqual(lateUpdate, false);
+World.insertUser(offlineSession);
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0)[0], offlineSession,
+    'explicit authoritative registration still restores a retired source');
+const replacementActor = { ...actor, fetchId: () => 703 };
+offlineSession.actor = replacementActor;
+assert.strictEqual(World.updateUserLocation(offlineSession, replacementActor), true);
+assert.strictEqual(World.retireUserActor(offlineSession, offlineActor), false,
+    'late retirement of an old source cannot remove the replacement');
+assert.strictEqual(World.realPlayerSessionsNear(location(10, 20), 0)[0], offlineSession);
+World.removeUser(offlineSession);
+
+const preparedSession = { actor: null, accountId: 'player_prepared_hall', fetchAccountId() { return this.accountId; } };
+World.insertUser(preparedSession);
+assert.strictEqual(World.retireUserActor(preparedSession, replacementActor), false,
+    'registered actor-less preparation cannot retire an unrelated actor');
+World.removeUser(preparedSession);
+assert.strictEqual(World.retireUserActor(offlineSession, replacementActor), false,
+    'unregistered source retirement is an O(1) no-op');
 console.log('character_location_index: PASS');

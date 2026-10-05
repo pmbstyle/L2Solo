@@ -256,7 +256,8 @@ const World = {
     retireUserActor(session, actor) {
         const runtime = userLocationIndexes.get(this.user);
         const membership = runtime?.sessions.get(session);
-        if (!membership || !actor || membership.actor !== actor) return false;
+        if (!membership || !actor) return false;
+        if (membership.actor !== actor && (membership.actor !== null || session.actor !== actor)) return false;
         runtime.index.remove(membership.id, actor);
         runtime.retiredActors.add(actor);
         membership.actor = null;
