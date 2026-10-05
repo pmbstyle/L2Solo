@@ -1,0 +1,551 @@
+[
+  {
+    "selfId": 1108,
+    "template": {
+      "kind": "Monster",
+      "name": "Glow Wisp",
+      "title": "",
+      "level": 67,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1169,
+      "pAtkRnd": 30,
+      "pDef": 439,
+      "mAtk": 681,
+      "mDef": 356,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 3626,
+      "maxMp": 1388,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 22
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.454221430163,
+      "sp": 622
+    },
+    "traits": {
+      "race": "construct",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1109,
+    "template": {
+      "kind": "Monster",
+      "name": "Hames Orc Scout",
+      "title": "",
+      "level": 68,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1065,
+      "pAtkRnd": 5,
+      "pDef": 382,
+      "mAtk": 713,
+      "mDef": 365,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 203
+    },
+    "vitals": {
+      "maxHp": 3706,
+      "maxMp": 1423,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 229,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "orc_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.747837370242,
+      "sp": 781
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1110,
+    "template": {
+      "kind": "Monster",
+      "name": "Marsh Predator",
+      "title": "",
+      "level": 69,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1265,
+      "pAtkRnd": 30,
+      "pDef": 460,
+      "mAtk": 746,
+      "mDef": 373,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3784,
+      "maxMp": 1458,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 35,
+      "size": 35
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.447174963243,
+      "sp": 674
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1111,
+    "template": {
+      "kind": "Monster",
+      "name": "Lava Wyrm",
+      "title": "",
+      "level": 70,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1314,
+      "pAtkRnd": 30,
+      "pDef": 470,
+      "mAtk": 780,
+      "mDef": 382,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 3862,
+      "maxMp": 1493,
+      "revHp": 11.85,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 29,
+      "size": 72
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.468775510204,
+      "sp": 714
+    },
+    "traits": {
+      "race": "dragon",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1112,
+    "template": {
+      "kind": "Monster",
+      "name": "Hames Orc Footman",
+      "title": "",
+      "level": 71,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1363,
+      "pAtkRnd": 5,
+      "pDef": 481,
+      "mAtk": 814,
+      "mDef": 390,
+      "accur": -3,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 198
+    },
+    "vitals": {
+      "maxHp": 3938,
+      "maxMp": 1529,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 233,
+      "shield": 110,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.73060900615,
+      "sp": 875
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1113,
+    "template": {
+      "kind": "Monster",
+      "name": "Hames Orc Sniper",
+      "title": "",
+      "level": 72,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 3140,
+      "pAtkRnd": 5,
+      "pDef": 417,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": -3,
+      "atkSpd": 249,
+      "castSpd": 227,
+      "atkRadius": 500
+    },
+    "speed": {
+      "walk": 49,
+      "run": 176
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 27
+    },
+    "equipment": {
+      "weapon": 287,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "orc_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.875385802469,
+      "sp": 988
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1114,
+    "template": {
+      "kind": "Monster",
+      "name": "Cursed Guardian",
+      "title": "",
+      "level": 73,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1463,
+      "pAtkRnd": 10,
+      "pDef": 426,
+      "mAtk": 885,
+      "mDef": 407,
+      "accur": -3.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 110,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4086,
+      "maxMp": 1601,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 45
+    },
+    "equipment": {
+      "weapon": 1472,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.732219928692,
+      "sp": 950
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1115,
+    "template": {
+      "kind": "Monster",
+      "name": "Hames Orc Shaman",
+      "title": "",
+      "level": 74,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1513,
+      "pAtkRnd": 20,
+      "pDef": 435,
+      "mAtk": 921,
+      "mDef": 416,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 11,
+      "run": 159
+    },
+    "vitals": {
+      "maxHp": 4158,
+      "maxMp": 1637,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 23
+    },
+    "equipment": {
+      "weapon": 186,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "orc_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.468772826881,
+      "sp": 838
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1116,
+    "template": {
+      "kind": "Monster",
+      "name": "Hames Orc Overlord",
+      "title": "",
+      "level": 75,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1720,
+      "pAtkRnd": 10,
+      "pDef": 475,
+      "mAtk": 957,
+      "mDef": 425,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 39,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4229,
+      "maxMp": 1673,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 12,
+      "size": 24
+    },
+    "equipment": {
+      "weapon": 75,
+      "shield": 103,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "orc_clan",
+      "helpRadius": 500
+    },
+    "rewards": {
+      "exp": 2.2576,
+      "sp": 1340
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  }
+]

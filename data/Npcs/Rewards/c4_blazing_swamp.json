@@ -1,0 +1,1423 @@
+[
+  {
+    "selfId": 1108,
+    "template": {
+      "name": "Glow Wisp"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 890,
+            "max": 1818,
+            "chance": 99.453008
+          },
+          {
+            "selfId": 358,
+            "name": "Blue Wolf Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.000995
+          },
+          {
+            "selfId": 2380,
+            "name": "Blue Wolf Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.001563
+          },
+          {
+            "selfId": 4078,
+            "name": "Blue Wolf Breastplate Part",
+            "min": 1,
+            "max": 1,
+            "chance": 0.226042
+          },
+          {
+            "selfId": 4080,
+            "name": "Blue Wolf Gaiters Material",
+            "min": 1,
+            "max": 1,
+            "chance": 0.318392
+          }
+        ],
+        "overall": 70.385
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 1,
+            "chance": 63.532747
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 31.766373
+          },
+          {
+            "selfId": 1880,
+            "name": "Steel",
+            "min": 1,
+            "max": 1,
+            "chance": 3.176404
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 1.058704
+          },
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.04229
+          },
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.423482
+          }
+        ],
+        "overall": 34.2872
+      },
+      {
+        "items": [
+          {
+            "selfId": 2381,
+            "name": "Doom Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.371402
+          },
+          {
+            "selfId": 4081,
+            "name": "Doom Plate Armor Temper",
+            "min": 1,
+            "max": 1,
+            "chance": 99.628598
+          }
+        ],
+        "overall": 0.1077
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4052,
+            "name": "Earring of Black Ore Piece",
+            "min": 1,
+            "max": 1,
+            "chance": 7.8329
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5230,
+            "name": "Recipe: Mithril Arrow (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.2949
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5550,
+            "name": "Durable Metal Plate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.9499
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1109,
+    "template": {
+      "name": "Hames Orc Scout"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1108,
+            "max": 2253,
+            "chance": 98.331594
+          },
+          {
+            "selfId": 6323,
+            "name": "Sealed Phoenix Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.002248
+          },
+          {
+            "selfId": 6324,
+            "name": "Sealed Phoenix Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.00295
+          },
+          {
+            "selfId": 6325,
+            "name": "Sealed Phoenix Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004495
+          },
+          {
+            "selfId": 6341,
+            "name": "Sealed Phoenix Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 0.525512
+          },
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 0.40625
+          },
+          {
+            "selfId": 6345,
+            "name": "Sealed Phoenix Ring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 0.726951
+          }
+        ],
+        "overall": 71.1877
+      },
+      {
+        "items": [
+          {
+            "selfId": 1807,
+            "name": "Recipe: Soulshot: A-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.030942
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 23.248629
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 23.248629
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 1.549847
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.774924
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.774924
+          },
+          {
+            "selfId": 6037,
+            "name": "Waking Scroll",
+            "min": 1,
+            "max": 1,
+            "chance": 46.497487
+          },
+          {
+            "selfId": 6670,
+            "name": "Deluxe Chest Key - Grade 6",
+            "min": 1,
+            "max": 1,
+            "chance": 3.874619
+          }
+        ],
+        "overall": 43.6301
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 18.3146
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 9.1573
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 2.3101
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1110,
+    "template": {
+      "name": "Marsh Predator"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 948,
+            "max": 1925,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 38.387195
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 57.581041
+          },
+          {
+            "selfId": 1877,
+            "name": "Adamantite Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 2.303082
+          },
+          {
+            "selfId": 3956,
+            "name": "Recipe: Blessed Spiritshot A",
+            "min": 1,
+            "max": 1,
+            "chance": 0.07672
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 1.151292
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.50067
+          }
+        ],
+        "overall": 20.0731
+      },
+      {
+        "items": [
+          {
+            "selfId": 5297,
+            "name": "Sealed Dark Crystal Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.187559
+          },
+          {
+            "selfId": 5298,
+            "name": "Sealed Dark Crystal Leggings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.312598
+          },
+          {
+            "selfId": 5301,
+            "name": "Sealed Tallum Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.125039
+          },
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.353235
+          },
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.350422
+          },
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 47.671147
+          }
+        ],
+        "overall": 0.3199
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1807,
+            "name": "Recipe: Soulshot: A-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.313
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 3035,
+            "name": "Recipe: Spiritshot A",
+            "min": 1,
+            "max": 1,
+            "chance": 0.313
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 1.3892
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1111,
+    "template": {
+      "name": "Lava Wyrm"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 993,
+            "max": 2020,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 35.666734
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 28.533552
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 28.533552
+          },
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 1.902127
+          },
+          {
+            "selfId": 1879,
+            "name": "Cokes",
+            "min": 1,
+            "max": 1,
+            "chance": 4.755455
+          },
+          {
+            "selfId": 4040,
+            "name": "Mold Lubricant",
+            "min": 1,
+            "max": 1,
+            "chance": 0.570666
+          },
+          {
+            "selfId": 5166,
+            "name": "Recipe: Blessed Spiritshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.037916
+          }
+        ],
+        "overall": 36.3961
+      },
+      {
+        "items": [
+          {
+            "selfId": 5297,
+            "name": "Sealed Dark Crystal Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.178944
+          },
+          {
+            "selfId": 5298,
+            "name": "Sealed Dark Crystal Leggings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.328064
+          },
+          {
+            "selfId": 5301,
+            "name": "Sealed Tallum Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.119296
+          },
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.360871
+          },
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.354011
+          },
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 47.658813
+          }
+        ],
+        "overall": 0.3353
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 2.14
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 1.4562
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 3.2483
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1112,
+    "template": {
+      "name": "Hames Orc Footman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1204,
+            "max": 2455,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 1,
+            "chance": 68.877718
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 13.775544
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 6.887655
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 9.83944
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.573796
+          },
+          {
+            "selfId": 5281,
+            "name": "Recipe: Greater Blessed Spiritshot (A) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.045848
+          }
+        ],
+        "overall": 42.7504
+      },
+      {
+        "items": [
+          {
+            "selfId": 5290,
+            "name": "Sealed Dark Crystal Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182202
+          },
+          {
+            "selfId": 5291,
+            "name": "Sealed Dark Crystal Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182202
+          },
+          {
+            "selfId": 5295,
+            "name": "Sealed Tallum Gloves",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182202
+          },
+          {
+            "selfId": 5296,
+            "name": "Sealed Tallum Boots",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182202
+          },
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.817798
+          },
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 24.817798
+          },
+          {
+            "selfId": 5508,
+            "name": "Sealed Dark Crystal Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.817798
+          },
+          {
+            "selfId": 5509,
+            "name": "Sealed Tallum Gloves Design",
+            "min": 1,
+            "max": 1,
+            "chance": 24.817798
+          }
+        ],
+        "overall": 1.0428
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 3956,
+            "name": "Recipe: Blessed Spiritshot A",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3987
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5485,
+            "name": "Sealed Tallum Tunic Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 2.5148
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5486,
+            "name": "Sealed Dark Crystal Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 1.7696
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1113,
+    "template": {
+      "name": "Hames Orc Sniper"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1344,
+            "max": 2745,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 30,
+            "max": 90,
+            "chance": 12.019128
+          },
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 1,
+            "max": 3,
+            "chance": 28.845745
+          },
+          {
+            "selfId": 1869,
+            "name": "Iron Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 28.845745
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 11.538257
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 17.751322
+          },
+          {
+            "selfId": 3035,
+            "name": "Recipe: Spiritshot A",
+            "min": 1,
+            "max": 1,
+            "chance": 0.03847
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.961334
+          }
+        ],
+        "overall": 48.8696
+      },
+      {
+        "items": [
+          {
+            "selfId": 5297,
+            "name": "Sealed Dark Crystal Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.197628
+          },
+          {
+            "selfId": 5298,
+            "name": "Sealed Dark Crystal Leggings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.329381
+          },
+          {
+            "selfId": 5301,
+            "name": "Sealed Tallum Leather Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.131752
+          },
+          {
+            "selfId": 5478,
+            "name": "Sealed Dark Crystal Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.346948
+          },
+          {
+            "selfId": 5479,
+            "name": "Sealed Tallum Leather Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.343874
+          },
+          {
+            "selfId": 5482,
+            "name": "Sealed Dark Crystal Leggings Design",
+            "min": 1,
+            "max": 1,
+            "chance": 47.650417
+          }
+        ],
+        "overall": 0.4554
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5156,
+            "name": "Recipe: Soulshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4454
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5166,
+            "name": "Recipe: Blessed Spiritshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4454
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5489,
+            "name": "Sealed Tallum Stockings Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 4.4093
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1114,
+    "template": {
+      "name": "Cursed Guardian"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1282,
+            "max": 2610,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1344,
+            "name": "Mithril Arrow",
+            "min": 10,
+            "max": 30,
+            "chance": 36.931343
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 1,
+            "max": 1,
+            "chance": 29.545074
+          },
+          {
+            "selfId": 1870,
+            "name": "Coal",
+            "min": 1,
+            "max": 1,
+            "chance": 29.545074
+          },
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 1.969554
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 0.984777
+          },
+          {
+            "selfId": 4043,
+            "name": "Asofe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.984777
+          },
+          {
+            "selfId": 5271,
+            "name": "Recipe: Greater Soulshot (A) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0394
+          }
+        ],
+        "overall": 45.4316
+      },
+      {
+        "items": [
+          {
+            "selfId": 5287,
+            "name": "Sealed Dark Crystal breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182648
+          },
+          {
+            "selfId": 5288,
+            "name": "Sealed Dark Crystal Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.304414
+          },
+          {
+            "selfId": 5293,
+            "name": "Sealed Tallum Plate Armor",
+            "min": 1,
+            "max": 1,
+            "chance": 0.121766
+          },
+          {
+            "selfId": 5520,
+            "name": "Sealed Dark Crystal Breastplate Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 30.745814
+          },
+          {
+            "selfId": 5521,
+            "name": "Sealed Tallum Plate Armor Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 21.674277
+          },
+          {
+            "selfId": 5524,
+            "name": "Sealed Dark Crystal Gaiters Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 46.971081
+          }
+        ],
+        "overall": 0.3285
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1875,
+            "name": "Stone of Purity",
+            "min": 1,
+            "max": 1,
+            "chance": 21.2062
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5161,
+            "name": "Recipe: Spiritshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.4241
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5494,
+            "name": "Sealed Dark Crystal Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 6.6805
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1115,
+    "template": {
+      "name": "Hames Orc Shaman"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1119,
+            "max": 2280,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 34.883586
+          },
+          {
+            "selfId": 1871,
+            "name": "Charcoal",
+            "min": 1,
+            "max": 1,
+            "chance": 52.325602
+          },
+          {
+            "selfId": 1885,
+            "name": "High Grade Suede",
+            "min": 1,
+            "max": 1,
+            "chance": 4.360169
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 0.454854
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 2.092596
+          },
+          {
+            "selfId": 5281,
+            "name": "Recipe: Greater Blessed Spiritshot (A) Compressed Package(100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.069634
+          },
+          {
+            "selfId": 6671,
+            "name": "Deluxe Chest Key - Grade 7",
+            "min": 1,
+            "max": 1,
+            "chance": 5.813559
+          }
+        ],
+        "overall": 22.4028
+      },
+      {
+        "items": [
+          {
+            "selfId": 5304,
+            "name": "Sealed Tallum Tunic",
+            "min": 1,
+            "max": 1,
+            "chance": 0.184892
+          },
+          {
+            "selfId": 5305,
+            "name": "Sealed Tallum Stockings",
+            "min": 1,
+            "max": 1,
+            "chance": 0.316957
+          },
+          {
+            "selfId": 5308,
+            "name": "Sealed Dark Crystal Robe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.132066
+          },
+          {
+            "selfId": 5485,
+            "name": "Sealed Tallum Tunic Texture",
+            "min": 1,
+            "max": 1,
+            "chance": 30.348653
+          },
+          {
+            "selfId": 5486,
+            "name": "Sealed Dark Crystal Robe Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 21.368199
+          },
+          {
+            "selfId": 5489,
+            "name": "Sealed Tallum Stockings Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 47.649234
+          }
+        ],
+        "overall": 0.3786
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 5166,
+            "name": "Recipe: Blessed Spiritshot (A) Compressed Package (100%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.3704
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5496,
+            "name": "Sealed Dark Crystal Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 6.5134
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5497,
+            "name": "Sealed Tallum Boots Lining",
+            "min": 1,
+            "max": 1,
+            "chance": 6.5134
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1116,
+    "template": {
+      "name": "Hames Orc Overlord"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1770,
+            "max": 3612,
+            "chance": 97.355545
+          },
+          {
+            "selfId": 6323,
+            "name": "Sealed Phoenix Necklace",
+            "min": 1,
+            "max": 1,
+            "chance": 0.003477
+          },
+          {
+            "selfId": 6324,
+            "name": "Sealed Phoenix Earring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.004729
+          },
+          {
+            "selfId": 6325,
+            "name": "Sealed Phoenix Ring",
+            "min": 1,
+            "max": 1,
+            "chance": 0.006954
+          },
+          {
+            "selfId": 6341,
+            "name": "Sealed Phoenix Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 0.833085
+          },
+          {
+            "selfId": 6343,
+            "name": "Sealed Phoenix Necklace Beads",
+            "min": 1,
+            "max": 1,
+            "chance": 0.643937
+          },
+          {
+            "selfId": 6345,
+            "name": "Sealed Phoenix Ring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 1.152272
+          }
+        ],
+        "overall": 71.9014
+      },
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.00473
+          },
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 1,
+            "max": 3,
+            "chance": 29.262444
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 1,
+            "max": 1,
+            "chance": 58.525124
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 9.754148
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 1.540004
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 0.731455
+          },
+          {
+            "selfId": 4987,
+            "name": "Recipe: Tunic of Doom (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.182095
+          }
+        ],
+        "overall": 42.2856
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 729,
+            "name": "Scroll: Enchant Weapon (Grade A)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.0489
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5480,
+            "name": "Sealed Leather Armor of Nightmare Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 1.9737
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 5481,
+            "name": "Sealed Majestic Leather Armor Fabric",
+            "min": 1,
+            "max": 1,
+            "chance": 1.9737
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
