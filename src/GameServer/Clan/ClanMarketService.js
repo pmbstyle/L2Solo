@@ -5,7 +5,6 @@ const GoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 
@@ -53,20 +52,13 @@ async function resolveClan(clan) {
         ? Math.max(0, number(order.budget) - number(order.spent))
         : Infinity;
     const maxUnitPrice = order ? number(order.maxUnitPrice) : Infinity;
-    const candidates = (clan.members || [])
-        .filter((member) => member.phase === 'cold' && number(member.characterId) > 0
-            && (!assigned.size || assigned.has(number(member.characterId))))
-        .sort((left, right) => number(right.adena) - number(left.adena) || number(left.characterId) - number(right.characterId));
+    const candidates = ClanOrderService.marketMembers(clan, [...assigned]);
     let offer = null;
     let buyer = null;
     for (const candidate of candidates) {
         const state = await stateFor(candidate.characterId);
         if (!state || state.phase !== 'cold' || String(state.partyId || '') !== '') continue;
-        const nextOffer = MarketOpportunity.bestOffer(itemId, {
-            town: state.currentRegion || 'Giran',
-            budget: Math.min(number(state.adena), maxUnitPrice, remainingBudget),
-            buyerCharacterId: state.characterId
-        });
+        const nextOffer = ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget));
         if (nextOffer) {
             offer = nextOffer;
             buyer = state;

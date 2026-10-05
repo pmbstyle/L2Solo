@@ -77,13 +77,39 @@ function farmSource(itemId, clan, memberIds, options = {}) {
     return sources.find((source) => number(source.npcLevel || source.spotLevel) <= ceiling) || sources[0] || null;
 }
 
-function affordableOffer(order, itemId, remaining, options = {}) {
+// The cold members who may buy for the clan's market goal, richest first
+// (ClanMarketService buys with the first one that finds an offer).
+function marketMembers(clan, memberIds = null) {
+    const allowed = memberIds?.length ? new Set(memberIds.map(Number)) : null;
+    return (clan?.members || [])
+        .filter((member) => member.phase === 'cold' && number(member.characterId) > 0
+            && (!allowed || allowed.has(number(member.characterId))))
+        .sort((left, right) => number(right.adena) - number(left.adena) || number(left.characterId) - number(right.characterId));
+}
+
+// What one member may buy for the clan: in its town (Giran without one),
+// never from its own records, within its money and `cap`.
+function memberOffer(state, itemId, cap = Infinity) {
+    return MarketOpportunity.bestOffer(itemId, {
+        town: state.currentRegion || 'Giran',
+        budget: Math.min(number(state.adena), cap),
+        buyerCharacterId: state.characterId
+    });
+}
+
+// The market pays only when a member can buy the item as the executor does
+// (memberOffer); the order's caps bound the price (E41).
+function affordableOffer(order, clan, itemId, remaining, options = {}) {
     if (options.offer === null) return null;
     const remainingBudget = number(order.budget) > 0 ? Math.max(0, number(order.budget) - number(order.spent)) : Infinity;
     const unitBudget = number(order.maxUnitPrice) > 0 ? number(order.maxUnitPrice) : remainingBudget;
     const budget = Math.min(unitBudget || Infinity, remainingBudget || 0);
     if (budget <= 0) return null;
-    const offer = options.offer || MarketOpportunity.bestOffer(itemId, { budget });
+    let offer = options.offer || null;
+    for (const member of offer ? [] : marketMembers(clan, orderMembers(clan, order))) {
+        offer = memberOffer(LifeState.cachedState(member.characterId) || member, itemId, budget);
+        if (offer) break;
+    }
     if (!offer) return null;
     if (number(order.maxUnitPrice) > 0 && number(offer.price) > number(order.maxUnitPrice)) return null;
     if (number(order.budget) > 0 && number(offer.price) > remainingBudget) return null;
@@ -237,7 +263,7 @@ function planFor(order, clan, progress, options = {}) {
     const requested = STRATEGIES.includes(String(order.strategy)) ? String(order.strategy) : 'auto';
     const avoid = String(options.avoidPlan || '');
     const offer = requested !== 'farm' && avoid !== 'market'
-        ? affordableOffer(order, order.itemId, remaining, options)
+        ? affordableOffer(order, clan, order.itemId, remaining, options)
         : null;
     if (requested === 'market' || requested === 'auto' && offer) {
         return {
@@ -577,6 +603,8 @@ module.exports = {
     edit,
     itemSnapshot,
     itemTemplate,
+    marketMembers,
+    memberOffer,
     planFor,
     orderSettings,
     resolveClan,
