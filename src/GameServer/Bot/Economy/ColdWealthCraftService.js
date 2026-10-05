@@ -22,6 +22,7 @@ const inFlight = new Set();
 
 function eligible(state) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping'].includes(state.activity)
+        || state.stats?.marketErrand
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state)) return false;
@@ -54,9 +55,12 @@ function staticExits(recipe, template) {
         }));
 }
 
-function exitsFor(state, recipe, template) {
+// The buyers of a craft: the buy ads on the board, each answered in its town
+// (its trip counts against the profit, E45), and the static buyers (until
+// step 3.6).
+function exitsFor(state, recipe, template, trip) {
     const dynamic = AfkTrade.offers(recipe.productId, AfkTrade.BUY, { characterId: state.characterId })
-        .map((offer) => ({ type: 'afk', price: Number(offer.price), count: Number(offer.count), offer }));
+        .map((offer) => ({ type: 'afk', price: Number(offer.price), count: Number(offer.count), offer, trip: trip(offer.town) }));
     return [...dynamic, ...staticExits(recipe, template)].sort((a, b) => b.price - a.price);
 }
 
@@ -69,15 +73,18 @@ function chooseOpportunity(state, knownRecipes) {
     const budgetState = { ...state, adena: gearPlan?.status === 'active' && gearPlan.strategy === 'market'
         ? PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve)
         : PurchaseFunding.budget(state) };
-    const offerCache = new Map();
+    // Each input is one purchase in the town where it costs the least with
+    // the trip (the one purchase path): its landed price is the input's cost.
+    const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
+    const trip = ColdMarket.tripFrom(state);
+    const planCache = new Map();
     const ownStock = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
         .map((item) => [Number(item.selfId), item]));
     const ownValueCache = new Map();
-    const offersFor = (selfId) => {
-        if (!offerCache.has(selfId)) offerCache.set(selfId, AfkTrade.offers(selfId, AfkTrade.SELL, {
-            characterId: state.characterId
-        }));
-        return offerCache.get(selfId);
+    const planFor = (selfId, missing) => {
+        const key = `${selfId}:${missing}`;
+        if (!planCache.has(key)) planCache.set(key, ColdMarket.planPurchase(state, selfId, missing, { npc: false, cost: trip }));
+        return planCache.get(key);
     };
     const ownedFor = (selfId) => {
         const stock = ownStock.get(Number(selfId));
@@ -85,10 +92,12 @@ function chooseOpportunity(state, knownRecipes) {
         if (!ownValueCache.has(selfId)) {
             const fixedBids = staticExits({ productId: selfId, productCount: 1 },
                 ItemTemplateIndex.find(DataCache.items, selfId));
+            // A buy ad is worth its price less the trip to answer it.
             const dynamicBids = AfkTrade.offers(selfId, AfkTrade.BUY, { characterId: state.characterId });
             ownValueCache.set(selfId, Math.max(Number(stock.price || 0),
                 ...fixedBids.map((bid) => Number(bid.price || 0)),
-                ...dynamicBids.map((bid) => Number(bid.price || 0))));
+                ...dynamicBids.map((bid) => Number(bid.price || 0)
+                    - trip(bid.town) / Math.max(1, Math.min(Number(stock.count), Number(bid.count) || 1)))));
         }
         return { count: Number(stock.count), unitValue: ownValueCache.get(selfId) };
     };
@@ -97,9 +106,9 @@ function chooseOpportunity(state, knownRecipes) {
         if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         if (!template || !recipe.materials?.length) continue;
-        const exits = exitsFor(state, recipe, template);
+        const exits = exitsFor(state, recipe, template, trip);
         if (!exits.length) continue;
-        const candidate = Policy.opportunityFor(budgetState, recipe, offersFor, exits, ownedFor);
+        const candidate = Policy.opportunityFor(budgetState, recipe, planFor, exits, ownedFor);
         if (candidate && (!best || candidate.expectedProfit > best.expectedProfit)) {
             best = { ...candidate, template };
         }
@@ -163,15 +172,20 @@ async function execute(state, opportunity) {
     if (!current) return { state, crafted: false, reason: 'state_write_rejected' };
     let spent = 0;
     try {
+        // Each input is bought in its town (the one purchase path): here, or
+        // the bot goes there and the craft waits for the next look.
+        const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
         for (const purchase of opportunity.basket.purchases) {
-            const trade = await AfkTrade.buyFromShop(current.characterId, purchase.offer.store,
-                purchase.selfId, purchase.count, { lineId: purchase.offer.lineId, expectedPrice: purchase.price, coldState: current });
-            const done = AfkTrade.committedTrade(trade, current.characterId);
-            if (!done.committed) throw new Error('cold_inventory_sync_failed');
-            spent += purchase.price * purchase.count;
+            const bought = await ColdMarket.acquire(current, purchase.selfId, purchase.count,
+                { towns: [purchase.town], npc: false, purpose: 'wealth_craft' });
             // The bot went hot: the actor holds the materials; the craft stops here.
-            if (done.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
-            current = done.state;
+            if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
+            if (!bought.bought && (bought.traveling || bought.state?.stats?.marketErrand)) {
+                return { state: bought.state, crafted: false, reason: 'buying_trip', spent };
+            }
+            if (!bought.bought) throw new Error('purchase_unavailable');
+            spent += purchase.cost;
+            current = bought.state;
         }
     } catch (error) {
         const failed = withOutcome(current, opportunity, 'purchase_failed',
@@ -188,7 +202,8 @@ async function execute(state, opportunity) {
             crafted: false, reason: 'materials_changed' };
     }
 
-    if (opportunity.exit.type === 'afk' && !AfkTrade.offers(recipe.productId, AfkTrade.BUY,
+    if (opportunity.exit.type === 'afk' && current.currentRegion === opportunity.exit.offer.town
+        && !AfkTrade.offers(recipe.productId, AfkTrade.BUY,
         { characterId: current.characterId }).some((offer) => (
         Number(offer.sourceId) === Number(opportunity.exit.offer.sourceId)
             && Number(offer.price) >= Number(opportunity.exit.price)
@@ -255,7 +270,9 @@ async function execute(state, opportunity) {
                 sellerCharacterId: current.characterId, sellerName: current.name, town: exit.town
             });
         }
-    } else {
+    } else if (current.activity === 'shopping' && current.currentRegion === exit.offer.town) {
+        // A buy ad is answered in its town (E45); elsewhere the product waits
+        // for the bot's sale, which goes there when it pays (MarketPricing.disposition).
         const offer = AfkTrade.offers(recipe.productId, AfkTrade.BUY, { characterId: current.characterId })
             .find((entry) => Number(entry.sourceId) === Number(exit.offer.sourceId)
                 && Number(entry.price) >= Number(exit.price)

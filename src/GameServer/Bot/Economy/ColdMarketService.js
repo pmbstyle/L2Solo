@@ -157,16 +157,22 @@ function staticOffers(selfId) {
 // once when the bot stands in it, else leaves it an errand and starts the
 // author's market trip (GoalExecutor.beginMarketTravel); on arrival
 // tryPurchase buys the errand (buyHere). One trip per purchase.
-function planPurchase(state, selfId, amount, { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
-    timestamp = Date.now() } = {}) {
-    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+// The bot's round trip to a town in Adena, from its farming place
+// (OfferOrder.tripCost); none to the town it is shopping in.
+function tripFrom(state, timestamp = Date.now()) {
     const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
     const origin = OfferOrder.farmingOrigin(state, (spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId));
     const trip = OfferOrder.tripCost(state, { origin, timestamp });
+    return (town) => (town === here ? 0 : trip ? trip(town) : 0);
+}
+
+function planPurchase(state, selfId, amount, { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
+    timestamp = Date.now(), cost = null } = {}) {
+    const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
         amount, money, maxPrice, towns, excludeOwner: state?.characterId,
         npcOffers: npc ? staticOffers(selfId) : [],
-        cost: (town) => (town === here ? 0 : trip ? trip(town) : 0)
+        cost: cost || tripFrom(state, timestamp)
     });
     return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money } : null;
 }
@@ -336,6 +342,7 @@ const ColdMarketService = {
         });
     },
     buyOffer,
+    tripFrom,
     planPurchase,
     buyHere,
     acquire,

@@ -33,7 +33,19 @@ const originals = {
     staticBuyerSale: MarketTelemetry.staticBuyerSale
 };
 
+// A sell line on the board in memory: inputs are bought in their town, the
+// one purchase path (group C); the crafter shops in Giran where they are.
+function boardLine(id, selfId, count, price) {
+    AfkTrade.refreshRecord({ id, ownerId: 9003, ownerName: 'Supplier', ownerAccount: 'bot_9003', kind: 'sell_ad',
+        storeType: AfkTrade.SELL, status: 'active', town: 'Giran', title: '', revision: 1, expiresAt: 0,
+        locX: 0, locY: 0, locZ: 0, appearance: {}, lines: [{ id: id * 10, selfId, name: `Item ${selfId}`, count, price, enchant: 0 }] });
+}
+
 async function run() {
+    invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
+    boardLine(980001, 1864, 2, 10000);
+    boardLine(980002, 1865, 1, 5000);
+    boardLine(980003, 1867, 6, 500);
     const productId = 999999;
     const recipe = { type: 'dwarven', recipeId: 90001, level: 4, productId,
         productCount: 1, successRate: 100, mpCost: 20,
@@ -41,6 +53,7 @@ async function run() {
     const sellStore = { afkTrade: true, storeType: AfkTrade.SELL };
     const buyStore = { afkTrade: true, storeType: AfkTrade.BUY };
     const purchases = [];
+    let exitPrice = 50000;
     let crafted = false;
     let sold = false;
     DataCache.items = [{ selfId: productId, template: { name: 'Test Component', kind: 'Other.Material' },
@@ -59,7 +72,7 @@ async function run() {
     Recipes.resolveByRecipeId = (recipeId) => recipeId === recipe.recipeId ? recipe : null;
     AfkTrade.offers = (selfId, storeType) => {
         if (storeType === AfkTrade.BUY && selfId === productId) return [{
-            sourceId: 9002, price: 50000, count: 1, store: buyStore
+            sourceId: 9002, price: exitPrice, count: 1, store: buyStore, town: 'Giran'
         }];
         if (storeType !== AfkTrade.SELL) return [];
         return selfId === 1864 || selfId === 1865 ? [{
@@ -85,7 +98,8 @@ async function run() {
     } });
     LifeEvents.record = async () => null;
     const state = { characterId: 9001, accountName: 'bot_pop_test', name: 'Crafter', phase: 'cold',
-        activity: 'hunting', level: 60, adena: 500000, vitals: { mp: 100 }, inventory: {},
+        activity: 'shopping', currentRegion: 'Giran', loc: { locX: 83396, locY: 147904, locZ: -3400 },
+        level: 60, adena: 500000, vitals: { mp: 100 }, inventory: {},
         stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
@@ -134,6 +148,22 @@ async function run() {
     assert(repeat.crafted && repeat.sold,
         `the next lifecycle can craft again when materials and a funded buyer remain: ${repeat.reason}`);
     assert.strictEqual(purchases.length, 4);
+    // On its spot the crafter buys nothing from afar: the first input is an
+    // errand and a trip to its town, the craft waits (group C).
+    crafted = false;
+    sold = false;
+    const away = { ...state, characterId: 9006, name: 'AwayCrafter', activity: 'hunting', currentRegion: 'Dion',
+        loc: { locX: 17000, locY: 145000, locZ: -3000 } };
+    // The trips are costs of the craft: three of them eat a 25,000 margin.
+    assert.strictEqual((await Service.tryCraft(away, 1000002)).reason, 'no_profit');
+    exitPrice = 500000;
+    const waiting = await Service.tryCraft({ ...away, characterId: 9007 }, 1000003);
+    exitPrice = 50000;
+    assert.strictEqual(waiting.reason, 'buying_trip', waiting.reason);
+    assert.strictEqual(waiting.state.stats.marketErrand.town, 'Giran');
+    assert.strictEqual(waiting.state.activity, 'traveling');
+    assert.strictEqual(purchases.length, 4, 'nothing bought from afar');
+    assert.strictEqual(Service.eligible(waiting.state), false, 'it crafts again once its errand is done');
 
     const leather = { type: 'dwarven', recipeId: 25, level: 1, productId: 1882,
         productCount: 1, successRate: 100, mpCost: 10,
@@ -182,6 +212,7 @@ run().then(() => console.log('Cold wealth craft checks passed')).catch((error) =
     process.exitCode = 1;
     throw error;
 }).finally(() => {
+    AfkTrade._resetForTests();
     DataCache.items = originals.items;
     Database.fetchCharacterRecipes = originals.fetchCharacterRecipes;
     Database.fetchItems = originals.fetchItems;
