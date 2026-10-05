@@ -10,7 +10,6 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ClanRaidPolicy = invoke('GameServer/Clan/ClanRaidPolicy');
 const ColdRaidEncounter = require('./ColdRaidEncounter');
 
-const MAX_DROPS_PER_RESOLVE = 4;
 const RAID_RESOLVE_INTERVAL_MS = 15000;
 
 function clamp(value, min, max) {
@@ -58,7 +57,6 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
         killerLevel: Math.max(...levels),
         rng,
         spoiler: spoilerIndex >= 0 ? ColdKillRewards.spoilerFor(members[spoilerIndex], profiles[spoilerIndex]) : null,
-        lootKills: MAX_DROPS_PER_RESOLVE,
         dropOwners: members.length
     });
     const memberProgression = members.map(() => ({ exp: 0, sp: 0 }));

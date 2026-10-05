@@ -28,10 +28,10 @@ function spoilerFor(state, profile) {
 //
 // The random draws come in a fixed order: base exp/SP of every kill, the drop
 // roll of every kill, the spot's fallback adena for kills without reward data,
-// then, for each of the first `lootKills` kills, its drop owner (only when
-// `dropOwners` recipients share the drops), the spoiler's Spoil landing roll
-// against that kill's NPC level and, when Spoil landed, the spoil.
-function roll({ spot, kills, killerLevel, rng, spoiler = null, lootKills = kills.length, dropOwners = 0 }) {
+// then, for each kill, its drop owner (only when `dropOwners` recipients share
+// the drops), the spoiler's Spoil landing roll against that kill's NPC level
+// and, when Spoil landed, the spoil.
+function roll({ spot, kills, killerLevel, rng, spoiler = null, dropOwners = 0 }) {
     const OverhitReward = invoke('GameServer/Progression/OverhitReward');
     const progression = kills.map((kill) => {
         const base = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: kill.npcSelfId, rng });
@@ -51,7 +51,7 @@ function roll({ spot, kills, killerLevel, rng, spoiler = null, lootKills = kills
             : rolled.adena)
     ), 0);
     const loot = [];
-    for (let index = 0; index < Math.min(kills.length, lootKills); index++) {
+    for (let index = 0; index < kills.length; index++) {
         const drops = rolls[index]?.items || [];
         const owner = drops.length && dropOwners > 0
             ? Math.min(dropOwners - 1, Math.floor(rng() * dropOwners))

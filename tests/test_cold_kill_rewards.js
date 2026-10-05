@@ -1,7 +1,8 @@
 // Golden values for cold kill rewards: exp, SP, adena (rolled and the spot's
 // fallback range), drops, spoil, the party adena split and the drop owner.
 // A seeded random source makes every draw repeatable, so a change of reward
-// rules or of the order of random draws moves these values. The spoiler's
+// rules or of the order of random draws moves these values. Every won kill,
+// solo or party, rolls its drop and spoil. The spoiler's
 // Spoil landing roll comes after exp, SP and adena, so only loot depends on it.
 const assert = require('assert');
 
@@ -99,17 +100,17 @@ for (const [spotId, seed, classId, level, expected] of SOLO) {
 const PARTY = [
     ['pin_orcs', 11, [[53, 15], [0, 16], [10, 14]], [
         [9040, 340, 1200, [[1799, 10], [1799, 10], [1867, 10], [37, 1]]],
-        [10290, 370, 1200, [[1867, 1], [1867, 1], [1867, 1]]],
+        [10290, 370, 1200, [[1867, 1], [1867, 1], [1867, 1], [2005, 1], [1867, 1]]],
         [7860, 290, 1199, []]
     ]],
     ['pin_orcs', 12, [[53, 15], [0, 16], [10, 14]], [
-        [8660, 320, 1108, [[1060, 1], [1867, 10], [1867, 1], [1867, 10]]],
+        [8660, 320, 1108, [[1060, 1], [1867, 10], [1867, 1], [1867, 10], [1921, 1], [1870, 1], [1921, 10]]],
         [9850, 340, 1108, []],
         [7520, 270, 1108, [[1802, 1]]]
     ]],
     ['pin_orcs', 13, [[0, 15], [53, 13]], [
         [14080, 510, 1714, [[49, 1], [1060, 1], [1921, 1], [1867, 1]]],
-        [10580, 380, 1714, [[1799, 10], [1799, 10], [1867, 10]]]
+        [10580, 380, 1714, [[1799, 10], [1799, 10], [1867, 10], [1870, 1]]]
     ]],
     ['pin_orcs', 14, [[0, 15], [18, 16], [31, 15], [44, 14]], [
         [7420, 240, 875, [[1060, 1]]],
@@ -139,6 +140,52 @@ for (const [spotId, seed, team, expected] of PARTY) {
     assert.strictEqual(result.debug.wins, 5, `party ${spotId} seed ${seed} must win five fights`);
     assert.deepStrictEqual(result.memberResults.map((entry) => compact(entry.result.materialize)), expected,
         `party kill rewards changed: ${spotId} seed ${seed}`);
+}
+
+// Fights per party resolve follow the solo window rule: a solo bot fights at
+// most once per 12-second window, and a party over the same elapsed time gets
+// at least as many fights (here exactly one per window, at density 3 and
+// cohesion 1), however long the time between resolves. Every won fight rolls
+// its drop: the drop roll is replaced by one fixed item per kill, so each win
+// must bring exactly one item to some member.
+const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
+const rollRewardsForFight = BackgroundDropResolver.rollRewardsForFight;
+BackgroundDropResolver.rollRewardsForFight = () => ({
+    adena: 1,
+    items: [{ selfId: 1867, amount: 1 }]
+});
+try {
+    for (const elapsedMs of [60000, 120000, 180000]) {
+        const windows = Math.floor(elapsedMs / 12000);
+        let soloWins = 0;
+        for (let window = 0; window < windows; window++) {
+            soloWins += BackgroundResolver.resolveSolo({
+                state: member(81, 0, 14, 'pin_orcs'),
+                spot: orcs,
+                elapsedMs: 12000,
+                rng: seeded(100 + window),
+                timestamp: TIMESTAMP + window * 12000
+            }).debug.wins;
+        }
+        const party = BackgroundPartyResolver.resolve({
+            party: { partyId: 'pin', cohesion: 1, risk: 0, roleCoverage: {} },
+            // No spoiler, so every item is a drop.
+            members: [[0, 15], [18, 16], [10, 14]].map(([classId, level], index) => member(91 + index, classId, level, 'pin_orcs')),
+            spot: orcs,
+            elapsedMs,
+            rng: seeded(elapsedMs),
+            timestamp: TIMESTAMP
+        });
+        assert.strictEqual(soloWins, windows, `solo must win one fight per 12 s window over ${elapsedMs} ms`);
+        assert.strictEqual(party.debug.wins, windows, `party must win one fight per 12 s window over ${elapsedMs} ms`);
+        assert.ok(party.debug.wins >= soloWins, `party must fight at least as often as solo over ${elapsedMs} ms`);
+        const drops = party.memberResults.reduce((sum, entry) => (
+            sum + entry.result.materialize.items.filter((item) => item.selfId === 1867).length
+        ), 0);
+        assert.strictEqual(drops, party.debug.wins, `party must roll a drop for every win over ${elapsedMs} ms`);
+    }
+} finally {
+    BackgroundDropResolver.rollRewardsForFight = rollRewardsForFight;
 }
 
 console.log('test_cold_kill_rewards: ok');
