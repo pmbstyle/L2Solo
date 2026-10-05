@@ -41,6 +41,7 @@ class BackpackModel {
         }
 
         this.paperdoll[slot] = { id: id, selfId: selfId };
+        this.visibleLook = null; // Social/VisibleStrength
     }
 
     unequipPaperdoll(slot) {
@@ -51,6 +52,7 @@ class BackpackModel {
         }
 
         this.paperdoll[slot] = {};
+        this.visibleLook = null; // Social/VisibleStrength
     }
 
     // Get

@@ -158,10 +158,12 @@ async function enchant(session, objectId, options = {}) {
         updateScrollMemory(backpack, scroll, persisted.scrollAmount);
         if (result === 'success') {
             target.setEnchantLevel(nextLevel);
+            backpack.visibleLook = null; // the weapon glow may change
             sendSuccessMessage(session, target, oldLevel);
             send(session, ServerResponse.enchantResult(0));
         } else if (result === 'blessed-fail') {
             target.setEnchantLevel(0);
+            backpack.visibleLook = null;
             ConsoleText.transmit(session, 1517);
             send(session, ServerResponse.enchantResult(2));
         } else {
