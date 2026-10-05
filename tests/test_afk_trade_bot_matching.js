@@ -70,11 +70,6 @@ async function coldBot(characterId, name) {
     }, 'test_seed');
 }
 
-async function amount(characterId, selfId) {
-    return (await Database.fetchItems(characterId)).filter((row) => Number(row.selfId) === selfId)
-        .reduce((sum, row) => sum + Number(row.amount), 0);
-}
-
 const VARNISH = 1865;
 const ad = (kind, lines) => ({ kind, storeType: kind === 'sell_ad' ? 1 : 3, title: 'Varnish', town: 'Giran',
     locX: 0, locY: 0, locZ: 0, lines });

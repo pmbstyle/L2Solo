@@ -183,12 +183,12 @@ function amountOf(rows, selfId) {
     assert.strictEqual(amountOf(await inventory(ownerId), 3005), 2, 'sixth slot stock returns on closure');
 
     const remoteStock = (await inventory(ownerId)).find((row) => Number(row.selfId) === 1001);
-    const playerSale = await Database.createAfkTradeShop(ownerId, {
+    await Database.createAfkTradeShop(ownerId, {
         storeType: 1, town: 'Giran', locX: 83000, locY: 148000, locZ: -3400,
         lines: [{ objectId: remoteStock.id, selfId: 1001, name: 'Test Material',
             count: 1, price: 12, stackable: true }]
     });
-    const playerBuy = await Database.createAfkTradeShop(customerId, {
+    await Database.createAfkTradeShop(customerId, {
         storeType: 3, town: 'Dion', locX: 16308, locY: 143760, locZ: -2888,
         lines: [{ selfId: 1001, name: 'Test Material', count: 1, price: 20, stackable: true }]
     });
