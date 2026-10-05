@@ -6,7 +6,9 @@ require('../src/Global');
 
 // Pins every cold trip a builder starts (U18): the market trip and its return
 // (GoalExecutor), the craft station trip and its three returns
-// (ColdCraftingService) and the Mammon trip and its return (BotMammonUnseal).
+// (ColdCraftingService), the Mammon trip and its return (BotMammonUnseal), the
+// hunting route (HuntingTravel) and the karma washing walk (ColdKarmaPolicy),
+// with [BotPopulation] coldHonestTravel off (the default).
 // Each case records the trip, the timing and the stats the builder writes; the
 // digest lives in tests/fixtures/cold_trip_builders.json. Run with --record to
 // rewrite it after a decided change, and review the diff.
@@ -170,6 +172,17 @@ async function cases() {
     ], async () => digest(await MammonUnseal.finish({ ...mammonTrip, activity: 'crafting',
         loc: { locX: Mammon.loc.locX + 5000, locY: Mammon.loc.locY, locZ: Mammon.loc.locZ },
         stats: { ...mammonTrip.stats, travel: null } }, T)));
+
+    // The hunting route (solo and party) and the karma washing walk: with
+    // coldHonestTravel off these keep the author's times.
+    const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
+    const route = { needed: true, mode: 'solo', spotId: SPOT.id, regionName: SPOT.name, travelMs: 25000, to: { ...SPOT.center } };
+    out.hunting_solo = digest(beginHuntingTrip(hunter(), route, T));
+    out.hunting_party = digest(beginHuntingTrip(hunter({ party: { partyId: 'pin' } }), { ...route, mode: 'party' }, T));
+    out.karma_washing = digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100 } }), [{
+        id: 'wash', name: 'Wash', minLevel: 35, maxLevel: 45, center: { locX: 40000, locY: 140000, locZ: -3000 },
+        npcEntries: [{ selfId: 20001, level: 38 }]
+    }], T).plannedState);
     return out;
 }
 

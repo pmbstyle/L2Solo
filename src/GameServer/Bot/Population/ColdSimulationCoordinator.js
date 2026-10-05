@@ -29,7 +29,7 @@ const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
-const { HUNTING_TRAVEL_MS } = require('./HuntingTravel');
+const ColdTrip = require('./ColdTrip');
 const OWNERSHIP_REBASE_REASONS = new Set([
     'stale_revision',
     'cas_failed',
@@ -778,7 +778,8 @@ class ColdSimulationCoordinator {
             currentSpotId: currentId,
             spotId: selected.id,
             regionName: selected.name || state.currentRegion || 'Hunting Ground',
-            travelMs: HUNTING_TRAVEL_MS,
+            // The routed bot's trip time; a party's members all take it.
+            travelMs: ColdTrip.spotTripMs(state, destinations[String(state.characterId)] || selected.center),
             reason: partyRoute
                 ? 'party_spot_replan'
                 : unsafeSoloGround ? 'unsafe_ground_evacuation'

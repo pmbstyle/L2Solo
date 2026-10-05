@@ -41,7 +41,12 @@ function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {
                 ? 'equipment_source_replan'
                 : 'level_replan'),
         ...(route.cause ? { cause: route.cause } : {})
-    }, timestamp, { durationMs: Number(route.travelMs) || HUNTING_TRAVEL_MS, extraStats: { pveEncounter: null } });
+    }, timestamp, {
+        durationMs: Number(route.travelMs) || HUNTING_TRAVEL_MS,
+        // A party travels as one: every member arrives at the party's time.
+        sharedMs: isPartyRoute ? Number(route.travelMs) || 0 : 0,
+        extraStats: { pveEncounter: null }
+    });
 }
 
 module.exports = { HUNTING_TRAVEL_MS, beginHuntingTrip };

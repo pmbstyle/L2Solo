@@ -3,6 +3,7 @@ const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+const ColdTrip = require('./ColdTrip');
 
 // Karma washing: a bot with any karma hunts it off. The same value as
 // Karma.closesTowns, asked for planning rather than for town access.
@@ -67,12 +68,12 @@ function plan(state, spots, timestamp = Date.now()) {
         return { targetNpcId: 0, plannedState: { ...clean, activity: 'resting' }, spot: null };
     }
     const from = { ...(state.loc || {}) };
-    const duration = Math.max(25000, Math.ceil(Math.hypot(to.locX - from.locX, to.locY - from.locY) / 120 * 1000));
-    return { targetNpcId: 0, spot, plannedState: { ...clean, activity: 'traveling',
-        timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp + duration },
-        stats: { ...clean.stats, travel: { from, to, startedAt: timestamp, arrivalAt: timestamp + duration,
-            method: 'walk', reason: 'karma_washing', spotId: spot.id, regionName: spot.name,
-            arrivalActivity: 'hunting', arrivalEvent: 'arrived_hunting_ground' } } } };
+    // A bot with karma walks (ColdTrip.toSpot), with the switch off in the
+    // author's washing walk time: at least 25 s, then 120 units per second.
+    return { targetNpcId: 0, spot, plannedState: ColdTrip.toSpot(clean, {
+        from, to, reason: 'karma_washing', spotId: spot.id, regionName: spot.name,
+        arrivalActivity: 'hunting', arrivalEvent: 'arrived_hunting_ground'
+    }, timestamp, { durationMs: ColdTrip.authorWalkMs(from, to) }) };
 }
 
 module.exports = { active, plan, targetForSpot };

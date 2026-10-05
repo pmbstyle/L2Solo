@@ -71,6 +71,7 @@ const {
 } = PartyRequestPlanner;
 
 const { HUNTING_TRAVEL_MS, beginHuntingTrip } = require('./HuntingTravel');
+const ColdTrip = require('./ColdTrip');
 const activationFailureLogAt = new Map();
 
 function logPartyActivationFailure(state, result, timestamp = Date.now()) {
@@ -159,6 +160,7 @@ function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
         mode: options.regroup ? 'party' : 'solo',
         spotId: spot.id,
         regionName: spot.name,
+        ...(options.travelMs ? { travelMs: options.travelMs } : {}),
         to: destination,
         ...(spotBackoff ? { spotBackoff, cause: 'death_pressure', reason: 'death_pressure_replan' } : {})
     }, timestamp);
@@ -3202,14 +3204,17 @@ const PopulationService = {
             const needsTravel = (physicalSpotId && physicalSpotId !== spot.id && !assembling) || assemblyAdmitted;
             const spotBackoff = needsTravel ? require('./PartySpotRiskPolicy').backoff(party, physicalSpotId, startedAt) : null;
             const destinations = needsTravel ? SpotService.arrivalPointsForParty(members, spot) : null;
+            // The party travels as one, at its leader's trip time.
+            const travelMs = destinations
+                ? ColdTrip.spotTripMs(leader, destinations[String(leader.characterId)] || spot.center) : HUNTING_TRAVEL_MS;
             const travellingMembers = needsTravel && destinations ? members.map((member) => beginPartySpotTravel(
                     member,
                     spot,
                     startedAt,
-                    { currentSpotId: physicalSpotId, spotBackoff, destination: destinations[String(member.characterId)] }
+                    { currentSpotId: physicalSpotId, spotBackoff, travelMs, destination: destinations[String(member.characterId)] }
                 )) : null;
             if (travellingMembers?.every(Boolean)) {
-                const arrivalAt = startedAt + HUNTING_TRAVEL_MS;
+                const arrivalAt = startedAt + travelMs;
                 return travellingMembers.reduce((chain, member) => (
                     chain.then(() => LifeState.upsertState(member, 'party_spot_travel'))
                 ), Promise.resolve()).then(() => BackgroundPartyState.createOrUpdate({

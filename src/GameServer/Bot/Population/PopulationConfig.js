@@ -151,6 +151,10 @@ const DEFAULTS = {
     coldCompetitionConflictsEnabled: true,
     coldCompetitionPvpEnabled: true,
     pvpAggression: 0.5,
+    // Honest cold travel (step 3.2): off = the author's trip times (a 25 s
+    // transit); on = scroll cast + gatekeeper hops + run time by distance, and
+    // a bot running to a spot is a walker that appears near the player.
+    coldHonestTravel: false,
     partyMinSize: 2,
     partyMaxSize: 5,
     // Shared safety ceiling for every background party. Admission never

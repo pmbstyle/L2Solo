@@ -385,5 +385,113 @@
     "craftReturn": null,
     "mammonReturn": null,
     "mammonRetryAt": 1300000
+  },
+  "hunting_solo": {
+    "activity": "traveling",
+    "adena": 500000,
+    "wallet": {
+      "57": 500000,
+      "736": 3
+    },
+    "timing": {
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
+    },
+    "travel": {
+      "from": {
+        "locX": 22000,
+        "locY": 140000,
+        "locZ": -3000
+      },
+      "to": {
+        "locX": 116000,
+        "locY": -180000,
+        "locZ": -900
+      },
+      "regionName": "Pinned hunting ground",
+      "spotId": "19_-19",
+      "arrivalActivity": "hunting",
+      "arrivalEvent": "arrived_hunting_ground",
+      "reason": "level_replan",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
+    },
+    "marketReturn": null,
+    "craftReturn": null,
+    "mammonReturn": null,
+    "mammonRetryAt": null
+  },
+  "hunting_party": {
+    "activity": "traveling",
+    "adena": 500000,
+    "wallet": {
+      "57": 500000,
+      "736": 3
+    },
+    "timing": {
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1025000
+    },
+    "travel": {
+      "from": {
+        "locX": 22000,
+        "locY": 140000,
+        "locZ": -3000
+      },
+      "to": {
+        "locX": 116000,
+        "locY": -180000,
+        "locZ": -900
+      },
+      "regionName": "Pinned hunting ground",
+      "spotId": "19_-19",
+      "arrivalActivity": "grouped",
+      "arrivalEvent": "party_arrived_hunting_ground",
+      "reason": "party_spot_replan",
+      "method": "gatekeeper_spot",
+      "startedAt": 1000000,
+      "arrivalAt": 1025000
+    },
+    "marketReturn": null,
+    "craftReturn": null,
+    "mammonReturn": null,
+    "mammonRetryAt": null
+  },
+  "karma_washing": {
+    "activity": "traveling",
+    "adena": 500000,
+    "wallet": {
+      "57": 500000,
+      "736": 3
+    },
+    "timing": {
+      "activityStartedAt": 1000000,
+      "nextResolveAt": 1148934
+    },
+    "travel": {
+      "from": {
+        "locX": 22000,
+        "locY": 140000,
+        "locZ": -3000
+      },
+      "to": {
+        "locX": 39872,
+        "locY": 140009,
+        "locZ": -2544
+      },
+      "reason": "karma_washing",
+      "spotId": "wash",
+      "regionName": "Wash",
+      "arrivalActivity": "hunting",
+      "arrivalEvent": "arrived_hunting_ground",
+      "method": "walk",
+      "startedAt": 1000000,
+      "arrivalAt": 1148934
+    },
+    "marketReturn": null,
+    "craftReturn": null,
+    "mammonReturn": null,
+    "mammonRetryAt": null
   }
 }
