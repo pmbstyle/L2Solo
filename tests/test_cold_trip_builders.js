@@ -179,10 +179,14 @@ async function cases() {
     const route = { needed: true, mode: 'solo', spotId: SPOT.id, regionName: SPOT.name, travelMs: 25000, to: { ...SPOT.center } };
     out.hunting_solo = digest(beginHuntingTrip(hunter(), route, T));
     out.hunting_party = digest(beginHuntingTrip(hunter({ party: { partyId: 'pin' } }), { ...route, mode: 'party' }, T));
-    out.karma_washing = digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100 } }), [{
+    // Keep the pinned ground height independent of optional local geodata files;
+    // the real arrival builder still chooses the offset and route.
+    out.karma_washing = withStubs([
+        [invoke('GameServer/Geodata/GeodataEngine'), 'getHeight', () => -2544]
+    ], () => digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100 } }), [{
         id: 'wash', name: 'Wash', minLevel: 35, maxLevel: 45, center: { locX: 40000, locY: 140000, locZ: -3000 },
         npcEntries: [{ selfId: 20001, level: 38 }]
-    }], T).plannedState);
+    }], T).plannedState));
     return out;
 }
 

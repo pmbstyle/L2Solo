@@ -1,9 +1,9 @@
 {
   "market_sell": {
     "activity": "traveling",
-    "adena": 500000,
+    "adena": 492200,
     "wallet": {
-      "57": 500000,
+      "57": 492200,
       "736": 2
     },
     "timing": {
@@ -18,18 +18,18 @@
       },
       "reason": "market_sale_inventory",
       "to": {
-        "locX": 15631,
-        "locY": 142885,
-        "locZ": -2704
+        "locX": 46600,
+        "locY": 49700,
+        "locZ": 0
       },
-      "townName": "Dion",
+      "townName": "Elven Village",
       "viaTown": "Dion",
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
       "method": "soe_gatekeeper",
       "paid": {
         "scroll": 736,
-        "fee": 0
+        "fee": 7800
       },
       "startedAt": 1000000,
       "arrivalAt": 1025000
