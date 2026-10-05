@@ -44,7 +44,7 @@ const apply = (a, b, overrides = {}) => Conflict.apply({ ...base, event: event(a
 async function run() {
     Database.init();
     const stats = { equipmentPlan: { status: 'active', next: { npcId: 10, spotId: 'test' } } };
-    for (const id of range(1, 64)) {
+    for (const id of range(1, 68)) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_conflict_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_conflict_${id}`, `Conflict${id}`]]);
@@ -55,7 +55,7 @@ async function run() {
     }
     await Life.init();
     await Party.init();
-    await Memory.ensureMany(range(1, 64));
+    await Memory.ensureMany(range(1, 68));
     await createParty([1, 2, 3]);
     await Database.execute(['UPDATE bot_life_state SET activity=? WHERE characterId=?', ['resting', 3]]);
     Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [3]]))[0]);
@@ -133,8 +133,21 @@ async function run() {
     const bystander = await apply(31, 33, { rng: () => 0.95 });
     assert(bystander.ok, JSON.stringify(bystander));
     assert.strictEqual(bystander.outcome, 'held_ground');
-    const evenPair = await apply(62, 63, { rng: () => 0.45 });
+    const evenPair = await apply(65, 66, { rng: () => 0.45 });
     assert.strictEqual(evenPair.outcome, 'displaced', 'two equal solos: a coin flip (chance 0.5)');
+    {
+        // PIN (before one decision per encounter): a cold dispute with a PvP intent asks
+        // can-I-win again at the start gate and, when no fight starts, twice more for
+        // who gives way: three rolls in one encounter.
+        const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+        const labels = [];
+        Tendency.roll = (...key) => { labels.push(key.find(part => ['cold_open', 'give_way'].includes(part))); return 0.99; };
+        const chained = await apply(67, 68, { pvpEnabled: () => true, event: { ...event(67, 68), pvpIntent: true } });
+        Tendency.roll = () => 0.49;
+        assert(chained.ok, JSON.stringify(chained));
+        assert.deepStrictEqual(labels, ['cold_open', 'give_way', 'give_way'], 'today: three rolls in one encounter');
+        assert.strictEqual(chained.outcome, 'displaced', 'a refused start; neither side willing: the coin, 0.2 < 0.5');
+    }
     assert.strictEqual(bystander.participants.find(p => p.id === 32).role, 'stand_aside');
     assert.strictEqual(bystander.memoryEvents, 1);
     assert.deepStrictEqual(Memory.snapshot(33).relations.map(r => r.targetId), [31]);
