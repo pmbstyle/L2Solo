@@ -4,13 +4,13 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const craftScanAt = new Map();
 const depositQueues = new Map();
 let enchantReleaseCursor = 0;
+let marketReleaseCursor = 0;
 const MAX_GEAR_COPIES_PER_TYPE = 2;
 let templateSource = null;
 let templateIndex = new Map();
@@ -73,8 +73,7 @@ function overflowCandidate(item, count) {
     return {
         selfId: Number(item.selfId),
         name: item.name || templateFor(item.selfId)?.template?.name || `Item ${item.selfId}`,
-        count: amount,
-        npcPrice: NpcSellRules.npcBuyPrice(ItemDisposition.basePrice(item))
+        count: amount
     };
 }
 
@@ -228,15 +227,14 @@ async function depositColdUnlocked(state, candidates) {
             ? { ...(state.stats || {}), lastWarehouseDeposit: { items: stored, at: Date.now() } }
             : { ...(state.stats || {}) }
     };
-    const liquidated = overflow.length
-        ? LifeState.applyNpcLiquidation(depositedState, overflow, { source: 'warehouse_retention_overflow' })
-        : Promise.resolve(depositedState);
-    return liquidated.then((nextState) => ({
-        state: nextState || depositedState,
+    // Room to store is not a sale decision. Excess copies stay in the bag
+    // for the market visit's common disposition, without a separate payout.
+    return {
+        state: depositedState,
         count: stored.reduce((sum, item) => sum + item.amount, 0),
         items: stored,
         overflow
-    }));
+    };
 }
 
 function depositCold(state) {
@@ -286,13 +284,12 @@ function historicalGearOverflow(items = [], maxUnits = 16) {
                 ...row,
                 name: row.name || templateFor(selfId)?.template?.name || `Item ${selfId}`
             }, liquidated);
-            if (!candidate?.npcPrice) continue;
+            if (!candidate) continue;
             selected.push({
                 id: Number(row.id),
                 selfId,
                 amount: liquidated,
-                enchant: Math.max(0, Number(row.enchant || 0)),
-                npcPrice: candidate.npcPrice
+                enchant: Math.max(0, Number(row.enchant || 0))
             });
             remaining -= liquidated;
         }
@@ -300,7 +297,7 @@ function historicalGearOverflow(items = [], maxUnits = 16) {
     return selected;
 }
 
-function historicalCleanupCandidates(afterCharacterId = 0, limit = 4) {
+function historicalCleanupCandidates(afterCharacterId = 0, limit = 4, options = {}) {
     const cursor = Math.max(0, Number(afterCharacterId) || 0);
     const safeLimit = Math.max(1, Math.min(32, Number(limit) || 4));
     return Database.execute([`
@@ -311,24 +308,38 @@ function historicalCleanupCandidates(afterCharacterId = 0, limit = 4) {
           AND warehouse.amount > 0
           AND states.phase = 'cold'
           AND states.simulationOwner = 'legacy_main'
+          AND states.accountName NOT LIKE 'bot_craft_%'
           AND (states.partyId IS NULL OR states.partyId = '')
           AND states.activity IN ('hunting', 'resting')
         ORDER BY warehouse.characterId ASC
         LIMIT ${safeLimit}`,
-    [cursor]], 'warehouse:cleanup-candidates').then((rows) => rows
+    [cursor], { onTiming: options.onTiming }], 'warehouse:cleanup-candidates').then((rows) => rows
         .map((row) => Number(row.characterId))
         .filter((characterId) => characterId > cursor));
 }
 
-async function cleanupHistoricalOwner(characterId, maxUnits = 16) {
+function cleanupHistoricalOwner(characterId, maxUnits = 16) {
+    return serializeDeposit(characterId, () => cleanupHistoricalOwnerUnlocked(characterId, maxUnits));
+}
+
+async function cleanupHistoricalOwnerUnlocked(characterId, maxUnits) {
+    const [state] = await LifeState.statesByIds([Number(characterId)], { ownerId: 'legacy_main', unassigned: true });
+    if (!canRelease(state)) return { ok: false, reason: 'owner_unavailable', characterId: Number(characterId) };
     const warehouseItems = await Database.fetchWarehouseItems(characterId);
     const selections = historicalGearOverflow(warehouseItems, maxUnits);
     if (!selections.length) {
         return { ok: true, reason: 'no_overflow', characterId: Number(characterId), rowsRemoved: 0, units: 0, payout: 0 };
     }
-    return LifeState.applyWarehouseGearCleanup(characterId, selections, {
-        source: 'historical_gear_retention'
-    });
+    const reserved = reservedWithdrawalAmounts(state, warehouseItems);
+    const selling = marketRequests(state, warehouseItems, reserved);
+    const selectedAmounts = storedAmounts(selections);
+    const requests = selling.map((request) => ({ ...request,
+        amount: Math.min(request.amount, selectedAmounts.get(request.selfId) || 0)
+    })).filter((request) => request.amount > 0);
+    const result = await releaseRequests(state, selections, requests);
+    return { ...result, ok: true, reason: result.released ? 'market_released' : 'market_kept',
+        characterId: Number(characterId), rowsRemoved: 0,
+        units: result.items.reduce((total, item) => total + item.amount, 0), payout: 0 };
 }
 
 async function cleanupHistoricalBatch(options = {}) {
@@ -390,20 +401,44 @@ function craftRequests(state, warehouseItems) {
 }
 
 function marketRequests(state, warehouseItems, reserved = new Map(), options = {}) {
-    const demandSelfIds = new Set(options.marketDemandSelfIds || MarketOpportunity.activeBuyDemandSelfIds());
-    const offers = new Map();
-    return (warehouseItems || []).flatMap((item) => {
-        const selfId = Number(item.selfId || 0);
-        const stored = Math.max(0, Number(item.amount || 0) - Number(reserved.get(selfId) || 0));
-        if (!selfId || stored <= 0 || !demandSelfIds.has(selfId)) return [];
-        if (!offers.has(selfId)) {
-            offers.set(selfId, MarketOpportunity.bestBuyOffer(selfId, { sellerCharacterId: state.characterId }));
-        }
-        const offer = offers.get(selfId);
-        if (!offer) return [];
-        const amount = Math.min(stored, Number(offer.count || 0));
-        return amount > 0 ? [{ selfId, amount, reason: 'market', town: offer.town || null }] : [];
+    const stored = storedAmounts(warehouseItems);
+    const inventory = { ...(state.inventory || {}) };
+    const summary = LifeState.inventorySummaryFromItems(warehouseItems);
+    for (const [key, item] of Object.entries(summary)) {
+        const owned = inventory[key];
+        inventory[key] = { ...item, ...owned, amount: Number(owned?.amount || 0) + item.amount,
+            ...(item.instances ? { instances: [...(owned?.instances || []), ...item.instances] } : {}) };
+    }
+    // A temporary inventory for the one common E choice. It is never saved:
+    // only the selected physical rows move, then the real bag is refreshed.
+    // Warehouse units in this temporary bag are not counted again as occupied
+    // room. Only the stock reserved to remain there limits the E keep option.
+    const decision = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(
+        { ...state, inventory }, { ...options, stored: reserved });
+    const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
+        .map((item) => [Number(item.selfId), Number(item.count)]));
+    const choices = [
+        ...decision.listings,
+        ...decision.npc,
+        ...decision.answers.map((answer) => ({ ...answer.item, count: answer.count, town: answer.line.town }))
+    ];
+    return choices.flatMap((item) => {
+        const selfId = Number(item.selfId);
+        const available = Math.max(0, (stored.get(selfId) || 0) - (reserved.get(selfId) || 0));
+        const amount = Math.min(available, Math.max(0, Number(item.count) - (inBag.get(selfId) || 0)));
+        return amount > 0 ? [{ selfId, amount, reason: 'market', town: item.town || null }] : [];
     });
+}
+
+function canRelease(state) {
+    return !!state && isLegacyMainState(state) && state.phase === 'cold'
+        && !(state.party?.partyId || state.partyId) && ['hunting', 'resting'].includes(state.activity);
+}
+
+function reservedWithdrawalAmounts(state, warehouseItems) {
+    const requests = [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)];
+    return requests.reduce((amounts, item) => amounts.set(item.selfId,
+        (amounts.get(item.selfId) || 0) + item.amount), new Map());
 }
 
 function hasFundedReleasedMarketMaterial(state) {
@@ -417,10 +452,7 @@ function hasFundedReleasedMarketMaterial(state) {
 function pendingMarketReleaseCandidates(limit = 8, timestamp = Date.now()) {
     const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
     return LifeState.allStates(2000).filter((state) => (
-        state?.phase !== 'hot'
-        && isLegacyMainState(state)
-        && !state?.party?.partyId
-        && ['hunting', 'resting'].includes(state?.activity)
+        canRelease(state)
         && Number(state.stats?.marketSellRetryAfter || 0) > Number(timestamp)
         && hasFundedReleasedMarketMaterial(state)
     )).sort((left, right) => Number(left.stats?.marketSellRetryAfter || 0) - Number(right.stats?.marketSellRetryAfter || 0))
@@ -428,7 +460,7 @@ function pendingMarketReleaseCandidates(limit = 8, timestamp = Date.now()) {
 }
 
 async function resumeReleasedMarket(state, timestamp = Date.now()) {
-    if (!state || !isLegacyMainState(state) || !hasFundedReleasedMarketMaterial(state)) return { state, resumed: false, items: [] };
+    if (!canRelease(state) || !hasFundedReleasedMarketMaterial(state)) return { state, resumed: false, items: [] };
     const nextState = {
         ...state,
         stats: { ...(state.stats || {}), marketSellRetryAfter: null },
@@ -441,8 +473,13 @@ async function resumeReleasedMarket(state, timestamp = Date.now()) {
     return { state: saved || nextState, resumed: true, released: false, items: [] };
 }
 
-async function releaseCold(state, options = {}) {
-    if (!state || !isLegacyMainState(state) || state.phase === 'hot' || state.party?.partyId || !['hunting', 'resting'].includes(state.activity)) {
+function releaseCold(state, options = {}) {
+    if (!canRelease(state)) return Promise.resolve({ state, released: false, items: [] });
+    return serializeDeposit(state.characterId, () => releaseColdUnlocked(state, options));
+}
+
+async function releaseColdUnlocked(state, options = {}) {
+    if (!canRelease(state)) {
         return { state, released: false, items: [] };
     }
     const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
@@ -458,14 +495,22 @@ async function releaseCold(state, options = {}) {
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
     const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
+    for (const item of enchanting) reserved.set(item.selfId, (reserved.get(item.selfId) || 0) + item.amount);
     const selling = marketRequests(state, warehouseItems, reserved, options);
-    const requests = [...crafting, ...enchanting, ...selling].reduce((merged, request) => {
+    recordStage('item_plan', planStartedAt);
+    return releaseRequests(state, warehouseItems, [...crafting, ...enchanting, ...selling], options);
+}
+
+async function releaseRequests(state, warehouseItems, requested, options = {}) {
+    const current = LifeState.cachedState(state.characterId) || state;
+    if (!canRelease(current)) return { state: current, released: false, items: [] };
+    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
+    const requests = requested.reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
         const previous = merged.get(key);
         merged.set(key, previous ? { ...previous, amount: previous.amount + request.amount } : request);
         return merged;
     }, new Map());
-    recordStage('item_plan', planStartedAt);
     if (!requests.size) return { state, released: false, items: [] };
 
     const remainingByRequest = new Map([...requests.entries()].map(([key, request]) => [key, Number(request.amount || 0)]));
@@ -473,7 +518,9 @@ async function releaseCold(state, options = {}) {
     const transferStartedAt = Date.now();
     try {
         for (const row of warehouseItems) {
+            if (!canRelease(LifeState.cachedState(state.characterId) || state)) break;
             for (const reason of ['craft', 'enchant', 'market']) {
+                if (!canRelease(LifeState.cachedState(state.characterId) || state)) break;
                 const key = `${Number(row.selfId)}:${reason}`;
                 const remaining = Number(remainingByRequest.get(key) || 0);
                 if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
@@ -563,13 +610,13 @@ function enchantReleaseCandidates(limit = 8, options = {}) {
     });
 }
 
-function releaseCandidates(limit = 8, demandSelfIds = null, options = {}) {
-    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+async function releaseCandidates(limit = 8, demandSelfIds = null, options = {}) {
+    const totalLimit = Math.max(1, Math.min(50, Number(limit) || 8));
+    const safeLimit = Math.floor(totalLimit / 2);
     const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
-    if (!demandIds.length) return Promise.resolve([]);
-    // Traverse eligible owners in oldest-state order. The partial index avoids
-    // reading full lifecycle rows when a rare demanded item has no seller.
-    return Database.execute([`
+    // Keep the indexed demand lookup for prompt ad answers. At least half
+    // the batch visits warehouse owners by cursor, including no-ad listings.
+    const demanded = demandIds.length && safeLimit > 0 ? await Database.execute([`
         SELECT DISTINCT states.characterId
         FROM warehouse_items warehouse
         INNER JOIN bot_life_state states INDEXED BY bot_life_state_warehouse_demand
@@ -583,7 +630,13 @@ function releaseCandidates(limit = 8, demandSelfIds = null, options = {}) {
         AND states.activity IN ('hunting', 'resting')
         ORDER BY states.updatedAt ASC
         LIMIT ${safeLimit}`,
-    demandIds, { onTiming: options.onTiming }], 'warehouse:release-candidates').then((rows) => rows.map((row) => Number(row.characterId)).filter(Boolean));
+    demandIds, { onTiming: options.onTiming }], 'warehouse:release-candidates') : [];
+    const demandOwners = demanded.map((row) => Number(row.characterId)).filter(Boolean).slice(0, safeLimit);
+    const remaining = totalLimit - demandOwners.length;
+    let ids = await historicalCleanupCandidates(marketReleaseCursor, remaining, options);
+    if (!ids.length && marketReleaseCursor > 0) ids = await historicalCleanupCandidates(0, remaining, options);
+    marketReleaseCursor = ids.at(-1) || 0;
+    return [...new Set([...demandOwners, ...ids])].slice(0, totalLimit);
 }
 
 function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {

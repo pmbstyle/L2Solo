@@ -9,6 +9,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const BotMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const TradeService = invoke('GameServer/Bot/TradeService');
 const SellJunk = invoke('GameServer/World/Generics/NpcBypasses/SellJunk');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -31,6 +32,7 @@ const originals = {
     allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
     activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
+    saleDecision: BotMarket.saleDecision,
     deleteItem: Database.deleteItem,
     updateItemAmount: Database.updateItemAmount,
     itemsList: ServerResponse.itemsList,
@@ -135,9 +137,9 @@ async function run() {
         stats: {}
     });
     assert.strictEqual(capped.count, 1, 'only the remaining warehouse gear allowance may be deposited');
-    assert.strictEqual(capped.overflow[0].count, 2, 'surplus gear must be reported for value-preserving NPC liquidation');
-    assert.strictEqual(capped.state.inventory['94'].amount, 0, 'surplus cold gear must leave inventory after liquidation');
-    assert.strictEqual(capped.state.stats.lastNpcLiquidation.source, 'warehouse_retention_overflow');
+    assert.strictEqual(capped.overflow[0].count, 2, 'surplus gear must be reported for the common market choice');
+    assert.strictEqual(capped.state.inventory['94'].amount, 2, 'surplus cold gear stays in the bag until its sale decision');
+    assert.strictEqual(capped.state.stats.lastNpcLiquidation, undefined, 'the warehouse cap cannot independently create NPC income');
     const depositCalls = calls.length;
     const ownedDeposit = await BotWarehouse.depositCold({
         ...state,
@@ -294,10 +296,10 @@ async function run() {
         }), { ...(coldState.inventory || {}) })
     });
     LifeState.upsertState = (coldState) => Promise.resolve(coldState);
-    let bestBuyLookups = 0;
-    MarketOpportunity.bestBuyOffer = () => {
-        bestBuyLookups += 1;
-        return { count: 50, town: 'Giran' };
+    let saleDecisions = 0;
+    BotMarket.saleDecision = () => {
+        saleDecisions += 1;
+        return { listings: [], npc: [], answers: [{ item: { selfId: 5220 }, count: 50, line: { town: 'Giran' } }] };
     };
     MarketOpportunity.activeBuyDemandSelfIds = () => [5220];
     const sparseDemandRows = Array.from({ length: 150 }, (_, index) => ({
@@ -310,10 +312,10 @@ async function run() {
         new Map(),
         { marketDemandSelfIds: [5220] }
     );
-    assert.strictEqual(bestBuyLookups, 1,
-        'warehouse planning must resolve offers once per demanded item instead of once per stored row');
+    assert.strictEqual(saleDecisions, 1,
+        'warehouse planning must make one common E choice per owner, not one per stored row');
     assert(sparseDemand.every((request) => request.selfId === 5220));
-    bestBuyLookups = 0;
+    saleDecisions = 0;
     const itemStages = [];
     const craftRelease = await BotWarehouse.releaseCold({
         characterId: 58,
@@ -369,6 +371,7 @@ async function run() {
             marketSellRetryAfter: Date.now() + 15 * 60 * 1000
         }
     };
+    MarketOpportunity.bestBuyOffer = () => ({ count: 50, town: 'Giran' });
     LifeState.allStates = () => [pendingSeller, {
         ...pendingSeller,
         characterId: 60,
@@ -387,9 +390,10 @@ async function run() {
         return Promise.resolve([{ characterId: 59 }]);
     };
     assert.deepStrictEqual(await BotWarehouse.releaseCandidates(3), [59]);
-    assert(candidateQuery[0].includes('LIMIT 3'), 'warehouse scanning must remain bounded by the scheduler batch');
+    assert(candidateQuery[0].includes('LIMIT 2'), 'the surplus cursor gets the remaining bounded batch after ad demand');
     assert(candidateQuery[0].includes("states.simulationOwner = 'legacy_main'"), 'warehouse candidate SQL must exclude leased owner rows');
-    assert.deepStrictEqual(candidateQuery[1], [5220], 'only currently funded material demand should enter the warehouse scan');
+    assert(candidateQuery[0].includes('INDEXED BY warehouse_items_characterId'), 'surplus discovery uses the existing warehouse owner index');
+    assert.deepStrictEqual(candidateQuery[1], [0], 'the first bounded surplus pass starts at its owner cursor');
     LifeState.allStates = () => [{
         characterId: 58,
         phase: 'cold',
@@ -415,7 +419,7 @@ async function run() {
 
     LifeState.allStates = () => [];
     Database.execute = (statement) => {
-        if (!statement[0].includes('warehouse.selfId IN')) return Promise.resolve([]);
+        if (!statement[0].includes('warehouse.selfId IN') && !statement[0].includes('warehouse.characterId >')) return Promise.resolve([]);
         statement[2]?.onTiming?.({ waitMs: 17, runMs: 3 });
         return Promise.resolve([{ characterId: 59 }, { characterId: 60 }]);
     };
@@ -439,7 +443,7 @@ async function run() {
     assert.deepStrictEqual(hydratedIds.options, { ownerId: 'legacy_main', unassigned: true });
     assert.deepStrictEqual(
         releaseStages.filter((stage) => !stage.startsWith('item_')),
-        ['resume', 'prepare', 'market_queue_wait', 'market_sql', 'enchant_queue_wait', 'enchant_sql',
+        ['resume', 'prepare', 'market_queue_wait', 'market_sql', 'enchant_queue_wait', 'enchant_sql', 'market_queue_wait', 'market_sql',
             'hydrate', 'candidates', 'release_items', 'release_items'],
         'warehouse telemetry must track bounded hydration and each completed candidate');
     for (const kind of ['market', 'enchant']) {
@@ -466,11 +470,16 @@ async function run() {
         cleanupRequest = { characterId, selections, cleanupOptions };
         return Promise.resolve({ ok: true, characterId, rowsRemoved: selections.length, units: selections.length, payout: 123 });
     };
+    LifeState.statesByIds = () => Promise.resolve([{ characterId: 77, phase: 'cold', activity: 'hunting', inventory: {}, stats: {} }]);
+    BotMarket.saleDecision = () => ({ listings: [{ selfId: 94, count: 4 }], npc: [], answers: [] });
+    const withdrawalsBeforeCleanup = withdrawals.length;
     const historicalCleanup = await BotWarehouse.cleanupHistoricalOwner(77, 1);
     assert.strictEqual(historicalCleanup.units, 1);
-    assert.strictEqual(cleanupRequest.characterId, 77);
-    assert.deepStrictEqual(cleanupRequest.selections.map((item) => item.id), [83]);
-    assert.strictEqual(cleanupRequest.cleanupOptions.source, 'historical_gear_retention');
+    assert.strictEqual(cleanupRequest, null, 'historical retention never uses the direct NPC liquidation path');
+    assert.deepStrictEqual(withdrawals.slice(withdrawalsBeforeCleanup).map((item) => [item.characterId, item.id]), [[77, 83]],
+        'historical surplus follows the common release path with its physical copy identity');
+    assert.strictEqual(historicalCleanup.rowsRemoved, 0, 'warehouse withdrawal does not destroy the item');
+    assert.strictEqual(historicalCleanup.payout, 0, 'release creates no money before the ordinary sale');
 
     Database.execute = (statement) => {
         candidateQuery = statement;
@@ -532,6 +541,7 @@ run().catch((err) => {
     LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;
+    BotMarket.saleDecision = originals.saleDecision;
     Database.deleteItem = originals.deleteItem;
     Database.updateItemAmount = originals.updateItemAmount;
     ServerResponse.itemsList = originals.itemsList;

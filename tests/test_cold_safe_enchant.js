@@ -131,12 +131,25 @@ function fixture(predicate, description) {
     }, 'cold_safe_enchant_warehouse_fixture');
     const released = await BotWarehouseService.releaseCold(huntingState);
     assert.strictEqual(released.released, true);
-    assert.deepStrictEqual(released.items.map((item) => [item.selfId, item.amount, item.reason]), [[955, 2, 'enchant']],
-        'warehouse scrolls must return only for an actual safe enchant need');
+    assert.deepStrictEqual(released.items.filter((item) => item.reason === 'enchant')
+        .map((item) => [item.selfId, item.amount, item.reason]), [[955, 2, 'enchant']],
+        'only scrolls reserved for an actual safe enchant need may be consumed');
+    assert.deepStrictEqual(released.items.filter((item) => item.reason === 'market')
+        .map((item) => [item.selfId, item.amount, item.reason]), [[956, 3, 'market']],
+        'the common market choice may release unused armor scrolls without a buy ad');
+    assert.strictEqual(released.state.adena, huntingState.adena, 'warehouse release must not create a direct NPC payout');
     const afterRelease = await Database.fetchItems(character.id);
     assert.strictEqual(Number(afterRelease.find((row) => Number(row.selfId) === Number(weapon.selfId))?.enchant || 0), 2,
         'released warehouse scrolls must be consumed immediately without a second town loop');
     assert.strictEqual(afterRelease.some((row) => Number(row.selfId) === 955), false);
+    const remainingWarehouse = await Database.fetchWarehouseItems(character.id);
+    const armorScrolls = [...afterRelease, ...remainingWarehouse].filter((row) => Number(row.selfId) === 956)
+        .reduce((total, row) => total + Number(row.amount), 0);
+    assert.strictEqual(armorScrolls, 3, 'market release preserves every unused armor scroll until a sale');
+    const [savedAfterRelease] = await Database.execute(['SELECT adena, inventorySummary FROM bot_life_state WHERE characterId = ?', [character.id]]);
+    assert.strictEqual(savedAfterRelease.adena, huntingState.adena);
+    assert.strictEqual(Number(JSON.parse(savedAfterRelease.inventorySummary)[956]?.amount || 0), 3,
+        'the persisted bag keeps market scrolls separately from consumed enchant stock');
 
     console.log('Cold safe enchant checks passed');
 })().catch((error) => {
