@@ -15,13 +15,15 @@ invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan = ()
 invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => {
     const count = invoke('GameServer/Bot/Economy/MarketCounters').counter('material none').deals;
     parentPort.postMessage({ trace: 'look', ownerId: state.characterId, count });
-    return { updates: [{ recordId: 7, lineId: 11, expectedRevision: 4,
+    return { updates: [{ recordId: lines[0].recordId, lineId: lines[0].lineId, expectedRevision: 4,
         previousPricing: lines[0].pricing,
         pricing: { ...lines[0].pricing, seenCounter: count } }], reprices: [], withdrawals: [] };
 };
 `;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function check(mode) {
+    const pressure = mode === 'pressure';
+    const owners = pressure ? 20 : 1;
     const epoch = `n53-ack-${mode}`;
     const worker = new Worker(source, { eval: true, workerData: { workerEpoch: epoch,
         workerPath } });
@@ -51,13 +53,18 @@ async function check(mode) {
         send('catalog_page', { catalog: 'spots', rows: [spot], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
         const pricing = { price: 100, seenCounter: 2, seenItem: 1, rival: 0, worth: 0, seenFills: 0 };
-        const boardRow = p => [7, 'shop', 1, 4242, 'Giran', 1, [[11, 1864, 0, 100, 100, p, 0]], 4];
+        const boardRow = (p, ownerId = 4242) => {
+            const offset = ownerId - 4242;
+            return [7 + offset, 'shop', 1, ownerId, 'Giran', 1, [[11 + offset, 1864, 0, 100, 100, p, 0]], 4];
+        };
         const counterRow = count => ['c:material none', count, 1, Date.now(), 0, 0, null];
         send('table_page', { tables: [
-            { name: 'board', from: null, to: 0, full: true, rows: [[7, boardRow(pricing)]], removed: [] },
+            { name: 'board', from: null, to: 0, full: true,
+                rows: Array.from({ length: owners }, (_, i) => [7 + i, boardRow(pricing, 4242 + i)]), removed: [] },
             { name: 'market', from: null, to: 0, full: true, rows: [['c:material none', counterRow(2)]], removed: [] }
         ] });
-        send('init', { config: { loopIntervalMs: 10, flushTargetMs: 10, flushHardMs: 50 } });
+        send('init', { config: { loopIntervalMs: 10, flushTargetMs: 10, flushHardMs: 50,
+            ...(pressure ? { maxInFlight: 2 } : {}) } });
         await until(message => message.type === 'ready' && message.payload.phase === 'running');
         const now = Date.now();
         const state = { characterId: 4242, name: 'AckOwner', accountName: 'bot_ack_owner', level: 30,
@@ -66,7 +73,9 @@ async function check(mode) {
             timing: { lastResolvedAt: now - 45000, nextResolveAt: now + 60000 },
             stats: { generatedCold: true, classId: 0, role: 'dps', equipment: [] } };
         const context = { spot, route: null };
-        send('snapshot_page', { done: true, ack: true, rows: [{ state, context }] });
+        send('snapshot_page', { done: true, ack: true, rows: Array.from({ length: owners }, (_, i) => ({
+            state: { ...state, characterId: 4242 + i, name: `AckOwner${i}` }, context
+        })) });
         await until(message => message.type === 'ready' && message.payload.phase === 'state_loaded');
         send('table_page', { tables: [{ name: 'market', from: 0, to: 1, full: false,
             rows: [['c:material none', counterRow(3)]], removed: [] }] });
@@ -75,6 +84,29 @@ async function check(mode) {
         const commandId = first.payload.requests[0].commandId;
         assert.equal(typeof commandId, 'string', 'market commands identify their own ack');
         assert(commandId.length > 0);
+        if (pressure) {
+            await pause(100);
+            const pending = commands().flatMap(message => message.payload.requests);
+            assert.equal(pending.length, 2, 'market commands share the existing kernel in-flight limit');
+            assert.equal(new Set(pending.map(request => request.characterId)).size, 2);
+            const done = pending[0];
+            send('table_page', { tables: [{ name: 'board', from: 0, to: 1, full: false,
+                rows: [[done.market.updates[0].recordId,
+                    boardRow(done.market.updates[0].pricing, done.characterId)]], removed: [] }] });
+            send('command_ack', { results: [{ ok: true, characterId: done.characterId,
+                state: done.state, context: done.context, marketDeferred: false, marketCommandId: done.commandId }] });
+            await until(message => message.type === 'command_request'
+                && !pending.some(request => request.commandId === message.payload.requests[0].commandId));
+            await pause(100);
+            const afterAck = commands().flatMap(message => message.payload.requests);
+            assert.equal(afterAck.length, 3, 'one ack frees exactly one slot for the next affected owner');
+            assert.equal(new Set(afterAck.map(request => request.characterId)).size, 3,
+                'remaining indexed owners stay queued instead of being lost or duplicating the acknowledged owner');
+            assert.equal(received.some(message => message.type === 'claim_request'
+                || message.type === 'proposal_batch'), false, 'pressure draining never starts early combat');
+            console.log('Market reviews obey shared pressure; ack frees one queued owner slot');
+            return;
+        }
         if (mode === 'fence') {
             send('fence', { characterId: 4242, deadlineAt: Date.now() + 1000 });
             await until(message => message.type === 'fence_ack');
@@ -151,5 +183,6 @@ async function check(mode) {
     await check('deferred');
     await check('fence');
     await check('snapshot');
+    await check('pressure');
     console.log('N53 real-worker ack ordering checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
