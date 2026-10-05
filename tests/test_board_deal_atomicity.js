@@ -109,14 +109,18 @@ function marketWeapon() {
         && Number(item.template?.price || 0) > 1000 && Number(item.etc?.slot || 0) === 7);
 }
 
-// A seller lists the weapon through the cold sale path; a funded buyer with
-// a market plan for it is the demand that makes the listing worth it.
+// A seller lists the weapon through the cold sale path; deals of it on the
+// board are the buyers that make the listing worth it (group E).
 async function listWeapon(name, weapon) {
     const seller = await makeBot(name, [{ selfId: 57, name: 'Adena', amount: 500 },
         { selfId: weapon.selfId, name: weapon.template.name, amount: 1, slot: weapon.etc.slot }]);
-    const demand = { characterId: 999999, name: 'Demand', adena: 100000000, currentRegion: 'Giran',
-        stats: { equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: weapon.selfId, name: weapon.template.name } } } };
-    const listed = await ListingService.open(seller, { now: Date.now(), random: () => 0.1, states: [demand] });
+    // One decision point for the visit, the same in every run.
+    const at = 1800000000000;
+    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+    for (let deal = 0; deal < 12; deal++) {
+        MarketCounters.deal(weapon.selfId, Number(weapon.template.price) * 2, 1, at - (12 - deal) * 300000, 999999);
+    }
+    const listed = await ListingService.open(seller, { now: at, random: () => 0.1 });
     assert.strictEqual(listed.listed, true, `${name}: the weapon is listed`);
     return listed.state;
 }

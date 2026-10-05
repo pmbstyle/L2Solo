@@ -45,6 +45,15 @@ function npcFrom(row, index = 0) {
     };
 }
 
+// Animal Bone trades on the board (group E): the bot keeps it for the
+// market or its warehouse instead of selling it to the NPC. One decision
+// point for the trip: the clock stands still in this test.
+const realNow = Date.now;
+const frozen = 1800000000000;
+Date.now = () => frozen;
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+for (let deal = 0; deal < 40; deal++) MarketCounters.deal(1870, 2000, 20, frozen - (40 - deal) * 60000, 1);
+
 try {
     const warehouseRows = TownServiceCatalog.rowsForTown('Giran', TownServiceCatalog.ROLES.WAREHOUSE);
     const warehouseRow = warehouseRows[0];
@@ -147,4 +156,6 @@ try {
     TownNpcApproach.plan = originals.plan;
     TownNpcApproach.reset = originals.reset;
     ShoppingState.depositAtWarehouse = originals.depositAtWarehouse;
+    MarketCounters.reset();
+    Date.now = realNow;
 }

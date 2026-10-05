@@ -10,7 +10,6 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const BuyStore = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const WealthCraft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-const ItemTemplateIndex = require('../src/GameServer/Item/ItemTemplateIndex');
 Data.init();
 
 // Pins the numeric edges of the economy rules; the surrounding behaviour is
@@ -42,23 +41,22 @@ try {
     PersonaEconomicPolicy.wealthSaleOpportunity = originals.wealthSale;
 }
 
-// The listing floor is 60% of the reference price, which is the lower of the
-// rate-scaled base price and the NPC price. A WTB bid under the floor is not posted.
+// The reference price is the lower of the rate-scaled base price and the
+// NPC price. No listing floor (group E): a WTB bid is the mirror of the
+// bot's ask, at or under what the item is worth to it.
 const BOW = 274;
 const item = { selfId: BOW, basePrice: 1000000 };
 const scaledBase = BotEconomyPricing.scalePrice(item.basePrice);
 BotMarketPricing.useNpcOfferSnapshot([{ selfId: BOW, price: Math.floor(scaledBase / 2) }]);
 assert.strictEqual(BotMarketPricing.referencePrice(item), Math.floor(scaledBase / 2), 'a cheaper NPC price is the reference');
-assert.strictEqual(BotMarketPricing.listingFloor(item), Math.floor(Math.floor(scaledBase / 2) * 0.6));
 BotMarketPricing.useNpcOfferSnapshot([]);
-assert.strictEqual(BotMarketPricing.listingFloor(item), Math.floor(scaledBase * 0.6), 'without NPC stock the scaled base price is the reference');
-
-const bowFloor = BotMarketPricing.listingFloor({ selfId: BOW,
-    basePrice: Number(ItemTemplateIndex.find(Data.items, BOW).template.price) });
+assert.strictEqual(BotMarketPricing.referencePrice(item), scaledBase, 'without NPC stock the scaled base price is the reference');
+assert.strictEqual(BotMarketPricing.listingFloor, undefined, 'no listing floor');
 const bid = (adena) => BuyStore.bidFor({ characterId: 9102, adena: 1000000000, inventory: {} },
     { type: 'upgrade_gear', target: { itemId: BOW, adena }, plan: { priceSource: 'offer' } });
-assert.strictEqual(bid(bowFloor - 1), null, 'a WTB bid under the listing floor is not posted');
-assert.strictEqual(bid(bowFloor)?.price, bowFloor, 'a WTB bid at the floor is posted');
+const low = bid(1000);
+assert(!low || low.price <= 1000, 'a bid stays at or under what the item is worth to the buyer');
+assert(bid(scaledBase).price <= scaledBase);
 
 // A wealth crafter does not craft while it holds its own WTB.
 const crafter = { characterId: 9103, accountName: 'bot_pop_test', name: 'Crafter', phase: 'cold',

@@ -81,13 +81,17 @@ const originals = {
     updateItemAmount: Database.updateItemAmount,
     itemsList: ServerResponse.itemsList,
     userInfo: ServerResponse.userInfo,
-    speak: ServerResponse.speak
+    speak: ServerResponse.speak,
+    now: Date.now
 };
 
 async function run() {
     // A world with a market (group E): materials and D recipes trade on the
     // board, so the bot keeps them for it; with no buyer of its kind at all
     // an item's best outcome would be the NPC.
+    // One decision point for each sale: the clock stands still in this test.
+    const frozen = 1800000000000;
+    Date.now = () => frozen;
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
     MarketCounters.reset();
     for (let deal = 0; deal < 40; deal++) {
@@ -127,4 +131,5 @@ run().then(() => console.log('Hot sell-junk market stock checks passed'))
     .finally(() => {
         Object.assign(Database, { deleteItem: originals.deleteItem, updateItemAmount: originals.updateItemAmount });
         Object.assign(ServerResponse, { itemsList: originals.itemsList, userInfo: originals.userInfo, speak: originals.speak });
+        Date.now = originals.now;
     });
