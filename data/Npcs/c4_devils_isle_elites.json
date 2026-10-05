@@ -1,0 +1,307 @@
+[
+  {
+    "selfId": 1625,
+    "template": {
+      "kind": "Monster",
+      "name": "Zaken's Elite Guard",
+      "title": "",
+      "level": 50,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 445,
+      "pAtkRnd": 5,
+      "pDef": 278,
+      "mAtk": 264,
+      "mDef": 226,
+      "accur": -3.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 88,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2245,
+      "maxMp": 830,
+      "revHp": 34.76,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 34.5
+    },
+    "equipment": {
+      "weapon": 225,
+      "shield": 945,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "undead_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.1432,
+      "sp": 215
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1628,
+    "template": {
+      "kind": "Monster",
+      "name": "Kaim Vanul Ladd",
+      "title": "",
+      "level": 51,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 539,
+      "pAtkRnd": 30,
+      "pDef": 286,
+      "mAtk": 281,
+      "mDef": 232,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 40,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2323,
+      "maxMp": 861,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 28,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "demonic_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.106113033449,
+      "sp": 219
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1631,
+    "template": {
+      "kind": "Monster",
+      "name": "Zombie Captain's Spiritual Body",
+      "title": "",
+      "level": 52,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 499,
+      "pAtkRnd": 5,
+      "pDef": 295,
+      "mAtk": 300,
+      "mDef": 239,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 15,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2402,
+      "maxMp": 892,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 33.6
+    },
+    "equipment": {
+      "weapon": 232,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.460059171598,
+      "sp": 305
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1634,
+    "template": {
+      "kind": "Monster",
+      "name": "Crimson Doll Blader",
+      "title": "",
+      "level": 53,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 527,
+      "pAtkRnd": 30,
+      "pDef": 258,
+      "mAtk": 319,
+      "mDef": 247,
+      "accur": 4.75,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 24,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2481,
+      "maxMp": 923,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 15
+    },
+    "equipment": {
+      "weapon": 5129,
+      "shield": 5129,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.22819508722,
+      "sp": 271
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1637,
+    "template": {
+      "kind": "Monster",
+      "name": "Crimson Vale Master",
+      "title": "",
+      "level": 54,
+      "hostile": true
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 636,
+      "pAtkRnd": 30,
+      "pDef": 266,
+      "mAtk": 339,
+      "mDef": 254,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 77,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 2562,
+      "maxMp": 955,
+      "revHp": 41.08,
+      "revMp": 2.45,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14.5,
+      "size": 48
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "zaken_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.128600823045,
+      "sp": 262
+    },
+    "traits": {
+      "race": "demonic",
+      "undead": false
+    }
+  }
+]

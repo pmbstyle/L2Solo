@@ -1,0 +1,792 @@
+[
+  {
+    "selfId": 1625,
+    "template": {
+      "name": "Zaken's Elite Guard"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1509,
+            "max": 3068,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 1867,
+            "name": "Animal Skin",
+            "min": 4,
+            "max": 12,
+            "chance": 46.034942
+          },
+          {
+            "selfId": 1872,
+            "name": "Animal Bone",
+            "min": 7,
+            "max": 21,
+            "chance": 24.551839
+          },
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 3,
+            "max": 9,
+            "chance": 10.229864
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 9.691377
+          },
+          {
+            "selfId": 2169,
+            "name": "Recipe: Necklace of Binding",
+            "min": 1,
+            "max": 1,
+            "chance": 4.888595
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 4.603383
+          }
+        ],
+        "overall": 36.0083
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 83.1383
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1882,
+            "name": "Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 83.1383
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4601,
+            "name": "Greater Dye of STR (Str+3 Con-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8314
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1628,
+    "template": {
+      "name": "Kaim Vanul Ladd"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1523,
+            "max": 3095,
+            "chance": 99.920777
+          },
+          {
+            "selfId": 200,
+            "name": "Sage's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.000714
+          },
+          {
+            "selfId": 2103,
+            "name": "Sage's Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 0.078509
+          }
+        ],
+        "overall": 70.0555
+      },
+      {
+        "items": [
+          {
+            "selfId": 162,
+            "name": "War Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 174,
+            "name": "Nirvana Axe",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 196,
+            "name": "Stick of Eternity",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 197,
+            "name": "Paradia Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 199,
+            "name": "Pa'agrian Hammer",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 201,
+            "name": "Club of Nature",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 202,
+            "name": "Mace of The Underworld",
+            "min": 1,
+            "max": 1,
+            "chance": 0.096759
+          },
+          {
+            "selfId": 2097,
+            "name": "War Axe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 12.626996
+          },
+          {
+            "selfId": 2098,
+            "name": "Nirvana Axe Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 12.626996
+          },
+          {
+            "selfId": 2099,
+            "name": "Stick of Eternity Shaft",
+            "min": 1,
+            "max": 1,
+            "chance": 13.280116
+          },
+          {
+            "selfId": 2100,
+            "name": "Paradia Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 13.280116
+          },
+          {
+            "selfId": 2102,
+            "name": "Pa'agrian Hammer Head",
+            "min": 1,
+            "max": 1,
+            "chance": 12.796323
+          },
+          {
+            "selfId": 2104,
+            "name": "Club of Nature Head",
+            "min": 1,
+            "max": 1,
+            "chance": 13.280116
+          },
+          {
+            "selfId": 2105,
+            "name": "Mace of The Underworld Head",
+            "min": 1,
+            "max": 1,
+            "chance": 12.626996
+          },
+          {
+            "selfId": 2356,
+            "name": "Recipe: Demon's Staff",
+            "min": 1,
+            "max": 1,
+            "chance": 8.805031
+          }
+        ],
+        "overall": 0.4134
+      },
+      {
+        "items": [
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 5.521504
+          },
+          {
+            "selfId": 1878,
+            "name": "Braided Hemp",
+            "min": 1,
+            "max": 1,
+            "chance": 33.129769
+          },
+          {
+            "selfId": 1884,
+            "name": "Cord",
+            "min": 1,
+            "max": 1,
+            "chance": 50.96919
+          },
+          {
+            "selfId": 1889,
+            "name": "Compound Braid",
+            "min": 1,
+            "max": 1,
+            "chance": 5.521504
+          },
+          {
+            "selfId": 3012,
+            "name": "Recipe: Full Plate Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 1.545129
+          },
+          {
+            "selfId": 5220,
+            "name": "Metal Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 3.312903
+          }
+        ],
+        "overall": 26.9039
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1539,
+            "name": "Greater Healing Potion",
+            "min": 1,
+            "max": 1,
+            "chance": 83.8205
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1874,
+            "name": "Oriharukon Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 25.1462
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4604,
+            "name": "Greater Dye of CON (Con+3 Dex-3)",
+            "min": 1,
+            "max": 1,
+            "chance": 0.8382
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1631,
+    "template": {
+      "name": "Zombie Captain's Spiritual Body"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1870,
+            "max": 3780,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 103,
+            "name": "Tower Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.352828
+          },
+          {
+            "selfId": 107,
+            "name": "Composite Shield",
+            "min": 1,
+            "max": 1,
+            "chance": 0.352828
+          },
+          {
+            "selfId": 517,
+            "name": "Composite Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.247363
+          },
+          {
+            "selfId": 1149,
+            "name": "Shining Circlet",
+            "min": 1,
+            "max": 1,
+            "chance": 0.247363
+          },
+          {
+            "selfId": 1978,
+            "name": "Tower Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 29.330777
+          },
+          {
+            "selfId": 1983,
+            "name": "Shining Circlet Pattern",
+            "min": 1,
+            "max": 1,
+            "chance": 20.069032
+          },
+          {
+            "selfId": 2957,
+            "name": "Composite Helmet Design",
+            "min": 1,
+            "max": 1,
+            "chance": 20.069032
+          },
+          {
+            "selfId": 4055,
+            "name": "Composite Shield Fragment",
+            "min": 1,
+            "max": 1,
+            "chance": 29.330777
+          }
+        ],
+        "overall": 5.215
+      },
+      {
+        "items": [
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 3,
+            "max": 9,
+            "chance": 26.539447
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 31.847454
+          },
+          {
+            "selfId": 1876,
+            "name": "Mithril Ore",
+            "min": 1,
+            "max": 1,
+            "chance": 15.923435
+          },
+          {
+            "selfId": 1895,
+            "name": "Metallic Fiber",
+            "min": 1,
+            "max": 1,
+            "chance": 22.747973
+          },
+          {
+            "selfId": 2357,
+            "name": "Recipe: Crystal Dagger",
+            "min": 1,
+            "max": 1,
+            "chance": 0.129613
+          },
+          {
+            "selfId": 3012,
+            "name": "Recipe: Full Plate Helmet",
+            "min": 1,
+            "max": 1,
+            "chance": 1.485296
+          },
+          {
+            "selfId": 4042,
+            "name": "Enria",
+            "min": 1,
+            "max": 1,
+            "chance": 1.326783
+          }
+        ],
+        "overall": 34.2558
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 2091,
+            "name": "Tsurugi Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 2.5158
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2092,
+            "name": "Homunkulus's Sword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 2.5159
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2353,
+            "name": "Recipe: Samurai Longsword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.7531
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1634,
+    "template": {
+      "name": "Crimson Doll Blader"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1830,
+            "max": 3717,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 135,
+            "name": "Samurai Longsword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.216378
+          },
+          {
+            "selfId": 2115,
+            "name": "Samurai Longsword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 31.907457
+          },
+          {
+            "selfId": 4134,
+            "name": "Recipe: Zubei's Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 35.719041
+          },
+          {
+            "selfId": 5286,
+            "name": "Berserker Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.216378
+          },
+          {
+            "selfId": 5530,
+            "name": "Berserker Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 31.940746
+          }
+        ],
+        "overall": 0.6008
+      },
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.775865
+          },
+          {
+            "selfId": 1894,
+            "name": "Crafted Leather",
+            "min": 1,
+            "max": 1,
+            "chance": 31.203571
+          },
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 29.644508
+          },
+          {
+            "selfId": 4041,
+            "name": "Mold Hardener",
+            "min": 1,
+            "max": 1,
+            "chance": 7.731548
+          },
+          {
+            "selfId": 4044,
+            "name": "Thons",
+            "min": 1,
+            "max": 1,
+            "chance": 29.644508
+          }
+        ],
+        "overall": 3.1365
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 1806,
+            "name": "Recipe: Soulshot: B-Grade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.9066
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 1918,
+            "name": "Nassen's Earring Gemstone",
+            "min": 1,
+            "max": 1,
+            "chance": 19.6309
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4039,
+            "name": "Mold Glue",
+            "min": 1,
+            "max": 1,
+            "chance": 15.1093
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  },
+  {
+    "selfId": 1637,
+    "template": {
+      "name": "Crimson Vale Master"
+    },
+    "rewards": [
+      {
+        "items": [
+          {
+            "selfId": 57,
+            "name": "Adena",
+            "min": 1746,
+            "max": 3555,
+            "chance": 100
+          }
+        ],
+        "overall": 70
+      },
+      {
+        "items": [
+          {
+            "selfId": 135,
+            "name": "Samurai Longsword",
+            "min": 1,
+            "max": 1,
+            "chance": 0.352113
+          },
+          {
+            "selfId": 2115,
+            "name": "Samurai Longsword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 49.620802
+          },
+          {
+            "selfId": 5286,
+            "name": "Berserker Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 0.352113
+          },
+          {
+            "selfId": 5530,
+            "name": "Berserker Blade Edge",
+            "min": 1,
+            "max": 1,
+            "chance": 49.674973
+          }
+        ],
+        "overall": 0.3692
+      },
+      {
+        "items": [
+          {
+            "selfId": 1864,
+            "name": "Stem",
+            "min": 4,
+            "max": 12,
+            "chance": 15.116451
+          },
+          {
+            "selfId": 1865,
+            "name": "Varnish",
+            "min": 2,
+            "max": 6,
+            "chance": 12.093108
+          },
+          {
+            "selfId": 1866,
+            "name": "Suede",
+            "min": 3,
+            "max": 9,
+            "chance": 6.718511
+          },
+          {
+            "selfId": 1868,
+            "name": "Thread",
+            "min": 1,
+            "max": 3,
+            "chance": 40.311066
+          },
+          {
+            "selfId": 1873,
+            "name": "Silver Nugget",
+            "min": 1,
+            "max": 1,
+            "chance": 24.186481
+          },
+          {
+            "selfId": 4142,
+            "name": "Recipe: Avadon Gaiters",
+            "min": 1,
+            "max": 1,
+            "chance": 0.464906
+          },
+          {
+            "selfId": 4936,
+            "name": "Recipe: Avadon Shield (60%)",
+            "min": 1,
+            "max": 1,
+            "chance": 1.109476
+          }
+        ],
+        "overall": 37.7926
+      }
+    ],
+    "spoils": [
+      {
+        "items": [
+          {
+            "selfId": 2115,
+            "name": "Samurai Longsword Blade",
+            "min": 1,
+            "max": 1,
+            "chance": 1.9848
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 2116,
+            "name": "Deadman's Staff Head",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0383
+          }
+        ],
+        "overall": 100
+      },
+      {
+        "items": [
+          {
+            "selfId": 4141,
+            "name": "Recipe: Avadon Breastplate",
+            "min": 1,
+            "max": 1,
+            "chance": 2.0829
+          }
+        ],
+        "overall": 100
+      }
+    ]
+  }
+]
