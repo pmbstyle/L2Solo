@@ -1027,9 +1027,10 @@ class ColdSimulationKernel {
             }
             const entry = this.states.get(id);
             if (!entry) return;
-            this.inFlight.set(id, { grant, state: entry.state, context: entry.context, startedAt: this.now() });
+            this.inFlight.set(id, { grant, state: entry.state, context: entry.context, startedAt: this.now(), claimRequestId: requestId });
             this.stats.claimed += 1;
-            this.resolveChain = this.resolveChain.then(() => this.resolveGrant(id));
+            const source = this.captureResolverSource(id);
+            this.resolveChain = this.resolveChain.then(() => this.resolveGrant(id, source));
         });
         const touchedParties = new Set([
             ...grants.map((entry) => entry.purpose?.partyId),
@@ -1053,11 +1054,12 @@ class ColdSimulationKernel {
             run.purpose.memberIds.forEach((id) => {
                 const state = run.members.find((member) => Number(member.characterId) === Number(id));
                 this.inFlight.set(Number(id), {
-                    grant: run.grants.get(Number(id)), state, context: {}, startedAt: this.now(), partyId
+                    grant: run.grants.get(Number(id)), state, context: {}, startedAt: this.now(), partyId, claimRequestId: requestId
                 });
             });
             this.stats.claimed += run.purpose.memberIds.length;
-            this.resolveChain = this.resolveChain.then(() => this.resolvePartyGrant(partyId));
+            const source = this.capturePartyResolverSource(partyId);
+            this.resolveChain = this.resolveChain.then(() => this.resolvePartyGrant(partyId, source));
         });
     }
 
@@ -1133,11 +1135,35 @@ class ColdSimulationKernel {
         });
     }
 
-    async resolvePartyGrant(partyId) {
+    captureResolverSource(characterId) {
+        const id = Number(characterId), active = this.inFlight.get(id);
+        return { id, active, token: Protocol.leaseRenewalToken(active?.grant), requestId: active?.claimRequestId };
+    }
+
+    resolverSourceCurrent(source) {
+        return !this.stopping && !!source.token && typeof source.requestId === 'string' && !!source.requestId
+            && this.inFlight.get(source.id) === source.active && source.active.claimRequestId === source.requestId
+            && this.sameLease(source.active.grant, source.token)
+            && this.states.get(source.id)?.state.phase === 'cold'
+            && Number(source.active.grant.leaseUntil) > this.now();
+    }
+
+    capturePartyResolverSource(partyId) {
         const run = this.partyRuns.get(String(partyId));
-        if (!run || this.stopping) return;
+        return run ? { run, requestId: run.requestId,
+            sources: run.members.map(member => this.captureResolverSource(member.characterId)) } : null;
+    }
+
+    async resolvePartyGrant(partyId, captured = this.capturePartyResolverSource(partyId)) {
+        if (!captured || this.stopping) return;
+        const { run, requestId, sources } = captured;
+        const current = () => this.partyRuns.get(String(partyId)) === run && run.requestId === requestId
+            && sources.every(source => source.requestId === requestId && this.resolverSourceCurrent(source)
+                && this.sameLease(run.grants.get(source.id), source.token));
+        if (!current()) return;
         const startedAt = this.now();
         let raidStepId = null;
+        let published = false, handled = false;
         try {
             if (run.invalidReason) {
                 const releasedMembers = run.members.map((state) => (
@@ -1173,6 +1199,7 @@ class ColdSimulationKernel {
                     },
                     'party_invalid_size'
                 );
+                published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
                 this.stats.resolved += proposals.length;
                 this.flush(null, true);
@@ -1199,6 +1226,7 @@ class ColdSimulationKernel {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,
                     meta: { partyId: run.party.partyId, departed: [...review.leaving.keys()], decisions: review.decisions }
                 }, 'party_session_review');
+                published = handled = true;
                 proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
                 this.stats.resolved += proposals.length;
                 this.flush(null, true);
@@ -1222,6 +1250,7 @@ class ColdSimulationKernel {
                         null,
                         'party_travel_wait'
                     );
+                    published = handled = true;
                     proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
                     this.stats.resolved += proposals.length;
                     this.flush(null, true);
@@ -1257,6 +1286,7 @@ class ColdSimulationKernel {
                     },
                     'party_arrival'
                 );
+                published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
                 this.stats.resolved += proposals.length;
                 this.flush(null, true);
@@ -1296,6 +1326,7 @@ class ColdSimulationKernel {
                     null,
                     'party_travel'
                 );
+                published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
                 this.stats.resolved += proposals.length;
                 this.flush(null, true);
@@ -1323,8 +1354,10 @@ class ColdSimulationKernel {
                 raidStepId = `raid:${run.grants.get(Number(run.party.leaderId))?.leaseId}`;
                 staged = await raids.stage({ key: raids.keyFor(run.spot, run.targetNpcId), id: raidStepId,
                     memberIds: run.members.map(member => Number(member.characterId)) }, () => this.resolveParty(resolveOptions));
+                if (!current()) return;
             }
             const resolution = staged ? staged.result : await this.resolveParty(resolveOptions);
+            if (!current()) return;
             const proposals = [];
             const resolvedParty = {
                 ...run.party,
@@ -1356,6 +1389,7 @@ class ColdSimulationKernel {
                 const projection = this.projectResolve
                     ? await this.projectResolve(state, result, startedAt)
                     : null;
+                if (!current()) return;
                 let projectedState = projection?.state || projection;
                 if (resolvedParty.status === 'dissolved') {
                     projectedState = BackgroundPartyLifecycle.releaseMember(
@@ -1391,31 +1425,41 @@ class ColdSimulationKernel {
                         party: resolvedParty
                     } : null
                 };
-                this.dirty.set(id, proposal);
                 proposals.push(proposal);
             }
+            if (!current()) return;
+            published = handled = true;
+            proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
             this.stats.resolved += proposals.length;
             this.flush(null, true);
         } catch (error) {
             if (raidStepId) require('./ColdRaidEncounter').abort(raidStepId);
-            for (const [id, proposal] of this.dirty) if (proposal.raidStepId === raidStepId && raidStepId) this.dirty.delete(id);
+            if (!current()) return;
+            handled = true;
+            for (const source of sources) {
+                if (raidStepId && this.dirty.get(source.id)?.raidStepId === raidStepId) this.dirty.delete(source.id);
+            }
             if (error?.message !== 'raid_step_pending') {
                 this.stats.errors += 1;
                 this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
             }
             this.requestRelease([...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' })));
         } finally {
-            this.partyRuns.delete(String(partyId));
-            const elapsed = this.now() - startedAt;
-            this.stats.lastResolveMs = elapsed;
-            this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+            if (raidStepId && !published) require('./ColdRaidEncounter').abort(raidStepId);
+            if (this.partyRuns.get(String(partyId)) === run) this.partyRuns.delete(String(partyId));
+            if (handled) {
+                const elapsed = this.now() - startedAt;
+                this.stats.lastResolveMs = elapsed;
+                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+            }
         }
     }
 
-    async resolveGrant(characterId) {
-        const active = this.inFlight.get(Number(characterId));
-        if (!active || this.stopping) return;
+    async resolveGrant(characterId, source = this.captureResolverSource(characterId)) {
+        const active = source.active;
+        if (source.id !== Number(characterId) || !this.resolverSourceCurrent(source)) return;
         const startedAt = this.now();
+        let handled = false;
         try {
             const timestamp = startedAt;
             const elapsedMs = active.state.timing?.lastResolvedAt
@@ -1424,6 +1468,7 @@ class ColdSimulationKernel {
             const lifecyclePlan = this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, context: active.context, timestamp })
                 : null;
+            if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const result = await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
@@ -1438,9 +1483,11 @@ class ColdSimulationKernel {
                 rng: deterministicRandom(active.state),
                 timestamp
             });
+            if (!this.resolverSourceCurrent(source)) return;
             const projection = this.projectResolve
                 ? await this.projectResolve(resolveState, result, timestamp)
                 : null;
+            if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
             const priority = projection?.durable ? 'P1' : priorityForResult(active.state, result);
             const proposal = {
@@ -1456,20 +1503,25 @@ class ColdSimulationKernel {
                 result,
                 options: { allowLifecycle: true }
             };
+            handled = true;
             this.dirty.set(Number(characterId), proposal);
             this.stats.resolved += 1;
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
                 this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
             }
         } catch (error) {
+            if (!this.resolverSourceCurrent(source)) return;
+            handled = true;
             this.stats.errors += 1;
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
             this.inFlight.delete(Number(characterId));
             this.requestRelease([{ token: active.grant, reason: error?.message || 'resolver_error' }]);
         } finally {
-            const elapsed = this.now() - startedAt;
-            this.stats.lastResolveMs = elapsed;
-            this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+            if (handled) {
+                const elapsed = this.now() - startedAt;
+                this.stats.lastResolveMs = elapsed;
+                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+            }
         }
     }
 

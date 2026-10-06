@@ -48,9 +48,15 @@ assert.deepStrictEqual(review(partyFor(sharedTarget), membersFor(12), null).stat
         resolveParty: () => { throw Error('a due review comes before combat'); },
         emit: (type, payload) => messages.push({ type, payload }),
         projectResolve: (state, result) => ({ ...state, ...result.patch }) });
-    kernel.partyRuns.set(party.partyId, { party, members, spot: elpy, route: null,
-        grants: new Map(members.map((s) => [s.characterId, { characterId: s.characterId,
-            leaseId: `review-${s.characterId}`, revision: 1 }])) });
+    const requestId = 'review-claim';
+    const held = new Map(members.map(s => [s.characterId, { characterId: s.characterId,
+        ownerId: 'cold_simulation_owner', leaseId: `review-${s.characterId}`, revision: 1, leaseUntil: at + 30000 }]));
+    for (const state of members) {
+        kernel.upsert({ state, context: {} });
+        kernel.inFlight.set(state.characterId, { state, grant: held.get(state.characterId),
+            partyId: party.partyId, claimRequestId: requestId });
+    }
+    kernel.partyRuns.set(party.partyId, { party, members, spot: elpy, route: null, requestId, grants: held });
     await kernel.resolvePartyGrant(party.partyId);
     const batch = messages.find((m) => m.type === 'proposal_batch');
     assert(batch, JSON.stringify(messages));

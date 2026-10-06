@@ -128,10 +128,11 @@ async function run() {
         ownerId: Owner.OWNER_ID, leaseId: 'kernel', revision: 1, leaseUntil: at + 30000 }]));
     for (const member of members) {
         kernel.upsert({ state: member, context: {} });
-        kernel.inFlight.set(member.characterId, { state: member, grant: held.get(member.characterId), partyId: a.partyId });
+        kernel.inFlight.set(member.characterId, { state: member, grant: held.get(member.characterId),
+            partyId: a.partyId, claimRequestId: 'raid-claim' });
     }
     kernel.partyRuns.set(a.partyId, { party: a, members, spot: { ...spot, raidAuthorityRevision: 0 },
-        grants: held });
+        requestId: 'raid-claim', grants: held });
     await kernel.resolvePartyGrant(a.partyId);
     const proposals = messages.filter(message => message.type === 'proposal_batch').flatMap(message => message.data.proposals);
     assert.equal(proposals.length, 9, JSON.stringify(messages));

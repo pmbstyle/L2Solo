@@ -88,9 +88,15 @@ async function main() {
         resolveParty: options => Resolver.resolve(options),
         emit: (type, payload) => messages.push({ type, payload }),
         projectResolve: (state, result) => ({ ...state, ...result.patch }) });
-    kernel.partyRuns.set(party.partyId, { party, members: scattered, spot, route: null,
-        grants: new Map(scattered.map(s => [s.characterId, { characterId: s.characterId,
-            leaseId: `assembly-${s.characterId}`, revision: 1 }])) });
+    const requestId = 'assembly-claim';
+    const held = new Map(scattered.map(s => [s.characterId, { characterId: s.characterId,
+        ownerId: 'cold_simulation_owner', leaseId: `assembly-${s.characterId}`, revision: 1, leaseUntil: at + 30000 }]));
+    for (const state of scattered) {
+        kernel.upsert({ state, context: {} });
+        kernel.inFlight.set(state.characterId, { state, grant: held.get(state.characterId),
+            partyId: party.partyId, claimRequestId: requestId });
+    }
+    kernel.partyRuns.set(party.partyId, { party, members: scattered, spot, route: null, requestId, grants: held });
     await kernel.resolvePartyGrant(party.partyId);
     const batch = messages.find(m => m.type === 'proposal_batch');
     assert(batch, JSON.stringify(messages));
