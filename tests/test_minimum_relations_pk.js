@@ -139,6 +139,21 @@ async function main() {
         done('actual legacy 57→58 init/reinit merges existing pair and player counters once');
         await Life.init();
         const red = Life.cachedState(1), white = Life.cachedState(2), ordinary = Life.cachedState(3);
+        // Non-dropping deaths must not consume the PK sequence or return a bag.
+        for (const [id, karma, pk] of [[4, 0, 6], [5, 100, 3]]) {
+            await createBot(id, pk);
+            await Database.execute(['UPDATE characters SET hp=0,karma=? WHERE id=?', [karma, id]]);
+            await Database.execute(["UPDATE bot_life_state SET activity='dead',deathCount=1 WHERE characterId=?", [id]]);
+            await Database.execute(['UPDATE items SET slot=0 WHERE characterId=? AND equipped=0', [id]]);
+            const bag = await Database.fetchItems(id);
+            const result = await Database.syncInventorySummary(id, Life.inventorySummaryFromItems(bag), 'resolve_death');
+            assert.deepEqual(result, { drops: [] });
+            assert.deepEqual(await Database.fetchItems(id), bag);
+            const [saved] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]);
+            assert.equal(JSON.parse(saved.statsJson).pkDropDeathSequence, undefined);
+        }
+        done('ineligible PK deaths return early without changing the bag or sequence');
+
         const repository = invoke('GameServer/Social/InteractionMemoryRepository');
         const memory = new Memory(repository); memory.playingHours = () => 4;
         const committed = await memory.recordBatch([event('durable:1')]);

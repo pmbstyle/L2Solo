@@ -2358,11 +2358,11 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
 }
 
 function dropPkDeathItemsUnsafe(characterId) {
+    const current = one('SELECT hp,karma,pk FROM characters WHERE id=?', [characterId]);
+    if (!current || Number(current.hp) > 0 || !require('./GameServer/PkDropPolicy').enabled(current)) return { drops: [] };
     const life = one('SELECT deathCount,statsJson FROM bot_life_state WHERE characterId=?', [characterId]);
     const stats = jsonObject(life?.statsJson), death = Number(life?.deathCount || stats.deaths || 0);
     if (!life || death <= Number(stats.pkDropDeathSequence || 0)) return { drops: [] };
-    const current = one('SELECT hp,karma,pk FROM characters WHERE id=?', [characterId]);
-    if (Number(current?.hp) > 0) return { drops: [] };
     const Data = invoke('GameServer/DataCache');
     const Templates = require('./GameServer/Item/ItemTemplateIndex');
     const inventory = all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]).map(item => {

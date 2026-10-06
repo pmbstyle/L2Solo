@@ -495,11 +495,10 @@ function startKernel(config = {}) {
             records: id => kernel.states.locationIndex.getSource(id, 'state'),
             packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
             monitor: competition, deadlines: kernel, sequence: id => kernel.states.safetyNodes.get(id)?.sequence,
-            fitsFrame: frame => {
+            frameSizing: frame => {
                 const report = competition.snapshot();
                 const large = Number.MAX_SAFE_INTEGER;
-                const outcomes = Object.fromEntries([...new Set([...Object.keys(report.outcomes),
-                    ...frame.events.filter(event => event.action !== 'revenge').map(event => event.action)])].map(key => [key, large]));
+                const outcomes = Object.fromEntries(Object.keys(report.outcomes).map(key => [key, large]));
                 const kernelReport = kernel.heartbeatSnapshot();
                 const message = Protocol.envelope('heartbeat', epoch, {
                     ...kernelReport, safety: safetyTotals(),
@@ -507,8 +506,8 @@ function startKernel(config = {}) {
                     // head. Include both optional shapes before those effects.
                     queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'worker_safety',
                         dueAt: large, overdue: false, current: false },
-                    competition: { ...report, events: frame.events,
-                        recent: [...report.recent, ...frame.events].slice(-12), frame, at: frame.at, outcomes,
+                    competition: { ...report, events: [],
+                        recent: [], frame: { ...frame, events: [] }, at: frame.at, outcomes,
                         scans: large, evaluated: large, pvpIntents: large, activeHunters: large, lastSampleMs: large,
                         deliverySendFailures: large, lastScanEvents: 160, consumedSpotKeys: 32, consumedActorKeys: 128,
                         pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
@@ -517,12 +516,7 @@ function startKernel(config = {}) {
                     eventLoopUtilization: 1, eventLoopLagP95Ms: large,
                     eventLoopLagMaxMs: large
                 }, 'x'.repeat(160));
-                // Every finite IEEE Number serializes in fewer than32 chars.
-                // Quote numeric fields conservatively, including fractional
-                // telemetry; validate the original values and shape below.
-                const bytes = Buffer.byteLength(JSON.stringify(message,
-                    (_, value) => typeof value === 'number' ? 'x'.repeat(32) : value));
-                return Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes }).ok;
+                return new (require('./ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, report.recent);
             }
         });
         kernel.decisionEvents = competitionCandidates;

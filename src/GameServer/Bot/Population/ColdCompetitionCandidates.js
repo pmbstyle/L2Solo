@@ -25,11 +25,11 @@ function freeze(value) {
 // Only derived memberships/keys, current record references and scalar clocks.
 // The packet/state always comes from the one canonical provider at use time.
 class ColdCompetitionCandidates {
-    constructor({ records, packets, memory, monitor, deadlines, sequence = null, fitsFrame = () => true }) {
+    constructor({ records, packets, memory, monitor, deadlines, sequence = null, fitsFrame = () => true, frameSizing = null }) {
         if ([records, packets].some(read => typeof read !== 'function') || !memory || !monitor || !deadlines) {
             throw new TypeError('invalid_competition_candidates');
         }
-        Object.assign(this, { records, packets, memory, monitor, deadlines, sequence, fitsFrame });
+        Object.assign(this, { records, packets, memory, monitor, deadlines, sequence, fitsFrame, frameSizing });
         this.spots = new Map(); this.parties = new Map(); this.partyHunters = new Map();
         this.memberParties = new Map(); this.relationOwners = new Map(); this.clans = new Map(); this.units = new Map();
         this.pendingSpots = new Map(); this.pendingActors = new Map(); this.policyDeadlines = new Map();
@@ -224,11 +224,24 @@ class ColdCompetitionCandidates {
         const spots = this.takeKeys(this.pendingSpots, 32), actors = this.takeKeys(this.pendingActors, 128);
         if (!spots.length && !actors.length) return null;
         const events = [], frameId = this.nextFrame + 1;
+        let sizing;
+        try { sizing = this.frameSizing?.({ frameId, at }); }
+        catch {
+            for (const { key, generation } of spots) this.pendingSpots.set(key, generation);
+            for (const { key, generation } of actors) this.pendingActors.set(key, generation);
+            return null;
+        }
         const offer = event => {
             let copy;
             try {
                 copy = structuredClone(event);
-                if (events.length >= 160 || !this.fitsFrame({ frameId, at, events: [...events, copy] })) return false;
+                if (events.length >= 160 || sizing && !sizing.offer(copy)) return false;
+                if (!sizing) {
+                    events.push(copy);
+                    try { if (!this.fitsFrame({ frameId, at, events })) { events.pop(); return false; } }
+                    catch (error) { events.pop(); throw error; }
+                    events.pop();
+                }
             } catch { return false; }
             events.push(freeze(copy)); return true;
         };

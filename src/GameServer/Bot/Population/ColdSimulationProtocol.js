@@ -76,16 +76,20 @@ function envelopeBytes(message, payloadBytes) {
     return byteLength({ ...message, payload: {} }) - 2 + payloadBytes;
 }
 
+function competitionEvent(event, at) {
+    return !!event && typeof event === 'object' && !Array.isArray(event)
+        && event.at === at && typeof event.key === 'string' && event.key.length > 0
+        && typeof event.action === 'string' && event.action.length > 0
+        && Number.isSafeInteger(event.actor?.id) && event.actor.id > 0
+        && Number.isSafeInteger(event.peer?.id) && event.peer.id > 0;
+}
+
 function competitionFrame(value) {
     return !!value && typeof value === 'object' && !Array.isArray(value)
         && Number.isSafeInteger(value.frameId) && value.frameId > 0
         && Number.isSafeInteger(value.at) && value.at > 0
         && Array.isArray(value.events) && value.events.length <= 160
-        && value.events.every(event => event && typeof event === 'object' && !Array.isArray(event)
-            && event.at === value.at && typeof event.key === 'string' && event.key.length > 0
-            && typeof event.action === 'string' && event.action.length > 0
-            && Number.isSafeInteger(event.actor?.id) && event.actor.id > 0
-            && Number.isSafeInteger(event.peer?.id) && event.peer.id > 0);
+        && value.events.every(event => competitionEvent(event, value.at));
 }
 
 function competitionReceipt(value) {
@@ -366,5 +370,6 @@ module.exports = {
     commandCheckpoint,
     sameCommandCheckpoint,
     commandIdentity,
-    byteLength
+    byteLength,
+    competitionEvent
 };
