@@ -508,7 +508,7 @@ class ColdSimulationCoordinator {
             await this.handleReleaseRequest(message);
             break;
         case 'command_request':
-            this.handleCommandRequest(message);
+            this.handleCommandRequest(message, worker, epoch);
             break;
         case 'heartbeat':
             this.lastHeartbeatAt = Date.now();
@@ -1656,60 +1656,80 @@ class ColdSimulationCoordinator {
         this.postCollections('release_ack', { results }, message.msgId);
     }
 
-    handleCommandRequest(message) {
-        const requests = message.payload.requests || [];
+    handleCommandRequest(message, worker = this.worker, epoch = this.workerEpoch) {
+        const sourceCurrent = () => this.worker === worker && this.workerEpoch === epoch;
+        const requests = (message.payload.requests || []).flatMap((request) => {
+            const parsed = Protocol.commandIdentity(request);
+            const identity = parsed && { characterId: parsed.characterId, commandId: parsed.commandId,
+                commandCheckpoint: parsed.checkpoint };
+            if (!identity || !['lifecycle', 'market_review'].includes(request.kind)
+                || !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state)) return [];
+            return [{ request, identity }];
+        });
         this.commandTail = this.commandTail.then(async () => {
+            if (!sourceCurrent()) return;
             const results = [];
-            for (const request of requests) {
+            for (const { request, identity } of requests) {
+                if (!sourceCurrent()) return;
                 const marketReview = request.kind === 'market_review';
                 this.counters.commands += 1;
                 try {
                     const state = LifeState.cachedState(request.characterId) || request.state;
-                    const id = Number(request.characterId);
+                    const id = identity.characterId;
                     Metrics.recordColdOwnerLegacyDeferred(`command_${String(state?.activity || 'unknown')}`);
                     if (this.fencedBots.has(id) || state?.phase !== 'cold') {
-                        results.push({ ok: false, characterId: id, reason: 'hot_handoff_fenced',
-                            ...(marketReview ? { marketDeferred: true, marketCommandId: request.commandId,
+                        results.push({ ...identity, ok: false, reason: 'hot_handoff_fenced',
+                            ...(marketReview ? { marketDeferred: true, marketCommandId: identity.commandId,
                                 context: request.context || {},
                                 ...(state?.phase !== 'cold' ? { state } : {}) } : { state }) });
                         continue;
                     }
+                    if (!marketReview && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
+                        results.push({ ...identity, ok: false, reason: 'stale_command', retryAfterMs: 1000,
+                            state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) });
+                        continue;
+                    }
                     let result;
                     const operation = marketReview
-                        ? this.executeMarketReviewCommand(request)
+                        ? this.executeMarketReviewCommand(request, sourceCurrent)
                         : Promise.resolve(this.population?.executeWorkerLifecycleCommand?.(state, request));
                     this.commandInflight.set(id, operation);
-                    try { result = await operation; } finally { this.commandInflight.delete(id); }
+                    try { result = await operation; } finally {
+                        if (this.commandInflight.get(id) === operation) this.commandInflight.delete(id);
+                    }
+                    if (!sourceCurrent()) return;
                     const nextState = result?.state || LifeState.cachedState(request.characterId) || state;
                     results.push({
+                        ...identity,
                         ok: result?.ok !== false,
-                        characterId: request.characterId,
                         reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
                             Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
                         state: nextState,
-                        ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: request.commandId } : {}),
+                        ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: identity.commandId } : {}),
                         context: marketReview ? request.context || {}
                             : this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
                     });
                 } catch (error) {
+                    if (!sourceCurrent()) return;
                     this.counters.commandErrors += 1;
-                    results.push({ ok: false, characterId: request.characterId, reason: error?.message || 'command_error', retryAfterMs: 5000,
+                    results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
                         ...(marketReview ? { state: LifeState.cachedState(request.characterId) || request.state,
-                            context: request.context || {}, marketDeferred: true, marketCommandId: request.commandId } : {}) });
+                            context: request.context || {}, marketDeferred: true, marketCommandId: identity.commandId } : {}) });
                 }
                 await new Promise((resolve) => setImmediate(resolve));
             }
+            if (!sourceCurrent()) return;
             for (const result of results) {
                 if (result.marketCommandId === undefined) continue;
                 if (this.fencedBots.has(Number(result.characterId))) delete result.state;
                 else result.state = LifeState.cachedState(result.characterId) || result.state;
             }
             this.postCollections('command_ack', { results }, message.msgId);
-        }).catch((error) => this.recordError(error));
+        }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
     }
 
-    async executeMarketReviewCommand(request) {
+    async executeMarketReviewCommand(request, sourceCurrent = () => true) {
         const id = Number(request.characterId);
         const state = LifeState.cachedState(id);
         if (!state || state.phase !== 'cold' || this.fencedBots.has(id) || this.visibleToRealPlayer(state)) {
@@ -1731,6 +1751,7 @@ class ColdSimulationCoordinator {
         const coldAuthority = { ownerId: current.ownerId, revision: Number(current.revision || 0),
             leaseId: current.leaseId || null };
         const canCommitReview = () => {
+            if (!sourceCurrent()) return false;
             const latest = LifeState.cachedState(id);
             const simulation = latest?.simulation || {};
             return latest?.phase === 'cold' && !this.fencedBots.has(id) && !this.visibleToRealPlayer(latest)

@@ -92,8 +92,9 @@ async function trader({ hot = false, leased = true } = {}) {
 
 function request(trader, overrides = {}) {
     const line = trader.shop.lines[0];
-    return { kind: 'market_review', commandId: `n53-command-${++sequence}`, characterId: trader.id,
-        state: clone(LifeState.snapshot(trader.id)), context: { marker: 'worker-context', nested: { keep: 7 } },
+    const state = clone(LifeState.snapshot(trader.id));
+    return { kind: 'market_review', commandCheckpoint: Protocol.commandCheckpoint(state), commandId: `n53-command-${++sequence}`, characterId: trader.id,
+        state, context: { marker: 'worker-context', nested: { keep: 7 } },
         market: { reprices: [], withdrawals: [], updates: [{ recordId: trader.shop.id, lineId: line.id,
             expectedRevision: trader.shop.revision, previousPricing: clone(line.pricing),
             pricing: { ...clone(line.pricing), seenCounter: 7, seenItem: 3, rival: 95 } }] }, ...overrides };
@@ -127,7 +128,8 @@ async function rpc(command) {
 
 async function refused(command, reason) {
     const before = await persisted();
-    const result = await rpc(command);
+    const result = Protocol.commandIdentity(command)
+        ? await rpc(command) : await coordinator.executeMarketReviewCommand(command);
     assert.strictEqual(result.ok, false);
     assert.strictEqual(result.marketDeferred, true);
     if (reason) assert.strictEqual(result.reason, reason);
@@ -280,6 +282,7 @@ async function run() {
         for (const patch of [{ revision: 999 }, { ownerId: 'other_owner' }, { leaseId: 'old_lease' }]) {
             const command = request(bot);
             Object.assign(command.state.simulation, patch);
+            command.commandCheckpoint = Protocol.commandCheckpoint(command.state);
             await refused(command, 'stale_market_review');
         }
     });
@@ -307,6 +310,7 @@ async function run() {
         assert.strictEqual(LifeState.cachedState(uncached.id), null, 'durable owner has no current main cache authority');
         const command = request(bot, { characterId: uncached.id });
         command.state.characterId = uncached.id;
+        command.commandCheckpoint = Protocol.commandCheckpoint(command.state);
         await refused(command, 'hot_handoff_fenced');
     });
     await check('malformed arrays and command/character identities do not mutate anything', async () => {
