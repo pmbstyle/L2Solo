@@ -1,6 +1,18 @@
-// Override `require` for more convenient referrals
+// Override `require` for more convenient referrals. A loaded module is
+// remembered by name: hot paths call invoke() per decision, and a plain
+// require() resolves the path on disk each time. The remembered entry is
+// reused only while it is still the one in require.cache (tests may delete
+// or replace it to reload a module) and has finished loading (a circular
+// require still sees the partial exports through require itself).
+const invoked = new Map();
 global.invoke = (module) => {
-    return require(__dirname + '/' + module);
+    const held = invoked.get(module);
+    if (held && held.loaded && require.cache[held.id] === held) return held.exports;
+    const file = require.resolve(__dirname + '/' + module);
+    const exports = require(file);
+    const entry = require.cache[file];
+    if (entry?.loaded) invoked.set(module, entry);
+    return exports;
 };
 
 global.utils = {
