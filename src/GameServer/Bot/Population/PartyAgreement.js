@@ -53,11 +53,33 @@ function allocate(memberResults, agreement, { rng = Math.random, needScore = () 
     return { memberResults: copies, transfers, agreement: { ...agreement, cursor } };
 }
 
-function describe(goal, agreement) {
-    const target = goal?.itemId ? `item ${goal.itemId}` : goal?.spotId || 'our next hunt';
-    const division = agreement?.mode === 'need' ? 'items to whoever needs them'
-        : agreement?.mode === 'turn' ? 'items in turns' : 'random items';
-    return `My goal is ${target}; Adena equally, ${division}${agreement?.help ? ', requested item to its customer' : ''}.`;
+function feeText(value) {
+    const fee = Math.floor(positive(value));
+    if (fee < 1000) return String(fee);
+    if (fee < 999500) return `${Math.round(fee / 1000)}k`;
+    return `${(fee / 1000000).toFixed(1).replace(/\.0$/, '')}kk`;
 }
 
-module.exports = { MODES, propose, allocate, describe };
+function describe(goal, agreement, { place, includeGoal = true } = {}) {
+    const itemName = id => require('../../Item/ItemTemplateIndex')
+        .find(invoke('GameServer/DataCache').items, id)?.template?.name;
+    const help = agreement?.help;
+    const named = itemName(includeGoal && help?.fee > 0 ? help.itemId : includeGoal && goal?.itemId);
+    const destination = includeGoal && goal?.spotId
+        ? invoke('GameServer/Bot/AI/BotChatLocation').describe({ spotId: goal.spotId }) : null;
+    const namedPlace = destination && destination !== 'my hunting spot' && destination !== place;
+    let target = '';
+    if (named && help?.fee > 0) target = `need help farming ${named}, paying ${feeText(help.fee)}`;
+    else if (named) target = `farming ${named}${namedPlace ? ` in ${destination}` : ''}`;
+    else if (namedPlace && !goal?.itemId) target = `heading to ${destination}`;
+    const loot = { need: 'loot by need', random: 'loot random', turn: 'loot by turn' }[agreement?.mode];
+    return [target, loot].filter(Boolean).join(', ');
+}
+
+function formationText(name, spotId, goal, agreement) {
+    const place = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spotId });
+    const clause = describe(goal, agreement, { place });
+    return `${name} formed a party at ${place}${clause ? `: ${clause}` : ''}.`;
+}
+
+module.exports = { MODES, propose, allocate, describe, formationText };

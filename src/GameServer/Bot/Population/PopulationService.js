@@ -916,7 +916,7 @@ function createBackgroundParty(members = [], objectiveOverride = null) {
     const partyEvent = {
         characterId: leader.characterId,
         eventType: 'party',
-        summary: `${leader.name} formed a party near ${party.spotId}. ${require('./PartyAgreement').describe(party.stats.objective, party.stats.agreement)}`,
+        summary: require('./PartyAgreement').formationText(leader.name, party.spotId, party.stats.objective, party.stats.agreement),
         meta: {
             partyId,
             spotId: party.spotId,

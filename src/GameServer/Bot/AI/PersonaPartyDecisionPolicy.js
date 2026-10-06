@@ -64,9 +64,8 @@ function reply(decision) {
     if (!decision?.accept) {
         return 'I am keeping this run focused for now. Let us get to know each other first.';
     }
-    const goal = decision.goal?.itemId ? ` I am working toward item ${decision.goal.itemId}.`
-        : decision.goal?.spotId ? ` My next goal is ${decision.goal.spotId}.` : '';
-    if (goal) return `I am in.${goal} Let us agree on the loot before we start.`;
+    const goal = require('../Population/PartyAgreement').describe(decision.goal, null);
+    if (goal) return `ok, ${goal}`;
     if (decision.persona?.primaryDrive === 'social') return 'Gladly. A steady party is better than going alone.';
     if (decision.persona?.primaryDrive === 'wealth') return 'I can make time for a familiar partner. Let us make the run count.';
     return 'A good party will help the next run. I am in.';
