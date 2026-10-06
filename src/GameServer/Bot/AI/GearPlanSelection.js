@@ -9,7 +9,6 @@ const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
-const planningCache = new Map();
 function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
     if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
@@ -35,7 +34,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         chosen?.funded, activity?.key, previousPlan?.status, previousPlan?.acquisitionProgress?.failures,
         previousPlan?.target?.selfId, state.stats?.partyRequest?.status,
         state.stats?.clanEquipmentOrder?.revision].join('|');
-    const held = planningCache.get(state.characterId);
+    const held = economy.gearPlanMemo;
     if (held?.key === key && held.spots === spots && !state.stats?.lastResolveDebug?.failed) {
         // A transport copy retains the current native progress/claims; only
         // the expensive choice is cached, never a stale whole state.
@@ -125,7 +124,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
     };
     const result = { acquisitionPlan: { ...acquisitionPlan },
         replanContext, reusablePartyRequest, excludedSpotIds };
-    planningCache.set(state.characterId, { key, spots, previous: result.acquisitionPlan, result });
+    economy.gearPlanMemo = { key, spots, result };
     return result;
 }
 
