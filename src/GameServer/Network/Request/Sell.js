@@ -92,13 +92,14 @@ async function consumeMerchant(session, list, { native = false } = {}) {
                 expectedUnitPrice: line.expectedUnitPrice
             });
             sold.push(result);
-            MarketTelemetry.recordTrade({
+            const recordedQty = result.npcQty ?? result.qty;
+            if (recordedQty > 0) MarketTelemetry.recordTrade({
                 channel: 'wtb',
                 sourceType: 'private_buy_store_player_sale',
                 selfId: line.item.fetchSelfId(),
                 itemName: result.name,
-                quantity: result.qty,
-                unitPrice: result.qty ? result.totalAdena / result.qty : 0,
+                quantity: recordedQty,
+                unitPrice: (result.npcAdena ?? result.totalAdena) / recordedQty,
                 town: store.town || trade.merchant?.session?.coldMarketState?.currentRegion,
                 sellerCharacterId: session.actor.fetchId(),
                 sellerName: session.actor.fetchName(),

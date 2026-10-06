@@ -96,10 +96,11 @@ function validPrice(line, minimum = 1) {
 // The player's static price is read from the one board at the window and
 // transaction, not at spawn. Shops and ads share the same item-side index;
 // orders are another goal and do not establish an ordinary purchase bid.
-function priceFor(store, line) {
+function priceFor(store, line, { viewerId = 0 } = {}) {
     const index = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
     if (Number(store.storeType) === BUY) {
         const bid = index.first(line.selfId, BUY, {
+            excludeOwner: Number(viewerId) || 0,
             accept: candidate => ['shop', 'buy_ad'].includes(candidate.kind) && validPrice(candidate)
         });
         return bid ? bid.price : NpcSellRules.npcBuyPrice(basePrice(line.selfId));

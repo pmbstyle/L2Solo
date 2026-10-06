@@ -112,8 +112,9 @@ module.exports = async function(session, parts) {
 
     try {
         const sold = await TradeService.sellToStore(session.actor, store, selfId, sellQty);
-        MarketTelemetry.recordTrade({ channel: 'wtb', sourceType: 'private_buy_store_player_sale',
-            selfId, itemName: sold.name, quantity: sold.qty, unitPrice: sold.totalAdena / sold.qty,
+        const recordedQty = sold.npcQty ?? sold.qty;
+        if (recordedQty > 0) MarketTelemetry.recordTrade({ channel: 'wtb', sourceType: 'private_buy_store_player_sale',
+            selfId, itemName: sold.name, quantity: recordedQty, unitPrice: (sold.npcAdena ?? sold.totalAdena) / recordedQty,
             town: store.town, sellerCharacterId: session.actor.fetchId(), sellerName: session.actor.fetchName(),
             buyerCharacterId: bot.fetchId(), buyerName: bot.fetchName() });
         BotSocialMemory.recordTradeCompleted(session, bot, `sold ${sold.qty} ${sold.name}`);
