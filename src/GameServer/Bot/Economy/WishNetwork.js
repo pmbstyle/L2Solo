@@ -38,9 +38,12 @@ function moneyQueue(wishes, wallet, survivalReserve = 0) {
 // Providers supply game effects and available paths, never policy priorities.
 // One bounded DAG serves individual characters and group actors alike. The
 // caller owns its event input key and the small saved focus/dormant packet.
-// Per-actor results are a cache, not state: memory per bot is budgeted like
-// CPU, so the held networks are bounded and the least recently used go first.
-const ACTOR_LIMIT = 512;
+// Per-actor results are a cache, not state: memory per bot is budgeted
+// (design 16.26). They serve the several readers of one decision (a commit,
+// a resolve, a hot tick); a bot's next decision rebuilds the cheap layer
+// anyway (new adena, exp), while the expensive one is kept per build
+// (ColdCombatProfile.buildGainsFor). So few are held, least recently used out.
+const ACTOR_LIMIT = 64;
 function remember(map, key, value, limit = ACTOR_LIMIT) {
     map.delete(key);
     map.set(key, value);

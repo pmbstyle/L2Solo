@@ -36,10 +36,14 @@ function changedInventory(state, item, patch) {
     } else inventory[item.selfId] = { ...row, enchant: next.enchant, instances: [...instances, next] };
     return { ...state, inventory };
 }
+function caster(state) {
+    return ['mage','healer','buffer','nuker','summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
+}
 function gain(state, after, before = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const a = before || Profile.powerFor(state), b = Profile.powerFor(after);
-    const caster = ['mage','healer','buffer','nuker','summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
+    return gainBetween(before || Profile.powerFor(state), Profile.powerFor(after), caster(state));
+}
+function gainBetween(a, b, caster) {
     const attack = caster ? 'mAtk' : 'pAtk', speed = caster ? 'castSpd' : 'atkSpd';
     return { attack: Math.max(0, b[attack] * b[speed] / Math.max(1, a[attack] * a[speed]) - 1),
         defence: Math.max(0, 1 - a.pDef / Math.max(1, b.pDef), 1 - a.mDef / Math.max(1, b.mDef),
@@ -70,7 +74,7 @@ function enchantCost(item, from, to, scroll, config) {
 function stuckCost(state, item, ctx) {
     if (!item.equipped || !adapter(item).isWeapon()) return 0;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const before = Profile.powerFor(state);
+    const before = Profile.buildGainsFor(state).power;
     let remainder = changedInventory(state,item,{equipped:false});
     const spares = instances(state).filter(other => other.id !== item.id && adapter(other).isWeapon());
     const rate = profile => profile.pAtk * profile.atkSpd + profile.mAtk * profile.castSpd;
@@ -91,8 +95,15 @@ function opportunities(state, ctx) {
     const config = Rules.configWith(globalThis.options?.default?.Enchant);
     const horizon = Valuation.stageHours(state, ctx.hunt.expPerHour, ctx.persona);
     const weight = (ctx.persona.primaryDrive === 'progression' ? 1 : .5) + Valuation.trait(ctx.persona, 'caution');
-    const before = invoke('GameServer/Bot/Population/ColdCombatProfile').powerFor(state);
-    const value = after => { const effect = gain(state, after, before); return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight; };
+    // Gains come from the build (design 16.5): remembered per build and
+    // candidate, so a review after an ordinary fight computes none of them.
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const build = Profile.buildGainsFor(state), magic = caster(state);
+    const value = (key, after) => {
+        const effect = Profile.gainFor(build, `${magic ? 'm' : 'p'}:${key}`,
+            () => gainBetween(build.power, Profile.powerFor(after()), magic));
+        return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight;
+    };
     const result = [];
     for (const item of instances(state)) {
         const a = adapter(item), category = Rules.categoryOf(a);
@@ -102,9 +113,9 @@ function opportunities(state, ctx) {
         if (!equipped && !buyer && !ctx.board?.first(item.selfId, 1, { excludeOwner: state.characterId })) continue;
         const from = positive(item.enchant), cap = Rules.maxFor(category, config);
         for (let to = from + 1; to <= Math.min(from + 3, cap || from + 3); to++) {
-            const after = changedInventory(state, item, { enchant: to });
             const salePrice = !equipped && enchantedPrice(item, to, ctx);
-            const benefit = equipped ? value(after) : (ctx.hunt.perHour > 0
+            const benefit = equipped ? value(`enchant:${item.selfId}:${item.slot}:${from}:${to}`,
+                () => changedInventory(state, item, { enchant: to })) : (ctx.hunt.perHour > 0
                 ? Math.max(0, salePrice - enchantedPrice(item, from, ctx)) / ctx.hunt.perHour : 0);
             if (!(benefit > 0)) continue;
             const alternatives = Object.entries(scrolls).flatMap(([id, rule]) => {
@@ -137,7 +148,8 @@ function opportunities(state, ctx) {
         }
         if (equipped && a.isWeapon()) for (const recipe of SA.options(7300, item.selfId, 'install')) {
             const product = { ...item, selfId: recipe.productId };
-            const benefit = value(changedInventory(state, item, product));
+            const benefit = value(`sa:${item.selfId}:${item.slot}:${from}:${recipe.productId}`,
+                () => changedInventory(state, item, product));
             const materials = SA.costs(recipe);
             const price = materials.reduce((sum, mat) => sum + ctx.price(mat.selfId) * mat.amount, 0);
             if (benefit > 0 && price > 0) result.push({ key: `sa:${item.id}:${recipe.id}`, kind: 'sa', objectId: item.id,
@@ -148,7 +160,7 @@ function opportunities(state, ctx) {
     if (slots.filter(Boolean).length < Henna.slotsForClass(state.stats?.classId || state.classId)) {
         for (const symbol of Henna.availableForClass(state.stats?.classId || state.classId)) {
             if (slots.includes(symbol.id)) continue;
-            const benefit = value({ ...state, stats: { ...state.stats, hennas: [...slots, symbol.id] } });
+            const benefit = value(`henna:${symbol.id}`, () => ({ ...state, stats: { ...state.stats, hennas: [...slots, symbol.id] } }));
             if (benefit <= 0) continue;
             result.push({ key: `henna:${symbol.id}`, kind: 'henna', symbolId: symbol.id,
                 materials: [{ selfId: symbol.dyeSelfId, amount: symbol.dyeAmount }], fee: symbol.price,

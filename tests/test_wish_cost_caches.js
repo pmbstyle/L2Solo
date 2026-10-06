@@ -53,7 +53,7 @@ check('invoke() returns the module require() returns, reloads after a cache dele
     assert.equal(invoke('GameServer/Formulas'), first);
 });
 
-check('power numbers by build equal the full profile, for the base build and each change', () => {
+check('power numbers equal the full profile, for the base build and each change', () => {
     const now = Date.now();
     const variants = [
         base(),
@@ -66,17 +66,32 @@ check('power numbers by build equal the full profile, for the base build and eac
     ];
     const seen = new Set();
     for (const state of variants) {
-        const power = Profile.powerFor(state, now);
+        const power = Profile.buildGainsFor(state, now).power;
         assert.deepEqual(power, subset(Profile.profileFor(state, now)));
+        assert.deepEqual(Profile.powerFor(state, now), power);
         seen.add(JSON.stringify(power));
     }
     assert.ok(seen.size >= 5, `changes must change the power (${seen.size} distinct)`);
 });
 
-check('an ordinary fight (adena, exp) reuses the remembered numbers', () => {
+check('an ordinary fight (adena, exp) keeps the build entry; a gain is computed once per build', () => {
     const now = Date.now();
-    const before = Profile.powerFor(base(), now);
-    assert.equal(Profile.powerFor(base({ adena: 999999, exp: 5000 }), now), before);
+    const entry = Profile.buildGainsFor(base(), now);
+    assert.equal(Profile.buildGainsFor(base({ adena: 999999, exp: 5000 }), now), entry);
+    let computed = 0;
+    const compute = () => { computed++; return { attack: 0.25, defence: 0.5 }; };
+    assert.deepEqual(Profile.gainFor(entry, 'p:test', compute), { attack: 0.25, defence: 0.5 });
+    assert.deepEqual(Profile.gainFor(Profile.buildGainsFor(base({ adena: 5 }), now), 'p:test', compute), { attack: 0.25, defence: 0.5 });
+    assert.equal(computed, 1);
+});
+
+check('no inventory and an empty inventory are different builds', () => {
+    const now = Date.now();
+    const none = base(); delete none.inventory;
+    const empty = base({ inventory: {} });
+    assert.notEqual(Profile.buildGainsFor(none, now), Profile.buildGainsFor(empty, now));
+    assert.deepEqual(Profile.buildGainsFor(none, now).power, subset(Profile.profileFor(none, now)));
+    assert.deepEqual(Profile.buildGainsFor(empty, now).power, subset(Profile.profileFor(empty, now)));
 });
 
 check('a timed effect counts while active and not after it expires', () => {
@@ -84,10 +99,13 @@ check('a timed effect counts while active and not after it expires', () => {
     const effect = { id: 1068, key: 'might', category: 'buff', expiresAt: now + 60000, stats: { pAtkMul: 1.15 } };
     const state = base();
     state.stats.coldCombat = { ...state.stats.coldCombat, effects: [effect] };
-    const active = Profile.powerFor(state, now), expired = Profile.powerFor(state, now + 120000);
+    const active = Profile.buildGainsFor(state, now).power, expired = Profile.buildGainsFor(state, now + 120000).power;
     assert.deepEqual(active, subset(Profile.profileFor(state, now)));
     assert.deepEqual(expired, subset(Profile.profileFor(state, now + 120000)));
     assert.ok(active.pAtk > expired.pAtk);
+    const recast = base();
+    recast.stats.coldCombat = { ...recast.stats.coldCombat, effects: [{ ...effect, expiresAt: now + 90000, sequence: 7 }] };
+    assert.equal(Profile.buildGainsFor(recast, now), Profile.buildGainsFor(state, now), 'a recast of the same buff is the same build');
 });
 
 check('a caller without spots gets no sources and keeps the index built for the real spot list', () => {
@@ -165,7 +183,13 @@ check('a wish review is rebuilt only by changes on items it read (design 16.5)',
     const lazy = Data.items.map(item => Number(item.selfId)).find(id => id > 1000 && id !== wished && afterDeal.price(id) >= 0);
     assert.equal(Economy.forState(state, deps), afterDeal);
     board.put({ id: 13, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: lazy, count: 1, price: 10 }] });
-    assert.notEqual(Economy.forState(state, deps), afterDeal, 'a later read is watched too');
+    assert.notEqual(Economy.forState(state, deps), afterDeal, 'a later price read is watched too');
+    // a later board look through the context (a market look) does not widen the review's inputs
+    const held = Economy.forState(state, deps);
+    const looked = Data.items.map(item => Number(item.selfId)).find(id => id > 2000 && id !== wished && id !== lazy);
+    held.board.first(looked, SELL);
+    board.put({ id: 14, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: looked, count: 1, price: 10 }] });
+    assert.equal(Economy.forState(state, deps), held, 'a board look after the review is not its input');
 });
 
 if (failures) { console.error(`${failures} failed`); process.exit(1); }

@@ -80,8 +80,10 @@ function marketKey(reads) {
     }
     return hash.toString(16);
 }
-// Board reads of the review go through here, so each item it looked at is
-// remembered with its token.
+// Board reads of the review go through here while it is built, so each
+// item it looked at is remembered with its token. Later readers of
+// context.board (a market look, a sale) do not widen what the review
+// depends on.
 function watchedBoard(board, watch) {
     if (!board) return board;
     return Object.assign(Object.create(board), {
@@ -104,7 +106,9 @@ function forState(state = {}, deps = {}) {
     const held = cache.get(actorKey);
     if (held?.key === key && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
     const reads = new Map();
-    const watch = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
+    let building = true;
+    const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
+    const watch = id => { if (building) read(id); };
     const Data = invoke('GameServer/DataCache');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -119,8 +123,10 @@ function forState(state = {}, deps = {}) {
     const knowledgeEnabled = deps.knowledgeEnabled ?? Learning.knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
         marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
+    // A price is remembered in `prices`, so every price read counts, also a
+    // late one through context.price: its item joins the review's inputs.
     const price = id => {
-        watch(id);
+        read(id);
         if (!prices.has(Number(id))) {
             const belief = Belief.prior(id, priceCtx);
             prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
@@ -164,8 +170,8 @@ function forState(state = {}, deps = {}) {
     };
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
-    // The items read so far name this network; later lazy reads (worth,
-    // purchaseBudget) still join `reads` and keep the context honest.
+    // The items read so far name this network; a later price read through
+    // context.price still joins `reads` and keeps the held context honest.
     const networkKey = `${key}#${marketKey(reads)}`;
     let network = engine.build({ actorKey, inputKey: networkKey, ...projection,
         wallet: positive(state.adena), survivalReserve: survivalReserve(state),
@@ -177,6 +183,8 @@ function forState(state = {}, deps = {}) {
     if (isMainThread && state.stats?.workshop?.entries?.length) {
         const opportunities = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state, {
             hourAdena: network.hourAdena, worth: price, timestamp, insideContext: true });
+        // The crafter's exits read the board directly: their products are inputs too.
+        for (const row of opportunities) if (row.recipe?.productId) watch(row.recipe.productId);
         const statusNode = projection.nodes.find(node => node.key === 'status:producer');
         if (statusNode && opportunities.length) statusNode.paths = [{activity:'crafting',kind:'producer_status',
             recipeId:opportunities[0].recipe.recipeId,costHours:opportunities[0].margin?.hours || 0,available:true}];
@@ -218,6 +226,7 @@ function forState(state = {}, deps = {}) {
         return 0;
     };
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant };
+    building = false;
 
     remember(cache, actorKey, { key, reads, context });
     return context;
@@ -236,7 +245,10 @@ function forGroup(group, members, deps = {}) {
     const wallet = positive(group.adena ?? group.wallet);
     const key = [wallet, ...contexts.map(context => context.inputKey)].join('|');
     const held = cache.get(actorKey);
-    if (held?.key === key) return remember(cache, actorKey, held).context;
+    // A member rebuilt on a late price read keeps its network key; the held
+    // group copies its first member, so it is valid only with the same members.
+    if (held?.key === key && held.members.every((member, i) => member === contexts[i]))
+        return remember(cache, actorKey, held).context;
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
@@ -269,7 +281,7 @@ function forGroup(group, members, deps = {}) {
         hourAdena: network.hourAdena, statsPacket: { wishFocus: network.focus, dormantWishes: network.dormant } };
     context.itemUsefulness = id => contexts.reduce((sum, member) => sum + member.itemUsefulness(id), 0);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    remember(cache, actorKey, { key, context }); return context;
+    remember(cache, actorKey, { key, members: contexts, context }); return context;
 }
 function forget(id) { const key = `character:${id}`; cache.delete(key); engine.forget(key); }
 function reset() { cache.clear(); engine.clear(); }

@@ -800,48 +800,66 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     };
 }
 
-// The power numbers the economy compares when it weighs gear, enchant,
-// hennas and SA (attack, speed, defence, HP). They come from the bot's build
-// alone, so a build seen once is remembered: a wish review after an ordinary
-// fight (new adena and exp, same build) reuses them instead of re-running
-// profileFor for every candidate. The key holds everything profileFor reads
-// for these numbers: class, level, captured base, henna capture and saved
-// equipment, worn items with slot and enchant, the effects active at
-// `timestamp`, skills, hennas and night. CP and other time-only fields are
-// not part of the result. Bounded, least recently used out.
-const POWER_LIMIT = 8192;
-const powerByBuild = new Map();
+// The expensive layer of a wish review (design 16.5): how much power each
+// candidate (gear, enchant, henna, SA) adds to a build. It depends on the
+// build alone, so it is kept per build and shared by bots with the same
+// build; an ordinary fight (new adena and exp) reuses it. An entry holds the
+// build's own power numbers and two numbers per candidate the review
+// compared, never whole profiles (memory per bot is budgeted, design 16.26).
+// The build key holds everything profileFor reads for these numbers: class,
+// level, captured base, henna capture and saved equipment, worn items with
+// slot and enchant, the effects active at `timestamp` (by id and stats),
+// skills, hennas and night. Bounded by the population, least recently used out.
+const buildGains = new Map();
+function buildGainLimit() {
+    return Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0);
+}
 function powerKey(state = {}, timestamp = Date.now()) {
     const saved = state.stats?.coldCombat || {};
     const worn = state.inventory && typeof state.inventory === 'object'
         ? Object.values(state.inventory).filter((row) => row?.equipped).map((row) => [row.selfId, row.amount, row.slot,
             row.enchant, (row.equippedSlots || []).join('.'), (row.instances || []).filter((item) => item.equipped)
                 .map((item) => `${item.slot}.${item.enchant}`).join('/')].join(':')).sort().join(',')
-        : null;
-    const effects = activeEffects((saved.effects || []).filter((effect) => effect.category !== 'equipment_item_skill'), timestamp);
+        : 'no-inventory';
+    const effects = activeEffects((saved.effects || []).filter((effect) => effect.category !== 'equipment_item_skill'), timestamp)
+        .map((effect) => `${effect.id}/${effect.key}/${JSON.stringify(effectStats(effect))}`).sort().join(',');
     return [saved.classId, state.stats?.classId, state.classId, state.level, worn, (state.stats?.hennas || []).join(','),
         Array.isArray(saved.skills) ? `${saved.skillSource}:${saved.skills.map((skill) => `${skill.selfId}:${skill.level}`).join(',')}` : '',
-        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null, effects]),
+        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null]), effects,
         GameTime.isNight(timestamp) ? 'n' : 'd'].join('|');
 }
 function powerFor(state = {}, timestamp = Date.now()) {
-    const key = powerKey(state, timestamp);
-    const held = powerByBuild.get(key);
-    if (held) {
-        powerByBuild.delete(key);
-        powerByBuild.set(key, held);
-        return held;
-    }
     const profile = profileFor(state, timestamp);
-    const power = Object.freeze({ pAtk: profile.pAtk, mAtk: profile.mAtk, atkSpd: profile.atkSpd,
-        castSpd: profile.castSpd, pDef: profile.pDef, mDef: profile.mDef, maxHp: profile.maxHp });
-    powerByBuild.set(key, power);
-    if (powerByBuild.size > POWER_LIMIT) powerByBuild.delete(powerByBuild.keys().next().value);
-    return power;
+    return { pAtk: profile.pAtk, mAtk: profile.mAtk, atkSpd: profile.atkSpd, castSpd: profile.castSpd,
+        pDef: profile.pDef, mDef: profile.mDef, maxHp: profile.maxHp };
+}
+// The build's entry: { power, gains }. `gainFor(entry, key, compute)` returns
+// the remembered [attack, defence] of one candidate or computes it once.
+function buildGainsFor(state = {}, timestamp = Date.now()) {
+    const key = powerKey(state, timestamp);
+    let entry = buildGains.get(key);
+    if (entry) {
+        buildGains.delete(key);
+        buildGains.set(key, entry);
+        return entry;
+    }
+    entry = { power: powerFor(state, timestamp), gains: new Map() };
+    buildGains.set(key, entry);
+    if (buildGains.size > buildGainLimit()) buildGains.delete(buildGains.keys().next().value);
+    return entry;
+}
+function gainFor(entry, key, compute) {
+    let gain = entry.gains.get(key);
+    if (!gain) {
+        const effect = compute();
+        gain = [effect.attack, effect.defence];
+        entry.gains.set(key, gain);
+    }
+    return { attack: gain[0], defence: gain[1] };
 }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor,
     offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
