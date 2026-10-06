@@ -582,16 +582,14 @@ async function handle(message) {
         else sendLeasePage();
         break;
     case 'commit_ack':
-        kernel?.onCommitAck(payload);
-        for (const result of payload.results || []) {
+        for (const result of kernel?.onCommitAck(payload) || []) {
             const id = Number(result.characterId);
             if (marketCommands.has(id)) marketEvents.ownerChanged(id);
             else marketEvents.rearm(id);
         }
         break;
     case 'release_ack':
-        kernel?.onReleaseAck(payload);
-        for (const result of payload.results || []) {
+        for (const result of kernel?.onReleaseAck(payload) || []) {
             const id = Number(result.characterId);
             if (marketCommands.has(id)) marketEvents.ownerChanged(id);
             else marketEvents.rearm(id);

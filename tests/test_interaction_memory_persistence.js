@@ -2,10 +2,11 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-require('../src/Global');
+const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+require(gameRoot + '/src/Global');
 const Database = invoke('Database');
-const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
-const Memory = require('../src/GameServer/Social/InteractionMemory');
+const Policy = require(gameRoot + '/src/GameServer/Social/InteractionMemoryPolicy');
+const Memory = require(gameRoot + '/src/GameServer/Social/InteractionMemory');
 const Repository = invoke('GameServer/Social/InteractionMemoryRepository');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-interaction-memory-'));
 const file = path.join(dir, 'test.sqlite');
@@ -101,8 +102,8 @@ async function run() {
         assert.strictEqual(runtime.events.snapshot().pending, 1, 'one hot episode despite 100 hit callbacks');
         await runtime.events.flush();
         assert.strictEqual((await Repository.load(1)).revision, 6);
-        const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
-        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const { ColdSimulationKernel } = require(gameRoot + '/src/GameServer/Bot/Population/ColdSimulationKernel');
+        const { ColdSimulationCoordinator } = require(gameRoot + '/src/GameServer/Bot/Population/ColdSimulationCoordinator');
         const kernel = new ColdSimulationKernel({ resolveSolo: () => ({}) });
         const coordinator = new ColdSimulationCoordinator();
         coordinator.contextIndex = () => ({ spots: new Map(), parties: new Map() });
@@ -115,11 +116,17 @@ async function run() {
             runtime.assess({ id: 1 }, { id: 2 }, {}, timestamp));
         assert(!kernel.states.get(1).context.interactionMemory, 'worker stores one indexed view, not an extra context copy');
         await runtime.recordBatch([event('ack:memory')]);
+        const token = { characterId: 1, ownerId: 'cold_simulation_owner', revision: 5,
+            leaseId: 'memory-ack', leaseUntil: Date.now() + 30000 };
+        const proposal = { characterId: 1, proposalId: 'memory-ack:5', token,
+            baseState: coldState, priority: 'P2', enqueuedAt: Date.now(), result: { events: [] } };
+        kernel.inFlight.set(1, { state: coldState, grant: token });
+        kernel.dirty.set(1, proposal); kernel.flush(null, true);
         coordinator.postCollections = (type, payload) => {
             assert.strictEqual(type, 'commit_ack');
             kernel.onCommitAck(payload);
         };
-        await coordinator.handleCommitResults([{ ok: true, characterId: 1, nextState: coldState }]);
+        await coordinator.handleCommitResults([{ ok: true, characterId: 1, nextState: coldState, proposal }]);
         kernel.upsert(oldPage);
         assert.strictEqual(kernel.interactionMemory.inspect(1).revision, 7, 'late catalog pages cannot overwrite ACK memory');
         kernel.upsert({ state: { ...coldState, phase: 'hot', simulation: { revision: 6 } } });

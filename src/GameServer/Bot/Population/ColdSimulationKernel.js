@@ -435,6 +435,8 @@ class ColdSimulationKernel {
         this.earliestOperationalAlarm = null;
         this.nextAlarmToken = 1;
         this.inFlight = new Map();
+        this.pendingReleases = new Map();
+        this.nextReleaseRequest = 1;
         this.partyRuns = new Map();
         this.dirty = new Map();
         this.commanding = new Set();
@@ -536,6 +538,7 @@ class ColdSimulationKernel {
 
     remove(characterId) {
         const id = Number(characterId);
+        this.pendingReleases.delete(id);
         const current = this.states.get(id);
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
@@ -971,6 +974,7 @@ class ColdSimulationKernel {
         const requestId = `claim:${this.nextClaimRequest++}`;
         for (const candidate of candidates) {
             const id = Number(candidate.characterId);
+            this.pendingReleases.delete(id);
             const alarmToken = this.armAlarm('claim_ack', id,
                 this.claimStartedAt.get(id) + this.claimAckTimeoutMs,
                 { stamp: requestId, characterId: id, operational: true });
@@ -1038,7 +1042,7 @@ class ColdSimulationKernel {
             if (!complete) return;
             if (run.rejected) {
                 const releases = [...run.grants.values()].map((token) => ({ token, reason: 'party_claim_partial' }));
-                if (releases.length) this.emit('release_request', { releases });
+                if (releases.length) this.requestRelease(releases);
                 run.purpose.memberIds.forEach((id) => {
                     this.cancelClaimAttempt(id);
                 });
@@ -1399,9 +1403,7 @@ class ColdSimulationKernel {
                 this.stats.errors += 1;
                 this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
             }
-            this.emit('release_request', {
-                releases: [...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' }))
-            });
+            this.requestRelease([...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' })));
         } finally {
             this.partyRuns.delete(String(partyId));
             const elapsed = this.now() - startedAt;
@@ -1463,9 +1465,7 @@ class ColdSimulationKernel {
             this.stats.errors += 1;
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
             this.inFlight.delete(Number(characterId));
-            this.emit('release_request', {
-                releases: [{ token: active.grant, reason: error?.message || 'resolver_error' }]
-            });
+            this.requestRelease([{ token: active.grant, reason: error?.message || 'resolver_error' }]);
         } finally {
             const elapsed = this.now() - startedAt;
             this.stats.lastResolveMs = elapsed;
@@ -1533,9 +1533,7 @@ class ColdSimulationKernel {
             if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
             this.dirty.delete(Number(proposal.characterId));
             this.stats.proposalOversizeRejected += 1;
-            this.emit('release_request', {
-                releases: [{ token: proposal.token, reason: 'proposal_too_large' }]
-            });
+            this.requestRelease([{ token: proposal.token, reason: 'proposal_too_large' }]);
             this.requeue(Number(proposal.characterId), timestamp + 5000);
         });
         if (!proposals.length) return 0;
@@ -1559,6 +1557,13 @@ class ColdSimulationKernel {
         // comma, less the brace each drops. send() need not serialise it again.
         const tail = { proposalBytes, capacityBlocked };
         const payloadBytes = proposalPayloadBytes(proposals.length, itemBytes) + Protocol.byteLength(tail) - 1;
+        for (const proposal of proposals) {
+            const active = this.inFlight.get(Number(proposal.characterId));
+            if (this.sameLease(active?.grant, proposal.token)) {
+                active.pendingCommitId = proposal.proposalId;
+                active.pendingRaidStepId = proposal.raidStepId;
+            }
+        }
         this.emit('proposal_batch', { proposals, ...tail }, null, payloadBytes);
         return proposals.length;
     }
@@ -1588,10 +1593,42 @@ class ColdSimulationKernel {
         return 0;
     }
 
+    sameLease(left, right) {
+        return !!left && !!right && left.characterId === right.characterId && left.ownerId === right.ownerId
+            && left.revision === right.revision && left.leaseId === right.leaseId;
+    }
+
+    requestRelease(releases = []) {
+        if (this.stopping) return 0;
+        const accepted = releases.filter(entry => Protocol.leaseRenewalToken(entry?.token));
+        if (!accepted.length) return 0;
+        const requestId = `release:${this.nextReleaseRequest++}`;
+        for (const entry of accepted) {
+            const token = Protocol.leaseRenewalToken(entry.token), id = token.characterId;
+            this.pendingReleases.delete(id);
+            if (this.pendingReleases.size >= 128 * Protocol.MAX_BATCH) {
+                // Forget admission only; the native requested release still
+                // runs, and existing snapshots/lease expiry cover a lost ACK.
+                this.pendingReleases.delete(this.pendingReleases.keys().next().value);
+            }
+            this.pendingReleases.set(id, { token, requestId, version: this.versions.get(id) || 0 });
+        }
+        this.emit('release_request', { releases: accepted }, requestId);
+        return accepted.length;
+    }
+
     onCommitAck(payload = {}) {
+        const accepted = [];
+        if (this.stopping) return accepted;
         (payload.results || []).forEach((result) => {
-            if (result.raidStepId) require('./ColdRaidEncounter').acknowledge(result.raidStepId, result.characterId, result.ok);
+            const identity = Protocol.leaseAckIdentity(result, 'commit_ack');
+            if (!identity) return;
             const id = Number(result.characterId);
+            const active = this.inFlight.get(id);
+            if (!this.sameLease(active?.grant, identity.token) || active.pendingCommitId !== identity.key
+                || this.states.get(id)?.state.phase !== 'cold'
+                || Number(active.grant.leaseUntil) <= this.now()) return;
+            if (active.pendingRaidStepId) require('./ColdRaidEncounter').acknowledge(active.pendingRaidStepId, id, result.ok);
             this.inFlight.delete(id);
             if (result.ok && result.state) {
                 this.upsert({ state: result.state, context: result.context || this.states.get(id)?.context || {} });
@@ -1609,16 +1646,31 @@ class ColdSimulationKernel {
                 });
                 else this.requeue(id, this.now() + 1000);
             }
+            accepted.push(result);
         });
+        return accepted;
     }
 
     onReleaseAck(payload = {}) {
+        const accepted = [];
+        if (this.stopping) return accepted;
         (payload.results || []).forEach((result) => {
+            const identity = Protocol.leaseAckIdentity(result, 'release_ack');
+            if (!identity) return;
             const id = Number(result.characterId);
+            const pending = this.pendingReleases.get(id), active = this.inFlight.get(id);
+            if (!pending || pending.requestId !== identity.key || !this.sameLease(pending.token, identity.token)
+                || this.claiming.has(id) || this.states.get(id)?.state.phase !== 'cold'
+                || (active && !this.sameLease(active.grant, identity.token))
+                || (!active && pending.version !== this.versions.get(id))
+                || Number(active?.grant.leaseUntil || pending.token.leaseUntil) <= this.now()) return;
+            this.pendingReleases.delete(id);
             this.inFlight.delete(id);
             if (result.state) this.upsert(result);
             else this.requeue(id, this.now() + 1000);
+            accepted.push(result);
         });
+        return accepted;
     }
 
     completeCommand(payload = {}) {
@@ -1670,6 +1722,7 @@ class ColdSimulationKernel {
 
     async shutdown() {
         this.stopping = true;
+        this.pendingReleases.clear();
         this.states.cancelSafetyCycle();
         this.safetyStartedAt = null;
         this.safetyAlarmToken = null;

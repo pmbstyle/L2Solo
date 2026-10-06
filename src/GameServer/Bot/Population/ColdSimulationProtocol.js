@@ -145,6 +145,14 @@ function validateEnvelope(message, direction, options = {}) {
             ids.add(token.characterId);
         }
     }
+    if (message.type === 'commit_ack' || message.type === 'release_ack') {
+        const ids = new Set();
+        for (const result of batch) {
+            const identity = leaseAckIdentity(result, message.type);
+            if (!identity || ids.has(result.characterId)) return { ok: false, reason: 'invalid_lease_ack' };
+            ids.add(result.characterId);
+        }
+    }
     if (message.type === 'worker_presence_request' || message.type === 'worker_repair_request') {
         const ids = new Set(), edges = new Set();
         for (const row of batch) {
@@ -256,6 +264,16 @@ function leaseRenewalToken(token) {
         leaseId: token.leaseId, leaseUntil: token.leaseUntil };
 }
 
+function leaseAckIdentity(result, type) {
+    if (!['commit_ack', 'release_ack'].includes(type) || !result || typeof result !== 'object'
+        || Array.isArray(result) || typeof result.ok !== 'boolean') return null;
+    const token = leaseRenewalToken(result.inputToken);
+    const key = type === 'commit_ack' ? result.proposalId : result.releaseRequestId;
+    if (!token || result.characterId !== token.characterId || typeof key !== 'string' || !key
+        || key.length > (type === 'commit_ack' ? 240 : 160)) return null;
+    return { token, key };
+}
+
 module.exports = {
     PROTOCOL_VERSION,
     MAX_BATCH,
@@ -265,6 +283,7 @@ module.exports = {
     validateEnvelope,
     validateToken,
     leaseRenewalToken,
+    leaseAckIdentity,
     safetyCheckpoint,
     sameSafetyCheckpoint,
     byteLength

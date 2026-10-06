@@ -29,15 +29,26 @@ function state(characterId = 1, overrides = {}) {
 // Capture the actual emitted request id; manual ACKs use the same wire
 // correlation as the worker instead of a missing-id compatibility path.
 const claimRequestIds = new WeakMap();
+const sentProposals = new WeakMap();
 function recordingKernel(options) {
     let kernel;
     const requests = new Map();
+    const proposals = new Map();
     kernel = new ColdSimulationKernel({ ...options, emit: (type, payload, msgId, ...rest) => {
         if (type === 'claim_request') for (const candidate of payload.candidates) requests.set(candidate.characterId, msgId);
+        if (type === 'proposal_batch') for (const proposal of payload.proposals) proposals.set(proposal.characterId, proposal);
         return options.emit?.(type, payload, msgId, ...rest);
     } });
     claimRequestIds.set(kernel, requests);
+    sentProposals.set(kernel, proposals);
     return kernel;
+}
+function commitAck(kernel, payload) {
+    kernel.onCommitAck({ results: payload.results.map(result => {
+        const proposal = sentProposals.get(kernel).get(result.characterId);
+        assert(proposal, 'fixture commit ACK echoes an actual sent proposal');
+        return { ...result, inputToken: proposal.token, proposalId: proposal.proposalId };
+    }) });
 }
 function claimAck(kernel, payload) {
     const rows = [...(payload.grants || []), ...(payload.rejected || [])];
@@ -131,7 +142,7 @@ function claimAck(kernel, payload) {
         { type: 'party_invalid_size', characterId: 1 }
     ], 'the fallback attached member must receive the party lifecycle event');
 
-    kernel.onCommitAck({ results: [{
+    commitAck(kernel, { results: [{
         ok: true,
         characterId: 1,
         state: state(1, {
@@ -446,13 +457,14 @@ function claimAck(kernel, payload) {
         leaseId: 'catalog-before-ack', leaseUntil: recoveryNow + 30000
     }] });
     await ackRaceKernel.resolveChain;
+    ackRaceKernel.flush(null, true);
     ackRaceKernel.upsert({ state: state(8, {
         timing: { lastResolvedAt: recoveryNow, nextResolveAt: recoveryNow },
         simulation: { ownerId: 'legacy_main', revision: 5, leaseId: null, leaseUntil: 0 }
     }), context: { spot: { id: 'newer-catalog' } } });
     assert.strictEqual(ackRaceKernel.scheduleTokens.has(8), false,
         'a newer catalog snapshot must not schedule a second writer while the prior revision is in flight');
-    ackRaceKernel.onCommitAck({ results: [{
+    commitAck(ackRaceKernel, { results: [{
         ok: true,
         characterId: 8,
         state: state(8, {
@@ -536,7 +548,7 @@ function claimAck(kernel, payload) {
     const stalePartyKernel = recordingKernel({
         resolveSolo: resolver,
         resolveParty: () => { throw new Error('partial stale party claim must not resolve'); },
-        emit: (type, payload) => stalePartyMessages.push({ type, payload }),
+        emit: (type, payload, msgId) => stalePartyMessages.push({ type, payload, msgId }),
         now: () => stalePartyNow
     });
     stalePartyKernel.upsert({
@@ -581,6 +593,8 @@ function claimAck(kernel, payload) {
     stalePartyKernel.onReleaseAck({ results: [{
         ok: true,
         characterId: 220,
+        inputToken: partialRelease.payload.releases[0].token,
+        releaseRequestId: partialRelease.msgId,
         state: {
             ...stalePartyMembers[0],
             simulation: { ownerId: 'legacy_main', revision: 5, leaseId: null, leaseUntil: 0 }
@@ -1098,6 +1112,7 @@ function claimAck(kernel, payload) {
     for (let id = 600; id < 605; id++) {
         const pending = { ...oversizedProposal, characterId: id, enqueuedAt: now,
             token: { ...oversizedProposal.token, characterId: id }, baseState: state(id), nextState: state(id), result: { events: [], debug: {} } };
+        partialKernel.upsert({ state: pending.baseState, context: {} });
         partialKernel.inFlight.set(id, { state: pending.baseState, grant: pending.token });
         partialKernel.dirty.set(id, pending);
     }
@@ -1106,7 +1121,7 @@ function claimAck(kernel, payload) {
     assert.strictEqual(drained.payload.proposals.length, 5, 'an atomic capacity wait must drain completed owners despite free slots');
     assert.strictEqual(drained.payload.capacityBlocked, true, 'main must receive the atomic capacity pressure');
     assert.strictEqual(partialKernel.inFlight.size, 5, 'slots remain owned until the commit acknowledgement');
-    partialKernel.onCommitAck({ results: drained.payload.proposals.map(p => ({ ok: true, characterId: p.characterId,
+    commitAck(partialKernel, { results: drained.payload.proposals.map(p => ({ ok: true, characterId: p.characterId,
         state: state(p.characterId, { timing: { nextResolveAt: now + 60000 } }), context: {} })) });
     assert.strictEqual(partialKernel.dueCandidates(now + 1000, 8).length, 9, 'the complete clan party can run after the owners commit');
 
