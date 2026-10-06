@@ -40,7 +40,7 @@ class LifeStateCache extends Map {
         this.ordered = [];
         this.orderEntries = new Map();
         this.nextSequence = 0;
-        this.occupancy = new SpotOccupancyIndex();
+        this.occupancy = new SpotOccupancyIndex({ locationIndex });
         // Walkers (honest travel, ColdTrip): cold bots running the last part of
         // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
         // Kept on every write like the cells; read only by walkersNear.
@@ -145,7 +145,7 @@ class LifeStateCache extends Map {
                 loc: () => stateLocation(state) }, { indexed });
         }
         this.insertOrder(id, state, sequence);
-        this.occupancy.update(state);
+        this.occupancy.update(state, Date.now(), { sourceId: id });
         ShopPlaces.syncState(id, state);
         const run = state.phase === 'cold' && state.activity === 'traveling' ? state.stats?.travel?.run : null;
         if (run) this.walkers.set(id, run);

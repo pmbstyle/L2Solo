@@ -438,7 +438,7 @@ class ColdSimulationKernel {
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
         this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()));
-        this.occupancy = new SpotOccupancyIndex();
+        this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();

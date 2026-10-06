@@ -336,7 +336,7 @@ function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
     for (const key of view.excludedKeys) if (!excludedKeys.has(key)) markPlace(key);
     view.excludedKeys = new Set(excludedKeys);
     const catalog = profiles || [];
-    const counted = (members) => [...(members || [])]
+    const counted = (spotId, kind) => [...index.members(spotId, kind)]
         .filter(([key]) => !view.excludedKeys.has(key))
         .map(([, state]) => state);
     const snapshot = {};
@@ -350,8 +350,8 @@ function indexedOccupancy(index, profiles, excludedKeys = new Set()) {
         }
         let cached = view.entries.get(spotId);
         if (!cached || cached.profile !== profile || index.dirty.has(spotId)) {
-            const spotMembers = counted(index.physical.get(spotId));
-            const claimers = counted(index.reserved.get(spotId));
+            const spotMembers = counted(spotId, 'physical');
+            const claimers = counted(spotId, 'reserved');
             cached = { profile, entry: spotMembers.length || claimers.length
                 ? occupancyEntry(key, profile, spotMembers, claimers) : null };
             view.entries.set(spotId, cached);
