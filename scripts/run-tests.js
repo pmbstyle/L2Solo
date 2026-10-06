@@ -877,6 +877,9 @@ const tests = [
     'tests/test_n53_heartbeat_snapshot.js',
     'tests/test_cold_queue_head_consumers.js',
     'tests/test_character_location_unindexed_sources.js',
+    'tests/test_n53_command_lifetime.js',
+    'tests/test_cold_command_identity_runtime.js',
+    'tests/test_cold_command_source_runtime.js',
     'tests/test_cold_worker_queue_heartbeat.js'
 ];
 
@@ -961,6 +964,9 @@ const defaultConfigTests = new Set([
     'tests/test_n53_heartbeat_snapshot.js',
     'tests/test_cold_queue_head_consumers.js',
     'tests/test_character_location_unindexed_sources.js',
+    'tests/test_n53_command_lifetime.js',
+    'tests/test_cold_command_identity_runtime.js',
+    'tests/test_cold_command_source_runtime.js',
     'tests/test_cold_worker_queue_heartbeat.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
