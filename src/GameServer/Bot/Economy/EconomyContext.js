@@ -63,7 +63,9 @@ function inputKey(state, deps = {}) {
 // The market as an input of one bot: the board lines and the counter of each
 // item its review read, as tokens at the time of reading. The context stays
 // valid while every token holds; a deal or a line of another item, anywhere
-// in the world, rebuilds nobody (design 16.5).
+// in the world, rebuilds nobody (design 16.5). Not inputs, by the same rule:
+// the all-counter average a counter without its own move falls back to
+// (MarketCounters.moveOf) and PriceBelief's hourly demand cache.
 function marketToken(board, id) {
     const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
     return `${board?.itemRevision ? board.itemRevision(id) : '-'}|${Counters.revisionOf(Counters.counterOf(id))}`;
