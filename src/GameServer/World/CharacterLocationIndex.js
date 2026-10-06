@@ -4,6 +4,50 @@ const { SPOT_CELL_SIZE } = require('./WorldConstants');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
 const VIEWS = new Set(['actor', 'state']);
 
+const RAW_XY_SIZE = 6000;
+const RAW_XY_LIMIT = 2 ** 65;
+const neighborBits = new DataView(new ArrayBuffer(8));
+
+function adjacentNumber(value, direction) {
+    if (value === 0) return direction * Number.MIN_VALUE;
+    if (value === Infinity) return direction > 0 ? value : Number.MAX_VALUE;
+    if (value === -Infinity) return direction < 0 ? value : -Number.MAX_VALUE;
+    neighborBits.setFloat64(0, value);
+    const bits = neighborBits.getBigUint64(0);
+    neighborBits.setBigUint64(0, bits + ((value > 0) === (direction > 0) ? 1n : -1n));
+    return neighborBits.getFloat64(0);
+}
+
+const RAW_XY_OUTWARD_RADIUS = adjacentNumber(RAW_XY_SIZE, 1);
+
+function rawAxisKeys(value) {
+    if (Math.abs(value) > RAW_XY_LIMIT) return [Math.floor(value / RAW_XY_SIZE)];
+    const low = Math.floor(adjacentNumber(value - RAW_XY_OUTWARD_RADIUS, -1) / RAW_XY_SIZE);
+    const high = Math.floor(adjacentNumber(value + RAW_XY_OUTWARD_RADIUS, 1) / RAW_XY_SIZE);
+    const count = high - low + 1;
+    if (!Number.isSafeInteger(low) || !Number.isSafeInteger(high) || count < 1 || count > 9) {
+        throw new RangeError('invalid_character_facet_bounds');
+    }
+    return Array.from({ length: count }, (_, offset) => low + offset);
+}
+
+function rawPointOf(loc, current = null) {
+    const point = typeof loc === 'function' ? loc() : loc;
+    if (current && !current()) return null;
+    if (!point) return null;
+    const locX = point.locX;
+    if (current && !current()) return null;
+    const locY = point.locY;
+    if (current && !current()) return null;
+    return Number.isFinite(locX) && Number.isFinite(locY) ? { locX, locY } : null;
+}
+
+function validateRawFacet(view, facet, cellSize) {
+    if (view !== 'actor' || facet !== 'raw_xy' || cellSize !== RAW_XY_SIZE) {
+        throw new RangeError('invalid_character_facet');
+    }
+}
+
 function validateGroupQuery(view, family) {
     if (view !== 'actor' || family !== 'pvp_party') throw new RangeError('invalid_character_group');
 }
@@ -98,6 +142,7 @@ class CharacterLocationIndex {
         let row = this.records.get(id);
         let entry = row?.[view];
         if (entry && !sameSource(entry.source, source, legacy)) {
+            this.detachRawXY(entry);
             this.detachCell(entry);
             this.detachSpot(entry);
             this.detachGroups(entry);
@@ -148,6 +193,7 @@ class CharacterLocationIndex {
         const row = this.records.get(id);
         const entry = row?.[view];
         if (!entry || !sameSource(entry.source, source, view === 'state' && this.legacyStateCache)) return false;
+        this.detachRawXY(entry);
         this.detachCell(entry);
         this.detachSpot(entry);
         this.detachGroups(entry);
@@ -184,6 +230,69 @@ class CharacterLocationIndex {
     sourceEntries(view) {
         validateView(view);
         return sourceRecordEntries(this.sourceViews[view].entries());
+    }
+
+    updateFacet(id, view, expectedRecord, facet, payload) {
+        validateRawFacet(view, facet, this.cellSize);
+        if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('invalid_character_source');
+        const entry = this.records.get(id)?.[view];
+        if (!entry || entry.record !== expectedRecord) return false;
+        const previous = entry.rawXY;
+        const current = () => this.records.get(id)?.[view] === entry
+            && entry.record === expectedRecord && entry.rawXY === previous;
+        const enabled = payload?.enabled;
+        if (!current()) return false;
+        if (typeof enabled !== 'boolean') throw new TypeError('invalid_character_facet_mode');
+        if (!enabled) {
+            this.detachRawXY(entry);
+            return true;
+        }
+        const loc = payload.loc;
+        if (!current()) return false;
+        const point = rawPointOf(loc, current);
+        if (!current()) return false;
+        if (!point) throw new RangeError('invalid_character_facet_location');
+        const key = `${Math.floor(point.locX / RAW_XY_SIZE)}_${Math.floor(point.locY / RAW_XY_SIZE)}`;
+        if (previous?.key !== key) this.detachRawXY(entry);
+        const cell = this.cells.get(key) ?? {
+            x: Math.floor(point.locX / RAW_XY_SIZE), y: Math.floor(point.locY / RAW_XY_SIZE)
+        };
+        const members = cell.rawXY ?? new Set();
+        cell.rawXY = members;
+        members.add(entry);
+        this.cells.set(key, cell);
+        entry.rawXY = { key, record: expectedRecord, loc };
+        return true;
+    }
+
+    nearFacet(loc, radius, { view = 'actor', facet = 'raw_xy', accept = null } = {}) {
+        validateRawFacet(view, facet, this.cellSize);
+        if (accept !== null && typeof accept !== 'function') throw new TypeError('invalid_character_query_filter');
+        if (!Number.isFinite(radius) || radius < 0 || radius > RAW_XY_SIZE) {
+            throw new RangeError('invalid_character_facet_radius');
+        }
+        const point = rawPointOf(loc);
+        if (!point) throw new RangeError('invalid_character_facet_location');
+        const xs = rawAxisKeys(point.locX), ys = rawAxisKeys(point.locY);
+        const radiusSquared = radius * radius;
+        const found = [], seen = new Set();
+        for (const x of xs) for (const y of ys) {
+            for (const entry of this.cells.get(`${x}_${y}`)?.rawXY ?? []) {
+                if (seen.has(entry)) continue;
+                seen.add(entry);
+                const record = entry.record, membership = entry.rawXY;
+                const current = () => this.records.get(entry.id)?.actor === entry
+                    && entry.record === record && entry.rawXY === membership && membership?.record === record;
+                if (!current()) continue;
+                if (accept && !accept(record)) continue;
+                if (!current()) continue;
+                const candidate = rawPointOf(membership.loc, current);
+                if (!current() || !candidate) continue;
+                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
+                if (dx * dx + dy * dy <= radiusSquared) found.push(record);
+            }
+        }
+        return found;
     }
 
     updateGroups(id, view, expectedRecord, family, keys, order) {
@@ -299,6 +408,7 @@ class CharacterLocationIndex {
     }
 
     clear() {
+        for (const entry of this.sourceViews.actor.values()) this.detachRawXY(entry);
         this.clearGroups();
         this.records.clear();
         this.sourceViews.actor.clear();
@@ -381,7 +491,7 @@ class CharacterLocationIndex {
         members[entry.phase].delete(entry);
         if (entry.realPlayer) members.player.delete(entry);
         if (!members.all.size) delete cell[entry.view];
-        if (!cell.actor && !cell.state) this.cells.delete(entry.key);
+        if (!cell.actor && !cell.state && !cell.rawXY) this.cells.delete(entry.key);
     }
 
     detachSpot(entry) {
@@ -391,6 +501,18 @@ class CharacterLocationIndex {
         members.delete(entry);
         if (!members.size) delete spot[entry.view];
         if (!spot.actor && !spot.state) this.spots.delete(entry.spotId);
+    }
+
+    detachRawXY(entry) {
+        const membership = entry.rawXY;
+        if (!membership) return;
+        const cell = this.cells.get(membership.key), members = cell?.rawXY;
+        if (members) {
+            members.delete(entry);
+            if (!members.size) delete cell.rawXY;
+            if (!cell.actor && !cell.state && !cell.rawXY) this.cells.delete(membership.key);
+        }
+        entry.rawXY = null;
     }
 
     detachGroups(entry) {

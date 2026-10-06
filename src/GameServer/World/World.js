@@ -36,7 +36,7 @@ function currentUserLocationIndex(user) {
 
 function registeredActor(runtime, session, actor, id, membership) {
     return Object.freeze({ id, session, actor, source: actor, phase: 'hot', order: membership.order,
-        token: Symbol('user-registration'), loc: () => projectedActorLoc(actor),
+        token: Symbol('user-registration'), loc: () => projectedActorLoc(actor), rawLoc: () => rawActorLoc(actor),
         get realPlayer() { return membership.realPlayer === true; },
         get retired() { return runtime.retiredActors.has(actor); } });
 }
@@ -44,6 +44,28 @@ function registeredActor(runtime, session, actor, id, membership) {
 function currentActorRecord(runtime, record) {
     return !!record && runtime.sessions.get(record.session)?.registered === record
         && record.session.actor === record.actor && runtime.index.getSource(record.id, 'actor') === record;
+}
+
+function rawCoordinate(value) {
+    if (value !== null && !['number', 'string', 'boolean'].includes(typeof value)) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+}
+
+function rawActorLoc(actor) {
+    if (typeof actor.fetchLocX !== 'function' || typeof actor.fetchLocY !== 'function') return null;
+    const rawX = actor.fetchLocX(), rawY = actor.fetchLocY();
+    const locX = rawCoordinate(rawX), locY = rawCoordinate(rawY);
+    return locX !== null && locY !== null ? { locX, locY } : null;
+}
+
+function refreshRawActorLocation(runtime, record) {
+    if (!currentActorRecord(runtime, record)) return false;
+    const point = record.rawLoc();
+    if (!currentActorRecord(runtime, record)) return false;
+    return runtime.index.updateFacet(record.id, 'actor', record, 'raw_xy', {
+        enabled: point !== null, loc: record.rawLoc
+    });
 }
 
 function partyMembershipPacket(runtime, record) {
@@ -79,6 +101,7 @@ function attachRegisteredActor(runtime, session, membership, explicit = false) {
     const record = registeredActor(runtime, session, actor, id, membership);
     runtime.index.setSource(id, 'actor', record, { indexed: false });
     membership.registered = record;
+    refreshRawActorLocation(runtime, record);
     publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
     notifyUserChange(id);
     return record;
@@ -326,7 +349,9 @@ const World = {
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor || session.actor !== actor) return false;
         const registered = attachRegisteredActor(runtime, session, membership);
-        if (!registered || registered.retired) return false;
+        if (!registered) return false;
+        refreshRawActorLocation(runtime, registered);
+        if (registered.retired) return false;
         const online = actor.fetchIsOnline?.() !== false;
         const onlineChanged = membership.online !== online;
         membership.online = online;
@@ -355,6 +380,7 @@ const World = {
         const retired = registeredActor(runtime, session, actor, previous.id, membership);
         runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
         membership.registered = retired;
+        refreshRawActorLocation(runtime, retired);
         publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
         notifyUserChange(previous.id);
         membership.actor = null;
@@ -366,6 +392,28 @@ const World = {
         const runtime = currentUserLocationIndex(this.user);
         const record = runtime?.index.getSource(Number(id), 'actor');
         return runtime && currentActorRecord(runtime, record) ? record : null;
+    },
+
+    botRealPlayerIndex: true,
+
+    botVisibleRealPlayers(session, bot) {
+        if (!session || !bot) return [];
+        const point = rawActorLoc(bot);
+        if (!point) return [];
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return [];
+        const records = runtime.index.nearFacet(point, CLIENT_VISIBILITY_RADIUS, {
+            view: 'actor', facet: 'raw_xy',
+            accept: record => {
+                if (!currentActorRecord(runtime, record) || record.session === session) return false;
+                const candidate = record.session, actor = record.actor;
+                return !!actor.fetchIsOnline?.() && !!candidate.accountId
+                    && !String(candidate.accountId).startsWith('bot_')
+                    && typeof actor.fetchLocX === 'function' && typeof actor.fetchLocY === 'function';
+            }
+        });
+        records.sort((left, right) => left.order - right.order);
+        return records.map(record => record.session);
     },
 
     pvpPartyMembershipIndex: true,
