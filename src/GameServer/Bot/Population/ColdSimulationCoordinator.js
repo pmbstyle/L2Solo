@@ -26,6 +26,7 @@ const ColdStateDelta = require('./ColdStateDelta');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const { ColdProjectionRetention } = require('./ColdProjectionRetention');
+const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
@@ -137,6 +138,7 @@ class ColdSimulationCoordinator {
         this.tableChannel = options.tableChannel || TableChannel.shared;
         this.worker = null;
         this.workerEpoch = null;
+        this.safetyTransport = null;
         this.projectionRetention = new ColdProjectionRetention({
             stateFor: id => LifeState.cachedState(id), epoch: () => this.workerEpoch,
             dependencies: (state, context) => {
@@ -158,6 +160,7 @@ class ColdSimulationCoordinator {
         this.population = null;
         this.started = false;
         this.stopping = false;
+        this.stopPromise = null;
         this.ready = false;
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
@@ -296,6 +299,7 @@ class ColdSimulationCoordinator {
     }
 
     start(population = null) {
+        if (this.stopPromise) return Promise.resolve(false);
         this.competitionActions.stopping = false;
         if (this.started || Config.enabled === false || Config.backgroundResolverEnabled === false) return Promise.resolve(false);
         this.population = population || this.population;
@@ -380,10 +384,15 @@ class ColdSimulationCoordinator {
             resourceLimits: { maxOldGenerationSizeMb: Math.max(128, Number(Config.coldWorkerHeapMb) || 256) }
         });
         this.worker = worker;
+        Metrics.beginColdSafetyEpoch(this.workerEpoch);
+        this.attachSafetyTransport();
         this.counters.workersStarted += 1;
-        worker.on('message', (message) => { this.onMessage(message); });
-        worker.on('error', (error) => this.onWorkerError(error));
-        worker.on('exit', (code) => this.onWorkerExit(code));
+        const epoch = this.workerEpoch;
+        worker.on('message', (message) => { this.onMessage(message, worker, epoch); });
+        worker.on('error', (error) => {
+            if (this.worker === worker && this.workerEpoch === epoch) this.onWorkerError(error);
+        });
+        worker.on('exit', (code) => this.onWorkerExit(code, worker, epoch));
     }
 
     remember(msgId) {
@@ -437,7 +446,8 @@ class ColdSimulationCoordinator {
         return sent;
     }
 
-    async onMessage(message) {
+    async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
+        if (this.worker !== worker || this.workerEpoch !== epoch) return;
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
@@ -500,6 +510,7 @@ class ColdSimulationCoordinator {
         case 'heartbeat':
             this.lastHeartbeatAt = Date.now();
             this.lastWorkerSnapshot = payload;
+            if (!this.stopping) Metrics.recordColdSafetyTotals(epoch, payload.safety);
             if (Config.coldCompetitionActionsEnabled) this.competitionActions.submit(payload.competition);
             break;
         case 'fence_ack':
@@ -862,6 +873,59 @@ class ColdSimulationCoordinator {
 
     snapshotEntry(state, index = this.contextIndex()) {
         return { state, context: this.contextFor(state, index) };
+    }
+
+    attachSafetyTransport() {
+        if (!this.worker || !this.workerEpoch) return null;
+        if (this.safetyTransport?.worker === this.worker && this.safetyTransport.epoch === this.workerEpoch
+            && !this.safetyTransport.disposed) return this.safetyTransport;
+        this.cancelSafety();
+        this.safetyTransport = new ColdSafetyTransport({ worker: this.worker, epoch: this.workerEpoch,
+            post: (type, payload, msgId) => this.post(type, payload, msgId),
+            isCurrent: (worker, epoch) => this.worker === worker && this.workerEpoch === epoch
+                && this.ready && this.snapshotsLoaded && !this.stopping,
+            onTotals: (epoch, totals) => Metrics.recordColdSafetyTotals(epoch, totals),
+            now: () => Date.now(), timeoutMs: Math.max(1000, Number(Config.coldOwnerResolveTimeoutMs) || 10000) });
+        return this.safetyTransport;
+    }
+
+    safetyCurrent() {
+        if (!this.worker || !this.workerEpoch || this.stopping) return null;
+        this.attachSafetyTransport();
+        return { worker: this.worker, epoch: this.workerEpoch, ready: this.ready && this.snapshotsLoaded };
+    }
+
+    safetyExcluded(characterId) {
+        return !this.worker || !this.ready || !this.snapshotsLoaded || this.stopping || this.snapshotInFlightInitial
+            || this.fencedBots.has(characterId) || this.economyBots.has(characterId) || this.commandInflight.has(characterId)
+            || this.snapshotQueue.dirty.has(characterId);
+    }
+
+    canRepairSafety(checkpoint) {
+        if (this.safetyExcluded(checkpoint?.characterId) || checkpoint?.phase !== 'cold') return false;
+        const state = LifeState.cachedState(checkpoint.characterId);
+        if (!state || !Protocol.sameSafetyCheckpoint(checkpoint, Protocol.safetyCheckpoint(state))) return false;
+        const loc = state.stats?.craftShop?.loc || state.loc;
+        if (![Number(loc?.locX), Number(loc?.locY)].every(Number.isFinite)
+            || typeof this.population?.realPlayerSessionsNear !== 'function') return false;
+        try { return !this.visibleToRealPlayer(state); } catch (_) { return false; }
+    }
+
+    requestSafety(kind, rows, expected) {
+        const current = this.safetyCurrent();
+        if (!current?.ready || current.worker !== expected?.worker || current.epoch !== expected?.epoch) {
+            return Promise.resolve({ ok: false, results: [], reason: 'stale' });
+        }
+        return this.safetyTransport.request(kind, rows);
+    }
+
+    pollSafety(timestamp) {
+        return this.safetyTransport?.pulse(timestamp) || false;
+    }
+
+    cancelSafety() {
+        this.safetyTransport?.dispose();
+        this.safetyTransport = null;
     }
 
     projectedEntryFor(characterId) {
@@ -1769,7 +1833,10 @@ class ColdSimulationCoordinator {
         this.recordError(error);
     }
 
-    onWorkerExit(code) {
+    onWorkerExit(code, worker = this.worker, epoch = this.workerEpoch) {
+        if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        this.cancelSafety();
+        Metrics.clearColdSafetyEpoch(epoch);
         this.projectionRetention.reset();
         this.counters.workerExits += 1;
         this.tableChannel.detach(this);
@@ -1796,7 +1863,17 @@ class ColdSimulationCoordinator {
         utils.infoWarn('ColdWorker', '%s', error?.message || String(error));
     }
 
-    async stop() {
+    stop() {
+        if (this.stopPromise) return this.stopPromise;
+        const pending = this.stopCurrent(this.worker, this.workerEpoch).finally(() => {
+            if (this.stopPromise === pending) this.stopPromise = null;
+        });
+        this.stopPromise = pending;
+        return pending;
+    }
+
+    async stopCurrent(worker, epoch) {
+        this.cancelSafety();
         this.projectionRetention.reset();
         if (!this.started) return { stopped: true };
         this.stopping = true;
@@ -1823,7 +1900,7 @@ class ColdSimulationCoordinator {
         await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
         await Promise.race([this.criticalSnapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
         let drained = null;
-        if (this.worker) {
+        if (worker && this.worker === worker && this.workerEpoch === epoch) {
             const msgId = this.post('shutdown', { deadlineAt: Date.now() + 10000 });
             if (msgId) {
                 drained = await Promise.race([
@@ -1836,8 +1913,10 @@ class ColdSimulationCoordinator {
         await Promise.race([this.commandTail.catch(() => null), wait(10000)]);
         await Promise.race([this.historyCleanupInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
         this.historyCleanupInFlight = null;
-        if (this.worker) await this.worker.terminate().catch(() => null);
-        this.worker = null;
+        if (worker) await worker.terminate().catch(() => null);
+        Metrics.clearColdSafetyEpoch(epoch);
+        if (this.worker === worker) this.worker = null;
+        if (this.workerEpoch !== epoch) return { stopped: true, drained, queue };
         await ColdSimulationOwner.recoverStartupLeases().catch(() => null);
         this.started = false;
         return { stopped: true, drained, queue };

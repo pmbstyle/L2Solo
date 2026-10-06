@@ -937,6 +937,9 @@ const PopulationService = {
     hotBoardReviewStartPromise: null,
     hotBoardReviewTickUnsubscribe: null,
     hotBoardReviewReadyUnsubscribe: null,
+    lifecycleSafetyGeneration: 0,
+    lifecycleSafetySweep: null,
+    lifecycleSafetyStartPromise: null,
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
@@ -1040,6 +1043,7 @@ const PopulationService = {
 
         this.startBackgroundJobRegistry();
         this.startHotBoardReviews();
+        this.startLifecycleSafetySweep();
 
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
@@ -1123,6 +1127,7 @@ const PopulationService = {
     },
 
     stop() {
+        this.stopLifecycleSafetySweep();
         this.stopHotBoardReviews();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
@@ -1481,6 +1486,35 @@ const PopulationService = {
         this.backgroundJobRegistry = registry;
         registry.start();
         return registry;
+    },
+
+    startLifecycleSafetySweep() {
+        if (Config.enabled === false || !this.started || !this.backgroundJobRegistry?.started) return Promise.resolve(false);
+        if (this.lifecycleSafetyStartPromise) return this.lifecycleSafetyStartPromise;
+        if (this.lifecycleSafetySweep?.running) return Promise.resolve(false);
+        const generation = ++this.lifecycleSafetyGeneration;
+        const registry = this.backgroundJobRegistry;
+        const current = () => this.started && Config.enabled !== false && this.lifecycleSafetyGeneration === generation
+            && this.backgroundJobRegistry === registry && registry.started;
+        const pending = Promise.resolve(this.lifeReadyPromise).then(ready => {
+            if (ready !== true || !current()) return false;
+            if (!this.lifecycleSafetySweep) this.lifecycleSafetySweep = require('./LifecycleSafetyRuntime')
+                .createLifecycleSafetyRuntime(this, ColdSimulationCoordinator);
+            return this.lifecycleSafetySweep.start(registry);
+        }).catch(error => {
+            ColdSimulationCoordinator.recordError(error);
+            return false;
+        }).finally(() => {
+            if (this.lifecycleSafetyStartPromise === pending) this.lifecycleSafetyStartPromise = null;
+        });
+        this.lifecycleSafetyStartPromise = pending;
+        return pending;
+    },
+
+    stopLifecycleSafetySweep() {
+        this.lifecycleSafetyGeneration++;
+        this.lifecycleSafetySweep?.stop();
+        this.lifecycleSafetyStartPromise = null;
     },
 
     startHotBoardReviews() {
