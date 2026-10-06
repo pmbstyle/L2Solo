@@ -497,6 +497,7 @@ const tests = [
     'tests/test_cold_ack_route.js',
     'tests/test_cold_worker_restart_message_ids.js',
     'tests/test_cold_economy_decision.js',
+    'tests/test_cold_improvement_decision.js',
     'tests/test_bot_population_cooldown_cleanup.js',
     'tests/test_bot_cold_state_context.js',
     'tests/test_bot_pvp_risk.js',

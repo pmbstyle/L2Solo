@@ -6,9 +6,9 @@ const { capture, ColdEconomyDecisions } = require('../src/GameServer/Bot/Populat
 
 const economy = { network: { activity: { activity: 'hunting', spotId: '22_18', npcId: 20120, rootKey: 'power', price: 5 } } };
 const decision = capture(economy, { characterId: 7, updatedAt: 1000 });
-assert.deepEqual(decision, { updatedAt: 1000, activity: { activity: 'hunting', spotId: '22_18', npcId: 20120 } },
+assert.deepEqual(decision, { updatedAt: 1000, riskWeight: 0, activity: { activity: 'hunting', spotId: '22_18', npcId: 20120 } },
     'only what main reads travels: activity, spot, mob');
-assert.deepEqual(capture({ network: {} }, { updatedAt: 5 }), { updatedAt: 5, activity: null });
+assert.deepEqual(capture({ network: {} }, { updatedAt: 5 }), { updatedAt: 5, riskWeight: 0, activity: null });
 
 const decisions = new ColdEconomyDecisions();
 let builds = 0;
