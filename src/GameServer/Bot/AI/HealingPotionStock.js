@@ -47,7 +47,8 @@ function useThreshold(value) {
 function targetAmountFor(value) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
-    return Economy.forState(state).stock('potions').target;
+    // The stock rule needs no wish network (L25).
+    return Economy.stockFor(state, 'potions').target;
 }
 
 function purchasePotionFor(value) {

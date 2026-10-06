@@ -96,7 +96,7 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const life = Valuation.progressStats(state, { timestamp, startedAt, kills: debug.wins,
         losses: debug.deaths || (state.activity !== 'dead' && result.patch?.activity === 'dead' ? 1 : 0),
-        lossHours: invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp }).deathHours, risky: !!state.stats?.pvpIntent,
+        lossHours: invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { timestamp }).deathHours, risky: !!state.stats?.pvpIntent,
         persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: Learning.knowledgeEnabled() });
     if (!(Number(debug.combatMs) > 0 || Number(debug.fights) > 0)) return life;
     const cycleMs = Math.max(0, Number(result.nextResolveAt || 0) - timestamp);

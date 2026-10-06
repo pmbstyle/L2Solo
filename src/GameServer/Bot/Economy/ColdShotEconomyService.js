@@ -143,15 +143,18 @@ function hasShotSurplus(state) {
 
 async function reviewDemand(state, now) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)) return state;
-    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp: now });
-    const stock = context.stock('shots');
+    // The stock rule and prices need no wish network; only the worth of a
+    // missing stack does (L25).
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const basics = Economy.basics(state, { timestamp: now });
+    const stock = basics.stock('shots');
     if (!stock.needed || !stock.missing) {
         if (!state.stats?.shotDemand) return state;
         return await persist({ ...state, stats: { ...state.stats, shotDemand: null } }, 'shot_market_demand_filled') || state;
     }
-    const price = context.price(stock.itemId);
+    const price = basics.price(stock.itemId);
     if (!(price > 0)) return state;
-    const worth = context.worth(stock.itemId);
+    const worth = Economy.forState(state, { timestamp: now }).worth(stock.itemId);
     const maxSpend = Math.min(PurchaseFunding.spendable(state), stock.missing * (worth ?? price));
     const wanted = state.stats?.shotDemand;
     if (!wanted || wanted.itemId !== stock.itemId || wanted.amount !== stock.missing || wanted.maxSpend !== maxSpend) {
