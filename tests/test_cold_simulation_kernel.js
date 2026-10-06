@@ -542,6 +542,32 @@ function claimAck(kernel, payload) {
         'the leader proposal must carry the party durable update');
     assert(!partyMessages.some((entry) => entry.type === 'command_request'), 'party combat compute must never fall back to main');
 
+    const refreshMessages = [], refreshed = [];
+    const refreshMembers = [state(120, { party: { partyId: 'refresh-party' }, stats: { equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 55 } } } }),
+        state(121, { party: { partyId: 'refresh-party' }, stats: { equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 56 } } } })];
+    const refreshParty = { partyId: 'refresh-party', status: 'active', leaderId: 120, memberIds: [120, 121], stats: {}, nextResolveAt: now };
+    const refreshKernel = recordingKernel({ resolveSolo: resolver, now: () => now,
+        resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+            partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+        projectResolve: state => ({ state }),
+        planPartyRequirement: ({ state }) => { refreshed.push(state.characterId); return { acquisitionPlan: state.characterId === 120
+            ? { status: 'active', strategy: 'market', target: { selfId: 55 } } : state.stats.equipmentPlan }; },
+        emit: (type, payload) => refreshMessages.push({ type, payload }) });
+    refreshKernel.upsert({ state: refreshMembers[0], context: { isPartyLeader: true, party: refreshParty,
+        partyMembers: refreshMembers, spot: { id: 'refresh-spot' }, requirementRefresh: true } });
+    refreshKernel.upsert({ state: refreshMembers[1], context: {} }); refreshKernel.tick();
+    const refreshClaim = refreshMessages.find(message => message.type === 'claim_request');
+    claimAck(refreshKernel, { grants: refreshClaim.payload.candidates.map(candidate => ({ ok: true,
+        characterId: candidate.characterId, ownerId: 'cold_simulation_owner', revision: candidate.expectedRevision + 1,
+        leaseId: `refresh-${candidate.characterId}`, leaseUntil: now + 30000, purpose: candidate.purpose })) });
+    await refreshKernel.resolveChain;
+    const refreshProposal = refreshMessages.find(message => message.type === 'proposal_batch').payload.proposals.find(proposal => proposal.partyResolution);
+    assert.deepStrictEqual(refreshed, [120, 121], 'the party resolve refreshes each member after its projection');
+    assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
+    assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
+    assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
+    assert(refreshKernel.snapshot().partyRequirementRefreshMaxMs < 20);
+
     const stalePartyMessages = [];
     let stalePartyNow = now;
     const stalePartyMembers = [

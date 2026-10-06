@@ -24,7 +24,7 @@ const originals = {
     active: PartyState.active,
     counts: PartyState.counts,
     statesForParty: LifeState.statesForParty,
-    statesForParties: LifeState.statesForParties,
+    cachedStatesForParties: LifeState.cachedStatesForParties,
     coldPartyCandidateProjections: LifeState.coldPartyCandidateProjections,
     coldPartyCandidateCount: LifeState.coldPartyCandidateCount,
     coldPartyCandidates: LifeState.coldPartyCandidates,
@@ -70,7 +70,7 @@ async function run() {
     };
     LifeState.coldPartyCandidates = () => Promise.resolve([]);
     LifeState.coldPartyCandidatesForSpots = () => Promise.resolve([]);
-    LifeState.statesForParties = () => Promise.resolve(new Map());
+    LifeState.cachedStatesForParties = () => Promise.resolve(new Map());
     PopulationService.resolving = false;
     PopulationService.partyFormationRunning = false;
     PopulationService.nextPartyRequestCleanupAt = Infinity;
@@ -82,7 +82,7 @@ async function run() {
     LifeState.coldPartyCandidateCount = originals.coldPartyCandidateCount;
     LifeState.coldPartyCandidates = originals.coldPartyCandidates;
     LifeState.coldPartyCandidatesForSpots = originals.coldPartyCandidatesForSpots;
-    LifeState.statesForParties = originals.statesForParties;
+    LifeState.cachedStatesForParties = originals.cachedStatesForParties;
     LifeState.coldPartyCandidateProjections = originals.coldPartyCandidateProjections;
 
     const party = { partyId: 'bgp_1', leaderId: 1, memberIds: [1, 2], spotId: 'cruma', stats: {} };
@@ -102,7 +102,7 @@ async function run() {
 
     PartyState.active = () => [party];
     LifeState.statesForParty = () => Promise.resolve(members);
-    LifeState.statesForParties = () => Promise.resolve(new Map([['bgp_1', members]]));
+    LifeState.cachedStatesForParties = () => Promise.resolve(new Map([['bgp_1', members]]));
     LifeState.assignParty = (state, partyId, role, leaderId) => {
         assigned.push({ state, partyId, role, leaderId });
         return Promise.resolve(state);
@@ -127,7 +127,7 @@ async function run() {
     const staleLeaderParty = { partyId: 'bgp_stale_leader', leaderId: 999, memberIds: [1, 2], spotId: 'cruma', stats: {} };
     let staleLeaderSaved = null;
     PartyState.active = () => [staleLeaderParty];
-    LifeState.statesForParties = () => Promise.resolve(new Map([['bgp_stale_leader', members]]));
+    LifeState.cachedStatesForParties = () => Promise.resolve(new Map([['bgp_stale_leader', members]]));
     PartyState.createOrUpdate = (nextParty) => {
         staleLeaderSaved = nextParty;
         return Promise.resolve(nextParty);
@@ -159,7 +159,7 @@ async function run() {
     ]));
     const sharedAssignments = [];
     PartyState.active = () => sharedParties;
-    LifeState.statesForParties = () => Promise.resolve(sharedMembers);
+    LifeState.cachedStatesForParties = () => Promise.resolve(sharedMembers);
     LifeState.assignParty = (state, partyId) => {
         sharedAssignments.push({ characterId: state.characterId, partyId });
         return Promise.resolve(state);
@@ -553,7 +553,7 @@ run().catch((err) => {
     PartyState.active = originals.active;
     PartyState.counts = originals.counts;
     LifeState.statesForParty = originals.statesForParty;
-    LifeState.statesForParties = originals.statesForParties;
+    LifeState.cachedStatesForParties = originals.cachedStatesForParties;
     LifeState.coldPartyCandidateProjections = originals.coldPartyCandidateProjections;
     LifeState.coldPartyCandidateCount = originals.coldPartyCandidateCount;
     LifeState.coldPartyCandidates = originals.coldPartyCandidates;

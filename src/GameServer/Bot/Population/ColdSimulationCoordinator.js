@@ -954,6 +954,7 @@ class ColdSimulationCoordinator {
             isPartyLeader: !!party,
             party,
             partyMembers,
+            requirementRefresh: !!party && this.population?.partyRequirementRefreshDue?.has(String(party.partyId)),
             route: this.routeFor(state, spot, party, fullPartyMembers, { ...index, memory: interactionMemory, wishLeaf: leaf })
         };
         this.projectionRetention.prepare(state, context, index.partyGeneration);
@@ -1693,6 +1694,11 @@ class ColdSimulationCoordinator {
                 }
             }
         });
+        if (entry.proposal.partyResolution?.party && this.population?.applyWorkerPartyRequirements) {
+            await this.step('partyPlans', id, () => this.population.applyWorkerPartyRequirements(
+                BackgroundPartyState.find(entry.proposal.partyResolution.partyId) || entry.proposal.partyResolution.party,
+                entry.proposal.partyResolution));
+        }
         await this.step('metrics', id, () => {
             Metrics.recordBackgroundResolve();
             Metrics.recordCombat(entry.proposal.result?.debug);

@@ -42,7 +42,7 @@ class PartyAssemblyEvents {
             }
             // Freed capacity wakes already indexed waiting groups.
             if (previous && party.status === 'dissolved') {
-                for (const group of this.groups.values()) this.enqueue(group);
+                this.enqueue(this.groups.get(`spot:${party.spotId || previous.spotId}`));
             }
         });
         this.unsubscribeTick = this.registry.subscribeTicks(timestamp => this.pulse(timestamp));
@@ -79,8 +79,10 @@ class PartyAssemblyEvents {
         if (packet.state && packet.state !== state) return false;
         const input = state && this.classify(state, this.now());
         const previous = this.records.get(id);
-        const changed = previous?.key !== input?.key || previous?.stamp !== input?.stamp;
-        if (previous && (!input || changed)) {
+        const moved = previous?.key !== input?.key;
+        const changed = moved || !previous || !input || previous.stamp.some((field, index) => field !== input.stamp[index]);
+        const wake = moved || !previous || !input || previous.stamp[4] !== input.stamp[4];
+        if (previous && (!input || moved)) {
             const group = this.groups.get(previous.key);
             group?.members.delete(id);
             if (group) { group.revision++; this.enqueue(group); }
@@ -91,13 +93,14 @@ class PartyAssemblyEvents {
             if (previous && repair) { this.metrics.repaired++; this.onRepair(); }
             return !!previous;
         }
-        const record = changed || !previous ? { id, key: input.key, stamp: input.stamp, state } : previous;
+        const record = previous && !moved ? previous : { id, key: input.key, stamp: input.stamp, state };
+        record.stamp = input.stamp;
         record.state = state;
         if (!this.groups.has(input.key)) this.groups.set(input.key, { key: input.key, members: new Map(), revision: 0, handled: 0 });
         const group = this.groups.get(input.key);
         group.members.set(id, record);
         this.records.set(id, record);
-        if (changed || !previous) {
+        if (wake) {
             group.revision++; this.enqueue(group); this.metrics.events++;
             if (repair) { this.metrics.repaired++; this.onRepair(); }
         }

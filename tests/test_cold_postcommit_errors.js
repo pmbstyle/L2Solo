@@ -58,6 +58,13 @@ async function run() {
     assert.equal(partyWrites, 2); assert.equal(resolves, 2); assert.equal(announcements, 2);
     assert.equal(logs.filter(line => line.includes('postcommit journal failed')).length, 1);
     assert.equal(coordinator.counters.afterCommitStepErrors.journal, 1);
+    stub(Events, 'recordMany', async () => {});
+    coordinator.population.applyWorkerPartyRequirements = () => { throw Error('party_plan_probe'); };
+    logs.length = 0;
+    await coordinator.afterCommit(entry);
+    assert.equal(resolves, 3); assert.equal(announcements, 3);
+    assert.equal(logs.filter(line => line.includes('postcommit partyPlans failed')).length, 1);
+    assert.equal(coordinator.counters.afterCommitStepErrors.partyPlans, 1);
     console.log('Applied commands and independent post-commit steps survive synchronous failures');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {

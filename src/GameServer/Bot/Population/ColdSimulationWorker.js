@@ -417,6 +417,10 @@ function startKernel(config = {}) {
                 ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture(economy, projected), key: seenKey } } : {})
             };
         },
+        planPartyRequirement: ({ state, context, timestamp }) => require('./PartyRequirementRefresh').plan(state, {
+            spots: planningSpots, occupancy: currentPlanningOccupancy(timestamp), timestamp,
+            planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
+        }),
         planLifecycle: ({ state, context, timestamp }) => {
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
             if (karmaPlan) return karmaPlan;

@@ -435,6 +435,9 @@ class ColdSimulationKernel {
         if (typeof options.resolveSolo !== 'function') throw new Error('resolveSolo is required');
         this.resolveSolo = options.resolveSolo;
         this.resolveParty = typeof options.resolveParty === 'function' ? options.resolveParty : null;
+        this.planPartyRequirement = options.planPartyRequirement || null;
+        // Numeric member ids only, bounded by active party rosters (<=9 each); dropped at completion, release or dissolve.
+        this.partyRequirementProgress = new Map();
         this.planLifecycle = typeof options.planLifecycle === 'function' ? options.planLifecycle : null;
         this.requiresWeaponBridge = typeof options.requiresWeaponBridge === 'function'
             ? options.requiresWeaponBridge
@@ -536,6 +539,9 @@ class ColdSimulationKernel {
         if (!characterId) return false;
         const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
         const current = this.states.get(characterId);
+        if (entry.context?.requirementRefresh === false) {
+            this.partyRequirementProgress.delete(String(entry.context?.party?.partyId || current?.context?.party?.partyId || ''));
+        }
         let memoryChanged = false;
         if (entry.context?.interactionMemory) {
             if (entry.context.interactionMemory.ownerId !== characterId) throw new Error('interaction memory: wrong snapshot owner');
@@ -601,6 +607,7 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         this.pendingReleases.delete(id);
         const current = this.states.get(id);
+        this.partyRequirementProgress.delete(String(current?.context?.party?.partyId || current?.state?.party?.partyId || ''));
         const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
@@ -953,6 +960,7 @@ class ColdSimulationKernel {
                 };
                 this.partyRuns.set(String(party.partyId), {
                     purpose,
+                    requirementRefresh: current.context.requirementRefresh === true,
                     party,
                     members: partyMembers,
                     spot: current.context.spot,
@@ -1564,6 +1572,13 @@ class ColdSimulationKernel {
                     expectedRevision: Number(run.spot.raidAuthorityRevision || 0),
                     revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
             }
+            let requirementMs = 0, lastRequirementPlanMs = 0;
+            let requirementProgress = this.partyRequirementProgress.get(String(run.party.partyId));
+            if (run.requirementRefresh && !requirementProgress) {
+                requirementProgress = new Set();
+                this.partyRequirementProgress.set(String(run.party.partyId), requirementProgress);
+            }
+            const memberPlans = [];
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -1578,6 +1593,23 @@ class ColdSimulationKernel {
                         resolvedParty.stats?.partyBreakReason || 'party_dissolved',
                         resolvedParty.stats?.objective
                     );
+                }
+                if (run.requirementRefresh && this.planPartyRequirement && projectedState
+                    && resolvedParty.status !== 'dissolved' && !requirementProgress.has(id)
+                    && requirementMs + lastRequirementPlanMs < 20) {
+                    const planningStarted = performance.now();
+                    const selection = await this.planPartyRequirement({ state: projectedState,
+                        context: this.states.get(id)?.context || {}, timestamp: startedAt });
+                    lastRequirementPlanMs = performance.now() - planningStarted;
+                    requirementMs += lastRequirementPlanMs;
+                    const plan = selection?.acquisitionPlan;
+                    if (require('./PartyRequirementRefresh').acquisitionRequirementKey(state.stats?.equipmentPlan)
+                        !== require('./PartyRequirementRefresh').acquisitionRequirementKey(plan)) {
+                        memberPlans.push({ characterId: id, plan });
+                        if (selection.replanContext?.failure) result.events = [...(result.events || []),
+                            require('./PartyRequirementRefresh').acquisitionFallbackEvent(state, state.stats?.equipmentPlan, selection.replanContext.failure, plan)];
+                    }
+                    requirementProgress.add(id);
                 }
                 const proposal = {
                     proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
@@ -1610,6 +1642,20 @@ class ColdSimulationKernel {
                     } : null
                 };
                 proposals.push(proposal);
+            }
+            if (run.requirementRefresh) {
+                const leader = proposals.find(proposal => proposal.partyResolution);
+                if (leader) {
+                    leader.partyResolution.memberPlans = memberPlans;
+                    if (run.members.every(member => requirementProgress.has(Number(member.characterId)))) {
+                        leader.partyResolution.requirementRefreshedAt = startedAt;
+                        this.partyRequirementProgress.delete(String(run.party.partyId));
+                    }
+                }
+                if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
+                this.stats.partyRequirementRefreshes = Number(this.stats.partyRequirementRefreshes || 0) + 1;
+                this.stats.partyRequirementRefreshMs = requirementMs;
+                this.stats.partyRequirementRefreshMaxMs = Math.max(Number(this.stats.partyRequirementRefreshMaxMs || 0), requirementMs);
             }
             if (!current()) return;
             published = handled = true;
@@ -1870,6 +1916,7 @@ class ColdSimulationKernel {
             if (result.ok && result.state) {
                 this.upsert({ state: result.state, context: result.context || this.states.get(id)?.context || {} });
             } else {
+                this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
                 if (String(result.reason || '').includes('stale')) this.stats.stale += 1;
                 if (result.state) this.upsert({
                     state: {
@@ -1902,6 +1949,7 @@ class ColdSimulationKernel {
                 || (!active && pending.version !== this.versions.get(id))
                 || Number(active?.grant.leaseUntil || pending.token.leaseUntil) <= this.now()) return;
             this.pendingReleases.delete(id);
+            this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || this.states.get(id)?.context?.party?.partyId || ''));
             this.inFlight.delete(id);
             if (result.state) this.upsert(result);
             else this.requeue(id, this.now() + 1000);
@@ -1986,6 +2034,7 @@ class ColdSimulationKernel {
 
     async shutdown() {
         this.stopping = true;
+        this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
         this.buyerWakeups.clear();
         this.pendingReleases.clear();

@@ -102,8 +102,7 @@ const bladeAfter = GearAcquisitionPlanner.planFor(dualState(4000000), { ...blade
 assert.strictEqual(bladeBefore?.target?.selfId, 129, 'fixture: the plan buys the missing blade');
 assert.strictEqual(bladeAfter.market.reserve, bladeBefore.market.reserve, 'the blade plan keeps its reserve after posting');
 
-// Background party members replan on the main thread with the member's
-// escrow (the worker's party review is checked in test_cold_worker_buy_order_escrow).
+// The shared party refresh planner receives the member's own escrow (the worker's party review is checked in test_cold_worker_buy_order_escrow).
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -113,7 +112,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
     const saved = {
         planFor: GearAcquisitionPlanner.planFor,
         replacementPlanFor: GearAcquisitionPlanner.replacementPlanFor,
-        statesForParties: LifeState.statesForParties,
+        cachedStatesForParties: LifeState.cachedStatesForParties,
         upsertState: LifeState.upsertState,
         createOrUpdate: PartyState.createOrUpdate,
         ensure: SpotProfiles.ensure,
@@ -139,12 +138,20 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         LifeState.upsertState = async (state) => state;
         const member = (characterId, equipmentPlan) => ({ ...afterPosting, characterId, name: `Member${characterId}`,
             partyId: 'bgp-escrow', stats: { ...afterPosting.stats, equipmentPlan } });
-        LifeState.statesForParties = () => Promise.resolve(new Map([['bgp-escrow', [
+        LifeState.cachedStatesForParties = () => Promise.resolve(new Map([['bgp-escrow', [
             member(7, memberPlan),
             member(8, { status: 'blocked', strategy: 'direct_drop', target: { selfId: 1 } })
         ]]]));
-        await PopulationService.refreshBackgroundPartyRequirements([{ partyId: 'bgp-escrow', leaderId: 7,
-            memberIds: [7, 8], stats: { lastRequirementRefreshAt: 0 } }]);
+        const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), originalContext = Economy.forState;
+        Economy.forState = state => ({ inputKey: 'escrow-fixture', network: {
+            queue: [{ key: 'gear', funded: true, object: { slot: 7, itemId: state.stats.equipmentPlan.target.selfId } }],
+            focus: ['gear'], activity: { rootKey: 'gear', activity: 'shopping', key: 'buy-gear' } } });
+        try {
+            for (const state of [member(7, memberPlan), member(8, { status: 'blocked', strategy: 'direct_drop', target: { selfId: 1 } })]) {
+                require('../src/GameServer/Bot/Population/PartyRequirementRefresh').plan(state, {
+                    spots: [], occupancy: {}, timestamp: Date.now(), planningOptions: { buyOrderEscrow: price } });
+            }
+        } finally { Economy.forState = originalContext; }
         assert.deepStrictEqual(plannedWith, [price, price], 'the party refresh plans both paths with the member\'s escrow');
 
         // Without a worker plan, the main thread plans a solo bot itself:
@@ -156,7 +163,7 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         GearAcquisitionPlanner.planFor = (_state, options) => { soloOptions.push(['plan', options.buyOrderEscrow]); throw sentinel; };
         await assert.rejects(async () => PopulationService.resolveColdState({ ...afterPosting, name: 'Solo7' }),
             (error) => error === sentinel);
-        assert.deepStrictEqual(soloOptions, [['bridge', price], ['plan', price]], 'the main-thread solo plan counts the bot\'s escrow');
+        assert.deepStrictEqual(soloOptions, [['plan', price]], 'the armed solo fixture counts its escrow without a weapon bridge');
         soloOptions.length = 0;
         GearAcquisitionPlanner.replanContextFor = () => ({ routeCurrent: true, failure: null });
         GearAcquisitionPlanner.fundedMarketPlanForTarget = (_state, _target, options) => {
@@ -169,12 +176,12 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
             equipmentPlan: { ...posting, strategy: 'direct_drop', next: { spotId: 'x', npcId: 1 } },
             partyRequest: { status: 'open', reviewAt: Date.now() + 600000 } } };
         await assert.rejects(async () => PopulationService.resolveColdState(waiting), (error) => error === sentinel);
-        assert.deepStrictEqual(soloOptions, [['bridge', price], ['funded', price]],
+        assert.deepStrictEqual(soloOptions, [['funded', price]],
             'keeping an open party request checks the funded purchase with the escrow');
     } finally {
         GearAcquisitionPlanner.planFor = saved.planFor;
         GearAcquisitionPlanner.replacementPlanFor = saved.replacementPlanFor;
-        LifeState.statesForParties = saved.statesForParties;
+        LifeState.cachedStatesForParties = saved.cachedStatesForParties;
         LifeState.upsertState = saved.upsertState;
         PartyState.createOrUpdate = saved.createOrUpdate;
         SpotProfiles.ensure = saved.ensure;

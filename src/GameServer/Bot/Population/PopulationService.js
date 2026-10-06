@@ -332,35 +332,7 @@ function occupiedPartySlots() {
     return Math.max(0, Number(BackgroundPartyState.counts().active || 0)) + partyAdmission.pending;
 }
 
-function acquisitionFallbackEvent(state, previousPlan, failure, nextPlan) {
-    return {
-        type: 'gear_acquisition_fallback',
-        summary: `${state.name} abandoned an unproductive ${previousPlan?.target?.name || `item ${failure.targetId}`} drop route`,
-        weight: 3,
-        meta: {
-            reason: failure.reason,
-            targetId: failure.targetId,
-            npcId: failure.npcId,
-            resolves: failure.resolves,
-            targetKills: failure.targetKills,
-            nextStrategy: nextPlan?.strategy
-        }
-    };
-}
-
-function acquisitionRequirementKey(plan) {
-    return JSON.stringify({
-        status: plan?.status || null,
-        strategy: plan?.strategy || null,
-        partyNeed: plan?.partyNeed || (plan?.requiresParty ? 'required' : 'solo_ok'),
-        partyNeedReason: plan?.partyNeedReason || null,
-        requiresParty: Boolean(plan?.requiresParty),
-        target: Number(plan?.target?.selfId || 0),
-        nextSpot: plan?.next?.spotId || null,
-        nextNpc: Number(plan?.next?.npcId || 0),
-        nextItem: Number(plan?.next?.itemId || 0)
-    });
-}
+const { acquisitionRequirementKey, acquisitionFallbackEvent } = require('./PartyRequirementRefresh');
 
 function partyObjectivesShareRoute(left, right) {
     const leftClanGoal = String(left?.clanGoalKey || '');
@@ -379,14 +351,6 @@ function partySessionExpired(party, timestamp = Date.now()) {
     return BackgroundPartyLifecycle.sessionExpired(party, timestamp, Config);
 }
 
-function statesForParties(partyIds = []) {
-    const ids = [...new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean))];
-    if (typeof LifeState.statesForParties === 'function') {
-        return LifeState.statesForParties(ids);
-    }
-    return Promise.all(ids.map((partyId) => LifeState.statesForParty(partyId)))
-        .then((groups) => new Map(ids.map((partyId, index) => [partyId, groups[index] || []])));
-}
 
 function expirePartyRequestForState(state, timestamp = Date.now()) {
     const request = state?.stats?.partyRequest;
@@ -988,6 +952,7 @@ const PopulationService = {
     warehouseCleanupTimer: null,
     stateRetentionTimer: null,
     partyAssemblyEvents: null,
+    partyRequirementRefreshDue: new Set(),
     phasePolicyTimer: null,
     seedTimer: null,
     classProgressionMigrationTimer: null,
@@ -1561,6 +1526,9 @@ const PopulationService = {
             onError: error => utils.infoWarn('BotPopulation', 'party event failed: %s', error?.message || error)
         });
         this.partyAssemblyEvents = service;
+        service.unsubscribeRequirements = BackgroundPartyState.subscribeChanges(party => {
+            if (party.status !== 'active') this.partyRequirementRefreshDue.delete(String(party.partyId));
+        });
         service.start();
         service.unsubscribeHelp = Help.subscribePending(() => service.wakeHelp());
         if (Help.hasPending()) service.wakeHelp();
@@ -1578,7 +1546,8 @@ const PopulationService = {
     stopPartyAssemblyEvents() {
         const service = this.partyAssemblyEvents;
         this.partyAssemblyEvents = null;
-        service?.unsubscribeHelp?.(); service?.unsubscribePresence?.(); service?.stop();
+        service?.unsubscribeHelp?.(); service?.unsubscribePresence?.(); service?.unsubscribeRequirements?.(); service?.stop();
+        this.partyRequirementRefreshDue.clear();
     },
 
     partyAssemblyInput(state, timestamp = Date.now()) {
@@ -1596,9 +1565,9 @@ const PopulationService = {
         // Ownership/HP/coordinates pulse regularly. Refresh their original
         // reference without restarting an unchanged recruitment decision.
         return { key: `spot:${partyObjectiveSpotForState(state)}`, dueAt,
-            stamp: JSON.stringify([state.level, state.stats?.classId, state.clanId,
-                state.stats?.persona, state.stats?.equipmentPlan, objective, request,
-                state.stats?.partyHistory, state.inventory, state.stats?.clanPartyObjective]) };
+            stamp: [state.level ?? null, state.stats?.classId ?? null, state.clanId ?? state.stats?.clanId ?? null,
+                objective?.spotId ?? null, request?.status ?? null, request?.priority ?? null,
+                state.stats?.equipmentPlan?.strategy ?? null, state.stats?.equipmentPlan?.target?.selfId ?? null] };
     },
 
     async refreshPartyAssemblyRequest(id, timestamp = Date.now()) {
@@ -2651,100 +2620,78 @@ const PopulationService = {
         const refreshMs = Math.max(1000, Number(Config.partyRequirementRefreshMs) || 5 * 60 * 1000);
         const batchSize = Math.max(1, Number(Config.partyRequirementRefreshBatchSize) || 8);
         const refreshable = (parties || [])
-            .filter((party) => !BackgroundPartyLifecycle.raidStarted(party))
+            .filter((party) => party.status === 'active' && !BackgroundPartyLifecycle.raidStarted(party))
             .filter((party) => timestamp - Number(party.stats?.lastRequirementRefreshAt || 0) >= refreshMs)
             .sort((a, b) => Number(a.stats?.lastRequirementRefreshAt || 0) - Number(b.stats?.lastRequirementRefreshAt || 0))
             .slice(0, batchSize);
         if (!refreshable.length) return Promise.resolve([]);
 
-        let spots = [];
-        try {
-            spots = SpotProfiles.ensure();
-        } catch (err) {
-            // Unit/integration harnesses may not load the world spot index;
-            // keep the refresh best-effort and let the normal party resolver
-            // retry it on the next formation pass.
-            utils.infoWarn('BotPopulation', 'party requirement refresh spot index unavailable: %s', err.message);
-            return Promise.resolve([]);
+        for (const party of refreshable) {
+            if (budgetReached()) break;
+            this.partyRequirementRefreshDue.add(String(party.partyId));
         }
-        const occupancy = SpotProfiles.currentOccupancy(spots);
-        return statesForParties(refreshable.map((party) => party.partyId)).then((membersByParty) => refreshable.reduce((chain, party) => chain.then(async (refreshed) => {
-            if (budgetReached()) return refreshed;
-            const members = membersByParty.get(String(party.partyId)) || [];
-            let changed = false;
-            const refreshedPlans = new Map();
-            for (const member of members) {
-                if (budgetReached()) return refreshed;
-                const previousPlan = member.stats?.equipmentPlan;
-                let selection;
-                try {
-                    selection = GearPlanSelection.selectAcquisitionPlan(member, previousPlan, {
-                        spots, occupancy, timestamp,
-                        planningOptions: { buyOrderEscrow: BotAfkMarketService.buyOrderEscrow(member.characterId) }
-                    });
-                } catch (err) {
-                    utils.infoWarn('BotPopulation', 'party requirement refresh failed for %s: %s', member.name, err.message);
-                    continue;
-                }
-                const nextPlan = selection.acquisitionPlan;
-                refreshedPlans.set(Number(member.characterId), nextPlan);
-                if (acquisitionRequirementKey(previousPlan) === acquisitionRequirementKey(nextPlan)) continue;
-                const nextState = {
-                    ...member,
-                    stats: { ...(member.stats || {}), equipmentPlan: nextPlan }
-                };
-                const saved = await LifeState.upsertState(nextState, 'party_requirement_refresh');
-                if (saved && selection.replanContext.failure) {
-                    await LifeEvents.recordMany(member.characterId,
-                        [acquisitionFallbackEvent(member, previousPlan, selection.replanContext.failure, nextPlan)]);
-                }
-                changed = changed || !!saved;
+        return Promise.resolve(refreshable.filter(party => this.partyRequirementRefreshDue.has(String(party.partyId))).map(party => party.partyId));
+    },
+
+    async applyWorkerPartyRequirements(party, resolution) {
+        if (party.status !== 'active') {
+            this.partyRequirementRefreshDue.delete(String(party.partyId));
+            return [];
+        }
+        let changed = false;
+        for (const { characterId, plan } of resolution.memberPlans || []) {
+            const member = LifeState.cachedState(characterId);
+            if (!member || member.phase !== 'cold' || member.party?.partyId !== party.partyId) continue;
+            if (acquisitionRequirementKey(member.stats?.equipmentPlan) === acquisitionRequirementKey(plan)) continue;
+            changed = !!await LifeState.upsertState({ ...member, stats: { ...(member.stats || {}), equipmentPlan: plan } },
+                'party_requirement_refresh') || changed;
+        }
+        // ARCH-NOTE: A bounded worker refresh may span resolves; release members only after its complete projection.
+        if (!resolution.requirementRefreshedAt) return [];
+        const timestamp = Number(resolution.requirementRefreshedAt);
+        const members = (await LifeState.cachedStatesForParties([party])).get(String(party.partyId)) || [];
+        const refreshedMembers = members;
+        const releasable = party.stats?.objective?.priority === 'required'
+            ? refreshedMembers.filter((member) => (
+                member.stats?.equipmentPlan?.partyNeed !== 'required'
+                && member.stats?.equipmentPlan?.requiresParty !== true
+            ))
+            : [];
+        const departures = refreshedMembers.length - releasable.length >= Config.partyMinSize
+            ? releasable
+            : [];
+        await departures.reduce((chain, member) => chain.then(() => (
+            LifeState.leaveParty(member, 'party_objective_complete')
+        )), Promise.resolve());
+        const retainedMembers = refreshedMembers.filter((member) => (
+            !departures.some((departure) => Number(departure.characterId) === Number(member.characterId))
+        ));
+        const objectiveMember = retainedMembers.find((member) => (
+            member.stats?.equipmentPlan?.partyNeed === 'required'
+        )) || retainedMembers.find((member) => partyObjectiveForState(member));
+        const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
+        const nextLeaderId = leaderIdForMembers(party, retainedMembers);
+        const nextParty = {
+            ...party,
+            leaderId: nextLeaderId,
+            memberIds: retainedMembers.map((member) => member.characterId),
+            roleCoverage: PartyComposition.roleCoverage(retainedMembers),
+            spotId: objective?.spotId || party.spotId,
+            stats: {
+                ...(party.stats || {}),
+                objective: objective || null,
+                acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
+                    ? objectiveMember.stats.equipmentPlan
+                    : null,
+                lastRequirementRefreshAt: timestamp
             }
-            const refreshedMembers = members.map((member) => {
-                const nextPlan = refreshedPlans.get(Number(member.characterId)) || member.stats?.equipmentPlan;
-                return nextPlan ? { ...member, stats: { ...(member.stats || {}), equipmentPlan: nextPlan } } : member;
-            });
-            const releasable = party.stats?.objective?.priority === 'required'
-                ? refreshedMembers.filter((member) => (
-                    member.stats?.equipmentPlan?.partyNeed !== 'required'
-                    && member.stats?.equipmentPlan?.requiresParty !== true
-                ))
-                : [];
-            const departures = refreshedMembers.length - releasable.length >= Config.partyMinSize
-                ? releasable
-                : [];
-            await departures.reduce((chain, member) => chain.then(() => (
-                LifeState.leaveParty(member, 'party_objective_complete')
-            )), Promise.resolve());
-            const retainedMembers = refreshedMembers.filter((member) => (
-                !departures.some((departure) => Number(departure.characterId) === Number(member.characterId))
-            ));
-            const objectiveMember = retainedMembers.find((member) => (
-                member.stats?.equipmentPlan?.partyNeed === 'required'
-            )) || retainedMembers.find((member) => partyObjectiveForState(member));
-            const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
-            const nextLeaderId = leaderIdForMembers(party, retainedMembers);
-            const nextParty = {
-                ...party,
-                leaderId: nextLeaderId,
-                memberIds: retainedMembers.map((member) => member.characterId),
-                roleCoverage: PartyComposition.roleCoverage(retainedMembers),
-                spotId: objective?.spotId || party.spotId,
-                stats: {
-                    ...(party.stats || {}),
-                    objective: objective || null,
-                    acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
-                        ? objectiveMember.stats.equipmentPlan
-                        : null,
-                    lastRequirementRefreshAt: timestamp
-                }
-            };
-            if (Number(nextLeaderId) !== Number(party.leaderId)) {
-                await syncPartyLeader(retainedMembers, nextParty, nextLeaderId);
-            }
-            await BackgroundPartyState.createOrUpdate(nextParty);
-            return changed || departures.length ? [...refreshed, party.partyId] : refreshed;
-        }), Promise.resolve([])));
+        };
+        if (Number(nextLeaderId) !== Number(party.leaderId)) {
+            await syncPartyLeader(retainedMembers, nextParty, nextLeaderId);
+        }
+        await BackgroundPartyState.createOrUpdate(nextParty);
+        this.partyRequirementRefreshDue.delete(String(party.partyId));
+        return changed || departures.length ? [party.partyId] : [];
     },
 
     // Review the current goals, but never disband an otherwise valid party
@@ -2769,11 +2716,12 @@ const PopulationService = {
             })
             .sort((a, b) => (a.memberIds || []).length - (b.memberIds || []).length);
 
-        return statesForParties(parties.map((party) => party.partyId)).then((membersByParty) => parties.reduce((chain, party) => chain.then(() => {
+        return Promise.resolve(LifeState.cachedStatesForParties(parties)).then((membersByParty) => parties.reduce((chain, party) => chain.then(() => {
             if (budgetReached()) return null;
                 const members = membersByParty.get(String(party.partyId)) || [];
                 const partyLimits = partyLimitsForObjective(party?.stats?.objective || null);
                 if (members.length < Config.partyMinSize) return null;
+                // ARCH-NOTE: Reverse membership drift remains owned by the lifecycle safety sweep; this read follows only declared member ids.
                 const persistedMemberIds = new Set((party.memberIds || []).map(Number));
                 const membershipMismatch = members.length !== persistedMemberIds.size
                     || members.some((member) => !persistedMemberIds.has(Number(member.characterId)));

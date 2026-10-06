@@ -2062,31 +2062,12 @@ const BotLifeState = {
         });
     },
 
-    statesForParties(partyIds = []) {
-        const ids = [...new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean))];
-        if (!initialized || !ids.length) return Promise.resolve(new Map());
-
-        const placeholders = ids.map(() => '?').join(', ');
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND partyId IN (${placeholders})
-            ORDER BY partyId ASC, level DESC, characterId ASC`,
-            ids
-        ]).then((rows) => {
-            const grouped = new Map(ids.map((partyId) => [partyId, []]));
-            rows.forEach((row) => {
-                const state = normalize(row);
-                cache.set(state.characterId, state);
-                const partyId = String(row.partyId || '');
-                if (!grouped.has(partyId)) grouped.set(partyId, []);
-                grouped.get(partyId).push(state);
-            });
-            return grouped;
-        }).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to fetch %d parties: %s', ids.length, err.message);
-            return new Map(ids.map((partyId) => [partyId, []]));
-        });
+    cachedStatesForParties(parties = []) {
+        // The write-behind cache owns the newest member state. No publication or database read occurs here.
+        return new Map(parties.map(party => [String(party.partyId), (party.memberIds || [])
+            .map(id => cache.get(Number(id)))
+            .filter(state => state?.phase === 'cold' && String(state.party?.partyId || '') === String(party.partyId))
+            .sort((a, b) => Number(b.level) - Number(a.level) || Number(a.characterId) - Number(b.characterId))]));
     },
 
     coldPartyCandidateCount(partyRequiredOnly = false) {
