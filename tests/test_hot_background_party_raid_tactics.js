@@ -82,6 +82,8 @@ try {
     const debuffer = actor(4, 'dps');
     const sessions = [tank, offTank, damage, controller, debuffer].map((member) => ({
         actor: member,
+        accountId: `bot_hot_raid_${member.fetchId()}`,
+        fetchAccountId() { return this.accountId; },
         hotBackgroundPartyId: 'raid-party',
         dataSendToOthers() {}
     }));
@@ -112,7 +114,8 @@ try {
     };
 
     patch(Parties, 'find', () => party);
-    patch(World, 'user', { sessions });
+    patch(World, 'user', { sessions: [], revision: 0 });
+    sessions.forEach(session => World.insertUser(session));
     patch(World, 'fetchNpcsInRadius', () => [boss]);
     let incoming = boss;
     patch(Awareness, 'npcThreateningActor', () => incoming);

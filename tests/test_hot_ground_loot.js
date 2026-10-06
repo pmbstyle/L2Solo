@@ -20,6 +20,7 @@ function replace(object, key, value) {
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 function bot(id, x) {
     const session = { accountId: `bot_${id}`, botSession: true, plan: 'hunting', packets: [],
+        fetchAccountId() { return this.accountId; },
         dataSendToMe() {}, dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
     session.actor = {
         session, x, z: 0, backpack: {}, automation: new Automation(),
@@ -68,7 +69,8 @@ function bot(id, x) {
             const follower = grouped ? bot(3, -300) : null;
             const sessions = follower ? [leader, follower] : [leader];
             replace(Bots, 'sessions', sessions);
-            replace(World, 'user', { sessions });
+            replace(World, 'user', { sessions: [], revision: 0 });
+            sessions.forEach(session => World.insertUser(session));
             if (grouped) {
                 sessions.forEach(s => s.hotBackgroundPartyId = 'test');
                 replace(Parties, 'find', () => ({ partyId: 'test', status: 'hot', leaderId: 2, memberIds: [2, 3] }));

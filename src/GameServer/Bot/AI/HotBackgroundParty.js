@@ -16,8 +16,12 @@ const RAID_RECOVERY_BUFF_WAIT_MS = 8000;
 function roster(session) {
     const party = session?.hotBackgroundPartyId && Parties.find(session.hotBackgroundPartyId);
     if (party?.status !== 'hot' || session.partyCompanion) return [];
-    return party.memberIds.map(id => World.user.sessions.find(s => s.actor?.fetchId() === id
-        && s.hotBackgroundPartyId === party.partyId && !s.partyCompanion)).filter(Boolean);
+    return party.memberIds.map(id => {
+        const registered = World.registeredActorById(id);
+        const session = registered?.session;
+        return registered?.actor && registered.actor.fetchId() === id && session.hotBackgroundPartyId === party.partyId
+            && !session.partyCompanion ? session : null;
+    }).filter(Boolean);
 }
 
 function leader(session) {

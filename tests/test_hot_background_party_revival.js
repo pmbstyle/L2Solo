@@ -22,6 +22,7 @@ function member(id, skills = []) {
         select({id}) { this.dest = id; }, unselect() { this.dest = undefined; },
         automation: { abortAll() {}, replenishVitals() {} }, attack: { clearTimers() {}, resetQueuedEvent() {} } };
     const s = { actor, accountId: `bot_test_${id}`, arenaEphemeral: true, hotBackgroundPartyId: 'revival',
+        fetchAccountId() { return this.accountId; },
         dataSendToOthers() {}, dataSendToMe() {}, packets: [], dataSendToMeAndOthers(p) { this.packets.push(p); } };
     actor.session = s;
     return s;
@@ -34,7 +35,8 @@ try {
     const stats = {};
     patch(Parties, 'find', id => id === 'revival' ? { partyId: id, status: 'hot', leaderId: 2000100,
         memberIds: group.map(s => s.actor.fetchId()), stats } : null);
-    patch(World, 'user', { sessions: group });
+    patch(World, 'user', { sessions: [], revision: 0 });
+    group.forEach(session => World.insertUser(session));
     patch(World, 'npc', { spawns: [] });
     patch(World, 'fetchNpcsInRadius', () => []);
     let danger = false;

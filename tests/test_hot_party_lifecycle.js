@@ -22,6 +22,7 @@ const RaidMinions = invoke('GameServer/World/RaidBossMinionManager');
 const ClanEquipment = invoke('GameServer/Clan/ClanEquipmentService');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-hot-party-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
+options.default.Database.historyPath = path.join(dir, 'history.sqlite');
 const at = Date.now();
 const saved = [];
 function replace(object, key, value) { saved.push(() => { object[key] = value; }); object[key] = value; }
@@ -50,6 +51,7 @@ function fakeSession(state, data) {
         state: { fetchDead: () => dead, setDead: value => { dead = value; } }, destructor() { this.destroyed = true; },
         automation: { replenishVitals() {}, stopReplenish() {} } };
     const session = { actor, accountId: state.accountName, coldLifeState: state, populationStaging: true, spawnData: data,
+        fetchAccountId() { return this.accountId; },
         plan: 'hunting', dataSendToOthers() {} };
     actor.session = session;
     return session;
@@ -68,8 +70,6 @@ async function run() {
     await Life.init(); await Parties.init(); await Memory.ensureMany([1, 2, 3]);
     const beforeMemory = JSON.stringify([1, 2, 3].map(id => Memory.snapshot(id)));
     replace(World, 'user', { sessions: [] }); replace(Manager, 'sessions', []);
-    replace(World, 'insertUser', session => { World.user.sessions.push(session); });
-    replace(World, 'removeUser', session => { World.user.sessions = World.user.sessions.filter(s => s !== session); });
     replace(World, 'fetchVisibleRealPlayers', () => []);
     replace(World, 'fetchNpcsInRadius', () => []);
     replace(Placement, 'resolve', state => ({ loc: { ...state.loc }, spot: { id: state.spotId } }));
@@ -342,14 +342,15 @@ async function run() {
     require('child_process').execFileSync(process.execPath, ['-e', `
         require('./src/Global');
         options.default.Database.path = process.argv[1];
+        options.default.Database.historyPath = process.argv[2];
         const D = invoke('Database'), L = invoke('GameServer/Bot/Population/BotLifeState'), P = invoke('GameServer/Bot/Population/BackgroundPartyState');
         D.init();
         Promise.all([L.init(), P.init()]).then(() => {
-            const p = P.find(process.argv[2]);
+            const p = P.find(process.argv[3]);
             require('assert')(p?.status === 'active' && p.memberIds.length === 9);
             require('assert')(p.memberIds.every(id => L.cachedState(id)?.phase === 'cold' && L.cachedState(id)?.party.partyId === p.partyId));
         }).catch(e => { console.error(e); process.exitCode = 1; }).finally(() => D.close());
-    `, options.default.Database.path, recoveryPartyId], { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
+    `, options.default.Database.path, options.default.Database.historyPath, recoveryPartyId], { cwd: path.resolve(__dirname, '..'), stdio: 'pipe' });
     console.log('Hot party lifecycle: atomic activation/cooldown, full roster publication, rollback, CAS, memory, visibility, PvP and reopen passed');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

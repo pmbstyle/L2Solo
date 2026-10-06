@@ -25,11 +25,13 @@ function actor(id, x = 0, kind = null) {
 }
 try {
     replace(Geo, 'hasLineOfSight', () => true);
-    const group = [1, 2].map(id => ({ hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
+    const group = [1, 2].map(id => ({ accountId: `bot_hot_target_${id}`, fetchAccountId() { return this.accountId; },
+        hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader] = group;
     const party = { partyId: 'group', leaderId: 1, memberIds: [1, 2], status: 'hot', stats: {} };
     replace(Parties, 'find', () => party);
-    replace(World, 'user', { sessions: group });
+    replace(World, 'user', { sessions: [], revision: 0 });
+    group.forEach(session => World.insertUser(session));
     // The nearest monster is 21; 20 is the one a target would prefer.
     const planned = actor(20, 400, 'Monster'), nearest = actor(21, 20, 'Monster');
     replace(World, 'fetchNpcsInRadius', () => [nearest, planned]);

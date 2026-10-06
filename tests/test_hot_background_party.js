@@ -23,11 +23,13 @@ function actor(id, x = 0, kind = null) {
 }
 try {
     replace(Geo, 'hasLineOfSight', () => true);
-    const group = [1, 2, 3].map(id => ({ hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
+    const group = [1, 2, 3].map(id => ({ accountId: `bot_hot_party_${id}`, fetchAccountId() { return this.accountId; },
+        hotBackgroundPartyId: 'group', actor: actor(id), dataSendToOthers() {} }));
     const [leader, healer, follower] = group;
     const party = { partyId: 'group', leaderId: 1, memberIds: [1, 2, 3], status: 'hot', stats: { objective: { npcId: 20 } } };
     replace(Parties, 'find', () => party);
-    replace(World, 'user', { sessions: group });
+    replace(World, 'user', { sessions: [], revision: 0 });
+    group.forEach(session => World.insertUser(session));
     const wanted = actor(20, 400, 'Monster'), other = actor(21, 20, 'Monster');
     replace(World, 'fetchNpcsInRadius', () => [other, wanted]);
     replace(Awareness, 'npcThreateningActor', s => s.incoming || null);

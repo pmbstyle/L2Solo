@@ -21,7 +21,8 @@ function member(id, classId, skills=[]) {
         fetchIsOnline:()=>true,isDead:()=>state.fetchDead(), fetchHp:()=>100,fetchMaxHp:()=>100,
         fetchMp(){return this.mp;},fetchMaxMp:()=>100,canUseSkill:()=>true,skillset:{fetchSkills:()=>skills},
         select(){},unselect(){},automation:{abortAll(){},replenishVitals(){}},moveTo(){throw Error('Unexpected regroup');}};
-    const s={actor,hotBackgroundPartyId:'buffs',dataSendToOthers(){}};actor.session=s;return s;
+    const s={actor,accountId:`bot_hot_buffs_${id}`,fetchAccountId(){return this.accountId;},
+        hotBackgroundPartyId:'buffs',dataSendToOthers(){}};actor.session=s;return s;
 }
 try {
     const shield=skill(1040,3,'shield',{pDefMul:1.15});
@@ -30,7 +31,7 @@ try {
     const leader=member(2000100,0), buffer=member(2000101,17,[shield,empower]), mage=member(2000102,25,[weaker]);
     const group=[leader,buffer,mage];
     patch(Parties,'find',()=>({partyId:'buffs',status:'hot',leaderId:2000100,memberIds:group.map(s=>s.actor.fetchId()),stats:{}}));
-    patch(World,'user',{sessions:group});patch(World,'fetchNpcsInRadius',()=>[]);
+    patch(World,'user',{sessions:[],revision:0});group.forEach(s=>World.insertUser(s));patch(World,'fetchNpcsInRadius',()=>[]);
     let incoming=null, danger=false, healed=false;
     patch(Awareness,'npcThreateningActor',()=>incoming);
     patch(Revival,'partyCombatInProgress',()=>danger);
