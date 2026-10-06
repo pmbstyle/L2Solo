@@ -19,12 +19,10 @@ function stageHours(state, expPerHour, persona) {
     const remaining = Math.max(0, Number(Data.experience[end - 1]) - positive(state.stats?.exp ?? state.exp));
     return expPerHour > 0 ? remaining / expPerHour : 0;
 }
-function deathHours(state, { expPerHour = 0, returnHours, lostGearHours = 0 } = {}) {
+function deathHours(state, { expPerHour = 0, walkBackHours, returnHours, lostGearHours = 0, spotId } = {}) {
     const Death = invoke('GameServer/Progression/DeathExperience');
     const loss = Death.calculateLoss({ ...state, exp: state.stats?.exp ?? state.exp ?? 0 });
-    // Native cold restart is 90 seconds. Trip time comes from the actual
-    // current return/visit; a caller with that path supplies it explicitly.
-    const downtime = returnHours ?? Math.max(0, Number(state.stats?.travel?.durationMs || 0)) / 3600000;
+    const downtime = walkBackHours ?? returnHours ?? require('./WalkBack').hours(spotId || state.spotId, state);
     return (expPerHour > 0 ? loss.expLost / expPerHour : 0) + 90 / 3600 + positive(downtime) + positive(lostGearHours);
 }
 function karmaHours(state, { expPerHour = 0, lostGearHours = 0, exposureHours = 0, deathsPerHour = 0 } = {}) {

@@ -70,7 +70,8 @@ async function sellJunk(accountId, crafter, knownRecipeIds = []) {
         },
         fetchItems() { return this.items; }
     };
-    const session = { accountId, actor: actor(backpack, crafter), dataSendToMe() {} };
+    // ARCH-NOTE: pin a native potion-consuming spot, since the best-income fallback has zero potion use.
+    const session = { accountId, actor: actor(backpack, crafter), currentSpot: { id: '-10_30' }, coldLifeState: { phase: 'hot', spotId: '-10_30', stats: {} }, dataSendToMe() {} };
     await SellJunk(session, ['sell-junk']);
     await new Promise((resolve) => setImmediate(resolve));
     return { left: backpack.items.map((entry) => [entry.fetchSelfId(), entry.fetchAmount()]), actor: session.actor, learned };
@@ -105,7 +106,7 @@ async function run() {
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);
 
     const botSale = await sellJunk('bot_hot_hunter');
-    const keep = HealingPotionStock.targetAmountFor({ level: 30, stats: { classId: 0 } });
+    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0 } });
     assert(keep > 0 && keep < 30, `the potion stock must be part of the stack: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
         // Step 3.2 (H12 narrowed): the Scrolls of Escape a bot reads for town

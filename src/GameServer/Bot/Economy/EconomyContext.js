@@ -56,7 +56,7 @@ function inputKey(state, deps = {}) {
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
-    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf,
+    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
@@ -136,21 +136,25 @@ function foundation(state, deps, persona, timestamp, price) {
     const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
     const bestSpotId = hunt.spotId || state.spotId;
-    const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours });
+    const walkBackHours = require('./WalkBack').hours(bestSpotId, state, deps.spots || invoke('GameServer/Bot/AI/SpotService').spots);
+    const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const bestTable = (bestSpotId && Table.value(bestSpotId, tableRole, state.level, true))
         || Table.best(tableRole, state.level, true);
     const stock = kind => {
         const shots = kind === 'shots';
         const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
             : invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
-        const use = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
+        const rawUse = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
+        const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
+        const benefit = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) : 0;
+        const shotCostHours = rawUse * price(plan.selfId) / Hunt.huntHour(hunt, state);
+        const use = shots && benefit < shotCostHours ? 0 : rawUse;
         const current = positive(state.inventory?.[plan.selfId]?.amount);
-        const targetHours = 1 + 2 * Valuation.trait(persona, 'commitment');
+        const targetHours = require('./TownVisitInterval').targetHours(state.stats);
         const target = Math.ceil(use * targetHours);
         const survivalMissing = Math.max(0, Math.ceil(use) - current);
         const missing = Math.max(0, target - Math.max(current, use));
-        const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-        const benefitHours = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) * targetHours
+        const benefitHours = shots ? (use > 0 ? benefit * targetHours : 0)
             : positive(bestTable?.deaths) * deathHours * targetHours;
         return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
             targetHours, target, missing, survivalMissing, unitPrice: price(plan.selfId), benefitHours,

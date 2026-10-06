@@ -9,6 +9,8 @@ function raiseDecision(session, reason) {
     const stats = statsFor(session);
     stats.decisionSeq = Math.max(0, Math.trunc(Number(stats.decisionSeq) || 0)) + 1;
     stats.activityLeaf = 0;
+    // ARCH-NOTE: visit ends share the arrival clock until a single native arrival event exists.
+    if (reason === 'town') stats.visitEvery = require('../Economy/TownVisitInterval').arrived(stats);
     reasons[reason]++;
     return stats.decisionSeq;
 }

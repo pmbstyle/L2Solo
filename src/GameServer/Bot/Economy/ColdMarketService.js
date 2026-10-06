@@ -403,6 +403,8 @@ const ColdMarketService = {
             }
         }
         return { ...current, stats: { ...current.stats,
+            // ARCH-NOTE: the completed cold visit uses the same clock as the hot town event.
+            visitEvery: require('./TownVisitInterval').arrived(current.stats),
             townVisit: current.stats?.townVisit ? { ...current.stats.townVisit, completed: true } : null } };
     },
     buyOffer,
