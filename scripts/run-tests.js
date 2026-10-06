@@ -56,6 +56,7 @@ const tests = [
     'tests/test_bot_armor_policy.js',
     'tests/test_bot_hunt_efficiency.js',
     'tests/test_spot_value_table.js',
+    'tests/test_spot_table_stacks.js',
     'tests/test_spot_table_generator.js',
     'tests/test_first_price.js',
     'tests/test_bot_solo_hunt_safety.js',
@@ -990,6 +991,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_spot_table_stacks.js',
     'tests/test_hot_background_party_roster.js',
     'tests/test_knowledge_learning.js',
     'tests/test_n79_price_prior.js',

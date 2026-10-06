@@ -80,7 +80,8 @@ function load() {
             minGap: field(raw.rowFields, 'minGap'), refGap: field(raw.rowFields, 'refGap'), kph: field(raw.rowFields, 'kph'),
             busy: field(raw.rowFields, 'busy'), deaths: field(raw.rowFields, 'deaths'), exp: field(raw.rowFields, 'exp'),
             sp: field(raw.rowFields, 'sp'), adena: field(raw.rowFields, 'adena'), loot: field(raw.rowFields, 'loot'),
-            shots: field(raw.rowFields, 'shots'), potions: field(raw.rowFields, 'potions')
+            shots: field(raw.rowFields, 'shots'), potions: field(raw.rowFields, 'potions'),
+            stacks: raw.rowFields.indexOf('stacks')
         }
     };
     return table;
@@ -146,6 +147,8 @@ function value(spotId, role, level, shots = true) {
         loot: kills * row[t.f.loot] * ratio('adena') * rates.drop * lootRateFactor(t.spots[s], rates.drop),
         shots: kills * row[t.f.shots] * ratio('busy'),
         potions: kills * row[t.f.potions] * ratio('busy'),
+        stacks: t.f.stacks < 0 || row[t.f.stacks] === null ? null
+            : kills * row[t.f.stacks] * lootRateFactor(t.spots[s], rates.drop),
         busyShare: Math.min(1, kills * busy / 3600)
     };
 }

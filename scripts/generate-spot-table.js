@@ -8,6 +8,7 @@
 //
 // Usage: node scripts/generate-spot-table.js [--jobs=4] [--hours=2] [--curve-hours=1]
 //        [--out=data/Bots/spot-table.json] [--spots=N]   (N: first N spots only, for tests)
+//        --merge-stacks-from=old.json --stacks-table=measured.json [--out=...]
 //
 // Layout (factored, so the file stays small):
 // - one row per spot x role x shots (on/off): the bot of the role, in the
@@ -68,7 +69,7 @@ const ROLE_CLASSES = {
 };
 const ROLES = Object.keys(ROLE_CLASSES);
 const SHOTS = [1, 0];
-const ROW_FIELDS = ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions'];
+const ROW_FIELDS = ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions', 'stacks'];
 // Loot has no curve of its own: one rare drop in an hour of a curve spot
 // would swing it; it follows the adena curve (same drop groups, same
 // deep-blue rule, same monsters).
@@ -77,7 +78,8 @@ const START = 1_750_000_000_000;
 
 function args() {
     const out = { jobs: Math.max(1, Math.min(6, os.cpus().length - 2)), hours: 2, curveHours: 1,
-        out: path.join(root, 'data', 'Bots', 'spot-table.json'), spots: 0, child: null };
+        out: path.join(root, 'data', 'Bots', 'spot-table.json'), spots: 0, child: null, revision: null,
+        mergeStacksFrom: null, stacksTable: null };
     for (const arg of process.argv.slice(2)) {
         const [key, value] = arg.replace(/^--/, '').split('=');
         if (key === 'jobs') out.jobs = Math.max(1, Number(value));
@@ -86,9 +88,41 @@ function args() {
         else if (key === 'out') out.out = path.resolve(value);
         else if (key === 'spots') out.spots = Number(value);
         else if (key === 'child') out.child = value;
+        else if (key === 'revision') out.revision = value;
+        else if (key === 'merge-stacks-from') out.mergeStacksFrom = path.resolve(value);
+        else if (key === 'stacks-table') out.stacksTable = path.resolve(value);
         else throw new Error(`unknown argument ${arg}`);
     }
     return out;
+}
+
+// ARCH-NOTE: full regeneration exceeded the FX-E9 tolerance for XP/SP,
+// loot and potions. This prescribed fallback keeps every authored column,
+// curve and input; only the measured stacks column comes from the new run.
+function mergeStacks(old, measured) {
+    if (JSON.stringify(old.gaps) !== JSON.stringify(measured.gaps)) throw new Error('spot-table merge gaps differ');
+    const stackIndex = measured.rowFields.indexOf('stacks');
+    if (stackIndex < 0) throw new Error('spot-table merge missing stacks');
+    const spots = new Map(measured.spots.map((spot, index) => [String(spot[0]), index]));
+    const oldStackIndex = old.rowFields.indexOf('stacks');
+    const rowFields = oldStackIndex < 0 ? [...old.rowFields, 'stacks'] : [...old.rowFields];
+    const outputIndex = rowFields.indexOf('stacks');
+    const rows = old.rows.map((set, spot) => set.map((row, index) => {
+        if (!row) return null;
+        const role = measured.roles.indexOf(old.roles[Math.floor(index / old.shots.length)]);
+        const shot = measured.shots.indexOf(old.shots[index % old.shots.length]);
+        if (role < 0 || shot < 0) throw new Error('spot-table merge role or shots differ');
+        const source = measured.rows[spots.get(String(old.spots[spot][0]))]?.[role * measured.shots.length + shot];
+        const value = source?.[stackIndex];
+        const result = [...row];
+        // A removed/unhuntable measurement remains unknown, so the runtime
+        // uses its old two-hour fallback instead of inventing zero growth.
+        result[outputIndex] = Number.isFinite(value) && value >= 0 ? value : null;
+        return result;
+    }));
+    return { ...old, header: { ...old.header, revision: measured.header.revision,
+        stacksSource: { revision: measured.header.revision, counts: measured.header.counts,
+            mode: 'stacks_only', oldColumnsRevision: old.header.revision } }, rowFields, rows };
 }
 
 function hash(text) {
@@ -157,6 +191,15 @@ let sim = null;
 function loadSimulation(catalogueFile) {
     require('../src/Global');
     invoke('GameServer/DataCache').init();
+    const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
+    const nativeFloor = Floor.forState;
+    // ARCH-NOTE: the measured combat has unlimited supplies (1e9 each), so
+    // the new native bag gate rejects every run as overweight. This offline
+    // table excludes town unloading; keep death/mana gates and skip unload.
+    Floor.forState = (...args) => {
+        const result = nativeFloor(...args);
+        return result?.action === 'unload' ? null : result;
+    };
     const saved = JSON.parse(fs.readFileSync(catalogueFile, 'utf8'));
     invoke('GameServer/Bot/AI/SpotService').spots = saved.spots;
     invoke('GameServer/Bot/Population/SpotProfiles').cache = saved.profiles;
@@ -167,16 +210,17 @@ function loadSimulation(catalogueFile) {
         BotGear: invoke('GameServer/Bot/AI/BotGear'),
         ShotStock: invoke('GameServer/Inventory/ShotStock'),
         Potions: invoke('GameServer/Bot/AI/HealingPotionStock'),
-        HuntEfficiency: invoke('GameServer/Bot/AI/BotHuntEfficiency')
+        HuntEfficiency: invoke('GameServer/Bot/AI/BotHuntEfficiency'),
+        items: invoke('GameServer/DataCache').items
     };
 }
 
 // A bot of the class and level in the author's kit for that level (BotGear),
 // with the shots of its weapon (or none) and the healing potions the author's
 // restock buys at that level, both never running out.
-function newBot(classId, level, shots) {
+function newBot(classId, level, shots, simulation = sim) {
     const inventory = {};
-    for (const entry of sim.BotGear.planFor({ classId, level }).items) {
+    for (const entry of simulation.BotGear.planFor({ classId, level }).items) {
         const key = `kit-${entry.selfId}`;
         const prior = inventory[key];
         const amount = (prior?.amount || 0) + 1;
@@ -187,15 +231,15 @@ function newBot(classId, level, shots) {
         vitals: {}, stats: { classId }, inventory };
     let shotId = 0;
     if (shots) {
-        const plan = sim.ShotStock.planForState(bot);
+        const plan = simulation.ShotStock.planForState(bot);
         if (plan.selfId && plan.perAction > 0) {
             shotId = Number(plan.selfId);
             inventory[String(shotId)] = { selfId: shotId, amount: 1e9 };
         }
     }
-    const potion = sim.Potions.purchasePotionFor({ level });
+    const potion = simulation.Potions.purchasePotionFor({ level });
     if (potion?.selfId) inventory[String(potion.selfId)] = { selfId: Number(potion.selfId), amount: 1e9 };
-    const profile = sim.CCP.profileFor(bot, START);
+    const profile = simulation.CCP.profileFor(bot, START);
     bot.vitals = { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp };
     return { bot, shotId, full: { ...bot.vitals } };
 }
@@ -220,25 +264,44 @@ function canHunt(spot, role, level, shots) {
     }
 }
 
+// Distinct stackable drops take a slot only once in this run; non-stackable
+// drops always take their physical slots. The native bag policy owns the slot rule.
+function countNewStacks(items, seen, definitions = invoke('GameServer/DataCache').items) {
+    const Index = require('../src/GameServer/Item/ItemTemplateIndex');
+    const inventory = {};
+    for (const item of items) {
+        const selfId = Number(item.selfId), amount = Math.max(0, Number(item.amount) || 0);
+        if (selfId === 57 || !amount) continue;
+        const stackable = item.stackable ?? Index.find(definitions, selfId)?.etc?.stackable;
+        if (stackable !== false) {
+            if (seen.has(selfId)) continue;
+            seen.add(selfId);
+        }
+        inventory[selfId] = { ...item, selfId, amount: (inventory[selfId]?.amount || 0) + amount };
+    }
+    return invoke('GameServer/Bot/Population/SurvivalFloor').stateInventory({ inventory }, definitions).slots;
+}
+
 // The author's cold combat for `hours` of game time. A death is counted and
 // the bot stands up at full health at once: the time a death costs belongs to
 // the price of death (step 3.5), not to the spot.
-function hunt(spot, role, level, shots, hours) {
+function hunt(spot, role, level, shots, hours, simulation = sim) {
     const classId = classFor(role, level);
     const seed = hash(`${spot.id}|${role}|${shots}|${level}`);
     const rng = mulberry(seed);
     const random = Math.random;
     Math.random = mulberry(seed ^ 0x9e3779b9);
-    const sum = { kills: 0, busyMs: 0, deaths: 0, exp: 0, sp: 0, adena: 0, loot: 0, shots: 0, potions: 0 };
+    const sum = { kills: 0, busyMs: 0, deaths: 0, exp: 0, sp: 0, adena: 0, loot: 0, shots: 0, potions: 0, stacks: 0 };
     try {
-        const made = newBot(classId, level, shots);
+        const made = newBot(classId, level, shots, simulation);
+        const seen = new Set(Object.values(made.bot.inventory).filter(item => item.amount > 0).map(item => Number(item.selfId)));
         let state = { ...made.bot, spotId: spot.id, loc: { ...spot.center } };
         const target = atSpot(spot);
         let t = START;
         const end = START + hours * 3600000;
         let elapsed = 60000;
         while (t < end) {
-            const result = sim.BR.resolveSolo({ state, spot: target, elapsedMs: elapsed, timestamp: t, rng });
+            const result = simulation.BR.resolveSolo({ state, spot: target, elapsedMs: elapsed, timestamp: t, rng });
             const gained = result.materialize || {};
             const debug = result.debug || {};
             const patch = result.patch || {};
@@ -246,7 +309,8 @@ function hunt(spot, role, level, shots, hours) {
             sum.exp += Number(gained.exp || 0);
             sum.sp += Number(gained.sp || 0);
             sum.adena += Number(gained.adena || 0);
-            sum.loot += sim.HuntEfficiency.lootValue(gained.items || []);
+            sum.loot += simulation.HuntEfficiency.lootValue(gained.items || []);
+            sum.stacks += countNewStacks(gained.items || [], seen, simulation.items);
             sum.potions += Number(debug.potionsUsed || 0);
             // The bots' records count a cycle's combat and the rest it calls for.
             if (Number.isFinite(debug.combatMs)) {
@@ -278,7 +342,7 @@ function perKill(sum, hours) {
     if (sum.kills <= 0) return null;
     const k = sum.kills;
     return { kph: k / hours, busy: sum.busyMs / 1000 / k, deaths: sum.deaths / k, exp: sum.exp / k, sp: sum.sp / k,
-        adena: sum.adena / k, loot: sum.loot / k, shots: sum.shots / k, potions: sum.potions / k };
+        adena: sum.adena / k, loot: sum.loot / k, shots: sum.shots / k, potions: sum.potions / k, stacks: sum.stacks / k };
 }
 
 // A row: the lowest level gap at which the role finds a safe target, then the
@@ -327,6 +391,7 @@ function runChild(catalogueFile) {
 // ---------------------------------------------------------------- parent
 
 function runPool(catalogueFile, tasks, jobs) {
+    if (!tasks.length) return Promise.resolve([]);
     return new Promise((resolve, reject) => {
         const results = new Array(tasks.length);
         let next = 0;
@@ -461,8 +526,17 @@ function gitRevision() {
 async function main() {
     const options = args();
     if (options.child) return runChild(options.child);
+    if (options.mergeStacksFrom || options.stacksTable) {
+        if (!options.mergeStacksFrom || !options.stacksTable) throw new Error('spot-table merge requires both input files');
+        const table = mergeStacks(JSON.parse(fs.readFileSync(options.mergeStacksFrom, 'utf8')),
+            JSON.parse(fs.readFileSync(options.stacksTable, 'utf8')));
+        fs.mkdirSync(path.dirname(options.out), { recursive: true });
+        fs.writeFileSync(options.out, JSON.stringify(table) + '\n');
+        process.stderr.write(`merged stacks into ${options.out}: ${table.spots.length} spots\n`);
+        return;
+    }
     const started = Date.now();
-    const revision = gitRevision();
+    const revision = options.revision || gitRevision();
     const catalogue = buildCatalogue();
     let spots = catalogue.profiles.filter((spot) => spot.raidBoss !== true)
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -563,7 +637,9 @@ async function main() {
     process.exit(0);
 }
 
-main().catch((error) => {
+if (require.main === module) main().catch((error) => {
     process.stderr.write(`${error.stack || error}\n`);
     process.exit(1);
 });
+
+module.exports = { hunt, perKill, countNewStacks, runPool, mergeStacks };
