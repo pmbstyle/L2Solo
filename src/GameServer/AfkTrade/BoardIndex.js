@@ -44,6 +44,29 @@ function removeFrom(list, line) {
     if (list[at] === line) list.splice(at, 1);
 }
 
+function itemPosition(list, id) {
+    let low = 0, high = list.length;
+    while (low < high) {
+        const middle = (low + high) >> 1;
+        if (list[middle] < id) low = middle + 1;
+        else high = middle;
+    }
+    return low;
+}
+
+// Seek the n-th line of two sorted lists without materializing their union.
+function mergedPosition(left, right, n) {
+    n = Math.min(left.length + right.length, Math.max(0, n));
+    let low = Math.max(0, n - right.length), high = Math.min(n, left.length);
+    while (low <= high) {
+        const a = (low + high) >> 1, b = n - a;
+        if (a > 0 && b < right.length && compareLines(left[a - 1], right[b]) > 0) high = a - 1;
+        else if (b > 0 && a < left.length && compareLines(right[b - 1], left[a]) > 0) low = a + 1;
+        else return [a, b];
+    }
+    return [left.length, right.length];
+}
+
 // A record as the table carries it: [id, kind, storeType, ownerId, town,
 // botOwned, lines[[lineId, selfId, enchant, count, price, pricing, fills]], revision], lines with stock
 // only. `record` has the main thread's fields (AfkTradeService projectionStore
@@ -107,6 +130,9 @@ class BoardIndex {
         this.itemChanges = new Map();
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
         this.sides = new Map([[SELL, new Map()], [BUY, new Map()]]);
+        // side -> town (null for unplaced, '*' for all) -> sorted item ids.
+        // Updated with line-list creation/removal; about 8 B per indexed id.
+        this.townItems = new Map([[SELL, new Map()], [BUY, new Map()]]);
         // record id -> its indexed lines
         this.records = new Map();
         // owner id -> its record ids
@@ -122,6 +148,7 @@ class BoardIndex {
         this.epoch++;
         this.itemChanges.clear();
         this.sides.forEach((items) => items.clear());
+        this.townItems.forEach((towns) => towns.clear());
         this.records.clear();
         this.owners.clear();
         this.groupLines.clear();
@@ -135,6 +162,19 @@ class BoardIndex {
 
     itemChanged(selfId) {
         this.itemChanges.set(selfId, (this.itemChanges.get(selfId) || 0) + 1);
+    }
+
+    townItem(storeType, town, selfId, present) {
+        const towns = this.townItems.get(storeType);
+        let ids = towns.get(town);
+        if (!ids) {
+            if (!present) return;
+            towns.set(town, ids = []);
+        }
+        const at = itemPosition(ids, selfId);
+        if (present && ids[at] !== selfId) ids.splice(at, 0, selfId);
+        else if (!present && ids[at] === selfId) ids.splice(at, 1);
+        if (!ids.length) towns.delete(town);
     }
 
     countGroup(line, step) {
@@ -193,11 +233,13 @@ class BoardIndex {
             if (!item) {
                 item = { all: [], towns: new Map() };
                 items.set(line.selfId, item);
+                this.townItem(storeType, '*', line.selfId, true);
             }
             let town = item.towns.get(line.town);
             if (!town) {
                 town = [];
                 item.towns.set(line.town, town);
+                this.townItem(storeType, line.town, line.selfId, true);
             }
             insert(item.all, line);
             insert(town, line);
@@ -232,9 +274,15 @@ class BoardIndex {
             const town = item.towns.get(line.town);
             if (town) {
                 removeFrom(town, line);
-                if (!town.length) item.towns.delete(line.town);
+                if (!town.length) {
+                    item.towns.delete(line.town);
+                    this.townItem(line.storeType, line.town, line.selfId, false);
+                }
             }
-            if (!item.all.length) items.delete(line.selfId);
+            if (!item.all.length) {
+                items.delete(line.selfId);
+                this.townItem(line.storeType, '*', line.selfId, false);
+            }
         }
     }
 
@@ -251,6 +299,66 @@ class BoardIndex {
         const merged = [...own, ...unplaced];
         merged.sort(compareLines);
         return merged;
+    }
+
+    *itemIds(storeType, town = null, start = 0, reverse = false) {
+        const towns = this.townItems.get(Number(storeType));
+        const left = towns?.get(town || '*') || EMPTY;
+        const right = town ? towns?.get(null) || EMPTY : EMPTY;
+        const step = reverse ? -1 : 1;
+        let a = itemPosition(left, start), b = itemPosition(right, start);
+        if (reverse) {
+            if (left[a] !== start) a--;
+            if (right[b] !== start) b--;
+        }
+        const valid = (list, at) => at >= 0 && at < list.length;
+        while (valid(left, a) || valid(right, b)) {
+            let id;
+            if (!valid(left, a)) id = right[b];
+            else if (!valid(right, b)) id = left[a];
+            else id = reverse ? Math.max(left[a], right[b]) : Math.min(left[a], right[b]);
+            if (left[a] === id) a += step;
+            if (right[b] === id) b += step;
+            yield id;
+        }
+    }
+
+    lineLists(selfId, storeType, town = null) {
+        const item = this.sides.get(Number(storeType))?.get(Number(selfId));
+        return !item ? [EMPTY, EMPTY] : !town ? [item.all, EMPTY]
+            : [item.towns.get(town) || EMPTY, item.towns.get(null) || EMPTY];
+    }
+
+    *page(storeType, { town = null, selfId = 0, cursor = null } = {}) {
+        const startId = Math.max(0, Number(cursor?.selfId) || Number(selfId) || 0);
+        const ids = selfId ? [Number(selfId)] : this.itemIds(storeType, town, startId);
+        for (const id of ids) {
+            if (id < startId) continue;
+            const [left, right] = this.lineLists(id, storeType, town);
+            let n = id === startId ? Math.max(0, Math.floor(Number(cursor?.n) || 0)) : 0;
+            let [a, b] = mergedPosition(left, right, n);
+            while (a < left.length || b < right.length) {
+                const line = b >= right.length || a < left.length && compareLines(left[a], right[b]) <= 0
+                    ? left[a++] : right[b++];
+                yield { line, cursor: { selfId: id, n: n++ } };
+            }
+        }
+    }
+
+    previousCursor(storeType, { town = null, selfId = 0, cursor = null, count = 20 } = {}) {
+        if (!cursor) return null;
+        let remaining = Math.max(1, Math.floor(Number(count) || 20));
+        const startId = Number(cursor.selfId) || 0;
+        const ids = selfId ? [Number(selfId)] : this.itemIds(storeType, town, startId, true);
+        let earliest = null;
+        for (const id of ids) {
+            const [left, right] = this.lineLists(id, storeType, town);
+            const end = id === startId ? Math.min(left.length + right.length, Number(cursor.n) || 0) : left.length + right.length;
+            earliest = { selfId: id, n: Math.max(0, end - remaining) };
+            if (end >= remaining) return earliest;
+            remaining -= end;
+        }
+        return earliest;
     }
 
     // The first line of the list the caller accepts, skipping `excludeOwner`

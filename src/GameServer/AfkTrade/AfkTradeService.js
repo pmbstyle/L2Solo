@@ -1090,6 +1090,7 @@ module.exports = {
     isBoardReady: () => boardReady,
     subscribeBoardChanges,
     offerOf,
+    itemName,
     activeDemandSelfIds,
     activate,
     begin,

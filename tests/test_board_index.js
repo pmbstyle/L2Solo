@@ -75,6 +75,42 @@ assert.deepStrictEqual(recordOf([12, 'sell_ad', SELL, 5, 'Oren', 1, [[40, 1864, 
 
 // Upkeep at the expected board size: 6.8k records of up to 3 lines over 300
 // items in 16 towns; a change costs a few microseconds.
+{
+    const paging = new BoardIndex();
+    let seed = 947;
+    const random = n => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+    for (let change = 0; change < 1000; change++) {
+        const id = 1 + random(40);
+        if (random(4) === 0) paging.remove(id);
+        else paging.put(record(id, { storeType: random(2) ? SELL : BUY, town: ['Giran', 'Dion', null][random(3)] },
+            Array.from({ length: 1 + random(3) }, () => ({ selfId: 1 + random(30), price: random(100), count: random(3) }))));
+        for (const side of [SELL, BUY]) {
+            const expected = new Map();
+            for (const [id, item] of paging.sides.get(side)) {
+                for (const town of ['*', ...item.towns.keys()]) {
+                    if (!expected.has(town)) expected.set(town, []);
+                    expected.get(town).push(id);
+                }
+            }
+            const actual = paging.townItems.get(side);
+            assert.strictEqual(actual.size, expected.size);
+            for (const [town, ids] of expected) assert.deepStrictEqual(actual.get(town), ids.sort((a, b) => a - b));
+            for (const town of [null, 'Giran', 'Dion']) {
+                const expectedLines = [...paging.sides.get(side).keys()].sort((a, b) => a - b)
+                    .flatMap(id => paging.list(id, side, town));
+                assert.deepStrictEqual([...paging.page(side, { town })].map(row => row.line), expectedLines);
+                if (expectedLines.length > 3) {
+                    const rows = [...paging.page(side, { town })];
+                    assert.deepStrictEqual([...paging.page(side, { town, cursor: rows[3].cursor })].map(row => row.line),
+                        expectedLines.slice(3), 'a cursor seeks within the merged town/unplaced list');
+                }
+            }
+        }
+    }
+    paging.clear();
+    assert([...paging.townItems.values()].every(towns => !towns.size));
+}
+
 if (process.env.L2NODE_SKIP_BOARD_INDEX_BENCHMARK !== '1') {
     const large = new BoardIndex();
     const towns = ['Giran', 'Dion', 'Gludio', 'Oren', 'Aden', 'Heine', 'Goddard', 'Rune', 'Schuttgart', 'Floran',

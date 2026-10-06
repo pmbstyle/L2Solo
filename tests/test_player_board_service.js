@@ -18,21 +18,27 @@ async function main() {
     board.put({ ...record, id: 2, kind: 'ad', storeType: BUY, ownerId: 46,
         lines: [{ lineId: 12, selfId: 1864, count: 10, price: 90 }] }, {});
     board.put({ ...record, id: 3, ownerId: 8, lines: [{ lineId: 13, selfId: 1152, count: 1, price: 500 }] }, {});
+    board.put({ ...record, id: 4, ownerId: 47, lines: [{ lineId: 14, selfId: 1152, count: 1, price: 550 }] }, {});
     const shop = { characterId: 55, currentRegion: 'Dion', loc: { locX: 5000, locY: 0, locZ: 0 }, simulation: { revision: 2 } };
     const service = create({ afk: () => ({ isBoardReady: () => true, boardIndex: () => board,
-        offerOf: (line) => ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection }),
+        offerOf: (line) => line.ownerId === 47 ? null
+            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
     life: () => ({ cachedState: (id) => ({ characterId: id, loc: { locX: 7000, locY: 0, locZ: 0 }, currentRegion: 'Dion' }) }),
     workshops: () => ({ boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', ownerId: 55, ownerName: 'Maker',
         town: 'Dion', loc: shop.loc, revision: 2, entries: [{ recipeId: 17, price: 150 }] }],
-    lookup: () => ({ state: shop, price: 150 }), craft: async (owner, recipe, customer, options) => {
+    lookup: () => ({ state: shop, recipe: { productId: 1835 }, price: 150 }), craft: async (owner, recipe, customer, options) => {
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 150]); crafts++;
         return { product: { id: 91, amount: 1 } };
     } }), database: () => ({ fetchItems: async () => [{ id: 91, selfId: 1835, amount: 1 }] }),
     response: () => ({ itemsList: (items) => items }) });
     const listed = service.entries(player, { selfId: 1152, side: SELL });
     assert.equal(listed.entries.length, 1); assert.equal(listed.entries[0].price, 600);
-    assert.equal(service.entries(player, { limit: 1 }).more, true);
+    assert.equal(listed.entries[0].cursor.n, 2, 'own and unavailable lines count in the raw list cursor');
+    const firstPage = service.entries(player, { limit: 1 });
+    assert(firstPage.next !== null);
+    assert.equal(service.entries(player, { limit: 1, cursor: firstPage.next }).entries[0].id, 2,
+        'a cursor starts at the first line not shown on the previous page');
     const request = { id: 1, lineId: 11, selfId: 1152, price: 600, revision: 4 };
     assert.equal((await service.answer(player, request)).action, 'meet'); assert.equal(selects, 0);
     x = 1000; assert.equal((await service.answer(player, request)).action, 'store_opened'); assert.equal(selects, 2);
@@ -45,7 +51,9 @@ async function main() {
     const order = { ...workshop, kind: 'workshop' };
     assert.equal((await service.answer(player, order)).action, 'meet'); assert.equal(crafts, 0);
     x = 5000; assert.equal((await service.answer(player, { ...order, price: 151 })).reason, 'record_changed');
-    assert.equal((await service.answer(player, order)).action, 'crafted'); assert.equal(crafts, 1);
+    const confirm = await service.answer(player, order);
+    assert.equal(confirm.action, 'confirm'); assert.equal(confirm.productId, 1835); assert.equal(crafts, 0);
+    assert.equal((await service.answer(player, { ...order, confirmed: true })).action, 'crafted'); assert.equal(crafts, 1);
     assert.equal(player.actor.backpack.fetchItems()[0].id, 91);
     assert.equal(service.entries({ ...player, accountId: 'bot_board' }).available, false);
     console.log('Player board server contract: native index/read pages, current quote, own record, physical store interaction, workshop adapter and no remote purchase passed');
