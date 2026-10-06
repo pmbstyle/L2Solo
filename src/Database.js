@@ -1455,18 +1455,22 @@ function captureWriteAdmission(options, errorCode) {
     return Object.freeze({ beforeWrite, present, captureFailed, captureError, errorCode });
 }
 
+function checkCapturedWriteAdmission(admission) {
+    if (admission.captureFailed) throw admission.captureError;
+    if (admission.present) {
+        const beforeWrite = admission.beforeWrite;
+        const verdict = beforeWrite();
+        if (verdict !== undefined) {
+            if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
+            throw new TypeError(admission.errorCode);
+        }
+    }
+}
+
 function guardedNativeWrite(sql, params, operation, admission) {
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation})`);
-        if (admission.captureFailed) throw admission.captureError;
-        if (admission.present) {
-            const beforeWrite = admission.beforeWrite;
-            const verdict = beforeWrite();
-            if (verdict !== undefined) {
-                if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
-                throw new TypeError(admission.errorCode);
-            }
-        }
+        checkCapturedWriteAdmission(admission);
         return write(sql, params);
     }, { operation, read: false });
 }
@@ -5242,9 +5246,13 @@ const Database = {
     },
 
     // reason names the bot action for the economy journal (e.g. 'npc_liquidation').
-    syncInventorySummary(characterId, inventory = {}, reason = null) {
+    syncInventorySummary(characterId, inventory = {}, reason = null, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_inventory_before_write');
         return withCharacterFlush(characterId, () => inTransaction(
-            () => syncInventorySummaryUnsafe(characterId, inventory),
+            () => {
+                checkCapturedWriteAdmission(admission);
+                return syncInventorySummaryUnsafe(characterId, inventory);
+            },
             reason ? `inventory:sync-summary:${reason}` : 'inventory:sync-summary'
         ));
     },
@@ -8731,7 +8739,11 @@ const Database = {
             WHERE characterId = ? AND pendingRestoration = 1`,
         [resolvedAt, String(reason || 'invalidated'), characterId], 'character:death-exp-clear'));
     },
-    updateCharacterVitals(id, hp, maxHp, mp, maxMp) { return withCharacterFlush(id, () => update('characters', { hp, maxHp, mp, maxMp }, 'id = ?', [id], 'character:vitals')); },
+    updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write');
+        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "hp" = ?, "maxHp" = ?, "mp" = ?, "maxMp" = ? WHERE id = ?',
+            [hp, maxHp, mp, maxMp, id], 'character:vitals', admission));
+    },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
     updateCharacterClassId(id, classId, options = {}) {
