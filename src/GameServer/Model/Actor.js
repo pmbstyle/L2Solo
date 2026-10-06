@@ -1,5 +1,12 @@
 const CreatureModel = invoke('GameServer/Model/Creature');
 const Formulas = invoke('GameServer/Formulas');
+const locationBatchDepth = new WeakMap();
+
+function publishLocation(actor) {
+    if (!locationBatchDepth.has(actor) && actor.session?.actor === actor) {
+        invoke('GameServer/World/World').updateUserLocation?.(actor.session, actor);
+    }
+}
 
 class ActorModel extends CreatureModel {
     fetchCollectivePAtk() { return invoke('GameServer/Pets/PetMount').stats(this)?.pAtk ?? super.fetchCollectivePAtk(); }
@@ -9,9 +16,31 @@ class ActorModel extends CreatureModel {
 
     // Set
 
+    setLocX(data) {
+        super.setLocX(data);
+        publishLocation(this);
+    }
+
+    setLocY(data) {
+        super.setLocY(data);
+        publishLocation(this);
+    }
+
+    setLocZ(data) {
+        super.setLocZ(data);
+        publishLocation(this);
+    }
+
     setLocXYZ(coords) {
-        super.setLocXYZ(coords);
-        if (this.session?.actor === this) invoke('GameServer/World/World').updateUserLocation?.(this.session, this);
+        const previousDepth = locationBatchDepth.get(this) || 0;
+        locationBatchDepth.set(this, previousDepth + 1);
+        try {
+            super.setLocXYZ(coords);
+        } finally {
+            if (previousDepth === 0) locationBatchDepth.delete(this);
+            else locationBatchDepth.set(this, previousDepth);
+        }
+        publishLocation(this);
     }
 
     canReplenishVitals() {
