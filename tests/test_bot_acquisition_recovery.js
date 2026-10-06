@@ -82,12 +82,33 @@ async function run() {
     const nestedState = { ...state, activity: 'hunting', inventory: { 1869: { selfId: 1869, amount: 2 } },
         stats: { ...state.stats, equipmentPlan: { ...plan, marketFallback: true,
             next: { itemId: 1869, amount: 3, requiredTotal: 3 } } } };
-    const nestedGoal = needs.evaluate(nestedState, { now }).find((goal) => goal.type === 'buy_craft_material');
-    assert.strictEqual(nestedGoal.target.itemId, 1869);
-    assert.strictEqual(nestedGoal.target.amount, 1, 'nested-component shopping must subtract ingredients already collected');
-    nestedState.inventory[1869].amount = 3;
-    assert(!needs.evaluate(nestedState, { now }).some((goal) => goal.type === 'buy_craft_material'),
-        'a completed ingredient must not create another WTB goal');
+    // The common economy now owns the missing quantity. The goal adapter
+    // forwards its selected shopping leaf and resolves the displayed name.
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const originalContext = Economy.forState;
+    let selected = { activity: 'shopping', itemId: 1869, amount: 1, price: 10, rootKey: 'ingredient' };
+    Economy.forState = () => ({ network: { activity: selected, queue: [] } });
+    try {
+        const nestedGoal = needs.evaluate(nestedState, { now }).find((goal) => goal.type === 'buy_craft_material');
+        assert.strictEqual(nestedGoal.target.itemId, 1869);
+        assert.strictEqual(nestedGoal.target.amount, 1, 'shopping forwards the missing quantity from the economy');
+        const ingredientName = DataCache.items.find((item) => Number(item.selfId) === 1869).template.name;
+        assert.strictEqual(nestedGoal.target.itemName, ingredientName, 'a buy ad names the material, not its id (T25)');
+        const noneHeld = { ...nestedState, inventory: {} };
+        selected = { ...selected, amount: 3, price: 30 };
+        const noneHeldGoal = needs.evaluate(noneHeld, { now }).find((goal) => goal.type === 'buy_craft_material');
+        assert.strictEqual(noneHeldGoal.target.amount, 3);
+        assert.strictEqual(noneHeldGoal.target.itemName, ingredientName,
+            'a bot holding none of the material still names it (T25)');
+        const named = { ...nestedState, inventory: { 1869: { selfId: 1869, amount: 2, name: 'Iron Ore' } } };
+        assert.strictEqual(needs.evaluate(named, { now })[0].target.itemName, 'Iron Ore');
+        selected = null;
+        nestedState.inventory[1869].amount = 3;
+        assert(!needs.evaluate(nestedState, { now }).some((goal) => goal.type === 'buy_craft_material'),
+            'a completed ingredient without a shopping leaf must not create another WTB goal');
+    } finally {
+        Economy.forState = originalContext;
+    }
 
     const disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const reserves = disposition.reservedCraftAmounts(state);
