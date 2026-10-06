@@ -29,10 +29,10 @@ assert.strictEqual(Gear.replanContextFor({ ...failed, level: 40 },
     'crossing D to C must retain the old route failure too');
 const cooldown = { ...oldPlan, status: 'complete', recoveryTargets: context.recoveryTargets };
 assert(context.recoveryTargets.some(entry => entry.targetId === 84));
-assert(Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).excludedTargetIds.includes(84),
-    'the same route cooldown must survive another grade transition');
-assert(!Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
-    'expired route cooldowns must still clear');
+assert(!Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).excludedTargetIds.includes(84),
+    'a new level wakes an old target');
+assert(Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
+    'unchanged combat inputs keep the target dormant across elapsed time');
 
 const caster = { level: 56, adena: 11564058, stats: { classId: 51, role: 'buffer' },
     inventory: inventory([...heavy, [156, [7]]]) };

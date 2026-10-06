@@ -1,10 +1,19 @@
 const assert = require('assert');
 const { DatabaseSync } = require('node:sqlite');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bot-population-state-'));
+process.env.L2NODE_CONFIG_FILE = path.join(directory, 'config.ini');
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${directory}/world.sqlite\nhistoryPath=${directory}/history.sqlite\n`);
 
 require('../src/Global');
 
 const Database = invoke('Database');
+Database.init();
 const originalReconcileClanGoals = Database.reconcileBotClanGoals;
+const originalFetchMarketCounts = Database.fetchBotMarketCounts;
 const DataCache = invoke('GameServer/DataCache');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
@@ -14,6 +23,12 @@ const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 DataCache.init();
 
 const originalExecute = Database.execute;
+const originalSaveLifeState = Database.saveBotLifeState;
+const fixtureReady = originalExecute(["INSERT INTO accounts(username,password) VALUES('bot_population_fixture','pw')"])
+    .then(() => Promise.all([42, 43, 44, 45, 46, 71, 72, 99].map(id => originalExecute([
+        'INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        [id, 'bot_population_fixture', `PopulationFixture${id}`, 0, 0, 100, 100, 0, 0, 0, 0, 0, 0, 0]
+    ]))));
 const originalSyncInventorySummary = Database.syncInventorySummary;
 const originalUpdateCharacterLocation = Database.updateCharacterLocation;
 const originalUpdateCharacterExperience = Database.updateCharacterExperience;
@@ -37,6 +52,11 @@ try {
     ColdSimulationOwner.recoverStartupLeases = () => Promise.resolve({ affectedRows: 0 });
     Database.reconcileBotClanMembership = () => Promise.resolve({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
+    Database.fetchBotMarketCounts = async () => [];
+    Database.saveBotLifeState = (statement, queryOptions) => {
+        statements.push({ sql: String(statement[0]), params: statement[1], queryOptions });
+        return originalSaveLifeState(statement, queryOptions);
+    };
     Database.execute = ([sql, params, queryOptions]) => {
         statements.push({ sql: String(sql), params, queryOptions });
         if (String(sql).startsWith('SELECT id, classId, level, exp, sp FROM characters')) {
@@ -75,7 +95,7 @@ try {
 
     const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
-    BotLifeState.init().then((ready) => {
+    fixtureReady.then(() => BotLifeState.init()).then((ready) => {
         assert.strictEqual(ready, true);
         const retiredStaticMerchants = statements.find((entry) => entry.sql.includes('retired_static_merchant'));
         assert(retiredStaticMerchants, 'bot life init should remove hot lifecycle rows for retired static merchants');
@@ -458,6 +478,7 @@ try {
                             aggregate: true,
                             populationTelemetryOwner: true,
                             targetNpcId: 93,
+                            targetOnSpot: 1,
                             defeatedNpcIds: [93]
                         }
                     }).then((resolvedMember) => {
@@ -467,7 +488,7 @@ try {
                         assert.strictEqual(resolvedMember.stats.expEarned, 1120, 'a projected party stats snapshot must not erase earned EXP telemetry');
                         assert.strictEqual(resolvedMember.stats.spEarned, 113, 'a projected party stats snapshot must not erase earned SP telemetry');
                         assert.strictEqual(resolvedMember.stats.adenaEarned, 580, 'a projected party stats snapshot must not erase earned Adena telemetry');
-                        assert.deepStrictEqual(resolvedMember.stats.coldCombat, { cooldowns: {} }, 'resolver-specific patch stats must still survive the authoritative counter merge');
+                        assert.deepStrictEqual(resolvedMember.stats.coldCombat.cooldowns, {}, 'resolver-specific cooldown patch must still survive profile normalization and the authoritative counter merge');
                         return resolvedMember;
                     });
                 });
@@ -555,8 +576,9 @@ try {
     }).catch((err) => {
         console.error(err);
         process.exitCode = 1;
-    }).finally(() => {
+    }).finally(async () => {
         Database.execute = originalExecute;
+        Database.saveBotLifeState = originalSaveLifeState;
         Database.syncInventorySummary = originalSyncInventorySummary;
         Database.updateCharacterLocation = originalUpdateCharacterLocation;
         Database.updateCharacterExperience = originalUpdateCharacterExperience;
@@ -572,9 +594,13 @@ try {
         ColdSimulationOwner.recoverStartupLeases = originalRecoverStartupLeases;
         Database.reconcileBotClanMembership = originalReconcileClanMembership;
         Database.reconcileBotClanGoals = originalReconcileClanGoals;
+        Database.fetchBotMarketCounts = originalFetchMarketCounts;
+        await Database.close();
+        fs.rmSync(directory, { recursive: true, force: true });
     });
 } catch (err) {
     Database.execute = originalExecute;
+    Database.saveBotLifeState = originalSaveLifeState;
     Database.syncInventorySummary = originalSyncInventorySummary;
     Database.updateCharacterLocation = originalUpdateCharacterLocation;
     Database.updateCharacterExperience = originalUpdateCharacterExperience;
@@ -590,5 +616,8 @@ try {
     ColdSimulationOwner.recoverStartupLeases = originalRecoverStartupLeases;
     Database.reconcileBotClanMembership = originalReconcileClanMembership;
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
+    Database.fetchBotMarketCounts = originalFetchMarketCounts;
+    Database.close();
+    fs.rmSync(directory, { recursive: true, force: true });
     throw err;
 }

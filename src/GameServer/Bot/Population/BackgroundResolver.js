@@ -1957,6 +1957,7 @@ const BackgroundResolver = {
                 potionsUsed,
                 drunkPotions,
                 targetNpcId: Number(targetNpcId) || null,
+                targetOnSpot: ColdCombatProfile.spotSpawns(spot, targetNpcId) ? 1 : 0,
                 foughtNpcIds
             }
         };

@@ -210,6 +210,17 @@ function rankIndex(rank) {
     return index < 0 ? 0 : index;
 }
 
+function recoveryWake(state = {}) {
+    const weapon = equippedInventoryItems(state.inventory).find(item => WEAPON_SLOTS.has(Number(item.etc?.slot)));
+    return [Number(state.level || 1), weapon ? rankIndex(weapon.etc?.rank) : -1, state.party?.partyId ? 1 : 0];
+}
+
+function recoveryEntryLive(entry, state, timestamp, wake) {
+    if (!Array.isArray(entry.wake)) return Number(entry.until || 0) > timestamp;
+    const current = wake || recoveryWake(state);
+    return entry.wake.length === 3 && entry.wake.every((value, n) => Number(value) === current[n]);
+}
+
 // One planner decision judges the same bot against every candidate source
 // (partyNeedAssessmentForSource per drop source, per material source), and
 // its readiness depends only on the bot. Like ClanRaidPolicy's per-pass
@@ -1253,8 +1264,10 @@ function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'mar
     if (Number(plan.target.selfId) !== Number(itemId)
         && Number(plan.next?.itemId) !== Number(itemId)
         && !(plan.materials || []).some((material) => Number(material.selfId) === Number(itemId))) return state;
+    const wake = recoveryWake(state);
     const recoveryTargets = (plan.recoveryTargets || []).filter((entry) => (
-        Number(entry.until) > timestamp && Number(entry.targetId) !== Number(plan.target.selfId)
+        recoveryEntryLive(entry, state, timestamp, wake)
+            && (Array.isArray(entry.wake) || Number(entry.targetId) !== Number(plan.target.selfId))
     ));
     recoveryTargets.push({ targetId: Number(plan.target.selfId), itemId: Number(itemId),
         reason, failedAt: timestamp, until: timestamp + acquisitionCooldown(state) });
@@ -1314,11 +1327,17 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const sourceViable = !sourceNpcId || isPlanSourceViableForState(state, previousPlan);
     const modelCurrent = Number(previousPlan?.rateModelVersion || 0) >= RATE_MODEL_VERSION
         && String(previousPlan?.rateProfileSignature || '') === rateProfileSignature();
+    const wake = recoveryWake(state);
     const recoveryTargets = (previousPlan?.recoveryTargets || [])
-        .filter((entry) => Number(entry.until || 0) > timestamp && Number(entry.targetId || 0) > 0);
+        .filter((entry) => recoveryEntryLive(entry, state, timestamp, wake) && Number(entry.targetId || 0) > 0);
     // A retained route can fail on either side of a grade threshold. Keep
     // its failure and cooldown until expiry, even after another level-up.
-    const failure = directPlanFailure(state, previousPlan, timestamp)
+    // ARCH-NOTE: the old active plan may survive a replan; replaying its
+    // recorded failure immediately recreates dormancy on a wake event. Wait
+    // for the new plan to stamp its baseline before judging that route again.
+    const recordedFailure = (previousPlan?.recoveryTargets || []).some(entry => Array.isArray(entry.wake)
+        && entry.reason === 'combat_unviable' && Number(entry.targetId) === Number(previousPlan?.target?.selfId));
+    const failure = (!recordedFailure && directPlanFailure(state, previousPlan, timestamp))
             || partyRouteFailure(state, previousPlan, timestamp)
             || craftPlanFailure(state, previousPlan, timestamp);
     if (failure) {
@@ -1328,12 +1347,19 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
             itemId: failure.itemId,
             reason: failure.reason,
             failedAt: timestamp,
-            until: timestamp + (failure.itemId ? acquisitionCooldown(state) : DIRECT_ROUTE_COOLDOWN_MS)
+            // ARCH-NOTE: dormantWishes does not exclude a gear target yet;
+            // keep its numeric wake inputs in the planner's recovery list (max4).
+            ...(failure.reason === 'combat_unviable' ? { wake }
+                : { until: timestamp + (failure.itemId ? acquisitionCooldown(state) : DIRECT_ROUTE_COOLDOWN_MS) })
         };
         const index = recoveryTargets.findIndex((entry) => Number(entry.targetId) === failure.targetId);
         if (index >= 0) recoveryTargets[index] = recovery;
         else recoveryTargets.push(recovery);
     }
+    const dormant = recoveryTargets.filter(entry => entry.reason === 'combat_unviable' && Array.isArray(entry.wake))
+        .sort((a, b) => Number(b.failedAt) - Number(a.failedAt));
+    const dropped = new Set(dormant.slice(4));
+    for (let n = recoveryTargets.length - 1; n >= 0; n--) if (dropped.has(recoveryTargets[n])) recoveryTargets.splice(n, 1);
     const currentMarketRecovery = previousPlan?.strategy === 'market'
         ? recoveryTargets.find((entry) => Number(entry.targetId) === Number(previousPlan.target?.selfId || 0))
         : null;
@@ -1383,8 +1409,13 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     const currentCounter = rawPlan?.status === 'active' && rawPlan.strategy === 'direct_drop'
         ? targetCombatCounter(state, rawPlan.next?.npcId)
         : null;
+    const wokeDirectTarget = currentCounter && (previousPlan?.recoveryTargets || []).some(entry =>
+        entry.reason === 'combat_unviable' && Array.isArray(entry.wake)
+        && Number(entry.targetId) === Number(rawPlan.target?.selfId)
+        && !recoveryEntryLive(entry, state, timestamp));
     const targetProgress = currentCounter
         ? (sameDirectTarget && previousPlan.targetProgress
+            && !wokeDirectTarget
             && !counterRestarted(currentCounter, previousPlan.targetProgress)
             ? previousPlan.targetProgress
             : currentCounter)

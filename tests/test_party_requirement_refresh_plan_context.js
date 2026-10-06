@@ -141,8 +141,8 @@ async function main() {
     assert(failedPlan, 'the changed requirement must be saved');
     assert((failedPlan.recoveryTargets || []).some((entry) => (
         Number(entry.targetId) === Number(weapon.selfId) && entry.reason === 'combat_unviable'
-        && Number(entry.until) > now
-    )), 'the saved plan must carry the failed target cooldown');
+        && Array.isArray(entry.wake) && entry.wake.every(Number.isFinite) && entry.until === undefined
+    )), 'the saved plan must carry the failed target dormant wake inputs');
 
     const refreshedCraft = saved.get(craftMember.characterId);
     assert(refreshedCraft, 'fixture: the craft route requirement changed and must be saved');

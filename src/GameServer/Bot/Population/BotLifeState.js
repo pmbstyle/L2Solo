@@ -423,6 +423,7 @@ function syncNewTripPayment(state, previous) {
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
+    if (debug?.targetOnSpot !== 1) return null;
     const targetNpcId = Number(debug?.targetNpcId || 0);
     if (targetNpcId <= 0) return null;
     const targetKey = String(targetNpcId);
@@ -3880,5 +3881,7 @@ BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
 BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;
+
+BotLifeState.targetCombatTelemetry = targetCombatTelemetry;
 
 module.exports = BotLifeState;

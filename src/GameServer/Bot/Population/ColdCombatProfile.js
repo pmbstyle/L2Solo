@@ -716,6 +716,14 @@ function corpseSummonSkills(profile = {}) {
             || Number(b.level || 0) - Number(a.level || 0));
 }
 
+function spotSpawns(spot = {}, npcId) {
+    const id = Number(npcId);
+    if (!(id > 0)) return false;
+    return Array.isArray(spot.npcEntries) && spot.npcEntries.length
+        ? spot.npcEntries.some(entry => Number(entry.selfId) === id)
+        : (spot.npcSelfIds || []).some(selfId => Number(selfId) === id);
+}
+
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     let entries = rawEntries.filter((entry) => {
@@ -931,6 +939,6 @@ function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, size,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
+    spotSpawns, npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
 };
