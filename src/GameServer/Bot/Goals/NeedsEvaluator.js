@@ -41,9 +41,9 @@ function evaluate(state = {}, options = {}) {
     if (!leaf) return [];
     const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
     const wish = context.network.queue.find(row => row.key === leaf.rootKey);
-    const common = { priority: 50, blockers: [], inputKey: context.inputKey,
+    const common = { priority: 50, blockers: [], inputHash: require('../Fnv1a').fnv1a32(context.inputKey),
         plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
-            recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost: leaf.price, economyInputKey: context.inputKey,
+            recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost: leaf.price,
             targetId: leaf.targetId, economyActivity: leaf.activity } };
     if (leaf.activity === 'shopping' && itemId) {
         const gear = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);

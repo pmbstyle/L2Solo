@@ -201,7 +201,7 @@ async function run() {
 
     const requests = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(base);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].inputKey, context.inputKey);
+    assert.equal(requests[0].inputHash, require('../src/GameServer/Bot/Fnv1a').fnv1a32(context.inputKey));
     const dead = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate({ ...base, activity: 'dead' });
     assert.equal(dead[0].type, 'recover'); assert.equal(dead[0].priority, 100);
     const beforeProfile = Profile.profileFor(base);

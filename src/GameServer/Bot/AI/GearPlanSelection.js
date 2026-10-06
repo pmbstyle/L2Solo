@@ -11,6 +11,7 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 const planningCache = new Map();
 function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
+    if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
         spots, occupancy, timestamp, board: planningOptions.board
     });
@@ -23,7 +24,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.
         return { acquisitionPlan: { ...previousPlan, status: 'deferred', strategy: 'none', next: null,
-            reason: 'wish_focus', economyInputKey: economy.inputKey }, replanContext: {},
+            reason: 'wish_focus' }, replanContext: {},
             reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp) };
     }
     const bag = Object.values(state.inventory || {}).filter(row => row.equipped || row.equippedCount)
@@ -122,7 +123,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     };
-    const result = { acquisitionPlan: { ...acquisitionPlan, economyInputKey: economy.inputKey },
+    const result = { acquisitionPlan: { ...acquisitionPlan },
         replanContext, reusablePartyRequest, excludedSpotIds };
     planningCache.set(state.characterId, { key, spots, previous: result.acquisitionPlan, result });
     return result;

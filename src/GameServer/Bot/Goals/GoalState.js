@@ -32,13 +32,15 @@ function normalizeGoal(goal = {}, timestamp = now()) {
     const type = text(goal.type);
     if (!type) return null;
 
+    const plan = goal.plan && typeof goal.plan === 'object' ? { ...goal.plan } : {};
+    delete plan.economyInputKey; delete plan.inputKey;
     const status = STATUSES.has(goal.status) ? goal.status : 'planned';
     return {
         type,
         status,
         priority: Math.max(0, Math.min(100, Number(goal.priority) || 0)),
         target: goal.target && typeof goal.target === 'object' ? { ...goal.target } : {},
-        plan: goal.plan && typeof goal.plan === 'object' ? { ...goal.plan } : {},
+        plan,
         progress: goal.progress && typeof goal.progress === 'object' ? { ...goal.progress } : {},
         blockers: Array.isArray(goal.blockers) ? [...new Set(goal.blockers.map(text).filter(Boolean))].slice(0, 8) : [],
         createdAt: Number(goal.createdAt) || timestamp,
@@ -118,12 +120,12 @@ const GoalState = {
         });
     },
 
-    set(characterId, goal) {
+    set(characterId, goal, { inputHash } = {}) {
         const id = Number(characterId || 0);
         const current = normalizeGoal(goal);
         if (!id || !current) return Promise.resolve(null);
 
-        const snapshot = { characterId: id, current, updatedAt: now() };
+        const snapshot = { characterId: id, current, updatedAt: now(), inputHash };
         return this.init().then((ready) => {
             if (!ready) return null;
             return save(snapshot).then(() => {
@@ -141,7 +143,7 @@ const GoalState = {
             const characterId = Number(entry?.characterId || 0);
             const current = normalizeGoal(entry?.goal);
             if (!characterId || !current) return null;
-            return { characterId, current, updatedAt: now() };
+            return { characterId, current, updatedAt: now(), inputHash: entry.inputHash };
         }).filter(Boolean);
         if (!snapshots.length) return Promise.resolve([]);
         return this.init().then((ready) => {

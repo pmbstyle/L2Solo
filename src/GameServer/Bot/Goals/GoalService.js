@@ -29,7 +29,7 @@ function reviewDecision(state, existing, options, timestamp) {
     const activeMarketGoal = isMarketGoal(existing?.current);
     if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
         && !marketCandidate && !activeMarketGoal
-        && candidates[0]?.plan?.economyInputKey === existing.current.plan?.economyInputKey) return { result: existing, unchanged: true, goal: null, candidates };
+        && Number.isSafeInteger(existing.inputHash) && candidates[0]?.inputHash === existing.inputHash) return { result: existing, unchanged: true, goal: null, candidates };
 
     const goal = GoalPlanner.plan(candidates, timestamp);
     if (!goal) return { result: null, unchanged: true, goal: null, candidates };
@@ -76,7 +76,7 @@ const GoalService = {
         const choose = (existing) => {
             const decision = reviewDecision(state, existing, options, timestamp);
             if (decision.unchanged) return withCandidates(decision.result, decision.candidates);
-            return GoalState.set(state.characterId, decision.goal).then(saved => {
+            return GoalState.set(state.characterId, decision.goal, { inputHash: decision.candidates[0]?.inputHash }).then(saved => {
                 if (saved) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, saved.current, existing?.current, timestamp);
                 return withCandidates(saved, decision.candidates);
             });
@@ -105,7 +105,7 @@ const GoalService = {
             });
             const pending = decisions.filter(({ decision }) => !decision.unchanged).map(({ state, decision }) => ({
                 characterId: state.characterId,
-                goal: decision.goal
+                goal: decision.goal, inputHash: decision.candidates[0]?.inputHash
             }));
             return GoalState.setBatch(pending).then((saved) => {
                 const savedById = new Map(saved.map((snapshot) => [Number(snapshot.characterId), snapshot]));

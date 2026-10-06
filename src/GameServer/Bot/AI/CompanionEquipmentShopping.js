@@ -74,7 +74,7 @@ function checkedPlan(session, state, town, options = {}) {
         const amount = Math.max(1, Math.ceil(leaf.amount || 1));
         const budget = Math.min(PurchaseFunding.spendable(state) / amount, economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget });
-        return { plan: offer ? { status: 'active', strategy: 'market', economyInputKey: economy.inputKey,
+        return { plan: offer ? { status: 'active', strategy: 'market',
             target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
             market: { sourceType: offer.sourceType } } : null, offers: offer ? [offer] : [] };
     }
