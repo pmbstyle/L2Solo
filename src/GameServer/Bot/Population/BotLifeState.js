@@ -3439,6 +3439,7 @@ const BotLifeState = {
             });
             if (!recipes.length) return state;
             const learned = await Database.learnColdRecipes(state.characterId, recipes, state);
+            if (learned.learned?.length) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
             if (!learned.coldLifeRow) return state;
             const saved = this.acceptLifecycleRow(learned.coldLifeRow);
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });

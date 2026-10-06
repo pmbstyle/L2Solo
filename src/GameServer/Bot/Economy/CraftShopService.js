@@ -331,7 +331,10 @@ function ensureRecipes(characterId, profile) {
     const recipeIds = [...new Set((profile?.entries || []).map((entry) => Number(entry.recipeId)).filter(Number.isSafeInteger))];
     return recipeIds.reduce((chain, recipeId) => (
         chain.then(() => Database.setCharacterRecipe(characterId, recipeId, 'dwarven'))
-    ), Promise.resolve()).then(() => profile);
+    ), Promise.resolve()).then(() => {
+        invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(characterId);
+        return profile;
+    });
 }
 
 module.exports = {

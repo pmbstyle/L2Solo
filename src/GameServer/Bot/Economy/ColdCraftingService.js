@@ -343,6 +343,7 @@ async function craft(state, random = Math.random) {
             error: String(error?.message || error)
         };
     }
+    if (station.clan && learning) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(crafter.id);
     if (station.workshop) {
         LifeState.acceptLifecycleRow(result.crafterState);
         const committed = LifeState.acceptLifecycleRow(result.customerState);

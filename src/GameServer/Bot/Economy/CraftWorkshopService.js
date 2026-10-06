@@ -7,6 +7,8 @@ const owners = new Map();
 const inputOwners = new Map();
 const ownerInputs = new Map();
 const crafters = new Map();
+const knownRecipes = new Map();
+function recipesChanged(id) { knownRecipes.delete(Number(id)); }
 let inputIds = null;
 function watchedInputs() {
     if (!inputIds) {
@@ -21,7 +23,8 @@ function watchedInputs() {
 let unsubscribe = null;
 let unsubscribeOwnership = null;
 
-function remove(id) {
+function remove(id, { recipes: dropRecipes = true } = {}) {
+    if (dropRecipes) recipesChanged(id);
     for (const recipeId of owners.get(Number(id)) || []) {
         const records = byRecipe.get(recipeId);
         records?.delete(Number(id));
@@ -38,7 +41,7 @@ function remove(id) {
 }
 function register(state) {
     const id = Number(state?.characterId);
-    remove(id);
+    remove(id, { recipes: state?.phase !== 'cold' });
     if (!state || state.phase !== 'cold') return;
     const items = new Set([...watchedInputs()].filter(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0));
     if (state.stats?.shotDemand?.itemId) items.add(Number(state.stats.shotDemand.itemId));
@@ -49,6 +52,7 @@ function register(state) {
     }
     ownerInputs.set(id, items);
     if (invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) crafters.set(id, state);
+    else recipesChanged(id);
     const shop = state?.stats?.workshop;
     if (!shop || state.phase !== 'cold' || state.simulation?.ownerId !== 'legacy_main' || Number(state.vitals?.hp) <= 0
         || state.partyId || state.party?.partyId || ['dead', 'traveling'].includes(state.activity)) return;
@@ -144,14 +148,25 @@ async function review(state) {
         if (state) register(state);
         return state;
     }
-    const known = await invoke('Database').fetchCharacterRecipes(state.characterId);
+    const id = Number(state.characterId);
+    let known = knownRecipes.get(id);
+    if (!known) {
+        known = (await invoke('Database').fetchCharacterRecipes(id)).map(row => Number(row.recipeId));
+        knownRecipes.set(id, known);
+    }
     const current = life().cachedState(state.characterId);
     if (current && current !== state) return current;
     const prior = new Map((state.stats?.workshop?.entries || []).map(entry => [Number(entry.recipeId), entry]));
-    const entries = known.map(row => recipes().resolveByRecipeId(row.recipeId)).filter(recipe => recipe
+    const entries = known.map(id => recipes().resolveByRecipeId(id)).filter(recipe => recipe
         && rules.canCraft(state, recipe)).slice(0, rules.MAX_PUBLIC_RECIPES).map(recipe => ({ recipeId: recipe.recipeId,
         ...servicePrice(recipe, prior.get(recipe.recipeId), state) }));
-    if (!entries.length) { remove(state.characterId); return state; }
+    const previous = state.stats?.workshop?.entries || [];
+    if (!entries.length && !previous.length) { remove(state.characterId, { recipes: false }); return state; }
+    if (entries.length === previous.length && entries.every((entry, i) =>
+        Number(entry.recipeId) === Number(previous[i].recipeId)
+        && ['price', 'firstPrice', 'earned', 'fills'].every(key => Number(entry[key] || 0) === Number(previous[i][key] || 0)))) {
+        register(state); return state;
+    }
     const next = { ...state, stats: { ...state.stats, workshop: { title: `${state.name}'s workshop`,
         entries, town: state.currentRegion, loc: state.loc } } };
     const saved = await life().upsertState(next, 'workshop_updated') || state;
@@ -213,4 +228,4 @@ async function publishDemand(state, recipe, productPrice, context) {
     }
     return state;
 }
-module.exports = { init, register, remove, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand };
+module.exports = { init, register, remove, recipesChanged, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand };

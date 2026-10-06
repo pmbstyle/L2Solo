@@ -456,7 +456,9 @@ class Backpack extends BackpackModel {
             mpCost: recipeItem.mpCost
         };
         this.fetchRecipeBook(actor, recipeItem.type).push(recipe);
-        Database.setCharacterRecipe(actor.fetchId(), recipe.recipeId, recipeItem.type).catch((error) => {
+        Database.setCharacterRecipe(actor.fetchId(), recipe.recipeId, recipeItem.type).then(() => {
+            invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(actor.fetchId());
+        }).catch((error) => {
             utils.infoWarn('Crafting', 'failed to persist recipe %d for %s: %s', recipe.recipeId, actor.fetchName?.() || actor.fetchId(), error.message || error);
         });
     }
