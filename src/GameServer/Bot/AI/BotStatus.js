@@ -106,7 +106,13 @@ function findTarget(session, bot) {
     if (!session.currentTargetId) return null;
 
     const World = invoke('GameServer/World/World');
-    const userSession = World.user.sessions.find((ob) => ob.actor && ob.actor.fetchId() === session.currentTargetId);
+    let userSession;
+    if (typeof World.registeredActorById === 'function') {
+        const candidate = World.registeredActorById(session.currentTargetId)?.session;
+        userSession = candidate?.actor && candidate.actor.fetchId() === session.currentTargetId ? candidate : null;
+    } else {
+        userSession = World.user.sessions.find((ob) => ob.actor && ob.actor.fetchId() === session.currentTargetId);
+    }
     if (userSession && userSession.actor) {
         return { type: 'user', ...actorSummary(userSession.actor, bot) };
     }

@@ -511,7 +511,14 @@ class ColdSimulationCoordinator {
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
-                this.attachTableChannel();
+                try {
+                    this.attachTableChannel();
+                } catch (error) {
+                    // Native source setup failed; use the existing Worker exit
+                    // path rather than leave a running child without its feed.
+                    this.onWorkerError(error);
+                    worker.terminate?.()?.catch(failure => this.recordError(failure));
+                }
             } else if (payload.phase === 'running') {
                 this.ready = true;
                 this.syncWorkerPressure();
@@ -582,12 +589,27 @@ class ColdSimulationCoordinator {
 
     // A new worker epoch gets every table in full; later flushes send changes.
     attachTableChannel() {
+        if (this.stopping) return;
+        // Production owns the shared channel. Injected channels keep their
+        // ordinary-table behavior and do not silently acquire native authority.
+        const nativeActors = this.tableChannel === TableChannel.shared;
+        if (nativeActors) {
+            const source = require('../../World/MainActorPublicationSource').native();
+            const existing = this.tableChannel.tables.get('actors');
+            if (existing && existing.streamed?.source !== source) {
+                throw new TypeError('foreign_native_actor_table');
+            }
+            if (!existing) this.tableChannel.register('actors', {
+                key: ref => ref.id, eventDriven: true, streamed: { source, recipient: 'cold' }
+            });
+        }
+        const worker = this.worker;
         const epoch = this.workerEpoch;
         this.tableChannel.attach(this, epoch, (payload, payloadBytes) => {
-            if (this.workerEpoch !== epoch) return false;
+            if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return false;
             const bytes = Protocol.envelopeBytes(Protocol.envelope('table_page', epoch, {}), payloadBytes) + 256;
             return !!this.post('table_page', payload, null, bytes);
-        });
+        }, nativeActors ? { streamedTables: ['actors'] } : {});
     }
 
     workerConfig() {
@@ -2098,6 +2120,9 @@ class ColdSimulationCoordinator {
     }
 
     async stopCurrent(worker, epoch) {
+        // Fence posted continuations before cancellation, early returns or any
+        // drain await. A stopped same-epoch recipient cannot be rearmed.
+        this.tableChannel.stopActorRecipient?.(this, epoch);
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         this.projectionRetention.reset();

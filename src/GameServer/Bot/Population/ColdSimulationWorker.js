@@ -118,7 +118,10 @@ let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 const actorSources = require('../../World/CharacterActorSources').native();
-tables.attachStore('actors', actorSources.createStore);
+const actorOwner = tables.attachStore('actors', actorSources.createStore);
+const ColdActorTableReceiver = require('./ColdActorTableReceiver');
+const actorTables = new ColdActorTableReceiver({ mirror: tables, owner: actorOwner,
+    onResync: names => send('table_resync', { names }) });
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
@@ -574,8 +577,7 @@ async function handle(message) {
         }, message.msgId);
         break;
     case 'table_page': {
-        const resync = tables.apply(payload.tables);
-        if (resync.length) send('table_resync', { names: resync });
+        actorTables.apply(payload.tables);
         break;
     }
     case 'clan_social_page':
@@ -702,6 +704,7 @@ async function handle(message) {
         marketEvents.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        actorTables.stop();
         competitionCandidates?.stop();
         stopTimers();
         eventLoopDelay.disable();

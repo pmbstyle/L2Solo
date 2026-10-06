@@ -287,7 +287,23 @@ function travellingPullerAwayFromCamp(leaderSession, pulling) {
 }
 
 function hasDeadPartyMember(leaderSession) {
-    return (World.user?.sessions || []).some((memberSession) => (
+    let members;
+    if (World.pvpPartyMembershipIndex === true) {
+        if (typeof World.pvpPartySessionsForKey !== 'function' || typeof World.registeredActorById !== 'function') {
+            throw new TypeError('invalid_party_membership_index');
+        }
+        if (leaderSession?.hotBackgroundPartyId) {
+            members = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(leaderSession);
+        } else {
+            members = World.pvpPartySessionsForKey(leaderSession);
+            const current = World.registeredActorById(leaderSession?.actor?.fetchId?.());
+            if (current && current.session === leaderSession && current.actor === leaderSession.actor
+                && !members.includes(leaderSession)) members.push(leaderSession);
+        }
+    } else {
+        members = World.user?.sessions || [];
+    }
+    return members.some((memberSession) => (
         PartyAwareness.isPartySession(memberSession, leaderSession) &&
         memberSession.actor?.isDead?.() === true
     ));
