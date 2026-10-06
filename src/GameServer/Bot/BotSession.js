@@ -15,6 +15,7 @@ class BotSession {
     setActor(properties) {
         World.retireUserActor(this, this.actor);
         this.actor = new Actor(this, properties);
+        World.updateUserLocation(this, this.actor);
     }
 
     fetchAccountId() {

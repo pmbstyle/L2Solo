@@ -41,6 +41,22 @@ const items = new Map();
 const towns = new Map();
 let mirror = null;
 let channel = null;
+const changeListeners = new Set();
+let loading = false;
+
+function notifyChanged(change) {
+    if (loading) return;
+    for (const listener of changeListeners) {
+        try { listener(change); }
+        catch (error) { utils.infoWarn('Market', 'counter listener failed: %s', error.message); }
+    }
+}
+
+function subscribeChanges(listener) {
+    if (typeof listener !== 'function') return () => {};
+    changeListeners.add(listener);
+    return () => changeListeners.delete(listener);
+}
 
 function template(selfId) {
     return ItemTemplateIndex.find(DataCache.items, Number(selfId)) || null;
@@ -191,10 +207,20 @@ function deal(selfId, unitPrice, quantity, timestamp = Date.now(), sellerId = 0,
         channel.changed('market', itemRow(id, item));
         if (byTown) channel.changed('market', townRow(key, byTown));
     }
+    notifyChanged({ key, deals: counter.deals });
 }
 
 // The journal of the last day at start (oldest first): the same deals again.
 function load(rows = []) {
+    loading = true;
+    try { return loadRows(rows); }
+    finally {
+        loading = false;
+        for (const [key, value] of counters) notifyChanged({ key, deals: value.deals });
+    }
+}
+
+function loadRows(rows) {
     for (const row of rows) {
         deal(row.selfId, row.unitPrice, row.quantity, Number(row.occurredAt), row.sellerCharacterId, row.town || null,
             row.buyerCharacterId);
@@ -337,7 +363,8 @@ function reset() {
     items.clear();
     towns.clear();
     mirror = null;
+    notifyChanged({ reset: true });
 }
 
 module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, townDemand, firstPrice,
-    publish, useTable, useSpots, reset };
+    publish, useTable, useSpots, reset, subscribeChanges };

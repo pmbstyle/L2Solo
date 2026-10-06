@@ -31,10 +31,23 @@ function recentLimit(limit) {
 }
 const pendingWrites = new Map();
 const changeListeners = new Set();
+const marketReviewListeners = new Set();
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
 let marketGoalCursor = { updatedAt: 0, characterId: 0 };
+
+function notifyMarketReviewState(state, previous) {
+    if (!state?.characterId) return;
+    const left = previous?.simulation || {};
+    const right = state.simulation || {};
+    if (previous?.phase === state.phase && left.ownerId === right.ownerId
+        && left.revision === right.revision && left.leaseId === right.leaseId) return;
+    for (const listener of marketReviewListeners) {
+        try { listener(state.characterId); }
+        catch (error) { utils.infoWarn('BotLife', 'market lifecycle listener failed: %s', error.message); }
+    }
+}
 
 function isCriticalSnapshotReason(reason = '', state = null) {
     if (state?.activity === 'dead') return true;
@@ -1565,6 +1578,7 @@ const BotLifeState = {
         const current = cache.get(snapshot.characterId);
         if (Number(current?.stats?.clanLevelSpVersion || 0) > Number(snapshot.stats?.clanLevelSpVersion || 0)) return current;
         cache.set(snapshot.characterId, snapshot);
+        notifyMarketReviewState(snapshot, current);
         invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
         return snapshot;
     },
@@ -1619,8 +1633,10 @@ const BotLifeState = {
             return save(row);
         }).then(() => {
             const snapshot = normalize(row);
+            const current = cache.get(characterId);
             cache.set(characterId, snapshot);
             setSessionSnapshotsPhase(session, 'hot');
+            notifyMarketReviewState(snapshot, current);
             return snapshot;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to mark %s hot: %s', row.characterName, err.message);
@@ -1711,7 +1727,9 @@ const BotLifeState = {
             .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
             .then(() => {
                 const snapshot = normalize(row);
+                const current = cache.get(characterId);
                 cache.set(characterId, snapshot);
+                notifyMarketReviewState(snapshot, current);
                 return snapshot;
             }).catch((err) => {
                 utils.infoWarn('BotLife', 'failed to mark %s cold: %s', row.characterName, err.message);
@@ -3348,7 +3366,9 @@ const BotLifeState = {
             .then((row) => paidTrip().then(() => row))
             .then((row) => {
                 const snapshot = normalize(row);
+                const current = cache.get(characterId);
                 cache.set(characterId, snapshot);
+                notifyMarketReviewState(snapshot, current);
                 notifyColdSnapshot(snapshot, reason);
                 return snapshot;
             })
@@ -3565,6 +3585,12 @@ const BotLifeState = {
         return () => changeListeners.delete(listener);
     },
 
+    subscribeMarketReviewChanges(listener) {
+        if (typeof listener !== 'function') return () => {};
+        marketReviewListeners.add(listener);
+        return () => marketReviewListeners.delete(listener);
+    },
+
     acceptSimulationOwnership(characterId, result = {}, committedState = null) {
         const id = Number(characterId);
         const current = cache.get(id);
@@ -3586,6 +3612,7 @@ const BotLifeState = {
             next.stats = { ...next.stats, nameGeneratorVersion: current.stats.nameGeneratorVersion };
         }
         cache.set(id, next);
+        notifyMarketReviewState(next, current);
         invoke('GameServer/Clan/ClanService').syncColdMember(next);
         return next;
     },

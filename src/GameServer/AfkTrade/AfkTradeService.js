@@ -46,6 +46,37 @@ function boardRows() {
 const SETTLE_TICK_MS = 5000;
 let settleTimer = null;
 let settling = false;
+const boardChangeListeners = new Set();
+let boardReady = false;
+let boardChangeDepth = 0;
+const changedOwners = new Set();
+
+function notifyBoardChange(change) {
+    for (const listener of boardChangeListeners) {
+        try { listener(change); }
+        catch (error) { utils.infoWarn('AfkTrade', 'board listener failed: %s', error.message); }
+    }
+}
+
+// A replacement's remove/put is one logical event. Listeners see the
+// completed indexed board, including metadata-only checkpoint refreshes.
+function boardChange(work) {
+    boardChangeDepth++;
+    try { return work(); }
+    finally {
+        if (--boardChangeDepth === 0 && changedOwners.size) {
+            const ownerIds = [...changedOwners];
+            changedOwners.clear();
+            notifyBoardChange({ ownerIds, ready: boardReady });
+        }
+    }
+}
+
+function subscribeBoardChanges(listener) {
+    if (typeof listener !== 'function') return () => {};
+    boardChangeListeners.add(listener);
+    return () => boardChangeListeners.delete(listener);
+}
 
 function kindOf(shop) {
     return shop?.kind || 'shop';
@@ -61,6 +92,7 @@ function entryStore(entry) {
 function unindexProjection(projection) {
     const recordId = projection?.indexedRecordId;
     if (!recordId) return;
+    changedOwners.add(Number(projection.shop.ownerId));
     board.remove(recordId);
     TableChannel.shared.changed('board', { key: recordId, removed: true });
     projection.indexedRecordId = null;
@@ -73,6 +105,7 @@ function indexProjection(projection) {
     const row = rowOf(store);
     if (!row[6].length) return;
     board.put(recordOf(row), projection);
+    changedOwners.add(Number(projection.shop.ownerId));
     TableChannel.shared.changed('board', row);
     projection.indexedRecordId = row[0];
     projection.boardRow = row;
@@ -301,6 +334,10 @@ function invalidateTradeWindows(actor) {
 }
 
 function removeProjection(ownerId) {
+    return boardChange(() => removeProjectionEntry(ownerId));
+}
+
+function removeProjectionEntry(ownerId) {
     const projection = projectionsByOwner.get(Number(ownerId));
     if (!projection) return false;
     unindexProjection(projection);
@@ -324,6 +361,10 @@ function removeProjection(ownerId) {
 }
 
 function spawnProjection(shop) {
+    return boardChange(() => spawnProjectionEntry(shop));
+}
+
+function spawnProjectionEntry(shop) {
     removeProjection(shop.ownerId);
     const projection = buildProjection(shop);
     projectionsByOwner.set(Number(shop.ownerId), projection);
@@ -400,6 +441,10 @@ function dropAd(id) {
 // projection (the author's), an ad as an entry. A closed or empty record
 // leaves memory.
 function refreshRecord(shop) {
+    return boardChange(() => refreshRecordEntry(shop));
+}
+
+function refreshRecordEntry(shop) {
     if (!shop) return null;
     if (kindOf(shop) === 'shop') return refreshProjection(shop);
     dropAd(shop.id);
@@ -946,6 +991,8 @@ function activeDemandSelfIds() {
 }
 
 function clearBoard() {
+    boardReady = false;
+    notifyBoardChange({ reset: true, ready: false });
     stopTimers();
     for (const entry of entriesById.values()) {
         if (entry.indexedRecordId) TableChannel.shared.changed('board', { key: entry.indexedRecordId, removed: true });
@@ -957,6 +1004,7 @@ function clearBoard() {
     entriesById.clear();
     entriesByOwner.clear();
     board.clear();
+    changedOwners.clear();
 }
 
 // Restores the board at start. The old world's bot records close once
@@ -982,6 +1030,8 @@ async function init() {
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
     MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }));
+    boardReady = true;
+    notifyBoardChange({ ready: true });
     startTimers();
     return shops.length;
 }
@@ -1016,6 +1066,8 @@ module.exports = {
     restorePlace,
     activeShops,
     boardIndex: () => board,
+    isBoardReady: () => boardReady,
+    subscribeBoardChanges,
     offerOf,
     activeDemandSelfIds,
     activate,

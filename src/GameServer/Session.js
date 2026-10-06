@@ -182,6 +182,7 @@ class Session {
         this.questStatesLoaded = false;
         this.activeNpcTalk = null;
         this.actor = new Actor(this, properties);
+        World.updateUserLocation(this, this.actor);
     }
 
     persistCharacterStatus({ currentOnly = false } = {}) {

@@ -10,11 +10,47 @@ const NpcObjectIndex = require('./NpcObjectIndex');
 const CharacterLocationIndex = require('./CharacterLocationIndex');
 const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
 const userLocationIndexes = new WeakMap();
+const userChangeListeners = new Set();
+
+function notifyUserChange(id) {
+    if (!Number.isSafeInteger(id) || id <= 0) return;
+    for (const listener of userChangeListeners) {
+        try { listener(id); }
+        catch (error) { utils.infoWarn('World', 'user change listener failed: %s', error.message); }
+    }
+}
 
 function createUserLocationIndex(user) {
-    const runtime = { index: new CharacterLocationIndex(), sessions: new Map(), retiredActors: new WeakSet() };
+    const runtime = { index: new CharacterLocationIndex(), sessions: new Map(),
+        registered: new Map(), retiredActors: new WeakSet() };
     userLocationIndexes.set(user, runtime);
     return runtime;
+}
+
+function registeredActor(runtime, session, actor, id) {
+    return Object.freeze({ id, session, actor, token: Symbol('user-registration'),
+        get retired() { return runtime.retiredActors.has(actor); } });
+}
+
+function attachRegisteredActor(runtime, session, membership) {
+    const actor = session.actor;
+    const id = Number(actor?.fetchId?.());
+    const previous = membership.registered;
+    if (previous?.actor === actor && previous.id === id) return previous;
+    if (previous && runtime.registered.get(previous.id) === previous) runtime.registered.delete(previous.id);
+    membership.registered = null;
+    if (previous) notifyUserChange(previous.id);
+    if (!actor || !Number.isSafeInteger(id) || id <= 0) return null;
+    const displaced = runtime.registered.get(id);
+    if (displaced && displaced.actor !== actor) {
+        runtime.retiredActors.add(displaced.actor);
+        runtime.index.remove(id, displaced.actor);
+    }
+    const record = registeredActor(runtime, session, actor, id);
+    runtime.registered.set(id, record);
+    membership.registered = record;
+    notifyUserChange(id);
+    return record;
 }
 
 function removeIndexedSession(runtime, session) {
@@ -24,7 +60,10 @@ function removeIndexedSession(runtime, session) {
         runtime.index.remove(membership.id, membership.actor);
         runtime.retiredActors.add(membership.actor);
     }
+    const registered = membership.registered;
+    if (registered && runtime.registered.get(registered.id) === registered) runtime.registered.delete(registered.id);
     runtime.sessions.delete(session);
+    if (registered) notifyUserChange(registered.id);
 }
 
 function actorLoc(actor) {
@@ -200,9 +239,10 @@ const World = {
         }
         // Explicit registration is authoritative, including reconnecting the
         // same session/actor. Delayed setters alone cannot undo retirement.
-        if (session.actor) runtime.retiredActors.delete(session.actor);
+        const restored = session.actor && runtime.retiredActors.delete(session.actor);
         if (!runtime.sessions.has(session)) runtime.sessions.set(session, { actor: null, id: null });
         this.updateUserLocation(session);
+        if (restored) notifyUserChange(Number(session.actor.fetchId?.()));
         this.user.revision += 1;
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
     },
@@ -220,20 +260,30 @@ const World = {
     updateUserLocation(session, actor = session?.actor) {
         const runtime = userLocationIndexes.get(this.user);
         const membership = runtime?.sessions.get(session);
-        if (!membership || !actor || session.actor !== actor || runtime.retiredActors.has(actor)) return false;
+        if (!membership || !actor || session.actor !== actor) return false;
+        const registered = attachRegisteredActor(runtime, session, membership);
+        if (runtime.retiredActors.has(actor)) return false;
         if (membership.actor && membership.actor !== actor) this.retireUserActor(session, membership.actor);
-        if (actor.fetchIsOnline?.() === false) {
+        const online = actor.fetchIsOnline?.() !== false;
+        const onlineChanged = membership.online !== online;
+        membership.online = online;
+        if (!online) {
             if (membership.actor === actor) runtime.index.remove(membership.id, actor);
+            if (onlineChanged && registered) notifyUserChange(registered.id);
             return false;
         }
         const id = actor.fetchId?.();
         const previous = runtime.index.get(id);
         if (membership.actor === actor && membership.id !== id) runtime.index.remove(membership.id, actor);
         const loc = indexedActorLoc(actor);
-        if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY) || !Number.isFinite(loc.locZ)) {
+        const usable = Number.isFinite(loc.locX) && Number.isFinite(loc.locY) && Number.isFinite(loc.locZ);
+        const usableChanged = membership.usable !== usable;
+        membership.usable = usable;
+        if (!usable) {
             runtime.index.remove(id, actor);
             membership.actor = actor;
             membership.id = id;
+            if ((usableChanged || onlineChanged) && registered) notifyUserChange(registered.id);
             return false;
         }
         const realPlayer = PlayerActivitySignal.isRealPlayerSession(session);
@@ -250,6 +300,7 @@ const World = {
         }
         membership.actor = actor;
         membership.id = id;
+        if ((usableChanged || onlineChanged) && registered) notifyUserChange(registered.id);
         return true;
     },
 
@@ -260,9 +311,29 @@ const World = {
         if (membership.actor !== actor && (membership.actor !== null || session.actor !== actor)) return false;
         runtime.index.remove(membership.id, actor);
         runtime.retiredActors.add(actor);
+        const previous = membership.registered;
+        if (previous?.actor === actor && runtime.registered.get(previous.id) === previous) {
+            // Retirement invalidates an in-flight token even if explicit
+            // registration later restores this same session and actor.
+            const retired = registeredActor(runtime, session, actor, previous.id);
+            runtime.registered.set(previous.id, retired);
+            membership.registered = retired;
+            notifyUserChange(previous.id);
+        }
         membership.actor = null;
         membership.id = null;
         return true;
+    },
+
+    registeredActorById(id) {
+        const record = userLocationIndexes.get(this.user)?.registered.get(Number(id));
+        return record?.session.actor === record?.actor ? record || null : null;
+    },
+
+    subscribeUserChanges(listener) {
+        if (typeof listener !== 'function') return () => {};
+        userChangeListeners.add(listener);
+        return () => userChangeListeners.delete(listener);
     },
 
     realPlayerSessionsNear(loc, radius) {
