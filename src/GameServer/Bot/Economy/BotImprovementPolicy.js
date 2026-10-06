@@ -36,7 +36,7 @@ function changedInventory(state, item, patch) {
     } else inventory[item.selfId] = { ...row, enchant: next.enchant, instances: [...instances, next] };
     return { ...state, inventory };
 }
-function caster(state) {
+function isCaster(state) {
     return ['mage','healer','buffer','nuker','summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
 }
 function gainBetween(a, b, caster) {
@@ -71,7 +71,7 @@ function stuckCost(state, item, ctx, before = null) {
     if (!item.equipped || !adapter(item).isWeapon()) return 0;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const timestamp = ctx.timestamp ?? Date.now();
-    before = before || Profile.buildGainsFor(state, timestamp).power;
+    before = before || Profile.powerNumbers(Profile.buildGainsFor(state, timestamp));
     let remainder = changedInventory(state,item,{equipped:false});
     const spares = instances(state).filter(other => other.id !== item.id && adapter(other).isWeapon());
     const rate = profile => profile.pAtk * profile.atkSpd + profile.mAtk * profile.castSpd;
@@ -96,10 +96,10 @@ function opportunities(state, ctx) {
     // candidate, so a review after an ordinary fight computes none of them.
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const timestamp = ctx.timestamp ?? Date.now();
-    const build = Profile.buildGainsFor(state, timestamp), magic = caster(state);
+    const build = Profile.buildGainsFor(state, timestamp), magic = isCaster(state);
     const value = (key, after) => {
         const effect = Profile.gainFor(build, `${magic ? 'm' : 'p'}:${key}`,
-            () => gainBetween(build.power, Profile.powerFor(after(), timestamp), magic));
+            () => gainBetween(Profile.powerNumbers(build), Profile.powerFor(after(), timestamp, Profile.buildOptions(build, timestamp)), magic));
         return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight;
     };
     const result = [];
@@ -107,7 +107,7 @@ function opportunities(state, ctx) {
         const a = adapter(item), category = Rules.categoryOf(a);
         // What losing this weapon costs: once per item, only where a try can fail.
         let stuck = null;
-        const stuckOnce = () => stuck ?? (stuck = stuckCost(state, item, ctx, build.power));
+        const stuckOnce = () => stuck ?? (stuck = stuckCost(state, item, ctx, Profile.powerNumbers(build)));
         if (!category || !Rules.CRYSTAL_IDS[Rules.gradeOf(a)]) continue;
         const equipped = item.equipped;
         const buyer = !equipped && ctx.board?.first(item.selfId, 3, { excludeOwner: state.characterId });
@@ -219,4 +219,4 @@ function crystalPath(state, id, ctx, spots = []) {
     }
     return best;
 }
-module.exports = { enchantedPrice, crystalPath, opportunities, instances, adapter, changedInventory, enchantCost, stuckCost };
+module.exports = { isCaster, enchantedPrice, crystalPath, opportunities, instances, adapter, changedInventory, enchantCost, stuckCost };

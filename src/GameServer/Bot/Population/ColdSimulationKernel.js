@@ -607,6 +607,8 @@ class ColdSimulationKernel {
     remove(characterId) {
         const id = Number(characterId);
         this.pendingReleases.delete(id);
+        // Standalone kernels cannot have game economy entries before Global loads.
+        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
         const current = this.states.get(id);
         this.partyRequirementProgress.delete(String(current?.context?.party?.partyId || current?.state?.party?.partyId || ''));
         const previousRecord = this.states.locationIndex.getSource(id, 'state');

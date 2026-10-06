@@ -186,6 +186,11 @@ class ColdSimulationCoordinator {
         this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.economyDecisions = new ColdEconomyDecisions();
+        this.unsubscribeWishRemovals = LifeState.subscribePublications(packet => {
+            if (packet.kind !== 'remove') return;
+            this.economyDecisions.forget(packet.characterId);
+            invoke('GameServer/Bot/Economy/EconomyContext').forget(packet.characterId);
+        });
         this.seenOrder = [];
         this.waiters = new Map();
         this.commandTail = Promise.resolve();
@@ -1960,9 +1965,11 @@ class ColdSimulationCoordinator {
     }
 
     async fenceBot(characterId, timeoutMs = 500, economy = false) {
+        const id = Number(characterId);
+        this.economyDecisions.forget(id);
+        invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
         if (!economy && this.economyBots.has(Number(characterId))) return { ok: false, reason: 'economy_in_progress' };
         if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
-        const id = Number(characterId);
         this.fencedBots.add(id);
         this.counters.fences += 1;
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });

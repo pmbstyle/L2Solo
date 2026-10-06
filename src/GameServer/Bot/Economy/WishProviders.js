@@ -39,15 +39,15 @@ function worn(state, slot) {
 // build and item (design 16.5), so a later review of the same build reuses it.
 function gearGain(state, item, timestamp = Date.now(), build = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const caster = ['mage', 'healer', 'buffer', 'nuker', 'summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
+    const caster = require('./BotImprovementPolicy').isCaster(state);
     build = build || Profile.buildGainsFor(state, timestamp);
     return Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
-        const before = build.power;
+        const before = Profile.powerNumbers(build);
         const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, row]) => [key,
             Number(row.slot) === Number(item.etc.slot) ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
         inventory[item.selfId] = { selfId: Number(item.selfId), amount: 1, equipped: true,
             equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
-        const after = Profile.powerFor({ ...state, inventory }, timestamp);
+        const after = Profile.powerFor({ ...state, inventory }, timestamp, Profile.buildOptions(build, timestamp));
         const attack = caster ? 'mAtk' : 'pAtk';
         const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
         const defenceGain = Math.max(0, 1 - Number(before.pDef) / Math.max(1, Number(after.pDef)));
@@ -82,13 +82,15 @@ function attackRate(profile) {
     });
     return rotationRate(autoRate, casts);
 }
-function skillGain(state, book) {
+function skillGain(state, book, before = null, beforeRate = null, timestamp = Date.now(), build = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const original = state.stats?.coldCombat || {};
     const skills = Profile.skillSnapshotsFromRecords([...original.skills || [], { selfId: book.skillId, level: book.level }]);
-    const after = Profile.profileFor({ ...state, stats: { ...state.stats, coldCombat: { ...original, skills } } });
-    const before = Profile.profileFor(state);
-    return { attack: Math.max(0, attackRate(after) / Math.max(0.001, attackRate(before)) - 1),
+    const options = build ? Profile.buildOptions(build, timestamp) : {};
+    const after = Profile.profileFor({ ...state, stats: { ...state.stats, coldCombat: { ...original, skills } } }, timestamp, options);
+    before = before || Profile.profileFor(state, timestamp, options);
+    beforeRate = beforeRate ?? attackRate(before);
+    return { attack: Math.max(0, attackRate(after) / Math.max(0.001, beforeRate) - 1),
         defence: Math.max(0, 1 - before.pDef / after.pDef, 1 - before.mDef / after.mDef) };
 }
 // A review judges the bot against every drop source of every candidate: its
@@ -99,7 +101,10 @@ function build(state, ctx, deps = {}) {
 function buildProjection(state, ctx, deps) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const timestamp = ctx.timestamp ?? Date.now();
-    const ownBuild = invoke('GameServer/Bot/Population/ColdCombatProfile').buildGainsFor(state, timestamp);
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const ownBuild = Profile.buildGainsFor(state, timestamp);
+    let beforeBook = null, beforeBookRate = null;
+    const magic = require('./BotImprovementPolicy').isCaster(state);
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
     const nodes = [], roots = [], values = new Map();
     const add = node => { if (nodes.length >= 64 || nodes.some(row => row.key === node.key)) return false;
@@ -206,7 +211,13 @@ function buildProjection(state, ctx, deps) {
     }
     for (const book of invoke('GameServer/Skills/SkillBookCatalog').missingBooks(state)) {
         if (nodes.length >= 36) break;
-        const gain = skillGain(state, book);
+        const gain = Profile.gainFor(ownBuild, `${magic ? 'm' : 'p'}:skill:${book.skillId}:${book.level}`, () => {
+            if (!beforeBook) {
+                beforeBook = Profile.profileFor(state, timestamp, Profile.buildOptions(ownBuild, timestamp));
+                beforeBookRate = attackRate(beforeBook);
+            }
+            return skillGain(state, book, beforeBook, beforeBookRate, timestamp, ownBuild);
+        });
         const value = (gain.attack + gain.defence * ctx.deathHours) * horizon * powerWeight;
         if (!(value > 0) || !(price(book.selfId) > 0)) continue;
         const key = itemNode(book.selfId); if (!key) continue;

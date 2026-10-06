@@ -329,4 +329,6 @@ function forget(id) {
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
 function reset() { cache.clear(); groups.clear(); engine.clear(); }
-module.exports = { forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
+function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
+
+module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };

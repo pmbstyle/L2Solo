@@ -1,3 +1,4 @@
+const { fnv1a32 } = require('../Fnv1a');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
@@ -126,7 +127,7 @@ function effectStats(effect = {}) {
 // Passives follow the hot rule (SkillRequirements). A cold fight is judged
 // once, at its start: the bot at full HP (HP-threshold passives off), not
 // moving or seated, night from the game clock at `timestamp`.
-function statSources(profile, timestamp) {
+function statSources(profile, timestamp, options = {}) {
     const equipment = profile.equipment || {};
     const gear = {
         weaponKind: equipment.weaponKind || '',
@@ -136,7 +137,7 @@ function statSources(profile, timestamp) {
     };
     const situation = {
         hp: 1, maxHp: 1, moving: false, walking: false, seated: false,
-        get night() { return GameTime.isNight(timestamp); }
+        get night() { options.onNightRead?.(); return options.night ?? GameTime.isNight(timestamp); }
     };
     const sources = activeEffects(profile.effects, timestamp).map(effectStats);
     for (const skill of profile.skills || []) {
@@ -522,7 +523,7 @@ function needsDatabaseBackfill(snapshot = {}) {
         && (snapshot?.skillSource !== 'database' || number(snapshot?.version) < PROFILE_VERSION);
 }
 
-function profileFor(state = {}, timestamp = Date.now()) {
+function profileFor(state = {}, timestamp = Date.now(), options = {}) {
     const saved = state.stats?.coldCombat;
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
     const template = classTemplate(classId);
@@ -556,7 +557,7 @@ function profileFor(state = {}, timestamp = Date.now()) {
     }
     // Resolve effects and passive requirements once for this calculation.
     // A later profile rebuild gets fresh sources after gear, skill or buff changes.
-    const sources = statSources(profile, timestamp);
+    const sources = statSources(profile, timestamp, options);
     const equipment = profile.equipment;
     const str = effectiveBase(profile, 'STR', timestamp, sources);
     const dex = effectiveBase(profile, 'DEX', timestamp, sources);
@@ -807,26 +808,26 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     };
 }
 
-// The expensive layer of a wish review (design 16.5): how much power each
-// candidate (gear, enchant, henna, SA) adds to a build. It depends on the
-// build alone, so it is kept per build and shared by bots with the same
-// build; an ordinary fight (new adena and exp) reuses it. An entry holds the
-// build's own power numbers and two numbers per candidate the review
-// compared, never whole profiles (memory per bot is budgeted, design 16.26).
-// The build key holds everything profileFor reads for these numbers: class,
-// level, captured base, henna capture and saved equipment, worn items with
-// slot and enchant, the effects active at `timestamp` (by id and stats),
-// skills, hennas and night. Each bot owns the entry of its current build
-// (several bots share one); an entry dies with its last owner, so the store
-// holds about one entry per bot, and owners not seen for long leave first.
+// ARCH-NOTE: Float32 changed queue/focus for 15 of 300 saved builds.
+// Float64 gains preserve exact decisions; 128 packed candidates keep heap plus buffers below 4 KB per bot.
+// Shared candidate names are interned once; a build keeps only numeric hashes,
+// power numbers and packed gains. Owners release both variants and night markers.
 const buildGains = new Map();
 const ownerBuilds = new Map();
+const candidateIndex = new Map();
+const POWER_FIELDS = ['pAtk', 'mAtk', 'atkSpd', 'castSpd', 'pDef', 'mDef', 'maxHp'];
+const CANDIDATE_LIMIT = 65536, ENTRY_LIMIT = 128;
 function ownerLimit() {
     return Math.ceil(1.25 * Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0));
 }
 function releaseBuild(key) {
     const entry = buildGains.get(key);
-    if (entry && --entry.owners <= 0) buildGains.delete(key);
+    if (!entry) return;
+    if (--entry.owners <= 0) buildGains.delete(key);
+    if (entry.night === 1) {
+        const marker = buildGains.get(entry.baseKey);
+        if (marker && --marker.owners <= 0) buildGains.delete(entry.baseKey);
+    }
 }
 function powerKey(state = {}, timestamp = Date.now()) {
     const saved = state.stats?.coldCombat || {};
@@ -839,30 +840,54 @@ function powerKey(state = {}, timestamp = Date.now()) {
         .map((effect) => `${effect.id}/${effect.key}/${JSON.stringify(effectStats(effect))}`).sort().join(',');
     return [saved.classId, state.stats?.classId, state.classId, state.level, worn, (state.stats?.hennas || []).join(','),
         Array.isArray(saved.skills) ? `${saved.skillSource}:${saved.skills.map((skill) => `${skill.selfId}:${skill.level}`).join(',')}` : '',
-        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null]), effects,
-        GameTime.isNight(timestamp) ? 'n' : 'd'].join('|');
+        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null]), effects].join('|');
 }
-function powerFor(state = {}, timestamp = Date.now()) {
-    const profile = profileFor(state, timestamp);
-    return { pAtk: profile.pAtk, mAtk: profile.mAtk, atkSpd: profile.atkSpd, castSpd: profile.castSpd,
-        pDef: profile.pDef, mDef: profile.mDef, maxHp: profile.maxHp };
+function buildHash(text) {
+    return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
 }
-// The build's entry: { power, gains }. `gainFor(entry, key, compute)` returns
-// the remembered [attack, defence] of one candidate or computes it once. A
-// state without a character id gets a fresh entry that is not kept.
+function powerFor(state = {}, timestamp = Date.now(), options = {}) {
+    const profile = profileFor(state, timestamp, options);
+    return Object.fromEntries(POWER_FIELDS.map(field => [field, profile[field]]));
+}
+// ARCH-NOTE: Existing callers need named numbers transiently; packed entries
+// never retain that object or a per-candidate string/array.
+function powerNumbers(entry) {
+    return Object.fromEntries(POWER_FIELDS.map((field, index) => [field, entry.power[index]]));
+}
+function buildOptions(entry, timestamp) {
+    return { night: entry.night === 0 ? false : GameTime.isNight(timestamp) };
+}
+function newEntry(power, night, baseKey) {
+    return { power: Float64Array.from(POWER_FIELDS.map(field => power[field])), ids: new Int32Array(32),
+        gains: new Float64Array(64), size: 0, owners: 0, night, baseKey };
+}
 function buildGainsFor(state = {}, timestamp = Date.now()) {
-    const key = powerKey(state, timestamp);
+    const text = powerKey(state, timestamp), baseKey = buildHash(text);
     const owner = Number(state.characterId) || 0;
-    let entry = buildGains.get(key);
+    let key = baseKey, entry = buildGains.get(baseKey);
     if (!entry) {
-        entry = { power: powerFor(state, timestamp), gains: new Map(), owners: 0 };
-        if (!owner) return entry;
-        buildGains.set(key, entry);
+        let readsNight = false;
+        const power = powerFor(state, timestamp, { onNightRead: () => { readsNight = true; } });
+        if (readsNight) {
+            entry = { night: 2, owners: 0 };
+            if (owner) buildGains.set(baseKey, entry);
+            key = buildHash(text + (GameTime.isNight(timestamp) ? '|n' : '|d'));
+            entry = newEntry(power, 1, baseKey);
+        } else entry = newEntry(power, 0, baseKey);
+        if (owner) buildGains.set(key, entry);
+    } else if (entry.night === 2) {
+        key = buildHash(text + (GameTime.isNight(timestamp) ? '|n' : '|d'));
+        entry = buildGains.get(key);
+        if (!entry) {
+            entry = newEntry(powerFor(state, timestamp), 1, baseKey);
+            if (owner) buildGains.set(key, entry);
+        }
     }
     if (!owner) return entry;
     const held = ownerBuilds.get(owner);
     if (held !== key) {
         entry.owners++;
+        if (entry.night === 1) buildGains.get(baseKey).owners++;
         if (held !== undefined) releaseBuild(held);
     }
     ownerBuilds.delete(owner);
@@ -881,17 +906,30 @@ function forgetBuild(characterId) {
     releaseBuild(key);
 }
 function gainFor(entry, key, compute) {
-    let gain = entry.gains.get(key);
-    if (!gain) {
-        const effect = compute();
-        gain = [effect.attack, effect.defence];
-        entry.gains.set(key, gain);
+    let id = candidateIndex.get(key);
+    if (id === undefined && candidateIndex.size < CANDIDATE_LIMIT) {
+        id = candidateIndex.size;
+        candidateIndex.set(key, id);
     }
-    return { attack: gain[0], defence: gain[1] };
+    for (let index = 0; id !== undefined && index < entry.size; index++) {
+        if (entry.ids[index] === id) return { attack: entry.gains[index * 2], defence: entry.gains[index * 2 + 1] };
+    }
+    const effect = compute();
+    if (id === undefined || entry.size >= ENTRY_LIMIT) return effect;
+    if (entry.size === entry.ids.length) {
+        const ids = new Int32Array(Math.min(ENTRY_LIMIT, entry.ids.length * 2)), gains = new Float64Array(ids.length * 2);
+        ids.set(entry.ids); gains.set(entry.gains); entry.ids = ids; entry.gains = gains;
+    }
+    const index = entry.size++;
+    entry.ids[index] = id;
+    entry.gains[index * 2] = effect.attack;
+    entry.gains[index * 2 + 1] = effect.defence;
+    return { attack: entry.gains[index * 2], defence: entry.gains[index * 2 + 1] };
 }
+function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds.size, candidateIndex: candidateIndex.size }; }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, size,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add

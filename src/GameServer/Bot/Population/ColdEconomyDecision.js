@@ -75,6 +75,8 @@ class ColdEconomyDecisions {
         const decision = this.decided(state);
         return decision ? decision.activity : build()?.network?.activity || null;
     }
+    forget(id) { this.byId.delete(Number(id)); }
+    size() { return this.byId.size; }
 }
 
 module.exports = { capture, stateKey, ColdEconomyDecisions };
