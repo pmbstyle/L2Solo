@@ -43,9 +43,10 @@ class ColdCompetitionActions {
         this.report = { mode: 'cooperation', applied: 0, rejected: 0, avoids: 0, yields: 0, contests: 0, revenges: 0, deescalated: 0, parties: 0, recruits: 0, queued: 0, pvpFights: 0, pvpDeaths: 0, pkKills: 0, budgetSkipped: 0, recent: [] };
         Object.assign(this.report, { attempted: 0, decisionRefreshes: 0, rejectedReasons: {}, rejectionExamples: [], skippedActions: {}, pvpRejected: {}, pvpSuppressed: {}, pvpCompleted: 0, pvpOutcomes: {}, pvpExtensions: 0, pvpExtendedMs: 0 });
     }
-    submit(forecast) {
-        if (this.stopping || this.running || !forecast || forecast.at <= this.lastScanAt || !this.canRun()) return;
-        this.lastScanAt = forecast.at;
+    submit(forecast, options = {}) {
+        if (this.stopping || this.running || !forecast || (!options.framed && forecast.at <= this.lastScanAt) || !this.canRun()) return false;
+        const releaseForecasts = options.releaseForecasts || this.releaseForecasts;
+        this.lastScanAt = options.framed ? Math.max(this.lastScanAt, forecast.at) : forecast.at;
         const candidates = (forecast.events || forecast.recent || []).filter(e => e.at === forecast.at
             && (e.action === 'avoid' || e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
                 || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
@@ -109,8 +110,9 @@ class ColdCompetitionActions {
             for (const event of skipped) count(this.report.skippedActions, event.pvpIntent ? 'pvp' : event.action);
             // A skipped forecast was never carried out: its pair re-decides on
             // the next scan instead of waiting out the cooldown. No backlog.
-            if (skipped.length) this.releaseForecasts(skipped);
+            if (skipped.length) releaseForecasts(skipped);
         })().finally(() => { this.running = null; });
+        return true;
     }
     async apply(event) {
         const now = this.now();
@@ -229,4 +231,4 @@ class ColdCompetitionActions {
         spotActivityEvicted: this.spotActivityEvicted,
         mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
-module.exports = { ColdCompetitionActions, eligible, WAIT_MS, CONFLICT_COOLDOWN_MS };
+module.exports = { ColdCompetitionActions, eligible, TTL_MS, WAIT_MS, CONFLICT_COOLDOWN_MS };

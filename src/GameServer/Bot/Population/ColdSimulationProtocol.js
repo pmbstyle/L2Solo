@@ -76,6 +76,25 @@ function envelopeBytes(message, payloadBytes) {
     return byteLength({ ...message, payload: {} }) - 2 + payloadBytes;
 }
 
+function competitionFrame(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+        && Number.isSafeInteger(value.frameId) && value.frameId > 0
+        && Number.isSafeInteger(value.at) && value.at > 0
+        && Array.isArray(value.events) && value.events.length <= 160
+        && value.events.every(event => event && typeof event === 'object' && !Array.isArray(event)
+            && event.at === value.at && typeof event.key === 'string' && event.key.length > 0
+            && typeof event.action === 'string' && event.action.length > 0
+            && Number.isSafeInteger(event.actor?.id) && event.actor.id > 0
+            && Number.isSafeInteger(event.peer?.id) && event.peer.id > 0);
+}
+
+function competitionReceipt(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+        && Number.isSafeInteger(value.frameId) && value.frameId > 0
+        && Number.isSafeInteger(value.at) && value.at > 0
+        && ['accepted', 'deferred', 'observed', 'expired'].includes(value.status);
+}
+
 function validateEnvelope(message, direction, options = {}) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
         return { ok: false, reason: 'invalid_envelope' };
@@ -101,6 +120,17 @@ function validateEnvelope(message, direction, options = {}) {
     const bytes = Number.isFinite(options.bytes) && options.bytes >= 0 ? options.bytes : byteLength(message);
     if (!Number.isFinite(bytes) || bytes > Number(options.maxBytes || MAX_MESSAGE_BYTES)) {
         return { ok: false, reason: 'message_too_large', bytes };
+    }
+    if (message.type === 'heartbeat' && message.payload.competition
+        && Object.prototype.hasOwnProperty.call(message.payload.competition, 'frame')
+        && !competitionFrame(message.payload.competition.frame)) {
+        return { ok: false, reason: 'invalid_competition_frame' };
+    }
+    if (message.type === 'competition_release' && (message.payload.events !== undefined
+        && (!Array.isArray(message.payload.events) || message.payload.events.length > 160)
+        || message.payload.receipt !== undefined && (!Array.isArray(message.payload.events)
+            || !competitionReceipt(message.payload.receipt)))) {
+        return { ok: false, reason: 'invalid_competition_receipt' };
     }
 
     const batchFields = {

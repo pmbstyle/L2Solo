@@ -22,6 +22,7 @@ const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartySt
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Protocol = require('./ColdSimulationProtocol');
+const { TTL_MS: COMPETITION_TTL_MS } = require('./ColdCompetitionActions');
 const ColdStateDelta = require('./ColdStateDelta');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
@@ -186,6 +187,7 @@ class ColdSimulationCoordinator {
         this.seenOrder = [];
         this.waiters = new Map();
         this.commandTail = Promise.resolve();
+        this.competitionFrameAdmission = null;
         this.competitionActions = new (require('./ColdCompetitionActions').ColdCompetitionActions)({
             life: LifeState, owner: ColdSimulationOwner,
             memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
@@ -374,6 +376,7 @@ class ColdSimulationCoordinator {
         if (this.worker || this.stopping) return;
         this.cancelLeaseRenewalRound();
         this.workerEpoch = `cold-worker:${process.pid}:${randomUUID()}`;
+        this.competitionFrameAdmission = null;
         this.projectionRetention.reset();
         this.ready = false;
         this.snapshotsLoaded = false;
@@ -446,6 +449,46 @@ class ColdSimulationCoordinator {
         return sent;
     }
 
+    releaseCompetitionForecasts(events, worker, epoch) {
+        if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return null;
+        return this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
+            actor: { id: e.actor.id, partyId: e.actor.partyId || null }, peer: { id: e.peer.id, partyId: e.peer.partyId || null } })) });
+    }
+
+    handleCompetitionForecast(forecast, worker, epoch) {
+        if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch || !forecast) return;
+        const releaseForecasts = events => this.releaseCompetitionForecasts(events, worker, epoch);
+        const frame = forecast.frame;
+        if (frame === undefined) {
+            if (Config.coldCompetitionActionsEnabled) this.competitionActions.submit(forecast, { releaseForecasts });
+            return;
+        }
+        const reply = status => {
+            if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return;
+            this.post('competition_release', { events: [], receipt: { frameId: frame.frameId, at: frame.at, status } });
+        };
+        const accepted = this.competitionFrameAdmission;
+        if (accepted?.worker === worker && accepted.epoch === epoch) {
+            if (accepted.frameId === frame.frameId && accepted.at === frame.at) {
+                reply(accepted.status);
+                return;
+            }
+            if (frame.frameId <= accepted.frameId) return;
+        }
+        const now = Date.now();
+        if (frame.at > now) { reply('deferred'); return; }
+        if (now - frame.at > COMPETITION_TTL_MS) { reply('expired'); return; }
+        const status = Config.coldCompetitionActionsEnabled
+            ? this.competitionActions.submit(frame, { framed: true, releaseForecasts }) ? 'accepted' : 'deferred'
+            : 'observed';
+        if (status === 'accepted' || status === 'observed') {
+            // Install before sending: a lost receipt replays this admission,
+            // even after TTL, without installing another action task.
+            this.competitionFrameAdmission = { worker, epoch, frameId: frame.frameId, at: frame.at, status };
+        }
+        reply(status);
+    }
+
     async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
@@ -514,7 +557,7 @@ class ColdSimulationCoordinator {
             this.lastHeartbeatAt = Date.now();
             this.lastWorkerSnapshot = payload;
             if (!this.stopping) Metrics.recordColdSafetyTotals(epoch, payload.safety);
-            if (Config.coldCompetitionActionsEnabled) this.competitionActions.submit(payload.competition);
+            this.handleCompetitionForecast(payload.competition, worker, epoch);
             break;
         case 'fence_ack':
         case 'drained': {
