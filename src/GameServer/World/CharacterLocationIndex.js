@@ -8,6 +8,15 @@ function validateView(view) {
     if (!VIEWS.has(view)) throw new RangeError('invalid_character_source_view');
 }
 
+function validSource(source, rawPrimitive) {
+    return source !== null && source !== undefined
+        && (rawPrimitive || typeof source === 'object' || typeof source === 'function');
+}
+
+function sameSource(left, right, legacyState) {
+    return left === right || (legacyState && Number.isNaN(left) && Number.isNaN(right));
+}
+
 function cellMembers() {
     return { all: new Set(), hot: new Set(), cold: new Set(), player: new Set() };
 }
@@ -67,8 +76,11 @@ class CharacterLocationIndex {
         if (typeof indexed !== 'boolean') throw new TypeError('invalid_character_source_mode');
         const legacy = view === 'state' && this.legacyStateCache;
         const sameId = record?.id === id || (legacy && Number.isNaN(id) && Number.isNaN(record?.id));
-        if ((!legacy && (!Number.isSafeInteger(id) || id <= 0)) || !sameId
-            || !record?.source || (typeof record.source !== 'object' && typeof record.source !== 'function')) {
+        if ((!legacy && (!Number.isSafeInteger(id) || id <= 0)) || !sameId) {
+            throw new RangeError('invalid_character_source');
+        }
+        const source = record?.source;
+        if (!validSource(source, legacy && !indexed)) {
             throw new RangeError('invalid_character_source');
         }
         const point = indexed ? pointOf(record.loc) : null;
@@ -76,10 +88,9 @@ class CharacterLocationIndex {
         const tags = memberships(record);
         let row = this.records.get(id);
         let entry = row?.[view];
-        if (entry && entry.source !== record.source) {
+        if (entry && !sameSource(entry.source, source, legacy)) {
             this.detachCell(entry);
             this.detachSpot(entry);
-            entry.source = record.source;
             entry.key = null;
             entry.spotId = null;
             entry.indexed = false;
@@ -89,11 +100,12 @@ class CharacterLocationIndex {
             this.records.set(id, row);
         }
         if (!entry) {
-            entry = { id, view, source: record.source, record, indexed: false,
+            entry = { id, view, source, record, indexed: false,
                 key: null, phase: null, realPlayer: false, spotId: null };
             row[view] = entry;
             this.sourceViews[view].set(id, entry);
         }
+        entry.source = source;
         entry.record = record;
         this.refresh(entry, key, tags, point, indexed);
         return record;
@@ -105,10 +117,12 @@ class CharacterLocationIndex {
 
     updateSource(id, view, source, { indexed } = {}) {
         validateView(view);
+        const legacy = view === 'state' && this.legacyStateCache;
         const entry = this.records.get(id)?.[view];
-        if (!entry || entry.source !== source) return false;
+        if (!entry || !sameSource(entry.source, source, legacy)) return false;
         const nextIndexed = indexed === undefined ? entry.indexed : indexed;
         if (typeof nextIndexed !== 'boolean') throw new TypeError('invalid_character_source_mode');
+        if (!validSource(entry.source, legacy && !nextIndexed)) throw new RangeError('invalid_character_source');
         const point = nextIndexed ? pointOf(entry.record.loc) : null;
         const key = nextIndexed ? this.cellKey(point, view) : null;
         this.refresh(entry, key, memberships(entry.record), point, nextIndexed);
@@ -123,7 +137,7 @@ class CharacterLocationIndex {
         validateView(view);
         const row = this.records.get(id);
         const entry = row?.[view];
-        if (!entry || entry.source !== source) return false;
+        if (!entry || !sameSource(entry.source, source, view === 'state' && this.legacyStateCache)) return false;
         this.detachCell(entry);
         this.detachSpot(entry);
         this.sourceViews[view].delete(id);
