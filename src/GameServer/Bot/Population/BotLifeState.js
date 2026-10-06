@@ -38,6 +38,25 @@ function recentLimit(limit) {
 const pendingWrites = new Map();
 const changeListeners = new Set();
 const marketReviewListeners = new Set();
+// Pending ids only: each initial/new cold cache entry is examined once.
+const classMigrationCandidates = new Map();
+const classMigrationListeners = new Set();
+function notifyClassMigrationPending() {
+    for (const listener of classMigrationListeners) listener(classMigrationCandidates.size);
+}
+cache.subscribePublications(({ characterId, state, previousState }) => {
+    if (workerProjectorRole) return;
+    const id = Number(characterId);
+    if (state?.phase !== 'cold') {
+        if (classMigrationCandidates.delete(id)) notifyClassMigrationPending();
+        return;
+    }
+    if (previousState?.phase === 'cold') return;
+    if (classProgressionNeeded(state, Number(state.stats?.classId || 0), Number(state.level || 1))) {
+        classMigrationCandidates.set(id, Number(state.updatedAt || 0));
+        notifyClassMigrationPending();
+    }
+});
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -882,6 +901,9 @@ function hydrateCache() {
             cache.set(state.characterId, state);
             invoke('GameServer/Bot/Economy/CraftWorkshopService').register(state);
         });
+        const ordered = [...classMigrationCandidates].sort((a, b) => a[1] - b[1]);
+        classMigrationCandidates.clear();
+        for (const [id, at] of ordered) classMigrationCandidates.set(id, at);
         return rows.length;
     });
 }
@@ -1960,21 +1982,24 @@ const BotLifeState = {
         });
     },
 
+    pendingClassProgressionMigration() { return classMigrationCandidates.size; },
+
+    subscribeClassProgressionMigration(listener) {
+        classMigrationListeners.add(listener);
+        return () => classMigrationListeners.delete(listener);
+    },
+
     migrateLegacyClassProgression(limit = 5) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
-        const candidates = Array.from(cache.values())
-            // Hot bots own a live Actor instance. Their class is reconciled
-            // through activation/level-up, not behind that actor's back.
-            .filter((state) => state.phase === 'cold')
-            .filter((state) => !pendingWrites.has(state.characterId))
-            .filter((state) => classProgressionNeeded(
-                state,
-                Number(state.stats?.classId || 0),
-                Number(state.level || 1)
-            ))
-            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
-            .slice(0, safeLimit);
+        const ids = [];
+        for (const id of classMigrationCandidates.keys()) { ids.push(id); if (ids.length >= safeLimit) break; }
+        // A pending native write is not an attempted migration. Keep that
+        // candidate for the next bounded pass after its write settles.
+        for (const id of ids) if (!pendingWrites.has(id)) classMigrationCandidates.delete(id);
+        notifyClassMigrationPending();
+        const candidates = ids.map(id => cache.get(id))
+            .filter(state => state?.phase === 'cold' && !pendingWrites.has(state.characterId));
 
         return candidates.reduce((chain, state) => chain.then((migrated) => (
             Database.execute([

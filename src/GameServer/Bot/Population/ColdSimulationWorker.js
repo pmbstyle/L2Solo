@@ -413,6 +413,8 @@ function startKernel(config = {}) {
             return {
                 state: projected,
                 durable: Object.keys(durable).length ? durable : null,
+                buffOffer: require('../Economy/ColdBuffOffer').project(projected,
+                    kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
                 // Main reads this instead of building the network again.
                 ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture(economy, projected), key: seenKey } } : {})
             };

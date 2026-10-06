@@ -1055,13 +1055,13 @@ const PopulationService = {
         this.startPartyAssemblyEvents();
         this.startLifecycleEconomyEvents();
 
-        this.classProgressionMigrationTimer = setInterval(() => {
-            this.migrateLegacyClassProgression();
-        }, Config.classProgressionMigrationIntervalMs);
-
-        if (typeof this.classProgressionMigrationTimer.unref === 'function') {
-            this.classProgressionMigrationTimer.unref();
-        }
+        Promise.resolve(this.lifeReadyPromise).then(() => {
+            if (!this.started) return;
+            this.classProgressionMigrationUnsubscribe?.();
+            this.classProgressionMigrationUnsubscribe = LifeState.subscribeClassProgressionMigration(
+                () => this.ensureClassProgressionMigrationTimer());
+            this.ensureClassProgressionMigrationTimer();
+        });
 
         if (Config.warehouseCleanupEnabled !== false) {
             this.nextWarehouseCleanupAt = Date.now() + Math.max(1000, Number(Config.warehouseCleanupStartDelayMs) || 60000);
@@ -1162,6 +1162,8 @@ const PopulationService = {
             clearTimeout(this.seedTimer);
             this.seedTimer = null;
         }
+        this.classProgressionMigrationUnsubscribe?.();
+        this.classProgressionMigrationUnsubscribe = null;
         if (this.classProgressionMigrationTimer) {
             clearInterval(this.classProgressionMigrationTimer);
             this.classProgressionMigrationTimer = null;
@@ -1247,6 +1249,18 @@ const PopulationService = {
         }
     },
 
+    ensureClassProgressionMigrationTimer() {
+        if (!this.started || !LifeState.pendingClassProgressionMigration()) {
+            if (this.classProgressionMigrationTimer) clearInterval(this.classProgressionMigrationTimer);
+            this.classProgressionMigrationTimer = null;
+            return;
+        }
+        if (this.classProgressionMigrationTimer) return;
+        this.classProgressionMigrationTimer = setInterval(() => this.migrateLegacyClassProgression(),
+            Config.classProgressionMigrationIntervalMs);
+        this.classProgressionMigrationTimer.unref?.();
+    },
+
     migrateLegacyClassProgression() {
         // Database uses one ordered connection. Never queue a migration behind
         // an active resolver: a skipped migration tick is harmless, but a
@@ -1270,6 +1284,7 @@ const PopulationService = {
             })
             .finally(() => {
                 this.classProgressionMigrationRunning = false;
+                this.ensureClassProgressionMigrationTimer();
             });
     },
 

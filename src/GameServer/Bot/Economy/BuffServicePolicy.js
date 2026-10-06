@@ -41,13 +41,14 @@ function incomeForTenMinutes(entity) {
     return Math.round(HuntEfficiency.hourValue(lifeStateOf(entity)).perHour / 6);
 }
 
-function priceFor({ provider, recipient, skills, town, trust = 0 }) {
+function priceFor({ provider, recipient, skills, mp, count, town, trust = 0 }) {
     if (sameClan(provider, recipient)) return 0;
-    const mp = skills.reduce((sum, skill) => sum + Math.max(0, Number(skill.fetchConsumedMp?.() || 0)), 0);
+    mp = mp ?? (skills || []).reduce((sum, skill) => sum + Math.max(0, Number(skill.fetchConsumedMp?.() || 0)), 0);
+    count = count ?? skills?.length ?? 0;
     const opportunity = incomeForTenMinutes(provider);
     const mpCost = Math.ceil(opportunity * Math.min(1, mp / Math.max(1, Number(provider?.fetchMaxMp?.() || provider?.vitals?.maxMp || 500))) * 0.22);
     const townPrice = Math.ceil(opportunity * 1.25 / 2 + mpCost);
-    const base = town ? townPrice : Math.max(mpCost + skills.length * 8, Math.ceil(townPrice * 0.55));
+    const base = town ? townPrice : Math.max(mpCost + count * 8, Math.ceil(townPrice * 0.55));
     const relation = trust >= 8 ? 0.9 : trust >= 3 ? 0.96 : trust <= -5 ? 1.1 : 1;
     return Math.max(1, Math.ceil(base * relation));
 }

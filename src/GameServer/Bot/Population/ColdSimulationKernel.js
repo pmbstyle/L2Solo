@@ -1734,6 +1734,10 @@ class ColdSimulationKernel {
                 durable: projection?.durable || null,
                 ...(projection?.market ? { market: projection.market } : {}),
                 ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
+                // The projected state precedes claim; main commits one revision
+                // after this grant before consuming the offer.
+                ...(projection?.buffOffer ? { buffOffer: { ...projection.buffOffer,
+                    providerRevision: active.grant.revision } } : {}),
                 result,
                 options: { allowLifecycle: true }
             };
