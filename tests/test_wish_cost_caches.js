@@ -225,6 +225,27 @@ check('a wish review is rebuilt only by changes on items it read (design 16.5)',
     assert.equal(Economy.forState(state, deps), held, 'a board look after the review is not its input');
 });
 
+check('basics() and stockFor() give what forState gives, without building a network', () => {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const { BoardIndex } = invoke('GameServer/AfkTrade/BoardIndex');
+    const deps = { board: new BoardIndex(), spots: invoke('GameServer/Bot/Population/SpotProfiles').ensure(), timestamp: Date.now() };
+    for (const level of [20, 35, 52]) {
+        const state = { characterId: 950 + level, phase: 'cold', activity: 'hunting', level, adena: 5000,
+            inventory: { 1: { selfId: 1, amount: 1, equipped: true, equippedCount: 1, slot: 7 }, 1835: { selfId: 1835, amount: 40 } },
+            loc: { locX: 80000, locY: 148000, locZ: -3500 }, currentRegion: 'Giran',
+            stats: { classId: 1, exp: Data.experience[level - 1], persona: { traits: { commitment: .7, caution: .4,
+                resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .6 } },
+            timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
+        Economy.reset();
+        const full = Economy.forState(state, deps);
+        const alone = Economy.basics(state, deps);
+        for (const kind of ['shots', 'potions']) assert.deepEqual(Economy.stockFor(state, kind, deps), full.stock(kind), `${kind} at ${level}`);
+        for (const field of ['deathHours', 'riskWeight', 'lostGearHours', 'karmaHours', 'expectedDeathHours', 'bestSpotId'])
+            assert.deepEqual(alone[field], full[field], `${field} at ${level}`);
+        assert.deepEqual(alone.hunt, full.hunt);
+    }
+});
+
 if (failures) { console.error(`${failures} failed`); process.exit(1); }
 console.log('all passed');
 process.exit(0);

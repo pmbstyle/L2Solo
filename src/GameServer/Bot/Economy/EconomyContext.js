@@ -93,15 +93,82 @@ function watchedBoard(board, watch) {
         list: (selfId, ...rest) => { watch(selfId); return board.list(selfId, ...rest); }
     });
 }
-function forState(state = {}, deps = {}) {
+function resolved(state, deps) {
     deps = { ...runtime, ...deps };
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
-    const timestamp = Number(deps.timestamp || Date.now());
     if (typeof deps.productionStatus === 'function') deps.productionStatus = deps.productionStatus(state.characterId);
     if (deps.productionStatus == null && isMainThread && state.stats?.production) deps.productionStatus = invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (deps.memory?.relations || []).map(row => row.targetId));
+    return deps;
+}
+function personaOf(state, deps) {
+    return deps.persona || invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
+}
+function pricing(state, persona, board, timestamp, deps, read = () => {}) {
+    const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const prices = new Map();
+    const knowledgeEnabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
+    const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
+        marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
+    return { knowledgeEnabled, price: id => {
+        read(id);
+        if (!prices.has(Number(id))) {
+            const belief = Belief.prior(id, priceCtx);
+            prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
+        }
+        return prices.get(Number(id));
+    } };
+}
+// The bot's hour, death and karma prices and its stock of shots and potions:
+// the part of a review that needs no wish network. forState builds on it and
+// basics() returns it alone, so a reader that wants only these never builds
+// the network, and both give the same numbers.
+function foundation(state, deps, persona, timestamp, price) {
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const role = state.party?.role || state.stats?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId || 0);
+    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
+    const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
+    const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
+    const bestSpotId = hunt.spotId || state.spotId;
+    const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours });
+    const bestTable = (bestSpotId && Table.value(bestSpotId, tableRole, state.level, true))
+        || Table.best(tableRole, state.level, true);
+    const stock = kind => {
+        const shots = kind === 'shots';
+        const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
+            : invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
+        const use = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
+        const current = positive(state.inventory?.[plan.selfId]?.amount);
+        const targetHours = 1 + 2 * Valuation.trait(persona, 'commitment');
+        const target = Math.ceil(use * targetHours);
+        const missing = Math.max(0, target - current);
+        const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
+        const benefitHours = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) * targetHours
+            : positive(bestTable?.deaths) * deathHours * targetHours;
+        return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
+            targetHours, target, missing, unitPrice: price(plan.selfId), benefitHours,
+            needed: use > 0 && current < use };
+    };
+    return { tableRole, hunt, lostGearHours, bestSpotId, deathHours, bestTable, stock,
+        riskWeight: Valuation.riskWeight(state, persona),
+        expectedDeathHours: positive(bestTable?.deaths) * deathHours,
+        karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
+}
+function basics(state = {}, deps = {}) {
+    deps = resolved(state, deps);
+    const timestamp = Number(deps.timestamp || Date.now());
+    const persona = personaOf(state, deps);
+    const board = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
+    const { price } = pricing(state, persona, board, timestamp, deps);
+    return { persona, price, timestamp, ...foundation(state, deps, persona, timestamp, price) };
+}
+function stockFor(state, kind, deps = {}) { return basics(state, deps).stock(kind); }
+function forState(state = {}, deps = {}) {
+    deps = resolved(state, deps);
+    const timestamp = Number(deps.timestamp || Date.now());
     const key = inputKey(state, { ...deps, timestamp });
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
     const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
@@ -112,64 +179,27 @@ function forState(state = {}, deps = {}) {
     const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
     const watch = id => { if (building) read(id); };
     const Data = invoke('GameServer/DataCache');
-    const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
-    const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
-    const persona = deps.persona || invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
-    const role = state.party?.role || state.stats?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId || 0);
-    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
-    const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
+    const persona = personaOf(state, deps);
     const board = watchedBoard(sourceBoard, watch);
-    const prices = new Map();
-    const knowledgeEnabled = deps.knowledgeEnabled ?? Learning.knowledgeEnabled();
-    const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
-        marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
-    // A price is remembered in `prices`, so every price read counts, also a
-    // late one through context.price: its item joins the review's inputs.
-    const price = id => {
-        read(id);
-        if (!prices.has(Number(id))) {
-            const belief = Belief.prior(id, priceCtx);
-            prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
-        }
-        return prices.get(Number(id));
-    };
+    // A price is remembered, so every price read counts, also a late one
+    // through context.price: its item joins the review's inputs.
+    const { price, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read);
+    const base = foundation(state, deps, persona, timestamp, price);
     const buyback = id => invoke('GameServer/Items/NpcSellRules')
         .npcBuyPrice(Number(ItemIndex.find(Data.items, id)?.template?.price || 0));
     const own = Hunt.sampledRows(state, timestamp, deps.mode);
     const calibrations = own.flatMap(row => {
-        const base = Table.value(row.spotId, tableRole, state.level, true);
-        return base?.exp > 0 ? [Math.max(0, row.exp) / row.cycleMs * 3600000 / base.exp] : [];
+        const value = Table.value(row.spotId, base.tableRole, state.level, true);
+        return value?.exp > 0 ? [Math.max(0, row.exp) / row.cycleMs * 3600000 / value.exp] : [];
     });
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
     const Tendency = require('../AI/TendencyRoll');
-    const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
-    const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt, price, buyback, calibration,
-        riskWeight: Valuation.riskWeight(state, persona), bestSpotId: hunt.spotId || state.spotId,
-        deathHours: Valuation.deathHours(state, { ...hunt, lostGearHours }), lostGearHours,
-        karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours }), expectedDeathHours: 0 };
+    const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt: base.hunt, price, buyback, calibration,
+        riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
+        karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock };
     context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
-    const bestTable = (context.bestSpotId && Table.value(context.bestSpotId, tableRole, state.level, true))
-        || Table.best(tableRole, state.level, true);
-    context.expectedDeathHours = positive(bestTable?.deaths) * context.deathHours;
-    context.karmaHours = Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) });
-    context.stock = kind => {
-        const shots = kind === 'shots';
-        const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
-            : invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
-        const use = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
-        const current = positive(state.inventory?.[plan.selfId]?.amount);
-        const targetHours = 1 + 2 * Valuation.trait(persona, 'commitment');
-        const target = Math.ceil(use * targetHours);
-        const missing = Math.max(0, target - current);
-        const without = shots && context.bestSpotId ? Table.value(context.bestSpotId, tableRole, state.level, false) : null;
-        const benefitHours = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) * targetHours
-            : positive(bestTable?.deaths) * context.deathHours * targetHours;
-        return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
-            targetHours, target, missing, unitPrice: price(plan.selfId), benefitHours,
-            needed: use > 0 && current < use };
-    };
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
     // The items read so far name this network; a later price read through
@@ -179,7 +209,7 @@ function forState(state = {}, deps = {}) {
         wallet: positive(state.adena), survivalReserve: survivalReserve(state),
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
-        hourAdena: hunt.perHour, riskWeight: context.riskWeight });
+        hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
     // A known production opportunity uses the same marginal hour. Its
     // provider never calls Context, so the common evaluation has no cycle.
     if (isMainThread && state.stats?.workshop?.entries?.length) {
@@ -196,7 +226,7 @@ function forState(state = {}, deps = {}) {
         if (opportunities.length) network = engine.build({ actorKey, inputKey: networkKey + ':production', ...projection,
             wallet: positive(state.adena), survivalReserve: survivalReserve(state),
             playedHours: positive(state.stats?.playedHours), persona,
-            previous: { focus: network.focus, dormant: network.dormant }, hourAdena: hunt.perHour, riskWeight: context.riskWeight });
+            previous: { focus: network.focus, dormant: network.dormant }, hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
     }
     context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
@@ -290,4 +320,4 @@ function forget(id) {
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
 function reset() { cache.clear(); engine.clear(); }
-module.exports = { forState, forActor, forGroup, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
+module.exports = { forState, forActor, forGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
