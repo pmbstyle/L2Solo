@@ -111,8 +111,17 @@ class Skillset {
         });
     }
 
-    awardSkills(id, classId, level) {
-        return new Promise((success) => {
+    awardSkills(id, classId, level, options = {}) {
+        return new Promise((success, reject) => {
+            if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('invalid_skill_before_write');
+            const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
+            let skillOptions;
+            if (descriptor) {
+                if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
+                    throw new TypeError('invalid_skill_before_write');
+                }
+                skillOptions = Object.freeze({ beforeWrite: descriptor.value });
+            } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
             const createOrUpdateSkill = (skill) => {
                 const skillDetails = DataCache.skills.find((item) => item.selfId === skill.selfId);
                 if (!skillDetails) {
@@ -123,61 +132,34 @@ class Skillset {
                     return Promise.resolve();
                 }
 
-                return new Promise((done) => {
-                    const requested = skill.levels.filter((ob) => ob.pLevel <= level).pop();
-                    const resolved = definedLevel(skillDetails, requested?.level);
-                    if (!resolved) {
-                        utils.infoWarn('GameServer', 'unknown Skill Id %d with Level %d', skill.selfId, requested?.level);
-                        done();
-                        return;
-                    }
+                const requested = skill.levels.filter((ob) => ob.pLevel <= level).pop();
+                const resolved = definedLevel(skillDetails, requested?.level);
+                if (!resolved) {
+                    utils.infoWarn('GameServer', 'unknown Skill Id %d with Level %d', skill.selfId, requested?.level);
+                    return Promise.resolve();
+                }
 
-                    Database.fetchSkill(id, skill.selfId).then((ownedSkill) => {
-                        const storedLevel = ownedSkill[0]?.level;
-
-                        // Reconciliation also visits ancestor trees. They may
-                        // contain an older rank of a skill already trained.
-                        if (Number(storedLevel) >= Number(resolved.level)) {
-                            done();
-                            return;
-                        }
-
-                        // The skill is present in DB, update its level
-                        if (storedLevel) {
-                            Database.updateSkillLevel(id, skill.selfId, resolved.level).then(() => {
-                                done();
-                            });
-                        }
-                        else {
-                            // The skill is a new addition based on character's level
-                            skill = {
-                                ...utils.crushOb(skill),
-                                passive: skillDetails.template?.passive ?? false,
-                                level: resolved.level
-                            };
-                            Database.setSkill(skill, id).then(() => {
-                                done();
-                            });
-                        }
-                    });
+                return Database.fetchSkill(id, skill.selfId).then((ownedSkill) => {
+                    const storedLevel = ownedSkill[0]?.level;
+                    // Ancestor reconciliation never downgrades a trained rank.
+                    if (Number(storedLevel) >= Number(resolved.level)) return;
+                    if (storedLevel) return Database.updateSkillLevel(id, skill.selfId, resolved.level, skillOptions);
+                    return Database.setSkill({
+                        ...utils.crushOb(skill),
+                        passive: skillDetails.template?.passive ?? false,
+                        level: resolved.level
+                    }, id, skillOptions);
                 });
             };
 
             DataCache.fetchSkillTreeFromClassId(classId, (skillTree) => {
-                const skills = skillTree.skills;
-                const levelX = skills?.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level)) ?? [];
-
-                // Loop on skills that match character's current level
-                levelX.reduce((previous, skill) => {
-                    return previous.then(() => {
-                        return createOrUpdateSkill(skill);
-                    });
-                }, Promise.resolve()).then(() => {
-                    // Re-instantiate all character skills
-                    this.populate(id, () => {
-                        return success();
-                    });
-                });
+                try {
+                    const skills = skillTree.skills;
+                    const levelX = skills?.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level)) ?? [];
+                    // Serial writes and the final real read all reject outward.
+                    levelX.reduce((previous, skill) => previous.then(() => createOrUpdateSkill(skill)), Promise.resolve())
+                        .then(() => this.populate(id)).then(() => success(), reject);
+                } catch (error) { reject(error); }
             });
         });
     }

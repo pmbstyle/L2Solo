@@ -47,9 +47,18 @@ function plan({ classId, level, seed } = {}) {
     return { classId: resolvedClassId, transitions };
 }
 
-async function reconcile({ characterId, classId, level, seed = characterId } = {}) {
+async function reconcile({ characterId, classId, level, seed = characterId } = {}, options = {}) {
     const Database = invoke('Database');
     const Skillset = invoke('GameServer/Actor/Skillset');
+    if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('invalid_skill_before_write');
+    const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
+    let skillOptions;
+    if (descriptor) {
+        if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
+            throw new TypeError('invalid_skill_before_write');
+        }
+        skillOptions = Object.freeze({ beforeWrite: descriptor.value });
+    } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
     const id = Number(characterId);
     let resolvedClassId = Number(classId);
     const transitions = [];
@@ -59,13 +68,13 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     // first, then walk every profession threshold it has already passed.
     const skillset = new Skillset();
     for (const ancestor of ClassProgression.lineage(resolvedClassId)) {
-        await skillset.awardSkills(id, ancestor, level);
+        await skillset.awardSkills(id, ancestor, level, skillOptions);
     }
     for (let target = nextClass(resolvedClassId, level, seed); target; target = nextClass(resolvedClassId, level, seed)) {
         await Database.updateCharacterClassId(id, target);
         resolvedClassId = target;
         transitions.push(target);
-        await skillset.awardSkills(id, resolvedClassId, level);
+        await skillset.awardSkills(id, resolvedClassId, level, skillOptions);
     }
 
     return { classId: resolvedClassId, transitions };

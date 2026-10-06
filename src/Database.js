@@ -1434,6 +1434,38 @@ function write(sql, params = []) {
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 
+// Only the two skill writers use this optional admission. The normal SQL
+// queue, its write timing and result stay the same as run's nonread branch.
+function guardedSkillWrite(sql, params, operation, options = {}) {
+    let beforeWrite, present = false, captureFailed = false, captureError;
+    try {
+        if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('invalid_skill_before_write');
+        const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
+        if (descriptor) {
+            present = true;
+            if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
+                throw new TypeError('invalid_skill_before_write');
+            }
+            beforeWrite = descriptor.value;
+        } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
+    } catch (error) {
+        captureFailed = true;
+        captureError = error;
+    }
+    return enqueue(() => {
+        if (!connection) throw new Error(`SQLite is not initialized (${operation})`);
+        if (captureFailed) throw captureError;
+        if (present) {
+            const verdict = beforeWrite();
+            if (verdict !== undefined) {
+                if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
+                throw new TypeError('invalid_skill_before_write');
+            }
+        }
+        return write(sql, params);
+    }, { operation, read: false });
+}
+
 const GENERATED_BOT_FILTER = `(
     c.username LIKE 'bot_pop_%'
     OR c.username LIKE 'bot_scale_%'
@@ -5415,13 +5447,14 @@ const Database = {
     deleteSkills(characterId) {
         return remove('skills', 'characterId = ?', [characterId], 'skill:delete-all');
     },
-    setSkill(skill, characterId) {
-        return run(`INSERT INTO skills (selfId, name, passive, level, characterId) VALUES (?, ?, ?, ?, ?)
+    setSkill(skill, characterId, options = {}) {
+        return guardedSkillWrite(`INSERT INTO skills (selfId, name, passive, level, characterId) VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(characterId, selfId) DO UPDATE SET name = excluded.name, passive = excluded.passive, level = excluded.level`,
-        [skill.selfId, skill.name, skill.passive ? 1 : 0, skill.level, characterId], 'skill:upsert');
+        [skill.selfId, skill.name, skill.passive ? 1 : 0, skill.level, characterId], 'skill:upsert', options);
     },
-    updateSkillLevel(characterId, skillSelfId, skillLevel) {
-        return update('skills', { level: skillLevel }, 'selfId = ? AND characterId = ?', [skillSelfId, characterId], 'skill:level');
+    updateSkillLevel(characterId, skillSelfId, skillLevel, options = {}) {
+        return guardedSkillWrite('UPDATE "skills" SET "level" = ? WHERE selfId = ? AND characterId = ?',
+            [skillLevel, skillSelfId, characterId], 'skill:level', options);
     },
     setItem(characterId, item) {
         const values = { selfId: item.selfId, name: item.name ?? '', amount: item.amount ?? 1, enchant: Math.max(0, Number(item.enchant ?? 0) || 0), equipped: item.equipped ? 1 : 0, slot: item.slot ?? 0, characterId };
