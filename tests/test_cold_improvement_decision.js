@@ -3,7 +3,7 @@
 // without a decision it builds the network as before.
 const assert = require('node:assert/strict');
 require('../src/Global');
-const { capture } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+const { capture, stateKey } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Database = invoke('Database');
@@ -13,7 +13,7 @@ const Service = invoke('GameServer/Bot/Economy/BotImprovementService');
     const improvement = { kind: 'enchant', itemId: 4001, riskHours: 2 };
     const economy = { riskWeight: 1.5, network: { activity: { activity: 'improving', improvement, spotId: null, npcId: null } } };
     const decision = capture(economy, { characterId: 41, updatedAt: 500 });
-    assert.deepEqual(decision, { updatedAt: 500, riskWeight: 1.5,
+    assert.deepEqual(decision, { updatedAt: 500, key: stateKey({ characterId: 41, updatedAt: 500 }), riskWeight: 1.5,
         activity: { activity: 'improving', spotId: null, npcId: null, improvement } });
     assert.equal(capture({ riskWeight: 1, network: { activity: { activity: 'hunting', improvement } } }, {}).activity.improvement,
         undefined, 'an improvement travels only when the bot is improving');
@@ -27,10 +27,10 @@ const Service = invoke('GameServer/Bot/Economy/BotImprovementService');
     Life.cachedState = () => state;
     Life.acceptLifecycleRow = () => state;
     try {
-        await Service.reviewCold(state, { beforeWrite: 'w', decision });
+        await Service.reviewCold(state, { beforeWrite: 'w', decide: () => decision });
         assert.equal(builds, 0, 'the decided state builds no network on main');
         assert.deepEqual(writes[0].plan, { ...improvement, lossHours: 3 });
-        assert.equal(writes[0].options.decision, undefined, 'the decision is not passed to the writer');
+        assert.equal(writes[0].options.decide, undefined, 'the decision is not passed to the writer');
         assert.equal(writes[0].options.beforeWrite, 'w');
 
         await Service.reviewCold(state, { beforeWrite: 'w' });

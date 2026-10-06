@@ -389,14 +389,14 @@ function startKernel(config = {}) {
             buyOrderEscrow: kernel.states.get(Number(state.characterId))?.context?.buyOrderEscrow
         }),
         projectResolve: async (state, result, timestamp) => {
-            let economy = null;
+            let economy = null, seenKey = null;
             const resolved = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
                 timestamp,
                 projectClassProgression: true,
                 // Spot crowding, as main gave the same leaf before (L25).
                 economyDeps: { occupancy: currentPlanningOccupancy(timestamp) },
-                onEconomy: (built) => { economy = built; }
+                onEconomy: (built, seen) => { economy = built; seenKey = ColdEconomyDecision.stateKey(seen); }
             });
             // Board events submit price observations through market commands.
             const projected = resolved;
@@ -414,7 +414,7 @@ function startKernel(config = {}) {
                 state: projected,
                 durable: Object.keys(durable).length ? durable : null,
                 // Main reads this instead of building the network again.
-                ...(economy && projected ? { economyDecision: ColdEconomyDecision.capture(economy, projected) } : {})
+                ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture(economy, projected), key: seenKey } } : {})
             };
         },
         planLifecycle: ({ state, context, timestamp }) => {

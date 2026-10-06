@@ -140,7 +140,11 @@ function localNpcPrice(potion, town) {
 
 function restockPlan(value, options = {}) {
     const potion = options.potion || purchasePotionFor(value);
-    const targetAmount = Math.max(0, Number(options.targetAmount ?? targetAmountFor(value)) || 0);
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const state = value?.backpack ? Economy.stateForActor(value) : value;
+    // The budget needs the review; the same review gives the target.
+    const context = options.targetAmount === undefined ? Economy.forState(state) : null;
+    const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory
         ? amountInInventory(options.inventory, potion.selfId)
@@ -152,10 +156,8 @@ function restockPlan(value, options = {}) {
     const unitPrice = Math.max(0, Number(options.unitPrice ?? potion.price) || 0);
     const reserve = Math.max(0, Number(options.reserve ?? operationalReserve(value)) || 0);
     const desired = Math.max(0, targetAmount - stockAmount);
-    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    const state = value?.backpack ? Economy.stateForActor(value) : value;
     const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve)
-        : Economy.forState(state).purchaseBudget(potion.selfId);
+        : context.purchaseBudget(potion.selfId);
     const affordable = unitPrice > 0 ? Math.floor(Math.min(allowance, Math.max(0, adena - reserve)) / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {

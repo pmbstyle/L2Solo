@@ -2,13 +2,13 @@
 // committed state, and builds the wish network itself only when there is no
 // such decision (a restart, or main changed the state since).
 const assert = require('node:assert/strict');
-const { capture, ColdEconomyDecisions } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+const { capture, stateKey, ColdEconomyDecisions } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 
 const economy = { network: { activity: { activity: 'hunting', spotId: '22_18', npcId: 20120, rootKey: 'power', price: 5 } } };
 const decision = capture(economy, { characterId: 7, updatedAt: 1000 });
-assert.deepEqual(decision, { updatedAt: 1000, riskWeight: 0, activity: { activity: 'hunting', spotId: '22_18', npcId: 20120 } },
+assert.deepEqual(decision, { updatedAt: 1000, key: stateKey({ characterId: 7, updatedAt: 1000 }), riskWeight: 0, activity: { activity: 'hunting', spotId: '22_18', npcId: 20120 } },
     'only what main reads travels: activity, spot, mob');
-assert.deepEqual(capture({ network: {} }, { updatedAt: 5 }), { updatedAt: 5, riskWeight: 0, activity: null });
+assert.deepEqual(capture({ network: {} }, { updatedAt: 5 }), { updatedAt: 5, key: stateKey({}), riskWeight: 0, activity: null });
 
 const decisions = new ColdEconomyDecisions();
 let builds = 0;
@@ -37,4 +37,19 @@ decisions.activity({ characterId: 9, updatedAt: 1 }, build);
 assert.equal(builds, 2, 'no decision yet (after a restart) builds the network');
 assert.equal(decisions.hits, 1);
 assert.equal(decisions.misses, 2);
+// A commit or a projection can change these keeping updatedAt: not used then.
+const base = { characterId: 20, updatedAt: 70, level: 30, activity: 'hunting', stats: { classId: 1, clanId: 5, equipmentPlan: { status: 'active', target: { selfId: 9 } } } };
+for (const [label, changed] of [
+    ['clan left', { ...base, stats: { ...base.stats, clanId: 0 } }],
+    ['class changed', { ...base, stats: { ...base.stats, classId: 2 } }],
+    ['activity repaired', { ...base, activity: 'resting' }],
+    ['goal dropped', { ...base, stats: { ...base.stats, equipmentPlan: null } }],
+    ['workshop crafter', { ...base, stats: { ...base.stats, workshop: { entries: [{}] } } }]]) {
+    decisions.accept(20, capture(economy, base));
+    assert.equal(decisions.decided(changed), null, label);
+}
+decisions.accept(20, capture(economy, base));
+assert.notEqual(decisions.decided(base), null, 'the same state is decided');
+decisions.accept(21, capture(economy, base, { ...base, stats: { ...base.stats, classId: 2 } }));
+assert.equal(decisions.decided({ ...base, characterId: 21 }), null, 'built before a class change in the projection');
 console.log('test_cold_economy_decision: ok');

@@ -9,10 +9,23 @@
 // bot; a missing or older entry (a restart, a main-side change) falls back to
 // building the network as before.
 
-function capture(economy, state) {
+// What a decision depends on beyond updatedAt: a commit can merge clan or
+// goal changes and a projection can change the class after the network was
+// built, both keeping updatedAt; such a decision is not used.
+function stateKey(state = {}) {
+    const stats = state.stats || {};
+    const plan = stats.equipmentPlan;
+    return [Number(state.level || 0), Number(stats.classId || 0), state.activity || '', Number(stats.clanId || 0),
+        plan ? `${plan.status || ''}:${Number(plan.target?.selfId || 0)}:${plan.clanGoal ? 1 : 0}` : ''].join('|');
+}
+
+// economy: the network built on `seen` (the state before the projection's
+// last changes); state: the projected state main will commit.
+function capture(economy, state, seen = state) {
     const leaf = economy?.network?.activity || null;
     return {
         updatedAt: Number(state?.updatedAt || 0),
+        key: stateKey(seen),
         riskWeight: Number(economy?.riskWeight) || 0,
         activity: leaf ? {
             activity: leaf.activity || null,
@@ -41,11 +54,13 @@ class ColdEconomyDecisions {
         else this.byId.delete(id);
     }
 
-    // The worker's decision made on exactly this state, or null.
+    // The worker's decision made on exactly this state, or null. A workshop
+    // crafter's network has production paths only on main: main decides.
     decided(state) {
         const id = Number(state?.characterId);
         const decision = this.byId.get(id);
-        if (decision && decision.updatedAt === Number(state?.updatedAt || 0)) {
+        if (decision && decision.updatedAt === Number(state?.updatedAt || 0)
+            && decision.key === stateKey(state) && !state.stats?.workshop?.entries?.length) {
             this.hits += 1;
             return decision;
         }
@@ -62,4 +77,4 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { capture, ColdEconomyDecisions };
+module.exports = { capture, stateKey, ColdEconomyDecisions };

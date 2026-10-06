@@ -432,8 +432,9 @@ function saleCandidates(state, options = {}) {
     const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
     // The healing potions, the bot's own shots and the Scrolls of Escape a bot
     // spends are kept up to their restock targets; a surplus is sold.
-    const kept = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state),
-        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state),
+    const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
+    const kept = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: basics.stock('potions').target }),
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, basics),
         ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);

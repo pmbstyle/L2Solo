@@ -1695,7 +1695,7 @@ class ColdSimulationCoordinator {
             return LifeState.cachedState(state.characterId) || state;
         });
         const improved = await invoke('GameServer/Bot/Economy/BotImprovementService')
-            .reviewCold(state, { beforeWrite, decision: this.economyDecisions.decided(state) }).catch(error => {
+            .reviewCold(state, { beforeWrite, decide: () => this.economyDecisions.decided(state) }).catch(error => {
                 utils.infoWarn('BotEquipment', 'postcommit improvement failed for %s: %s', state.characterId, error.message);
                 return { state: LifeState.cachedState(state.characterId) || state };
             });

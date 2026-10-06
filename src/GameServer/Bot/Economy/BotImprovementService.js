@@ -9,14 +9,15 @@ function inTown(state) {
     const town = invoke('GameServer/World/TownRespawn').getClosestTown(state.loc?.locX || 0, state.loc?.locY || 0, state.loc?.locZ || 0);
     return town.name === state.currentRegion && Math.hypot(state.loc?.locX - town.locX, state.loc?.locY - town.locY) <= 7500;
 }
-// options.decision: the worker's decision made on exactly this state (L25);
-// without it the wish network is built here.
+// options.decide(): the worker's decision made on exactly this state, or null
+// (L25); without one the wish network is built here.
 function reviewCold(state, options = {}) {
     if (!state?.characterId || state.phase !== 'cold' || ['dead','traveling'].includes(state.activity)
         || state.simulation?.ownerId && state.simulation.ownerId !== 'legacy_main') return Promise.resolve({state,changed:false});
     if (pendingCold.has(state.characterId)) return pendingCold.get(state.characterId);
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const { decision, ...writeOptions } = options;
+    const { decide, ...writeOptions } = options;
+    const decision = typeof decide === 'function' ? decide() : null;
     const context = decision
         ? { network: { activity: decision.activity }, riskWeight: decision.riskWeight }
         : invoke('GameServer/Bot/Economy/EconomyContext').forState(state);

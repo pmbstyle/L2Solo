@@ -121,9 +121,9 @@ function planForState(state) {
 // spare. One rule for the sale set (ItemDisposition.saleCandidates) and the
 // shot crafters' surplus (ColdShotEconomyService), so nothing the restock has
 // just bought is sold back.
-function keptAmounts(state) {
+function keptAmounts(state, basics = null) {
     // The stock rule needs no wish network (L25).
-    const stock = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(state, 'shots');
+    const stock = (basics || invoke('GameServer/Bot/Economy/EconomyContext').basics(state)).stock('shots');
     return { [stock.itemId]: stock.target };
 }
 

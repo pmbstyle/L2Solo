@@ -66,6 +66,7 @@ async function marketSnapshot(now = Date.now()) {
     };
     const shotSupply = new Map(), shotMinPrice = new Map(), recipeStock = new Map();
     const recipeHolders = new Map(), shotDemand = new Map(), unlistedSupply = new Map();
+    const keptOf = new Map(); // a crafter's shot keep amounts, once per snapshot
     // Static catalog keys and item-side queries; never a population or shop roster scan.
     for (const [id, template] of itemTemplates) {
         if (!CRYSTAL_BY_RANK[template?.etc?.rank] || !(Number(template?.etc?.cristals) > 0)) continue;
@@ -89,7 +90,8 @@ async function marketSnapshot(now = Date.now()) {
         shotDemand.set(id, signals);
         unlistedSupply.set(id, sources.reduce((sum, state) => {
             if (!state.stats?.shotCraft) return sum;
-            return sum + Math.max(0, Number(state.inventory?.[id]?.amount || 0) - Number(ShotStock.keptAmounts(state)[id] || 0));
+            if (!keptOf.has(state)) keptOf.set(state, ShotStock.keptAmounts(state));
+            return sum + Math.max(0, Number(state.inventory?.[id]?.amount || 0) - Number(keptOf.get(state)[id] || 0));
         }, 0));
     }
     for (const id of SHOT_RECIPE_ITEM_IDS) {
