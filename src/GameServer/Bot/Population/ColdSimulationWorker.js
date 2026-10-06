@@ -84,7 +84,8 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
-const { ColdCompetitionMonitor, INTERVAL_MS: COMPETITION_INTERVAL_MS } = require('./ColdCompetitionMonitor');
+const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
+const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
 const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
@@ -106,6 +107,7 @@ let flushTimer = null;
 let heartbeatTimer = null;
 let shuttingDown = false;
 let competition = null;
+let competitionCandidates = null;
 let competitionReady = false;
 let safetyStateReady = false;
 let leaseProbe = null;
@@ -462,28 +464,71 @@ function startKernel(config = {}) {
             isTargetAllowed: id => allowed.has(id),
             ownSide: invoke('GameServer/Bot/Population/ColdPvpResolver').ownSide
         });
+        competitionCandidates = new ColdCompetitionCandidates({
+            records: id => kernel.states.locationIndex.getSource(id, 'state'),
+            packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
+            monitor: competition, deadlines: kernel, sequence: id => kernel.states.safetyNodes.get(id)?.sequence,
+            fitsFrame: frame => {
+                const report = competition.snapshot();
+                const large = Number.MAX_SAFE_INTEGER;
+                const outcomes = Object.fromEntries([...new Set([...Object.keys(report.outcomes),
+                    ...frame.events.filter(event => event.action !== 'revenge').map(event => event.action)])].map(key => [key, large]));
+                const kernelReport = kernel.heartbeatSnapshot();
+                const message = Protocol.envelope('heartbeat', epoch, {
+                    ...kernelReport, safety: safetyTotals(),
+                    // Forecast cooldowns can make a decision alarm the new
+                    // head. Include both optional shapes before those effects.
+                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'worker_safety',
+                        dueAt: large, overdue: false, current: false },
+                    competition: { ...report, events: frame.events,
+                        recent: [...report.recent, ...frame.events].slice(-12), frame, at: frame.at, outcomes,
+                        scans: large, evaluated: large, pvpIntents: large, activeHunters: large, lastSampleMs: large,
+                        deliverySendFailures: large, lastScanEvents: 160, consumedSpotKeys: 32, consumedActorKeys: 128,
+                        pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
+                        revenge: { evaluated: large, intents: large, at: frame.at, active: 128, sampledActors: 128, overflow: false } },
+                    tables: tables.summary(), heapUsed: large, rss: large,
+                    eventLoopUtilization: 1, eventLoopLagP95Ms: large,
+                    eventLoopLagMaxMs: large
+                }, 'x'.repeat(160));
+                // Every finite IEEE Number serializes in fewer than32 chars.
+                // Quote numeric fields conservatively, including fractional
+                // telemetry; validate the original values and shape below.
+                const bytes = Buffer.byteLength(JSON.stringify(message,
+                    (_, value) => typeof value === 'number' ? 'x'.repeat(32) : value));
+                return Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes }).ok;
+            }
+        });
+        kernel.decisionEvents = competitionCandidates;
     }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
-        if (competition && competitionReady && !kernel.paused && !shuttingDown
-            && (competition.lastAt === null || Date.now() - competition.lastAt >= COMPETITION_INTERVAL_MS)) {
+        if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
             const started = performance.now();
-            competition.sample([...kernel.states.values()], kernel.interactionMemory, Date.now());
+            competitionCandidates.reviewBatch(Date.now());
             competition.report.lastSampleMs = performance.now() - started;
         }
         const elu = performance.eventLoopUtilization(previousElu);
         previousElu = performance.eventLoopUtilization();
-        send('heartbeat', {
+        const heartbeat = {
             ...kernel.heartbeatSnapshot(),
             safety: safetyTotals(),
-            competition: competition?.snapshot() || null,
+            competition: competitionCandidates?.snapshot() || null,
             tables: tables.summary(),
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
             eventLoopLagP95Ms: Number(eventLoopDelay.percentile(95) / 1e6) || 0,
             eventLoopLagMaxMs: Number(eventLoopDelay.max / 1e6) || 0
-        });
+        };
+        try {
+            if (!send('heartbeat', heartbeat) && competition) {
+                competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+            }
+        } catch {
+            // Main has not admitted this frame. Its exact origin/content stay
+            // owned here for the next existing heartbeat, including backpressure.
+            if (competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+        }
         eventLoopDelay.reset();
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
@@ -533,8 +578,16 @@ async function handle(message) {
     }
     case 'clan_social_page':
         if (!kernel) break;
-        for (const snapshot of payload.rows || []) kernel.interactionMemory.clanSocial.accept(snapshot);
-        if (payload.memberships) kernel.interactionMemory.clanSocial.acceptMemberships(payload.memberships, payload.membershipVersion, payload.activeClanIds);
+        for (const snapshot of payload.rows || []) {
+            if (kernel.interactionMemory.clanSocial.accept(snapshot)) competitionCandidates?.clanChanged(snapshot.clanId);
+        }
+        if (payload.memberships) {
+            const social = kernel.interactionMemory.clanSocial, previous = social.memberships;
+            const active = payload.activeClanIds ? new Set(payload.activeClanIds) : null;
+            const removed = active ? [...social.clans.keys()].filter(id => !active.has(id)) : [];
+            social.acceptMemberships(payload.memberships, payload.membershipVersion, payload.activeClanIds);
+            if (social.memberships !== previous) competitionCandidates?.membershipsChanged(previous, social.memberships, removed);
+        }
         break;
     case 'snapshot_page':
         if (!kernel) throw new Error('kernel_not_initialized');
@@ -638,7 +691,8 @@ async function handle(message) {
         kernel?.setMaxInFlight(payload.maxInFlight);
         break;
     case 'competition_release':
-        competition?.release(payload.events || []);
+        if (Object.hasOwn(payload, 'receipt') && !competitionCandidates?.receipt(payload.receipt)) break;
+        competitionCandidates?.releaseForecasts(payload.events || []);
         break;
     case 'shutdown':
         leaseProbe = null;
@@ -646,6 +700,7 @@ async function handle(message) {
         marketEvents.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        competitionCandidates?.stop();
         stopTimers();
         eventLoopDelay.disable();
         send('drained', await kernel?.shutdown() || {}, message.msgId);

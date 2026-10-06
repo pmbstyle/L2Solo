@@ -14,12 +14,31 @@ class DueHeap {
     constructor() {
         this.values = [];
         this.positions = new WeakMap();
+        this.decisionHeads = [];
     }
 
     set(index, entry) {
         this.values[index] = entry;
         this.positions.set(entry, index);
+        this.refreshDecision(index);
     }
+
+    // A derived minimum on the SAME heap nodes; normal heads never hide a
+    // decision deadline when actor admission is full or paused.
+    refreshDecision(index) {
+        while (index >= 0) {
+            let best = this.values[index]?.alarmKind === 'decision' ? this.values[index] : null;
+            for (const child of [index * 2 + 1, index * 2 + 2]) {
+                const candidate = child < this.values.length ? this.decisionHeads[child] : null;
+                if (candidate && (!best || this.compare(candidate, best) < 0)) best = candidate;
+            }
+            this.decisionHeads[index] = best;
+            if (!index) break;
+            index = Math.floor((index - 1) / 2);
+        }
+    }
+
+    peekDecision() { return this.decisionHeads[0] || null; }
 
     up(index) {
         const entry = this.values[index];
@@ -64,6 +83,8 @@ class DueHeap {
         if (index === undefined) return false;
         const last = this.values.pop();
         this.positions.delete(entry);
+        this.refreshDecision(this.values.length);
+        this.decisionHeads.length = this.values.length;
         if (index < this.values.length) {
             this.set(index, last);
             const parent = Math.floor((index - 1) / 2);
@@ -452,6 +473,8 @@ class ColdSimulationKernel {
         this.alarms = new Map();
         this.operationalAlarms = new Map();
         this.earliestOperationalAlarm = null;
+        this.decisionAlarms = new Map();
+        this.decisionEvents = null;
         this.nextAlarmToken = 1;
         this.inFlight = new Map();
         this.pendingReleases = new Map();
@@ -507,13 +530,15 @@ class ColdSimulationKernel {
         const state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
         if (!characterId) return false;
+        const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
+        const current = this.states.get(characterId);
+        let memoryChanged = false;
         if (entry.context?.interactionMemory) {
             if (entry.context.interactionMemory.ownerId !== characterId) throw new Error('interaction memory: wrong snapshot owner');
-            this.interactionMemory.accept(entry.context.interactionMemory);
+            memoryChanged = this.interactionMemory.accept(entry.context.interactionMemory);
             const { interactionMemory, ...context } = entry.context;
             entry = { ...entry, context };
         }
-        const current = this.states.get(characterId);
         const incomingRevision = Math.max(0, Number(state.simulation?.revision || 0));
         const currentRevision = Math.max(0, Number(current?.state?.simulation?.revision || 0));
         if (current && incomingRevision < currentRevision) {
@@ -522,6 +547,8 @@ class ColdSimulationKernel {
             // ownership state when an older page arrives out of order, while
             // still accepting refreshed routing/party context.
             if (entry.context) this.states.set(characterId, { ...current, context: entry.context });
+            this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
+            if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
             this.refreshCommandSource(characterId);
             this.ensureScheduled(characterId);
             return false;
@@ -539,6 +566,8 @@ class ColdSimulationKernel {
                 context: entry.context || {}
             });
             this.occupancy.update(state);
+            this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
+            if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
             this.stats.snapshots += 1;
             this.refreshCommandSource(characterId);
             this.ensureScheduled(characterId);
@@ -548,6 +577,8 @@ class ColdSimulationKernel {
         this.versions.set(characterId, version);
         this.states.set(characterId, { state, context: entry.context || {}, version });
         this.occupancy.update(state);
+        this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
+        if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
         this.stats.snapshots += 1;
         this.refreshCommandSource(characterId);
         this.ensureScheduled(characterId);
@@ -563,8 +594,10 @@ class ColdSimulationKernel {
         const id = Number(characterId);
         this.pendingReleases.delete(id);
         const current = this.states.get(id);
+        const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
+        this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.scheduleTokens.delete(id);
@@ -606,6 +639,43 @@ class ColdSimulationKernel {
             this.earliestOperationalAlarm = entry;
         }
         return entry.alarmToken;
+    }
+
+    armDecisionDeadline(key, dueAt, stamp, callback) {
+        if (key == null || !Number.isSafeInteger(dueAt) || dueAt < 0 || typeof callback !== 'function') {
+            throw new RangeError('invalid_decision_deadline');
+        }
+        const previous = this.decisionAlarms.get(key);
+        if (previous?.stamp === stamp && previous.dueAt === dueAt) return previous.alarmToken;
+        if (previous) this.cancelDecisionDeadline(key, previous.alarmToken);
+        const entry = { kind: 'alarm', alarmKind: 'decision', alarmKey: {}, key, dueAt,
+            stamp, callback, characterId: 0, alarmToken: this.nextAlarmToken++ };
+        this.decisionAlarms.set(key, entry);
+        this.alarms.set(entry.alarmKey, entry);
+        this.heap.push(entry);
+        return entry.alarmToken;
+    }
+
+    cancelDecisionDeadline(key, expectedToken) {
+        const entry = this.decisionAlarms.get(key);
+        if (!entry || entry.alarmToken !== expectedToken) return false;
+        this.heap.remove(entry);
+        this.decisionAlarms.delete(key);
+        this.alarms.delete(entry.alarmKey);
+        return true;
+    }
+
+    drainDecisionDeadlines(timestamp, budget) {
+        let fired = 0;
+        while (budget.remaining > 0) {
+            const entry = this.heap.peekDecision();
+            if (!entry || entry.dueAt > timestamp) break;
+            budget.remaining--;
+            this.cancelDecisionDeadline(entry.key, entry.alarmToken);
+            entry.callback(entry.stamp);
+            fired++;
+        }
+        return fired;
     }
 
     cancelAlarm(kind, key, expectedToken) {
@@ -722,7 +792,7 @@ class ColdSimulationKernel {
         if (this.scheduleTokens.get(id)?.token === entry?.scheduleToken) this.scheduleTokens.delete(id);
     }
 
-    dueCandidates(timestamp = this.now(), capacity = this.maxBatch) {
+    dueCandidates(timestamp = this.now(), capacity = this.maxBatch, decisionBudget = { remaining: 64 }) {
         this.partyCapacityBlocked = false;
         const limit = Math.max(0, Math.min(this.maxBatch, Number(capacity) || 0));
         const candidates = [];
@@ -731,6 +801,11 @@ class ColdSimulationKernel {
             const head = this.heap.peek();
             if (head.kind === 'alarm') {
                 if (head.dueAt > timestamp) break;
+                if (head.alarmKind === 'decision') {
+                    if (decisionBudget.remaining <= 0) break;
+                    this.drainDecisionDeadlines(timestamp, decisionBudget);
+                    continue;
+                }
                 this.drainOperationalAlarms(timestamp);
                 continue;
             }
@@ -1022,6 +1097,8 @@ class ColdSimulationKernel {
     tick() {
         this.stats.loopRuns += 1;
         this.stats.lastLoopAt = this.now();
+        const decisionBudget = { remaining: 64 };
+        this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
         this.recoverStalled(this.stats.lastLoopAt);
         this.recoverOrphanedSchedules(this.stats.lastLoopAt);
         if (this.paused || this.stopping) return;
@@ -1033,7 +1110,7 @@ class ColdSimulationKernel {
             this.flushDue();
             return;
         }
-        const candidates = this.dueCandidates(this.now(), capacity);
+        const candidates = this.dueCandidates(this.now(), capacity, decisionBudget);
         if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) return;
         this.stats.selected += candidates.length;
@@ -1874,7 +1951,10 @@ class ColdSimulationKernel {
         this.safetyStartedAt = null;
         this.safetyAlarmToken = null;
         for (const id of this.claimAttempts.keys()) this.cancelClaimAttempt(id);
-        for (const entry of this.alarms.values()) this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
+        for (const entry of this.alarms.values()) {
+            if (entry.alarmKind === 'decision') this.cancelDecisionDeadline(entry.key, entry.alarmToken);
+            else this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
+        }
         await this.resolveChain.catch(() => null);
         this.flush(null, true);
         return this.heartbeatSnapshot();
@@ -1899,6 +1979,7 @@ class ColdSimulationKernel {
             heap: this.heap.size,
             queueHead: {
                 kind: !head ? 'empty' : head.kind === 'alarm' ? 'alarm' : 'normal',
+                ...(head?.kind === 'alarm' ? { alarmKind: head.alarmKind } : {}),
                 dueAt,
                 overdue: !!head && dueAt <= now,
                 ageMs: head ? Math.max(0, now - dueAt) : 0,

@@ -14,42 +14,56 @@ function nearby(a, b) {
         && Math.abs(a?.loc?.locZ - b?.loc?.locZ) <= 500;
 }
 class ColdRevengeMonitor {
-    constructor() { this.cursor = 0; this.cooldowns = new Map(); this.report = { evaluated: 0, intents: 0 }; }
+    constructor({ onCooldown = () => {} } = {}) {
+        this.onCooldown = onCooldown;
+        this.cursor = 0; this.cooldowns = new Map(); this.report = { evaluated: 0, intents: 0 };
+    }
     sample(entries, memory, at, personaFor, rng) {
         for (const [id, until] of this.cooldowns) if (until <= at) this.cooldowns.delete(id);
         const byId = new Map(entries.map(e => [e.state.characterId, e]));
         const active = entries.filter(e => available(e.state, at));
+        const selected = active.slice(this.cursor % (active.length || 1)).concat(active.slice(0, this.cursor % (active.length || 1)));
+        const events = this.sampleActors(selected.slice(0, MAX_ACTORS), id => byId.get(id), memory, at, personaFor, rng);
+        this.report.active = active.length;
+        this.cursor += Math.min(MAX_ACTORS, active.length);
+        return events;
+    }
+    sampleActors(actors, read, memory, at, personaFor, rng, acceptEvent = () => true) {
         const events = [];
         const identity = s => ({ id: s.characterId, clanId: Number(s.stats?.clanId || 0), partyId: partyId(s) });
         const participant = e => ({ id: e.state.characterId, name: e.state.name, partyId: partyId(e.state),
             size: e.context?.party?.memberIds?.length || 1, partyUpdatedAt: e.context?.party?.updatedAt,
             revision: Number(e.state.simulation?.revision || 0), memoryRevision: memory.views.get(e.state.characterId)?.revision });
-        const examined = Math.min(MAX_ACTORS, active.length);
-        Object.assign(this.report, { at, active: active.length, sampledActors: examined });
+        const examined = Math.min(MAX_ACTORS, actors.length);
+        Object.assign(this.report, { at, active: actors.length, sampledActors: examined, overflow: false });
         for (let i = 0; i < examined; i++) {
-            const actor = active[(this.cursor + i) % active.length], a = actor.state;
+            const actor = actors[i], a = actor?.state;
+            if (!available(a, at)) continue;
             if (this.cooldowns.has(unitId(a))) continue;
             for (const id of memory.views.get(a.characterId)?.characterIds || []) {
-                const peer = byId.get(id), b = peer?.state;
+                const peer = read(id), b = peer?.state;
                 if (!available(b, at) || unitId(a) === unitId(b) || this.cooldowns.has(unitId(b)) || !nearby(a, b)) continue;
                 if (!memory.views.get(id)?.ready) continue;
                 const social = Policy.evaluate(memory.assess(identity(a), identity(b), {}, at), personaFor(a));
                 if (!(social.chance > 0)) continue;
                 // One roll per group per cooldown, independent of observer/heartbeat frequency.
-                this.cooldowns.set(unitId(a), at + Policy.RETRY_MS);
-                this.report.evaluated++;
                 const roll = rng();
                 if (roll < social.chance) {
-                    this.cooldowns.set(unitId(b), at + Policy.RETRY_MS);
-                    this.report.intents++;
-                    events.push({ key: `revenge:${at}:${a.characterId}:${b.characterId}`, at, action: 'revenge', reason: social.reason,
+                    const event = { key: `revenge:${at}:${a.characterId}:${b.characterId}`, at, action: 'revenge', reason: social.reason,
                         spotId: a.spotId, npcId: 0, contextVersion: 1, pvpIntent: true, revengeRoll: roll, chance: social.chance,
-                        actor: participant(actor), peer: participant(peer) });
+                        actor: participant(actor), peer: participant(peer) };
+                    if (!acceptEvent(event)) { this.report.overflow = true; return events; }
+                    this.cooldowns.set(unitId(b), at + Policy.RETRY_MS);
+                    this.onCooldown('revenge', unitId(b), at + Policy.RETRY_MS, [unitId(b)]);
+                    this.report.intents++;
+                    events.push(event);
                 }
+                this.cooldowns.set(unitId(a), at + Policy.RETRY_MS);
+                this.onCooldown('revenge', unitId(a), at + Policy.RETRY_MS, [unitId(a)]);
+                this.report.evaluated++;
                 break;
             }
         }
-        this.cursor += examined;
         return events;
     }
     // Releases only the cooldowns set by the sample at `at`.

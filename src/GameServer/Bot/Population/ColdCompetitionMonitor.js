@@ -11,8 +11,9 @@ const { seeded } = require('../AI/TendencyRoll');
 class ColdCompetitionMonitor {
     // ownSide(states, timestamp): how a side knows itself (U26). The worker passes the
     // exact one (ColdPvpResolver.ownSide); standalone tests see themselves as others do.
-    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true, ownSide = Visible.stateSide }) {
+    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true, ownSide = Visible.stateSide, onCooldown = () => {} }) {
         this.ownSide = ownSide;
+        this.onCooldown = onCooldown;
         this.capacityForSpot = capacityForSpot;
         this.personaFor = personaFor;
         this.isTargetAllowed = isTargetAllowed;
@@ -20,7 +21,7 @@ class ColdCompetitionMonitor {
         this.cursor = 0;
         this.pairs = new Map();
         this.bots = new Map();
-        this.revenge = new (require('./ColdRevengeMonitor').ColdRevengeMonitor)();
+        this.revenge = new (require('./ColdRevengeMonitor').ColdRevengeMonitor)({ onCooldown });
         this.report = { mode: 'observe', scans: 0, evaluated: 0, outcomes: {}, pvpIntents: 0, recent: [],
             skipped: { cooldown: 0, conflictCooldown: 0, encounterRate: 0, memory: 0, incompleteParty: 0 } };
     }
@@ -41,6 +42,25 @@ class ColdCompetitionMonitor {
                 parties.set(party.partyId, party);
             }
         }
+        this.evaluate(entries, memory, timestamp, { elapsed, parties, states, cursor: this.cursor });
+        if (elapsed > 0) {
+            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`));
+            this.report.events.push(...revenge);
+            this.report.recent = [...this.report.recent, ...revenge].slice(-12);
+            this.report.revenge = { ...this.revenge.report };
+        }
+    }
+
+    // Explicit-array compatibility stays above. Worker supplies only affected
+    // hunters and lazy full-roster/current-party readers to this SAME evaluator.
+    sampleSpot(entries, memory, timestamp, options) {
+        this.lastAt = timestamp;
+        return this.evaluate(entries, memory, timestamp, { ...options, cursor: 0 });
+    }
+
+    evaluate(entries, memory, timestamp, { elapsed, parties, states, cursor = 0,
+        maxPairs = 32, pairOffset = 0, targetForParty = null, acceptEvent = () => true }) {
+        maxPairs = Math.max(0, Math.min(32, maxPairs));
         const partyTargets = new Map();
         const groups = new Map(), untargeted = new Map();
         let active = 0;
@@ -53,7 +73,7 @@ class ColdCompetitionMonitor {
             const partyId = state.party?.partyId || state.partyId || null;
             if (partyId && !partyTargets.has(partyId)) {
                 const party = parties.get(partyId);
-                partyTargets.set(partyId, party ? require('./PartyHuntingTarget').competitionNpcId(
+                partyTargets.set(partyId, targetForParty ? targetForParty(partyId) : party ? require('./PartyHuntingTarget').competitionNpcId(
                     party, states.get(Number(party.leaderId)), context.spot) : 0);
             }
             const target = partyId ? partyTargets.get(partyId) || 0 : Number(context.targetNpcId || 0)
@@ -84,7 +104,8 @@ class ColdCompetitionMonitor {
                 unit.hunters = unit.members;
                 if (unit.partyId) {
                     const party = parties.get(unit.partyId), ids = party?.memberIds;
-                    const members = Array.isArray(ids) ? ids.map(id => states.get(Number(id))) : [];
+                    const members = Array.isArray(ids) && ids.length >= 2 && ids.length <= 9
+                        ? ids.map(id => states.get(Number(id))) : [];
                     if (party?.status !== 'active' || party.spotId !== group.spotId || !Array.isArray(ids)
                         || ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length || !ids.includes(party.leaderId)
                         || party.stats?.travel || party.stats?.coldCompetition?.wait
@@ -110,18 +131,23 @@ class ColdCompetitionMonitor {
         // Busy grounds contain several independent encounters. Rotate grounds
         // fairly and sample bounded pairs, never the quadratic set of all rivals.
         const sampled = [];
-        for (let round = 0; round < 8 && sampled.length < 32; round++) {
-            for (let i = 0; i < pressured.length && sampled.length < 32; i++) {
-                const group = pressured[(this.cursor + i) % pressured.length];
+        let planned = 0;
+        for (let round = 0; round < 8; round++) {
+            for (let i = 0; i < pressured.length; i++) {
+                const group = pressured[(cursor + i) % pressured.length];
                 // Actual shortages bring independent hunting units into contact
                 // more often. A nearly full ground keeps its quieter cadence.
                 const unitsPerPair = group.pressure >= 1.5 ? 2 : 4;
-                if (round < Math.ceil(group.units.size / unitsPerPair)) sampled.push({ group, round });
+                if (round < Math.ceil(group.units.size / unitsPerPair)) {
+                    if (planned >= pairOffset && sampled.length < maxPairs) sampled.push({ group, round });
+                    planned++;
+                }
             }
         }
         Object.assign(this.report, { scans: this.report.scans + 1, at: timestamp, activeHunters: active,
             targetGroups: groups.size, pressuredGroups: pressured.length, sampledGroups: Math.min(32, pressured.length),
-            sampledPairs: sampled.length, pressureModel: 'spot_capacity_times_spawn_share', lastScanEvents: 0, events: [] });
+            sampledPairs: sampled.length, pressureModel: 'spot_capacity_times_spawn_share', lastScanEvents: 0, overflow: false, events: [] });
+        this.report.nextPairOffset = planned > pairOffset + sampled.length ? pairOffset + sampled.length : 0;
         for (const { group, round } of elapsed > 0 ? sampled : []) {
             const rng = seeded(`${group.key}:${Math.floor(timestamp / INTERVAL_MS)}${round ? `:${round}` : ''}`);
             const units = [...group.units.values()].filter(u => !this.bots.has(u.unitKey)).sort((a, b) => a.id - b.id);
@@ -170,12 +196,6 @@ class ColdCompetitionMonitor {
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key });
             // Cooling down a conflict must not prevent leaving the spot or cooperating.
             if (outcome.action === 'contest' && conflictCooling) { this.report.skipped.conflictCooldown++; continue; }
-            this.pairs.set(pairKey, timestamp + PAIR_COOLDOWN_MS);
-            this.bots.set(actor.unitKey, timestamp + BOT_COOLDOWN_MS);
-            this.bots.set(peer.unitKey, timestamp + BOT_COOLDOWN_MS);
-            this.report.evaluated++; this.report.lastScanEvents++;
-            this.report.outcomes[outcome.action] = (this.report.outcomes[outcome.action] || 0) + 1;
-            if (outcome.pvpIntent) this.report.pvpIntents++;
             const event = { at: timestamp, key,
                 spotId: group.spotId, npcId: group.npcId, contextVersion: 1, decisionRolls,
                 demand: group.demand, capacity: group.capacity, pressure: group.pressure,
@@ -184,17 +204,22 @@ class ColdCompetitionMonitor {
                 peer: { id: peer.id, name: peer.name, size: peer.size, activeSize: peer.hunters.length, partyId: peer.partyId,
                     partyUpdatedAt: parties.get(peer.partyId)?.updatedAt, revision: Number(peer.state.simulation?.revision || 0), memoryRevision: ba.revision },
                 relationship: [ab.disposition, ba.disposition], ...outcome };
+            if (!acceptEvent(event)) { this.report.overflow = true; break; }
+            this.pairs.set(pairKey, timestamp + PAIR_COOLDOWN_MS);
+            this.bots.set(actor.unitKey, timestamp + BOT_COOLDOWN_MS);
+            this.bots.set(peer.unitKey, timestamp + BOT_COOLDOWN_MS);
+            this.report.evaluated++; this.report.lastScanEvents++;
+            this.report.outcomes[outcome.action] = (this.report.outcomes[outcome.action] || 0) + 1;
+            if (outcome.pvpIntent) this.report.pvpIntents++;
+            this.onCooldown('pair', pairKey, timestamp + PAIR_COOLDOWN_MS, [actor.unitKey, peer.unitKey]);
+            this.onCooldown('unit', actor.unitKey, timestamp + BOT_COOLDOWN_MS, [actor.unitKey]);
+            this.onCooldown('unit', peer.unitKey, timestamp + BOT_COOLDOWN_MS, [peer.unitKey]);
             this.report.events.push(event);
             this.report.recent.push(event);
             this.report.recent = this.report.recent.slice(-12);
         }
         this.cursor += Math.min(32, pressured.length);
-        if (elapsed > 0) {
-            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor, seeded(`revenge:${timestamp}`));
-            this.report.events.push(...revenge);
-            this.report.recent = [...this.report.recent, ...revenge].slice(-12);
-            this.report.revenge = { ...this.revenge.report };
-        }
+        return this.report;
     }
     // The main thread skipped these forecasts for its action budget, so they
     // never happened: drop the cooldowns their scan set and let the pairs
