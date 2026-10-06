@@ -3,7 +3,7 @@
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
-const { WishNetwork } = require('./WishNetwork');
+const { WishNetwork, remember } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
 const engine = new WishNetwork();
 let runtime = {};
@@ -19,6 +19,8 @@ function registerProvider(key, provider) {
     if (typeof provider !== 'function') throw new TypeError('invalid_economy_provider');
     extensions.set(key, provider); reset();
 }
+// actorKey -> { key, context }: bounded (WishNetwork.remember), so group
+// contexts of parties that ended and bots out of work leave by themselves.
 const cache = new Map();
 const positive = value => Math.max(0, Number(value) || 0);
 
@@ -80,7 +82,7 @@ function forState(state = {}, deps = {}) {
     const key = inputKey(state, { ...deps, timestamp });
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
     const held = cache.get(actorKey);
-    if (held?.key === key) return held.context;
+    if (held?.key === key) return remember(cache, actorKey, held).context;
     const Data = invoke('GameServer/DataCache');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -190,7 +192,7 @@ function forState(state = {}, deps = {}) {
     };
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant };
 
-    cache.set(actorKey, { key, context });
+    remember(cache, actorKey, { key, context });
     return context;
 }
 function survivalReserve(state = {}) {
@@ -207,7 +209,7 @@ function forGroup(group, members, deps = {}) {
     const wallet = positive(group.adena ?? group.wallet);
     const key = [wallet, ...contexts.map(context => context.inputKey)].join('|');
     const held = cache.get(actorKey);
-    if (held?.key === key) return held.context;
+    if (held?.key === key) return remember(cache, actorKey, held).context;
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
@@ -240,7 +242,7 @@ function forGroup(group, members, deps = {}) {
         hourAdena: network.hourAdena, statsPacket: { wishFocus: network.focus, dormantWishes: network.dormant } };
     context.itemUsefulness = id => contexts.reduce((sum, member) => sum + member.itemUsefulness(id), 0);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    cache.set(actorKey, { key, context }); return context;
+    remember(cache, actorKey, { key, context }); return context;
 }
 function forget(id) { const key = `character:${id}`; cache.delete(key); engine.forget(key); }
 function reset() { cache.clear(); engine.clear(); }

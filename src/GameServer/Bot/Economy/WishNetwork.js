@@ -38,6 +38,15 @@ function moneyQueue(wishes, wallet, survivalReserve = 0) {
 // Providers supply game effects and available paths, never policy priorities.
 // One bounded DAG serves individual characters and group actors alike. The
 // caller owns its event input key and the small saved focus/dormant packet.
+// Per-actor results are a cache, not state: memory per bot is budgeted like
+// CPU, so the held networks are bounded and the least recently used go first.
+const ACTOR_LIMIT = 512;
+function remember(map, key, value, limit = ACTOR_LIMIT) {
+    map.delete(key);
+    map.set(key, value);
+    if (map.size > limit) map.delete(map.keys().next().value);
+    return value;
+}
 class WishNetwork {
     constructor() { this.cache = new Map(); }
     forget(actorKey) { this.cache.delete(actorKey); }
@@ -51,7 +60,7 @@ class WishNetwork {
             throw new TypeError('invalid_wish_network_input');
         }
         const cached = this.cache.get(actorKey);
-        if (cached?.inputKey === inputKey) return cached.result;
+        if (cached?.inputKey === inputKey) return remember(this.cache, actorKey, cached).result;
         const byKey = new Map();
         for (const node of nodes) {
             if (typeof node?.key !== 'string' || !node.key || byKey.has(node.key)
@@ -164,9 +173,9 @@ class WishNetwork {
         const result = { inputKey, queue, moneyPrice, available, valuePerHour,
             hourAdena: moneyPrice > 0 ? valuePerHour / moneyPrice : null,
             focus, dormant, activity, demands, plans };
-        this.cache.set(actorKey, { inputKey, result });
+        remember(this.cache, actorKey, { inputKey, result });
         return result;
     }
 }
 
-module.exports = { WishNetwork, moneyQueue, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH };
+module.exports = { WishNetwork, moneyQueue, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT };

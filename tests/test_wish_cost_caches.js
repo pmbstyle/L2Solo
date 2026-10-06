@@ -101,6 +101,20 @@ check('a caller without spots gets no sources and keeps the index built for the 
     assert.equal(Planner.sourceIndexFor(spots), index);
 });
 
+check('per-actor wish results are bounded, least recently used out, a reused actor kept', () => {
+    const { WishNetwork, remember, ACTOR_LIMIT } = invoke('GameServer/Bot/Economy/WishNetwork');
+    const map = new Map();
+    for (let i = 0; i < ACTOR_LIMIT; i++) remember(map, `character:${i}`, i);
+    remember(map, 'character:0', 0);
+    remember(map, 'group:after', 1);
+    assert.equal(map.size, ACTOR_LIMIT);
+    assert.ok(map.has('character:0'), 'a reused actor stays');
+    assert.ok(!map.has('character:1'), 'the oldest unused actor leaves');
+    const engine = new WishNetwork();
+    for (let i = 0; i < ACTOR_LIMIT + 40; i++) engine.build({ actorKey: `character:${i}`, inputKey: 'k', nodes: [], roots: [] });
+    assert.equal(engine.cache.size, ACTOR_LIMIT);
+});
+
 if (failures) { console.error(`${failures} failed`); process.exit(1); }
 console.log('all passed');
 process.exit(0);
