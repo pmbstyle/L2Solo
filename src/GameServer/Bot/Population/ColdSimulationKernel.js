@@ -1,3 +1,4 @@
+const CharacterStateSources = require('../../World/CharacterStateSources');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const WORKER_SAFETY_INTERVAL_MS = 30 * 60000;
@@ -323,8 +324,10 @@ function compactProposal(proposal = {}, includeInventory = true) {
 // Stable membership of the same authoritative states, not another state
 // snapshot or due queue. Producer writes keep traversal O(1) under churn.
 class RetainedStateMap extends Map {
-    constructor() {
+    constructor(sources) {
         super();
+        Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
+        this.sources = sources;
         this.safetyNodes = new Map();
         this.safetyHead = null;
         this.safetyTail = null;
@@ -332,18 +335,34 @@ class RetainedStateMap extends Map {
         this.safetyCursor = null;
     }
 
+    get(id) { return this.sources.get(id); }
+    has(id) { return this.sources.has(id); }
+    get size() { return this.sources.size(); }
+    keys() { return this.sources.keys(); }
+    values() { return this.sources.values(); }
+    entries() { return this.sources.entries(); }
+    [Symbol.iterator]() { return this.entries(); }
+    forEach(callback, thisArg) {
+        if (typeof callback !== 'function') throw new TypeError('invalid_retained_state_callback');
+        for (const [id, packet] of this.entries()) Reflect.apply(callback, thisArg, [packet, id, this]);
+    }
+
     set(id, entry) {
-        if (!super.has(id)) {
+        const present = this.has(id);
+        this.sources.publish(id, entry);
+        if (!present) {
             const node = { id, sequence: ++this.safetySequence, previous: this.safetyTail, next: null };
             if (this.safetyTail) this.safetyTail.next = node;
             else this.safetyHead = node;
             this.safetyTail = node;
             this.safetyNodes.set(id, node);
         }
-        return super.set(id, entry);
+        return this;
     }
 
     delete(id) {
+        const current = this.get(id);
+        if (!current || !this.sources.remove(id, current.state)) return false;
         const node = this.safetyNodes.get(id);
         if (node) {
             if (this.safetyCursor?.next === node) this.safetyCursor.next = node.next;
@@ -355,11 +374,11 @@ class RetainedStateMap extends Map {
             node.previous = null;
             node.next = null;
         }
-        return super.delete(id);
+        return true;
     }
 
     clear() {
-        super.clear();
+        this.sources.clear();
         this.safetyNodes.clear();
         this.safetyHead = null;
         this.safetyTail = null;
@@ -418,7 +437,7 @@ class ColdSimulationKernel {
             this.partyMinSize,
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
-        this.states = new RetainedStateMap();
+        this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()));
         this.occupancy = new SpotOccupancyIndex();
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();

@@ -26,7 +26,8 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
-const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index });
+const workerProjectorRole = CharacterLocationRuntime.workerProjectorRole();
+const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index, workerProjectorRole });
 
 function recentLimit(limit) {
     return Math.max(1, Math.min(2000, Number(limit) || 500));
@@ -1510,7 +1511,15 @@ function reconcileIncompatibleShields() {
 }
 
 const BotLifeState = {
+    passiveWorkerStateSources(role) {
+        if (!workerProjectorRole || role !== workerProjectorRole || initialized || initStarted) {
+            throw new TypeError('invalid_worker_projector_role');
+        }
+        return cache.passiveWorkerStateSources(role);
+    },
+
     init() {
+        if (workerProjectorRole) return Promise.reject(new TypeError('worker_projector_lifecycle_init'));
         if (initialized) return Promise.resolve(true);
         if (initStarted) return initPromise;
         initStarted = true;
@@ -2273,6 +2282,9 @@ const BotLifeState = {
 
     prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
+        if (workerProjectorRole && (options.persist !== false || options.projectClassProgression !== true)) {
+            return Promise.reject(new TypeError('worker_projector_projection_required'));
+        }
         const workerOptions = Object.prototype.hasOwnProperty.call(options, 'workerAdmission')
             ? { workerAdmission: options.workerAdmission } : null;
 
@@ -3656,6 +3668,7 @@ const BotLifeState = {
 
     // For a caller that changed the cached state object in place, not through a write.
     refreshOccupancy(state) {
+        if (workerProjectorRole) throw new TypeError('worker_projector_occupancy_write');
         if (state && cache.get(Number(state.characterId)) === state) cache.occupancy.update(state);
     },
 

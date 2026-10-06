@@ -1,4 +1,7 @@
 const { parentPort, workerData } = require('worker_threads');
+const epoch = String(workerData?.workerEpoch || 'cold-worker');
+const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
+const workerProjectorRole = CharacterLocationRuntime.beginWorkerProjectorRole(epoch);
 const path = require('path');
 const { performance, monitorEventLoopDelay } = require('perf_hooks');
 
@@ -98,7 +101,6 @@ const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
 if (forbiddenLoaded.length) throw new Error(`cold worker loaded forbidden modules: ${forbiddenLoaded.join(', ')}`);
 
 let kernel = null;
-let epoch = String(workerData?.workerEpoch || 'cold-worker');
 let loopTimer = null;
 let flushTimer = null;
 let heartbeatTimer = null;
@@ -356,6 +358,7 @@ function startKernel(config = {}) {
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
     kernel = new ColdSimulationKernel({
+        stateSources: LifeStateProjector.passiveWorkerStateSources(workerProjectorRole),
         resolveSolo: (options) => BackgroundResolver.resolveSolo(options),
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
         partySession: {

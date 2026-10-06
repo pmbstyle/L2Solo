@@ -2,7 +2,8 @@
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
-const cacheOwners = new WeakMap();
+const CharacterStateSources = require('../../World/CharacterStateSources');
+const { stateLocation, spatialState } = CharacterStateSources;
 
 function* stateValues(records) {
     for (const record of records) yield record.source;
@@ -12,24 +13,25 @@ function* stateEntries(records) {
     for (const [id, record] of records) yield [id, record.source];
 }
 
-function stateLocation(state) {
-    return { locX: Number(state.loc?.locX || 0), locY: Number(state.loc?.locY || 0), locZ: 0 };
-}
-
-function spatialState(state) {
-    if (!state || state.phase !== 'cold' || state.activity === 'pk_hunting') return false;
-    const loc = stateLocation(state);
-    return Number.isFinite(loc.locX) && Number.isFinite(loc.locY);
-}
-
 class LifeStateCache extends Map {
-    constructor({ locationIndex = new CharacterLocationIndex({ legacyStateCache: true }) } = {}) {
+    constructor({ locationIndex = new CharacterLocationIndex({ legacyStateCache: true }), workerProjectorRole = null } = {}) {
         super();
         if (!(locationIndex instanceof CharacterLocationIndex) || locationIndex.legacyStateCache !== true) {
             throw new TypeError('invalid_life_location_index');
         }
-        if (cacheOwners.has(locationIndex)) throw new TypeError('life_location_index_already_owned');
-        cacheOwners.set(locationIndex, this);
+        const Runtime = workerProjectorRole !== null ? require('../../World/CharacterLocationRuntime') : null;
+        if (workerProjectorRole !== null && !Runtime.isWorkerProjectorRole(workerProjectorRole, locationIndex)) {
+            throw new TypeError('invalid_worker_projector_role');
+        }
+        CharacterStateSources.registerCacheOwner(locationIndex, this, workerProjectorRole !== null ? {
+            role: workerProjectorRole,
+            isCurrent: () => Runtime.isWorkerProjectorRole(workerProjectorRole, locationIndex),
+            onMutation: () => { this.revision++; }
+        } : null);
+        if (workerProjectorRole !== null) {
+            CharacterStateSources.issueNativeGrant(locationIndex, this, workerProjectorRole,
+                String(require('worker_threads').workerData?.workerEpoch || 'cold-worker'));
+        }
         Object.defineProperty(this, 'locationIndex', { value: locationIndex, enumerable: true });
         this.revision = 0;
         // Newest updatedAt first; equal times keep Map order (first insertion),
@@ -43,6 +45,19 @@ class LifeStateCache extends Map {
         // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
         // Kept on every write like the cells; read only by walkersNear.
         this.walkers = new Map();
+    }
+
+    passiveWorkerStateSources(role) {
+        const Runtime = require('../../World/CharacterLocationRuntime');
+        if (!Runtime.isWorkerProjectorRole(role, this.locationIndex)) throw new TypeError('invalid_worker_projector_role');
+        if (this.ordered.length || this.orderEntries.size || this.occupancy.places.size || this.walkers.size) {
+            throw new TypeError('worker_passive_cache_effects_not_empty');
+        }
+        return CharacterStateSources.passiveForCache(this.locationIndex, this);
+    }
+
+    checkWritable() {
+        if (CharacterStateSources.cacheAttached(this.locationIndex, this)) throw new TypeError('worker_passive_state_write');
     }
 
     get(id) {
@@ -107,11 +122,13 @@ class LifeStateCache extends Map {
     }
 
     removeLocation(id) {
+        this.checkWritable();
         const record = this.locationIndex.getSource(id, 'state');
         return record ? this.locationIndex.removeSource(id, 'state', record.source) : false;
     }
 
     set(id, state) {
+        this.checkWritable();
         const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
         this.removeOrder(id);
         const previous = this.get(id);
@@ -138,6 +155,7 @@ class LifeStateCache extends Map {
     }
 
     delete(id) {
+        this.checkWritable();
         const record = this.locationIndex.getSource(id, 'state');
         const removed = this.removeLocation(id);
         this.walkers.delete(id);
@@ -149,6 +167,7 @@ class LifeStateCache extends Map {
     }
 
     clear() {
+        this.checkWritable();
         this.locationIndex.clearSourceView('state'); this.walkers.clear();
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         ShopPlaces.releaseStates();
