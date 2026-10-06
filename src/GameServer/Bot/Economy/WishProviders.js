@@ -76,7 +76,12 @@ function skillGain(state, book) {
     return { attack: Math.max(0, rate(after) / Math.max(0.001, rate(before)) - 1),
         defence: Math.max(0, 1 - before.pDef / after.pDef, 1 - before.mDef / after.mDef) };
 }
+// A review judges the bot against every drop source of every candidate: its
+// combat readiness is computed once for the review (the planner's scope).
 function build(state, ctx, deps = {}) {
+    return invoke('GameServer/Bot/AI/GearAcquisitionPlanner').withReadiness(() => buildProjection(state, ctx, deps));
+}
+function buildProjection(state, ctx, deps) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const timestamp = ctx.timestamp ?? Date.now();
     const ownBuild = invoke('GameServer/Bot/Population/ColdCombatProfile').buildGainsFor(state, timestamp);

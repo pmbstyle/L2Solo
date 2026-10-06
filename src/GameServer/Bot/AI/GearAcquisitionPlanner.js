@@ -2290,6 +2290,13 @@ function readinessScoped(fn) {
 
 module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
+// One decision outside this module (a wish review) that judges a bot against
+// many sources shares its readiness the same way.
+function withReadiness(fn) {
+    return readinessScoped(fn)();
+}
+module.exports.withReadiness = withReadiness;
+
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',
     'staticNpcKitAdequate', 'npcWeaponBridgePlan', 'npcEquipmentBridgePlan', 'sourceEffort', 'bestSourceForState',
