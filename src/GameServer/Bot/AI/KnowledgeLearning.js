@@ -10,8 +10,8 @@ const STAGES = Object.freeze([
     ['b', 52, 61], ['a', 61, 76], ['s', 76, 79]
 ].map(Object.freeze));
 const STAGE_KILL_FRACTION = 0.25;
-// e4b's three own deals at the first stage. One trade/craft is worth the same
-// number of learning points for life; later grades increase N, not its weight.
+// Rare trade/craft experience is counted in own deals, independently of the
+// thousands of kills in a later grade's hunting curriculum.
 const FIRST_ECONOMIC_HALF_LIFE = 3;
 let stageRows = null;
 let byGrade = null;
@@ -89,7 +89,7 @@ function halfLifeOf(grade, domain = 'mobs') {
     if (!stage) throw new RangeError('unknown_learning_grade');
     if (domain === 'mobs' || domain === 'people') return stage.halfLife;
     if (domain === 'market' || domain === 'crafting') {
-        return FIRST_ECONOMIC_HALF_LIFE * stage.halfLife / byGrade.none.halfLife;
+        return FIRST_ECONOMIC_HALF_LIFE;
     }
     throw new RangeError('unknown_learning_domain');
 }

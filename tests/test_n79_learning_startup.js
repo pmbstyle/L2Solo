@@ -95,8 +95,17 @@ async function run() {
         near(Learning.stageError(0.2, 0.03, n, stage.grade), 0.115, 'one N halves excess error');
         near(Learning.stageError(0.2, 0.03, 3 * n, stage.grade), 0.05125, 'three N leaves 1/8 of excess');
         near(Learning.halfLifeOf(stage.grade, 'market'), Learning.halfLifeOf(stage.grade, 'crafting'));
+        assert.equal(Learning.halfLifeOf(stage.grade, 'market'), 3);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'crafting'), 3);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'mobs'), stage.halfLife);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'people'), stage.halfLife);
         near(PriceLearning.errorOf(0.5, Learning.halfLifeOf(stage.grade, 'market'), `gear ${stage.grade}`), 0.0725);
     }
+    for (const counter of ['gear none', 'gear d', 'gear b', 'gear s', 'material a']) {
+        near(PriceLearning.errorOf(0.3, 0, counter), 0.149, 'a new counter starts with the full personal error');
+        near(PriceLearning.errorOf(0.3, 3, counter), 0.0895, 'three own deals halve the excess in every grade');
+    }
+    assert.throws(() => Learning.halfLifeOf('unknown', 'market'), /unknown_learning_grade/);
     assert.equal(Learning.gradeOfLevel(19), 'none');
     assert.equal(Learning.gradeOfLevel(20), 'd');
     assert.equal(Learning.gradeOfLevel(40), 'c');
