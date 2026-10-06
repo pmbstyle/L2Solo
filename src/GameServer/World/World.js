@@ -23,7 +23,7 @@ function notifyUserChange(id) {
 
 function createUserLocationIndex(user) {
     const runtime = { index: CharacterLocationRuntime.index, binding: CharacterLocationRuntime.bindWorld(user), sessions: new Map(),
-        registered: new Map(), retiredActors: new WeakSet() };
+        nextOrder: 0, retiredActors: new WeakSet() };
     userLocationIndexes.set(user, runtime);
     return runtime;
 }
@@ -33,27 +33,39 @@ function currentUserLocationIndex(user) {
     return CharacterLocationRuntime.isCurrentWorld(user, runtime?.binding) ? runtime : null;
 }
 
-function registeredActor(runtime, session, actor, id) {
-    return Object.freeze({ id, session, actor, token: Symbol('user-registration'),
+function registeredActor(runtime, session, actor, id, membership) {
+    return Object.freeze({ id, session, actor, source: actor, phase: 'hot', order: membership.order,
+        token: Symbol('user-registration'), loc: () => projectedActorLoc(actor),
+        get realPlayer() { return membership.realPlayer === true; },
         get retired() { return runtime.retiredActors.has(actor); } });
 }
 
-function attachRegisteredActor(runtime, session, membership) {
+function currentActorRecord(runtime, record) {
+    return !!record && runtime.sessions.get(record.session)?.registered === record
+        && record.session.actor === record.actor && runtime.index.getSource(record.id, 'actor') === record;
+}
+
+function attachRegisteredActor(runtime, session, membership, explicit = false) {
     const actor = session.actor;
     const id = Number(actor?.fetchId?.());
     const previous = membership.registered;
-    if (previous?.actor === actor && previous.id === id) return previous;
-    if (previous && runtime.registered.get(previous.id) === previous) runtime.registered.delete(previous.id);
+    if (previous && previous.actor === actor && previous.id === id) {
+        if (currentActorRecord(runtime, previous)) return previous;
+        if (!explicit) return null;
+    }
+    if (previous && runtime.index.getSource(previous.id, 'actor') === previous) {
+        runtime.index.removeSource(previous.id, 'actor', previous.source);
+        if (previous.actor !== actor) runtime.retiredActors.add(previous.actor);
+    }
     membership.registered = null;
     if (previous) notifyUserChange(previous.id);
     if (!actor || !Number.isSafeInteger(id) || id <= 0) return null;
-    const displaced = runtime.registered.get(id);
+    const displaced = runtime.index.getSource(id, 'actor');
     if (displaced && displaced.actor !== actor) {
         runtime.retiredActors.add(displaced.actor);
-        runtime.index.remove(id, displaced.actor);
     }
-    const record = registeredActor(runtime, session, actor, id);
-    runtime.registered.set(id, record);
+    const record = registeredActor(runtime, session, actor, id, membership);
+    runtime.index.setSource(id, 'actor', record, { indexed: false });
     membership.registered = record;
     notifyUserChange(id);
     return record;
@@ -62,12 +74,11 @@ function attachRegisteredActor(runtime, session, membership) {
 function removeIndexedSession(runtime, session) {
     const membership = runtime?.sessions.get(session);
     if (!membership) return;
-    if (membership.actor) {
-        runtime.index.remove(membership.id, membership.actor);
-        runtime.retiredActors.add(membership.actor);
-    }
     const registered = membership.registered;
-    if (registered && runtime.registered.get(registered.id) === registered) runtime.registered.delete(registered.id);
+    if (registered && runtime.index.getSource(registered.id, 'actor') === registered) {
+        runtime.index.removeSource(registered.id, 'actor', registered.source);
+        runtime.retiredActors.add(registered.actor);
+    }
     runtime.sessions.delete(session);
     if (registered) notifyUserChange(registered.id);
 }
@@ -86,6 +97,20 @@ function indexedActorLoc(actor) {
         locY: Number(actor.fetchLocY?.()),
         locZ: Number(actor.fetchLocZ?.())
     };
+}
+
+function usableActorLoc(loc) {
+    return Number.isFinite(loc.locX) && Number.isFinite(loc.locY) && Number.isFinite(loc.locZ);
+}
+
+function projectedActorLoc(actor) {
+    return { locX: Number(actor.fetchLocX?.() ?? 0), locY: Number(actor.fetchLocY?.() ?? 0), locZ: 0 };
+}
+
+function usableProjection(actor) {
+    if (typeof actor.fetchLocX !== 'function' || typeof actor.fetchLocY !== 'function') return false;
+    const loc = projectedActorLoc(actor);
+    return Number.isFinite(loc.locX) && Number.isFinite(loc.locY);
 }
 
 function actorIdForTarget(target) {
@@ -127,6 +152,20 @@ function isVisibleFrom(creature, candidate) {
     const dx = Number(candidate.actor.fetchLocX() ?? 0) - Number(creature.fetchLocX());
     const dy = Number(candidate.actor.fetchLocY() ?? 0) - Number(creature.fetchLocY());
     return (dx * dx) + (dy * dy) < CLIENT_VISIBILITY_RADIUS_SQUARED;
+}
+
+function visibleUserSessions(user, session, creature, realOnly) {
+    const runtime = currentUserLocationIndex(user);
+    if (!runtime) return [];
+    const loc = { locX: Number(creature?.fetchLocX?.()), locY: Number(creature?.fetchLocY?.()), locZ: 0 };
+    if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY)) return [];
+    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: 'all',
+        accept: (record) => currentActorRecord(runtime, record) && !record.retired
+            && record.session !== session && (!realOnly || !isBotSession(record.session))
+            && record.actor.fetchIsOnline?.() === true && usableProjection(record.actor) })
+        .filter((record) => isVisibleFrom(creature, record.session))
+        .sort((left, right) => left.order - right.order)
+        .map((record) => record.session);
 }
 
 function nameDistance(left, right) {
@@ -251,7 +290,8 @@ const World = {
         // Explicit registration is authoritative, including reconnecting the
         // same session/actor. Delayed setters alone cannot undo retirement.
         const restored = session.actor && runtime.retiredActors.delete(session.actor);
-        if (!runtime.sessions.has(session)) runtime.sessions.set(session, { actor: null, id: null });
+        if (!runtime.sessions.has(session)) runtime.sessions.set(session, { actor: null, id: null, order: ++runtime.nextOrder });
+        attachRegisteredActor(runtime, session, runtime.sessions.get(session), true);
         this.updateUserLocation(session);
         if (restored) notifyUserChange(Number(session.actor.fetchId?.()));
         this.user.revision += 1;
@@ -273,79 +313,52 @@ const World = {
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor || session.actor !== actor) return false;
         const registered = attachRegisteredActor(runtime, session, membership);
-        if (runtime.retiredActors.has(actor)) return false;
-        if (membership.actor && membership.actor !== actor) this.retireUserActor(session, membership.actor);
+        if (!registered || registered.retired) return false;
         const online = actor.fetchIsOnline?.() !== false;
         const onlineChanged = membership.online !== online;
         membership.online = online;
-        if (!online) {
-            if (membership.actor === actor) runtime.index.remove(membership.id, actor);
-            if (onlineChanged && registered) notifyUserChange(registered.id);
-            return false;
-        }
-        const id = actor.fetchId?.();
-        const previous = runtime.index.get(id);
-        if (membership.actor === actor && membership.id !== id) runtime.index.remove(membership.id, actor);
         const loc = indexedActorLoc(actor);
-        const usable = Number.isFinite(loc.locX) && Number.isFinite(loc.locY) && Number.isFinite(loc.locZ);
+        const usable = usableActorLoc(loc);
         const usableChanged = membership.usable !== usable;
         membership.usable = usable;
-        if (!usable) {
-            runtime.index.remove(id, actor);
-            membership.actor = actor;
-            membership.id = id;
-            if ((usableChanged || onlineChanged) && registered) notifyUserChange(registered.id);
-            return false;
-        }
-        const realPlayer = PlayerActivitySignal.isRealPlayerSession(session);
-        if (previous?.source === actor && previous.session === session) {
-            previous.realPlayer = realPlayer;
-            runtime.index.update(id, actor);
-        } else {
-            runtime.index.put({ id, source: actor, phase: 'hot', realPlayer, loc: () => indexedActorLoc(actor), session });
-            if (previous && previous.source !== actor) {
-                // Only a successful replacement retires the old source. Its
-                // delayed movement must not reclaim the character ID.
-                runtime.retiredActors.add(previous.source);
-            }
-        }
+        membership.realPlayer = online && usable && PlayerActivitySignal.isRealPlayerSession(session);
+        runtime.index.updateSource(registered.id, 'actor', actor, { indexed: online && usableProjection(actor) });
         membership.actor = actor;
-        membership.id = id;
-        if ((usableChanged || onlineChanged) && registered) notifyUserChange(registered.id);
-        return true;
+        membership.id = registered.id;
+        if (usableChanged || onlineChanged) notifyUserChange(registered.id);
+        return online && usable;
     },
 
     retireUserActor(session, actor) {
         const runtime = currentUserLocationIndex(this.user);
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor) return false;
-        if (membership.actor !== actor && (membership.actor !== null || session.actor !== actor)) return false;
-        runtime.index.remove(membership.id, actor);
-        runtime.retiredActors.add(actor);
         const previous = membership.registered;
-        if (previous?.actor === actor && runtime.registered.get(previous.id) === previous) {
-            // Retirement invalidates an in-flight token even if explicit
-            // registration later restores this same session and actor.
-            const retired = registeredActor(runtime, session, actor, previous.id);
-            runtime.registered.set(previous.id, retired);
-            membership.registered = retired;
-            notifyUserChange(previous.id);
-        }
+        if (previous?.actor !== actor || !currentActorRecord(runtime, previous)) return false;
+        runtime.retiredActors.add(actor);
+        membership.realPlayer = false;
+        // Renew the common raw record even for the same actor so an in-flight
+        // registration token cannot survive terminal retirement/restoration.
+        const retired = registeredActor(runtime, session, actor, previous.id, membership);
+        runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
+        membership.registered = retired;
+        notifyUserChange(previous.id);
         membership.actor = null;
         membership.id = null;
         return true;
     },
 
     registeredActorById(id) {
-        const record = currentUserLocationIndex(this.user)?.registered.get(Number(id));
-        return record?.session.actor === record?.actor ? record || null : null;
+        const runtime = currentUserLocationIndex(this.user);
+        const record = runtime?.index.getSource(Number(id), 'actor');
+        return runtime && currentActorRecord(runtime, record) ? record : null;
     },
 
     notifyUserStateChanged(session, actor = session?.actor) {
         const runtime = currentUserLocationIndex(this.user);
         const record = runtime?.sessions.get(session)?.registered;
         if (!record || record.retired || record.actor !== actor || session.actor !== actor
-            || runtime.registered.get(record.id) !== record) return false;
+            || !currentActorRecord(runtime, record)) return false;
         notifyUserChange(record.id);
         return true;
     },
@@ -359,9 +372,10 @@ const World = {
     realPlayerSessionsNear(loc, radius) {
         const runtime = currentUserLocationIndex(this.user);
         if (!runtime) throw new Error('character_location_index_uninitialized');
-        return runtime.index.near(loc, radius, { kind: 'player' })
-            .filter((record) => record.session.actor === record.source
-                && PlayerActivitySignal.isRealPlayerSession(record.session))
+        return runtime.index.nearSources(loc, radius, { view: 'actor', kind: 'player',
+            accept: (record) => currentActorRecord(runtime, record) && !record.retired
+                && usableActorLoc(indexedActorLoc(record.actor))
+                && PlayerActivitySignal.isRealPlayerSession(record.session) })
             .map((record) => record.session);
     },
 
@@ -386,20 +400,11 @@ const World = {
     },
 
     fetchVisibleUsers(session, creature) {
-        return (this.user.sessions || []).filter((ob) => (
-            session !== ob &&
-            ob.actor?.fetchIsOnline() === true &&
-            isVisibleFrom(creature, ob)
-        ));
+        return visibleUserSessions(this.user, session, creature, false);
     },
 
     fetchVisibleRealPlayers(session, creature) {
-        return (this.user.sessions || []).filter((ob) => (
-            session !== ob &&
-            !isBotSession(ob) &&
-            ob.actor?.fetchIsOnline() === true &&
-            isVisibleFrom(creature, ob)
-        ));
+        return visibleUserSessions(this.user, session, creature, true);
     },
 
     askForTeamUp(session, actor, data) {
