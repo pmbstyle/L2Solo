@@ -330,6 +330,15 @@ const World = {
         return record?.session.actor === record?.actor ? record || null : null;
     },
 
+    notifyUserStateChanged(session, actor = session?.actor) {
+        const runtime = userLocationIndexes.get(this.user);
+        const record = runtime?.sessions.get(session)?.registered;
+        if (!record || record.retired || record.actor !== actor || session.actor !== actor
+            || runtime.registered.get(record.id) !== record) return false;
+        notifyUserChange(record.id);
+        return true;
+    },
+
     subscribeUserChanges(listener) {
         if (typeof listener !== 'function') return () => {};
         userChangeListeners.add(listener);

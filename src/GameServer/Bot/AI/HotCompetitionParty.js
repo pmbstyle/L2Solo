@@ -60,9 +60,17 @@ async function form(sides, context, valid) {
         if (existing) Metrics.recordPartyRecruit(1); else Metrics.recordPartyFormation();
         return { ok: true, partyId, recruited: !!existing };
     } finally {
-        sessions.forEach(s => { if (s.hotCompetitionCommit === token) s.hotCompetitionCommit = null; });
+        const cleared = [];
+        sessions.forEach(s => {
+            if (s.hotCompetitionCommit === token) {
+                s.hotCompetitionCommit = null;
+                cleared.push(s);
+            }
+        });
         if (existing) Lifecycle.pending.delete(existing.partyId);
         release();
+        const World = invoke('GameServer/World/World');
+        cleared.forEach(s => World.notifyUserStateChanged(s));
     }
 }
 module.exports = { form };

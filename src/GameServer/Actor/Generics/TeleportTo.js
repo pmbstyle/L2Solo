@@ -95,7 +95,10 @@ function teleportTo(session, actor, coords, options = {}) {
     // Turns out to be a viable solution
     setTimeout(() => {
         if (actor.teleportSequence !== teleportId || session.actor !== actor) {
-            if (session.pendingActorTeleport === pendingTeleport) delete session.pendingActorTeleport;
+            if (session.pendingActorTeleport === pendingTeleport) {
+                delete session.pendingActorTeleport;
+                invoke('GameServer/World/World').notifyUserStateChanged(session);
+            }
             return;
         }
         Generics.updatePosition(session, actor, coords, { immediateNpcInfo: true, forceRefresh: true });
@@ -105,7 +108,10 @@ function teleportTo(session, actor, coords, options = {}) {
         // AI wakeup. Otherwise their follow tick still reads the old leader
         // position and immediately schedules a catch-up teleport backwards.
         syncPartyCompanions(session, coords, Generics);
-        if (session.pendingActorTeleport === pendingTeleport) delete session.pendingActorTeleport;
+        if (session.pendingActorTeleport === pendingTeleport) {
+            delete session.pendingActorTeleport;
+            invoke('GameServer/World/World').notifyUserStateChanged(session);
+        }
 
         // Wake up bot AI after teleportation is complete and position updated
         if (session.aiActive) {

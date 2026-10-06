@@ -931,6 +931,12 @@ const PopulationService = {
     partyTargetNpcId,
     initialized: false,
     started: false,
+    lifeReadyPromise: null,
+    hotBoardReviewGeneration: 0,
+    hotBoardReviewService: null,
+    hotBoardReviewStartPromise: null,
+    hotBoardReviewTickUnsubscribe: null,
+    hotBoardReviewReadyUnsubscribe: null,
     summaryTimer: null,
     initialSummaryTimer: null,
     schedulerTimer: null,
@@ -980,16 +986,18 @@ const PopulationService = {
     nextClanActionAt: 0,
 
     init() {
-        if (this.initialized || Config.enabled === false) return;
+        if (Config.enabled === false) return;
+        if (this.initialized) return this.lifeReadyPromise;
 
         Metrics.init();
         Metrics.startEventLoopMonitor();
-        LifeState.init();
+        this.lifeReadyPromise = LifeState.init();
         LifeEvents.init();
         BackgroundPartyState.init();
         Director.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
+        return this.lifeReadyPromise;
     },
 
     start() {
@@ -1031,6 +1039,7 @@ const PopulationService = {
         if (Config.backgroundResolverEnabled !== false) ColdSimulationCoordinator.start(this);
 
         this.startBackgroundJobRegistry();
+        this.startHotBoardReviews();
 
         this.classProgressionMigrationTimer = setInterval(() => {
             this.migrateLegacyClassProgression();
@@ -1114,6 +1123,7 @@ const PopulationService = {
     },
 
     stop() {
+        this.stopHotBoardReviews();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
             clearTimeout(this.initialSummaryTimer);
@@ -1471,6 +1481,87 @@ const PopulationService = {
         this.backgroundJobRegistry = registry;
         registry.start();
         return registry;
+    },
+
+    startHotBoardReviews() {
+        if (Config.enabled === false || !this.started || !this.backgroundJobRegistry?.started) {
+            return Promise.resolve(false);
+        }
+        if (this.hotBoardReviewStartPromise) return this.hotBoardReviewStartPromise;
+        if (this.hotBoardReviewService || this.hotBoardReviewTickUnsubscribe) return Promise.resolve(false);
+        const generation = ++this.hotBoardReviewGeneration;
+        const registry = this.backgroundJobRegistry;
+        const current = () => this.started && Config.enabled !== false
+            && this.hotBoardReviewGeneration === generation
+            && this.backgroundJobRegistry === registry && registry.started;
+        let nextAttachAt = 0;
+        let attachAttempt = 0;
+        const attach = () => {
+            if (!current() || this.hotBoardReviewService || !AfkTrade.isBoardReady()
+                || Date.now() < nextAttachAt) return false;
+            const attempt = ++attachAttempt;
+            let service;
+            try {
+                service = invoke('GameServer/Bot/Economy/HotBoardReviewService');
+                service.start({
+                    admit: () => {
+                        if (!current() || attachAttempt !== attempt || this.hotBoardReviewService !== service) return null;
+                        const scheduler = Metrics.schedulerState || {};
+                        const admission = BackgroundWorkGovernor.admit({
+                            job: 'hot_market_review', resource: 'sqlite-heavy',
+                            requestedBudgetMs: Math.max(1, Number(Config.schedulerSliceMs) || 12), minimumBudgetMs: 1,
+                            playerProtected: Number(scheduler.realPlayers || 0) > 0 || scheduler.mode === 'player',
+                            realPlayers: scheduler.realPlayers,
+                            lagMs: Math.max(Number(Metrics.currentEventLoopLag?.() || 0), Number(scheduler.lagMs || 0))
+                        });
+                        return admission.ok ? admission.lease : null;
+                    },
+                    complete: (lease, result) => BackgroundWorkGovernor.complete(lease, result)
+                });
+                this.hotBoardReviewService = service;
+                this.hotBoardReviewReadyUnsubscribe?.();
+                this.hotBoardReviewReadyUnsubscribe = null;
+                return true;
+            } catch (error) {
+                try { service?.stop(); } catch (stopError) {
+                    utils.infoWarn('HotMarket', 'failed startup cleanup: %s', stopError.message);
+                }
+                nextAttachAt = Date.now() + Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000);
+                utils.infoWarn('HotMarket', 'startup retries after governor window: %s', error.message);
+                return false;
+            }
+        };
+        const pending = Promise.resolve(this.lifeReadyPromise).then(ready => {
+            if (ready !== true || !current()) return false;
+            this.hotBoardReviewTickUnsubscribe = registry.subscribeTicks(() => {
+                if (!current()) return;
+                if (this.hotBoardReviewService) this.hotBoardReviewService.pump();
+                else attach();
+            });
+            if (AfkTrade.isBoardReady()) return attach();
+            this.hotBoardReviewReadyUnsubscribe = AfkTrade.subscribeBoardChanges(change => {
+                if (change.ready && current()) attach();
+            });
+            return false;
+        }).catch(error => {
+            utils.infoWarn('HotMarket', 'startup waits: %s', error.message);
+            return false;
+        }).finally(() => {
+            if (this.hotBoardReviewStartPromise === pending) this.hotBoardReviewStartPromise = null;
+        });
+        this.hotBoardReviewStartPromise = pending;
+        return pending;
+    },
+
+    stopHotBoardReviews() {
+        this.hotBoardReviewGeneration++;
+        this.hotBoardReviewReadyUnsubscribe?.();
+        this.hotBoardReviewTickUnsubscribe?.();
+        this.hotBoardReviewService?.stop();
+        this.hotBoardReviewReadyUnsubscribe = null;
+        this.hotBoardReviewTickUnsubscribe = null;
+        this.hotBoardReviewService = null;
+        this.hotBoardReviewStartPromise = null;
     },
 
     scheduleClanActions(continuation = false) {

@@ -59,21 +59,25 @@ class HotBoardReviewService {
         // A disposed generation may still be awaiting native flush. Its
         // token fences writes and keeps a restarted service from overlapping.
         this.inFlight = this.inFlight || null;
-        this.unsubscribers = [
-            this.counters.subscribeChanges(change => {
+        this.unsubscribers = [];
+        try {
+            this.unsubscribers.push(this.counters.subscribeChanges(change => {
                 if (change.reset) this.events.resetCounterHistory();
                 else this.counterChanged(change.key, change.deals);
-            }),
-            this.afk.subscribeBoardChanges(change => {
+            }));
+            this.unsubscribers.push(this.afk.subscribeBoardChanges(change => {
                 for (const id of change.ownerIds || []) this.ownerChanged(id);
                 if (change.ready && !change.ownerIds) this.seed();
-            }),
-            this.world.subscribeUserChanges(id => this.ownerChanged(id)),
-            this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id)),
-            this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId)))
-        ];
-        this.seed();
-        return true;
+            }));
+            this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id)));
+            this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id)));
+            this.unsubscribers.push(this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId))));
+            this.seed();
+            return true;
+        } catch (error) {
+            this.stop();
+            throw error;
+        }
     }
 
     seed() {

@@ -112,7 +112,10 @@ function clearAttachedTrade(trade) {
     if (!trade) return;
     releaseReservations(trade);
     if (trade.playerSession?.activeTrade === trade) trade.playerSession.activeTrade = null;
-    if (trade.botSession?.activeTrade === trade) trade.botSession.activeTrade = null;
+    if (trade.botSession?.activeTrade === trade) {
+        trade.botSession.activeTrade = null;
+        invoke('GameServer/World/World').notifyUserStateChanged(trade.botSession);
+    }
 }
 
 function sendToPlayer(trade, packet) {

@@ -849,7 +849,13 @@ const tests = [
     'tests/test_character_location_index.js',
     'tests/test_n62_visibility_index.js',
     'tests/test_hot_market_review_authority.js',
-    'tests/test_background_job_registry_subscribers.js'
+    'tests/test_background_job_registry_subscribers.js',
+    'tests/test_hot_market_runtime.js',
+    'tests/test_n53_claim_alarms.js',
+    'tests/test_n53_claim_alarm_transport.js',
+    'tests/test_hot_board_review.js',
+    'tests/test_hot_market_busy_events.js',
+    'tests/test_hot_market_startup_rollback.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -906,6 +912,12 @@ const defaultConfigTests = new Set([
     'tests/test_n62_visibility_index.js',
     'tests/test_hot_market_review_authority.js',
     'tests/test_background_job_registry_subscribers.js',
+    'tests/test_hot_market_runtime.js',
+    'tests/test_n53_claim_alarms.js',
+    'tests/test_n53_claim_alarm_transport.js',
+    'tests/test_hot_board_review.js',
+    'tests/test_hot_market_busy_events.js',
+    'tests/test_hot_market_startup_rollback.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
     'tests/test_market_restart_cursors.js',
