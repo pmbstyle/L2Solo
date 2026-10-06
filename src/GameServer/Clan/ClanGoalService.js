@@ -299,7 +299,7 @@ async function resolveClanInternal(clan, options = {}) {
         const previous = automaticPrevious?.type === 'equipment' ? automaticPrevious : clan.state?.productionGoal || automaticPrevious;
         const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);
         await ClanEquipmentService.validatePlanning(clan, candidateSnapshot.planning);
-        const brain = candidateSnapshot.planning.economy ? null : candidateSnapshot.decisionNeeded
+        const brain = candidateSnapshot.decisionNeeded
             ? ClanBrain.choose(clan, candidateSnapshot, options) : null;
         if (brain?.pending) {
             return {
@@ -320,7 +320,8 @@ async function resolveClanInternal(clan, options = {}) {
         const equipment = await ClanEquipmentService.resolveClan(clan, previous, {
             ...options,
             planning: candidateSnapshot.planning,
-            selectedCandidate: brain?.candidate || null
+            selectedCandidate: brain?.source === 'llm' ? brain.candidate : null,
+            candidateIds: candidateSnapshot.candidates.map(candidate => candidate.id)
         });
         if (equipment.skipped && !equipment.completed) {
             return {

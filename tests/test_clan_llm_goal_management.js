@@ -224,6 +224,28 @@ async function main() {
         });
         plans.set(701, plan(1001, 'Leader Armor'));
 
+        const third = { id: 703, name: 'Mage', classId: 10, level: 40, phase: 'cold' };
+        clan.members.push(third); plans.set(703, plan(1003, 'Mage Armor'));
+        const networkPlanning = { plans, selection: { member: clan.members[0], plan: plans.get(701),
+            selectedBy: 'clan_wish_network' }, previousFulfilled: false, economy: { network: { queue: [
+                { object: { kind: 'equipment', memberId: 702, itemId: 1002 } },
+                { object: { kind: 'hall', itemId: 9001 } },
+                { object: { kind: 'equipment', memberId: 703, itemId: 1003 } },
+                { object: { kind: 'equipment', memberId: 701, itemId: 1001 } }
+            ] } } };
+        EquipmentService.planningForClan = async () => networkPlanning;
+        CandidateService.reset();
+        const networkSnapshot = await CandidateService.snapshotFor(clan, null);
+        assert.deepStrictEqual(networkSnapshot.candidates.map(c => [c.memberId, c.itemId]),
+            [[702, 1002], [703, 1003], [701, 1001]], 'brain alternatives follow the clan wish queue');
+        for (const c of networkSnapshot.candidates) assert(networkPlanning.economy.network.queue.some(wish =>
+            wish.object.kind === 'equipment' && wish.object.memberId === c.memberId && wish.object.itemId === c.itemId));
+        const validIds = networkSnapshot.candidates.map(c => c.id);
+        const secondPick = networkSnapshot.candidates[1];
+        assert.strictEqual(EquipmentService.selectedPlanningTarget(clan, null, networkPlanning, secondPick, validIds).member.id, 703);
+        assert.strictEqual(EquipmentService.selectedPlanningTarget(clan, null, networkPlanning,
+            { ...secondPick, id: 'invented' }, validIds), networkPlanning.selection, 'a pick outside the snapshot is ignored');
+
         const history = ContextAssembler.historyFromEvents([
             {
                 eventType: 'equipment_goal_updated',
@@ -365,7 +387,7 @@ async function main() {
         const integrationSnapshot = {
             ...brainSnapshot,
             key: 'clan-77-goal-service',
-            planning: { plans: new Map(), previousFulfilled: false },
+            planning: { plans: new Map(), previousFulfilled: false, economy: networkPlanning.economy },
             cacheHit: true
         };
         CandidateService.snapshotFor = async () => integrationSnapshot;
@@ -424,6 +446,21 @@ async function main() {
         assert.strictEqual(serviceResolved.context.decisionSource, 'llm');
         assert.strictEqual(recordedSelection.eventType, 'llm_goal_selected');
         assert.strictEqual(recordedSelection.payload.candidateId, candidates[1].id);
+
+        ClanBrain.reset();
+        const requestedBefore = ClanBrain.metrics().requested;
+        const originalConfigured = ClanBrain.configured;
+        const originalGatewayConfig = OpenRouterGateway.config;
+        OpenRouterGateway.config = () => null;
+        EquipmentService.resolveClan = async (_clan, _previous, options) => {
+            assert.strictEqual(options.selectedCandidate, null, 'disabled brain cannot override the network pick after stall filtering');
+            return { ok: true, skipped: true, reason: 'test_network_fallback', goal: stalledGoal };
+        };
+        try {
+            const off = await ClanGoalService.resolveClan(clan, { config: null });
+            assert.strictEqual(off.reason, 'test_network_fallback');
+            assert.strictEqual(ClanBrain.metrics().requested, requestedBefore);
+        } finally { OpenRouterGateway.config = originalGatewayConfig; }
 
         ClanBrain.reset();
         BotInferenceBudget.reset();

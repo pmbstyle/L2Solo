@@ -235,6 +235,20 @@ function rankedCandidates(clan, previousGoal, planning, limit = DEFAULT_LIMIT) {
     ));
 }
 
+function networkCandidates(clan, previousGoal, planning) {
+    const members = new Map((clan.members || []).map(member => [memberId(member), member]));
+    const candidates = [];
+    for (const wish of planning.economy.network.queue) {
+        if (wish.object?.kind !== 'equipment') continue;
+        const id = number(wish.object.memberId), member = members.get(id), plan = planning.plans.get(id);
+        if (!member || !EquipmentPolicy.isAcquisitionPlan(plan)
+            || number(plan.target?.selfId) !== number(wish.object.itemId)) continue;
+        candidates.push(candidateFor(clan, member, plan, previousGoal, candidates.length + 1));
+        if (candidates.length === 5) break;
+    }
+    return candidates;
+}
+
 async function snapshotFor(clan, previousGoal = null, options = {}) {
     const startedAt = Date.now();
     let occupancy = options.occupancy || null;
@@ -260,7 +274,8 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
     const group = cacheGroups.get(clanId) || new Set();
     cacheGroups.set(clanId, group);
     const planning = await EquipmentService.planningForClan(clan, previousGoal, { ...options, occupancy });
-    let candidates = rankedCandidates(clan, previousGoal, planning, options.limit);
+    let candidates = planning.economy ? networkCandidates(clan, previousGoal, planning)
+        : rankedCandidates(clan, previousGoal, planning, options.limit);
     const selectedMember = planning.selection?.member;
     const selectedPlan = planning.selection?.plan;
     if (selectedMember && EquipmentPolicy.isAcquisitionPlan(selectedPlan)) {
@@ -328,6 +343,7 @@ module.exports = {
     fingerprint,
     goalStallAssessment,
     rankedCandidates,
+    networkCandidates,
     snapshotFor,
     metrics() {
         return {

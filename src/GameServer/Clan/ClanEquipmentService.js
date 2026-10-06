@@ -803,11 +803,11 @@ async function recordRaidFailure(party, timestamp = Date.now()) {
     return { ok: false, code: 'ownership_conflict' };
 }
 
-function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null) {
+function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null, candidateIds = []) {
     const memberIdValue = number(selectedCandidate?.memberId);
     const itemId = number(selectedCandidate?.itemId);
     const slot = number(selectedCandidate?.slot);
-    if (!memberIdValue || planning.economy) return planning.selection;
+    if (!memberIdValue || (planning.economy && !candidateIds.includes(selectedCandidate?.id))) return planning.selection;
     const member = (clan.members || []).find((entry) => memberId(entry) === memberIdValue);
     const plan = planning.plans.get(memberIdValue);
     if (!member || !Policy.isAcquisitionPlan(plan)) return planning.selection;
@@ -840,7 +840,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     }
     const planning = options.planning || await planningForClan(clan, previousGoal, options);
     const { plans, previousFulfilled } = planning;
-    const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate);
+    const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate, options.candidateIds);
     await validatePlanning(clan, planning, selection);
     const raidPartyAfterPlanning = activeRaidPartyForClan(clan.id);
     if (raidPartyAfterPlanning) {
@@ -965,6 +965,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
 
 const ClanEquipmentService = {
     assignPlan,
+    selectedPlanningTarget,
     resolveClan,
     planningForClan,
     craftingOptions,
