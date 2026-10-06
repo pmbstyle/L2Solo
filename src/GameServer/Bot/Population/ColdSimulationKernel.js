@@ -1591,7 +1591,10 @@ class ColdSimulationKernel {
                     nextState: projectedState,
                     durable: projection?.durable || null,
                     ...(projection?.market ? { market: projection.market } : {}),
-                    ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
+                    // A member released by a dissolved party: its decision was
+                    // made on its party state, so main decides on the solo one.
+                    ...(projection?.economyDecision && resolvedParty.status !== 'dissolved'
+                        ? { economyDecision: projection.economyDecision } : {}),
                     result: {
                         ...result,
                         events: [

@@ -2521,7 +2521,7 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: timestamp
         };
-        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { timestamp });
+        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
         Object.assign(nextState.stats, economy.statsPacket);
         if (typeof options.onEconomy === 'function') options.onEconomy(economy);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);

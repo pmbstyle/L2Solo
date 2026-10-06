@@ -799,8 +799,9 @@ class ColdSimulationCoordinator {
         };
         const unsafeSoloGround = !partyRoute && currentGround
             && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
-        const leaf = !partyRoute ? this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
-            .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory })) : null;
+        const leaf = partyRoute ? null : index.wishLeaf !== undefined ? index.wishLeaf
+            : this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
+                .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory }));
         const wished = leaf?.activity === 'hunting' && leaf.spotId
             ? index.spots.get(String(leaf.spotId)) : null;
         const wishDestination = wished && wished.raidBoss !== true
@@ -950,7 +951,7 @@ class ColdSimulationCoordinator {
             isPartyLeader: !!party,
             party,
             partyMembers,
-            route: this.routeFor(state, spot, party, fullPartyMembers, { ...index, memory: interactionMemory })
+            route: this.routeFor(state, spot, party, fullPartyMembers, { ...index, memory: interactionMemory, wishLeaf: leaf })
         };
         this.projectionRetention.prepare(state, context, index.partyGeneration);
         return context;
@@ -1614,7 +1615,7 @@ class ColdSimulationCoordinator {
             await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
         }
         let state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
-        this.economyDecisions.accept(state.characterId, entry.proposal.economyDecision);
+        this.economyDecisions.accept(state.characterId, entry.proposal.economyDecision, committed);
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         // The bot looked at its board lines in the worker: its new asks.
         if (entry.proposal.market) {

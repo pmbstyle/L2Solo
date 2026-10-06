@@ -394,6 +394,8 @@ function startKernel(config = {}) {
                 persist: false,
                 timestamp,
                 projectClassProgression: true,
+                // Spot crowding, as main gave the same leaf before (L25).
+                economyDeps: { occupancy: currentPlanningOccupancy(timestamp) },
                 onEconomy: (built) => { economy = built; }
             });
             // Board events submit price observations through market commands.

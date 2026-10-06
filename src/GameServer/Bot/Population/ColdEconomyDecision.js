@@ -27,10 +27,14 @@ class ColdEconomyDecisions {
         this.misses = 0;
     }
 
-    accept(characterId, decision) {
+    // committed: the commit's result. A commit that merged board deals or PK
+    // drops into the bag keeps the worker's updatedAt, but the decision was
+    // made on the bag before them: main builds the network itself then.
+    accept(characterId, decision, committed = null) {
         const id = Number(characterId);
         if (!id) return;
-        if (decision && Number.isFinite(Number(decision.updatedAt))) this.byId.set(id, decision);
+        const bagChanged = !!committed?.settled || !!committed?.pkDrops?.length;
+        if (decision && !bagChanged && Number.isFinite(Number(decision.updatedAt))) this.byId.set(id, decision);
         else this.byId.delete(id);
     }
 

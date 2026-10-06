@@ -23,6 +23,13 @@ assert.deepEqual(decisions.activity({ characterId: 7, updatedAt: 1001 }, build),
 assert.equal(builds, 1, 'a state changed after the decision builds the network');
 assert.equal(decisions.byId.has(7), false, 'an outdated decision is dropped');
 
+decisions.accept(10, decision, { settled: [{ itemId: 57 }] });
+assert.equal(decisions.byId.has(10), false, 'board deals merged at commit: the decision saw the old bag');
+decisions.accept(11, decision, { pkDrops: [{ selfId: 1 }] });
+assert.equal(decisions.byId.has(11), false, 'PK drops merged at commit: the decision saw the old bag');
+decisions.accept(12, decision, { pkDrops: [] });
+assert.equal(decisions.byId.has(12), true);
+
 decisions.accept(8, decision);
 decisions.accept(8, undefined);
 assert.equal(decisions.byId.has(8), false, 'a commit without a decision clears the old one');
