@@ -12,6 +12,8 @@ const PvpPartyMembershipKeys = require('./PvpPartyMembershipKeys');
 const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
 const userLocationIndexes = new WeakMap();
 const userChangeListeners = new Set();
+const actorPublicationListeners = new Set();
+let currentActorPublication = Object.freeze({ binding: null });
 let currentUser;
 
 function notifyUserChange(id) {
@@ -20,6 +22,38 @@ function notifyUserChange(id) {
         try { listener(id); }
         catch (error) { utils.infoWarn('World', 'user change listener failed: %s', error.message); }
     }
+}
+
+function currentActorPublicationRuntime(runtime) {
+    return !!runtime && runtime.binding === currentActorPublication.binding
+        && CharacterLocationRuntime.isCurrentWorld(currentUser, runtime.binding);
+}
+
+function notifyActorPublication(runtime, kind, record, cause) {
+    // Dirty evidence retains the native record; listener failures cannot mask
+    // a pending native error, including when publication runs from finally.
+    try {
+        const publication = currentActorPublication;
+        const envelope = Object.freeze(record
+            ? { kind, binding: publication.binding, record, cause }
+            : { kind, binding: publication.binding, cause });
+        const listeners = [...actorPublicationListeners];
+        for (const listener of listeners) {
+            if (!actorPublicationListeners.has(listener)) continue;
+            try {
+                if (publication !== currentActorPublication) break;
+                if (kind !== 'reset') {
+                    if (!currentActorPublicationRuntime(runtime)) break;
+                    if (kind === 'upsert' && !currentActorRecord(runtime, record)) break;
+                    if (kind === 'remove' && runtime.index.getSource(record.id, 'actor') === record) break;
+                }
+                listener(envelope);
+            } catch (error) {
+                try { utils.infoWarn('World', 'actor publication listener failed: %s', error?.message); }
+                catch { /* Diagnostics are observational, including in finally. */ }
+            }
+        }
+    } catch { /* Publication must preserve the native return or original error. */ }
 }
 
 function createUserLocationIndex(user) {
@@ -82,41 +116,60 @@ function publishPartyMembership(runtime, packet) {
 function attachRegisteredActor(runtime, session, membership, explicit = false) {
     const actor = session.actor;
     const id = Number(actor?.fetchId?.());
+    if (!currentActorPublicationRuntime(runtime) || runtime.sessions.get(session) !== membership
+        || session.actor !== actor) return null;
     const previous = membership.registered;
     if (previous && previous.actor === actor && previous.id === id) {
         if (currentActorRecord(runtime, previous)) return previous;
         if (!explicit) return null;
     }
-    if (previous && runtime.index.getSource(previous.id, 'actor') === previous) {
-        runtime.index.removeSource(previous.id, 'actor', previous.source);
-        if (previous.actor !== actor) runtime.retiredActors.add(previous.actor);
+    const removed = [];
+    let accepted = null;
+    try {
+        if (previous && runtime.index.getSource(previous.id, 'actor') === previous) {
+            runtime.index.removeSource(previous.id, 'actor', previous.source);
+            removed.push(previous);
+            if (previous.actor !== actor) runtime.retiredActors.add(previous.actor);
+        }
+        membership.registered = null;
+        if (previous) notifyUserChange(previous.id);
+        if (!currentActorPublicationRuntime(runtime) || runtime.sessions.get(session) !== membership
+            || session.actor !== actor) return null;
+        if (!actor || !Number.isSafeInteger(id) || id <= 0) return null;
+        const displaced = runtime.index.getSource(id, 'actor');
+        if (displaced && displaced.actor !== actor) {
+            runtime.retiredActors.add(displaced.actor);
+        }
+        const record = registeredActor(runtime, session, actor, id, membership);
+        runtime.index.setSource(id, 'actor', record, { indexed: false });
+        accepted = record;
+        if (displaced && displaced !== record) removed.push(displaced);
+        membership.registered = record;
+        refreshRawActorLocation(runtime, record);
+        publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
+        notifyUserChange(id);
+        return record;
+    } finally {
+        for (const record of removed) notifyActorPublication(runtime, 'remove', record, 'replace');
+        if (accepted) notifyActorPublication(runtime, 'upsert', accepted, 'attach');
     }
-    membership.registered = null;
-    if (previous) notifyUserChange(previous.id);
-    if (!actor || !Number.isSafeInteger(id) || id <= 0) return null;
-    const displaced = runtime.index.getSource(id, 'actor');
-    if (displaced && displaced.actor !== actor) {
-        runtime.retiredActors.add(displaced.actor);
-    }
-    const record = registeredActor(runtime, session, actor, id, membership);
-    runtime.index.setSource(id, 'actor', record, { indexed: false });
-    membership.registered = record;
-    refreshRawActorLocation(runtime, record);
-    publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
-    notifyUserChange(id);
-    return record;
 }
 
 function removeIndexedSession(runtime, session) {
     const membership = runtime?.sessions.get(session);
     if (!membership) return;
     const registered = membership.registered;
-    if (registered && runtime.index.getSource(registered.id, 'actor') === registered) {
-        runtime.index.removeSource(registered.id, 'actor', registered.source);
-        runtime.retiredActors.add(registered.actor);
+    let removed = false;
+    try {
+        if (registered && runtime.index.getSource(registered.id, 'actor') === registered) {
+            removed = runtime.index.removeSource(registered.id, 'actor', registered.source);
+            runtime.retiredActors.add(registered.actor);
+        }
+        runtime.sessions.delete(session);
+        if (registered) notifyUserChange(registered.id);
+    } finally {
+        if (removed) notifyActorPublication(runtime, 'remove', registered, 'remove');
     }
-    runtime.sessions.delete(session);
-    if (registered) notifyUserChange(registered.id);
 }
 
 function actorLoc(actor) {
@@ -272,9 +325,14 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 const World = {
     get user() { return currentUser; },
     set user(user) {
-        CharacterLocationRuntime.bindWorld(user);
+        const binding = CharacterLocationRuntime.bindWorld(user);
         currentUser = user;
+        if (binding !== currentActorPublication.binding) {
+            currentActorPublication = Object.freeze({ binding });
+            notifyActorPublication(null, 'reset', null, 'reset');
+        }
     },
+    get actorPublicationBinding() { return currentActorPublication.binding; },
     waitForBotSession,
     isBotSession,
 
@@ -350,21 +408,31 @@ const World = {
         if (!membership || !actor || session.actor !== actor) return false;
         const registered = attachRegisteredActor(runtime, session, membership);
         if (!registered) return false;
-        refreshRawActorLocation(runtime, registered);
-        if (registered.retired) return false;
-        const online = actor.fetchIsOnline?.() !== false;
-        const onlineChanged = membership.online !== online;
-        membership.online = online;
-        const loc = indexedActorLoc(actor);
-        const usable = usableActorLoc(loc);
-        const usableChanged = membership.usable !== usable;
-        membership.usable = usable;
-        membership.realPlayer = online && usable && PlayerActivitySignal.isRealPlayerSession(session);
-        runtime.index.updateSource(registered.id, 'actor', actor, { indexed: online && usableProjection(actor) });
-        membership.actor = actor;
-        membership.id = registered.id;
-        if (usableChanged || onlineChanged) notifyUserChange(registered.id);
-        return online && usable;
+        let accepted = false;
+        try {
+            accepted = refreshRawActorLocation(runtime, registered);
+            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
+            if (registered.retired) return false;
+            const online = actor.fetchIsOnline?.() !== false;
+            const onlineChanged = membership.online !== online;
+            membership.online = online;
+            const loc = indexedActorLoc(actor);
+            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
+            const usable = usableActorLoc(loc);
+            const usableChanged = membership.usable !== usable;
+            membership.usable = usable;
+            membership.realPlayer = online && usable && PlayerActivitySignal.isRealPlayerSession(session);
+            const indexed = online && usableProjection(actor);
+            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
+            const updated = runtime.index.updateSource(registered.id, 'actor', actor, { indexed });
+            accepted = updated || accepted;
+            membership.actor = actor;
+            membership.id = registered.id;
+            if (usableChanged || onlineChanged) notifyUserChange(registered.id);
+            return online && usable;
+        } finally {
+            if (accepted) notifyActorPublication(runtime, 'upsert', registered, 'location');
+        }
     },
 
     retireUserActor(session, actor) {
@@ -378,14 +446,20 @@ const World = {
         // Renew the common raw record even for the same actor so an in-flight
         // registration token cannot survive terminal retirement/restoration.
         const retired = registeredActor(runtime, session, actor, previous.id, membership);
-        runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
-        membership.registered = retired;
-        refreshRawActorLocation(runtime, retired);
-        publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
-        notifyUserChange(previous.id);
-        membership.actor = null;
-        membership.id = null;
-        return true;
+        let accepted = false;
+        try {
+            runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
+            accepted = true;
+            membership.registered = retired;
+            refreshRawActorLocation(runtime, retired);
+            publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
+            notifyUserChange(previous.id);
+            membership.actor = null;
+            membership.id = null;
+            return true;
+        } finally {
+            if (accepted) notifyActorPublication(runtime, 'upsert', retired, 'retire');
+        }
     },
 
     registeredActorById(id) {
@@ -459,6 +533,12 @@ const World = {
         if (typeof listener !== 'function') return () => {};
         userChangeListeners.add(listener);
         return () => userChangeListeners.delete(listener);
+    },
+
+    subscribeActorPublications(listener) {
+        if (typeof listener !== 'function') throw new TypeError('invalid_actor_publication_listener');
+        actorPublicationListeners.add(listener);
+        return () => actorPublicationListeners.delete(listener);
     },
 
     realPlayerSessionsNear(loc, radius) {
