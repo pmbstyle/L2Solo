@@ -8651,11 +8651,12 @@ const Database = {
             return { ok: true, characterId, sex: normalizedSex, appearanceVersion: version };
         }, 'bot-life:generated-appearance'));
     },
-    updateColdCharacterExperience(id, level, exp, sp) {
-        return withCharacterFlush(id, () => run(`UPDATE characters
+    updateColdCharacterExperience(id, level, exp, sp, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        return withCharacterFlush(id, () => guardedNativeWrite(`UPDATE characters
             SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
                 level = ?, exp = ?, sp = ? WHERE id = ?`,
-            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience'));
+            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
@@ -8679,9 +8680,11 @@ const Database = {
             syncColdDeathExperienceUnsafe(id, state.stats?.deathExperience, Number(state.updatedAt || now()));
         }, 'character:cold-progression'));
     },
-    applyCharacterDeathExperience(record) {
+    applyCharacterDeathExperience(record, options = {}) {
         const id = Number(record.characterId);
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
         return withCharacterFlush(id, () => inTransaction(() => {
+            checkCapturedWriteAdmission(admission);
             const existing = one('SELECT * FROM character_death_experience WHERE characterId = ?', [id]);
             const character = one('SELECT level, exp, sp FROM characters WHERE id = ?', [id]);
             if (!character) throw new Error(`death experience character missing: ${id}`);
@@ -8713,10 +8716,12 @@ const Database = {
             return { ...record, deathSequence: sequence, pendingRestoration: 1, duplicate: false };
         }, 'character:death-exp-apply'));
     },
-    restoreCharacterDeathExperience(id, restorePercent, resolvedAt = Date.now()) {
+    restoreCharacterDeathExperience(id, restorePercent, resolvedAt = Date.now(), options = {}) {
         const characterId = Number(id);
         const percent = Math.max(0, Math.min(100, Number(restorePercent) || 0));
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            checkCapturedWriteAdmission(admission);
             const death = one('SELECT * FROM character_death_experience WHERE characterId = ?', [characterId]);
             if (!death || Number(death.pendingRestoration) !== 1) return null;
             const character = one('SELECT level, exp, sp FROM characters WHERE id = ?', [characterId]);
@@ -8732,12 +8737,13 @@ const Database = {
             return { ...death, pendingRestoration: 0, restoredExp, totalExp, level, restorePercent: percent };
         }, 'character:death-exp-restore'));
     },
-    clearCharacterDeathExperience(id, reason = 'invalidated', resolvedAt = Date.now()) {
+    clearCharacterDeathExperience(id, reason = 'invalidated', resolvedAt = Date.now(), options = {}) {
         const characterId = Number(id);
-        return withCharacterFlush(characterId, () => run(`UPDATE character_death_experience
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        return withCharacterFlush(characterId, () => guardedNativeWrite(`UPDATE character_death_experience
             SET pendingRestoration = 0, resolvedAt = ?, resolutionReason = ?
             WHERE characterId = ? AND pendingRestoration = 1`,
-        [resolvedAt, String(reason || 'invalidated'), characterId], 'character:death-exp-clear'));
+        [resolvedAt, String(reason || 'invalidated'), characterId], 'character:death-exp-clear', admission));
     },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write');
