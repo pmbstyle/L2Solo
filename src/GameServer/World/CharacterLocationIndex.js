@@ -4,6 +4,14 @@ const { SPOT_CELL_SIZE } = require('./WorldConstants');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
 const VIEWS = new Set(['actor', 'state']);
 
+function validateGroupQuery(view, family) {
+    if (view !== 'actor' || family !== 'pvp_party') throw new RangeError('invalid_character_group');
+}
+
+function sameKey(left, right) {
+    return left === right || (Number.isNaN(left) && Number.isNaN(right));
+}
+
 function validateView(view) {
     if (!VIEWS.has(view)) throw new RangeError('invalid_character_source_view');
 }
@@ -65,6 +73,7 @@ class CharacterLocationIndex {
         this.sourceViews = { actor: new Map(), state: new Map() };
         this.cells = new Map();
         this.spots = new Map();
+        this.groups = new Map();
     }
 
     put(record) {
@@ -91,6 +100,7 @@ class CharacterLocationIndex {
         if (entry && !sameSource(entry.source, source, legacy)) {
             this.detachCell(entry);
             this.detachSpot(entry);
+            this.detachGroups(entry);
             entry.key = null;
             entry.spotId = null;
             entry.indexed = false;
@@ -140,6 +150,7 @@ class CharacterLocationIndex {
         if (!entry || !sameSource(entry.source, source, view === 'state' && this.legacyStateCache)) return false;
         this.detachCell(entry);
         this.detachSpot(entry);
+        this.detachGroups(entry);
         this.sourceViews[view].delete(id);
         row[view] = null;
         if (!row.actor && !row.state) this.records.delete(id);
@@ -173,6 +184,59 @@ class CharacterLocationIndex {
     sourceEntries(view) {
         validateView(view);
         return sourceRecordEntries(this.sourceViews[view].entries());
+    }
+
+    updateGroups(id, view, expectedRecord, family, keys, order) {
+        validateGroupQuery(view, family);
+        if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('invalid_character_source');
+        const entry = this.records.get(id)?.[view];
+        if (!entry || entry.record !== expectedRecord) return false;
+        if (!Array.isArray(keys)) throw new RangeError('invalid_character_group_keys');
+        const count = keys.length;
+        if (!Number.isSafeInteger(count) || count < 0 || count > 2) throw new RangeError('invalid_character_group_keys');
+        const nextKeys = [];
+        for (let i = 0; i < count; i += 1) nextKeys.push(keys[i]);
+        if (new Set(nextKeys).size !== count) throw new RangeError('invalid_character_group_keys');
+        if (!Number.isSafeInteger(order) || order <= 0) throw new RangeError('invalid_character_group_order');
+        if (this.records.get(id)?.[view] !== entry || entry.record !== expectedRecord) return false;
+        const previous = entry.groupMembership;
+        if (previous?.order === order && previous.keys.length === nextKeys.length
+            && nextKeys.every(key => previous.keys.some(old => sameKey(old, key)))) return true;
+        const next = { keys: nextKeys, order };
+        this.detachGroups(entry);
+        entry.groupMembership = next;
+        for (const key of next.keys) {
+            let bucket = this.groups.get(key);
+            if (!bucket) {
+                bucket = { entries: new Set(), last: null };
+                this.groups.set(key, bucket);
+            }
+            if (!bucket.last || bucket.last.groupMembership.order <= order) {
+                bucket.entries.add(entry);
+                bucket.last = entry;
+            } else {
+                // Only the affected group is reordered, on producer delivery.
+                const entries = [];
+                let inserted = false;
+                for (const member of bucket.entries) {
+                    if (!inserted && member.groupMembership.order > order) {
+                        entries.push(entry);
+                        inserted = true;
+                    }
+                    entries.push(member);
+                }
+                if (!inserted) entries.push(entry);
+                bucket.entries.clear();
+                for (const member of entries) bucket.entries.add(member);
+                bucket.last = entries[entries.length - 1];
+            }
+        }
+        return true;
+    }
+
+    groupSources(key, { view = 'actor', family = 'pvp_party' } = {}) {
+        validateGroupQuery(view, family);
+        return sourceRecords(this.groups.get(key)?.entries ?? []);
     }
 
     near(loc, radius, { kind = 'all' } = {}) {
@@ -235,6 +299,7 @@ class CharacterLocationIndex {
     }
 
     clear() {
+        this.clearGroups();
         this.records.clear();
         this.sourceViews.actor.clear();
         this.sourceViews.state.clear();
@@ -244,6 +309,7 @@ class CharacterLocationIndex {
 
     clearSourceView(view) {
         validateView(view);
+        if (view === 'actor') this.clearGroups();
         for (const entry of this.sourceViews[view].values()) this.removeSource(entry.id, view, entry.source);
         this.sourceViews[view].clear();
     }
@@ -325,6 +391,29 @@ class CharacterLocationIndex {
         members.delete(entry);
         if (!members.size) delete spot[entry.view];
         if (!spot.actor && !spot.state) this.spots.delete(entry.spotId);
+    }
+
+    detachGroups(entry) {
+        if (!entry.groupMembership) return;
+        for (const key of entry.groupMembership.keys) {
+            const bucket = this.groups.get(key);
+            if (!bucket) continue;
+            bucket.entries.delete(entry);
+            if (!bucket.entries.size) this.groups.delete(key);
+            else if (bucket.last === entry) {
+                for (const member of bucket.entries) bucket.last = member;
+            }
+        }
+        entry.groupMembership = null;
+    }
+
+    clearGroups() {
+        for (const bucket of this.groups.values()) {
+            bucket.entries.clear();
+            bucket.last = null;
+        }
+        for (const entry of this.sourceViews.actor.values()) entry.groupMembership = null;
+        this.groups.clear();
     }
 }
 
