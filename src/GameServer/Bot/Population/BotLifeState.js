@@ -1618,6 +1618,41 @@ const BotLifeState = {
         return snapshot;
     },
 
+    // Warehouse transfers patch the physical projection repeatedly; their stats
+    // stay untouched until the one final metadata patch.
+    acceptInventoryProjection(row) {
+        const current = cache.get(Number(row?.characterId));
+        if (!current || !row?.inventoryPatch || current.phase !== row.phase
+            || current.simulation?.ownerId !== row.simulationOwner
+            || Number(current.simulation?.revision || 0) >= Number(row.simulationRevision)) return current || null;
+        const inventory = { ...current.inventory };
+        for (const [id, item] of Object.entries(row.inventoryPatch)) {
+            if (item) inventory[id] = item;
+            else delete inventory[id];
+        }
+        const snapshot = { ...current, inventory, adena: Number(row.adena),
+            vitals: { ...current.vitals, mp: Number(row.mp) }, updatedAt: Number(row.updatedAt),
+            simulation: { ...current.simulation, revision: Number(row.simulationRevision) } };
+        cache.set(snapshot.characterId, snapshot);
+        notifyMarketReviewState(snapshot, current);
+        invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
+        return snapshot;
+    },
+
+    acceptWarehouseWithdrawal(row) {
+        const current = cache.get(Number(row?.characterId));
+        if (!current) return null;
+        if (Number(current.stats?.lastWarehouseWithdrawal?.at || 0) > Number(row.withdrawal.at)) return current;
+        const newerTiming = Number(current.simulation?.revision || 0) > Number(row.simulationRevision)
+            || Number(current.updatedAt || 0) > Number(row.updatedAt);
+        const snapshot = { ...current, stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal,
+            ...(row.market ? { marketSellRetryAfter: null } : {}) },
+            timing: newerTiming ? current.timing : { ...current.timing, nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null } };
+        cache.set(snapshot.characterId, snapshot);
+        notifyColdSnapshot(snapshot, 'cold_warehouse_withdrawal');
+        return snapshot;
+    },
+
     // A committed deal publishes only learning here. A cold worker keeps its
     // inventory/lease; delayed postcommit handlers cannot rewind later counts.
     acceptMarketTrades(characterId, counts) {

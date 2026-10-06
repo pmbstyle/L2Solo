@@ -1883,7 +1883,9 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?, mp = COALESCE(?, mp),
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
     [JSON.stringify(inventory), adena, mp, now(), Number(characterId)]);
-    return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]));
+    const inventoryPatch = Object.fromEntries([...new Set([57, ...changedIds].map(Number))]
+        .map(id => [id, physical[id] || null]));
+    return { ...normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)])), inventoryPatch };
 }
 
 // The funded order belongs to the native party row. Worker patches may
@@ -5939,18 +5941,19 @@ const Database = {
         }, 'warehouse:deposit'));
     },
 
-    transferWarehouseToInventory(characterId, item, { coldState = null, withdrawal = null } = {}) {
+    transferWarehouseToInventory(characterId, item, { coldState = null } = {}) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
             let life = null;
             if (coldState) {
-                life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                life = one(`SELECT phase, activity, simulationOwner, simulationRevision, partyId, inventorySummary,
+                    json_extract(statsJson,'$.equipmentPlan') AS equipmentPlan FROM bot_life_state WHERE characterId=?`, [characterId]);
                 // A queued flush can hand the bot to a worker or add a craft
                 // reservation after the caller planned the withdrawal.
                 if (!life || Number(coldState.characterId) !== Number(characterId)
                     || life.phase !== 'cold' || life.simulationOwner !== LEGACY_SIMULATION_OWNER
                     || life.partyId || !['hunting', 'resting'].includes(life.activity)
                     || (coldState.simulation && Number(life.simulationRevision) !== Number(coldState.simulation.revision))
-                    || JSON.stringify(jsonObject(life.statsJson).equipmentPlan || null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
+                    || JSON.stringify(life.equipmentPlan ? JSON.parse(life.equipmentPlan) : null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
                     throw new Error('economy_state_changed');
                 }
                 // A resolve saves its lifecycle row before materializing loot.
@@ -5977,18 +5980,24 @@ const Database = {
             const warehouseAmount = Number(source.amount) - Number(item.amount);
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
-            if (life && withdrawal) {
-                const timestamp = Number(withdrawal.at) || now();
-                const stats = jsonObject(life.statsJson);
-                stats.lastWarehouseWithdrawal = { items: withdrawal.items, at: timestamp };
-                if (withdrawal.items.some(entry => entry.reason === 'market')) stats.marketSellRetryAfter = null;
-                write(`UPDATE bot_life_state SET statsJson=?, nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END
-                    WHERE characterId=?`, [JSON.stringify(stats), timestamp, characterId]);
-            }
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:withdraw'));
+    },
+
+    patchWarehouseWithdrawal(characterId, withdrawal) {
+        const record = require('./GameServer/Bot/LastOperations').compact({ at: Number(withdrawal.at) || now() },
+            withdrawal.items, { marketFirst: true });
+        const raw = JSON.stringify(record);
+        const market = record.items.some(row => row[2] === 1);
+        return enqueue(() => {
+            const row = one(`UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),
+                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellRetryAfter', NULL" : ''}),
+                nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END WHERE characterId=?
+                RETURNING characterId,nextResolveAt,simulationRevision,updatedAt`, [raw, record.at, Number(characterId)]);
+            return row ? { ...row, withdrawal: record, market } : null;
+        }, { operation: 'warehouse:withdrawal-record' });
     },
 
     transferPlayerInventoryBatchToClanWarehouse({ clanId, characterId, transfers = [] } = {}) {

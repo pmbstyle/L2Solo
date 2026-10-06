@@ -22,6 +22,7 @@ const originals = {
     fetchWarehouseItems: Database.fetchWarehouseItems,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
     transferWarehouseToInventory: Database.transferWarehouseToInventory,
+    patchWarehouseWithdrawal: Database.patchWarehouseWithdrawal,
     execute: Database.execute,
     refreshInventory: LifeState.refreshInventory,
     upsertState: LifeState.upsertState,
@@ -280,6 +281,7 @@ async function run() {
 
     let warehouseRows = [{ id: 71, selfId: 5220, name: 'Metal Hardener', amount: 60 }];
     const withdrawals = [];
+    Database.patchWarehouseWithdrawal = async () => null;
     Database.fetchWarehouseItems = () => Promise.resolve(warehouseRows.map((row) => ({ ...row })));
     Database.transferWarehouseToInventory = (characterId, item) => {
         withdrawals.push({ characterId, ...item });
@@ -531,6 +533,7 @@ run().catch((err) => {
     Database.fetchWarehouseItems = originals.fetchWarehouseItems;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
     Database.transferWarehouseToInventory = originals.transferWarehouseToInventory;
+    Database.patchWarehouseWithdrawal = originals.patchWarehouseWithdrawal;
     Database.execute = originals.execute;
     LifeState.refreshInventory = originals.refreshInventory;
     LifeState.upsertState = originals.upsertState;

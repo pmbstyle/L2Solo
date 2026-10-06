@@ -214,7 +214,7 @@ async function run() {
         assert.equal(partialTotals.physical, 10);
         assert.equal(partialTotals.stored, 10);
         const [partialSaved] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [ids[7]]]);
-        assert.equal(JSON.parse(partialSaved.statsJson).lastWarehouseWithdrawal.items[0].amount, 10,
+        assert.equal(JSON.parse(partialSaved.statsJson).lastWarehouseWithdrawal.items[0][1], 10,
             'a partial transfer has its physical projection and release metadata already committed');
 
         await seed(ids[8]);

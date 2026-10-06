@@ -390,6 +390,7 @@ const tests = [
     'tests/test_bot_giran_starter_recovery.js',
     'tests/test_bot_craft_shop.js',
     'tests/test_bot_warehouse.js',
+    'tests/test_saved_warehouse_patch.js',
     'tests/test_bot_physical_warehouse_errand.js',
     'tests/test_bot_cold_market_trade_chat.js',
     'tests/test_bot_trade_chat.js',
@@ -993,6 +994,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_saved_warehouse_patch.js',
     'tests/test_spot_money_value.js',
     'tests/test_spot_table_stacks.js',
     'tests/test_hot_background_party_roster.js',

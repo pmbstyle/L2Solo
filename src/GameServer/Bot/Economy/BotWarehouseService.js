@@ -445,10 +445,10 @@ function reservedWithdrawalAmounts(state, warehouseItems) {
 }
 
 function hasFundedReleasedMarketMaterial(state) {
-    return (state?.stats?.lastWarehouseWithdrawal?.items || []).some((item) => (
-        item.reason === 'market'
-        && Number(state.inventory?.[String(item.selfId)]?.amount || 0) > 0
-        && !!MarketOpportunity.bestBuyOffer(item.selfId, { sellerCharacterId: state.characterId })
+    return (state?.stats?.lastWarehouseWithdrawal?.items || []).some((row) => (
+        row[2] === 1
+        && Number(state.inventory?.[String(row[0])]?.amount || 0) > 0
+        && !!MarketOpportunity.bestBuyOffer(row[0], { sellerCharacterId: state.characterId })
     ));
 }
 
@@ -524,8 +524,18 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
     const released = [];
     const timestamp = Date.now();
     let atomicSnapshot = false;
-    const stopped = () => ({ state: LifeState.cachedState(state.characterId) || state,
-        released: released.length > 0, items: released, reason: 'economy_state_changed', aborted: true });
+    let recorded = false;
+    const recordWithdrawal = async () => {
+        if (!released.length || recorded) return;
+        recorded = true;
+        const row = await Database.patchWarehouseWithdrawal(state.characterId, withdrawalRecord(released, timestamp));
+        if (row) state = LifeState.acceptWarehouseWithdrawal(row) || state;
+    };
+    const stopped = async () => {
+        await recordWithdrawal();
+        return { state: LifeState.cachedState(state.characterId) || state,
+            released: released.length > 0, items: released, reason: 'economy_state_changed', aborted: true };
+    };
     const transferStartedAt = Date.now();
     try {
         for (const row of warehouseItems) {
@@ -546,7 +556,7 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                     name: row.name || template?.template?.name || `Item ${row.selfId}`,
                     amount,
                     stackable: !!template?.etc?.stackable
-                }, { coldState: state, withdrawal: { items: [...released, withdrawal], at: timestamp } });
+                }, { coldState: state });
                 row.amount = Number(row.amount) - amount;
                 remainingByRequest.set(key, remaining - amount);
                 released.push(withdrawal);
@@ -555,18 +565,20 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                     // one transaction. Never overwrite a newer cache/owner
                     // with the row returned by an earlier awaited transfer.
                     if ((LifeState.cachedState(state.characterId) || state) !== state) return stopped();
-                    state = LifeState.acceptLifecycleRow(transfer.coldLifeRow);
+                    state = LifeState.acceptInventoryProjection(transfer.coldLifeRow) || state;
                     atomicSnapshot = true;
                 }
             }
         }
     } catch (error) {
         if (error?.message === 'economy_state_changed' || error?.message === 'warehouse_owner_changed') return stopped();
+        await recordWithdrawal();
         throw error;
     } finally {
         recordStage('item_transfer', transferStartedAt);
     }
     if (!released.length) return { state, released: false, items: [] };
+    await recordWithdrawal();
 
     const refreshStartedAt = Date.now();
     // The native transfer already returned the real bag. The fallback only
@@ -592,7 +604,7 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
         stats: {
             ...(releasedState.stats || {}),
             marketSellRetryAfter: releasedForMarket ? null : releasedState.stats?.marketSellRetryAfter,
-            lastWarehouseWithdrawal: { items: released, at: timestamp }
+            lastWarehouseWithdrawal: withdrawalRecord(released, timestamp)
         },
         timing: {
             ...(releasedState.timing || {}),
@@ -604,6 +616,11 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
     // Native withdrawal persisted only its own metadata in the transaction;
     // a full lifecycle upsert here would overwrite concurrent goals/stats.
     return { state: nextState, released: true, items: released };
+}
+
+function withdrawalRecord(items, at) {
+    return require('../LastOperations').compact({ at: Number(at) },
+        items.map(item => [Number(item.selfId), Number(item.amount), item.reason === 'market' ? 1 : 0]), { marketFirst: true });
 }
 
 function enchantReleaseCandidates(limit = 8, options = {}) {
@@ -764,6 +781,7 @@ module.exports = {
     retentionAmount,
     craftRequests,
     marketRequests,
+    withdrawalRecord,
     enchantReleaseCandidates,
     hasFundedReleasedMarketMaterial,
     pendingMarketReleaseCandidates,

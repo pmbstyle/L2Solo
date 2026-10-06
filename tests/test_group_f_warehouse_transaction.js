@@ -17,8 +17,8 @@ async function run() {
         const stock = await Database.execute(['INSERT INTO warehouse_items(characterId,selfId,name,amount,enchant) VALUES(?,?,?,20,0)',
             [id, 1864, 'Stem']]);
         const item = { id: Number(stock.insertId), selfId: 1864, name: 'Stem', amount: 20, stackable: true };
-        const withdrawal = { items: [{ selfId: 1864, name: 'Stem', amount: 20, reason: 'market' }], at: 1791200000000 };
-        const withdraw = () => Database.transferWarehouseToInventory(id, item, { coldState: state, withdrawal });
+        const withdrawal = { items: [[1864, 20, 1]], at: 1791200000000 };
+        const withdraw = () => Database.transferWarehouseToInventory(id, item, { coldState: state });
         const untouched = async () => {
             assert.equal((await Database.fetchWarehouseItems(id))[0].amount, 20);
             assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === 1864).length, 0);
@@ -55,11 +55,14 @@ async function run() {
         assert.equal(JSON.parse(result.coldLifeRow.inventorySummary)[1864].amount, 20);
         assert.equal(result.coldLifeRow.adena, 100000);
         assert.equal(result.coldLifeRow.simulationRevision, state.simulation.revision + 1);
-        const stats = JSON.parse(result.coldLifeRow.statsJson);
-        assert.deepEqual(stats.lastWarehouseWithdrawal, withdrawal, 'withdrawal metadata commits with its physical move');
+        assert.equal(JSON.parse(result.coldLifeRow.statsJson).lastWarehouseWithdrawal, undefined, 'per-item transfer leaves stats unchanged');
+        const patch = await Database.patchWarehouseWithdrawal(id, withdrawal);
+        const [patched] = await Database.execute(['SELECT statsJson,nextResolveAt FROM bot_life_state WHERE characterId=?', [id]]);
+        const stats = JSON.parse(patched.statsJson);
+        assert.deepEqual(stats.lastWarehouseWithdrawal, withdrawal, 'one metadata patch records the completed withdrawal');
         assert.equal(stats.marketSellRetryAfter, null, 'market release wakes the existing sale lifecycle');
         assert.equal(stats.freshNote, 'keep-me', 'metadata merge preserves unrelated fresh state');
-        assert.equal(result.coldLifeRow.nextResolveAt, withdrawal.at);
+        assert.equal(patch.nextResolveAt, withdrawal.at);
         assert.equal((await Database.fetchWarehouseItems(id)).length, 0);
         await world.reopen(id);
         const [saved] = await Database.execute(['SELECT inventorySummary,adena FROM bot_life_state WHERE characterId=?', [id]]);

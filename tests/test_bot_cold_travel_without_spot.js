@@ -253,7 +253,7 @@ async function run() {
         timing: { lastResolvedAt: Date.now() - 30000 },
         stats: {
             restUntil: Date.now() - 1,
-            lastWarehouseWithdrawal: { items: [{ selfId: 5220, amount: 5, reason: 'market' }], at: Date.now() }
+            lastWarehouseWithdrawal: { items: [[5220, 5, 1]], at: Date.now() }
         }
     };
     LifeState.applyResolve = () => Promise.resolve({
