@@ -41,7 +41,7 @@ try {
     const cache = observed.find(candidate => candidate.get(id) === first);
     assert(cache);
     assert.equal(Life.cachedState(id), first);
-    assert.equal(Map.prototype.get.call(cache, id), first, 'full native Map retains original state in this brick');
+    assert.equal(Map.prototype.get.call(cache, id), undefined, 'original current state has only the canonical raw backing');
     assert.equal(Runtime.index.getSource(id, 'state').source, first);
     assert.deepEqual(spatial(cache), [first]);
     assert.equal(Runtime.index.getSource(id, 'actor'), actor);
@@ -109,8 +109,8 @@ try {
         const fresh = Life.acceptLifecycleRow(row());
         cache.set(id, value);
         assert.equal(cache.get(id), value);
-        assert.equal(Map.prototype.get.call(cache, id), value);
-        assert.equal(Runtime.index.getSource(id, 'state'), null);
+        assert.equal(Map.prototype.get.call(cache, id), undefined);
+        assert(Object.is(Runtime.index.getSource(id, 'state').source, value));
         assert.deepEqual(spatial(cache), [], 'object->primitive removes the original cell membership');
         assert.equal(Runtime.index.removeSource(id, 'state', fresh), false);
         assert.equal(Runtime.index.getSource(id, 'actor'), actor);
@@ -154,18 +154,19 @@ try {
     for (const value of [42, 'state', false]) {
         plain.set('opaque', opaque); plain.set('opaque', value);
         assert.equal(plain.get('opaque'), value);
-        assert.equal(plain.locationIndex.getSource('opaque', 'state'), null);
+        assert(Object.is(plain.locationIndex.getSource('opaque', 'state').source, value));
         assert.equal(rawLocReads, 0, 'retiring raw object->primitive never evaluates old raw point');
     }
-    const other = new Cache({ locationIndex: plain.locationIndex }); independent.push(other);
-    const prior = { characterId: 8, phase: 'hot' }, foreign = { characterId: 8, phase: 'cold', activity: 'hunting', loc: origin };
-    plain.set('shared', prior); other.set('shared', foreign);
+    const prior = { characterId: 8, phase: 'hot' };
+    plain.set('shared', prior);
+    const beforeRefusal = plain.locationIndex.getSource('shared', 'state');
+    assert.throws(() => new Cache({ locationIndex: plain.locationIndex }), TypeError);
+    assert.equal(plain.locationIndex.getSource('shared', 'state'), beforeRefusal);
+    assert.equal(plain.get('shared'), prior);
     plain.set('shared', 42);
     assert.equal(plain.get('shared'), 42);
-    assert.equal(other.get('shared'), foreign);
-    assert.equal(plain.locationIndex.getSource('shared', 'state').source, foreign,
-        'object->primitive expected-source guard cannot erase a later foreign publication');
-    assert(spatial(other).includes(foreign));
+    assert.equal(plain.locationIndex.getSource('shared', 'state').source, 42);
+    assert.equal(plain.locationIndex.removeSource('shared', 'state', prior), false);
     const beforeClear = plain.revision;
     plain.clear(); assert.equal(plain.size, 0); assert.equal(plain.revision, beforeClear + 1);
     assert.equal(plain.locationIndex.getSource('function', 'state'), null);

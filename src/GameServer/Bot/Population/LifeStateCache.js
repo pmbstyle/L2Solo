@@ -2,6 +2,15 @@
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
+const cacheOwners = new WeakMap();
+
+function* stateValues(records) {
+    for (const record of records) yield record.source;
+}
+
+function* stateEntries(records) {
+    for (const [id, record] of records) yield [id, record.source];
+}
 
 function stateLocation(state) {
     return { locX: Number(state.loc?.locX || 0), locY: Number(state.loc?.locY || 0), locZ: 0 };
@@ -19,6 +28,8 @@ class LifeStateCache extends Map {
         if (!(locationIndex instanceof CharacterLocationIndex) || locationIndex.legacyStateCache !== true) {
             throw new TypeError('invalid_life_location_index');
         }
+        if (cacheOwners.has(locationIndex)) throw new TypeError('life_location_index_already_owned');
+        cacheOwners.set(locationIndex, this);
         Object.defineProperty(this, 'locationIndex', { value: locationIndex, enumerable: true });
         this.revision = 0;
         // Newest updatedAt first; equal times keep Map order (first insertion),
@@ -32,6 +43,41 @@ class LifeStateCache extends Map {
         // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
         // Kept on every write like the cells; read only by walkersNear.
         this.walkers = new Map();
+    }
+
+    get(id) {
+        return this.locationIndex.getSource(id, 'state')?.source;
+    }
+
+    has(id) {
+        return this.locationIndex.getSource(id, 'state') !== null;
+    }
+
+    get size() {
+        return this.locationIndex.sourceSize('state');
+    }
+
+    keys() {
+        return this.locationIndex.sourceKeys('state');
+    }
+
+    values() {
+        return stateValues(this.locationIndex.sourceValues('state'));
+    }
+
+    entries() {
+        return stateEntries(this.locationIndex.sourceEntries('state'));
+    }
+
+    [Symbol.iterator]() {
+        return this.entries();
+    }
+
+    forEach(callback, thisArg) {
+        if (typeof callback !== 'function') throw new TypeError('invalid_cache_callback');
+        for (const [id, record] of this.locationIndex.sourceEntries('state')) {
+            Reflect.apply(callback, thisArg, [record.source, id, this]);
+        }
     }
 
     orderIndex(at, sequence) {
@@ -61,51 +107,49 @@ class LifeStateCache extends Map {
     }
 
     removeLocation(id) {
-        const source = super.get(id);
-        if (source) this.locationIndex.removeSource(id, 'state', source);
+        const record = this.locationIndex.getSource(id, 'state');
+        return record ? this.locationIndex.removeSource(id, 'state', record.source) : false;
     }
 
     set(id, state) {
         const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
         this.removeOrder(id);
-        const previous = super.get(id);
+        const previous = this.get(id);
         if (previous && stateKey(previous) !== stateKey(state)) this.occupancy.remove(stateKey(previous));
-        super.set(id, state);
+        const objectSource = state !== null && (typeof state === 'object' || typeof state === 'function');
+        const indexed = objectSource && spatialState(state);
+        const current = this.locationIndex.getSource(id, 'state');
+        if (current && Object.is(current.source, state)) {
+            this.locationIndex.updateSource(id, 'state', state, { indexed });
+        } else {
+            this.locationIndex.setSource(id, 'state', { id, source: state,
+                // Geometry tag only; authoritative phase stays on the source.
+                get phase() { return objectSource && state.phase === 'cold' ? 'cold' : 'hot'; },
+                loc: () => stateLocation(state) }, { indexed });
+        }
         this.insertOrder(id, state, sequence);
         this.occupancy.update(state);
         ShopPlaces.syncState(id, state);
         const run = state.phase === 'cold' && state.activity === 'traveling' ? state.stats?.travel?.run : null;
         if (run) this.walkers.set(id, run);
         else this.walkers.delete(id);
-        if (state && (typeof state === 'object' || typeof state === 'function')) {
-            const indexed = spatialState(state);
-            if (this.locationIndex.getSource(id, 'state')?.source === state) {
-                this.locationIndex.updateSource(id, 'state', state, { indexed });
-            } else {
-                this.locationIndex.setSource(id, 'state', { id, source: state,
-                    // This is a membership tag, not the authoritative life
-                    // phase. Warm/unknown/partial states remain raw only.
-                    get phase() { return state.phase === 'cold' ? 'cold' : 'hot'; },
-                    loc: () => stateLocation(state) }, { indexed });
-            }
-        } else if (previous) this.locationIndex.removeSource(id, 'state', previous);
         this.revision++;
         return this;
     }
 
     delete(id) {
-        this.removeLocation(id);
+        const record = this.locationIndex.getSource(id, 'state');
+        const removed = this.removeLocation(id);
         this.walkers.delete(id);
         this.removeOrder(id);
-        if (super.has(id)) this.occupancy.remove(stateKey(super.get(id)));
+        if (record) this.occupancy.remove(stateKey(record.source));
         ShopPlaces.release(ShopPlaces.stateOwner(id));
-        const removed = super.delete(id);
         if (removed) this.revision++;
         return removed;
     }
 
     clear() {
-        super.clear(); this.locationIndex.clearSourceView('state'); this.walkers.clear();
+        this.locationIndex.clearSourceView('state'); this.walkers.clear();
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         ShopPlaces.releaseStates();
         this.revision++;
@@ -140,7 +184,7 @@ class LifeStateCache extends Map {
         if (![x, y, radius].every(Number.isFinite) || radius <= 0) return [];
         const records = this.locationIndex.nearSources({ locX: x, locY: y, locZ: 0 }, radius, {
             view: 'state', kind: 'cold', allowUnsafeCellBounds: true,
-            accept: record => super.get(record.id) === record.source && spatialState(record.source)
+            accept: record => this.get(record.id) === record.source && spatialState(record.source)
         });
         const found = [];
         for (const record of records) {
