@@ -11,11 +11,11 @@ function pending(state, timestamp = Date.now(), town = null) {
             || timestamp - Number(errand.at || 0) >= ERRAND_MS || (town && errand.town !== town)) continue;
         unique.set(key(errand), errand);
     }
-    return [...unique.values()];
+    return [...unique.values()].slice(0, 8);
 }
 
 function withPending(state, errands) {
-    return { ...state, stats: { ...(state.stats || {}), marketErrands: errands, marketErrand: errands[0] || null } };
+    return { ...state, stats: { ...(state.stats || {}), marketErrands: errands.slice(0, 8), marketErrand: errands[0] || null } };
 }
 
 function enqueue(state, errand, timestamp = Date.now()) {

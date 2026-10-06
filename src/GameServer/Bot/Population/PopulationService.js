@@ -434,9 +434,9 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWa
 function canResumeWarehouseMarketSale(state) {
     if (state?.activity !== 'hunting' || state.stats?.marketReturn || state.stats?.travel) return false;
     return (state.stats?.lastWarehouseWithdrawal?.items || []).some((item) => (
-        item.reason === 'market'
-        && Number(state.inventory?.[String(item.selfId)]?.amount || 0) > 0
-        && !!MarketOpportunity.bestBuyOffer(item.selfId, { sellerCharacterId: state.characterId })
+        (Array.isArray(item) ? item[2] === 1 : item.reason === 'market')
+        && Number(state.inventory?.[String(Array.isArray(item) ? item[0] : item.selfId)]?.amount || 0) > 0
+        && !!MarketOpportunity.bestBuyOffer(Array.isArray(item) ? item[0] : item.selfId, { sellerCharacterId: state.characterId })
     ));
 }
 

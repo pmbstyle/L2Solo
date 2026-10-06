@@ -98,6 +98,7 @@ function hasStaleRateModelPlan(state) {
 function safeJson(value) {
     return JSON.stringify(value || {});
 }
+function statsJson(value) { return safeJson(require('../SavedStats').compact(value)); }
 
 function parseJson(raw, fallback = {}) {
     if (!raw) return fallback;
@@ -640,7 +641,7 @@ function recordFromSession(session, phase, reason = '') {
         deathCount: 0,
         partyId: null,
         inventorySummary: safeJson(inventory),
-        statsJson: safeJson(stats),
+        statsJson: statsJson(stats),
         updatedAt: timestamp
     };
 }
@@ -681,7 +682,7 @@ function rowFromState(state) {
         deathCount: persistedState.stats?.deaths || 0,
         partyId: persistedState.party?.partyId || null,
         inventorySummary: safeJson(persistedState.inventory || {}),
-        statsJson: safeJson(persistedState.stats || {}),
+        statsJson: statsJson(persistedState.stats || {}),
         // Legacy lifecycle writes are fenced in SQLite by simulationOwner, but
         // `save()` intentionally does not rewrite the ownership columns. Keep
         // the authoritative ownership snapshot on the transient row as well,
@@ -3201,7 +3202,7 @@ const BotLifeState = {
             if (!selfId || amount <= 0 || price <= 0) return;
             inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
             payout += amount * price;
-            sold.push({ selfId, amount, price });
+            sold.push([selfId, amount, price]);
         });
         if (!sold.length) return Promise.resolve(state);
 
@@ -3217,7 +3218,7 @@ const BotLifeState = {
             inventory,
             stats: {
                 ...(state.stats || {}),
-                lastNpcLiquidation: { payout, sold, at: now(), ...options }
+                lastNpcLiquidation: require('../LastOperations').compact({ at: now(), payout: Math.round(payout) }, sold, { field: 'sold' })
             },
             updatedAt: now()
         };

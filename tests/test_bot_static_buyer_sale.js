@@ -63,7 +63,8 @@ async function run() {
         'accepted materials must be absent from the durable inventory summary');
     assert.strictEqual(result.state.inventory['1'].amount, 1, 'equipment remains available for the player market');
     assert.strictEqual(result.state.adena, 100 + preview[0].npcPrice * 10);
-    assert.strictEqual(result.state.stats.lastNpcLiquidation.source, 'static_buyer');
+    assert(result.state.stats.lastNpcLiquidation.sold.every(row => row.length === 3 && row.every(Number.isFinite)),
+        'liquidation records keep numeric tuples only');
     console.log('Bot static buyer sale checks passed');
 }
 
