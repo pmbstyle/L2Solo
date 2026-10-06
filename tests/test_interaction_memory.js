@@ -45,6 +45,31 @@ assert.throws(() => Policy.event(make('self', 1)), /self interaction/);
 assert.throws(() => Policy.event({ ...make('bad'), type: '__proto__' }), /invalid event/);
 assert.strictEqual(Policy.apply(snapshot, make('future', 2, 'attacked', now + 1), now).status, 'future_event');
 
+{
+    const Revenge = require('../src/GameServer/Social/RevengePolicy');
+    const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
+    const aggression = Config.pvpAggression;
+    const traits = { loyalty: 0.5, resilience: 0.5 };
+    let theft = Policy.empty(1);
+    for (let i = 0; i < 20; i++) {
+        const at = now + i * 90000;
+        theft = Policy.apply(theft, { ...make(`repeated-theft:${i}`, 2, 'mob_contested', at),
+            playedHours: 100 + i * 0.025, hours: 0.02, traits }, at).snapshot;
+    }
+    const feeling = theft.relations[0];
+    assert(feeling.hostility > 59.9 && feeling.hostility <= 60, 'repeated theft remains a lasting grievance');
+    assert(feeling.trust < -19.9 && feeling.grudge > 0, 'the old feelings and playing-hour layer both remember theft');
+    try {
+        Config.pvpAggression = 1;
+        assert(Revenge.evaluate({ ready: true, affiliation: 'outsider', personal: feeling }).chance > 0,
+            'repeated theft can trigger the shared revenge decision');
+    } finally { Config.pvpAggression = aggression; }
+    const loot = Policy.apply(Policy.empty(1), { ...make('loot-theft', 2, 'loot_taken'),
+        playedHours: 100, hours: 0.02, traits }, now).snapshot.relations[0];
+    assert.strictEqual(loot.trust, -2);
+    assert(loot.grudge > 0);
+}
+
 const worker = new Memory();
 worker.accept(main.snapshot(1));
 assert.throws(() => Policy.apply(worker.snapshot(1), make('worker-reduce'), now), /read-only/);

@@ -59,7 +59,7 @@ async function main() {
         done('ordered shared PK rolls, valuation, ten cap and protected items');
 
         let snapshot = Policy.apply(Policy.empty(1), event('contest:1'), at).snapshot;
-        assert.equal(snapshot.relations[0].hostility, 0, 'small resource loss no longer gives fixed +3 lasting hostility');
+        assert.equal(snapshot.relations[0].hostility, 3, 'resource theft keeps its shared lasting hostility alongside the grudge layer');
         const row = snapshot.relations[0];
         near(Layers.persistent(row, 4 + Layers.durations(row.traits).middle).grudge, 0.25);
         const fast = Layers.fast(null, event('contest:1'));

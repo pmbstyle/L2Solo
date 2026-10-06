@@ -173,7 +173,7 @@ function apply(snapshot, input, now) {
     const factor = halfLife(at - e.at, 7 * DAY);
     FIELDS.forEach((field, index) => {
         const min = ['hostility', 'fear', 'familiarity'].includes(field) ? 0 : -100;
-        values[field] = Math.max(min, Math.min(100, values[field] + (e.playedHours !== undefined && ['mob_contested', 'loot_taken'].includes(e.type) && field !== 'familiarity' ? 0 : EVENTS[e.type][index]) * factor));
+        values[field] = Math.max(min, Math.min(100, values[field] + EVENTS[e.type][index] * factor));
     });
     const reasons = [{ type: e.type, at: e.at }, ...(old?.reasons || [])]
         .sort((a, b) => b.at - a.at).slice(0, REASON_LIMIT);
