@@ -105,6 +105,7 @@ const tests = [
     'tests/test_player_party_takeover_dialogue.js',
     'tests/test_hot_party_lifecycle.js',
     'tests/test_hot_background_party.js',
+    'tests/test_hot_background_party_roster.js',
     'tests/test_hot_background_party_raid_tactics.js',
     'tests/test_player_party_raid.js',
     'tests/test_player_party_raid_chatter.js',
@@ -944,6 +945,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_hot_background_party_roster.js',
     'tests/test_knowledge_learning.js',
     'tests/test_n79_price_prior.js',
     'tests/test_n79_price_line_review.js',
