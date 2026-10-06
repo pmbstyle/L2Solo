@@ -2590,6 +2590,7 @@ const BotLifeState = {
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve', nativeWriteOptions))
                     .then(() => {
+                        if (workerOptions) checkWorkerCommandAdmission({ characterId }, workerOptions);
                         const snapshot = normalize(row);
                         cache.set(snapshot.characterId, snapshot);
                         notifyColdSnapshot(snapshot, nextActivity === 'dead' ? 'death' : 'resolve', {
