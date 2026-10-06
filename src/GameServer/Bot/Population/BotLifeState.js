@@ -2503,6 +2503,10 @@ const BotLifeState = {
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
+        const characterId = nextState.characterId;
+        const classWriteOptions = options.persist !== false && workerOptions ? {
+            beforeWrite: () => checkWorkerCommandAdmission({ characterId }, workerOptions)
+        } : undefined;
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
@@ -2513,7 +2517,7 @@ const BotLifeState = {
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            }))
+            }, classWriteOptions))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 
         return progression.then((resolved) => {
