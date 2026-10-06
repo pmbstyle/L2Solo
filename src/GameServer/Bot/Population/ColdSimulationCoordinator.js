@@ -1674,14 +1674,14 @@ class ColdSimulationCoordinator {
                 const marketReview = request.kind === 'market_review';
                 this.counters.commands += 1;
                 try {
-                    const state = LifeState.cachedState(request.characterId) || request.state;
+                    const state = LifeState.cachedState(request.characterId);
                     const id = identity.characterId;
                     Metrics.recordColdOwnerLegacyDeferred(`command_${String(state?.activity || 'unknown')}`);
                     if (this.fencedBots.has(id) || state?.phase !== 'cold') {
                         results.push({ ...identity, ok: false, reason: 'hot_handoff_fenced',
                             ...(marketReview ? { marketDeferred: true, marketCommandId: identity.commandId,
                                 context: request.context || {},
-                                ...(state?.phase !== 'cold' ? { state } : {}) } : { state }) });
+                                ...(state ? { state } : {}) } : (state ? { state } : {})) });
                         continue;
                     }
                     if (!marketReview && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
@@ -1692,29 +1692,30 @@ class ColdSimulationCoordinator {
                     let result;
                     const operation = marketReview
                         ? this.executeMarketReviewCommand(request, sourceCurrent)
-                        : Promise.resolve(this.population?.executeWorkerLifecycleCommand?.(state, request));
+                        : this.executeLifecycleCommand(request, identity, sourceCurrent);
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally {
                         if (this.commandInflight.get(id) === operation) this.commandInflight.delete(id);
                     }
                     if (!sourceCurrent()) return;
-                    const nextState = result?.state || LifeState.cachedState(request.characterId) || state;
+                    const nextState = LifeState.cachedState(request.characterId) || result?.state;
                     results.push({
                         ...identity,
                         ok: result?.ok !== false,
                         reason: result?.reason || (result?.ok === false ? 'command_rejected' : 'command_applied'),
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
                             Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
-                        state: nextState,
+                        ...(nextState ? { state: nextState } : {}),
                         ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: identity.commandId } : {}),
                         context: marketReview ? request.context || {}
-                            : this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true }))
+                            : nextState ? this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true })) : {}
                     });
                 } catch (error) {
                     if (!sourceCurrent()) return;
                     this.counters.commandErrors += 1;
+                    const state = LifeState.cachedState(request.characterId);
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
-                        ...(marketReview ? { state: LifeState.cachedState(request.characterId) || request.state,
+                        ...(marketReview ? { ...(state ? { state } : {}),
                             context: request.context || {}, marketDeferred: true, marketCommandId: identity.commandId } : {}) });
                 }
                 await new Promise((resolve) => setImmediate(resolve));
@@ -1727,6 +1728,21 @@ class ColdSimulationCoordinator {
             }
             this.postCollections('command_ack', { results }, message.msgId);
         }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
+    }
+
+    async executeLifecycleCommand(request, identity, sourceCurrent) {
+        // A previous native writer can hold the character beyond the worker
+        // lifetime. Own this entire promise and admit the computation only
+        // after the existing writer has settled against the current cache.
+        await LifeState.settleWrites([identity.characterId]);
+        if (!sourceCurrent()) return { ok: false, reason: 'stale_worker_source' };
+        const state = LifeState.cachedState(identity.characterId);
+        const refusal = reason => ({ ok: false, reason, retryAfterMs: 1000, ...(state ? { state } : {}) });
+        if (this.stopping) return refusal('coordinator_stopping');
+        if (!state) return refusal('missing_state');
+        if (this.fencedBots.has(identity.characterId) || state.phase !== 'cold') return refusal('hot_handoff_fenced');
+        if (!Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) return refusal('stale_command');
+        return this.population?.executeWorkerLifecycleCommand?.(state, request);
     }
 
     async executeMarketReviewCommand(request, sourceCurrent = () => true) {

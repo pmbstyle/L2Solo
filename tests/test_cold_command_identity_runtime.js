@@ -19,6 +19,7 @@ const command = (state, kind = 'lifecycle') => ({ characterId: state.characterId
     ...(kind === 'market_review' ? { market: { updates: [], reprices: [], withdrawals: [] } } : {}) });
 let currentRows;
 const oldCached = LifeState.cachedState;
+const oldSettle = LifeState.settleWrites;
 LifeState.cachedState = id => currentRows.get(Number(id)) || null;
 const failures = [];
 async function check(name, work) { try { await work(); console.log(`PASS ${name}`); } catch (error) { failures.push(name); console.error(`FAIL ${name}: ${error.stack}`); } }
@@ -117,6 +118,35 @@ async function run() {
         const results = acknowledgements(h)[0].message.payload.results;
         assert.equal(results.length, 1); assert.equal(results[0].commandId, valid.commandId);
     });
+    await check('missing authoritative cache refuses without restoring request snapshot', async () => {
+        const h = fixture(), input = command(currentRows.get(1)); currentRows.delete(1);
+        await h.submit([input]); await h.coordinator.commandTail;
+        assert.equal(h.calls.length, 0);
+        const result = acknowledgements(h)[0].message.payload.results[0];
+        assert.equal(result.ok, false); assert.equal(result.state, undefined);
+        assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
+    });
+    await check('pending write wait rejection refuses before dispatch with current retry identity', async () => {
+        const h = fixture(), input = command(currentRows.get(1));
+        LifeState.settleWrites = () => Promise.reject(Error('pending_write_error'));
+        try {
+            await h.submit([input]); await h.coordinator.commandTail;
+            assert.equal(h.calls.length, 0);
+            const result = acknowledgements(h)[0].message.payload.results[0];
+            assert.equal(result.ok, false); assert.equal(result.reason, 'pending_write_error'); assert.equal(result.retryAfterMs, 5000);
+            assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
+        } finally { LifeState.settleWrites = oldSettle; }
+    });
+    await check('market error after cache retirement cannot restore the original input snapshot', async () => {
+        const h = fixture({ held: true, kind: 'market_review' }), input = command(currentRows.get(1), 'market_review');
+        await h.submit([input]); await h.entered.promise;
+        currentRows.delete(1); h.gate.reject(Error('current_market_error')); await h.coordinator.commandTail;
+        const result = acknowledgements(h)[0].message.payload.results[0];
+        assert.equal(result.ok, false); assert.equal(result.reason, 'current_market_error');
+        assert.equal(result.retryAfterMs, 5000); assert.equal(result.marketDeferred, true);
+        assert.equal(result.state, undefined); assert.deepEqual(result.context, input.context);
+        assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
+    });
     if (failures.length) throw Error(`${failures.length} command handler contracts failed`);
 }
-run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { LifeState.cachedState = oldCached; });
+run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { LifeState.cachedState = oldCached; LifeState.settleWrites = oldSettle; });
