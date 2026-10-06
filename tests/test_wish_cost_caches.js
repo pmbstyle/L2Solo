@@ -246,6 +246,28 @@ check('basics() and stockFor() give what forState gives, without building a netw
     }
 });
 
+check('a party composition keeps no proposed groups; a real group is kept until it ends', () => {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const { BoardIndex } = invoke('GameServer/AfkTrade/BoardIndex');
+    const deps = { board: new BoardIndex(), spots: invoke('GameServer/Bot/Population/SpotProfiles').ensure() };
+    const member = id => ({ characterId: id, phase: 'cold', activity: 'hunting', level: 35, adena: 500,
+        inventory: { 1: { selfId: 1, amount: 1, equipped: true, equippedCount: 1, slot: 7 } },
+        loc: { locX: 80000, locY: 148000, locZ: -3500 }, currentRegion: 'Giran',
+        stats: { classId: 1, exp: Data.experience[34], persona: { traits: { commitment: .5, caution: .5,
+            resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .8 } },
+        timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } });
+    const members = [member(971), member(972)];
+    Economy.reset();
+    const own = Economy.forState(members[0], deps);
+    const proposal = Economy.forGroup({ partyId: 'proposal:971:972', adena: 1000 }, members, deps);
+    assert.notEqual(Economy.forGroup({ partyId: 'proposal:971:972', adena: 1000 }, members, deps), proposal, 'a proposal is not kept');
+    const real = Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps);
+    assert.equal(Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps), real, 'a real group is kept');
+    Economy.forgetGroup('bgp_test');
+    assert.notEqual(Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps), real, 'an ended group is gone');
+    assert.equal(Economy.forState(members[0], deps), own, 'group reviews never evict a bot\'s own');
+});
+
 if (failures) { console.error(`${failures} failed`); process.exit(1); }
 console.log('all passed');
 process.exit(0);

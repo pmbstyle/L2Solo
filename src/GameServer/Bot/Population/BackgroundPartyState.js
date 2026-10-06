@@ -312,6 +312,8 @@ const BackgroundPartyState = {
     setStatus(partyId, status = 'inactive') {
         const party = this.find(partyId);
         if (!party) return Promise.resolve(null);
+        // A group's wish review dies with the group (design 16.26).
+        if (status !== 'active') invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(partyId);
         return this.createOrUpdate({ ...party, status });
     },
 

@@ -55,14 +55,16 @@ class WishNetwork {
     forget(actorKey) { this.cache.delete(actorKey); }
     clear() { this.cache.clear(); }
 
+    // `remembered: false` builds without touching the per-actor cache (a
+    // caller that holds the result itself, or a one-off proposal).
     build({ actorKey, inputKey, nodes, roots, wallet = 0, survivalReserve = 0,
-        playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [] }) {
+        playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true }) {
         if (typeof actorKey !== 'string' || !actorKey || typeof inputKey !== 'string'
             || !Array.isArray(nodes) || nodes.length > MAX_NODES || !Array.isArray(roots) || roots.length > MAX_ROOTS
             || new Set(roots).size !== roots.length) {
             throw new TypeError('invalid_wish_network_input');
         }
-        const cached = this.cache.get(actorKey);
+        const cached = remembered ? this.cache.get(actorKey) : null;
         if (cached?.inputKey === inputKey) return remember(this.cache, actorKey, cached).result;
         const byKey = new Map();
         for (const node of nodes) {
@@ -176,7 +178,7 @@ class WishNetwork {
         const result = { inputKey, queue, moneyPrice, available, valuePerHour,
             hourAdena: moneyPrice > 0 ? valuePerHour / moneyPrice : null,
             focus, dormant, activity, demands, plans };
-        remember(this.cache, actorKey, { inputKey, result });
+        if (remembered) remember(this.cache, actorKey, { inputKey, result });
         return result;
     }
 }

@@ -13,9 +13,14 @@ function registerProvider(key, provider) {
     if (typeof provider !== 'function') throw new TypeError('invalid_economy_provider');
     extensions.set(key, provider); reset();
 }
-// actorKey -> { key, context }: bounded (WishNetwork.remember), so group
-// contexts of parties that ended and bots out of work leave by themselves.
+// actorKey -> { key, reads, context } of bots: bounded (WishNetwork.remember).
 const cache = new Map();
+// Groups apart, so a party composition that weighs many candidate groups
+// never evicts the bots' own reviews: `group:<partyId>` -> { key, members,
+// context }, removed when the party ends (forgetGroup) and bounded besides;
+// a proposed composition (`proposal:` party id) is built and not kept.
+const groups = new Map();
+const GROUP_LIMIT = 256;
 const positive = value => Math.max(0, Number(value) || 0);
 
 function stateForActor(actor, session = actor?.session) {
@@ -274,13 +279,14 @@ function forGroup(group, members, deps = {}) {
     const first = contexts[0];
     if (!first) return null;
     const actorKey = `group:${group.id || group.partyId}`;
+    const proposal = String(group.id || group.partyId || '').startsWith('proposal:');
     const wallet = positive(group.adena ?? group.wallet);
     const key = [wallet, ...contexts.map(context => context.inputKey)].join('|');
-    const held = cache.get(actorKey);
+    const held = proposal ? null : groups.get(actorKey);
     // A member rebuilt on a late price read keeps its network key; the held
     // group copies its first member, so it is valid only with the same members.
     if (held?.key === key && held.members.every((member, i) => member === contexts[i]))
-        return remember(cache, actorKey, held).context;
+        return remember(groups, actorKey, held, GROUP_LIMIT).context;
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
@@ -301,7 +307,7 @@ function forGroup(group, members, deps = {}) {
         roots.forEach(visit); return seen; };
     let kept = collect();
     while (kept.size > 40 && roots.length) { roots.pop(); kept = collect(); }
-    const network = engine.build({ actorKey, inputKey: key, nodes: nodes.filter(node => kept.has(node.key)), roots,
+    const network = engine.build({ actorKey, inputKey: key, remembered: false, nodes: nodes.filter(node => kept.has(node.key)), roots,
         wallet, playedHours: positive(group.playedHours), persona: group.persona || first.persona,
         previous: { focus: group.wishFocus, dormant: group.dormantWishes },
         hourAdena: contexts.reduce((sum, context) => sum + context.hunt.perHour, 0),
@@ -313,11 +319,13 @@ function forGroup(group, members, deps = {}) {
         hourAdena: network.hourAdena, statsPacket: { wishFocus: network.focus, dormantWishes: network.dormant } };
     context.itemUsefulness = id => contexts.reduce((sum, member) => sum + member.itemUsefulness(id), 0);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    remember(cache, actorKey, { key, members: contexts, context }); return context;
+    if (!proposal) remember(groups, actorKey, { key, members: contexts, context }, GROUP_LIMIT);
+    return context;
 }
+function forgetGroup(partyId) { groups.delete(`group:${partyId}`); }
 function forget(id) {
     const key = `character:${id}`; cache.delete(key); engine.forget(key);
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
-function reset() { cache.clear(); engine.clear(); }
-module.exports = { forState, forActor, forGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
+function reset() { cache.clear(); groups.clear(); engine.clear(); }
+module.exports = { forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
