@@ -937,6 +937,10 @@ const BotAI = {
 
     visibleRealPlayers(session, bot, World = invoke('GameServer/World/World')) {
         if (!session || !bot || !World) return [];
+        if (World.botRealPlayerIndex === true && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
+            if (typeof World.botVisibleRealPlayers !== 'function') throw new TypeError('invalid_bot_real_player_index');
+            return World.botVisibleRealPlayers(session, bot);
+        }
         const players = realPlayerSessions(World);
         if (players && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
             const x = bot.fetchLocX();
