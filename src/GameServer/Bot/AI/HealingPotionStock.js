@@ -158,7 +158,7 @@ function restockPlan(value, options = {}) {
     const desired = Math.max(0, targetAmount - stockAmount);
     const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve)
         : context.purchaseBudget(potion.selfId);
-    const affordable = unitPrice > 0 ? Math.floor(Math.min(allowance, Math.max(0, adena - reserve)) / unitPrice) : 0;
+    const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
         potion,

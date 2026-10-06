@@ -149,15 +149,23 @@ function foundation(state, deps, persona, timestamp, price) {
         const current = positive(state.inventory?.[plan.selfId]?.amount);
         const targetHours = 1 + 2 * Valuation.trait(persona, 'commitment');
         const target = Math.ceil(use * targetHours);
-        const missing = Math.max(0, target - current);
+        const survivalMissing = Math.max(0, Math.ceil(use) - current);
+        const missing = Math.max(0, target - Math.max(current, use));
         const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
         const benefitHours = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) * targetHours
             : positive(bestTable?.deaths) * deathHours * targetHours;
         return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
-            targetHours, target, missing, unitPrice: price(plan.selfId), benefitHours,
+            targetHours, target, missing, survivalMissing, unitPrice: price(plan.selfId), benefitHours,
             needed: use > 0 && current < use };
     };
-    return { tableRole, hunt, lostGearHours, bestSpotId, deathHours, bestTable, stock,
+    const kit = [stock('shots'), stock('potions')];
+    const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats?.karma) ? 0
+        : price(736) * Math.max(0, 1 - positive(state.inventory?.[736]?.amount));
+    const kitCost = id => Number(id) === 736 ? escapeCost
+        : kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
+    const reserve = escapeCost + kit.reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
+    return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost,
+        lostGearHours, bestSpotId, deathHours, bestTable, stock,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
@@ -203,47 +211,47 @@ function forState(state = {}, deps = {}) {
     const Tendency = require('../AI/TendencyRoll');
     const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
-        karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock };
+        karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
+        survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena };
     context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
-    // The items read so far name this network; a later price read through
-    // context.price still joins `reads` and keeps the held context honest.
-    const networkKey = `${key}#${marketKey(reads)}`;
-    let network = engine.build({ actorKey, inputKey: networkKey, ...projection,
-        wallet: positive(state.adena), survivalReserve: survivalReserve(state),
-        playedHours: positive(state.stats?.playedHours), persona,
-        previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
-        hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
-    // A known production opportunity uses the same marginal hour. Its
-    // provider never calls Context, so the common evaluation has no cycle.
+    // ARCH-NOTE: worker crafter hour = I_hunt until FX-C1.
     if (isMainThread && state.stats?.workshop?.entries?.length) {
+        const Profit = require('./CraftProfitPolicy');
         const opportunities = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state, {
-            hourAdena: network.hourAdena, worth: price, timestamp, insideContext: true });
-        // The crafter's exits read the board directly: their products are inputs too.
+            hourAdena: base.hourAdena, worth: price, timestamp, insideContext: true });
         for (const row of opportunities) if (row.recipe?.productId) watch(row.recipe.productId);
         const statusNode = projection.nodes.find(node => node.key === 'status:producer');
-        if (statusNode && opportunities.length) statusNode.paths = [{activity:'crafting',kind:'producer_status',
-            recipeId:opportunities[0].recipe.recipeId,costHours:opportunities[0].margin?.hours || 0,available:true}];
-        for (const row of opportunities.slice(0, 1)) projection.moneyPaths.push({ activity: 'crafting', kind: 'production',
-            recipeId: row.recipe?.recipeId, object: row.recipe?.productId,
-            incomePerHour: row.expectedProfit / Math.max(1 / 3600, row.margin?.hours || row.hours || row.basket?.hours || 1) });
-        if (opportunities.length) network = engine.build({ actorKey, inputKey: networkKey + ':production', ...projection,
-            wallet: positive(state.adena), survivalReserve: survivalReserve(state),
-            playedHours: positive(state.stats?.playedHours), persona,
-            previous: { focus: network.focus, dormant: network.dormant }, hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
+        if (statusNode && opportunities.length) statusNode.paths = [{ activity: 'crafting', kind: 'producer_status',
+            recipeId: opportunities[0].recipe.recipeId, costHours: opportunities[0].margin?.hours || 0, available: true }];
+        for (const row of opportunities.slice(0, 1)) {
+            const incomePerHour = Profit.craftIncomePerHour(row.margin);
+            if (!(incomePerHour > 0) || !Number.isFinite(incomePerHour)) continue;
+            context.hourAdena = Math.max(context.hourAdena, incomePerHour);
+            projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: row.recipe?.recipeId,
+                object: row.recipe?.productId, incomePerHour });
+        }
     }
+    const networkKey = `${key}#${marketKey(reads)}`;
+    const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
+        wallet: positive(state.adena), survivalReserve: base.survivalReserve,
+        playedHours: positive(state.stats?.playedHours), persona,
+        previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
+        hourAdena: context.hourAdena, riskWeight: context.riskWeight });
     context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
     context.projection = projection;
     context.network = network;
     context.moneyPrice = network.moneyPrice;
     context.hourAdena = network.hourAdena;
+    context.gapHorizonHours = !network.gap ? 0 : network.gap.key === 'stock:shots' ? base.stock('shots').targetHours
+        : network.gap.key === 'stock:potions' ? base.stock('potions').targetHours : projection.horizon;
     context.itemUsefulness = id => (network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0)
         * (knowledgeEnabled ? 1 + (1 - Number(persona.understanding ?? 0.3))
             * (2 * Tendency.roll('usefulness', state.characterId, id) - 1) : 1);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    const gap = network.queue.findIndex(wish => !wish.funded);
+    const gap = network.gap ? network.queue.indexOf(network.gap) : -1;
     const wanted = gap < 0 ? network.queue : network.queue.slice(0, gap + 1);
     const watched = new Set();
     context.watchList = wanted.flatMap(wish => {
@@ -254,24 +262,24 @@ function forState(state = {}, deps = {}) {
             worth: context.worth(id) ?? price(id), kind: wish.object?.kind, key: wish.key }];
     }).slice(0, 3);
     context.purchaseBudget = id => {
-        let left = Math.max(0, positive(state.adena) - survivalReserve(state));
+        let left = Math.max(0, positive(state.adena) - base.survivalReserve);
+        const ownKit = Math.min(positive(state.adena), base.kitCost(id));
         for (const wish of network.queue) {
-            if (Number(wish.object?.itemId) === Number(id)) return left;
-            if (!wish.funded) return 0;
+            if (Number(wish.object?.itemId) === Number(id)) return Math.min(positive(state.adena), ownKit + (wish.ratio >= network.moneyPrice ? left : 0));
+            if (!wish.funded) return ownKit;
             left -= wish.price;
         }
-        return 0;
+        return ownKit;
     };
-    context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant };
+    context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
+        money: [Math.round(context.hourAdena), Number(context.moneyPrice.toPrecision(3)), Math.round(base.survivalReserve)] };
     building = false;
 
     remember(cache, actorKey, { key, reads, context });
     return context;
 }
 function survivalReserve(state = {}) {
-    // Only an already authored survival trip/potion requirement is held.
-    // There is no percentage, level cushion or separate investment purse.
-    return positive(state.stats?.survivalReserve) + positive(state.stats?.townVisit?.returnFee);
+    return Array.isArray(state.stats?.money) ? positive(state.stats.money[2]) : basics(state).survivalReserve;
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
 function forGroup(group, members, deps = {}) {

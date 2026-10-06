@@ -42,13 +42,13 @@ assert.strictEqual(MarketPricing.lookChance, undefined);
 assert.strictEqual(MarketPricing.learnDeal, undefined);
 
 // The ask. Value of money: a base rate plus the bot's need.
-assert.strictEqual(PriceDecision.valueOfMoney(1000, 0), 0.07);
-assert(Math.abs(PriceDecision.valueOfMoney(1000, 1e9) - 0.02) < 1e-6);
+assert.strictEqual(PriceDecision.waitRate({ hourAdena: 76797, moneyPrice: 0, gapHorizonHours: 0 }), 0);
+assert(Math.abs(PriceDecision.waitRate({ hourAdena: 76797, moneyPrice: 3.235e-5, gapHorizonHours: 59.1 }) - .042) < .002);
 const market = (rival = null, buyersPerHour = 4) => ({ buyback: 50, buyersPerHour, lot: 1, units: 1,
     rivals: rival ? [{ landed: rival, units: 1 }] : [], npcLanded: Infinity, ownTrip: 0 });
 const believed = { mu: Math.log(1000), K: 10 };
-const needy = { wait: PriceDecision.valueOfMoney(50000, 1000), assertiveness: 0.5, caution: 0.5 };
-const richBold = { wait: PriceDecision.valueOfMoney(50000, 1e8) * 0.5, assertiveness: 0.95, caution: 0.5 };
+const needy = { wait: PriceDecision.waitRate({ hourAdena: 123854, moneyPrice: 7.304e-5, gapHorizonHours: 21.9 }), assertiveness: 0.5, caution: 0.5 };
+const richBold = { wait: 0, assertiveness: 0.95, caution: 0.5 };
 const median = (values) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
 // Where buyers are few (one an hour) the wait costs: a needy seller undercuts.
 const asks = (trader, rival) => Array.from({ length: 21 }, (_, at) => PriceDecision.chooseAsk(believed, market(rival, 1), trader, ['t', at]).price);

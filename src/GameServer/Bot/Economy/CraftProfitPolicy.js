@@ -6,7 +6,8 @@ function revenue(recipe, price) {
 }
 // Materials retain their market opportunity value even when already owned.
 // A missing monetary hour or MP production rate is unknown labour, never free labour.
-function margin(recipe, price, inputs, { hourAdena, mpPerHour, tripCost = 0 } = {}) {
+function margin(recipe, price, inputs, { hourAdena, hunt, mpPerHour, tripCost = 0 } = {}) {
+    hourAdena = hunt?.perHour ?? hourAdena;
     const mp = Math.max(0, Number(recipe?.mpCost || 0));
     if (mp && (!(hourAdena >= 0) || !Number.isFinite(hourAdena) || !(mpPerHour > 0))) return null;
     const hours = mp ? mp / mpPerHour : 0;
@@ -15,6 +16,10 @@ function margin(recipe, price, inputs, { hourAdena, mpPerHour, tripCost = 0 } = 
     const profit = expectedRevenue - Number(inputs) - labour - Math.max(0, Number(tripCost || 0));
     return Number.isFinite(profit) ? { expectedRevenue, inputs: Number(inputs), labour, hours, profit,
         perHour: hours > 0 ? profit / hours : profit } : null;
+}
+// Revenue less materials and trip, in adena per craft hour; zero-MP is no repeatable clock.
+function craftIncomePerHour(margin) {
+    return margin?.hours > 0 ? (margin.profit + margin.labour) / margin.hours : null;
 }
 function contextFor(state, timestamp = Date.now()) {
     const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp });
@@ -73,4 +78,4 @@ function materials(items, recipe, batches = 1) {
 function succeeds(recipe, random = Math.random) {
     return Number(recipe.successRate) >= 100 || Number(random()) * 100 < Number(recipe.successRate);
 }
-module.exports = { revenue, margin, contextFor, tripFor, inputValue, materials, succeeds };
+module.exports = { revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds };

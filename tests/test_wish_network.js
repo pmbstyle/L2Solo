@@ -38,7 +38,7 @@ assert.equal(first.focus[0], 'sword');
 assert.equal(first.focus[1], 5, 'loyal focus retains its original age');
 assert.equal(first.demands.get('ore'), 6.5, 'shared means sum value per required unit without multiplying the root value');
 assert.equal(first.queue[0].key, 'sword');
-assert(first.activity && first.valuePerHour > 0);
+assert(first.activity && first.hourAdena === input.hourAdena);
 assert.equal(network.build(input), first, 'unchanged event input reuses the derived network');
 assert.notEqual(network.build({ ...input, inputKey: 'level30:bag2:board1' }), first);
 assert.notEqual(network.build({ ...input, actorKey: 'clan:1' }), first, 'clan uses the same engine with its own wallet');
@@ -59,7 +59,7 @@ const funding = network.build({ actorKey: 'funding', inputKey: 'gap', wallet: 50
     ], moneyPaths: [{ activity: 'hunting', incomePerHour: 100 }] });
 assert.equal(funding.activity.funding, true, 'smaller purchases cannot steal the first-gap money');
 assert.equal(funding.activity.shortfall, 50);
-assert.equal(first.valuePerHour, 10 / .6, 'whole requirement cost prices the focused progress hour');
+assert.equal(first.hourAdena, 100, 'repeatable income prices the hour independently of funded wishes');
 const stock = network.build({ actorKey: 'stock', inputKey: 'quantity', wallet: 1000, hourAdena: 100,
     roots: ['shots'], nodes: [
         { key: 'shots', need: 'power', valueHours: 2, price: 100, paths: [{ requirements: [{ key: 'item', amount: 10 }] }] },
@@ -68,3 +68,11 @@ const stock = network.build({ actorKey: 'stock', inputKey: 'quantity', wallet: 1
 assert.equal(stock.activity.amount, 10);
 assert.equal(stock.activity.price, 100, 'funded leaf spends the complete required quantity');
 console.log('wish funding, complete progress hour and acquisition quantity: PASS');
+
+const overpriced = moneyQueue([{ key: 'luxury', valueHours: .5, price: 1000 }], 50000, 0, .001);
+assert.equal(overpriced.queue[0].funded, false);
+assert.equal(overpriced.gap, null);
+assert.equal(overpriced.moneyPrice, .001);
+const wealthy = network.build({ ...input, inputKey: 'wealthy-hour', wallet: 1e8, hourAdena: 1000 });
+assert.equal(wealthy.hourAdena, 1000);
+assert.equal(wealthy.moneyPrice, .001);

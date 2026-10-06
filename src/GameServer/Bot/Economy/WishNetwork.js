@@ -19,20 +19,23 @@ function choose(rows, weight, roll) {
     return rows[rows.length - 1];
 }
 
-function moneyQueue(wishes, wallet, survivalReserve = 0) {
+function moneyQueue(wishes, wallet, survivalReserve = 0, floor = 0) {
     let available = Math.max(0, nonnegative(wallet) - nonnegative(survivalReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
         .map(wish => ({ ...wish, ratio: wish.valueHours / wish.price }))
         .sort((a, b) => b.ratio - a.ratio || a.key.localeCompare(b.key));
-    let moneyPrice = 0, cutoffFound = false;
+    let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null;
     for (const wish of queue) {
         // The first gap holds the marginal price of money. Smaller desires
         // do not spend the money earmarked toward that first missing goal.
-        wish.funded = !cutoffFound && wish.price <= available;
+        wish.funded = !cutoffFound && wish.ratio >= floor && wish.price <= available;
         if (wish.funded) available -= wish.price;
-        else if (!cutoffFound) { moneyPrice = wish.ratio; cutoffFound = true; }
+        else if (!cutoffFound) {
+            if (wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
+            cutoffFound = true;
+        }
     }
-    return { queue, moneyPrice, available };
+    return { queue, moneyPrice, available, gap };
 }
 
 // Providers supply game effects and available paths, never policy priorities.
@@ -136,7 +139,7 @@ class WishNetwork {
         }
         const weighted = wishes.map(wish => ({ ...wish,
             valueHours: wish.valueHours * (wish === focused ? 1 : 1 - loyalty) }));
-        const { queue, moneyPrice, available } = moneyQueue(weighted, wallet, survivalReserve);
+        const { queue, moneyPrice, available, gap } = moneyQueue(weighted, wallet, survivalReserve, hourAdena > 0 ? 1 / hourAdena : 0);
         const demands = new Map(), leaves = new Map();
         const flow = (key, value, amount = 1, rootKey = key) => {
             const plan = plans.get(key);
@@ -156,7 +159,7 @@ class WishNetwork {
         };
         for (const wish of weighted) flow(wish.key, wish.valueHours);
         // Funding is a path to the first gap, not a second budget or desire.
-        const unfunded = queue.find(wish => !wish.funded);
+        const unfunded = gap;
         if (unfunded) for (const path of moneyPaths.slice(0, 3)) {
             const income = nonnegative(path.incomePerHour);
             if (!(income > 0) || path.available === false) continue;
@@ -172,11 +175,9 @@ class WishNetwork {
             || funded.has(leaf.rootKey) || leaf.price === 0 && leaf.rootKey === unfunded?.key);
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
-        const valuePerHour = focused ? focused.valueHours / Math.max(1 / 3600, focused.effort) : 0;
         const activity = choose(candidates, leaf => leaf.valueHours / Math.max(1 / 3600, leaf.effort),
             Tendency.roll(actorKey, inputKey, 'activity'));
-        const result = { inputKey, queue, moneyPrice, available, valuePerHour,
-            hourAdena: moneyPrice > 0 ? valuePerHour / moneyPrice : null,
+        const result = { inputKey, queue, moneyPrice, available, gap, hourAdena,
             focus, dormant, activity, demands, plans };
         if (remembered) remember(this.cache, actorKey, { inputKey, result });
         return result;

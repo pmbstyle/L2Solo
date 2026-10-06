@@ -341,7 +341,7 @@ function restockPlan(value, options = {}) {
     const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.usePerHour);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
-    const money = Math.min(allowance, Math.max(0, adena - reserve - potionCost));
+    const money = Math.min(allowance, Math.max(0, adena - potionCost));
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
     // the one rule for a stack purchase (OfferQuery.fill).
     const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
@@ -350,7 +350,7 @@ function restockPlan(value, options = {}) {
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
     const npcAmount = npcRestockAmount({ needed, targetAmount, currentAmount,
-        unitPrice: npcPrice, adena: Math.min(adena, money + reserve + potionCost), reserve, potionCost }, shopAmount, shopCost);
+        unitPrice: npcPrice, adena: Math.min(adena, money + potionCost), reserve: 0, potionCost }, shopAmount, shopCost);
     return {
         plan,
         currentAmount,

@@ -342,7 +342,7 @@ function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {})
     if (!eligible(state)) return [];
     const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
     const known = state.stats?.workshop?.entries || [];
-    const opportunity = chooseOpportunity(state, known, { hourAdena, worth, timestamp, insideContext: true, mpPerHour: Number(regen.mp) * 1200 });
+    const opportunity = chooseOpportunity(state, known, { hourAdena, hunt: { perHour: hourAdena }, worth, timestamp, insideContext: true, mpPerHour: Number(regen.mp) * 1200 });
     return opportunity ? [{ ...opportunity, value: opportunity.expectedProfit, activity: 'crafting' }] : [];
 }
 

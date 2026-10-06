@@ -50,6 +50,61 @@ async function run() {
         console.log('PASS known zero producer ambition / unknown income refusal / concrete recipe gate / no SQL');
         return;
     }
+    const ProvidersForKit = invoke('GameServer/Bot/Economy/WishProviders');
+    function equippedFixture(id, classId, level, adena) {
+        const state = { ...base, characterId: id, level, adena, inventory: {},
+            stats: { ...base.stats, classId, exp: Data.experience[level - 1] + 1 } };
+        for (const [, items] of ProvidersForKit.gearCandidates(state)) {
+            const item = items[0]; if (!item) continue;
+            state.inventory[item.selfId] = { selfId: Number(item.selfId), amount: 1, equipped: true,
+                equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
+        }
+        return state;
+    }
+    const warrior = equippedFixture(1300, 1, 30, 20000);
+    warrior.stats.persona = { ...warrior.stats.persona, understanding: .5 };
+    const kitDeps = { knowledgeEnabled: true };
+    const warriorContext = Economy.forState(warrior, kitDeps);
+    const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
+    assert(reserve >= 15000 && reserve <= 17000, `one hunting hour kit reserve: ${reserve}`);
+    assert(warriorContext.purchaseBudget(warriorStock.itemId) >= 1728 * warriorStock.unitPrice);
+    assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
+    assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
+    assert.equal(warriorContext.statsPacket.money.length, 3);
+    assert(warriorContext.statsPacket.money.every(Number.isFinite) && warriorContext.statsPacket.money[2] > 0);
+    const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
+    for (const wallet of [0, 20000, 200000, 1000000, 50000000]) {
+        const state = { ...warrior, adena: wallet };
+        const context = Economy.forState(state, kitDeps);
+        assert(Math.abs(context.hourAdena - 76797) < 1);
+        assert(context.moneyPrice >= 1 / context.hourAdena);
+        assert(Profit.margin({ productCount: 100, successRate: 100, mpCost: 5 }, 10, 500,
+            { ...context, mpPerHour: 1000 }));
+    }
+    const gladiator = Economy.forState(equippedFixture(1202, 2, 50, 1000000), kitDeps);
+    assert(Math.abs(gladiator.hourAdena - 123854) < 1);
+    assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
+    const stocked = { ...warrior, inventory: { ...warrior.inventory,
+        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) } } };
+    assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
+    const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
+    assert.equal(criminal.kitCost(736), 0);
+    const without = Table.value(warriorContext.bestSpotId, 'dps', 30, false);
+    const benefit = 1 - without.exp / warriorContext.hunt.expPerHour;
+    assert(benefit >= warriorStock.usePerHour * warriorStock.unitPrice / warriorContext.hourAdena);
+    const Craft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
+    const originalOpportunities = Craft.opportunities;
+    try {
+        const crafter = { ...warrior, characterId: 1203, stats: { ...warrior.stats, workshop: { entries: [1] } } };
+        Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: 0, profit: 1000, labour: 0 } }];
+        assert.equal(Economy.forState(crafter).hourAdena, warriorContext.hourAdena);
+        Economy.forget(crafter.characterId);
+        Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: .5, profit: 100000, labour: 38398.5 } }];
+        const context = Economy.forState(crafter);
+        assert.equal(context.hourAdena, 276797);
+        assert.equal(context.projection.moneyPaths.find(row => row.kind === 'production').incomePerHour, context.hourAdena);
+    } finally { Craft.opportunities = originalOpportunities; }
+    console.log('PASS repeatable wallet-independent income / survival reserve / craft hour / floor');
     const context = Economy.forState(base);
     assert(context.projection.nodes.length <= 40 && context.projection.roots.length <= 12);
     assert(context.network.queue.length && context.moneyPrice > 0 && context.hourAdena > 0);
@@ -58,8 +113,8 @@ async function run() {
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
     const rich = { ...base, adena: 1e12 };
     const richContext = Economy.forState(rich);
-    assert.equal(richContext.moneyPrice, 0);
-    assert.equal(richContext.hourAdena, null, 'all funded is no meaningful price of money');
+    assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);
+    assert.equal(richContext.hourAdena, context.hourAdena, 'wallet cannot change repeatable income');
     assert.notEqual(richContext, context, 'native wallet changes invalidate funding');
     console.log('PASS shared network hour / funding / input cache / bounded native gear');
 
@@ -67,17 +122,17 @@ async function run() {
     assert(stock.usePerHour > 0 && stock.target === Math.ceil(stock.usePerHour * stock.targetHours));
     const Shot = invoke('GameServer/Inventory/ShotStock');
     assert.equal(Shot.keptAmounts(base)[stock.itemId], stock.target);
-    assert.equal(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }), 0);
+    assert(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }) > 0);
     const plan = Shot.restockPlan({ ...base, adena: 1e8 }, { unitPrice: 10 });
     assert.equal(plan.targetAmount, stock.target);
-    assert.equal(plan.amount, stock.target);
-    assert.equal(plan.reserve, 0);
+    assert(plan.amount >= stock.survivalMissing && plan.amount <= stock.target, 'the floor permits survival and only worthwhile extra stock');
+    assert.equal(plan.reserve, context.survivalReserve);
     const potion = context.stock('potions');
     assert.equal(invoke('GameServer/Bot/AI/HealingPotionStock').targetAmountFor(base), potion.target);
     const gap = context.network.queue.find(row => !row.funded);
     const stockWish = context.network.queue.find(row => row.key === 'stock:shots');
     if (stockWish && gap.key !== stockWish.key && context.network.queue.indexOf(gap) < context.network.queue.indexOf(stockWish)) {
-        assert.equal(context.purchaseBudget(stock.itemId), 0, 'stock below the first gap cannot spend its earmarked money');
+        assert.equal(context.purchaseBudget(stock.itemId), Math.min(base.adena, context.kitCost(stock.itemId)), 'survival stock retains its own allowance below the gap');
     }
     console.log('PASS shot / potion hours and one wallet without percentage reserve');
 

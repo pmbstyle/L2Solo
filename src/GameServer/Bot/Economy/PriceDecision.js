@@ -28,14 +28,15 @@ const NEAR_BEST = 0.02;
 // How differently buyers see the same offers (e13: their understanding error).
 const PERCEPTION = 0.08;
 const RIVALS_SEEN = 20;
-// The shared network prices money in hours per Adena; multiplied by the
-// value of one hour it is a dimensionless urgency for an hour of waiting.
-function valueOfMoney(hour, moneyPrice) {
-    return Math.max(0, Number(hour) || 0) * Math.max(0, Number(moneyPrice) || 0);
+// Waiting costs the gap's urgency spread over that wish's own horizon (1/hour).
+// 76797 adena/hour * 3.235e-5 hours/adena / 59.1 hours = .042/hour.
+function waitRate({ hourAdena, moneyPrice, gapHorizonHours } = {}) {
+    return gapHorizonHours > 0 ? Math.max(0, Number(hourAdena) || 0)
+        * Math.max(0, Number(moneyPrice) || 0) / gapHorizonHours : 0;
 }
-function traderOf(persona, { hour, moneyPrice = 0 }) {
+function traderOf(persona, economy) {
     const traits = persona?.traits || {};
-    return { wait: valueOfMoney(hour, moneyPrice) * (1.5 - Number(traits.commitment ?? 0.5)),
+    return { wait: waitRate(economy) * (1.5 - Number(traits.commitment ?? 0.5)),
         assertiveness: Number(traits.assertiveness ?? 0.5), caution: Number(traits.caution ?? 0.5),
         understanding: Number(persona?.understanding ?? 0.3) };
 }
@@ -271,5 +272,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, valueOfMoney, traderOf, phi, saleUtility, purchaseCost, marketFor,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

@@ -150,22 +150,24 @@ async function reviewDemand(state, now) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const basics = Economy.basics(state, { timestamp: now });
     const stock = basics.stock('shots');
-    if (!stock.needed || !stock.missing) {
+    const missing = stock.survivalMissing + stock.missing;
+    if (!stock.needed || !missing) {
         if (!state.stats?.shotDemand) return state;
         return await persist({ ...state, stats: { ...state.stats, shotDemand: null } }, 'shot_market_demand_filled') || state;
     }
     const price = basics.price(stock.itemId);
     if (!(price > 0)) return state;
-    const worth = Economy.forState(state, { timestamp: now }).worth(stock.itemId);
-    const maxSpend = Math.min(PurchaseFunding.spendable(state), stock.missing * (worth ?? price));
+    const context = Economy.forState(state, { timestamp: now });
+    const worth = context.worth(stock.itemId);
+    const maxSpend = Math.min(context.purchaseBudget(stock.itemId), missing * (worth ?? price));
     const wanted = state.stats?.shotDemand;
-    if (!wanted || wanted.itemId !== stock.itemId || wanted.amount !== stock.missing || wanted.maxSpend !== maxSpend) {
+    if (!wanted || wanted.itemId !== stock.itemId || wanted.amount !== missing || wanted.maxSpend !== maxSpend) {
         state = await persist({ ...state, stats: { ...state.stats,
-            shotDemand: { itemId: stock.itemId, amount: stock.missing, maxSpend, at: now } } }, 'shot_market_demand') || state;
+            shotDemand: { itemId: stock.itemId, amount: missing, maxSpend, at: now } } }, 'shot_market_demand') || state;
     }
     if (require('../Population/CombinedErrandPolicy').pending(state, now)
         .some(errand => errand.purpose === 'shots')) return state;
-    const bought = await ColdMarket().acquire(state, stock.itemId, stock.missing, {
+    const bought = await ColdMarket().acquire(state, stock.itemId, missing, {
         money: maxSpend, purpose: 'shots', timestamp: now
     });
     if (bought.hot) return bought.state;
@@ -173,7 +175,7 @@ async function reviewDemand(state, now) {
         // A standing funded order is the real demand producer when fixed
         // shots are disabled; no NPC-derived 5% purchasing purse.
         const ad = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(bought.state, {
-            type: 'buy_craft_material', target: { itemId: stock.itemId, amount: stock.missing },
+            type: 'buy_craft_material', target: { itemId: stock.itemId, amount: missing },
             plan: { expectedBenefit: 'market_buy_craft_material', purpose: 'shots', estimatedCost: price }
         });
         return ad.state || bought.state;
