@@ -1,6 +1,11 @@
 const assert = require('assert');
 
 require('../src/Global');
+// Combat fixtures have no economy datapack; keep unrelated town wishes out of this encounter test.
+invoke('GameServer/Bot/Economy/EconomyContext').forActor = (_actor, session) => ({
+    network: { activity: null }, statsPacket: { decisionSeq: session.coldLifeState?.stats?.decisionSeq || 0,
+        activityLeaf: 0, money: [1, 1, 0, 0] }
+});
 
 const World = invoke('GameServer/World/World');
 const HuntingState = invoke('GameServer/Bot/AI/States/HuntingState');

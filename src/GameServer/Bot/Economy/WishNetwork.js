@@ -1,4 +1,5 @@
 const Tendency = require('../AI/TendencyRoll');
+const { fnv1a32 } = require('../Fnv1a');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -60,15 +61,22 @@ class WishNetwork {
 
     // `remembered: false` builds without touching the per-actor cache (a
     // caller that holds the result itself, or a one-off proposal).
-    build({ actorKey, inputKey, nodes, roots, wallet = 0, survivalReserve = 0,
+    build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, survivalReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true }) {
         if (typeof actorKey !== 'string' || !actorKey || typeof inputKey !== 'string'
             || !Array.isArray(nodes) || nodes.length > MAX_NODES || !Array.isArray(roots) || roots.length > MAX_ROOTS
             || new Set(roots).size !== roots.length) {
             throw new TypeError('invalid_wish_network_input');
         }
+        const individual = Number(characterId) > 0;
+        decisionSeq = Math.max(0, Math.trunc(Number(decisionSeq) || 0));
+        activityLeaf = Number(activityLeaf) >>> 0;
         const cached = remembered ? this.cache.get(actorKey) : null;
-        if (cached?.inputKey === inputKey) return remember(this.cache, actorKey, cached).result;
+        if (cached?.inputKey === inputKey && cached.decisionSeq === decisionSeq && cached.activityLeaf === activityLeaf)
+            return remember(this.cache, actorKey, cached).result;
+        // ARCH-NOTE: group and clan decisions retain their existing event-key seed.
+        const roll = kind => individual ? Tendency.roll(characterId, decisionSeq, kind)
+            : Tendency.roll(actorKey, inputKey, kind);
         const byKey = new Map();
         for (const node of nodes) {
             if (typeof node?.key !== 'string' || !node.key || byKey.has(node.key)
@@ -128,9 +136,11 @@ class WishNetwork {
         const held = wishes.find(wish => wish.key === previous.focus?.[0]);
         const challenger = wishes.reduce((best, wish) => !best || score(wish) > score(best) ? wish : best, null);
         const focused = held && (!challenger || score(challenger) <= score(held) * (1 + loyalty)) ? held
-            : choose(wishes, score, Tendency.roll(actorKey, inputKey, 'focus'));
+            : choose(wishes, score, roll('focus'));
         const focus = focused ? [focused.key, held === focused ? previous.focus[1] : playedHours,
             nonnegative(focused.price)] : null;
+        const inputDecisionSeq = decisionSeq, inputActivityLeaf = activityLeaf;
+        if (individual && focus?.[0] !== previous.focus?.[0]) { decisionSeq++; activityLeaf = 0; }
         const dormant = (previous.dormant || []).filter(row => Array.isArray(row) && row.length === 6
             && row[0] !== focus?.[0] && !wishes.some(wish => wish.key === row[0])).slice(0, 4);
         if (previous.focus && previous.focus[0] !== focus?.[0] && !dormant.some(row => row[0] === previous.focus[0])) {
@@ -175,11 +185,14 @@ class WishNetwork {
             || funded.has(leaf.rootKey) || leaf.price === 0 && leaf.rootKey === unfunded?.key);
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.
-        const activity = choose(candidates, leaf => leaf.valueHours / Math.max(1 / 3600, leaf.effort),
-            Tendency.roll(actorKey, inputKey, 'activity'));
+        const heldActivity = individual && activityLeaf ? candidates.find(leaf => fnv1a32(leaf.key) === activityLeaf) : null;
+        const activity = heldActivity || choose(candidates, leaf => leaf.valueHours / Math.max(1 / 3600, leaf.effort),
+            roll('activity'));
         const result = { inputKey, queue, moneyPrice, available, gap, hourAdena,
-            focus, dormant, activity, demands, plans };
-        if (remembered) remember(this.cache, actorKey, { inputKey, result });
+            focus, dormant, activity, demands, plans, decisionSeq,
+            activityLeaf: individual && activity ? fnv1a32(activity.key) : 0 };
+        if (remembered) remember(this.cache, actorKey, { inputKey, decisionSeq: inputDecisionSeq,
+            activityLeaf: inputActivityLeaf, result });
         return result;
     }
 }

@@ -45,7 +45,7 @@ function stateForActor(actor, session = actor?.session) {
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
         spotId: session?.currentSpot?.id || stored.spotId,
-        stats: { ...stored.stats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
+        stats: { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...stored.stats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
         party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored.party?.role } : null,
         activity: session?.plan || 'hunting' };
 }
@@ -56,7 +56,7 @@ function inputKey(state, deps = {}) {
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
-    return [state.level, stats.classId, items, positive(state.adena),
+    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf,
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.productionStatus?.inputKey || '', deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
@@ -235,6 +235,7 @@ function forState(state = {}, deps = {}) {
     }
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
+        characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
         wallet: positive(state.adena), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
@@ -263,6 +264,7 @@ function forState(state = {}, deps = {}) {
     }).slice(0, 3);
     const Funding = require('./PurchaseFunding');
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
+        decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         money: Funding.packetFor(network, context.hourAdena, base.survivalReserve) };
     context.purchaseBudget = id => {
         const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));

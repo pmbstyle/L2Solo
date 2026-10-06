@@ -70,4 +70,19 @@ assert.strictEqual(goer.session.coldLifeState.stats.marketSellRetryAfter, now + 
 assert.strictEqual(goer.session.coldLifeState.stats.generatedCold, true);
 assert.strictEqual(due(goer), null, 'no second half-full trip during the pause');
 
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const originalContext = Economy.forState;
+Economy.forState = () => { throw Error('sell_check_rebuilt_economy'); };
+try {
+    const seller = hunter(3);
+    seller.session.coldLifeState.stats.decisionSeq = 12;
+    seller.session.economySeq = 12;
+    seller.session.heldEconomy = { network: { activity: { activity: 'selling', items: [1864] } } };
+    assert.equal(due(seller)?.reason, 'wish_funding');
+    seller.bot.backpack.inventoryRevision = 1;
+    assert.equal(due(seller)?.reason, 'wish_funding', 'loot reuses the held selling choice without a context build');
+    seller.session.coldLifeState.stats.decisionSeq = 13;
+    assert.equal(due(seller), null, 'a new event cannot act on the retired selling choice');
+} finally { Economy.forState = originalContext; }
+
 console.log('Hot sell trigger checks passed');

@@ -1,4 +1,5 @@
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
+const { raiseDecision } = require('../DecisionEvents');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -341,6 +342,7 @@ module.exports = {
                 session.shoppingTarget = townMerchantTarget(closestTown, bot);
                 if (!session.shoppingTarget) {
                     session.plan = 'hunting';
+                    raiseDecision(session, 'town');
                     session.shoppingDoneAnnounced = false;
                     session.preShopLocation = undefined;
                     clearShoppingServiceState(session);
@@ -425,6 +427,8 @@ module.exports = {
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
                 deferEquipmentRetry(session);
                 session.plan = returningToCompanion ? 'following' : 'hunting';
+                // ARCH-NOTE: an unreachable shopping route also ends this town visit.
+                if (session.plan === 'hunting') raiseDecision(session, 'town');
                 session.shoppingDoneAnnounced = false;
                 session.shoppingTarget = undefined;
                 session.companionShopping = undefined;
@@ -450,7 +454,7 @@ module.exports = {
         if (session.shoppingServicePhase === 'improvement') {
             Improvements.reviewHot(session).then(result => {
                 if (result) { session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
-                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; }
+                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; raiseDecision(session, 'town'); }
             }).catch(error => utils.infoWarn('Improvement', '%s', error));
             return;
         }
@@ -818,6 +822,9 @@ module.exports = {
             session.plan = rebuffBeforeLeaving
                 ? 'getting_buffed'
                 : (returningToCompanion ? 'following' : 'hunting');
+            // ARCH-NOTE: shopping may finish with a buff stop; that continuation
+            // belongs to this town event and returning from the buff raises nothing.
+            if (!returningToCompanion) raiseDecision(session, 'town');
             Promise.resolve(BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: 'shopping_completed',
@@ -897,6 +904,8 @@ module.exports = {
             session.plan = session.partyCompanion === true && leaderSession?.actor?.fetchIsOnline?.()
                 ? 'following'
                 : 'hunting';
+            // ARCH-NOTE: hidden supply errands already advance in their cold round.
+            if (session.plan === 'hunting' && !wasSupplyErrand) raiseDecision(session, 'town');
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;

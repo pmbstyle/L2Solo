@@ -12,6 +12,13 @@ function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
 function surplus(state = {}, price = 0, reserve = 0) {
     return Math.max(0, budget(state) - nonnegative(price) - nonnegative(reserve));
 }
+function moneyReached(state) {
+    const packet = state?.stats?.money;
+    if (!Array.isArray(packet) || packet.length < 4 || !(Number(packet[3]) > 0)) return false;
+    let fundedPrice = 0;
+    for (let i = 5; i < packet.length; i += 3) fundedPrice = Math.max(fundedPrice, Number(packet[i]) || 0);
+    return budget(state) - nonnegative(packet[2]) >= fundedPrice + Number(packet[3]);
+}
 function budgetFor(packet, wallet, escrow, r) {
     let prior = 0;
     for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i] > r) prior = packet[i + 1];
@@ -57,5 +64,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, tripEscrow, budgetFor, packetFor, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, tripEscrow, budgetFor, moneyReached, packetFor, significant,
     summary: () => ({ moneyPacketMissing }), resetCounters: () => { moneyPacketMissing = 0; } };

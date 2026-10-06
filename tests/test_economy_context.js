@@ -110,6 +110,9 @@ async function run() {
     assert(context.network.queue.length && context.moneyPrice > 0 && context.hourAdena > 0);
     assert.equal(Hunt.hourValue(base).perHour, context.hourAdena);
     assert(context.network.activity && ['hunting','shopping','crafting','selling','pvp','helping'].includes(context.network.activity.activity));
+    assert.equal(typeof context.statsPacket.decisionSeq, 'number');
+    assert.equal(typeof context.statsPacket.activityLeaf, 'number');
+    assert(context.statsPacket.activityLeaf !== 0);
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
     const rich = { ...base, adena: 1e12 };
     const richContext = Economy.forState(rich);
@@ -207,12 +210,21 @@ async function run() {
     const beforeProfile = Profile.profileFor(base);
     assert(beforeProfile.pAtk > 0);
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const prepared = await Life.prepareResolve({ ...base, exp: base.stats.exp, sp: 0,
+    const resolveInput = { ...base, exp: base.stats.exp, sp: 0,
         stats: { ...base.stats, classProgressionLevel: base.level, classProgressionClassId: 1,
-            coldCombat: { classId: 1, skillSource: 'database', skills: [] } } }, {
+            decisionSeq: 9, activityLeaf: context.statsPacket.activityLeaf, wishFocus: context.network.focus,
+            coldCombat: { classId: 1, skillSource: 'database', skills: [] } } };
+    const resolveResult = {
         patch: { activity: 'hunting' }, materialize: { exp: 0, sp: 0, adena: 0, items: [] },
         debug: {}, nextResolveAt: Date.now() + 60000
-    }, { persist: false, projectClassProgression: true });
+    };
+    const resolveOptions = { persist: false, projectClassProgression: true, timestamp: Date.now() };
+    const prepared = await Life.prepareResolve(resolveInput, resolveResult, resolveOptions);
+    const retried = await Life.prepareResolve(resolveInput, resolveResult, resolveOptions);
+    assert.equal(prepared.stats.decisionSeq, 10);
+    assert.equal(retried.stats.decisionSeq, prepared.stats.decisionSeq);
+    assert.equal(retried.stats.activityLeaf, prepared.stats.activityLeaf);
+    assert.equal(resolveInput.stats.decisionSeq, 9, 'projection does not mutate its decision source');
     assert.equal(prepared.stats.wishFocus?.length, 3);
     assert.equal(prepared.inventory[1].amount, 1);
     assert.equal(Database.isReady(), false);

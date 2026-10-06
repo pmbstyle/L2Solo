@@ -2502,6 +2502,11 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: timestamp
         };
+        if (state.activity === 'hunting') {
+            // Derive from the input so retrying this projection cannot raise twice.
+            nextState.stats.decisionSeq = Math.max(0, Math.trunc(Number(state.stats?.decisionSeq) || 0)) + 1;
+            nextState.stats.activityLeaf = 0;
+        }
         const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
         Object.assign(nextState.stats, economy.statsPacket);
         if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);

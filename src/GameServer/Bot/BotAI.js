@@ -1,4 +1,5 @@
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const { raiseDecision } = require('./AI/DecisionEvents');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
@@ -574,6 +575,7 @@ const BotAI = {
                 Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
+                raiseDecision(session, 'revived');
                 session.clanHallVisit = null;
                 session.clanHallRetryAt = 0;
                 session.deathTimerStart = undefined;
