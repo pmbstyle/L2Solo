@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');

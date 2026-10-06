@@ -98,6 +98,7 @@ function fixture(predicate, description) {
     const hydrated = await LifeState.refreshInventory(base);
     const persistedBase = await LifeState.upsertState(hydrated, 'cold_safe_enchant_inventory');
 
+    // ARCH-NOTE: FX-F1 retains the original guaranteed safe-batch contract.
     const result = await ColdSafeEnchantService.enchantSafe(persistedBase);
     assert.strictEqual(result.enchanted, true);
     assert.strictEqual(result.operations.length, 8,

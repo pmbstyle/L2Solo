@@ -2,6 +2,7 @@ const assert = require('assert');
 const EventEmitter = require('events');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -31,9 +32,11 @@ class FakeWorker extends EventEmitter {
         const posted = [];
         coordinator.postCollections = (type, payload) => { posted.push({ type, payload }); return 1; };
 
+        const token = id => ({ characterId: id, ownerId: 'cold_simulation_owner', revision: 1,
+            leaseId: `lease-${id}`, leaseUntil: Date.now() + 30000 });
         await coordinator.handleCommitResults([
-            { ok: true, characterId: 1, revision: 2 },
-            { ok: false, characterId: 2, reason: 'stale_revision', proposal: { token: { characterId: 2 } } }
+            { ok: true, characterId: 1, revision: 2, proposal: { token: token(1), proposalId: 'proposal-1' } },
+            { ok: false, characterId: 2, reason: 'stale_revision', proposal: { token: token(2), proposalId: 'proposal-2' } }
         ]);
         const ack = posted.find((message) => message.type === 'commit_ack');
         assert(ack, 'commit results are acknowledged');
@@ -44,7 +47,7 @@ class FakeWorker extends EventEmitter {
             'the route is computed from the cached state that was just written');
 
         routed.length = 0;
-        await coordinator.handleReleaseRequest({ msgId: 7, payload: { releases: [{ token: { characterId: 1 } }] } });
+        await coordinator.handleReleaseRequest({ msgId: 7, payload: { releases: [{ token: token(1) }] } });
         const release = posted.find((message) => message.type === 'release_ack');
         assert.deepStrictEqual(routed, [1]);
         assert.strictEqual(release.payload.results[0].context.route.spotId, 'route_1', 'a release carries a route too');

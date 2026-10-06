@@ -269,7 +269,10 @@ class ColdSimulationCoordinator {
             snapshotCriticalRuns: 0,
             snapshotYields: 0,
             snapshotDeferrals: 0,
-            routeCapacityRejects: 0
+            routeCapacityRejects: 0,
+            afterCommitStepErrors: { partyCache: 0, raidCache: 0, raidSettlement: 0, economyDecision: 0,
+                journal: 0, board: 0, equipment: 0, training: 0, improvement: 0, party: 0, metrics: 0, announce: 0,
+                economyPlan: 0, clanEvents: 0, partyPlans: 0, buff: 0 }
         };
         this.queue = new ColdCommitQueue({
             targetMs: Config.coldWorkerOrdinaryFlushMs || 2000,
@@ -1606,83 +1609,96 @@ class ColdSimulationCoordinator {
         return admission.state;
     }
 
+    async step(name, characterId, work) {
+        try { return await work(); }
+        catch (error) {
+            this.counters.afterCommitStepErrors[name] += 1;
+            utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error?.message || error);
+            return undefined;
+        }
+    }
+
     async afterCommit(entry, committed = {}) {
+        const id = entry.nextState.characterId;
         const committedPartyRow = committed.partyRow || committed.raidPartyRow;
-        if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
-            < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
-        if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
-        if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
-            await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
-        }
-        let state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
-        this.economyDecisions.accept(state.characterId, entry.proposal.economyDecision, committed);
-        await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
-        // The bot looked at its board lines in the worker: its new asks.
+        await this.step('partyCache', id, () => {
+            if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
+                < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
+        });
+        await this.step('raidCache', id, () => {
+            if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
+        });
+        await this.step('raidSettlement', id, async () => {
+            if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
+                await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
+            }
+        });
+        let state = LifeState.cachedState(id) || entry.nextState;
+        await this.step('economyDecision', id, () => this.economyDecisions.accept(id, entry.proposal.economyDecision, committed));
+        await this.step('journal', id, () => LifeEvents.recordMany(id, entry.proposal.result?.events || []));
         if (entry.proposal.market) {
-            await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(state.characterId, entry.proposal.market)
-                .catch((error) => utils.infoWarn('BotMarket', 'board look failed for %s: %s',
-                    state.characterId, error?.message || error));
+            await this.step('board', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(id, entry.proposal.market));
         }
-        await LifeState.enqueueEquipmentGoalAdvanceForState(state)
-            .catch((error) => {
-                utils.infoWarn('BotGoals', 'equipment goal advance enqueue failed for %s: %s',
-                    state.characterId, error?.message || error);
-            });
+        await this.step('equipment', id, () => LifeState.enqueueEquipmentGoalAdvanceForState(state));
         const source = entry.proposal[PROPOSAL_SOURCE];
         const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
         if (sourceCurrent()) {
             const beforeWrite = () => {
                 if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
             };
-            state = await this.reviewCommittedEconomy(state, beforeWrite);
+            state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite)) || state;
         }
-        if (entry.proposal.partyResolution?.party) {
-            const party = entry.proposal.partyResolution.party;
-            if (!committedPartyRow) await BackgroundPartyState.createOrUpdate(party);
-            if (!committedPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
-                await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
-                    .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
-                        party.partyId, error?.message || error));
-            }
-            if (party.stats?.raidEncounter?.status === 'failed') {
-                await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(party)
-                    .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
-                        party.partyId, error?.message || error));
-            }
-            if (entry.proposal.result?.debug?.activity === 'party_session_review') {
-                const review = party.stats?.sessionReview || {};
-                const decisions = review.decisions || [];
-                const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
-                this.partyReviews.committed += 1;
-                this.partyReviews.departed += departed;
-                this.partyReviews.dissolved += Number(party.status === 'dissolved');
-                for (const decision of decisions) {
-                    this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
+        await this.step('party', id, async () => {
+            if (entry.proposal.partyResolution?.party) {
+                const party = entry.proposal.partyResolution.party;
+                if (!committedPartyRow) await BackgroundPartyState.createOrUpdate(party);
+                if (!committedPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
+                    await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
+                        .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
+                            party.partyId, error?.message || error));
                 }
-                this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
-                this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
-            }
-            if (party.status === 'dissolved') {
-                await LifeState.clearParty(
-                    party.partyId,
-                    party.stats?.partyBreakReason || 'party_dissolved'
-                );
-                Metrics.recordPartyDissolution();
-            } else {
-                Metrics.recordPartyResolve();
-                if (entry.proposal.partyResolution.reviewGoals
-                    && this.population?.reconcileWorkerPartyGoals) {
-                    await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
-                        .catch((error) => {
-                            utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
-                        });
+                if (party.stats?.raidEncounter?.status === 'failed') {
+                    await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(party)
+                        .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
+                            party.partyId, error?.message || error));
+                }
+                if (entry.proposal.result?.debug?.activity === 'party_session_review') {
+                    const review = party.stats?.sessionReview || {};
+                    const decisions = review.decisions || [];
+                    const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
+                    this.partyReviews.committed += 1;
+                    this.partyReviews.departed += departed;
+                    this.partyReviews.dissolved += Number(party.status === 'dissolved');
+                    for (const decision of decisions) {
+                        this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
+                    }
+                    this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
+                    this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
+                }
+                if (party.status === 'dissolved') {
+                    await LifeState.clearParty(
+                        party.partyId,
+                        party.stats?.partyBreakReason || 'party_dissolved'
+                    );
+                    Metrics.recordPartyDissolution();
+                } else {
+                    Metrics.recordPartyResolve();
+                    if (entry.proposal.partyResolution.reviewGoals
+                        && this.population?.reconcileWorkerPartyGoals) {
+                        await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
+                            .catch((error) => {
+                                utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
+                            });
+                    }
                 }
             }
-        }
-        Metrics.recordBackgroundResolve();
-        Metrics.recordCombat(entry.proposal.result?.debug);
-        Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
-        GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []);
+        });
+        await this.step('metrics', id, () => {
+            Metrics.recordBackgroundResolve();
+            Metrics.recordCombat(entry.proposal.result?.debug);
+            Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
+        });
+        await this.step('announce', id, () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         return state;
     }
 
@@ -1690,16 +1706,11 @@ class ColdSimulationCoordinator {
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;
-        state = await LifeState.reviewTrainingAfterCommit(state, { beforeWrite }).catch(error => {
-            utils.infoWarn('BotSkills', 'postcommit training failed for %s: %s', state.characterId, error.message);
-            return LifeState.cachedState(state.characterId) || state;
-        });
-        const improved = await invoke('GameServer/Bot/Economy/BotImprovementService')
-            .reviewCold(state, { beforeWrite, decide: () => this.economyDecisions.decided(state) }).catch(error => {
-                utils.infoWarn('BotEquipment', 'postcommit improvement failed for %s: %s', state.characterId, error.message);
-                return { state: LifeState.cachedState(state.characterId) || state };
-            });
-        return improved.state || state;
+        state = await this.step('training', state.characterId, () => LifeState.reviewTrainingAfterCommit(state, { beforeWrite }))
+            || LifeState.cachedState(state.characterId) || state;
+        const improved = await this.step('improvement', state.characterId, () => invoke('GameServer/Bot/Economy/BotImprovementService')
+            .reviewCold(state, { beforeWrite, decide: () => this.economyDecisions.decided(state) }));
+        return improved?.state || LifeState.cachedState(state.characterId) || state;
     }
 
     async handleCommitResults(results = []) {
@@ -1871,9 +1882,9 @@ class ColdSimulationCoordinator {
         const result = await this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
         if (result?.ok && sourceCurrent() && !this.stopping) {
             const current = LifeState.cachedState(identity.characterId);
-            if (current) result.state = await this.reviewCommittedEconomy(current, () => {
+            if (current) result.state = await this.step('improvement', identity.characterId, () => this.reviewCommittedEconomy(current, () => {
                 if (!sourceCurrent() || this.stopping) throw Error('cold_postcommit_source_retired');
-            });
+            })) || current;
         }
         return result;
     }

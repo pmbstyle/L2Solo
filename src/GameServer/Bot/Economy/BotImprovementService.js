@@ -11,7 +11,7 @@ function inTown(state) {
 }
 // options.decide(): the worker's decision made on exactly this state, or null
 // (L25); without one the wish network is built here.
-function reviewCold(state, options = {}) {
+async function reviewCold(state, options = {}) {
     if (!state?.characterId || state.phase !== 'cold' || ['dead','traveling'].includes(state.activity)
         || state.simulation?.ownerId && state.simulation.ownerId !== 'legacy_main') return Promise.resolve({state,changed:false});
     if (pendingCold.has(state.characterId)) return pendingCold.get(state.characterId);

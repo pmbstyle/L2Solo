@@ -536,11 +536,10 @@ function profileFor(state = {}, timestamp = Date.now()) {
         capturedAt: number(saved?.capturedAt, timestamp),
         classId,
         base: { ...(template.base || {}), ...(template.stats || {}), ...(saved?.base || {}) },
-        // Inventory is authoritative for a cold bot too: a completed market
-        // purchase or craft must alter its next fight without waiting for a
-        // hot materialisation. The hot snapshot fills only legacy states that
-        // have no persisted equipped items yet.
-        equipment: state.inventory && typeof state.inventory === 'object'
+        // ARCH-NOTE: Restore snapshot gear for legacy bags with no equipped rows;
+        // selling the last weapon keeps that snapshot until the next hot capture.
+        // Equipped rows still override it immediately after purchases and crafts.
+        equipment: equipped.length
             ? { ...(saved?.equipment || {}), ...legacyEquipment }
             : { ...legacyEquipment, ...(saved?.equipment || {}) },
         effects: [...(saved?.effects || []).filter(effect => effect.category !== 'equipment_item_skill'),

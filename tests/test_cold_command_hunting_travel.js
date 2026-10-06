@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
