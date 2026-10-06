@@ -1,5 +1,6 @@
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
+const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
@@ -24,7 +25,7 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
-const cache = new LifeStateCache();
+const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index });
 
 function recentLimit(limit) {
     return Math.max(1, Math.min(2000, Number(limit) || 500));

@@ -1,15 +1,25 @@
 'use strict';
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 const ShopPlaces = require('../Economy/ShopPlaces');
-// Bot location buckets: any size is correct. One visibility radius keeps a
-// coldNear search of that radius within 3x3 cells.
-const CELL_SIZE = require('../../World/WorldConstants').CLIENT_VISIBILITY_RADIUS;
+const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
+
+function stateLocation(state) {
+    return { locX: Number(state.loc?.locX || 0), locY: Number(state.loc?.locY || 0), locZ: 0 };
+}
+
+function spatialState(state) {
+    if (!state || state.phase !== 'cold' || state.activity === 'pk_hunting') return false;
+    const loc = stateLocation(state);
+    return Number.isFinite(loc.locX) && Number.isFinite(loc.locY);
+}
 
 class LifeStateCache extends Map {
-    constructor() {
+    constructor({ locationIndex = new CharacterLocationIndex({ legacyStateCache: true }) } = {}) {
         super();
-        this.cells = new Map();
-        this.cellById = new Map();
+        if (!(locationIndex instanceof CharacterLocationIndex) || locationIndex.legacyStateCache !== true) {
+            throw new TypeError('invalid_life_location_index');
+        }
+        Object.defineProperty(this, 'locationIndex', { value: locationIndex, enumerable: true });
         this.revision = 0;
         // Newest updatedAt first; equal times keep Map order (first insertion),
         // as a stable sort of values() would. Kept in place on every write:
@@ -50,17 +60,12 @@ class LifeStateCache extends Map {
         this.orderEntries.set(id, entry);
     }
 
-    removeCell(id) {
-        const key = this.cellById.get(id);
-        if (key === undefined) return;
-        const cell = this.cells.get(key);
-        cell?.delete(id);
-        if (!cell?.size) this.cells.delete(key);
-        this.cellById.delete(id);
+    removeLocation(id) {
+        const source = super.get(id);
+        if (source) this.locationIndex.removeSource(id, 'state', source);
     }
 
     set(id, state) {
-        this.removeCell(id);
         const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
         this.removeOrder(id);
         const previous = super.get(id);
@@ -72,21 +77,19 @@ class LifeStateCache extends Map {
         const run = state.phase === 'cold' && state.activity === 'traveling' ? state.stats?.travel?.run : null;
         if (run) this.walkers.set(id, run);
         else this.walkers.delete(id);
-        if (state.phase === 'cold' && state.activity !== 'pk_hunting') {
-            const x = Number(state.loc?.locX || 0), y = Number(state.loc?.locY || 0);
-            if (Number.isFinite(x) && Number.isFinite(y)) {
-                const key = `${Math.floor(x / CELL_SIZE)}:${Math.floor(y / CELL_SIZE)}`;
-                if (!this.cells.has(key)) this.cells.set(key, new Set());
-                this.cells.get(key).add(id);
-                this.cellById.set(id, key);
+        if (spatialState(state)) {
+            if (this.locationIndex.getSource(id, 'state')?.source === state) {
+                this.locationIndex.updateSource(id, 'state', state);
+            } else {
+                this.locationIndex.setSource(id, 'state', { id, source: state, phase: 'cold', loc: () => stateLocation(state) });
             }
-        }
+        } else if (previous) this.locationIndex.removeSource(id, 'state', previous);
         this.revision++;
         return this;
     }
 
     delete(id) {
-        this.removeCell(id);
+        this.removeLocation(id);
         this.walkers.delete(id);
         this.removeOrder(id);
         if (super.has(id)) this.occupancy.remove(stateKey(super.get(id)));
@@ -97,7 +100,7 @@ class LifeStateCache extends Map {
     }
 
     clear() {
-        super.clear(); this.cells.clear(); this.cellById.clear(); this.walkers.clear();
+        super.clear(); this.locationIndex.clearSourceView('state'); this.walkers.clear();
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         ShopPlaces.releaseStates();
         this.revision++;
@@ -130,20 +133,13 @@ class LifeStateCache extends Map {
     near(loc, radius, limit) {
         const x = Number(loc.locX), y = Number(loc.locY);
         if (![x, y, radius].every(Number.isFinite) || radius <= 0) return [];
-        const minX = Math.floor((x - radius) / CELL_SIZE), maxX = Math.floor((x + radius) / CELL_SIZE);
-        const minY = Math.floor((y - radius) / CELL_SIZE), maxY = Math.floor((y + radius) / CELL_SIZE);
-        const ids = new Set();
-        if ((maxX - minX + 1) * (maxY - minY + 1) > 10000) {
-            for (const id of this.cellById.keys()) ids.add(id);
-        } else {
-            for (let cx = minX; cx <= maxX; cx++) for (let cy = minY; cy <= maxY; cy++) {
-                for (const id of this.cells.get(`${cx}:${cy}`) || []) ids.add(id);
-            }
-        }
+        const records = this.locationIndex.nearSources({ locX: x, locY: y, locZ: 0 }, radius, {
+            view: 'state', kind: 'cold', allowUnsafeCellBounds: true,
+            accept: record => super.get(record.id) === record.source && spatialState(record.source)
+        });
         const found = [];
-        for (const id of ids) {
-            const state = this.get(id);
-            if (!state || state.phase !== 'cold' || state.activity === 'pk_hunting') continue;
+        for (const record of records) {
+            const state = record.source;
             const distanceSquared = (Number(state.loc?.locX || 0) - x) ** 2 + (Number(state.loc?.locY || 0) - y) ** 2;
             if (distanceSquared <= radius ** 2) found.push({ state, distanceSquared });
         }

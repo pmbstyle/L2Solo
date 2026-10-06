@@ -37,9 +37,11 @@ function memberships(record) {
 // membership is cached: exact queries read the original live location reference.
 // Actor and state producers retain independent source slots for the same ID.
 class CharacterLocationIndex {
-    constructor({ cellSize = SPOT_CELL_SIZE } = {}) {
+    constructor({ cellSize = SPOT_CELL_SIZE, legacyStateCache = false } = {}) {
         if (!Number.isFinite(cellSize) || cellSize <= 0) throw new RangeError('invalid_character_cell_size');
+        if (typeof legacyStateCache !== 'boolean') throw new TypeError('invalid_character_state_mode');
         Object.defineProperty(this, 'cellSize', { value: cellSize, enumerable: true });
+        Object.defineProperty(this, 'legacyStateCache', { value: legacyStateCache });
         this.records = new Map();
         this.cells = new Map();
         this.spots = new Map();
@@ -51,12 +53,14 @@ class CharacterLocationIndex {
 
     setSource(id, view, record) {
         validateView(view);
-        if (!Number.isSafeInteger(id) || id <= 0 || record?.id !== id
-            || !record.source || (typeof record.source !== 'object' && typeof record.source !== 'function')) {
+        const legacy = view === 'state' && this.legacyStateCache;
+        const sameId = record?.id === id || (legacy && Number.isNaN(id) && Number.isNaN(record?.id));
+        if ((!legacy && (!Number.isSafeInteger(id) || id <= 0)) || !sameId
+            || !record?.source || (typeof record.source !== 'object' && typeof record.source !== 'function')) {
             throw new RangeError('invalid_character_source');
         }
         const point = pointOf(record.loc);
-        const key = this.cellKey(point);
+        const key = this.cellKey(point, view);
         const tags = memberships(record);
         let row = this.records.get(id);
         let entry = row?.[view];
@@ -74,7 +78,7 @@ class CharacterLocationIndex {
             row[view] = entry;
         }
         entry.record = record;
-        this.refresh(entry, key, tags);
+        this.refresh(entry, key, tags, point);
         return record;
     }
 
@@ -87,7 +91,7 @@ class CharacterLocationIndex {
         const entry = this.records.get(id)?.[view];
         if (!entry || entry.source !== source) return false;
         const point = pointOf(entry.record.loc);
-        this.refresh(entry, this.cellKey(point), memberships(entry.record));
+        this.refresh(entry, this.cellKey(point, view), memberships(entry.record), point);
         return true;
     }
 
@@ -120,30 +124,48 @@ class CharacterLocationIndex {
         return this.nearSources(loc, radius, { view: 'actor', kind });
     }
 
-    nearSources(loc, radius, { view = 'actor', kind = 'all' } = {}) {
+    nearSources(loc, radius, { view = 'actor', kind = 'all', accept = null, allowUnsafeCellBounds = false } = {}) {
         validateView(view);
         if (!KINDS.has(kind)) throw new RangeError('invalid_character_query_kind');
+        if (accept !== null && typeof accept !== 'function') throw new TypeError('invalid_character_query_filter');
+        if (typeof allowUnsafeCellBounds !== 'boolean') throw new TypeError('invalid_character_query_bounds_mode');
+        if (allowUnsafeCellBounds && (!this.legacyStateCache || view !== 'state' || kind !== 'cold')) {
+            throw new RangeError('invalid_character_query_bounds_mode');
+        }
         if (!Number.isFinite(radius) || radius < 0) throw new RangeError('invalid_character_radius');
         const point = pointOf(loc);
-        const minX = cellCoordinate(point.locX - radius, this.cellSize);
-        const maxX = cellCoordinate(point.locX + radius, this.cellSize);
-        const minY = cellCoordinate(point.locY - radius, this.cellSize);
-        const maxY = cellCoordinate(point.locY + radius, this.cellSize);
+        const minX = Math.floor((point.locX - radius) / this.cellSize);
+        const maxX = Math.floor((point.locX + radius) / this.cellSize);
+        const minY = Math.floor((point.locY - radius) / this.cellSize);
+        const maxY = Math.floor((point.locY + radius) / this.cellSize);
+        const safeBounds = [minX, maxX, minY, maxY].every(Number.isSafeInteger);
+        if (!safeBounds && !allowUnsafeCellBounds) throw new RangeError('invalid_character_cell');
         const radiusSquared = radius * radius;
         const records = [];
-        for (let x = minX; x <= maxX; x += 1) {
-            for (let y = minY; y <= maxY; y += 1) {
-                const candidates = this.cells.get(`${x}_${y}`)?.[view]?.[kind];
-                if (!candidates) continue;
-                for (const entry of candidates) {
-                    const current = pointOf(entry.record.loc);
-                    const dx = current.locX - point.locX;
-                    const dy = current.locY - point.locY;
-                    if (dx * dx + dy * dy <= radiusSquared) {
-                        records.push(entry.record);
-                    }
-                }
+        const append = (cell) => {
+            for (const entry of cell?.[view]?.[kind] ?? []) {
+                if (accept && !accept(entry.record)) continue;
+                const current = pointOf(entry.record.loc);
+                const dx = current.locX - point.locX;
+                const dy = current.locY - point.locY;
+                if (dx * dx + dy * dy <= radiusSquared) records.push(entry.record);
             }
+        };
+        if (safeBounds && (maxX - minX + 1) * (maxY - minY + 1) <= 10000) {
+            for (let x = minX; x <= maxX; x += 1) {
+                for (let y = minY; y <= maxY; y += 1) append(this.cells.get(`${x}_${y}`));
+            }
+        } else {
+            const cells = [];
+            for (const cell of this.cells.values()) {
+                if (!cell[view]?.[kind]?.size) continue;
+                if (safeBounds && (cell.x < minX || cell.x > maxX || cell.y < minY || cell.y > maxY)) continue;
+                cells.push(cell);
+            }
+            // Match coordinate traversal for safe ranges. Legacy unsafe Cache
+            // queries keep their exact distance/id ordering in their adapter.
+            if (safeBounds) cells.sort((left, right) => left.x - right.x || left.y - right.y);
+            for (const cell of cells) append(cell);
         }
         return records;
     }
@@ -163,17 +185,30 @@ class CharacterLocationIndex {
         this.spots.clear();
     }
 
-    cellKey(point) {
+    clearSourceView(view) {
+        validateView(view);
+        for (const row of this.records.values()) {
+            const entry = row[view];
+            if (entry) this.removeSource(row.id, view, entry.source);
+        }
+    }
+
+    cellKey(point, view = 'actor') {
+        if (view === 'state' && this.legacyStateCache) {
+            return `${Math.floor(point.locX / this.cellSize)}_${Math.floor(point.locY / this.cellSize)}`;
+        }
         return `${cellCoordinate(point.locX, this.cellSize)}_${cellCoordinate(point.locY, this.cellSize)}`;
     }
 
-    refresh(entry, key, tags) {
+    refresh(entry, key, tags, point) {
         if (entry.key !== key) {
             this.detachCell(entry);
             entry.key = key;
             entry.phase = tags.phase;
             entry.realPlayer = tags.realPlayer;
-            const cell = this.cells.get(key) ?? {};
+            const cell = this.cells.get(key) ?? {
+                x: Math.floor(point.locX / this.cellSize), y: Math.floor(point.locY / this.cellSize)
+            };
             const members = cell[entry.view] ?? cellMembers();
             cell[entry.view] = members;
             this.cells.set(key, cell);

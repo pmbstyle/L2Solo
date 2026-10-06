@@ -23,7 +23,10 @@ assert.strictEqual(cache.recent(1)[0].characterId, 2499);
 cache.set(2, { ...states[2], updatedAt: 9999 });
 assert.strictEqual(cache.recent(1)[0].characterId, 2);
 cache.delete(2); assert(!cache.recent(2500).some(state => state.characterId === 2));
-cache.clear(); assert.strictEqual(cache.cells.size, 0); assert.strictEqual(cache.size, 0);
+cache.clear();
+assert.deepStrictEqual(cache.locationIndex.nearSources({ locX: 0, locY: 0, locZ: 0 }, Number.MAX_VALUE,
+    { view: 'state', kind: 'cold', allowUnsafeCellBounds: true }), []);
+assert.strictEqual(cache.size, 0);
 assert.deepStrictEqual(cache.recent(10), []);
 
 // The order kept on every write equals a stable sort of the Map values:

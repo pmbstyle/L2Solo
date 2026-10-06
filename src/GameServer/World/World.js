@@ -7,10 +7,11 @@ const RaidBossState = invoke('GameServer/World/RaidBossState');
 const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const NpcObjectIndex = require('./NpcObjectIndex');
-const CharacterLocationIndex = require('./CharacterLocationIndex');
+const CharacterLocationRuntime = require('./CharacterLocationRuntime');
 const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
 const userLocationIndexes = new WeakMap();
 const userChangeListeners = new Set();
+let currentUser;
 
 function notifyUserChange(id) {
     if (!Number.isSafeInteger(id) || id <= 0) return;
@@ -21,10 +22,15 @@ function notifyUserChange(id) {
 }
 
 function createUserLocationIndex(user) {
-    const runtime = { index: new CharacterLocationIndex(), sessions: new Map(),
+    const runtime = { index: CharacterLocationRuntime.index, binding: CharacterLocationRuntime.bindWorld(user), sessions: new Map(),
         registered: new Map(), retiredActors: new WeakSet() };
     userLocationIndexes.set(user, runtime);
     return runtime;
+}
+
+function currentUserLocationIndex(user) {
+    const runtime = user && userLocationIndexes.get(user);
+    return CharacterLocationRuntime.isCurrentWorld(user, runtime?.binding) ? runtime : null;
 }
 
 function registeredActor(runtime, session, actor, id) {
@@ -189,6 +195,11 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 }
 
 const World = {
+    get user() { return currentUser; },
+    set user(user) {
+        CharacterLocationRuntime.bindWorld(user);
+        currentUser = user;
+    },
     waitForBotSession,
     isBotSession,
 
@@ -220,7 +231,7 @@ const World = {
     },
 
     insertUser(session) {
-        const runtime = userLocationIndexes.get(this.user) ?? createUserLocationIndex(this.user);
+        const runtime = currentUserLocationIndex(this.user) ?? createUserLocationIndex(this.user);
         const exists = this.user.sessions.find((ob) => session.fetchAccountId() === ob.fetchAccountId());
         if (exists && exists !== session) {
             // Retire before destroying the socket: synchronous/late cleanup
@@ -248,7 +259,7 @@ const World = {
     },
 
     removeUser(session) {
-        removeIndexedSession(userLocationIndexes.get(this.user), session);
+        removeIndexedSession(currentUserLocationIndex(this.user), session);
         const wasPresent = this.user.sessions.includes(session);
         this.user.sessions = this.user.sessions.filter((ob) => ob !== session);
         this.user.revision += 1;
@@ -258,7 +269,7 @@ const World = {
     },
 
     updateUserLocation(session, actor = session?.actor) {
-        const runtime = userLocationIndexes.get(this.user);
+        const runtime = currentUserLocationIndex(this.user);
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor || session.actor !== actor) return false;
         const registered = attachRegisteredActor(runtime, session, membership);
@@ -305,7 +316,7 @@ const World = {
     },
 
     retireUserActor(session, actor) {
-        const runtime = userLocationIndexes.get(this.user);
+        const runtime = currentUserLocationIndex(this.user);
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor) return false;
         if (membership.actor !== actor && (membership.actor !== null || session.actor !== actor)) return false;
@@ -326,12 +337,12 @@ const World = {
     },
 
     registeredActorById(id) {
-        const record = userLocationIndexes.get(this.user)?.registered.get(Number(id));
+        const record = currentUserLocationIndex(this.user)?.registered.get(Number(id));
         return record?.session.actor === record?.actor ? record || null : null;
     },
 
     notifyUserStateChanged(session, actor = session?.actor) {
-        const runtime = userLocationIndexes.get(this.user);
+        const runtime = currentUserLocationIndex(this.user);
         const record = runtime?.sessions.get(session)?.registered;
         if (!record || record.retired || record.actor !== actor || session.actor !== actor
             || runtime.registered.get(record.id) !== record) return false;
@@ -346,7 +357,7 @@ const World = {
     },
 
     realPlayerSessionsNear(loc, radius) {
-        const runtime = userLocationIndexes.get(this.user);
+        const runtime = currentUserLocationIndex(this.user);
         if (!runtime) throw new Error('character_location_index_uninitialized');
         return runtime.index.near(loc, radius, { kind: 'player' })
             .filter((record) => record.session.actor === record.source
