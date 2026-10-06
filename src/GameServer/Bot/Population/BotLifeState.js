@@ -405,8 +405,8 @@ function refreshCraftShop(state = {}) {
 }
 
 // reason names the action for the economy journal.
-function syncInventorySummary(characterId, inventory, reason = null) {
-    return Database.syncInventorySummary(characterId, inventory, reason);
+function syncInventorySummary(characterId, inventory, reason = null, options) {
+    return Database.syncInventorySummary(characterId, inventory, reason, options);
 }
 
 // A town trip is paid when it starts (a Scroll of Escape, a gatekeeper fee:
@@ -2587,8 +2587,8 @@ const BotLifeState = {
                             ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp)
                             : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
                     })
-                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
-                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve'))
+                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
+                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve', nativeWriteOptions))
                     .then(() => {
                         const snapshot = normalize(row);
                         cache.set(snapshot.characterId, snapshot);
