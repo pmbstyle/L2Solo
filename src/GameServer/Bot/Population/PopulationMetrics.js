@@ -54,6 +54,7 @@ function emptyCounters() {
         coldSafetyStateRepairs: 0,
         coldSafetyBoardRepairs: 0,
         coldSafetyQueueRepairs: 0,
+        hotSafetyBoardRepairs: 0,
         legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
         warehouseCleanupOwners: 0,
@@ -144,6 +145,7 @@ const PopulationMetrics = {
     },
     timer: null,
     coldSafetySource: null,
+    hotSafetyHighWater: 0,
     delayHistogram: null,
     delayWindowStartedAt: 0,
 
@@ -165,6 +167,18 @@ const PopulationMetrics = {
         if (!this.coldSafetySource || this.coldSafetySource.epoch !== epoch) return false;
         this.coldSafetySource = null;
         return true;
+    },
+
+    // The hot producer is a process singleton; stop/start preserves its total.
+    recordHotSafetyTotal(total) {
+        if (!Number.isSafeInteger(total) || total < 0) return 0;
+        const delta = Math.max(0, total - this.hotSafetyHighWater);
+        if (!Number.isSafeInteger(this.counters.missedEventsRecovered + delta)
+            || !Number.isSafeInteger(this.counters.hotSafetyBoardRepairs + delta)) return 0;
+        this.hotSafetyHighWater += delta;
+        this.counters.missedEventsRecovered += delta;
+        this.counters.hotSafetyBoardRepairs += delta;
+        return delta;
     },
 
     // Worker-owned cumulative accepted transitions survive a lost direct ACK.

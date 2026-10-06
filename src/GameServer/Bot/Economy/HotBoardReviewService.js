@@ -1,5 +1,6 @@
 const { performance } = require('perf_hooks');
 const BoardReviewEvents = require('./BoardReviewEvents');
+const Protocol = require('../Population/ColdSimulationProtocol');
 
 function authorityOf(state) {
     return { ownerId: state.simulation?.ownerId || 'legacy_main',
@@ -43,6 +44,7 @@ class HotBoardReviewService {
         this.counters = invoke('GameServer/Bot/Economy/MarketCounters');
         this.world = invoke('GameServer/World/World');
         this.life = invoke('GameServer/Bot/Population/BotLifeState');
+        this.metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
         this.listings = invoke('GameServer/Bot/Economy/MarketListingPolicy');
         this.pricing = invoke('GameServer/Bot/Economy/MarketPricing');
         this.market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
@@ -59,6 +61,7 @@ class HotBoardReviewService {
         // A disposed generation may still be awaiting native flush. Its
         // token fences writes and keeps a restarted service from overlapping.
         this.inFlight = this.inFlight || null;
+        this.safetyRepairs = this.safetyRepairs || 0;
         this.unsubscribers = [];
         try {
             this.unsubscribers.push(this.counters.subscribeChanges(change => {
@@ -104,6 +107,46 @@ class HotBoardReviewService {
         this.pump();
     }
 
+    probeSafety(checkpoint) {
+        const deferred = reason => ({ status: 'deferred', reason });
+        if (!this.running || !this.afk.isBoardReady()) return deferred('not_ready');
+        const expected = Protocol.safetyCheckpoint(checkpoint);
+        if (!expected || expected.phase !== 'hot' || expected.simulationLeaseId
+            || expected.simulationLeaseUntil > Date.now()
+            || !['legacy_main', 'cold_worker'].includes(expected.simulationOwner)) return deferred('ineligible');
+        const id = expected.characterId;
+        if (!Protocol.sameSafetyCheckpoint(expected, Protocol.safetyCheckpoint(this.life.hotRow(id)))) {
+            return deferred('changed_checkpoint');
+        }
+        // Intentional deferral and the actual native command cover this owner
+        // even if another callback has removed its queue input meanwhile.
+        if (this.events.pending.has(id) || this.events.inFlight.has(id) || this.inFlight?.id === id) {
+            return { status: 'covered', reason: 'pending' };
+        }
+        if (!this.events.ownerStatus(id).behind) return { status: 'covered', reason: 'current' };
+        const edge = this.events.edgeOf(id);
+        if (!edge) return deferred('unknown_input');
+        if (this.events.lastAcceptedEdge(id) === edge) return deferred('already_accepted');
+        const record = this.world.registeredActorById(id);
+        if (!usableOwner(record)) return deferred('owner_unavailable');
+        return { status: 'uncovered', checkpoint: expected, generation: this.generation,
+            coverageVersion: this.events.coverageVersion(id), edge,
+            token: record.token, session: record.session, actor: record.actor };
+    }
+
+    repairSafety(receipt) {
+        if (receipt?.status !== 'uncovered' || !Number.isSafeInteger(this.safetyRepairs + 1)) return false;
+        const current = this.probeSafety(receipt.checkpoint);
+        if (current.status !== 'uncovered' || current.generation !== receipt.generation
+            || current.coverageVersion !== receipt.coverageVersion || current.edge !== receipt.edge
+            || current.token !== receipt.token || current.session !== receipt.session || current.actor !== receipt.actor) return false;
+        this.events.acceptSafetyEdge(receipt.checkpoint.characterId, receipt.edge);
+        this.safetyRepairs++;
+        this.metrics.recordHotSafetyTotal(this.safetyRepairs);
+        this.pump();
+        return true;
+    }
+
     pump() {
         if (!this.running || !this.afk.isBoardReady() || this.scheduled || this.inFlight
             || !this.events.ready.size) return false;
@@ -126,7 +169,7 @@ class HotBoardReviewService {
         const started = performance.now();
         const complete = this.complete;
         const [id] = this.events.take(1);
-        const token = { generation };
+        const token = { generation, id };
         this.inFlight = token;
         try {
             const record = this.world.registeredActorById(id);
