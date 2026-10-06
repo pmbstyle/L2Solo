@@ -2,6 +2,15 @@
 
 const { SPOT_CELL_SIZE } = require('./WorldConstants');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
+const VIEWS = new Set(['actor', 'state']);
+
+function validateView(view) {
+    if (!VIEWS.has(view)) throw new RangeError('invalid_character_source_view');
+}
+
+function cellMembers() {
+    return { all: new Set(), hot: new Set(), cold: new Set(), player: new Set() };
+}
 
 function pointOf(loc) {
     const point = typeof loc === 'function' ? loc() : loc;
@@ -26,6 +35,7 @@ function memberships(record) {
 
 // One runtime index for characters, including future cold/spot adapters. Only
 // membership is cached: exact queries read the original live location reference.
+// Actor and state producers retain independent source slots for the same ID.
 class CharacterLocationIndex {
     constructor({ cellSize = SPOT_CELL_SIZE } = {}) {
         if (!Number.isFinite(cellSize) || cellSize <= 0) throw new RangeError('invalid_character_cell_size');
@@ -36,21 +46,32 @@ class CharacterLocationIndex {
     }
 
     put(record) {
-        if (!Number.isSafeInteger(record?.id) || record.id <= 0
+        return this.setSource(record?.id, 'actor', record);
+    }
+
+    setSource(id, view, record) {
+        validateView(view);
+        if (!Number.isSafeInteger(id) || id <= 0 || record?.id !== id
             || !record.source || (typeof record.source !== 'object' && typeof record.source !== 'function')) {
             throw new RangeError('invalid_character_source');
         }
         const point = pointOf(record.loc);
         const key = this.cellKey(point);
         const tags = memberships(record);
-        let entry = this.records.get(record.id);
+        let row = this.records.get(id);
+        let entry = row?.[view];
         if (entry && entry.source !== record.source) {
-            this.remove(record.id, entry.source);
+            this.removeSource(id, view, entry.source);
+            row = this.records.get(id);
             entry = null;
         }
+        if (!row) {
+            row = { id, actor: null, state: null };
+            this.records.set(id, row);
+        }
         if (!entry) {
-            entry = { id: record.id, source: record.source, record, key: null, phase: null, realPlayer: false, spotId: null };
-            this.records.set(record.id, entry);
+            entry = { id, view, source: record.source, record, key: null, phase: null, realPlayer: false, spotId: null };
+            row[view] = entry;
         }
         entry.record = record;
         this.refresh(entry, key, tags);
@@ -58,7 +79,12 @@ class CharacterLocationIndex {
     }
 
     update(id, source) {
-        const entry = this.records.get(id);
+        return this.updateSource(id, 'actor', source);
+    }
+
+    updateSource(id, view, source) {
+        validateView(view);
+        const entry = this.records.get(id)?.[view];
         if (!entry || entry.source !== source) return false;
         const point = pointOf(entry.record.loc);
         this.refresh(entry, this.cellKey(point), memberships(entry.record));
@@ -66,19 +92,36 @@ class CharacterLocationIndex {
     }
 
     remove(id, source) {
-        const entry = this.records.get(id);
+        return this.removeSource(id, 'actor', source);
+    }
+
+    removeSource(id, view, source) {
+        validateView(view);
+        const row = this.records.get(id);
+        const entry = row?.[view];
         if (!entry || entry.source !== source) return false;
         this.detachCell(entry);
         this.detachSpot(entry);
-        this.records.delete(id);
+        row[view] = null;
+        if (!row.actor && !row.state) this.records.delete(id);
         return true;
     }
 
     get(id) {
-        return this.records.get(id)?.record ?? null;
+        return this.getSource(id, 'actor');
+    }
+
+    getSource(id, view) {
+        validateView(view);
+        return this.records.get(id)?.[view]?.record ?? null;
     }
 
     near(loc, radius, { kind = 'all' } = {}) {
+        return this.nearSources(loc, radius, { view: 'actor', kind });
+    }
+
+    nearSources(loc, radius, { view = 'actor', kind = 'all' } = {}) {
+        validateView(view);
         if (!KINDS.has(kind)) throw new RangeError('invalid_character_query_kind');
         if (!Number.isFinite(radius) || radius < 0) throw new RangeError('invalid_character_radius');
         const point = pointOf(loc);
@@ -90,7 +133,7 @@ class CharacterLocationIndex {
         const records = [];
         for (let x = minX; x <= maxX; x += 1) {
             for (let y = minY; y <= maxY; y += 1) {
-                const candidates = this.cells.get(`${x}_${y}`)?.[kind];
+                const candidates = this.cells.get(`${x}_${y}`)?.[view]?.[kind];
                 if (!candidates) continue;
                 for (const entry of candidates) {
                     const current = pointOf(entry.record.loc);
@@ -106,7 +149,12 @@ class CharacterLocationIndex {
     }
 
     inSpot(spotId) {
-        return Array.from(this.spots.get(spotId) ?? [], (entry) => entry.record);
+        return this.inSpotSources(spotId, { view: 'actor' });
+    }
+
+    inSpotSources(spotId, { view = 'actor' } = {}) {
+        validateView(view);
+        return Array.from(this.spots.get(spotId)?.[view] ?? [], (entry) => entry.record);
     }
 
     clear() {
@@ -125,21 +173,23 @@ class CharacterLocationIndex {
             entry.key = key;
             entry.phase = tags.phase;
             entry.realPlayer = tags.realPlayer;
-            const cell = this.cells.get(key) ?? { all: new Set(), hot: new Set(), cold: new Set(), player: new Set() };
+            const cell = this.cells.get(key) ?? {};
+            const members = cell[entry.view] ?? cellMembers();
+            cell[entry.view] = members;
             this.cells.set(key, cell);
-            cell.all.add(entry);
-            cell[entry.phase].add(entry);
-            if (entry.realPlayer) cell.player.add(entry);
+            members.all.add(entry);
+            members[entry.phase].add(entry);
+            if (entry.realPlayer) members.player.add(entry);
         } else {
-            const cell = this.cells.get(key);
+            const members = this.cells.get(key)[entry.view];
             if (entry.phase !== tags.phase) {
-                cell[entry.phase].delete(entry);
-                cell[tags.phase].add(entry);
+                members[entry.phase].delete(entry);
+                members[tags.phase].add(entry);
                 entry.phase = tags.phase;
             }
             if (entry.realPlayer !== tags.realPlayer) {
-                if (tags.realPlayer) cell.player.add(entry);
-                else cell.player.delete(entry);
+                if (tags.realPlayer) members.player.add(entry);
+                else members.player.delete(entry);
                 entry.realPlayer = tags.realPlayer;
             }
         }
@@ -147,8 +197,10 @@ class CharacterLocationIndex {
             this.detachSpot(entry);
             entry.spotId = tags.spotId;
             if (entry.spotId !== null) {
-                const spot = this.spots.get(entry.spotId) ?? new Set();
-                spot.add(entry);
+                const spot = this.spots.get(entry.spotId) ?? {};
+                const members = spot[entry.view] ?? new Set();
+                spot[entry.view] = members;
+                members.add(entry);
                 this.spots.set(entry.spotId, spot);
             }
         }
@@ -156,18 +208,22 @@ class CharacterLocationIndex {
 
     detachCell(entry) {
         const cell = this.cells.get(entry.key);
-        if (!cell) return;
-        cell.all.delete(entry);
-        cell[entry.phase].delete(entry);
-        if (entry.realPlayer) cell.player.delete(entry);
-        if (!cell.all.size) this.cells.delete(entry.key);
+        const members = cell?.[entry.view];
+        if (!members) return;
+        members.all.delete(entry);
+        members[entry.phase].delete(entry);
+        if (entry.realPlayer) members.player.delete(entry);
+        if (!members.all.size) delete cell[entry.view];
+        if (!cell.actor && !cell.state) this.cells.delete(entry.key);
     }
 
     detachSpot(entry) {
         const spot = this.spots.get(entry.spotId);
-        if (!spot) return;
-        spot.delete(entry);
-        if (!spot.size) this.spots.delete(entry.spotId);
+        const members = spot?.[entry.view];
+        if (!members) return;
+        members.delete(entry);
+        if (!members.size) delete spot[entry.view];
+        if (!spot.actor && !spot.state) this.spots.delete(entry.spotId);
     }
 }
 
