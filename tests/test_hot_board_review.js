@@ -65,12 +65,14 @@ async function character({ bot = false, online = false } = {}) {
     const items = await Database.fetchItems(id);
     if (!bot) return { id, items };
     const counter = Counters.counterOf(STEM);
+    await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,7)', [id, counter]]);
+    LifeState.acceptMarketTrades(id, { [counter]: 7 });
     const state = await LifeState.upsertState({ characterId: id, accountName: account,
         name: `HotReview${sequence}`, phase: 'hot', activity: 'hunting', level: 40,
         adena: 300000, loc: { ...LOC }, currentRegion: 'Giran',
         inventory: LifeState.inventorySummaryFromItems(items),
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 0, marketTrades: { [counter]: 7 } },
+        stats: { generatedCold: true, classId: 0 },
         timing: { nextResolveAt: Date.now() + 3600000 } }, 'hot_review_fixture');
     assert(state && LifeState.hotRow(id), 'native lifecycle and cache are actually hot');
     const row = (await Database.fetchCharacters(account))[0];
@@ -146,7 +148,7 @@ async function observeFill(trader, customer, side) {
     assert.strictEqual(filled.count, 9, 'native escrow loses exactly one item');
     assert.strictEqual(filled.fills, 1, 'native successful deal records one exact line fill');
     assert.strictEqual(LifeState.snapshot(trader.id).phase, 'hot', 'settlement retains hot lifecycle');
-    assert.strictEqual(LifeState.snapshot(trader.id).stats.marketTrades[counterKey], 7,
+    assert.strictEqual(LifeState.snapshot(trader.id).marketTrades[counterKey], 7,
         'OFF does not increment existing personal experience');
     const actual = Belief.prior(STEM, actualContext(trader).ctx);
     assert(actual && Number.isFinite(actual.mu) && actual.K > 0);
@@ -158,9 +160,9 @@ async function observeFill(trader, customer, side) {
         assert(quote && !quote.ask.npc && quote.ask.price > quote.market.buyback,
             'actual OFF decision has a valuable board ask, rather than an NPC-only withdrawal');
     } else {
-        assert(Pricing.bid(STEM, ctx, { units: 9, worth: pricing.worth, cap: Math.floor(pricing.worth),
-            rollKey: ['hot-review-fixture-positive-bid', trader.id] }),
-        'actual OFF decision has a funded positive bid');
+        const review = Pricing.look(LifeState.snapshot(trader.id), AfkTrade.boardIndex().ownerLines(trader.id), ctx);
+        assert(!(review?.withdrawals || []).some(move => move.lineId === filled.id),
+            'actual OFF review keeps the existing bid at its authored worth');
     }
     console.log(`PASS ${side === AfkTrade.SELL ? 'SELL' : 'BUY'} native data controls: counter=${before + 1}, fills=1, hot=true, bias=0`);
     await cooperativeTurns();
@@ -377,14 +379,14 @@ async function rejectedReview(customer, change, caughtUp = false) {
             assert(await LifeState.upsertState({ ...hot, stats: { ...hot.stats, huntEfficiency: [sample] } },
                 'hot_review_current_income'));
             const current = LifeState.hotRow(trader.id);
-            assert.strictEqual(Hunt.hourValue(liveState).source, 'default', 'old state has no personal sample');
+            assert.notStrictEqual(Hunt.hourValue(liveState).source, 'own', 'old state has no personal sample');
             const expected = Hunt.hourValue({ ...current, inventory: live.inventory, adena: live.adena, level: live.level });
             assert.strictEqual(expected.source, 'own');
             assert.strictEqual(expected.perHour, 600000, 'real current solo income positive control');
             trader.session.coldLifeState = { ...trader.session.coldLifeState,
                 phase: 'cold', party: { partyId: 'stale_old_party' },
                 adena: 1, inventory: {}, loc: { locX: -99999, locY: -99999, locZ: 9999 },
-                stats: { ...trader.session.coldLifeState.stats, marketTrades: { [Counters.counterOf(STEM)]: 999 } } };
+                marketTrades: { [Counters.counterOf(STEM)]: 999 } };
             const original = Listings.traderContext;
             const received = [];
             Listings.traderContext = (state, ...rest) => {

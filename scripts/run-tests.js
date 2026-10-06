@@ -218,6 +218,7 @@ const tests = [
     'tests/test_llm_supply_errand.js',
     'tests/test_llm_configured_supply_store.js',
     'tests/test_afk_trade_database.js',
+    'tests/test_saved_market_counts.js',
     'tests/test_afk_trade_cold_lease.js',
     'tests/test_board_records.js',
     'tests/test_board_deal_atomicity.js',
@@ -994,6 +995,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_saved_market_counts.js',
     'tests/test_saved_warehouse_patch.js',
     'tests/test_spot_money_value.js',
     'tests/test_spot_table_stacks.js',

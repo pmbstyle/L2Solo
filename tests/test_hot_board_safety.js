@@ -39,12 +39,14 @@ async function character({ bot = false, online = false } = {}) {
     const items = await Database.fetchItems(id);
     if (!bot) return { id, items };
     const counter = Counters.counterOf(STEM);
+    await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,7)', [id, counter]]);
+    LifeState.acceptMarketTrades(id, { [counter]: 7 });
     const state = await LifeState.upsertState({ characterId: id, accountName: account,
         name: `HotSafety${sequence}`, phase: 'hot', activity: 'hunting', level: 40,
         adena: 300000, loc: { ...LOC }, currentRegion: 'Giran',
         inventory: LifeState.inventorySummaryFromItems(items),
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 0, marketTrades: { [counter]: 7 } },
+        stats: { generatedCold: true, classId: 0 },
         timing: { nextResolveAt: Date.now() + 3600000 } }, 'hot_review_fixture');
     assert(state && LifeState.hotRow(id), 'native lifecycle and cache are actually hot');
     const row = (await Database.fetchCharacters(account))[0];

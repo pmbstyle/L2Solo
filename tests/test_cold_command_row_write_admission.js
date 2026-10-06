@@ -150,12 +150,13 @@ async function manualAndPolicy() {
     const id=await seed(),state=Life.snapshot(id),request=requestFor(state);
     assert.equal((await Population.executeWorkerLifecycleCommand(state,request)).ok,true);
     const actual=Life.snapshot(id);
-    await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.marketTrades',json(?)) WHERE characterId=?",
-        [JSON.stringify({'material none':9}),id]]);
+    await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,9)', [id, 'material none']]);
+    Life.acceptMarketTrades(id, { 'material none': 9 });
     // Stale cached stats never replace DB-owned counts, even in manual saves.
     assert.equal((await Population.executeWorkerLifecycleCommand(actual,requestFor(actual))).ok,true);
     const stats=JSON.parse(facts(id).bot_life_state.find(row=>row.characterId===id).statsJson);
-    assert.deepEqual(stats.marketTrades,{'material none':9});assert.deepEqual(Life.cachedState(id).stats.marketTrades,stats.marketTrades);
+    assert.equal(stats.marketTrades,undefined);assert.deepEqual(Life.cachedState(id).marketTrades,{'material none':9});
+    assert.equal((await Database.execute(['SELECT deals FROM bot_market_counts WHERE characterId=? AND counter=?', [id, 'material none']]))[0].deals,9);
     const owner=await seed(),old=Life.snapshot(owner);
     assert.equal((await Owner.claimBatch([old],{allowLifecycle:true,leaseMs:120000})).grants.length,1);
     const claimed=facts(owner),result=await Population.executeWorkerLifecycleCommand(old,requestFor(old));

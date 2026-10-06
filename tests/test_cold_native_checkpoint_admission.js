@@ -439,6 +439,7 @@ const directCases = [
         const stats = { ...JSON.parse(row(original, id).statsJson), clanInventoryRevision: 5,
             marketTrades: { material: { D: 7 } } };
         await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), id]]);
+        await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,7)', [id, 'gear d']]);
         const statement = boundStatement(id, callback, 94, { clanInventoryRevision: 4, marketTrades: { malicious: 999 } });
         const before = facts(id), rejected = await Database.saveBotLifeState(statement, { beforeWrite: callback });
         assert.equal(rejected.affectedRows, 0); assert.deepEqual(facts(id), before);
@@ -447,7 +448,8 @@ const directCases = [
         const accepted = await Database.saveBotLifeState(boundStatement(id, callback, 95, { clanInventoryRevision: 5,
             marketTrades: { malicious: 999 }, priceBeliefs: { legacy: 1 } }), { beforeWrite: callback });
         assert.equal(accepted.affectedRows, 1);
-        assert.deepEqual(JSON.parse(accepted.statsJson).marketTrades, stats.marketTrades);
+        assert.equal(JSON.parse(accepted.statsJson).marketTrades, undefined);
+        assert.equal((await Database.execute(['SELECT deals FROM bot_market_counts WHERE characterId=? AND counter=?', [id, 'gear d']]))[0].deals, 7);
         assert.equal(JSON.parse(accepted.statsJson).priceBeliefs, undefined);
         await Database.updateCharacterVitals(id, 95, 100, 75, 100, { beforeWrite: callback });
         assert.equal(physical(facts(id), id).hp, 95);

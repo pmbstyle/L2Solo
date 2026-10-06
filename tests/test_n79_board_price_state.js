@@ -60,6 +60,15 @@ const getShop = async owner => (await Database.fetchAfkTradeShops(owner))[0];
 const getStats = async id => JSON.parse((await Database.execute([
     'SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]
 ]))[0].statsJson);
+const getCounts = async id => Object.fromEntries((await Database.execute([
+    'SELECT counter,deals FROM bot_market_counts WHERE characterId=?', [id]
+])).map(row => [row.counter, Number(row.deals)]));
+async function publishCounts(result) {
+    for (const [id, counts] of Object.entries(result.marketTrades || {})) LifeState.acceptMarketTrades(id, counts);
+    return result;
+}
+const buy = async (...args) => publishCounts(await Database.buyFromAfkTradeShop(...args));
+const sellInto = async (...args) => publishCounts(await Database.sellToAfkTradeShop(...args));
 const balance = async id => (await Database.fetchItems(id)).filter(item => Number(item.selfId) === 57)
     .reduce((sum, item) => sum + Number(item.amount), 0);
 const move = (shop, line = shop.lines[0]) => ({ recordId: shop.id, lineId: line.id,
@@ -78,11 +87,11 @@ async function run() {
         const owner = await makeBot([stem(10)]);
         const buyer = await makeBot([adena(2000)]);
         const shop = await sell(owner);
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner, lineId: shop.lines[0].id,
+        await buy(buyer, { shopId: shop.id, ownerId: owner, lineId: shop.lines[0].id,
             amount: 3, expectedPrice: 100, expectedRevision: shop.revision });
         assert.strictEqual((await getShop(owner)).lines[0].count, 7);
         assert.strictEqual(await balance(buyer), 1700);
-        await assert.rejects(Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await assert.rejects(buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3, expectedPrice: 100, expectedRevision: shop.revision }),
         /afk_trade_shop_changed/);
         assert.strictEqual((await Database.settleBoardOwner(owner)).settled, true);
@@ -145,7 +154,7 @@ async function run() {
         const owner = await makeBot([stem(10)]);
         const buyer = await makeBot([adena(2000)]);
         const shop = await sell(owner, { kind: 'sell_ad' });
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
         const before = await getShop(owner);
         const key = MarketCounters.counterOf(STEM);
@@ -159,7 +168,7 @@ async function run() {
         assert.deepStrictEqual(agreed.lines[0].pricing, { ...shop.lines[0].pricing, price: 110,
             seenCounter: totals.get(`boardCounterDealCount:${key}`), seenItem: totals.get(`boardDealCount:${STEM}`),
             rival: 95, seenFills: 1 }, 'external agreed quote kept evidence attributed to its old price');
-        await Database.buyFromAfkTradeShop(buyer, { shopId: agreed.id, ownerId: owner,
+        await buy(buyer, { shopId: agreed.id, ownerId: owner,
             lineId: agreed.lines[0].id, amount: 1, expectedPrice: 110, expectedRevision: agreed.revision });
         const filled = await getShop(owner);
         assert.strictEqual(filled.lines[0].fills, 2);
@@ -191,17 +200,17 @@ async function run() {
         const buyer = await makeBot([adena(2000)]);
         const shop = await sell(owner);
         const key = MarketCounters.counterOf(STEM);
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3 });
-        assert.strictEqual((await getStats(owner)).marketTrades?.[key], 1, 'seller own-deal count missing at trade commit');
-        assert.strictEqual((await getStats(buyer)).marketTrades?.[key], 1, 'buyer own-deal count missing at trade commit');
+        assert.strictEqual((await getCounts(owner))[key], 1, 'seller own-deal count missing at trade commit');
+        assert.strictEqual((await getCounts(buyer))[key], 1, 'buyer own-deal count missing at trade commit');
         await Database.flushJournals();
         await Database.settleBoardOwner(owner);
         await Database.settleBoardOwner(owner);
-        assert.strictEqual((await getStats(owner)).marketTrades[key], 1, 'journal/settlement replay learned twice');
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        assert.strictEqual((await getCounts(owner))[key], 1, 'journal/settlement replay learned twice');
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
-        assert.strictEqual((await getStats(owner)).marketTrades[key], 2, 'partial fills count deals, not sold units');
+        assert.strictEqual((await getCounts(owner))[key], 2, 'partial fills count deals, not sold units');
     });
 
     await check('leased cold owner retains learning when stale worker commits settlement', async () => {
@@ -211,7 +220,7 @@ async function run() {
         const leased = LifeState.cachedState(owner);
         const token = await Owner.claim(leased, { timestamp: Date.now(), leaseMs: 30000 });
         assert(token.ok);
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3 });
         const next = structuredClone(leased);
         next.stats.workerAfterDeal = true;
@@ -221,7 +230,7 @@ async function run() {
         assert(commit.settled);
         assert.strictEqual(await balance(owner), 400);
         const stats = await getStats(owner);
-        assert.strictEqual(stats.marketTrades?.[MarketCounters.counterOf(STEM)], 1,
+        assert.strictEqual((await getCounts(owner))[MarketCounters.counterOf(STEM)], 1,
             'worker stats overwrote its committed own deal');
         assert.strictEqual(stats.workerAfterDeal, true);
         assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS n FROM bot_life_state WHERE characterId = ?',
@@ -233,10 +242,10 @@ async function run() {
         const buyer = await makeBot([adena(1)], { player: true });
         const shop = await sell(owner, { count: 2, price: 0, state: null });
         assert.strictEqual(shop.lines[0].pricing, undefined, 'player line should carry no bot observation state');
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1, 'free fill still counts an actual line deal');
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
         assert.strictEqual(await getShop(owner), undefined);
         assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS n FROM afk_trade_lines WHERE shopId = ?',
@@ -250,7 +259,7 @@ async function run() {
         const shop = (await Database.createAfkTradeShop(owner, { storeType: 1, town: 'Giran',
             lines: sources.map(source => ({ objectId: source.id, selfId: STEM, name: 'Stem', count: 40,
                 enchant: source.enchant, price: 100, stackable: true, pricing: pricing(100) })) })).shop;
-        for (let i = 0; i < 25; i++) await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        for (let i = 0; i < 25; i++) await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
         const after = await getShop(owner);
         assert.deepStrictEqual(after.lines.map(line => line.fills), [25, 0], 'same-owner item tail cannot identify the exact line');
@@ -278,11 +287,11 @@ async function run() {
         const shop = await sell(owner);
         const before = (await Database.fetchRecentBoardDeals()).dealCounts.find(row => row.selfId === STEM)?.deals || 0;
         Config.knowledgeErrorsEnabled = false;
-        try { await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        try { await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3 }); }
         finally { Config.knowledgeErrorsEnabled = enabled; }
-        assert.strictEqual((await getStats(owner)).marketTrades, undefined);
-        assert.strictEqual((await getStats(buyer)).marketTrades, undefined);
+        assert.strictEqual(Object.keys(await getCounts(owner)).length, 0);
+        assert.strictEqual(Object.keys(await getCounts(buyer)).length, 0);
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1);
         assert.strictEqual((await Database.fetchRecentBoardDeals()).dealCounts.find(row => row.selfId === STEM).deals, before + 1);
     });
@@ -291,9 +300,9 @@ async function run() {
         const owner = await makeBot([stem(10)]);
         const buyer = await makeBot([adena(2000)]);
         const free = await sell(owner, { price: 0 });
-        await Database.buyFromAfkTradeShop(buyer, { shopId: free.id, ownerId: owner, lineId: free.lines[0].id, amount: 1 });
+        await buy(buyer, { shopId: free.id, ownerId: owner, lineId: free.lines[0].id, amount: 1 });
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1);
-        assert.strictEqual((await getStats(owner)).marketTrades, undefined);
+        assert.strictEqual(Object.keys(await getCounts(owner)).length, 0);
         await Database.closeAfkTradeShop(owner);
         const legacy = await sell(owner, { count: 5 });
         // New publication still refuses Adena. A legacy row exercises the
@@ -302,10 +311,10 @@ async function run() {
             lines: [{ selfId: 57, name: 'Adena', count: 1, price: 100 }] }), /invalid_afk_trade_line/);
         await Database.execute(["UPDATE afk_trade_lines SET selfId = 57, name = 'Adena' WHERE id = ?", [legacy.lines[0].id]]);
         const totals = (await Database.fetchRecentBoardDeals()).dealCounts;
-        await Database.buyFromAfkTradeShop(buyer, { shopId: legacy.id, ownerId: owner, lineId: legacy.lines[0].id, amount: 1 });
+        await buy(buyer, { shopId: legacy.id, ownerId: owner, lineId: legacy.lines[0].id, amount: 1 });
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1);
-        assert.strictEqual((await getStats(owner)).marketTrades, undefined);
-        assert.strictEqual((await getStats(buyer)).marketTrades, undefined);
+        assert.strictEqual(Object.keys(await getCounts(owner)).length, 0);
+        assert.strictEqual(Object.keys(await getCounts(buyer)).length, 0);
         assert.deepStrictEqual((await Database.fetchRecentBoardDeals()).dealCounts, totals);
     });
 
@@ -314,13 +323,13 @@ async function run() {
         const buyer = await makeBot([adena(2000)]);
         const oldState = structuredClone(LifeState.cachedState(owner));
         const shop = await sell(owner);
-        await Database.buyFromAfkTradeShop(buyer, { shopId: shop.id, ownerId: owner,
+        await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 3 });
         const saved = await LifeState.upsertState({ ...oldState, stats: { ...oldState.stats, anotherStat: 17 } }, 'n79_stale_stats');
         assert(saved);
-        assert.strictEqual(saved.stats.marketTrades?.[MarketCounters.counterOf(STEM)], 1);
-        assert.strictEqual(LifeState.cachedState(owner).stats.marketTrades[MarketCounters.counterOf(STEM)], 1);
-        assert.strictEqual((await getStats(owner)).marketTrades[MarketCounters.counterOf(STEM)], 1);
+        assert.strictEqual(saved.marketTrades[MarketCounters.counterOf(STEM)], 1);
+        assert.strictEqual(LifeState.cachedState(owner).marketTrades[MarketCounters.counterOf(STEM)], 1);
+        assert.strictEqual((await getCounts(owner))[MarketCounters.counterOf(STEM)], 1);
         assert.strictEqual(saved.stats.anotherStat, 17);
     });
 
@@ -349,11 +358,11 @@ async function run() {
         assert.deepStrictEqual(await getShop(owner), before, 'insufficient escrow must leave price and decision state together');
         const seller = await makeBot([stem(5)]);
         const objectId = (await Database.fetchItems(seller)).find(item => Number(item.selfId) === STEM).id;
-        await Database.sellToAfkTradeShop(seller, { ownerId: owner, shopId: after.id,
+        await sellInto(seller, { ownerId: owner, shopId: after.id,
             lineId: after.lines[0].id, objectId, amount: 1 });
         const key = MarketCounters.counterOf(STEM);
-        assert.strictEqual((await getStats(owner)).marketTrades[key], 1, 'BUY record owner learns as buyer');
-        assert.strictEqual((await getStats(seller)).marketTrades[key], 1, 'acting seller learns in the same transaction');
+        assert.strictEqual((await getCounts(owner))[key], 1, 'BUY record owner learns as buyer');
+        assert.strictEqual((await getCounts(seller))[key], 1, 'acting seller learns in the same transaction');
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1);
     });
 
@@ -367,29 +376,29 @@ async function run() {
             assert.strictEqual(await balance(buyer), 2000);
             assert.strictEqual((await getShop(owner)).lines[0].count, 10);
             assert.strictEqual((await getShop(owner)).lines[0].fills, 0);
-            assert.strictEqual((await getStats(owner)).marketTrades, undefined);
-            assert.strictEqual((await getStats(buyer)).marketTrades, undefined);
+            assert.strictEqual(Object.keys(await getCounts(owner)).length, 0);
+            assert.strictEqual(Object.keys(await getCounts(buyer)).length, 0);
             assert(!Database.boardSettlementOwners().includes(owner));
             assert.deepStrictEqual((await Database.fetchRecentBoardDeals()).dealCounts, totals);
         };
         await Database.execute([`CREATE TEMP TRIGGER n79_after_learning_failure
-            BEFORE UPDATE OF statsJson ON main.bot_life_state WHEN NEW.characterId = ${buyer}
+            BEFORE INSERT ON main.bot_market_counts WHEN NEW.characterId = ${buyer}
             BEGIN SELECT RAISE(ABORT, 'injected learning failure'); END`]);
-        try { await assert.rejects(Database.buyFromAfkTradeShop(buyer, purchase), /injected learning failure/); }
+        try { await assert.rejects(buy(buyer, purchase), /injected learning failure/); }
         finally { await Database.execute(['DROP TRIGGER temp.n79_after_learning_failure']); }
         await unchanged();
         await Database.execute(['CREATE TABLE n79_deferred (id INTEGER REFERENCES characters(id) DEFERRABLE INITIALLY DEFERRED)']);
         await Database.execute([`CREATE TEMP TRIGGER n79_commit_failure
-            AFTER UPDATE OF statsJson ON main.bot_life_state WHEN NEW.characterId = ${buyer}
+            AFTER INSERT ON main.bot_market_counts WHEN NEW.characterId = ${buyer}
             BEGIN INSERT INTO n79_deferred VALUES (99999999); END`]);
-        try { await assert.rejects(Database.buyFromAfkTradeShop(buyer, purchase), /FOREIGN KEY constraint failed/); }
+        try { await assert.rejects(buy(buyer, purchase), /FOREIGN KEY constraint failed/); }
         finally {
             await Database.execute(['DROP TRIGGER temp.n79_commit_failure']);
             await Database.execute(['DROP TABLE n79_deferred']);
         }
         await unchanged();
-        await Database.buyFromAfkTradeShop(buyer, purchase);
-        assert.strictEqual((await getStats(owner)).marketTrades[MarketCounters.counterOf(STEM)], 1);
+        await buy(buyer, purchase);
+        assert.strictEqual((await getCounts(owner))[MarketCounters.counterOf(STEM)], 1);
         assert.strictEqual((await getShop(owner)).lines[0].fills, 1);
     });
 

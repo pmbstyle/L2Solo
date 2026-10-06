@@ -24,7 +24,7 @@ function traderContext(state, deps = {}) {
     return {
         characterId: Number(state?.characterId || 0),
         understanding: trader.understanding,
-        marketTrades: state?.stats?.marketTrades || {},
+        marketTrades: state?.marketTrades || {},
         knowledgeEnabled: deps.knowledgeEnabled ?? PriceLearning.knowledgeEnabled(),
         trader,
         economy,

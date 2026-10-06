@@ -642,8 +642,8 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null,
         LifeState.acceptMarketTrades(Number(id), counts);
         const session = onlineSession(Number(id));
         for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
-            if (session?.[key]) session[key] = { ...session[key], stats: { ...session[key].stats,
-                marketTrades: LifeState.snapshot(Number(id))?.stats?.marketTrades || counts } };
+            if (session?.[key]) session[key] = { ...session[key],
+                marketTrades: LifeState.snapshot(Number(id))?.marketTrades || counts };
         }
         if (session) refreshPartyMemberships([session], invoke);
     }
@@ -1042,7 +1042,7 @@ async function init() {
     // Preserve already committed counters; the once-only marker prevents replay.
     invoke('GameServer/Bot/AI/KnowledgeLearning').stages();
     const experience = await Database.initializeBotMarketTrades('history');
-    (experience.rows || []).forEach(row => LifeState.acceptLifecycleRow(row));
+    (experience.rows || []).forEach(row => LifeState.acceptMarketTrades(row.characterId, row.marketTrades));
     await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));

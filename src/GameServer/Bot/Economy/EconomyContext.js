@@ -116,7 +116,7 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}) {
     const prices = new Map();
     const knowledgeEnabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
-        marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
+        marketTrades: state.marketTrades, knowledgeEnabled, board, timestamp };
     return { knowledgeEnabled, price: id => {
         read(id);
         if (!prices.has(Number(id))) {

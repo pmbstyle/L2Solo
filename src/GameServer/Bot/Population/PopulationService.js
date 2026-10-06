@@ -1428,7 +1428,7 @@ const PopulationService = {
         return {
             key: JSON.stringify([state.level, state.sp, state.adena, stats.classId, bag, stats.karma,
                 stats.deathCount, plan?.status, plan?.strategy, plan?.target?.selfId, stats.lastWarehouseDeposit?.at,
-                stats.lastWarehouseWithdrawal?.at, stats.marketTrades, stats.hennas]),
+                stats.lastWarehouseWithdrawal?.at, state.marketTrades, stats.hennas]),
             eligible: state.simulation?.ownerId === 'legacy_main' && !state.party?.partyId
                 && state.activity === 'hunting' && !stats.pveEncounter && !stats.pvpEncounter,
             items: [...new Set([...Object.keys(state.inventory || {}).map(Number),

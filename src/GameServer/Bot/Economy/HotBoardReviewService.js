@@ -181,7 +181,7 @@ class HotBoardReviewService {
                 activity: record.session.plan || hot.activity, loc: liveLocation(record.actor),
                 currentRegion: record.session.currentRegion || hot.currentRegion,
                 spotId: record.session.currentSpot?.id ?? hot.spotId,
-                stats: { ...hot.stats, classId: live.stats.classId, marketTrades: hot.stats?.marketTrades || {} } };
+                marketTrades: hot.marketTrades || {}, stats: { ...hot.stats, classId: live.stats.classId } };
             const ctx = this.listings.traderContext(state);
             const review = this.pricing.look(state, this.board.ownerLines(id), ctx);
             if (!review) { this.events.deferAfterCommand(id); return; }

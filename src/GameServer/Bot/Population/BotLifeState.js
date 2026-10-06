@@ -30,6 +30,7 @@ const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const workerProjectorRole = CharacterLocationRuntime.workerProjectorRole();
 const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index, workerProjectorRole });
+const marketCounts = new Map();
 
 function recentLimit(limit) {
     return Math.max(1, Math.min(2000, Number(limit) || 500));
@@ -475,6 +476,8 @@ function compactResolveDebug(debug = {}) {
 
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
+    delete stats.marketTrades;
+    delete stats.priceBeliefs;
     const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
     return ClanMembershipPolicy.reconcileState({
@@ -514,6 +517,7 @@ function normalize(row) {
             leaderId: stats.leaderId || null
         },
         stats,
+        marketTrades: marketCounts.get(Number(row.characterId)) || {},
         inventory,
         simulation: {
             ownerId: row.simulationOwner || 'legacy_main',
@@ -726,6 +730,13 @@ function setSessionSnapshotsPhase(session, phase) {
 }
 
 function save(row, options = {}) {
+    // ARCH-NOTE: strip retired counters even when an old caller supplies them on a new row.
+    const proposedStats = parseJson(row.statsJson, {});
+    if (proposedStats.marketTrades || proposedStats.priceBeliefs) {
+        delete proposedStats.marketTrades;
+        delete proposedStats.priceBeliefs;
+        row.statsJson = safeJson(proposedStats);
+    }
     // A hot row belongs to the actor in the world; only markCold hands it back
     // to the cold population. A cold row proposed over it comes from a job that
     // started while the bot was cold: reject it like the stale writers below.
@@ -734,7 +745,7 @@ function save(row, options = {}) {
         error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
         return Promise.reject(error);
     }
-    const proposed = { activity: row.activity, stats: parseJson(row.statsJson, {}) };
+    const proposed = { activity: row.activity, stats: proposedStats };
     const reconciled = ClanMembershipPolicy.reconcileState(ClanMembershipPolicy.preserveGoalInvalidation(
         proposed, cache.get(Number(row.characterId))?.stats));
     if (reconciled !== proposed) {
@@ -799,10 +810,7 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
-            statsJson = CASE WHEN json_type(${TABLE}.statsJson, '$.marketTrades') = 'object'
-                THEN json_set(json_remove(excluded.statsJson, '$.priceBeliefs'), '$.marketTrades',
-                    json(json_extract(${TABLE}.statsJson, '$.marketTrades')))
-                ELSE json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs') END,
+            statsJson = json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
             updatedAt = excluded.updatedAt
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
@@ -1547,6 +1555,14 @@ const BotLifeState = {
         initStarted = true;
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
+            .then(() => Database.fetchBotMarketCounts()).then((rows) => {
+                marketCounts.clear();
+                for (const row of rows) {
+                    const counts = marketCounts.get(Number(row.characterId)) || {};
+                    counts[row.counter] = Number(row.deals);
+                    marketCounts.set(Number(row.characterId), counts);
+                }
+            })
             // A process restart invalidates every in-process logical owner,
             // even when its wall-clock lease had time remaining. Reclaim the
             // rows before any legacy startup repair can touch them.
@@ -1657,11 +1673,12 @@ const BotLifeState = {
     // inventory/lease; delayed postcommit handlers cannot rewind later counts.
     acceptMarketTrades(characterId, counts) {
         const id = Number(characterId);
+        const merged = { ...(marketCounts.get(id) || {}) };
+        for (const [key, value] of Object.entries(counts)) merged[key] = Math.max(Number(merged[key] || 0), Number(value));
+        marketCounts.set(id, merged);
         const current = cache.get(id);
         if (!current) return null;
-        const merged = { ...(current.stats?.marketTrades || {}) };
-        for (const [key, value] of Object.entries(counts)) merged[key] = Math.max(Number(merged[key] || 0), Number(value));
-        const snapshot = { ...current, stats: { ...current.stats, marketTrades: merged } };
+        const snapshot = { ...current, marketTrades: merged };
         cache.set(id, snapshot);
         return snapshot;
     },

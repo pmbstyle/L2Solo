@@ -2,6 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const Database = invoke('Database');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-afk-trade.sqlite');

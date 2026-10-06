@@ -28,6 +28,8 @@ let shuttingDown = false;
 let closePromise = null;
 let databasePath;
 let historyPath;
+let boardDealCountsReady = false;
+let boardCounterCountsReady = false;
 let flushPendingCharacterWrites = null;
 const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
@@ -345,6 +347,8 @@ async function inTransaction(work, operation = 'transaction') {
             try {
                 connection.exec('ROLLBACK');
             } finally {
+                boardDealCountsReady = false;
+                boardCounterCountsReady = false;
                 for (const [ownerId, pending] of pendingSettlementUndo) {
                     if (pending) pendingSettlementOwners.add(ownerId);
                     else pendingSettlementOwners.delete(ownerId);
@@ -1417,6 +1421,23 @@ function applySchemaMigrations() {
             WHERE json_valid(statsJson) AND json_type(statsJson, '$.priceBeliefs') IS NOT NULL;
     `)]);
     migrations.push([58, () => require('./GameServer/Social/InteractionMemoryRows').install(connection)]);
+    migrations.push([59, () => connection.exec(`
+        CREATE TABLE IF NOT EXISTS bot_market_counts (
+            characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+            counter TEXT NOT NULL,
+            deals INTEGER NOT NULL,
+            PRIMARY KEY(characterId, counter)
+        );
+        INSERT INTO bot_market_counts(characterId, counter, deals)
+            SELECT life.characterId, counts.key, MAX(0, CAST(counts.value AS INTEGER))
+            FROM bot_life_state life JOIN characters c ON c.id=life.characterId,
+                json_each(life.statsJson, '$.marketTrades') counts
+            WHERE substr(c.username, 1, 4)='bot_' AND counts.type IN ('integer', 'real')
+            ON CONFLICT(characterId, counter) DO UPDATE SET deals=MAX(deals, excluded.deals);
+        UPDATE bot_life_state SET statsJson=json_remove(statsJson, '$.marketTrades')
+            WHERE json_type(statsJson, '$.marketTrades') IS NOT NULL;
+        INSERT OR IGNORE INTO world_meta(key,value) VALUES('botMarketCountsMoved','1');
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -2120,11 +2141,9 @@ function preserveColdVersionedStatsParsed(row, patch = {}) {
     const current = currentViews.plain;
     const incoming = next.statsJson === proposedRaw ? proposedViews.plain : jsonObject(next.statsJson);
     if (next.statsJson !== proposedRaw) stats = incoming;
-    // A worker may hold older stats while a trade commits its own-deal count.
-    if (current.marketTrades || incoming.marketTrades || incoming.priceBeliefs) {
-        if (current.marketTrades && typeof current.marketTrades === 'object' && !Array.isArray(current.marketTrades)) {
-            incoming.marketTrades = current.marketTrades;
-        } else delete incoming.marketTrades;
+    // ARCH-NOTE: old workers can still carry the retired counters; the row table owns them now.
+    if (incoming.marketTrades || incoming.priceBeliefs) {
+        delete incoming.marketTrades;
         delete incoming.priceBeliefs;
         next.statsJson = JSON.stringify(incoming);
         stats = incoming;
@@ -2605,7 +2624,8 @@ function updateLinePricingUnsafe(line, pricing) {
 }
 
 function ensureBoardDealCountsUnsafe() {
-    if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) return;
+    if (boardDealCountsReady) return;
+    if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) { boardDealCountsReady = true; return; }
     // A queued world write freezes the outbox while one history query counts
     // the union. Rows already transferred but not yet deleted count once.
     const pending = all("SELECT payload FROM history_outbox WHERE kind = 'market_trade' ORDER BY id")
@@ -2623,11 +2643,13 @@ function ensureBoardDealCountsUnsafe() {
     for (const { selfId, deals } of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
         [`${BOARD_DEAL_COUNT_PREFIX}${Number(selfId)}`, String(deals)]);
     write("INSERT INTO world_meta (key, value) VALUES ('boardDealCountsReady', '1')");
+    boardDealCountsReady = true;
 }
 
 function ensureBoardCounterCountsUnsafe() {
     ensureBoardDealCountsUnsafe();
-    if (one("SELECT value FROM world_meta WHERE key = 'boardCounterCountsReady'")) return;
+    if (boardCounterCountsReady) return;
+    if (one("SELECT value FROM world_meta WHERE key = 'boardCounterCountsReady'")) { boardCounterCountsReady = true; return; }
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
     if (!invoke('GameServer/DataCache').items?.length) throw new Error('board_market_data_not_ready');
     const totals = new Map();
@@ -2638,6 +2660,7 @@ function ensureBoardCounterCountsUnsafe() {
     for (const [key, count] of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
         [`${BOARD_COUNTER_COUNT_PREFIX}${key}`, String(count)]);
     write("INSERT INTO world_meta (key, value) VALUES ('boardCounterCountsReady', '1')");
+    boardCounterCountsReady = true;
 }
 
 function initialLinePricingUnsafe(selfId, price, storeType) {
@@ -2649,22 +2672,16 @@ function initialLinePricingUnsafe(selfId, price, storeType) {
         rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0 };
 }
 
-function learnBoardTradeUnsafe(trade) {
+function learnBoardTradeUnsafe(trade, participants) {
     if (!boardTradeEligible(trade)) return {};
     if (!invoke('GameServer/Bot/Economy/PriceLearning').knowledgeEnabled()) return {};
     const counter = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(trade.selfId);
     const rows = {};
-    for (const id of new Set([trade.sellerCharacterId, trade.buyerCharacterId].map(Number).filter(Boolean))) {
-        const row = one(`SELECT life.statsJson FROM bot_life_state life JOIN characters c ON c.id = life.characterId
-            WHERE life.characterId = ? AND substr(c.username, 1, 4) = 'bot_'`, [id]);
-        if (!row) continue;
-        const stats = jsonObject(row.statsJson);
-        const counts = stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)
-            ? { ...stats.marketTrades } : {};
-        counts[counter] = Math.max(0, Number(counts[counter]) || 0) + 1;
-        stats.marketTrades = counts;
-        write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), id]);
-        rows[id] = counts;
+    for (const [id, participant] of participants) {
+        if (!BoardRules.isBotAccount(participant?.username) || rows[id]) continue;
+        const row = one(`INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,1)
+            ON CONFLICT(characterId,counter) DO UPDATE SET deals=deals+1 RETURNING deals`, [id, counter]);
+        rows[id] = { [counter]: Number(row.deals) };
     }
     return rows;
 }
@@ -3281,6 +3298,8 @@ const Database = {
     reconcileBotClanGoals: ClanMembership.reconcileGoals,
     init(callback = () => {}) {
         try {
+            boardDealCountsReady = false;
+            boardCounterCountsReady = false;
             shuttingDown = false;
             closePromise = null;
             databasePath = databaseFile();
@@ -3609,17 +3628,21 @@ const Database = {
                 }
             }
             const rows = [];
-            for (const life of all(`SELECT life.characterId, life.statsJson FROM bot_life_state life
+            for (const life of all(`SELECT life.characterId FROM bot_life_state life
                 JOIN characters c ON c.id = life.characterId WHERE substr(c.username, 1, 4) = 'bot_'`)) {
-                const stats = jsonObject(life.statsJson);
-                if (stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)) continue;
-                stats.marketTrades = totals.get(Number(life.characterId)) || {};
-                write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), life.characterId]);
-                rows.push(normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [life.characterId])));
+                if (one('SELECT 1 FROM bot_market_counts WHERE characterId=? LIMIT 1', [life.characterId])) continue;
+                const counts = totals.get(Number(life.characterId)) || {};
+                for (const [counter, deals] of Object.entries(counts)) write(
+                    'INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,?)', [life.characterId, counter, deals]);
+                rows.push({ characterId: Number(life.characterId), marketTrades: counts });
             }
             write("INSERT INTO world_meta (key, value) VALUES ('botMarketTradesInitialized', ?)", [mode]);
             return { skipped: false, mode, rows };
         }, 'board:own-trades-initialize'));
+    },
+
+    fetchBotMarketCounts() {
+        return run('SELECT characterId,counter,deals FROM bot_market_counts', [], 'board:own-counts', true);
     },
 
     fetchRecentBoardDeals({ perItem = 32, rangeMs = 24 * 60 * 60 * 1000 } = {}) {
@@ -3644,6 +3667,8 @@ const Database = {
                     connection.exec('COMMIT');
                 } catch (error) {
                     connection.exec('ROLLBACK');
+                    boardDealCountsReady = false;
+                    boardCounterCountsReady = false;
                     throw error;
                 }
             }
@@ -4113,7 +4138,7 @@ const Database = {
                 itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
             }));
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
-            const buyer = one('SELECT name FROM characters WHERE id = ?', [buyerId]);
+            const buyer = one('SELECT name, username FROM characters WHERE id = ?', [buyerId]);
             const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
                 eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: botOwned ? 'bot_wts' : 'player_wts',
@@ -4123,7 +4148,7 @@ const Database = {
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
             }, { unique: true });
             const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
-                sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId });
+                sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId }, [[Number(shop.ownerId), owner], [buyerId, buyer]]);
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
@@ -4181,7 +4206,7 @@ const Database = {
                 shopId, ownerId: shop.ownerId, counterpartyId: sellerId, kind: 'purchase', selfId: line.selfId,
                 itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
             }));
-            const seller = one('SELECT name FROM characters WHERE id = ?', [sellerId]);
+            const seller = one('SELECT name, username FROM characters WHERE id = ?', [sellerId]);
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
             const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
@@ -4192,7 +4217,7 @@ const Database = {
                 buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
             }, { unique: true });
             const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
-                sellerCharacterId: sellerId, buyerCharacterId: shop.ownerId });
+                sellerCharacterId: sellerId, buyerCharacterId: shop.ownerId }, [[sellerId, seller], [Number(shop.ownerId), owner]]);
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
             return {
