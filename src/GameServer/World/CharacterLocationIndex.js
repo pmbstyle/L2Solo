@@ -51,16 +51,17 @@ class CharacterLocationIndex {
         return this.setSource(record?.id, 'actor', record);
     }
 
-    setSource(id, view, record) {
+    setSource(id, view, record, { indexed = true } = {}) {
         validateView(view);
+        if (typeof indexed !== 'boolean') throw new TypeError('invalid_character_source_mode');
         const legacy = view === 'state' && this.legacyStateCache;
         const sameId = record?.id === id || (legacy && Number.isNaN(id) && Number.isNaN(record?.id));
         if ((!legacy && (!Number.isSafeInteger(id) || id <= 0)) || !sameId
             || !record?.source || (typeof record.source !== 'object' && typeof record.source !== 'function')) {
             throw new RangeError('invalid_character_source');
         }
-        const point = pointOf(record.loc);
-        const key = this.cellKey(point, view);
+        const point = indexed ? pointOf(record.loc) : null;
+        const key = indexed ? this.cellKey(point, view) : null;
         const tags = memberships(record);
         let row = this.records.get(id);
         let entry = row?.[view];
@@ -74,11 +75,12 @@ class CharacterLocationIndex {
             this.records.set(id, row);
         }
         if (!entry) {
-            entry = { id, view, source: record.source, record, key: null, phase: null, realPlayer: false, spotId: null };
+            entry = { id, view, source: record.source, record, indexed: false,
+                key: null, phase: null, realPlayer: false, spotId: null };
             row[view] = entry;
         }
         entry.record = record;
-        this.refresh(entry, key, tags, point);
+        this.refresh(entry, key, tags, point, indexed);
         return record;
     }
 
@@ -86,12 +88,15 @@ class CharacterLocationIndex {
         return this.updateSource(id, 'actor', source);
     }
 
-    updateSource(id, view, source) {
+    updateSource(id, view, source, { indexed } = {}) {
         validateView(view);
         const entry = this.records.get(id)?.[view];
         if (!entry || entry.source !== source) return false;
-        const point = pointOf(entry.record.loc);
-        this.refresh(entry, this.cellKey(point, view), memberships(entry.record), point);
+        const nextIndexed = indexed === undefined ? entry.indexed : indexed;
+        if (typeof nextIndexed !== 'boolean') throw new TypeError('invalid_character_source_mode');
+        const point = nextIndexed ? pointOf(entry.record.loc) : null;
+        const key = nextIndexed ? this.cellKey(point, view) : null;
+        this.refresh(entry, key, memberships(entry.record), point, nextIndexed);
         return true;
     }
 
@@ -200,7 +205,18 @@ class CharacterLocationIndex {
         return `${cellCoordinate(point.locX, this.cellSize)}_${cellCoordinate(point.locY, this.cellSize)}`;
     }
 
-    refresh(entry, key, tags, point) {
+    refresh(entry, key, tags, point, indexed) {
+        if (!indexed) {
+            this.detachCell(entry);
+            this.detachSpot(entry);
+            entry.key = null;
+            entry.phase = tags.phase;
+            entry.realPlayer = tags.realPlayer;
+            entry.spotId = null;
+            entry.indexed = false;
+            return;
+        }
+        entry.indexed = true;
         if (entry.key !== key) {
             this.detachCell(entry);
             entry.key = key;
