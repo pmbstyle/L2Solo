@@ -1782,7 +1782,44 @@ class ColdSimulationKernel {
         for (const entry of this.alarms.values()) this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
         await this.resolveChain.catch(() => null);
         this.flush(null, true);
-        return this.snapshot();
+        return this.heartbeatSnapshot();
+    }
+
+    heartbeatSnapshot() {
+        const now = this.now(), head = this.heap.peek();
+        const scheduled = head && head.kind !== 'alarm' ? this.scheduleTokens.get(Number(head.characterId)) : null;
+        const current = !!head && (head.kind === 'alarm'
+            ? this.alarms.get(head.alarmKey) === head
+            : this.validHeapEntry(head) && scheduled?.version === head.version && scheduled.heapEntry === head);
+        const dueAt = head ? Number(head.dueAt) : null;
+        const oldestDirtyAt = [...this.dirty.values()].reduce((oldest, proposal) => (
+            Math.min(oldest, Number(proposal.enqueuedAt || now))
+        ), now);
+        const oldestCommandAt = [...this.commandStartedAt.values()].reduce((oldest, startedAt) => (
+            Math.min(oldest, Number(startedAt || now))
+        ), now);
+        return {
+            ...this.stats,
+            states: this.states.size,
+            heap: this.heap.size,
+            queueHead: {
+                kind: !head ? 'empty' : head.kind === 'alarm' ? 'alarm' : 'normal',
+                dueAt,
+                overdue: !!head && dueAt <= now,
+                ageMs: head ? Math.max(0, now - dueAt) : 0,
+                current
+            },
+            claiming: this.claiming.size,
+            inFlight: this.inFlight.size,
+            dirty: this.dirty.size,
+            dirtyAgeMs: this.dirty.size ? Math.max(0, now - oldestDirtyAt) : 0,
+            commanding: this.commanding.size,
+            commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
+            maxInFlight: this.maxInFlight,
+            maxAtomicPartySize: this.maxAtomicPartySize,
+            paused: this.paused,
+            stopping: this.stopping
+        };
     }
 
     snapshot() {
