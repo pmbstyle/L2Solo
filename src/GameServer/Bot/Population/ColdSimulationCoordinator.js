@@ -32,6 +32,9 @@ const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
 
 const ColdTrip = require('./ColdTrip');
+// Private main-thread provenance survives the queue's shallow clone but is
+// excluded from JSON/wire sizing and cannot be supplied by a Worker message.
+const PROPOSAL_SOURCE = Symbol('cold-proposal-source');
 const OWNERSHIP_REBASE_REASONS = new Set([
     'stale_revision',
     'cas_failed',
@@ -491,7 +494,7 @@ class ColdSimulationCoordinator {
             await this.handleClaimRequest(message).catch((error) => this.recordError(error));
             break;
         case 'proposal_batch':
-            this.handleProposalBatch(message);
+            this.handleProposalBatch(message, worker, epoch);
             break;
         case 'party_formation_proposal': {
             const waiter = this.waiters.get(message.msgId);
@@ -1432,11 +1435,13 @@ class ColdSimulationCoordinator {
         });
     }
 
-    handleProposalBatch(message) {
+    handleProposalBatch(message, worker = this.worker, epoch = this.workerEpoch) {
         if (message.payload.capacityBlocked === true) this.queue.capacityBlocked = true;
         const rejected = [];
         const sizes = message.payload.proposalBytes;
+        const source = Object.freeze({ worker, epoch });
         (message.payload.proposals || []).forEach((proposal, index) => {
+            proposal[PROPOSAL_SOURCE] = source;
             const tokenValid = Protocol.validateToken(proposal.token);
             if (!tokenValid.ok || Number(proposal.characterId) !== Number(proposal.token?.characterId)) {
                 rejected.push({ ok: false, characterId: Number(proposal.characterId || 0), reason: tokenValid.reason || 'token_character', proposal });
@@ -1589,20 +1594,39 @@ class ColdSimulationCoordinator {
     }
 
     async handleCommitResults(results = []) {
+        const worker = this.worker, epoch = this.workerEpoch;
+        results = results.filter(result => {
+            const source = result.proposal?.[PROPOSAL_SOURCE];
+            return !source || (source.worker === worker && source.epoch === epoch);
+        });
+        if (!results.length) {
+            this.tableChannel.flush();
+            return;
+        }
         const releaseTokens = results.filter((result) => !result.ok && result.proposal?.token).map((result) => result.proposal.token);
         if (releaseTokens.length) await ColdSimulationOwner.releaseBatch(releaseTokens, { releaseInvalidated: true }).catch(() => []);
+        if (this.worker !== worker || this.workerEpoch !== epoch) {
+            this.tableChannel.flush();
+            return;
+        }
         const index = this.contextIndex({ compactPartyMembers: true });
-        const acknowledgements = results.map((result) => {
+        const acknowledgements = results.flatMap((result) => {
+            const inputToken = Protocol.leaseRenewalToken(result.proposal?.token);
+            const proposalId = result.proposal?.proposalId;
+            if (!inputToken || inputToken.characterId !== Number(result.characterId)
+                || typeof proposalId !== 'string' || !proposalId || proposalId.length > 240) return [];
             const state = LifeState.cachedState(result.characterId) || result.nextState || result.proposal?.baseState || null;
-            return {
+            return [{
                 ok: !!result.ok,
                 characterId: Number(result.characterId),
+                inputToken,
+                proposalId,
                 reason: result.reason || (result.ok ? 'committed' : 'rejected'),
                 revision: result.revision,
                 raidStepId: result.proposal?.raidStepId,
                 state,
                 context: state ? this.contextFor(state, index) : {}
-            };
+            }];
         });
         // Table changes reach the worker before the commits that made them.
         this.tableChannel.flush();
@@ -1610,12 +1634,24 @@ class ColdSimulationCoordinator {
     }
 
     async handleReleaseRequest(message) {
+        const worker = this.worker, epoch = this.workerEpoch;
         const tokens = (message.payload.releases || []).map((entry) => entry.token).filter(Boolean);
+        const original = new Map();
+        for (const token of tokens) {
+            const inputToken = Protocol.leaseRenewalToken(token);
+            if (!inputToken) continue;
+            // Ambiguous repeated ids cannot identify an original request.
+            original.set(inputToken.characterId, original.has(inputToken.characterId) ? null : inputToken);
+        }
         const released = await ColdSimulationOwner.releaseBatch(tokens, { releaseInvalidated: true }).catch(() => []);
+        if (this.worker !== worker || this.workerEpoch !== epoch) return;
         const index = this.contextIndex({ compactPartyMembers: true });
-        const results = released.map((result) => {
+        const results = released.flatMap((result) => {
+            const inputToken = original.get(Number(result.characterId));
+            if (!inputToken) return [];
             const state = LifeState.cachedState(result.characterId);
-            return { ...result, state, context: state ? this.contextFor(state, index) : {} };
+            return [{ ...result, inputToken, releaseRequestId: message.msgId,
+                state, context: state ? this.contextFor(state, index) : {} }];
         });
         this.postCollections('release_ack', { results }, message.msgId);
     }
