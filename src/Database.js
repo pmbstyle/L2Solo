@@ -14,6 +14,7 @@ const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
 const BoardRules = require('./GameServer/AfkTrade/BoardRules');
 const BotErrands = require('./GameServer/Bot/Population/BotErrands');
 const ColdProtocol = require('./GameServer/Bot/Population/ColdSimulationProtocol');
+const NativeWriteCheckpoint = require('./GameServer/Bot/Population/NativeWriteCheckpoint');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -1436,8 +1437,8 @@ function write(sql, params = []) {
 
 // Capture before a native flush can await; skill writers capture at their call.
 // Each admitted writer keeps its original SQL queue.
-function captureWriteAdmission(options, errorCode) {
-    let beforeWrite, present = false, captureFailed = false, captureError;
+function captureWriteAdmission(options, errorCode, characterId, rowStatement = null) {
+    let beforeWrite, nativeProof, present = false, captureFailed = false, captureError;
     try {
         if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError(errorCode);
         const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
@@ -1447,15 +1448,17 @@ function captureWriteAdmission(options, errorCode) {
                 throw new TypeError(errorCode);
             }
             beforeWrite = descriptor.value;
+            nativeProof = rowStatement ? NativeWriteCheckpoint.captureRow(beforeWrite, rowStatement)
+                : NativeWriteCheckpoint.capture(beforeWrite, characterId);
         } else if ('beforeWrite' in options) throw new TypeError(errorCode);
     } catch (error) {
         captureFailed = true;
         captureError = error;
     }
-    return Object.freeze({ beforeWrite, present, captureFailed, captureError, errorCode });
+    return Object.freeze({ beforeWrite, nativeProof, present, captureFailed, captureError, errorCode });
 }
 
-function checkCapturedWriteAdmission(admission) {
+function checkCapturedWriteAdmission(admission, characterId) {
     if (admission.captureFailed) throw admission.captureError;
     if (admission.present) {
         const beforeWrite = admission.beforeWrite;
@@ -1465,18 +1468,23 @@ function checkCapturedWriteAdmission(admission) {
             throw new TypeError(admission.errorCode);
         }
     }
+    if (admission.nativeProof) {
+        NativeWriteCheckpoint.checkTarget(admission.nativeProof, characterId);
+        NativeWriteCheckpoint.check(admission.nativeProof, one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')}
+            FROM bot_life_state WHERE characterId = ?`, [characterId]));
+    }
 }
 
 function guardedNativeWrite(sql, params, operation, admission) {
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation})`);
-        checkCapturedWriteAdmission(admission);
+        checkCapturedWriteAdmission(admission, params[params.length - 1]);
         return write(sql, params);
     }, { operation, read: false });
 }
 
 function guardedSkillWrite(sql, params, operation, options = {}) {
-    return guardedNativeWrite(sql, params, operation, captureWriteAdmission(options, 'invalid_skill_before_write'));
+    return guardedNativeWrite(sql, params, operation, captureWriteAdmission(options, 'invalid_skill_before_write', params[params.length - 1]));
 }
 
 const GENERATED_BOT_FILTER = `(
@@ -3189,41 +3197,33 @@ const Database = {
     // The lifecycle save's protected stats and its cache row are read from
     // the same queued statement; a later trade cannot slip between them.
     saveBotLifeState(statement, options = {}) {
-        let beforeWrite, present = false, captureFailed = false, captureError;
-        // Capture authority at enqueue time, not from a mutable bag when the
-        // existing SQL tail finally reaches this job.
-        try {
-            if (!options || typeof options !== 'object' || Array.isArray(options)) {
-                throw new TypeError('invalid_bot_life_before_write');
-            }
-            const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
-            if (descriptor) {
-                present = true;
-                if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
-                    throw new TypeError('invalid_bot_life_before_write');
-                }
-                beforeWrite = descriptor.value;
-            } else if ('beforeWrite' in options) {
-                throw new TypeError('invalid_bot_life_before_write');
-            }
-        } catch (error) {
-            captureFailed = true;
-            captureError = error;
-        }
+        const admission = captureWriteAdmission(options, 'invalid_bot_life_before_write', null, statement);
         return enqueue(() => {
-            if (captureFailed) throw captureError;
-            if (present) {
-                const verdict = beforeWrite();
-                if (verdict !== undefined) {
-                    // Async completion cannot admit SQL. Observe only native
-                    // Promise rejection; arbitrary thenables stay untouched.
-                    if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
-                    throw new TypeError('invalid_bot_life_before_write');
-                }
-            }
-            const row = one(`${statement[0]} RETURNING statsJson`, statement[1] || []);
+            if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
+            checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
+            const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson` : 'statsJson';
+            const row = one(`${statement[0]} RETURNING ${returning}`, statement[1] || []);
+            if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
             return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
         }, { operation: 'bot-life:save', read: false });
+    },
+
+    publishBotResolvedState(characterId, options, publish) {
+        const admission = captureWriteAdmission(options, 'invalid_bot_resolve_publication', characterId);
+        return enqueue(() => {
+            if (!connection) throw new Error('SQLite is not initialized (bot-life:resolve-publication)');
+            checkCapturedWriteAdmission(admission, characterId);
+            if (!admission.nativeProof || typeof publish !== 'function') throw new TypeError('invalid_bot_resolve_publication');
+            const result = publish();
+            if (result instanceof Promise) {
+                Promise.prototype.then.call(result, undefined, () => {});
+                throw new TypeError('invalid_bot_resolve_publication');
+            }
+            if (result && (typeof result === 'object' || typeof result === 'function') && 'then' in result) {
+                throw new TypeError('invalid_bot_resolve_publication');
+            }
+            return result;
+        }, { operation: 'bot-life:resolve-publication', read: true });
     },
 
     transferBuffServiceAdena({ payerId, providerId, amount, expectedSpotId = null } = {}) {
@@ -5247,10 +5247,10 @@ const Database = {
 
     // reason names the bot action for the economy journal (e.g. 'npc_liquidation').
     syncInventorySummary(characterId, inventory = {}, reason = null, options = {}) {
-        const admission = captureWriteAdmission(options, 'invalid_inventory_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_inventory_before_write', characterId);
         return withCharacterFlush(characterId, () => inTransaction(
             () => {
-                checkCapturedWriteAdmission(admission);
+                checkCapturedWriteAdmission(admission, characterId);
                 return syncInventorySummaryUnsafe(characterId, inventory);
             },
             reason ? `inventory:sync-summary:${reason}` : 'inventory:sync-summary'
@@ -8652,14 +8652,14 @@ const Database = {
         }, 'bot-life:generated-appearance'));
     },
     updateColdCharacterExperience(id, level, exp, sp, options = {}) {
-        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
         return withCharacterFlush(id, () => guardedNativeWrite(`UPDATE characters
             SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
                 level = ?, exp = ?, sp = ? WHERE id = ?`,
             [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {
-        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
         return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "level" = ?, "exp" = ?, "sp" = ? WHERE id = ?',
             [level, exp, sp, id], 'character:experience', admission));
     },
@@ -8682,9 +8682,9 @@ const Database = {
     },
     applyCharacterDeathExperience(record, options = {}) {
         const id = Number(record.characterId);
-        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
         return withCharacterFlush(id, () => inTransaction(() => {
-            checkCapturedWriteAdmission(admission);
+            checkCapturedWriteAdmission(admission, id);
             const existing = one('SELECT * FROM character_death_experience WHERE characterId = ?', [id]);
             const character = one('SELECT level, exp, sp FROM characters WHERE id = ?', [id]);
             if (!character) throw new Error(`death experience character missing: ${id}`);
@@ -8719,9 +8719,9 @@ const Database = {
     restoreCharacterDeathExperience(id, restorePercent, resolvedAt = Date.now(), options = {}) {
         const characterId = Number(id);
         const percent = Math.max(0, Math.min(100, Number(restorePercent) || 0));
-        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', characterId);
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            checkCapturedWriteAdmission(admission);
+            checkCapturedWriteAdmission(admission, characterId);
             const death = one('SELECT * FROM character_death_experience WHERE characterId = ?', [characterId]);
             if (!death || Number(death.pendingRestoration) !== 1) return null;
             const character = one('SELECT level, exp, sp FROM characters WHERE id = ?', [characterId]);
@@ -8739,21 +8739,21 @@ const Database = {
     },
     clearCharacterDeathExperience(id, reason = 'invalidated', resolvedAt = Date.now(), options = {}) {
         const characterId = Number(id);
-        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', characterId);
         return withCharacterFlush(characterId, () => guardedNativeWrite(`UPDATE character_death_experience
             SET pendingRestoration = 0, resolvedAt = ?, resolutionReason = ?
             WHERE characterId = ? AND pendingRestoration = 1`,
         [resolvedAt, String(reason || 'invalidated'), characterId], 'character:death-exp-clear', admission));
     },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
-        const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write', id);
         return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "hp" = ?, "maxHp" = ?, "mp" = ?, "maxMp" = ? WHERE id = ?',
             [hp, maxHp, mp, maxMp, id], 'character:vitals', admission));
     },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
     updateCharacterClassId(id, classId, options = {}) {
-        const admission = captureWriteAdmission(options, 'invalid_class_before_write');
+        const admission = captureWriteAdmission(options, 'invalid_class_before_write', id);
         return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "classId" = ? WHERE id = ?',
             [classId, id], 'character:class', admission));
     }

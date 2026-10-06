@@ -14,6 +14,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
+const NativeWriteCheckpoint = require('./NativeWriteCheckpoint');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -754,7 +755,7 @@ function save(row, options = {}) {
     }
     const beforeWrite = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
     const databaseOptions = beforeWrite ? Object.defineProperty({}, 'beforeWrite', beforeWrite) : undefined;
-    return Database.saveBotLifeState([
+    const statement = [
         `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
             spotId, activity, phase, activityStartedAt, nextResolveAt,
@@ -831,7 +832,9 @@ function save(row, options = {}) {
             row.statsJson,
             row.updatedAt
         ]
-    ], databaseOptions).then((result) => {
+    ];
+    NativeWriteCheckpoint.bindRow(beforeWrite?.value, statement, row.characterId);
+    return Database.saveBotLifeState(statement, databaseOptions).then((result) => {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
@@ -2507,7 +2510,7 @@ const BotLifeState = {
         // The cached input remains current until this resolve publishes its
         // own snapshot. Recheck that capability at assigned native writers.
         const nativeWriteOptions = options.persist !== false && workerOptions ? {
-            beforeWrite: () => checkWorkerCommandAdmission({ characterId }, workerOptions)
+            beforeWrite: NativeWriteCheckpoint.create(characterId, workerOptions)
         } : undefined;
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
@@ -2557,9 +2560,7 @@ const BotLifeState = {
                 }
                 const row = rowFromState(profiledState);
                 const characterId = row.characterId;
-                return save(row, workerOptions ? {
-                    beforeWrite: () => checkWorkerCommandAdmission({ characterId }, workerOptions)
-                } : undefined)
+                return save(row, nativeWriteOptions)
                     .then(() => {
                         const deathRecord = profiledState.stats?.deathExperience;
                         if (newDeath && deathRecord?.pendingRestoration) {
@@ -2590,16 +2591,18 @@ const BotLifeState = {
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve', nativeWriteOptions))
                     .then(() => {
-                        if (workerOptions) checkWorkerCommandAdmission({ characterId }, workerOptions);
-                        const snapshot = normalize(row);
-                        cache.set(snapshot.characterId, snapshot);
-                        notifyColdSnapshot(snapshot, nextActivity === 'dead' ? 'death' : 'resolve', {
-                            critical: nextActivity === 'dead'
-                                || materializedItems.length > 0
-                                || Number(result.materialize?.adena || 0) > 0
-                                || (result.events || []).length > 0
-                        });
-                        return snapshot;
+                        const publish = () => {
+                            const snapshot = normalize(row);
+                            cache.set(snapshot.characterId, snapshot);
+                            notifyColdSnapshot(snapshot, nextActivity === 'dead' ? 'death' : 'resolve', {
+                                critical: nextActivity === 'dead'
+                                    || materializedItems.length > 0
+                                    || Number(result.materialize?.adena || 0) > 0
+                                    || (result.events || []).length > 0
+                            });
+                            return snapshot;
+                        };
+                        return nativeWriteOptions ? Database.publishBotResolvedState(characterId, nativeWriteOptions, publish) : publish();
                     })
                     .catch((err) => {
                         if (err instanceof WorkerCommandAdmissionRefusal) throw err;
