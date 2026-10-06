@@ -240,13 +240,6 @@ function buildProjection(state, ctx, deps) {
     }
     // Concrete remembered people, not persona-labelled lifelong goals.
     const relations = deps.memory?.relations || state.stats?.relations || [];
-    const status = deps.productionStatus;
-    if (Number.isFinite(status?.incomePerHour) && status.incomePerHour >= 0
-        && Number.isFinite(status.nextIncomePerHour) && status.nextIncomePerHour > status.incomePerHour) {
-        const hours = horizon * (status.nextIncomePerHour - status.incomePerHour) / status.nextIncomePerHour * statusWeight;
-        root({key:'status:producer',need:'status',object:{kind:'producer',rank:status.rank},valueHours:hours,price:0,
-            paths:[{activity:'crafting',kind:'producer_status',costHours:horizon,available:false}]});
-    }
     const friend = relations.find(row => Number(row.trust ?? row.affinity ?? 0) > 0);
     if (friend) root({ key: `care:${friend.targetId}`, need: 'care', object: { targetId: friend.targetId },
         valueHours: trait(ctx.persona, 'empathy') * trait(ctx.persona, 'sociability') * positive(friend.trust ?? friend.affinity),

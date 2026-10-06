@@ -213,27 +213,4 @@ async function publishDemand(state, recipe, productPrice, context) {
     }
     return state;
 }
-// Status compares only personally known dynamic producers. Unknown played
-// time remains unknown; stock value and a hypothetical sale are not income.
-function producerStatus(state, knownIds = []) {
-    const rules = invoke('GameServer/Bot/Economy/CraftShopService');
-    const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
-    const current = life().cachedState(state?.characterId) || state;
-    const ids = new Set([Number(state?.characterId), ...Array.from(knownIds, value => Number(value?.characterId ?? value?.id ?? value))]);
-    const rows = [];
-    for (const id of ids) {
-        const peer = id === Number(current?.characterId) ? current : life().cachedState(id);
-        if (!peer || Identity.isStaticService(peer) || !rules.isServiceCrafter(peer)) continue;
-        const stats = peer.stats?.production || {}, hours = Number(peer.stats?.playedHours || 0);
-        const earned = Number(stats.revenue || 0) + Number(stats.profit || 0);
-        rows.push({ id, income: hours > 0 && Number.isFinite(hours) && Number.isFinite(earned) ? earned / hours : null,
-            crafts: Number(stats.crafts || 0), customers: Number(stats.customers || 0), hours, earned });
-    }
-    const own = rows.find(row => row.id === Number(state?.characterId));
-    const higher = own?.income === null || !own ? [] : rows.filter(row => row.income !== null && row.income > own.income);
-    return { incomePerHour: own?.income ?? null, rank: own?.income === null || !own ? null : higher.length + 1,
-        knownCount: rows.length, nextIncomePerHour: higher.length ? Math.min(...higher.map(row => row.income)) : null,
-        customers: own?.customers || 0, crafts: own?.crafts || 0,
-        inputKey: rows.map(row => `${row.id}:${row.hours}:${row.earned}:${row.crafts}:${row.customers}`).join('|') };
-}
-module.exports = { init, register, remove, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand, producerStatus };
+module.exports = { init, register, remove, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand };

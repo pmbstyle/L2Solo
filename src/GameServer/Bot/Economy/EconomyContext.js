@@ -59,7 +59,7 @@ function inputKey(state, deps = {}) {
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf,
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
-        deps.productionStatus?.inputKey || '', deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
+        deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
         stats.production?.crafts || 0, positive(state.sp),
@@ -104,8 +104,6 @@ function resolved(state, deps) {
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
-    if (typeof deps.productionStatus === 'function') deps.productionStatus = deps.productionStatus(state.characterId);
-    if (deps.productionStatus == null && isMainThread && state.stats?.production) deps.productionStatus = invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (deps.memory?.relations || []).map(row => row.targetId));
     return deps;
 }
 function personaOf(state, deps) {
@@ -222,9 +220,6 @@ function forState(state = {}, deps = {}) {
         const opportunities = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state, {
             hourAdena: base.hourAdena, worth: price, timestamp, insideContext: true });
         for (const row of opportunities) if (row.recipe?.productId) watch(row.recipe.productId);
-        const statusNode = projection.nodes.find(node => node.key === 'status:producer');
-        if (statusNode && opportunities.length) statusNode.paths = [{ activity: 'crafting', kind: 'producer_status',
-            recipeId: opportunities[0].recipe.recipeId, costHours: opportunities[0].margin?.hours || 0, available: true }];
         for (const row of opportunities.slice(0, 1)) {
             const incomePerHour = Profit.craftIncomePerHour(row.margin);
             if (!(incomePerHour > 0) || !Number.isFinite(incomePerHour)) continue;

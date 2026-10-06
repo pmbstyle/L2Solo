@@ -209,20 +209,9 @@ async function main() {
     cache.clear();
     console.log('PASS first 30min page/cursor, lost-edge repair exactly once, healthy pass and stop fencing');
 
-    const own = await seed({ classId: 56, playedHours: 2, production: { revenue: 200, profit: 40, crafts: 3, customers: 2 } });
-    const better = await seed({ classId: 56, playedHours: 2, production: { revenue: 400, crafts: 5, customers: 4 } });
-    const unknown = await seed({ classId: 56, playedHours: 0, production: { revenue: 99999 } });
-    const outsider = await seed({ classId: 56, playedHours: 1, production: { revenue: 1000000 } });
-    const status = Workshop.producerStatus(own, [better.characterId, unknown.characterId]);
-    assert.equal(status.incomePerHour, 120); assert.equal(status.rank, 2); assert.equal(status.knownCount, 3);
-    assert.equal(status.nextIncomePerHour, 200); assert.equal(status.crafts, 3); assert.equal(status.customers, 2);
-    assert.equal(Workshop.producerStatus(unknown, []).incomePerHour, null);
-    assert(!status.inputKey.includes(`${outsider.characterId}:`));
-    const updated = await Life.upsertState({ ...better, stats: { ...better.stats, production: { revenue: 600 } } }, 'producer_status_update');
-    assert(Workshop.producerStatus(own, [updated.characterId]).inputKey !== Workshop.producerStatus(own, []).inputKey);
-    assert.equal(Workshop.producerStatus(own, [updated.characterId]).nextIncomePerHour, 300);
+    assert.equal(Workshop.producerStatus, undefined);
     assert.equal(errors.length, 0, errors.map(error => error?.stack || String(error)).join('\n'));
-    console.log('PASS current known producer income/rank, unknown time, unrelated producer exclusion and status input invalidation');
+    console.log('PASS producer rank removed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     for (const dispose of disposers.reverse()) dispose();

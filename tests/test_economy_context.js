@@ -37,17 +37,33 @@ async function run() {
             resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .8 } },
         timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
     if (process.argv.includes('--producer-status')) {
-        const zero = Economy.forState(base, { productionStatus: { incomePerHour: 0, nextIncomePerHour: 200,
-            rank: 2, inputKey: 'known-zero' } });
-        const wish = zero.projection.nodes.find(node => node.key === 'status:producer');
-        assert(wish?.valueHours > 0, 'known zero production income can seek a known better producer rate');
-        assert.equal(wish.paths[0].available, false, 'status alone cannot invent an executable recipe');
-        const unknown = Economy.forState(base, { productionStatus: { incomePerHour: null, nextIncomePerHour: 200,
-            rank: null, inputKey: 'unplayed-unknown' } });
-        assert(!unknown.projection.nodes.some(node => node.key === 'status:producer'));
+        const Life = invoke('GameServer/Bot/Population/BotLifeState');
+        const Craft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
+        const cachedState = Life.cachedState, opportunities = Craft.opportunities;
+        const crafter = { ...base, phase: 'hot', stats: { ...base.stats, classId: 56, playedHours: 2,
+            production: { revenue: 200, crafts: 3 }, workshop: { entries: [1] } } };
+        const peers = new Map([902, 903, 904].map(characterId => [characterId, {
+            ...crafter, characterId, stats: { ...crafter.stats, production: { revenue: 400, crafts: 5 } } }]));
+        let peerReads = 0;
+        try {
+            Life.cachedState = id => { if (Number(id) !== crafter.characterId) peerReads++;
+                return Number(id) === crafter.characterId ? crafter : peers.get(Number(id)); };
+            Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 },
+                margin: { hours: 1, profit: 100000, labour: 0 } }];
+            const deps = { memory: { revision: 1, relations: [...peers.keys()].map(targetId => ({ targetId })) } };
+            const context = Economy.forState(crafter, deps);
+            assert.equal(peerReads, 0, 'a crafting review reads zero other crafters');
+            assert(!context.projection.nodes.some(node => node.key === 'status:producer'));
+            assert(context.projection.moneyPaths.some(row => row.kind === 'production' && row.incomePerHour > 0),
+                'profitable crafting remains a repeatable money path');
+            peers.get(902).stats.production.revenue = 900;
+            assert.equal(Economy.forState(crafter, deps), context, 'another producer sale cannot rebuild this bot');
+            assert.equal(peerReads, 0);
+            assert.equal(invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus, undefined);
+            console.log('PASS producer rank removed / 0 peer reads / production money path / own inputs only');
+        } finally { Life.cachedState = cachedState; Craft.opportunities = opportunities; }
         assert.equal(Database.isReady(), false);
         assert.deepEqual(fs.readdirSync(dir), ['config.ini']);
-        console.log('PASS known zero producer ambition / unknown income refusal / concrete recipe gate / no SQL');
         return;
     }
     const ProvidersForKit = invoke('GameServer/Bot/Economy/WishProviders');
