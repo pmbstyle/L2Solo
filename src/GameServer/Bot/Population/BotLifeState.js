@@ -2523,6 +2523,7 @@ const BotLifeState = {
         };
         const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { timestamp });
         Object.assign(nextState.stats, economy.statsPacket);
+        if (typeof options.onEconomy === 'function') options.onEconomy(economy);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);

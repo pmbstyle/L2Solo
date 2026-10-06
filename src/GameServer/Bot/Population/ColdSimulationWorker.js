@@ -82,6 +82,7 @@ const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
+const ColdEconomyDecision = require('./ColdEconomyDecision');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
@@ -388,10 +389,12 @@ function startKernel(config = {}) {
             buyOrderEscrow: kernel.states.get(Number(state.characterId))?.context?.buyOrderEscrow
         }),
         projectResolve: async (state, result, timestamp) => {
+            let economy = null;
             const resolved = await LifeStateProjector.prepareResolve(state, result, {
                 persist: false,
                 timestamp,
-                projectClassProgression: true
+                projectClassProgression: true,
+                onEconomy: (built) => { economy = built; }
             });
             // Board events submit price observations through market commands.
             const projected = resolved;
@@ -407,7 +410,9 @@ function startKernel(config = {}) {
             };
             return {
                 state: projected,
-                durable: Object.keys(durable).length ? durable : null
+                durable: Object.keys(durable).length ? durable : null,
+                // Main reads this instead of building the network again.
+                ...(economy && projected ? { economyDecision: ColdEconomyDecision.capture(economy, projected) } : {})
             };
         },
         planLifecycle: ({ state, context, timestamp }) => {

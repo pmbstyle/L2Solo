@@ -22,6 +22,7 @@ const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartySt
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const ColdSimulationOwner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Protocol = require('./ColdSimulationProtocol');
+const { ColdEconomyDecisions } = require('./ColdEconomyDecision');
 const { TTL_MS: COMPETITION_TTL_MS } = require('./ColdCompetitionActions');
 const ColdStateDelta = require('./ColdStateDelta');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
@@ -184,6 +185,7 @@ class ColdSimulationCoordinator {
         this.historyCleanupTimer = null;
         this.historyCleanupInFlight = null;
         this.seen = new Set();
+        this.economyDecisions = new ColdEconomyDecisions();
         this.seenOrder = [];
         this.waiters = new Map();
         this.commandTail = Promise.resolve();
@@ -797,10 +799,8 @@ class ColdSimulationCoordinator {
         };
         const unsafeSoloGround = !partyRoute && currentGround
             && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
-        const economy = !partyRoute ? invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
-            spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory
-        }) : null;
-        const leaf = economy?.network.activity;
+        const leaf = !partyRoute ? this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
+            .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory })) : null;
         const wished = leaf?.activity === 'hunting' && leaf.spotId
             ? index.spots.get(String(leaf.spotId)) : null;
         const wishDestination = wished && wished.raidBoss !== true
@@ -934,9 +934,8 @@ class ColdSimulationCoordinator {
                 return compact ? compactPartyMemberContext(member) : member;
             });
         const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
-        const economy = !party ? invoke('GameServer/Bot/Economy/EconomyContext').forState(state,
-            { spots: index.profiles, occupancy: index.occupancy, timestamp: index.timestamp, memory: interactionMemory }) : null;
-        const leaf = economy?.network.activity;
+        const leaf = !party ? this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
+            .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp: index.timestamp, memory: interactionMemory })) : null;
         const context = {
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
@@ -1615,6 +1614,7 @@ class ColdSimulationCoordinator {
             await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
         }
         let state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
+        this.economyDecisions.accept(state.characterId, entry.proposal.economyDecision);
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         // The bot looked at its board lines in the worker: its new asks.
         if (entry.proposal.market) {
@@ -2233,6 +2233,7 @@ class ColdSimulationCoordinator {
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
             competitionActions: this.competitionActions.snapshot(),
+            economyDecisions: { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size },
             partyReviews: this.partyReviews,
             queue: this.queue.snapshot(),
             snapshots: {

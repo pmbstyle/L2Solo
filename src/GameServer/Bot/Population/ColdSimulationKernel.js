@@ -1591,6 +1591,7 @@ class ColdSimulationKernel {
                     nextState: projectedState,
                     durable: projection?.durable || null,
                     ...(projection?.market ? { market: projection.market } : {}),
+                    ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
                     result: {
                         ...result,
                         events: [
@@ -1680,6 +1681,7 @@ class ColdSimulationKernel {
                 nextState: projectedState,
                 durable: projection?.durable || null,
                 ...(projection?.market ? { market: projection.market } : {}),
+                ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
                 result,
                 options: { allowLifecycle: true }
             };
