@@ -44,3 +44,77 @@ try {
     Config.knowledgeErrorsEnabled = oldKnowledge;
 }
 console.log('PASS saved money gap, unfunded-focus fallback and shared spot-value units');
+
+// Build the server's real catalogue with the generator's deterministic spawn.
+// This fixture uses no Database.init(): every world actor is process-local.
+const World = invoke('GameServer/World/World');
+const Service = invoke('GameServer/Bot/AI/SpotService');
+const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+const savedRandom = Math.random;
+const savedWorld = { npc: World.npc, user: World.user };
+const savedGate = Routes.isSpotAllowedForState;
+let catalogueSeed = 20261005;
+try {
+    Config.knowledgeErrorsEnabled = false;
+    Math.random = () => {
+        catalogueSeed = (catalogueSeed + 0x6D2B79F5) | 0;
+        let t = Math.imul(catalogueSeed ^ (catalogueSeed >>> 15), 1 | catalogueSeed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const world = { user: { sessions: [] },
+        npc: { spawns: [], grid: {}, nextId: 1000000, periodMode: 'day', periodRevision: 0,
+            periodDefinitions: [], raidBossRespawnTimers: new Map(), raidBossState: new Map(), gridKeys: new WeakMap() },
+        items: { spawns: [], nextId: 5000000 }, addNpcToGrid() {}, indexSpawnsInGrid() {} };
+    invoke('GameServer/World/Generics/SpawnNpcs').call(world);
+    World.npc = world.npc; World.user = world.user;
+    Service.reset(); Spots.reset();
+    const catalogue = Spots.ensure();
+    Math.random = savedRandom;
+    const fighter = { characterId: 990122, classId: 0, level: 50, adena: 3000, phase: 'cold', activity: 'hunting',
+        stats: { classId: 0, money: [3719, 0.0001, 1000, 900000] },
+        inventory: { 1: { selfId: 1, amount: 1, equipped: true, equippedCount: 1, slot: 7 } },
+        vitals: {}, loc: {}, timing: {} };
+    const kit = Cold.profileFor(fighter);
+    fighter.vitals = { hp: kit.maxHp, maxHp: kit.maxHp, mp: kit.maxMp, maxMp: kit.maxMp };
+    const options = { profiles: catalogue, occupancy: {}, timestamp: 1800000000000,
+        matchupProfiles: Match.stateProfiles(fighter) };
+    const near = catalogue.filter(s => !s.raidBoss && s.minLevel <= 54 && s.maxLevel >= 46
+        && savedGate(s, fighter, options));
+    assert.equal(near.length, 0, 'naked NG kit must actually enter the weak-kit fallback');
+    const oracle = catalogue.filter(s => !s.raidBoss && s.maxLevel < 46 && savedGate(s, fighter, options));
+    const income = s => {
+        const row = Table.value(s.id, 'dps', 50, true);
+        return row ? row.adena + row.loot : 0;
+    };
+    const bestIncome = Math.max(...oracle.map(income));
+    assert(bestIncome > 0);
+    const grey = oracle.filter(s => s.maxLevel <= 35 && income(s) > 0)
+        .sort((a, b) => income(a) - income(b))[0];
+    assert(grey, 'fixture needs a real grey camp');
+    fighter.spotId = grey.id;
+    let fallbackChecks = 0;
+    Routes.isSpotAllowedForState = (spot, candidate, opts) => {
+        if (spot.maxLevel < 46) fallbackChecks++;
+        return savedGate(spot, candidate, opts);
+    };
+    const picked = Spots.findForState(fighter, options);
+    assert(fallbackChecks > 0 && fallbackChecks <= 128, `fallback checks ${fallbackChecks}`);
+    assert(picked, 'the full catalogue must provide a surviving camp within the fixed fallback budget');
+    assert.notEqual(picked.id, grey.id, 'a cheaper grey camp cannot pin this money-saving fighter');
+    assert(income(picked) >= bestIncome * 0.5, `${income(picked)} < half of ${bestIncome}`);
+    const upper = Match.soloSpotUpperBound(options.matchupProfiles);
+    assert(oracle.every(spot => upper(spot)), 'cheap bound must retain every exact-safe camp');
+    assert(Match.soloSpotUpperBound([{ survivalKnown: false }])(catalogue[0]), 'unknown kits remain neutral');
+    console.log(`PASS full catalogue: ${world.npc.spawns.length} spawns, near=${near.length}, `
+        + `fallback=${fallbackChecks}, picked=${picked.id}, income ratio=${income(picked) / bestIncome}`);
+} finally {
+    Math.random = savedRandom;
+    World.npc = savedWorld.npc; World.user = savedWorld.user;
+    Routes.isSpotAllowedForState = savedGate;
+    Config.knowledgeErrorsEnabled = oldKnowledge;
+    Service.reset(); Spots.reset();
+}

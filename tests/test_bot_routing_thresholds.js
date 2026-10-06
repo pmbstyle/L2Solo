@@ -101,9 +101,9 @@ const spot = (id, level) => ({ id, name: id, minLevel: level, maxLevel: level, a
     density: 8, tags: [], tagsAuthoritative: true, center: { locX: 50000, locY: 150000, locZ: -3000 },
     npcEntries: [{ selfId: SAFE_NPC, count: 8 }], levelCounts: { [level]: 8 } });
 const original = Spots.cache;
-const search = (cache, searchState) => {
+const search = (cache, searchState, matchupProfiles = [mage]) => {
     Spots.cache = cache;
-    return Spots.findForState(searchState, { matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id || null;
+    return Spots.findForState(searchState, { matchupProfiles, occupancy: {}, timestamp: at })?.id || null;
 };
 try {
     const level35 = { ...state, level: 35, spotId: null };
@@ -121,6 +121,9 @@ try {
         const crowdedCatalogue = Array.from({ length: 200 }, (_, i) => ({
             ...spot(`bounded-${String(i).padStart(3, '0')}`, 19), npcEntries: [{ selfId: UNSAFE_NPC, count: 8 }] }));
         assert.strictEqual(search(crowdedCatalogue, level35), null);
+        assert.strictEqual(fallbackChecks, 0, 'the cheap optimistic bound rejects certainly lethal camps');
+        Routes.isSpotAllowedForState = () => { fallbackChecks++; return false; };
+        assert.strictEqual(search(crowdedCatalogue, level35, [{ ...mage, survivalKnown: false }]), null);
         assert.strictEqual(fallbackChecks, 128, 'one fallback search never runs more than 128 combat gates');
     } finally { Routes.isSpotAllowedForState = allowed; }
 } finally { Spots.cache = original; }
