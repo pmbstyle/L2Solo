@@ -33,6 +33,14 @@ function memberships(record) {
     return { phase: record.phase, realPlayer: record.realPlayer === true, spotId: record.spotId ?? null };
 }
 
+function* sourceRecords(entries) {
+    for (const entry of entries) yield entry.record;
+}
+
+function* sourceRecordEntries(entries) {
+    for (const [id, entry] of entries) yield [id, entry.record];
+}
+
 // One runtime index for characters, including future cold/spot adapters. Only
 // membership is cached: exact queries read the original live location reference.
 // Actor and state producers retain independent source slots for the same ID.
@@ -43,6 +51,9 @@ class CharacterLocationIndex {
         Object.defineProperty(this, 'cellSize', { value: cellSize, enumerable: true });
         Object.defineProperty(this, 'legacyStateCache', { value: legacyStateCache });
         this.records = new Map();
+        // Order metadata points at the same canonical entries as records.
+        // Each producer view keeps its own native Map insertion order.
+        this.sourceViews = { actor: new Map(), state: new Map() };
         this.cells = new Map();
         this.spots = new Map();
     }
@@ -66,9 +77,12 @@ class CharacterLocationIndex {
         let row = this.records.get(id);
         let entry = row?.[view];
         if (entry && entry.source !== record.source) {
-            this.removeSource(id, view, entry.source);
-            row = this.records.get(id);
-            entry = null;
+            this.detachCell(entry);
+            this.detachSpot(entry);
+            entry.source = record.source;
+            entry.key = null;
+            entry.spotId = null;
+            entry.indexed = false;
         }
         if (!row) {
             row = { id, actor: null, state: null };
@@ -78,6 +92,7 @@ class CharacterLocationIndex {
             entry = { id, view, source: record.source, record, indexed: false,
                 key: null, phase: null, realPlayer: false, spotId: null };
             row[view] = entry;
+            this.sourceViews[view].set(id, entry);
         }
         entry.record = record;
         this.refresh(entry, key, tags, point, indexed);
@@ -111,6 +126,7 @@ class CharacterLocationIndex {
         if (!entry || entry.source !== source) return false;
         this.detachCell(entry);
         this.detachSpot(entry);
+        this.sourceViews[view].delete(id);
         row[view] = null;
         if (!row.actor && !row.state) this.records.delete(id);
         return true;
@@ -123,6 +139,26 @@ class CharacterLocationIndex {
     getSource(id, view) {
         validateView(view);
         return this.records.get(id)?.[view]?.record ?? null;
+    }
+
+    sourceSize(view) {
+        validateView(view);
+        return this.sourceViews[view].size;
+    }
+
+    sourceKeys(view) {
+        validateView(view);
+        return this.sourceViews[view].keys();
+    }
+
+    sourceValues(view) {
+        validateView(view);
+        return sourceRecords(this.sourceViews[view].values());
+    }
+
+    sourceEntries(view) {
+        validateView(view);
+        return sourceRecordEntries(this.sourceViews[view].entries());
     }
 
     near(loc, radius, { kind = 'all' } = {}) {
@@ -186,16 +222,16 @@ class CharacterLocationIndex {
 
     clear() {
         this.records.clear();
+        this.sourceViews.actor.clear();
+        this.sourceViews.state.clear();
         this.cells.clear();
         this.spots.clear();
     }
 
     clearSourceView(view) {
         validateView(view);
-        for (const row of this.records.values()) {
-            const entry = row[view];
-            if (entry) this.removeSource(row.id, view, entry.source);
-        }
+        for (const entry of this.sourceViews[view].values()) this.removeSource(entry.id, view, entry.source);
+        this.sourceViews[view].clear();
     }
 
     cellKey(point, view = 'actor') {
