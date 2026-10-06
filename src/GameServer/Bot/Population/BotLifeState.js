@@ -3652,6 +3652,51 @@ const BotLifeState = {
         return cache.revision;
     },
 
+    async safetyPage(page = {}) {
+        if (page === null || typeof page !== 'object' || Array.isArray(page)) {
+            throw new TypeError('Lifecycle safety page options must be an object');
+        }
+        const { afterId = 0, limit = 64 } = page;
+        let { highWaterId } = page;
+        if (!Number.isSafeInteger(afterId) || afterId < 0
+            || !Number.isSafeInteger(limit) || limit < 1 || limit > 64
+            || (highWaterId !== undefined && (!Number.isSafeInteger(highWaterId) || highWaterId < 0))
+            || (highWaterId === undefined ? afterId !== 0 : afterId > highWaterId)) {
+            throw new RangeError('Invalid lifecycle safety page cursor or limit');
+        }
+        if (!Database.isReady()) {
+            throw Object.assign(new Error('Lifecycle safety database is unavailable'), {
+                code: 'BOT_LIFE_SAFETY_UNAVAILABLE'
+            });
+        }
+        // Fix only the cycle's upper PK boundary; each page reads current rows.
+        if (highWaterId === undefined) {
+            const [maximum] = await Database.execute([
+                `SELECT COALESCE(MAX(characterId), 0) AS highWaterId FROM ${TABLE}`, []
+            ], 'bot-life:safety-high-water');
+            highWaterId = maximum.highWaterId;
+            if (!Number.isSafeInteger(highWaterId) || highWaterId < 0) {
+                throw new RangeError('Invalid lifecycle safety high-water identity');
+            }
+        }
+        if (afterId === highWaterId) {
+            return { rows: [], cursor: { afterId, highWaterId }, done: true };
+        }
+        const rows = await Database.execute([
+            `SELECT characterId, phase, activity, simulationOwner, simulationRevision,
+                simulationLeaseId, simulationLeaseUntil, activityStartedAt, nextResolveAt,
+                lastResolvedAt, lastHotAt, updatedAt
+            FROM ${TABLE}
+            WHERE characterId > ? AND characterId <= ? ORDER BY characterId ASC LIMIT ?`,
+            [afterId, highWaterId, limit]
+        ], 'bot-life:safety-page');
+        const lastId = rows.length ? rows[rows.length - 1].characterId : afterId;
+        // An exact-size page may need an empty final read after a deleted tail.
+        // Do not inspect limit+1 rows just to predict that final read.
+        const done = rows.length < limit || lastId === highWaterId;
+        return { rows, cursor: { afterId: done ? highWaterId : lastId, highWaterId }, done };
+    },
+
     marketGoalCursorSnapshot() {
         return { ...marketGoalCursor };
     },
