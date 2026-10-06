@@ -346,7 +346,10 @@ function evaluate(state = {}, options = {}) {
             priority: 82,
             target: {
                 itemId: Number(wantedMaterial.selfId),
-                itemName: (state.inventory?.[String(wantedMaterial.selfId)] || {}).name || `Material ${wantedMaterial.selfId}`,
+                // A bot holding none of the material still posts its real
+                // name: the buy ad's title shows it to the player.
+                itemName: (state.inventory?.[String(wantedMaterial.selfId)] || {}).name
+                    || itemBySelfId(wantedMaterial.selfId)?.template?.name || `Item ${wantedMaterial.selfId}`,
                 amount: Number(wantedMaterial.missing)
             },
             plan: { kind: 'market_buy', expectedBenefit: 'market_buy_craft_material', recipeId: craftPlan.recipeId,

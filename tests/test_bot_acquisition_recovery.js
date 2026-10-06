@@ -85,6 +85,12 @@ async function run() {
     const nestedGoal = needs.evaluate(nestedState, { now }).find((goal) => goal.type === 'buy_craft_material');
     assert.strictEqual(nestedGoal.target.itemId, 1869);
     assert.strictEqual(nestedGoal.target.amount, 1, 'nested-component shopping must subtract ingredients already collected');
+    const ingredientName = DataCache.items.find((item) => Number(item.selfId) === 1869).template.name;
+    assert.strictEqual(nestedGoal.target.itemName, ingredientName, 'a buy ad names the material, not its id (T25)');
+    const noneHeld = { ...nestedState, inventory: {} };
+    const noneHeldGoal = needs.evaluate(noneHeld, { now }).find((goal) => goal.type === 'buy_craft_material');
+    assert.strictEqual(noneHeldGoal.target.itemName, ingredientName,
+        'a bot holding none of the material still names it (T25)');
     nestedState.inventory[1869].amount = 3;
     assert(!needs.evaluate(nestedState, { now }).some((goal) => goal.type === 'buy_craft_material'),
         'a completed ingredient must not create another WTB goal');
