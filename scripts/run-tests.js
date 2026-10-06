@@ -863,7 +863,10 @@ const tests = [
     'tests/test_cold_projection_retention.js',
     'tests/test_n53_worker_presence.js',
     'tests/test_hot_board_safety.js',
-    'tests/test_lifecycle_safety_sweep.js'
+    'tests/test_lifecycle_safety_sweep.js',
+    'tests/test_lifecycle_safety_runtime.js',
+    'tests/test_n53_lease_renewal.js',
+    'tests/test_cold_lease_renewal_runtime.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -934,6 +937,9 @@ const defaultConfigTests = new Set([
     'tests/test_n53_worker_presence.js',
     'tests/test_hot_board_safety.js',
     'tests/test_lifecycle_safety_sweep.js',
+    'tests/test_lifecycle_safety_runtime.js',
+    'tests/test_n53_lease_renewal.js',
+    'tests/test_cold_lease_renewal_runtime.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
     'tests/test_market_restart_cursors.js',
