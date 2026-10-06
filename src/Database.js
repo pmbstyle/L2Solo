@@ -3143,8 +3143,39 @@ const Database = {
 
     // The lifecycle save's protected stats and its cache row are read from
     // the same queued statement; a later trade cannot slip between them.
-    saveBotLifeState(statement) {
+    saveBotLifeState(statement, options = {}) {
+        let beforeWrite, present = false, captureFailed = false, captureError;
+        // Capture authority at enqueue time, not from a mutable bag when the
+        // existing SQL tail finally reaches this job.
+        try {
+            if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                throw new TypeError('invalid_bot_life_before_write');
+            }
+            const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
+            if (descriptor) {
+                present = true;
+                if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
+                    throw new TypeError('invalid_bot_life_before_write');
+                }
+                beforeWrite = descriptor.value;
+            } else if ('beforeWrite' in options) {
+                throw new TypeError('invalid_bot_life_before_write');
+            }
+        } catch (error) {
+            captureFailed = true;
+            captureError = error;
+        }
         return enqueue(() => {
+            if (captureFailed) throw captureError;
+            if (present) {
+                const verdict = beforeWrite();
+                if (verdict !== undefined) {
+                    // Async completion cannot admit SQL. Observe only native
+                    // Promise rejection; arbitrary thenables stay untouched.
+                    if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
+                    throw new TypeError('invalid_bot_life_before_write');
+                }
+            }
             const row = one(`${statement[0]} RETURNING statsJson`, statement[1] || []);
             return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
         }, { operation: 'bot-life:save', read: false });

@@ -13,7 +13,7 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
-const { checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
+const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -751,6 +751,8 @@ function save(row, options = {}) {
         row.characterName = current.name;
         row.statsJson = safeJson({ ...incomingStats, nameGeneratorVersion: current.stats.nameGeneratorVersion });
     }
+    const beforeWrite = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
+    const databaseOptions = beforeWrite ? Object.defineProperty({}, 'beforeWrite', beforeWrite) : undefined;
     return Database.saveBotLifeState([
         `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
@@ -828,7 +830,7 @@ function save(row, options = {}) {
             row.statsJson,
             row.updatedAt
         ]
-    ]).then((result) => {
+    ], databaseOptions).then((result) => {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
@@ -2271,6 +2273,8 @@ const BotLifeState = {
 
     prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
+        const workerOptions = Object.prototype.hasOwnProperty.call(options, 'workerAdmission')
+            ? { workerAdmission: options.workerAdmission } : null;
 
         const timestamp = Number(options.timestamp || now());
         const experienceAward = ProgressionCap.applyAward(state.exp, result.materialize?.exp);
@@ -2534,7 +2538,10 @@ const BotLifeState = {
                     };
                 }
                 const row = rowFromState(profiledState);
-                return save(row)
+                const characterId = row.characterId;
+                return save(row, workerOptions ? {
+                    beforeWrite: () => checkWorkerCommandAdmission({ characterId }, workerOptions)
+                } : undefined)
                     .then(() => {
                         const deathRecord = profiledState.stats?.deathExperience;
                         if (newDeath && deathRecord?.pendingRestoration) {
@@ -2576,6 +2583,7 @@ const BotLifeState = {
                         return snapshot;
                     })
                     .catch((err) => {
+                        if (err instanceof WorkerCommandAdmissionRefusal) throw err;
                         utils.infoWarn('BotLife', 'failed to apply resolve for %s: %s', state.name, err.message);
                         return null;
                     });
@@ -2586,7 +2594,11 @@ const BotLifeState = {
     applyResolve(state, result, options = {}) {
         return this.serializeClanLevelUp(state.characterId, () => {
             checkWorkerCommandAdmission(state, options);
-            return this.prepareResolve(state, result, { persist: true });
+            const preparedOptions = { persist: true };
+            if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
+                preparedOptions.workerAdmission = options.workerAdmission;
+            }
+            return this.prepareResolve(state, result, preparedOptions);
         });
     },
 
