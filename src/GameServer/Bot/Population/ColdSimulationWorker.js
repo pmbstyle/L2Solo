@@ -105,6 +105,9 @@ let heartbeatTimer = null;
 let shuttingDown = false;
 let competition = null;
 let competitionReady = false;
+let safetyStateReady = false;
+let safetyStateRepairs = 0;
+let safetyBoardRepairs = 0;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
@@ -118,15 +121,15 @@ const marketCommands = new Map();
 let marketSequence = 0;
 const boardFollower = boardIndex.follower();
 tables.watch('board', {
-    reset: () => boardFollower.reset(),
+    reset: () => { boardFollower.reset(); marketEvents.resetBoardCoverage(); },
     put: (key, row) => {
         boardFollower.put(key, row);
-        marketEvents.ownerChanged(recordOf(row).ownerId);
+        marketEvents.ownerChanged(recordOf(row).ownerId, { current: false });
     },
     remove: (key) => {
         const ownerId = boardIndex.records.get(Number(key))?.[0]?.ownerId;
         boardFollower.remove(key);
-        if (ownerId) marketEvents.ownerChanged(ownerId);
+        if (ownerId) marketEvents.ownerChanged(ownerId, { current: tables.ready('board') && tables.ready('market') });
     }
 });
 tables.watch('market', {
@@ -140,6 +143,101 @@ MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
+}
+
+function safetyTotals() {
+    return { stateRepairs: safetyStateRepairs, boardRepairs: safetyBoardRepairs,
+        coverageRepairs: kernel?.stats.orphanRecoveries || 0 };
+}
+
+function safetyPresence(checkpoint) {
+    const id = checkpoint.characterId, entry = kernel?.states.get(id);
+    const result = { characterId: id, checkpoint, observedCheckpoint: Protocol.safetyCheckpoint(entry?.state),
+        workerVersion: kernel?.versions.get(id) || 0,
+        normal: { status: 'deferred', reason: 'state_catalog_loading' },
+        board: { status: 'deferred', reason: 'state_catalog_loading', coverageVersion: marketEvents.coverageVersion(id) } };
+    const gate = (status, reason) => {
+        result.normal = { status, reason };
+        result.board = { status, reason, coverageVersion: marketEvents.coverageVersion(id) };
+        return result;
+    };
+    if (!kernel || !safetyStateReady) return result;
+    if (shuttingDown || kernel.stopping) return gate('deferred', 'worker_shutdown');
+    if (checkpoint.phase !== 'cold') return gate('ineligible', 'not_cold');
+    if (checkpoint.simulationOwner !== 'legacy_main' || checkpoint.simulationLeaseId !== null
+        || checkpoint.simulationLeaseUntil > 0) return gate('deferred', 'native_ownership_active');
+    // Native ownership can be ahead of the cached row during ACK processing.
+    if (kernel.busy(id) || marketCommands.has(id)) return gate('deferred', 'worker_busy');
+    const normalCovered = kernel.hasNormalCoverage(id);
+    if (!normalCovered && kernel.hasAcceptedPartyGrant(id)) return gate('deferred', 'partial_party_accepted');
+    if (entry && !Protocol.sameSafetyCheckpoint(checkpoint, entry.state)) return gate('deferred', 'checkpoint_changed');
+    result.normal = normalCovered ? { status: 'covered', reason: 'normal_schedule' }
+        : kernel.paused ? { status: 'deferred', reason: 'worker_paused' }
+            : !entry ? { status: 'uncovered', reason: 'missing_state' }
+                : kernel.needsNormalSchedule(id) ? { status: 'deferred', reason: 'local_coverage_missing' }
+                    : { status: 'ineligible', reason: 'no_normal_schedule' };
+    if (!tables.ready('board') || !tables.ready('market')) {
+        result.board = { status: 'deferred', reason: 'table_not_ready', coverageVersion: marketEvents.coverageVersion(id) };
+    } else if (!entry) {
+        result.board = { status: 'deferred', reason: 'state_projection_required', coverageVersion: marketEvents.coverageVersion(id) };
+    } else if (marketEvents.pending.has(id) || marketEvents.inFlight.has(id)) {
+        const deferred = !marketEvents.ready.has(id) && !marketEvents.inFlight.has(id);
+        result.board = { status: deferred ? 'deferred' : 'covered', reason: deferred ? 'intentional_pending' : 'board_event',
+            coverageVersion: marketEvents.coverageVersion(id) };
+    } else if (kernel.paused) {
+        result.board = { status: 'deferred', reason: 'worker_paused', coverageVersion: marketEvents.coverageVersion(id) };
+    } else {
+        const status = marketEvents.ownerStatus(id), edge = status.behind ? marketEvents.edgeOf(id) : null;
+        if (status.behind && edge && marketEvents.lastAcceptedEdge(id) !== edge && kernel.hasAcceptedPartyGrant(id)) {
+            result.board = { status: 'deferred', reason: 'partial_party_accepted',
+                coverageVersion: marketEvents.coverageVersion(id) };
+            return result;
+        }
+        result.board = { status: !status.priced || !status.behind ? 'ineligible'
+            : !edge || marketEvents.lastAcceptedEdge(id) === edge ? 'deferred' : 'uncovered',
+        reason: !status.priced ? 'no_priced_lines' : !status.behind ? 'checkpoint_current'
+            : !edge ? 'board_edge_unavailable' : marketEvents.lastAcceptedEdge(id) === edge ? 'edge_already_accepted' : 'board_event_absent',
+        coverageVersion: marketEvents.coverageVersion(id) };
+    }
+    return result;
+}
+
+function safetyRepair(row) {
+    const checkpoint = Protocol.safetyCheckpoint(row.checkpoint), id = checkpoint.characterId;
+    let presence = safetyPresence(checkpoint);
+    const receipt = (status, reason) => ({ edgeId: row.edgeId, characterId: id, kind: row.kind, status, reason,
+        checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion,
+        boardCoverageVersion: presence.board.coverageVersion });
+    if (presence.workerVersion !== row.expectedWorkerVersion) return receipt('stale', 'worker_version_changed');
+    if (row.kind === 'board' && presence.board.coverageVersion !== row.expectedBoardCoverageVersion) {
+        return receipt('stale', 'board_coverage_changed');
+    }
+    const coverage = row.kind === 'state' ? presence.normal : presence.board;
+    if (coverage.status !== 'uncovered') return receipt(coverage.status, coverage.reason);
+    if (row.kind === 'state') {
+        if (coverage.reason !== 'missing_state') return receipt('deferred', 'local_safety_owns_schedule');
+        const entry = row.entry, state = entry?.state, context = entry?.context;
+        const object = value => value && typeof value === 'object' && !Array.isArray(value);
+        if (!object(state) || !object(context) || !Object.keys(context).length
+            || !object(state.inventory) || !object(state.stats) || !object(state.timing) || !object(state.simulation)) {
+            return receipt('deferred', 'projection_unavailable');
+        }
+        if (!Protocol.sameSafetyCheckpoint(checkpoint, state)) return receipt('stale', 'projection_checkpoint_changed');
+        if (!kernel.upsert(entry)) return receipt('stale', 'projection_not_accepted');
+        marketEvents.rearm(id);
+        marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
+        presence = safetyPresence(checkpoint);
+        if (!Protocol.sameSafetyCheckpoint(presence.observedCheckpoint, checkpoint)) return receipt('stale', 'checkpoint_changed');
+        safetyStateRepairs++;
+        return receipt('accepted', 'state_delivery_restored');
+    }
+    if (kernel.hasAcceptedPartyGrant(id)) return receipt('deferred', 'partial_party_accepted');
+    const edge = marketEvents.edgeOf(id);
+    if (!edge || marketEvents.lastAcceptedEdge(id) === edge) return receipt('deferred', 'edge_already_accepted');
+    marketEvents.acceptSafetyEdge(id, edge);
+    presence = safetyPresence(checkpoint);
+    safetyBoardRepairs++;
+    return receipt('accepted', 'board_event_restored');
 }
 let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 let planningOccupancyCache = null;
@@ -179,7 +277,7 @@ function drainMarketEvents() {
         if (kernel.busy(id)) { marketEvents.defer(id); continue; }
         const market = reviewMarket(entry.state, Date.now());
         if (!market || !(market.updates?.length || market.reprices?.length || market.withdrawals?.length)) {
-            marketEvents.forget(id);
+            marketEvents.defer(id);
             continue;
         }
         kernel.commanding.add(id);
@@ -356,6 +454,7 @@ function startKernel(config = {}) {
         previousElu = performance.eventLoopUtilization();
         send('heartbeat', {
             ...kernel.snapshot(),
+            safety: safetyTotals(),
             competition: competition?.snapshot() || null,
             tables: tables.summary(),
             heapUsed: process.memoryUsage().heapUsed,
@@ -422,8 +521,9 @@ async function handle(message) {
         for (const row of payload.rows || []) {
             const id = Number(row.state?.characterId);
             if (!marketCommands.has(id)) marketEvents.rearm(id);
-            marketEvents.ownerChanged(id);
+            marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
         }
+        if (payload.initial === true && payload.done === true) safetyStateReady = true;
         if (payload.ack) {
             send('ready', {
                 phase: 'state_loaded',
@@ -434,6 +534,13 @@ async function handle(message) {
             competitionReady = true;
             send('ready', { phase: 'snapshots_loaded', ...kernel.snapshot() }, message.msgId);
         }
+        break;
+    case 'worker_presence_request':
+        send('worker_presence_ack', { results: payload.rows.map(row => safetyPresence(Protocol.safetyCheckpoint(row))),
+            safety: safetyTotals() }, message.msgId);
+        break;
+    case 'worker_repair_request':
+        send('worker_repair_ack', { results: payload.rows.map(safetyRepair), safety: safetyTotals() }, message.msgId);
         break;
     case 'claim_ack':
         kernel?.onClaimAck(payload, message.msgId);

@@ -552,8 +552,10 @@ class ColdSimulationKernel {
     schedule(characterId, version, dueAt) {
         const id = Number(characterId);
         const token = this.nextScheduleToken++;
-        this.scheduleTokens.set(id, { token, version: Number(version), dueAt: Number(dueAt || this.now()) });
-        this.heap.push({ characterId: id, version: Number(version), dueAt: Number(dueAt || this.now()), scheduleToken: token });
+        const heapEntry = { characterId: id, version: Number(version),
+            dueAt: Number(dueAt || this.now()), scheduleToken: token };
+        this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
+        this.heap.push(heapEntry);
     }
 
     armAlarm(kind, key, dueAt, options = {}) {
@@ -653,12 +655,32 @@ class ColdSimulationKernel {
         return this.claiming.has(id) || this.inFlight.has(id) || this.commanding.has(id);
     }
 
+    hasNormalCoverage(characterId) {
+        const id = Number(characterId), current = this.states.get(id), scheduled = this.scheduleTokens.get(id);
+        return !!current && scheduled?.version === current.version
+            && scheduled.heapEntry?.scheduleToken === scheduled.token
+            && scheduled.heapEntry?.version === current.version
+            && this.heap.positions.has(scheduled.heapEntry);
+    }
+
+    // Matching partial party ACKs already own native leases before the whole
+    // party enters inFlight. Inspect this bounded alias set only after the
+    // healthy token/busy fast paths, never classify it as lost work.
+    hasAcceptedPartyGrant(characterId) {
+        for (const run of this.partyRuns.values()) if (run.grants?.has(Number(characterId))) return true;
+        return false;
+    }
+
+    needsNormalSchedule(characterId) {
+        const entry = this.states.get(Number(characterId));
+        return !!entry && isSchedulableKind(lifecycleKind(entry.state, entry.context));
+    }
+
     ensureScheduled(characterId, dueAt = null) {
         const id = Number(characterId);
         const current = this.states.get(id);
-        if (!current || this.busy(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
-        const scheduled = this.scheduleTokens.get(id);
-        if (scheduled?.version === current.version) return false;
+        if (!current || this.busy(id) || this.hasNormalCoverage(id)) return false;
+        if (this.hasAcceptedPartyGrant(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
         this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now(), current.context, this.partySession));
         return true;
     }
@@ -914,7 +936,7 @@ class ColdSimulationKernel {
         if (this.stopping || this.safetyStartedAt === null) return 0;
         let recovered = 0;
         const page = this.states.inspectSafetyPage(this.orphanRecoveryLimit, id => {
-            if (this.stopping || this.busy(id) || this.scheduleTokens.has(id)) return;
+            if (this.stopping || this.busy(id) || this.hasNormalCoverage(id)) return;
             if (this.ensureScheduled(id)) recovered++;
         });
         this.stats.orphanRecoveries += recovered;
