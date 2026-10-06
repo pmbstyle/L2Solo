@@ -68,10 +68,7 @@ function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(stat
     // An active market gear plan keeps what its purchase needs (price and
     // reserve): inputs are bought only with the rest of the wallet. A bot
     // with its own buy order does not craft at all (eligible), so no escrow.
-    const gearPlan = state.stats?.equipmentPlan;
-    const budgetState = { ...state, adena: gearPlan?.status === 'active' && gearPlan.strategy === 'market'
-        ? PurchaseFunding.surplus(state, gearPlan.market?.price, gearPlan.market?.reserve)
-        : PurchaseFunding.budget(state) };
+    const budgetState = { ...state, adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) };
     // Each input is one purchase in the town where it costs the least with
     // the trip (the one purchase path): its landed price is the input's cost.
     const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
@@ -113,8 +110,11 @@ function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(stat
         const exits = exitsFor(state, recipe, template, trip);
         if (!exits.length) continue;
         const candidate = Policy.opportunityFor(budgetState, recipe, planFor, exits, ownedFor, context);
-        if (candidate && (!best || candidate.expectedProfit > best.expectedProfit)) {
-            best = { ...candidate, template };
+        const cash = candidate?.basket?.cashCost || 0;
+        const r = cash > 0 ? candidate.expectedProfit / context.hourAdena / cash : Infinity;
+        if (candidate && cash <= PurchaseFunding.spendable(state, 0, { r })
+            && (!best || candidate.expectedProfit > best.expectedProfit)) {
+            best = { ...candidate, template, r };
         }
     }
     return best;
@@ -171,7 +171,8 @@ async function execute(state, opportunity) {
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
         for (const purchase of opportunity.basket.purchases) {
             const bought = await ColdMarket.acquire(current, purchase.selfId, purchase.count,
-                { towns: [purchase.town], npc: false, purpose: 'wealth_craft' });
+                { towns: [purchase.town], npc: false, purpose: 'wealth_craft',
+                    money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }) });
             // The bot went hot: the actor holds the materials; the craft stops here.
             if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
             if (!bought.bought && (bought.traveling || bought.state?.stats?.marketErrand)) {

@@ -269,8 +269,9 @@ function lifecycleKind(state = {}, context = {}) {
         const price = Math.max(0, Number(plan.market?.price || 0));
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
         if (state.activity !== 'hunting'
-            || (price > 0 && PurchaseFunding.shortfall(state, price, reserve,
-                PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow)) === 0)) return 'command';
+            || (price > 0 && (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow))
+                : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow),
+                    { itemId: plan.target?.selfId })) >= price)) return 'command';
     }
     if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';

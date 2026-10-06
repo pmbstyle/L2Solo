@@ -336,7 +336,8 @@ function restockPlan(value, options = {}) {
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
-    const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve) : context.purchaseBudget(plan.selfId);
+    const allowance = options.targetAmount !== undefined ? PurchaseFunding.spendable(state, 0,
+        { itemId: plan.selfId, survivalCost: context.kitCost(plan.selfId) }) : context.purchaseBudget(plan.selfId);
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : context.worth(plan.selfId) ?? context.price(plan.selfId);
     const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.usePerHour);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
@@ -361,6 +362,7 @@ function restockPlan(value, options = {}) {
         unitPrice: npcPrice,
         amount: shopAmount + npcAmount,
         cost: shopCost + npcAmount * npcPrice,
+        spendBudget: money,
         adena,
         reserve,
         potionCost
@@ -373,7 +375,7 @@ function restockPlan(value, options = {}) {
 function npcRestockAmount(restock, bought = 0, spent = 0) {
     if (!restock.needed || !(restock.unitPrice > 0)) return 0;
     const left = restock.targetAmount - restock.currentAmount - bought;
-    const money = Math.max(0, restock.adena - restock.reserve - restock.potionCost - spent);
+    const money = Math.max(0, (restock.spendBudget ?? (restock.adena - restock.reserve - restock.potionCost)) - spent);
     return Math.max(0, Math.min(left, Math.floor(money / restock.unitPrice)));
 }
 
@@ -388,7 +390,7 @@ async function purchaseActorRestock(actor, options = {}) {
     // The board's lines of the town the bot stands in (б5: a deal is made in
     // the seller's town); away from a town, only the merchant's price.
     const town = options.town ?? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
-    const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice, potionUnitPrice: options.potionUnitPrice,
+    const restock = restockPlan(actor, { plan, targetAmount: options.targetAmount, unitPrice: options.unitPrice, potionUnitPrice: options.potionUnitPrice,
         offers: town ? AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId(), town }) : [] });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {

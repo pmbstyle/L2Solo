@@ -58,7 +58,7 @@ function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => nul
             const revenue = Number(exit.price) * outputCount;
             const margin = Profit.margin(recipe, exit.price, basket.cost, { ...context, tripCost: Number(exit.trip) || 0 });
             const expectedProfit = margin?.profit ?? -Infinity;
-            return { recipe, basket, exit, revenue, expectedProfit, successRate, hours: margin?.hours };
+            return { recipe, basket, exit, revenue, expectedProfit, successRate, hours: margin?.hours, margin };
         })
         .filter((candidate) => candidate.expectedProfit > 0)
         .sort((a, b) => b.expectedProfit - a.expectedProfit || b.revenue - a.revenue)[0] || null;

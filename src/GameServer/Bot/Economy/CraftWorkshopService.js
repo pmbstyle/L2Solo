@@ -187,7 +187,6 @@ function boardRecords() {
     });
 }
 async function publishDemand(state, recipe, productPrice, context) {
-    const budget = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state);
     for (const material of recipe.materials || []) {
         const missing = Math.max(0, Number(material.amount) - Number(state.inventory?.[material.selfId]?.amount || 0));
         if (!missing) continue;
@@ -198,13 +197,17 @@ async function publishDemand(state, recipe, productPrice, context) {
             others += value * Number(other.amount);
         }
         const margin = Profit.margin(recipe, productPrice, others, context);
+        const input = Profit.inputValue(material.selfId, state, context);
+        const cash = missing * input;
+        const r = margin?.profit > 0 && cash > 0 ? margin.profit / context.hourAdena / cash : 0;
+        const budget = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state, 0, { r });
         const worth = margin && margin.profit / Number(material.amount);
         if (!(worth > 0)) continue;
         const price = Math.floor(Math.min(worth, budget / missing));
         if (price < 1) continue;
         const result = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(state, {
             type: 'buy_craft_material', status: 'active', target: { itemId: material.selfId, amount: missing,
-                adena: price }, plan: { estimatedCost: price, expectedBenefit: 'market_buy_craft_material', priceSource: 'recipe_margin' }
+                adena: price }, plan: { estimatedCost: price, valueRate: r, expectedBenefit: 'market_buy_craft_material', priceSource: 'recipe_margin' }
         });
         return result.state || state; // One owned money focus; the next input follows its fill event.
     }

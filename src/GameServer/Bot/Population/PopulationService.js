@@ -420,8 +420,9 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWa
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || PurchaseFunding.shortfall(state, price, reserve,
-        PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId))) > 0) return false;
+    if (price <= 0 || (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)))
+            : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)),
+                { itemId: plan.target?.selfId })) < price) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);

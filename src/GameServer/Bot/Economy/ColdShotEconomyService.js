@@ -196,12 +196,15 @@ function recipeTarget(state, index = null, knownRecipeIds = []) {
         Number(index?.recipeStock?.get(Number(right.recipe.recipeItemId)) > 0)
             - Number(index?.recipeStock?.get(Number(left.recipe.recipeItemId)) > 0)
         || Number(right.route?.profit || 0) - Number(left.route?.profit || 0));
-    return viable[0]?.recipe || null;
+    return viable.find(entry => entry.route?.profit > 0) || null;
 }
 
-async function obtainRecipe(state, recipe, now) {
+async function obtainRecipe(state, selected, now) {
+    const { recipe, route } = selected;
+    const hourAdena = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, now).perHour;
+    if (!(route?.profit > 0)) return state;
     const itemId = Number(recipe.recipeItemId);
-    const maxSpend = PurchaseFunding.spendable(state);
+    const maxSpend = PurchaseFunding.spendable(state, 0, { valueHours: route.profit / hourAdena });
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) !== itemId
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25
@@ -286,7 +289,7 @@ function scrapCraftRoutes(state, knownRecipes, index) {
             cash += spend;
             inputs.push({ selfId: id, amount, npcPrice: npc, maxPrice: price });
         }
-        if (!Number.isFinite(cost) || cost <= 0 || cash > PurchaseFunding.spendable(state)) continue;
+        if (!Number.isFinite(cost) || cost <= 0 || cash > PurchaseFunding.spendable(state, 0, { upperBound: true })) continue;
         routes.push({ selfId: Number(recipe.productId), rank: template.etc.rank,
             source: 'craft', crystals: Number(template.etc.cristals), price: cost, cash,
             unitValue: cost / Number(template.etc.cristals), recipe, inputs });
@@ -296,7 +299,7 @@ function scrapCraftRoutes(state, knownRecipes, index) {
 
 function crystalRoute(state, rank, crystalId, required, index) {
     const routes = (index.gear.get(rank) || []).filter(gear => gear.ownerId !== Number(state.characterId)
-        && gear.price <= PurchaseFunding.spendable(state))
+        && gear.price <= PurchaseFunding.spendable(state, 0, { upperBound: true }))
         .map(gear => ({ ...gear, cash: gear.price, unitValue: gear.price / gear.crystals }));
     routes.push(...(index.scrapCraftRoutes || []).filter(route => route.rank === rank));
     for (const stock of ItemDisposition.saleCandidates(state, { unlimited: true })) {
@@ -313,7 +316,7 @@ function crystalRoute(state, rank, crystalId, required, index) {
             price: Number(offer.price), unitValue: Number(offer.price), cash: Number(offer.price) * required,
             crystals: Number(offer.count) });
     }
-    return routes.filter(route => route.cash <= PurchaseFunding.spendable(state))
+    return routes.filter(route => route.cash <= PurchaseFunding.spendable(state, 0, { upperBound: true }))
         .sort((a, b) => a.unitValue - b.unitValue || a.cash - b.cash)[0] || null;
 }
 
@@ -350,11 +353,12 @@ function craftCandidate(state, recipe, index) {
     if (!Number.isFinite(orePrice)) return null;
     const cost = Math.ceil(crystalValue * requiredCrystals + orePrice * Number(ore.amount));
     const margin = Profit.margin(recipe, salePrice, cost, context);
-    if (!margin || margin.profit <= 0 || PurchaseFunding.spendable(state) < (ownedCrystals >= requiredCrystals ? 0 : gear.cash)
-        + orePrice * Number(ore.amount)) return null;
+    const cash = (ownedCrystals >= requiredCrystals ? 0 : gear.cash) + orePrice * Number(ore.amount);
+    const r = margin?.profit > 0 && cash > 0 ? margin.profit / context.hourAdena / cash : 0;
+    if (!margin || margin.profit <= 0 || PurchaseFunding.spendable(state, 0, { r }) < cash) return null;
     const profit = margin.profit;
     return { recipe, output, rank, crystalId, requiredCrystals, ore, orePrice,
-        gear: ownedCrystals >= requiredCrystals ? null : gear, salePrice, profit, cost, demand };
+        gear: ownedCrystals >= requiredCrystals ? null : gear, salePrice, profit, cost, demand, r };
 }
 
 async function persist(state, reason) {
@@ -383,10 +387,11 @@ function consumeMaterials(state, materials) {
 // (ColdMarketService.acquire): here when this town is the cheapest with the
 // trip, else an errand and a trip, and the craft waits. Returns { state,
 // ready }: ready once the bot holds the amount.
-async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true) {
+async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true, r = 0) {
     const missing = amount - availableMaterial(state, selfId);
     if (missing <= 0) return { state, ready: true };
-    const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input' });
+    const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input',
+        money: PurchaseFunding.spendable(state, 0, { r }) });
     return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
 }
 
@@ -398,14 +403,14 @@ async function obtainCrystals(state, candidate, batches) {
     if (availableMaterial(state, candidate.crystalId) >= needed) return { state, ready: true };
     const gear = candidate.gear;
     if (!gear) return { state, ready: false };
-    if (gear.source === 'crystals') return buyMaterial(state, candidate.crystalId, needed, gear.price, false);
+    if (gear.source === 'crystals') return buyMaterial(state, candidate.crystalId, needed, gear.price, false, candidate.r);
     const [skill] = await Database.fetchSkill(state.characterId, 248);
     if (Number(skill?.level || 0) < CRYSTAL_SKILL_LEVEL[candidate.rank]) return { state, ready: false };
     const ownedRows = await Database.fetchItems(state.characterId);
     const ownedRowIds = new Set(ownedRows.map(item => Number(item.id)));
     if (gear.source === 'craft') {
         for (const input of gear.inputs) {
-            const next = await buyMaterial(state, input.selfId, input.amount, input.maxPrice);
+            const next = await buyMaterial(state, input.selfId, input.amount, input.maxPrice, true, candidate.r);
             if (!next.ready) return next;
             state = next.state;
         }
@@ -419,7 +424,7 @@ async function obtainCrystals(state, candidate, batches) {
             vitals: { ...state.vitals, mp } }, 'shot_scrap_crafted');
     } else if (gear.source === 'afk' || gear.source === 'npc') {
         const bought = await ColdMarket().acquire(state, gear.selfId, 1, { maxPrice: gear.price, npc: gear.source === 'npc',
-            purpose: 'craft_input' });
+            purpose: 'craft_input', money: PurchaseFunding.spendable(state, 0, { r: candidate.r }) });
         if (!bought.bought || bought.hot) return { state: bought.state, ready: false };
         state = bought.state;
     }
@@ -451,12 +456,12 @@ async function craft(state, candidate, index, now) {
         Math.ceil(candidate.demand / productPerBatch),
         Math.floor(potentialCrystals / candidate.requiredCrystals),
         mpPerBatch > 0 ? Math.floor(Math.max(0, Number(state.vitals?.mp || 0) - Number(route?.recipe?.mpCost || 0)) / mpPerBatch) : 64,
-        Math.floor(Math.max(0, PurchaseFunding.spendable(state) - fixedCash)
+        Math.floor(Math.max(0, PurchaseFunding.spendable(state, 0, { r: candidate.r }) - fixedCash)
             / (candidate.orePrice * orePerBatch + crystalCashPerBatch)));
     if (batches <= 0) return state;
     const crystals = await obtainCrystals(state, candidate, batches);
     if (!crystals.ready) return crystals.state;
-    const ore = await buyMaterial(crystals.state, Number(candidate.ore.selfId), orePerBatch * batches, candidate.orePrice);
+    const ore = await buyMaterial(crystals.state, Number(candidate.ore.selfId), orePerBatch * batches, candidate.orePrice, true, candidate.r);
     if (!ore.ready) return ore.state;
     state = ore.state;
     const batchRecipe = { ...candidate.recipe, materials: candidate.recipe.materials.map((material) => ({

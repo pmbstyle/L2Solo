@@ -70,7 +70,7 @@ async function run() {
     assert(warriorContext.purchaseBudget(warriorStock.itemId) >= 1728 * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
-    assert.equal(warriorContext.statsPacket.money.length, 3);
+    assert(warriorContext.statsPacket.money.length >= 4 && warriorContext.statsPacket.money.length <= 28);
     assert(warriorContext.statsPacket.money.every(Number.isFinite) && warriorContext.statsPacket.money[2] > 0);
     const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
     for (const wallet of [0, 20000, 200000, 1000000, 50000000]) {

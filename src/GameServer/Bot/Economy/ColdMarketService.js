@@ -328,7 +328,8 @@ const ColdMarketService = {
         // escrow is not in the wallet a shop is paid from.
         const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
-            budget: PurchaseFunding.spendable(state),
+            budget: goal.plan?.weaponBridge ? PurchaseFunding.budget(state)
+                : PurchaseFunding.spendable(state, 0, { itemId: goal.target.itemId }),
             buyerCharacterId: state.characterId
         });
         if (!offer) {
@@ -393,7 +394,7 @@ const ColdMarketService = {
         const restock = ShotStock.restockPlan(current, { plan, unitPrice });
         if (restock.needed && restock.amount > 0) {
             const purchase = planPurchase(current, plan.selfId, restock.targetAmount - restock.currentAmount, {
-                towns: [current.currentRegion], money: Math.max(0, restock.adena - restock.reserve - restock.potionCost)
+                towns: [current.currentRegion], money: restock.cost
             });
             if (purchase) {
                 const bought = await buyHere(current, purchase);

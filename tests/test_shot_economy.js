@@ -24,6 +24,11 @@ assert.strictEqual(NpcShopBuyLists.fetchForNpc(7315).find((row) => row.selfId ==
 
 const dwarf = { characterId: 100, classId: 57, level: 60, adena: 1000000,
     stats: { classId: 57 }, inventory: {}, vitals: { mp: 1000 } };
+// A real own sample prices this fixture's labour; the x10 table fallback is
+// millions/hour and correctly refuses a low-yield D-grade craft.
+const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+dwarf.stats.huntEfficiency = [{ signature: Hunt.signature(dwarf), spotId: 'fixture',
+    at: Date.now(), samples: 3, cycleMs: 3600000, adena: 77000, loot: 0, exp: 100000, kills: 1 }];
 const dRecipeItem = { selfId: 1804, name: 'Recipe: Soulshot: D-Grade', amount: 1 };
 assert.strictEqual(ItemDisposition.canLearnRecipe(dwarf, dRecipeItem), true,
     'a high-level crafter should still learn a D-grade shot recipe');
@@ -83,14 +88,14 @@ assert.strictEqual(ItemDisposition.priceFor({ ...dwarf, stats: {
 } }, { selfId: 1463, amount: recipe.productCount }, index.itemTemplates.get(1463)),
 candidate.salePrice, 'the published shot price must match the profitable route calculation');
 assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
-    shotDemand: new Map([[1464, [{ characterId: 200, amount: 1000, budget: 1000000 }]]]), shotSupply: new Map() })?.recipeItemId, 1805,
+    shotDemand: new Map([[1464, [{ characterId: 200, amount: 1000, budget: 1000000 }]]]), shotSupply: new Map() })?.recipe.recipeItemId, 1805,
     'a crafter should ask for a recipe that somebody actually holds');
 assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
     shotDemand: new Map(), shotSupply: new Map() }), null,
     'a crafter should not buy a recipe for a shot with no market demand');
-assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipeItemId,
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipe.recipeItemId,
     1804, 'a viable D-grade route should create recipe demand even before somebody lists the recipe');
-assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipeItemId,
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipe.recipeItemId,
     1804, 'knowing a higher-grade recipe must not prevent a profitable D-grade route');
 assert.strictEqual(candidate.requiredCrystals, 1);
 assert.strictEqual(candidate.ore.selfId, 1785);
@@ -132,10 +137,12 @@ try {
 const ownSupply = { ...dwarf, inventory: { '129': {
     selfId: 129, amount: 1, equipped: true, slot: 7
 }, '1463': { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT + 156, kind: 'Other.Shot' } } };
-assert(Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } } }),
+const ownShotTarget = invoke('GameServer/Bot/Economy/EconomyContext').basics(ownSupply).stock('shots').target;
+ownSupply.inventory['1463'].amount = ownShotTarget + 156;
+assert(Shots.hasShotSurplus({ ...ownSupply, stats: { ...ownSupply.stats, shotCraft: { productId: 1463 } } }),
     'leftover crafted shots must be admitted for a listing review');
-assert(!Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } },
-    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT } } }),
+assert(!Shots.hasShotSurplus({ ...ownSupply, stats: { ...ownSupply.stats, shotCraft: { productId: 1463 } },
+    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: ownShotTarget } } }),
     'the personal reserve alone must not trigger a surplus listing review');
 assert.strictEqual(ItemDisposition.saleCandidates(ownSupply, { unlimited: true })
     .find((item) => item.selfId === 1463)?.count, 156,

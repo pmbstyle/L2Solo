@@ -111,7 +111,8 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
         const amount = Math.max(1, Math.floor(Number(plan?.next?.amount || 1)));
-        const fee = Math.floor(Math.min(require('../Economy/PurchaseFunding').spendable(state),
+        // ARCH-NOTE: party value is pending; the help fee buys progress on its requested item.
+        const fee = Math.floor(Math.min(require('../Economy/PurchaseFunding').spendable(state, 0, { itemId: objective.itemId }),
             Math.max(0, Number(context.worth(objective.itemId)) || 0) * amount));
         if (fee > 0) objective = { ...objective, helpDeal: { payerId: Number(state.characterId),
             itemId: Number(objective.itemId), count: amount, fee } };

@@ -10,7 +10,7 @@ function templateFor(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
-function bidFor(state, goal) {
+function bidFor(state, goal, { money = Infinity } = {}) {
     const selfId = Number(goal?.target?.itemId || 0);
     const template = templateFor(selfId);
     const basePrice = Number(template?.template?.price || 0);
@@ -20,8 +20,8 @@ function bidFor(state, goal) {
         && Number(state?.inventory?.[String(selfId)]?.amount || 0) > 0) return null;
 
     // `state.adena` already holds the order's escrow (callers add it).
-    const reserve = Math.max(Number(goal.plan?.reserve || 0), PurchaseFunding.operatingReserve(state));
-    const spendable = Math.max(0, adena - reserve);
+    const spendable = Math.min(money, PurchaseFunding.spendable(state, 0,
+        goal.plan?.valueRate === undefined ? { itemId: selfId } : { r: goal.plan.valueRate }));
     // Older generic equipment goals stored the unscaled template value as
     // their budget: like a reference estimate, it says nothing of the price.
     const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource

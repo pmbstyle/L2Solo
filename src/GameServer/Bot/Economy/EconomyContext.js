@@ -261,18 +261,14 @@ function forState(state = {}, deps = {}) {
         return [{ itemId: id, amount: Math.max(1, Math.floor(wish.object?.amount || 1)),
             worth: context.worth(id) ?? price(id), kind: wish.object?.kind, key: wish.key }];
     }).slice(0, 3);
-    context.purchaseBudget = id => {
-        let left = Math.max(0, positive(state.adena) - base.survivalReserve);
-        const ownKit = Math.min(positive(state.adena), base.kitCost(id));
-        for (const wish of network.queue) {
-            if (Number(wish.object?.itemId) === Number(id)) return Math.min(positive(state.adena), ownKit + (wish.ratio >= network.moneyPrice ? left : 0));
-            if (!wish.funded) return ownKit;
-            left -= wish.price;
-        }
-        return ownKit;
-    };
+    const Funding = require('./PurchaseFunding');
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
-        money: [Math.round(context.hourAdena), Number(context.moneyPrice.toPrecision(3)), Math.round(base.survivalReserve)] };
+        money: Funding.packetFor(network, context.hourAdena, base.survivalReserve) };
+    context.purchaseBudget = id => {
+        const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
+        return Funding.spendable({ ...state, stats: { ...state.stats, money: context.statsPacket.money } }, 0,
+            { itemId: id, ...(wish ? { r: Funding.significant(wish.ratio) } : {}), survivalCost: base.kitCost(id) });
+    };
     building = false;
 
     remember(cache, actorKey, { key, reads, context });

@@ -74,13 +74,14 @@ function canTradeRemotely(state, goal) {
         // The offer as the buyer weighs it: its price and its trip there (б5, C7).
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
-            budget: PurchaseFunding.spendable(state, reserved),
+            budget: PurchaseFunding.spendable(state, reserved, { itemId: goal.target?.itemId }),
             buyerCharacterId: state.characterId,
             cost: invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state)
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
         if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
-        return !!BuyStoreService.bidFor(budgetState, goal);
+        return !!BuyStoreService.bidFor(budgetState, goal, { money: PurchaseFunding.spendable(state, reserved,
+            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
     }
     // Opening a shop needs the seller in its town (user, 2026-10-05): only a
     // bot that has its shop sells from afar.
@@ -286,7 +287,7 @@ function saleDecision(state, options = {}) {
 }
 
 // The bot's buy ad lines carry the quote, its authored worth and cursors.
-function buyLines(state, goal) {
+function buyLines(state, goal, { money = Infinity } = {}) {
     const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
     const goals = context.watchList.map(row => ({ type: 'buy_craft_material',
         target: { itemId: row.itemId, amount: row.amount },
@@ -295,12 +296,13 @@ function buyLines(state, goal) {
     let wallet = Number(state.adena || 0);
     const lines = [];
     for (const candidate of goals.slice(0, 3)) {
-        const bid = BuyStoreService.bidFor({ ...state, adena: wallet }, candidate);
+        const bid = BuyStoreService.bidFor({ ...state, adena: wallet }, candidate, { money });
         if (!bid) continue;
         const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
         lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
             enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing });
         wallet -= bid.count * bid.price;
+        money -= bid.count * bid.price;
     }
     return lines;
 }
@@ -372,7 +374,11 @@ async function reconcileBuyAds(state, goal, candidates) {
         if (!ads.length || state.phase !== 'cold') return { state, changed: false };
         return withdrawBuyAds(ownerId, null, state);
     }
-    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
+    // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
+    const escrow = buyOrderEscrow(ownerId);
+    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
+        { money: PurchaseFunding.spendable(state, escrow,
+            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
     const town = buyAdTown(state, ads, wanted);
     if (!wanted.length || (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted))) {
         return { state, changed: false };
@@ -407,7 +413,11 @@ async function publishBuyAds(ownerId, ads, lines, town) {
 async function openBuyAd(state, goal) {
     const ownerId = Number(state.characterId);
     const ads = buyAds(ownerId);
-    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, buyOrderEscrow(ownerId)) }, goal);
+    // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
+    const escrow = buyOrderEscrow(ownerId);
+    const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
+        { money: PurchaseFunding.spendable(state, escrow,
+            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
     if (!wanted.length) return { state, opened: false, reason: 'insufficient_budget' };
     const town = buyAdTown(state, ads, wanted);
     let store;

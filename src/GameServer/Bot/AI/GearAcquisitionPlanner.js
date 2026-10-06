@@ -341,7 +341,7 @@ function candidateEffort(candidate, state, options = {}) {
     const spots = options.spots || [];
     const offer = marketOfferForTarget(item, state, options);
     const marketEffortValue = offer
-        ? (PurchaseFunding.budget(state, options.buyOrderEscrow) >= Number(offer.price || 0)
+        ? (PurchaseFunding.spendable(state, options.buyOrderEscrow, { upperBound: true }) >= Number(offer.price || 0)
             ? 4
             : marketEffort(offer, state))
         : Infinity;
@@ -357,7 +357,7 @@ function candidateEffort(candidate, state, options = {}) {
     // drop sources have become too low-level for the buyer.
     const blades = combinationPurchase(candidate.recipe, state, options);
     const bladeEffort = blades
-        ? 8 + (blades.cost <= PurchaseFunding.spendable(state, options.buyOrderEscrow)
+        ? 8 + (blades.cost <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { upperBound: true })
             ? 4 : blades.cost / expectedAdenaPerKill(state))
         : Infinity;
 
@@ -852,9 +852,11 @@ function npcCandidatesForSlot(state = {}, desiredSlot, maxRank, options = {}) {
 // What a bot may spend on NPC gear: its purchase budget (wallet plus its own
 // buy-order escrow) above the operating reserve.
 function npcPurchaseBudget(state = {}, options = {}) {
-    const reserveOptions = { weaponBridge: !!options.weaponBridge };
-    return { reserve: operationalAdenaReserve(state, options.buyOrderEscrow, reserveOptions),
-        spendable: PurchaseFunding.spendable(state, options.buyOrderEscrow, reserveOptions) };
+    // ARCH-NOTE: a missing usable weapon is survival; its bridge may spend the whole wallet.
+    const reserveOptions = { upperBound: true };
+    return { reserve: options.weaponBridge ? 0 : operationalAdenaReserve(state),
+        spendable: options.weaponBridge ? PurchaseFunding.budget(state, options.buyOrderEscrow)
+            : PurchaseFunding.spendable(state, options.buyOrderEscrow, reserveOptions) };
 }
 
 function staticNpcUpgradePlan(state = {}, options = {}) {
@@ -1035,7 +1037,7 @@ function equipmentBridgeReason(state = {}, options = {}) {
     const plan = npcEquipmentBridgePlan(state, options);
     if (plan?.weaponBridge) return 'weapon_bridge';
     return plan?.equipmentBridge
-        && PurchaseFunding.shortfall(state, plan.market?.price, plan.market?.reserve, options.buyOrderEscrow) === 0
+        && Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId })
         ? 'class_armor_bridge' : null;
 }
 
@@ -1052,8 +1054,7 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
 function fundedMarketPlanForTarget(state = {}, targetId, options = {}) {
     const market = marketPlanForTarget(state, targetId, options);
     return market && Number(market.market.price) > 0
-        && PurchaseFunding.shortfall(state, market.market.price,
-            operationalAdenaReserve(state, options.buyOrderEscrow), options.buyOrderEscrow) === 0
+        && Number(market.market.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: market.target?.selfId })
         ? market : null;
 }
 
