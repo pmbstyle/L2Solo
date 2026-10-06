@@ -421,7 +421,7 @@ async function buyGoalCopy(memberId, plan, clan) {
     offer.equipSlot = number(plan.target?.slot) || undefined;
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return goalPurchaseFailed(blocker);
-    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state));
+    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state, 0, { itemId: plan.target.selfId }));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
         if (!paid.ok) return goalPurchaseFailed(paid.code, paid);

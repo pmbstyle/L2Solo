@@ -11,6 +11,7 @@ const CompanionEquipmentShopping = invoke('GameServer/Bot/AI/CompanionEquipmentS
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
+const BotSkillTraining = invoke('GameServer/Bot/BotSkillTraining');
 
 DataCache.init();
 
@@ -36,10 +37,13 @@ const original = {
     buyFromStore: TradeService.buyFromStore,
     applyBestUpgrades: BotEquipmentUpgrade.applyBestUpgrades,
     sellAndRestock: ShoppingState.sellAndRestock,
-    scheduleRestock: ShoppingState.scheduleRestock
+    scheduleRestock: ShoppingState.scheduleRestock,
+    economyForState: invoke('GameServer/Bot/Economy/EconomyContext').forState,
+    skillReview: BotSkillTraining.review
 };
 
 async function run() {
+    BotSkillTraining.review = async () => null;
     let purchased = false;
     let equippedWith = null;
     let restocked = 0;
@@ -51,6 +55,7 @@ async function run() {
         fetchId: () => 920001,
         fetchName: () => 'HotShopProbe',
         fetchLevel: () => 14,
+        fetchSp: () => 0,
         fetchClassId: () => 0,
         fetchLocX: () => -84081,
         fetchLocY: () => 243227,
@@ -113,6 +118,7 @@ async function run() {
             stats: {
                 classId: 0,
                 role: 'dps',
+                money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463],
                 equipmentPlan: { status: 'no_grade_drop_only', grade: 'none', strategy: 'direct_drop' }
             },
             inventory: {}
@@ -123,7 +129,7 @@ async function run() {
     World.user = { sessions: [] };
     World.npc = { spawns: [npc, alternateNpc] };
     MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
-        && (!options.accept || options.accept(offer)) ? offer : null;
+        && options.budget >= offer.price && (!options.accept || options.accept(offer)) ? offer : null;
     MarketOpportunity.npcOffers = (selfId, townName) => (
         Number(selfId) === 1 && townName === town.name ? [offer] : []
     );
@@ -184,9 +190,14 @@ async function run() {
             inventory: {}
         }
     };
+    const economyModule = invoke('GameServer/Bot/Economy/EconomyContext');
+    economyModule.forState = () => ({ inputKey: 'companion-fixture', worth: () => 1000,
+        network: { activity: { activity: 'shopping', itemId: 1, amount: 1 } } });
+    genericSession.coldLifeState.stats.money = [77000, 2e-5, 15000, 0, 2e-5, 500, 1];
     let genericMarketLookups = 0;
-    MarketOpportunity.bestOffer = (selfId) => {
+    MarketOpportunity.bestOffer = (selfId, options = {}) => {
         genericMarketLookups += 1;
+        assert.strictEqual(options.budget, 1000, 'a funded autonomous shopping leaf uses its item ratio and worth cap');
         return Number(selfId) === 1 ? {
             sourceType: 'afk_player_store',
             sourceId: afkSellerActor.fetchId(),
@@ -216,6 +227,13 @@ async function run() {
     });
     assert.strictEqual(genericMarketLookups, 1, 'later movement ticks must not rescan the market');
     assert(genericMoves.length >= 1, 'the generic hot bot must route to the AFK seller');
+
+    const nonWish = { ...genericSession, companionShopping: null, coldLifeState: { ...genericSession.coldLifeState,
+        stats: { ...genericSession.coldLifeState.stats, money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463] } } };
+    MarketOpportunity.bestOffer = (_itemId, options = {}) => options.budget >= 500 ? { ...offer, price: 500 } : null;
+    assert.strictEqual(CompanionEquipmentShopping.planErrand(nonWish, genericBot, town), null,
+        'an autonomous bot cannot spend its earmarked money on an item absent from the packet');
+    economyModule.forState = original.economyForState;
 
     World.user = { sessions: [] };
     MarketOpportunity.bestOffer = (selfId, options = {}) => Number(selfId) === 1 && !purchased
@@ -332,4 +350,6 @@ run().catch((error) => {
     BotEquipmentUpgrade.applyBestUpgrades = original.applyBestUpgrades;
     ShoppingState.sellAndRestock = original.sellAndRestock;
     ShoppingState.scheduleRestock = original.scheduleRestock;
+    invoke('GameServer/Bot/Economy/EconomyContext').forState = original.economyForState;
+    BotSkillTraining.review = original.skillReview;
 });

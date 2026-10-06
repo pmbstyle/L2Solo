@@ -85,7 +85,7 @@ async function resolveClan(clan) {
         if (!state || state.phase !== 'cold' || String(state.partyId || '') !== '') continue;
         const nextOffer = playerControlled ? ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget))
             : MarketOpportunity.bestOffer(itemId, { buyerCharacterId: state.characterId,
-                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state) + clanBudget) });
+                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state, 0, { free: true }) + clanBudget) });
         if (nextOffer) {
             offer = nextOffer;
             buyer = state;
@@ -100,7 +100,8 @@ async function resolveClan(clan) {
 
     // The member buys in the offer's town (б5): at once when it stands there,
     // else it goes there with an errand and deposits at a later resolve.
-    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price)) - PurchaseFunding.spendable(buyer));
+    // ARCH-NOTE: No member clan-value wish exists; clan purchases use only unearmarked personal money and the treasury.
+    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price)) - PurchaseFunding.spendable(buyer, 0, { free: true }));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: clanPart,
             kind: 'clan_level_purchase', moveMark: false, progressionGoal: goal });

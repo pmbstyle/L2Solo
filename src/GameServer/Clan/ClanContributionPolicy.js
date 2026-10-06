@@ -19,7 +19,7 @@ function walletAdena(state = {}) {
 // What the clan leaves a member: the bot's operating reserve (PurchaseFunding),
 // scaled by the clan's reserve multiplier.
 function personalReserve(state = {}, config = Config) {
-    const baseline = PurchaseFunding.operatingReserve({ level: Math.max(1, number(state.level, 1)), adena: walletAdena(state) });
+    const baseline = PurchaseFunding.operatingReserve(state);
     return Math.ceil(baseline * Math.max(0, number(config.personalAdenaReserveMultiplier, 1)));
 }
 
@@ -70,8 +70,9 @@ function ownGearPurchase(state = null) {
     // own buy-order escrow, as the goal review reads them.
     const escrow = state?.characterId
         ? invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId) : 0;
-    const reserve = number(plan.market.reserve) || PurchaseFunding.operatingReserve(state || {}, escrow);
-    return PurchaseFunding.shortfall(state || {}, plan.market.price, reserve, escrow) === 0 ? 'funded' : 'short';
+    const available = plan.weaponBridge ? PurchaseFunding.budget(state, escrow)
+        : PurchaseFunding.spendable(state, escrow, { itemId: plan.target?.selfId });
+    return number(plan.market.price) <= available ? 'funded' : 'short';
 }
 
 // Share of its free savings a member puts once into the clan's current target:

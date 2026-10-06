@@ -36,8 +36,10 @@ function currentState(session, bot, town) {
     };
 }
 
-function affordableOffers(target, state, town) {
-    const budget = PurchaseFunding.spendable(state);
+function affordableOffers(target, state, town, session) {
+    // ARCH-NOTE: Player companion errands use the player's choice; autonomous bots spend only on their funded item.
+    const budget = PurchaseFunding.spendable(state, 0, session.partyCompanion === true
+        ? { upperBound: true } : { itemId: target.selfId });
     const offer = MarketOpportunity.bestOffer(target.selfId, {
         town: town.name,
         buyerCharacterId: state.characterId,
@@ -72,7 +74,7 @@ function checkedPlan(session, state, town, options = {}) {
         if (leaf?.activity !== 'shopping' || !selfId) return { plan: null, offers: [] };
         const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, selfId);
         const amount = Math.max(1, Math.ceil(leaf.amount || 1));
-        const budget = Math.min(PurchaseFunding.spendable(state) / amount, economy.worth(selfId) ?? Infinity);
+        const budget = Math.min(PurchaseFunding.spendable(state, 0, { itemId: selfId }) / amount, economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget });
         return { plan: offer ? { status: 'active', strategy: 'market',
             target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
@@ -83,7 +85,7 @@ function checkedPlan(session, state, town, options = {}) {
     const offerCache = new Map();
     const offersFor = (target) => {
         const selfId = Number(target?.selfId || 0);
-        if (!offerCache.has(selfId)) offerCache.set(selfId, affordableOffers(target, state, town));
+        if (!offerCache.has(selfId)) offerCache.set(selfId, affordableOffers(target, state, town, session));
         return offerCache.get(selfId);
     };
     const previousOffers = previous?.target?.selfId ? offersFor(previous.target) : [];
@@ -171,7 +173,8 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
 function alternateNpcErrand(session, bot, town, errand) {
     if (errand?.kind !== 'npc_equipment_purchase' || !town?.name) return null;
     const state = currentState(session, bot, town);
-    const budget = PurchaseFunding.spendable(state);
+    const budget = PurchaseFunding.spendable(state, 0, session.partyCompanion === true
+        ? { upperBound: true } : { itemId: errand.itemId });
     const failedSourceIds = new Set([
         ...(errand.failedSourceIds || []).map(Number),
         Number(errand.sourceId || 0)

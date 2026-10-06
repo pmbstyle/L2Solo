@@ -52,7 +52,7 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
             object: { kind: 'equipment', itemId: id, memberId: Number(entry.memberId) }, valueHours: usefulness,
             paths: [{ kind: entry.plan?.strategy || 'market', activity: 'clan_equipment',
                 price: Math.max(0, positive(entry.plan?.bridgeCost ?? entry.plan?.market?.price)
-                    - positive(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(members[memberIndex] || {}))),
+                    - positive(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(members[memberIndex] || {}, 0, { free: true }))),
                 costHours: positive(entry.costHours), available: entry.plan?.status !== 'blocked' }] });
     }
     if (owned) {

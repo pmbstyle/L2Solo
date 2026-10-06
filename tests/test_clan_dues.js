@@ -4,6 +4,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 // The clan's dues (one mechanism for all levels): once per member and hour a
 // share of what it earned since its last settlement, never of its savings; a busy
@@ -55,7 +56,7 @@ async function main() {
     // and its own buy-order escrow counts toward its purchase.
     const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
     for (const wallet of [{ level: 20, adena: 10000 }, { level: 40, adena: 3000000 }, { level: 1, adena: 0 }]) {
-        assert.strictEqual(Policy.personalReserve(wallet), PurchaseFunding.operatingReserve(wallet), `the clan reserve is the operating reserve (${wallet.adena})`);
+        assert.strictEqual(Policy.personalReserve(wallet), Math.ceil(PurchaseFunding.operatingReserve(wallet)), `the clan reserve is the operating reserve (${wallet.adena})`);
     }
     const AfkMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
     const escrowOf = AfkMarket.buyOrderEscrow;
@@ -67,6 +68,14 @@ async function main() {
         'no investment while the member is about to buy its gear (K10)');
     const saving = { adena: 100000, level: 30, stats: { equipmentPlan: { strategy: 'market', market: { price: 500000 } } } };
     near(Policy.investFraction({ commitment: 0.6, ambition: 0.8 }, saving), 0.245, 'a member still saving invests as before');
+
+    const protectedWallet = { characterId: PAYER, level: 30, adena: 900000, stats: { classId: 0,
+        money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463],
+        equipmentPlan: { strategy: 'market', target: { selfId: 9001 }, market: { price: 500000 } } } };
+    assert.strictEqual(Policy.personalReserve(protectedWallet), 15000, 'the member retains its own packet reserve');
+    assert.strictEqual(Policy.ownGearPurchase(protectedWallet), 'short', 'a wallet does not fund an item absent from its packet');
+    protectedWallet.stats.money = [77000, 2e-5, 15000, 0, 4e-5, 20000, 1463, 2e-5, 520000, 9001];
+    assert.strictEqual(Policy.ownGearPurchase(protectedWallet), 'funded', 'the packet and purchase checks agree');
 
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
@@ -89,7 +98,7 @@ async function main() {
         const required = Policy.scaledAdenaRequirement(1);
         const first = await settle(SAVER, { investFraction: 0.25, timestamp: 10 });
         assert.strictEqual(first.dues, 0, 'the first settlement only marks the wallet');
-        assert.strictEqual(first.investment, Math.min(required, Math.floor((4000000 - 400000) * 0.25)), 'a quarter of the free savings');
+        assert.strictEqual(first.investment, Math.min(required, Math.floor((4000000 - Policy.personalReserve({ level: 30, adena: 4000000, stats: { classId: 0 } })) * 0.25)), 'a quarter of the free savings');
         const second = await settle(SAVER, { investFraction: 0.25, timestamp: 11 });
         assert.strictEqual(second.investment, 0, 'one investment per target');
 
@@ -117,6 +126,15 @@ async function main() {
         await Runtime.tick();
         const [after] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_contributions WHERE clanId = ? AND targetLevel = 1', [created.clanId]]);
         assert.strictEqual(Number(after.n), before, 'one pass per clan and hour');
+        await Database.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.money',json(?)) WHERE characterId=?`,
+            [JSON.stringify([77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463]), PAYER]]);
+        await Database.execute(['UPDATE items SET amount=amount+1000000 WHERE characterId=? AND selfId=57', [PAYER]]);
+        const protectedDues = await settle(PAYER, { timestamp: Date.now() + 1 });
+        assert.strictEqual(protectedDues.amount, 0, 'dues cannot spend money reserved toward an unfunded own wish');
+        await Database.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.money',json(?)) WHERE characterId=?`,
+            [JSON.stringify([77000, 1.3e-5, 15000, 0, 4e-5, 20000, 1463]), PAYER]]);
+        await Database.execute(['UPDATE items SET amount=amount+1000000 WHERE characterId=? AND selfId=57', [PAYER]]);
+        assert((await settle(PAYER, { timestamp: Date.now() + 2 })).amount > 0, 'after the gap is paid ordinary earned dues resume');
         console.log('Clan dues checks passed');
     } finally {
         await Database.close();

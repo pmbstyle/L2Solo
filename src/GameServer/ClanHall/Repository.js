@@ -570,8 +570,18 @@ module.exports = function ({
         // Every level pays the clan warehouse; levels 0-1 also write the contribution
         // ledger that the level-up checks.
         settleClanDues({ clanId, characterId, rate = 0, investFraction = 0, timestamp = Date.now() }) {
-            return withCharacterFlush(Number(characterId), () =>
-                tx(() => {
+            return withCharacterFlush(Number(characterId), () => {
+                // ARCH-NOTE: Dues also spend a bot's wallet; read its fixed money packet before the transaction instead of stripping it.
+                const member = one(`SELECT c.level, c.classId,
+                    COALESCE((SELECT SUM(amount) FROM items WHERE characterId=c.id AND selfId=57),0) AS adena,
+                    json_extract(l.statsJson,'$.money') AS money FROM characters c
+                    LEFT JOIN bot_life_state l ON l.characterId=c.id WHERE c.id=?`, [Number(characterId)]);
+                const personal = { level: n(member?.level), adena: n(member?.adena), stats: { classId: n(member?.classId),
+                    money: member?.money ? json(member.money) : undefined } };
+                const funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+                const freeBudget = funding.spendable(personal, 0, { free: true });
+                const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve(personal);
+                return tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId),
                         m = one('SELECT clanId,level FROM characters WHERE id=?', [id]);
@@ -582,8 +592,7 @@ module.exports = function ({
                     const cursor = one('SELECT * FROM clan_hall_earnings WHERE clanId=? AND characterId=?', [c.id, id]);
                     const wealth = payer.amount + n(cursor?.contributed),
                         earned = cursor ? Math.max(0, wealth - cursor.highWater) : 0;
-                    const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve({ level: m.level, adena: payer.amount });
-                    const free = Math.max(0, payer.amount - reserve);
+                    const free = Math.max(0, Math.min(freeBudget, payer.amount - reserve));
                     const dues = Math.min(free, Math.floor(earned * Math.max(0, Math.min(1, rate))));
                     const target = duesTarget(c, level);
                     const state = json(c.stateJson);
@@ -617,8 +626,8 @@ module.exports = function ({
                         investment,
                         row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null
                     };
-                }, 'dues')
-            );
+                }, 'dues');
+            });
         },
         clanHallBlocksDissolution(clanId) {
             return tx(

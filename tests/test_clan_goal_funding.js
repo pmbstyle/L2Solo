@@ -59,13 +59,15 @@ async function main() {
             VALUES (?, 'autonomous', '{"mode":"autonomous","warehouseRevision":0,"updatedAt":1}', 0, 0)`).run(clanId);
         seed.prepare(`INSERT INTO clan_warehouse_items(clanId, selfId, name, kind, amount, enchant, reservedAmount)
             VALUES (?, 57, 'Adena', 'Other.Currency', 3000000, 0, 0)`).run(clanId);
-        // The member's 20k leave 10k above its 10k operating reserve: not enough alone.
+        // The poor member's wallet is earmarked for its own unpaid wish.
         for (const [id, adena] of [[leaderId, 5000000], [poorId, 20000]]) {
             seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
                 locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, ?)`).run(id, `Fund${id}`, clanId);
             seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
                 currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', ?, ?, ?, 1)`)
-                .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1 }));
+                .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1,
+                    ...(id === POOR ? { money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463] } : {}),
+                    ...(id === POOR + 10 ? { money: [77000, 0, 15000, 0] } : {}) }));
             seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', ?, 0, 0, 0, ?)`).run(adena, id);
             // The leader is busy in a party and already armed; the poor member has no weapon.
             if (id === leaderId) seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(helped.target.selfId, id);
@@ -108,8 +110,8 @@ async function main() {
         const clanPaid = 3000000 - Number(left.n);
         const memberPaid = 20000 - Number(poor.n);
         assert(price > 10000, `the goal needs the clan (${price})`);
-        assert.strictEqual(memberPaid, 10000, 'the member pays all it has above its reserve');
-        assert.strictEqual(clanPaid, price - 10000, 'the clan pays the rest');
+        assert.strictEqual(memberPaid, 0, 'the clan purchase preserves money earmarked for the member\'s unpaid own wish');
+        assert.strictEqual(clanPaid, price - memberPaid, 'the clan pays the rest');
         const after = await LifeState.findByCharacterId(POOR);
         assert.strictEqual(after.activity, 'hunting', 'the member keeps hunting where it is');
         assert.strictEqual(after.currentRegion, 'Ant fields');
@@ -130,10 +132,9 @@ async function main() {
         assert.strictEqual(Number(own.n), 20000, 'the member keeps its own money');
         assert.strictEqual(Number((await LifeState.findByCharacterId(POOR + 10)).adena), 20000, 'and its cached state agrees');
 
-        // An unchanged goal is not written again when only the plan's reserve
-        // moved (the reserve follows the member's level and wallet).
+        // An unchanged goal is not written again when the saved operating reserve moves.
         await Database.execute(['UPDATE characters SET level = 44 WHERE id = ?', [POOR + 10]]);
-        await Database.execute(['UPDATE bot_life_state SET level = 44 WHERE characterId = ?', [POOR + 10]]);
+        await Database.execute(["UPDATE bot_life_state SET level = 44, statsJson = json_set(statsJson, '$.money[2]', 16000) WHERE characterId = ?", [POOR + 10]]);
         LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [POOR + 10]]))[0]);
         const reserveBefore = Number((await LifeState.findByCharacterId(POOR + 10)).stats.equipmentPlan.market.reserve);
         const upsertState = LifeState.upsertState;
@@ -145,7 +146,7 @@ async function main() {
         Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
         try {
             const again = await Equipment.resolveClan(await Goals.clanProjectionById(92), failed.goal);
-            assert.notStrictEqual(Number(again.selection.plan.market.reserve), reserveBefore, 'fixture: the reserve moved with the level');
+            assert.notStrictEqual(Number(again.selection.plan.market.reserve), reserveBefore, 'fixture: the saved operating reserve moved');
         } finally {
             Market.buyOffer = buyOffer;
             LifeState.upsertState = upsertState;
