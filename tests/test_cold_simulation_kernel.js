@@ -30,18 +30,28 @@ function state(characterId = 1, overrides = {}) {
 // correlation as the worker instead of a missing-id compatibility path.
 const claimRequestIds = new WeakMap();
 const sentProposals = new WeakMap();
+const sentCommands = new WeakMap();
 function recordingKernel(options) {
     let kernel;
     const requests = new Map();
     const proposals = new Map();
+    const commands = new Map();
     kernel = new ColdSimulationKernel({ ...options, emit: (type, payload, msgId, ...rest) => {
         if (type === 'claim_request') for (const candidate of payload.candidates) requests.set(candidate.characterId, msgId);
         if (type === 'proposal_batch') for (const proposal of payload.proposals) proposals.set(proposal.characterId, proposal);
+        if (type === 'command_request') for (const request of payload.requests) commands.set(request.characterId, request);
         return options.emit?.(type, payload, msgId, ...rest);
     } });
     claimRequestIds.set(kernel, requests);
     sentProposals.set(kernel, proposals);
+    sentCommands.set(kernel, commands);
     return kernel;
+}
+function commandAck(kernel, payload) {
+    const request = sentCommands.get(kernel).get(payload.characterId);
+    assert(request, 'fixture command ACK echoes an actual sent input');
+    return kernel.completeCommand({ ok: true, ...payload, commandId: request.commandId,
+        commandCheckpoint: request.commandCheckpoint });
 }
 function commitAck(kernel, payload) {
     kernel.onCommitAck({ results: payload.results.map(result => {
@@ -321,7 +331,7 @@ function claimAck(kernel, payload) {
     commandKernel.upsert({ state: { ...commandState }, context: { refreshed: true } });
     assert.strictEqual(commandKernel.scheduleTokens.has(3), false,
         'a catalog refresh must not create a second writer while the command is in flight');
-    commandKernel.completeCommand({ characterId: 3, state: { ...commandState }, context: { refreshed: true } });
+    commandAck(commandKernel, { characterId: 3, state: { ...commandState }, context: { refreshed: true } });
     assert.strictEqual(commandKernel.scheduleTokens.has(3), true,
         'a same-revision command ACK must restore the consumed due token');
     assert.strictEqual(commandKernel.snapshot().commanding, 0);
@@ -343,7 +353,7 @@ function claimAck(kernel, payload) {
         'lifecycle commands must share the ownership limit with combat claims');
     await commandPressureKernel.resolveChain;
     for (const s of blockedCommands.slice(0, 2)) {
-        commandPressureKernel.completeCommand({ characterId: s.characterId, ok: false,
+        commandAck(commandPressureKernel, { characterId: s.characterId, ok: false,
             reason: 'missing_spot', retryAfterMs: 30000, state: s, context: {} });
         commandPressureKernel.upsert({ state: s, context: { refreshed: true } });
         assert.strictEqual(commandPressureKernel.scheduleTokens.get(s.characterId).dueAt, now + 30000,
@@ -351,7 +361,7 @@ function claimAck(kernel, payload) {
     }
     commandPressureKernel.tick();
     await commandPressureKernel.resolveChain;
-    commandPressureKernel.completeCommand({ characterId: 712, ok: false, reason: 'missing_spot',
+    commandAck(commandPressureKernel, { characterId: 712, ok: false, reason: 'missing_spot',
         retryAfterMs: 30000, state: blockedCommands[2], context: {} });
     commandPressureKernel.tick();
     const resumedParty = commandPressureMessages.find(m => m.type === 'claim_request');
@@ -376,7 +386,7 @@ function claimAck(kernel, payload) {
     transitionKernel.tick();
     assert.strictEqual(transitionKernel.scheduleTokens.has(5), false,
         'an interim durable refresh can be consumed while the lifecycle ACK is pending');
-    transitionKernel.completeCommand({ characterId: 5, state: transitioned, context: {} });
+    commandAck(transitionKernel, { characterId: 5, state: transitioned, context: {} });
     assert.strictEqual(transitionKernel.scheduleTokens.has(5), true,
         'the lifecycle ACK must restore a transition node consumed during the command');
 

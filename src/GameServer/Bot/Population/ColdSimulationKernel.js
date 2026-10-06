@@ -441,6 +441,7 @@ class ColdSimulationKernel {
         this.dirty = new Map();
         this.commanding = new Set();
         this.commandStartedAt = new Map();
+        this.nextCommandRequest = 1;
         this.lastOrphanSweepAt = 0;
         this.orphanSweepIntervalMs = Math.max(WORKER_SAFETY_INTERVAL_MS,
             Number.isSafeInteger(options.orphanSweepIntervalMs) ? options.orphanSweepIntervalMs : WORKER_SAFETY_INTERVAL_MS);
@@ -502,6 +503,7 @@ class ColdSimulationKernel {
             // ownership state when an older page arrives out of order, while
             // still accepting refreshed routing/party context.
             if (entry.context) this.states.set(characterId, { ...current, context: entry.context });
+            this.refreshCommandSource(characterId);
             this.ensureScheduled(characterId);
             return false;
         }
@@ -519,6 +521,7 @@ class ColdSimulationKernel {
             });
             this.occupancy.update(state);
             this.stats.snapshots += 1;
+            this.refreshCommandSource(characterId);
             this.ensureScheduled(characterId);
             return true;
         }
@@ -527,6 +530,7 @@ class ColdSimulationKernel {
         this.states.set(characterId, { state, context: entry.context || {}, version });
         this.occupancy.update(state);
         this.stats.snapshots += 1;
+        this.refreshCommandSource(characterId);
         this.ensureScheduled(characterId);
         return true;
     }
@@ -848,20 +852,57 @@ class ColdSimulationKernel {
                     });
                 });
             } else if (kind === 'command') {
+                const attempt = this.beginCommand(id);
+                if (!attempt) continue;
                 commandsSelected += 1;
-                this.commanding.add(id);
-                this.commandStartedAt.set(id, this.now());
                 this.stats.commands += 1;
-                this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id));
+                this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id, attempt));
             }
         }
         return candidates;
     }
 
-    async resolveCommand(characterId) {
+    beginCommand(characterId, kind = 'lifecycle') {
+        const id = Number(characterId), current = this.states.get(id);
+        if (!Number.isSafeInteger(id) || id <= 0 || !['lifecycle', 'market_review'].includes(kind)
+            || this.stopping || !current || current.state.phase !== 'cold' || this.busy(id)
+            || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return null;
+        const checkpoint = Protocol.commandCheckpoint(current.state);
+        if (!checkpoint) return null;
+        const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
+            kind, checkpoint, context: current.context, version: current.version, sent: false };
+        this.commandStartedAt.set(id, attempt);
+        this.commanding.add(id);
+        return attempt;
+    }
+
+    cancelCommand(characterId, attempt) {
+        const id = Number(characterId);
+        if (!attempt || this.commandStartedAt.get(id) !== attempt) return false;
+        this.commandStartedAt.delete(id);
+        this.commanding.delete(id);
+        return true;
+    }
+
+    refreshCommandSource(characterId) {
+        const id = Number(characterId), attempt = this.commandStartedAt.get(id), current = this.states.get(id);
+        if (!attempt || typeof attempt !== 'object') return;
+        if (current?.state.phase !== 'cold' || !Protocol.commandCheckpoint(current.state)) this.cancelCommand(id, attempt);
+        else if (Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint)) attempt.version = current.version;
+        else if (!attempt.sent) this.cancelCommand(id, attempt);
+    }
+
+    currentCommand(characterId, attempt) {
+        const id = Number(characterId), current = this.states.get(id);
+        return !this.stopping && !!attempt && this.commandStartedAt.get(id) === attempt
+            && this.commanding.has(id) && current?.state.phase === 'cold' && current.version === attempt.version
+            && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint);
+    }
+
+    async resolveCommand(characterId, attempt) {
         const id = Number(characterId);
         const current = this.states.get(id);
-        if (!current || this.stopping) return;
+        if (!this.currentCommand(id, attempt)) return;
         const timestamp = this.now();
         try {
             const elapsedMs = current.state.timing?.lastResolvedAt
@@ -874,6 +915,7 @@ class ColdSimulationKernel {
                     timestamp
                 })
                 : null;
+            if (!this.currentCommand(id, attempt)) return;
             const resolveState = lifecyclePlan?.plannedState || current.state;
             const result = current.context.clanHallServices || current.state.stats?.clanHallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
@@ -887,11 +929,15 @@ class ColdSimulationKernel {
                 rng: deterministicRandom(current.state),
                 timestamp
             });
+            if (!this.currentCommand(id, attempt)) return;
             this.stats.resolved += 1;
-            this.emit('command_request', {
+            attempt.sent = true;
+            const sent = this.emit('command_request', {
                 requests: [{
                     characterId: id,
                     kind: 'lifecycle',
+                    commandId: attempt.commandId,
+                    commandCheckpoint: attempt.checkpoint,
                     state: current.state,
                     context: current.context,
                     precomputedPlan: lifecyclePlan,
@@ -899,10 +945,11 @@ class ColdSimulationKernel {
                     computedAt: timestamp
                 }]
             });
+            if (sent === false && this.cancelCommand(id, attempt)) this.requeue(id, this.now() + 5000);
         } catch (error) {
+            if (!this.currentCommand(id, attempt)) return;
             this.stats.errors += 1;
-            this.commanding.delete(id);
-            this.commandStartedAt.delete(id);
+            this.cancelCommand(id, attempt);
             this.requeue(id, this.now() + 5000);
         }
     }
@@ -1726,11 +1773,37 @@ class ColdSimulationKernel {
     }
 
     completeCommand(payload = {}) {
-        const id = Number(payload.characterId);
-        this.commanding.delete(id);
-        this.commandStartedAt.delete(id);
-        if (payload.state) {
-            this.upsert({ state: payload.state, context: payload.context || {} });
+        const identity = Protocol.commandIdentity(payload);
+        if (!identity || typeof payload.ok !== 'boolean' || this.stopping) return false;
+        const id = identity.characterId, attempt = this.commandStartedAt.get(id), current = this.states.get(id);
+        if (!attempt?.sent || !this.commanding.has(id) || current?.state.phase !== 'cold'
+            || attempt.commandId !== identity.commandId
+            || (attempt.kind === 'market_review' ? payload.marketCommandId !== attempt.commandId
+                : payload.marketCommandId !== undefined)
+            || !Protocol.sameCommandCheckpoint(attempt.checkpoint, identity.checkpoint)) return false;
+        this.cancelCommand(id, attempt);
+        let output = payload.state;
+        if (output) {
+            const outputCheckpoint = Protocol.commandCheckpoint(output), latest = Protocol.commandCheckpoint(current.state);
+            // A command may publish its native catalog before its receipt. Admit
+            // the original receipt, but keep any known newer retained state.
+            if (!outputCheckpoint || outputCheckpoint.simulationRevision < latest.simulationRevision
+                || (outputCheckpoint.simulationRevision === latest.simulationRevision
+                    && outputCheckpoint.updatedAt < latest.updatedAt)
+                || (!Protocol.sameCommandCheckpoint(latest, attempt.checkpoint)
+                    && !Protocol.sameCommandCheckpoint(outputCheckpoint, latest)
+                    && outputCheckpoint.simulationRevision === latest.simulationRevision
+                    && outputCheckpoint.updatedAt <= latest.updatedAt)) output = current.state;
+            if (output !== current.state && outputCheckpoint.simulationOwner === latest.simulationOwner
+                && outputCheckpoint.simulationRevision === latest.simulationRevision
+                && outputCheckpoint.simulationLeaseId === latest.simulationLeaseId
+                && Number(output.simulation?.leaseUntil || 0) < Number(current.state.simulation?.leaseUntil || 0)) {
+                output = { ...output, simulation: { ...output.simulation, leaseUntil: current.state.simulation.leaseUntil } };
+            }
+            const context = current.context === attempt.context
+                && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint)
+                ? payload.context || current.context : current.context;
+            this.upsert({ state: output, context });
             // Rejected commands often return the unchanged overdue state. Do
             // not let that timestamp immediately re-enter the head of the queue.
             if ((payload.ok === false || Number(payload.retryAfterMs) > 0) && this.scheduleTokens.has(id)) {
@@ -1738,6 +1811,7 @@ class ColdSimulationKernel {
                     this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000)));
             }
         } else this.requeue(id, this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000));
+        return true;
     }
 
     requeue(characterId, dueAt) {
@@ -1775,6 +1849,8 @@ class ColdSimulationKernel {
     async shutdown() {
         this.stopping = true;
         this.pendingReleases.clear();
+        this.commanding.clear();
+        this.commandStartedAt.clear();
         this.states.cancelSafetyCycle();
         this.safetyStartedAt = null;
         this.safetyAlarmToken = null;
@@ -1796,7 +1872,7 @@ class ColdSimulationKernel {
             Math.min(oldest, Number(proposal.enqueuedAt || now))
         ), now);
         const oldestCommandAt = [...this.commandStartedAt.values()].reduce((oldest, startedAt) => (
-            Math.min(oldest, Number(startedAt || now))
+            Math.min(oldest, Number((typeof startedAt === 'object' ? startedAt.startedAt : startedAt) || now))
         ), now);
         return {
             ...this.stats,
@@ -1835,7 +1911,7 @@ class ColdSimulationKernel {
             Math.min(oldest, Number(proposal.enqueuedAt || now))
         ), now);
         const oldestCommandAt = [...this.commandStartedAt.values()].reduce((oldest, startedAt) => (
-            Math.min(oldest, Number(startedAt || now))
+            Math.min(oldest, Number((typeof startedAt === 'object' ? startedAt.startedAt : startedAt) || now))
         ), now);
         const dueFences = due.reduce((counts, entry) => {
             const id = Number(entry.state.characterId);

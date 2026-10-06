@@ -93,6 +93,7 @@ invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => {
             rows: [[7, [7, 'shop', 1, 4242, 'Giran', 1, [[11, 1864, 0, 100, 100, pricing, 0]], 4]]], removed: [] }] });
         publish(0, 1, update.pricing);
         send('command_ack', { results: [{ ok: true, characterId: 4242, state, context,
+            commandId: request.commandId, commandCheckpoint: request.commandCheckpoint,
             marketCommandId: request.commandId }] });
         const second = await until((m) => m.type === 'command_request' && m !== first);
         const secondUpdate = second.payload.requests[0].market.updates[0];
@@ -100,6 +101,8 @@ invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => {
         assert.strictEqual(secondUpdate.pricing.seenCounter, 4, 'a deal during the command is retained');
         publish(1, 2, secondUpdate.pricing);
         send('command_ack', { results: [{ ok: true, characterId: 4242, state, context,
+            commandId: second.payload.requests[0].commandId,
+            commandCheckpoint: second.payload.requests[0].commandCheckpoint,
             marketCommandId: second.payload.requests[0].commandId }] });
         counter(2, 3, 4);
         await new Promise((resolve) => setTimeout(resolve, 100));

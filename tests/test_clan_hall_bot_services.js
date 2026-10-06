@@ -304,7 +304,9 @@ async function main() {
             }
         });
         kernel.upsert({ state, context: { clanHallServices: true } });
-        await kernel.resolveCommand(id);
+        const commandAttempt = kernel.beginCommand(id);
+        assert(commandAttempt, 'hall fixture admits an actual current command attempt');
+        await kernel.resolveCommand(id, commandAttempt);
         assert(requests?.[0].precomputedResult, 'worker requests a main-thread service operation');
         const returnSpot = { id: 'hall-return-test', name: 'Hunting field',
             center: { locX: 10000, locY: 15000, locZ: -3000 }, npcNames: [] };

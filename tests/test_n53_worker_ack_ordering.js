@@ -21,6 +21,7 @@ invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => {
 };
 `;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const commandReceipt = request => ({ commandId: request.commandId, commandCheckpoint: request.commandCheckpoint });
 async function check(mode) {
     const pressure = mode === 'pressure';
     const owners = pressure ? 20 : 1;
@@ -94,7 +95,8 @@ async function check(mode) {
                 rows: [[done.market.updates[0].recordId,
                     boardRow(done.market.updates[0].pricing, done.characterId)]], removed: [] }] });
             send('command_ack', { results: [{ ok: true, characterId: done.characterId,
-                state: done.state, context: done.context, marketDeferred: false, marketCommandId: done.commandId }] });
+                ...commandReceipt(done), state: done.state, context: done.context,
+                marketDeferred: false, marketCommandId: done.commandId }] });
             await until(message => message.type === 'command_request'
                 && !pending.some(request => request.commandId === message.payload.requests[0].commandId));
             await pause(100);
@@ -127,6 +129,7 @@ async function check(mode) {
             rows: [['c:material none', counterRow(4)]], removed: [] }] });
         if (mode === 'snapshot') await pause(100);
         send('command_ack', { results: [{ ok: true, characterId: 4242, state: ackState, context,
+            ...commandReceipt(first.payload.requests[0]),
             marketDeferred: mode !== 'fence', marketCommandId: commandId }] });
         await pause(150);
         const afterAck = commands().length;
@@ -142,6 +145,7 @@ async function check(mode) {
             send('table_page', { tables: [{ name: 'board', from: 1, to: 2, full: false,
                 rows: [[7, boardRow(second.market.updates[0].pricing)]], removed: [] }] });
             send('command_ack', { results: [{ ok: true, characterId: 4242, state: ackState, context,
+                ...commandReceipt(second),
                 marketDeferred: false, marketCommandId: second.commandId }] });
             send('table_page', { tables: [{ name: 'market', from: 2, to: 3, full: false,
                 rows: [['c:material none', counterRow(4)]], removed: [] }] });
@@ -153,6 +157,7 @@ async function check(mode) {
                 && message.payload.requests[0].commandId !== commandId
                 && message.payload.requests[0].commandId !== second.commandId)).payload.requests[0];
             send('command_ack', { results: [{ ok: true, characterId: 4242, state: ackState, context,
+                ...commandReceipt(third),
                 marketDeferred: true, marketCommandId: third.commandId }] });
             await pause(100);
             assert.equal(commands().length, 3, 'zero-applied ack without a new input does not spin');
@@ -167,6 +172,7 @@ async function check(mode) {
             assert.equal(second.state.simulation.revision, 1);
             assert.equal(second.market.updates[0].pricing.seenCounter, 4);
             send('command_ack', { results: [{ ok: true, characterId: 4242, state, context,
+                ...commandReceipt(first.payload.requests[0]),
                 marketDeferred: false, marketCommandId: commandId }] });
             send('table_page', { tables: [{ name: 'market', from: 2, to: 3, full: false,
                 rows: [['c:material none', counterRow(5)]], removed: [] }] });

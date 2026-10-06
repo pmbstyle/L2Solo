@@ -240,6 +240,53 @@ function sameSafetyCheckpoint(left, right) {
     return !!a && !!b && CHECKPOINT_FIELDS.every(key => a[key] === b[key]);
 }
 
+const COMMAND_CHECKPOINT_FIELDS = CHECKPOINT_FIELDS.filter(key => key !== 'simulationLeaseUntil');
+
+function commandCheckpoint(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    // Native snapshots have nested ownership/timing; absent native values use
+    // the same conservative defaults as safety snapshots. Flat wire input must
+    // carry every typed field and cannot obtain those defaults.
+    const flat = Object.prototype.hasOwnProperty.call(value, 'simulationOwner');
+    let checkpoint;
+    if (flat) {
+        if (!COMMAND_CHECKPOINT_FIELDS.every(key => Object.prototype.hasOwnProperty.call(value, key))) return null;
+        checkpoint = Object.fromEntries(COMMAND_CHECKPOINT_FIELDS.map(key => [key, value[key]]));
+    } else {
+        const native = safetyCheckpoint({ ...value, simulation: { ...value.simulation, leaseUntil: 0 } });
+        if (!native) return null;
+        checkpoint = Object.fromEntries(COMMAND_CHECKPOINT_FIELDS.map(key => [key, native[key]]));
+    }
+    const integers = ['characterId', 'simulationRevision', 'activityStartedAt', 'nextResolveAt',
+        'lastResolvedAt', 'lastHotAt', 'updatedAt'];
+    if (!integers.every(key => Number.isSafeInteger(checkpoint[key]) && checkpoint[key] >= 0)
+        || checkpoint.characterId === 0
+        || !['phase', 'activity', 'simulationOwner'].every(key => typeof checkpoint[key] === 'string' && checkpoint[key])
+        || (checkpoint.simulationLeaseId !== null
+            && (typeof checkpoint.simulationLeaseId !== 'string' || !checkpoint.simulationLeaseId))) return null;
+    return checkpoint;
+}
+
+function sameCommandCheckpoint(left, right) {
+    const a = commandCheckpoint(left), b = commandCheckpoint(right);
+    return !!a && !!b && COMMAND_CHECKPOINT_FIELDS.every(key => a[key] === b[key]);
+}
+
+function commandIdentity(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)
+        || !Number.isSafeInteger(value.characterId) || value.characterId <= 0
+        || typeof value.commandId !== 'string' || !value.commandId || value.commandId.length > 160) return null;
+    if (!value.commandCheckpoint || !COMMAND_CHECKPOINT_FIELDS.every(key =>
+        Object.prototype.hasOwnProperty.call(value.commandCheckpoint, key))) return null;
+    const checkpoint = commandCheckpoint(value.commandCheckpoint);
+    if (!checkpoint || checkpoint.characterId !== value.characterId || checkpoint.phase !== 'cold'
+        || (value.state !== undefined && (!value.state || typeof value.state !== 'object'
+            || Array.isArray(value.state) || value.state.characterId !== value.characterId))) return null;
+    if (value.kind !== undefined && (!['lifecycle', 'market_review'].includes(value.kind)
+        || !value.state || !sameCommandCheckpoint(value.state, checkpoint))) return null;
+    return { characterId: value.characterId, commandId: value.commandId, checkpoint };
+}
+
 function validateToken(token = {}) {
     if (!positiveInteger(token.characterId)) return { ok: false, reason: 'invalid_character' };
     if (!Number.isSafeInteger(Number(token.revision)) || Number(token.revision) < 0) {
@@ -286,5 +333,8 @@ module.exports = {
     leaseAckIdentity,
     safetyCheckpoint,
     sameSafetyCheckpoint,
+    commandCheckpoint,
+    sameCommandCheckpoint,
+    commandIdentity,
     byteLength
 };

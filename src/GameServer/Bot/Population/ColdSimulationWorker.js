@@ -119,7 +119,6 @@ const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const marketEvents = new BoardReviewEvents({ board: boardIndex,
     counter: (key) => MarketCounters.counter(key).deals });
 const marketCommands = new Map();
-let marketSequence = 0;
 const boardFollower = boardIndex.follower();
 tables.watch('board', {
     reset: () => { boardFollower.reset(); marketEvents.resetBoardCoverage(); },
@@ -298,15 +297,15 @@ function drainMarketEvents() {
             marketEvents.defer(id);
             continue;
         }
-        kernel.commanding.add(id);
-        kernel.commandStartedAt.set(id, Date.now());
-        const commandId = `market:${id}:${++marketSequence}`;
+        const attempt = kernel.beginCommand(id, 'market_review');
+        if (!attempt) { marketEvents.defer(id); continue; }
+        const commandId = attempt.commandId;
         marketCommands.set(id, commandId);
+        attempt.sent = true;
         if (!send('command_request', { requests: [{ kind: 'market_review', characterId: id,
-            commandId, state: entry.state, context: entry.context, market }] })) {
+            commandId, commandCheckpoint: attempt.checkpoint, state: entry.state, context: entry.context, market }] })) {
             marketCommands.delete(id);
-            kernel.commanding.delete(id);
-            kernel.commandStartedAt.delete(id);
+            kernel.cancelCommand(id, attempt);
             marketEvents.defer(id);
         }
     }
@@ -539,6 +538,9 @@ async function handle(message) {
         kernel.upsertMany(payload.rows || []);
         for (const row of payload.rows || []) {
             const id = Number(row.state?.characterId);
+            if (marketCommands.has(id) && kernel.commandStartedAt.get(id)?.commandId !== marketCommands.get(id)) {
+                marketCommands.delete(id);
+            }
             if (!marketCommands.has(id)) marketEvents.rearm(id);
             marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
         }
@@ -597,13 +599,14 @@ async function handle(message) {
         break;
     case 'command_ack':
         (payload.results || []).forEach((result) => {
-            const id = Number(result.characterId);
-            if (result.marketCommandId !== undefined || marketCommands.has(id)) {
-                if (marketCommands.get(id) !== result.marketCommandId) return;
-                marketCommands.delete(id);
-                result.context = kernel?.states.get(id)?.context || result.context;
-            }
-            kernel?.completeCommand(result);
+            const identity = Protocol.commandIdentity(result);
+            if (!identity || typeof result.ok !== 'boolean') return;
+            const id = identity.characterId;
+            const market = kernel?.commandStartedAt.get(id)?.kind === 'market_review';
+            if (market ? marketCommands.get(id) !== result.commandId || result.marketCommandId !== result.commandId
+                : result.marketCommandId !== undefined || marketCommands.has(id)) return;
+            if (!kernel?.completeCommand(result)) return;
+            if (market) marketCommands.delete(id);
             if (result.marketDeferred && result.reason !== 'stale_market_review') marketEvents.deferAfterCommand(id);
             else marketEvents.rearm(id);
         });
