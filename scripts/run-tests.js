@@ -871,7 +871,9 @@ const tests = [
     'tests/test_character_location_sources.js',
     'tests/test_n53_ack_lifetime.js',
     'tests/test_cold_ack_identity_runtime.js',
-    'tests/test_cold_ack_queue_origin.js'
+    'tests/test_cold_ack_queue_origin.js',
+    'tests/test_n53_resolver_lifetime.js',
+    'tests/test_main_character_location_runtime.js'
 ];
 
 // Real map loading and worker pathfinding are kept in an explicit integration run.
@@ -950,6 +952,8 @@ const defaultConfigTests = new Set([
     'tests/test_n53_ack_lifetime.js',
     'tests/test_cold_ack_identity_runtime.js',
     'tests/test_cold_ack_queue_origin.js',
+    'tests/test_n53_resolver_lifetime.js',
+    'tests/test_main_character_location_runtime.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
     'tests/test_market_restart_cursors.js',
