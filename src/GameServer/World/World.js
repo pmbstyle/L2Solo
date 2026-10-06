@@ -102,6 +102,16 @@ function refreshRawActorLocation(runtime, record) {
     });
 }
 
+function refreshActorPresence(runtime, record) {
+    if (!currentActorRecord(runtime, record)) return false;
+    const targetId = Number(record.actor.fetchDestId?.() || 0);
+    return runtime.index.updateActorPresence(record.id, record, {
+        online: record.actor.fetchIsOnline?.() === true,
+        realPlayer: !!record.session.accountId && !String(record.session.accountId).startsWith('bot_'),
+        targetId: Number.isFinite(targetId) && targetId > 0 ? targetId : 0
+    });
+}
+
 function partyMembershipPacket(runtime, record) {
     if (!currentActorRecord(runtime, record)) return null;
     return { record, keys: [...new Set(PvpPartyMembershipKeys(record.session))] };
@@ -146,6 +156,7 @@ function attachRegisteredActor(runtime, session, membership, explicit = false) {
         if (displaced && displaced !== record) removed.push(displaced);
         membership.registered = record;
         refreshRawActorLocation(runtime, record);
+        refreshActorPresence(runtime, record);
         publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
         notifyUserChange(id);
         return record;
@@ -323,6 +334,7 @@ function waitForBotSession(BotManager, name, attempts = 40) {
 }
 
 const World = {
+    actorSpatialIndex: true,
     get user() { return currentUser; },
     set user(user) {
         const binding = CharacterLocationRuntime.bindWorld(user);
@@ -411,6 +423,7 @@ const World = {
         let accepted = false;
         try {
             accepted = refreshRawActorLocation(runtime, registered);
+            refreshActorPresence(runtime, registered);
             if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
             if (registered.retired) return false;
             const online = actor.fetchIsOnline?.() !== false;
@@ -452,6 +465,7 @@ const World = {
             accepted = true;
             membership.registered = retired;
             refreshRawActorLocation(runtime, retired);
+            refreshActorPresence(runtime, retired);
             publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
             notifyUserChange(previous.id);
             membership.actor = null;
@@ -466,6 +480,35 @@ const World = {
         const runtime = currentUserLocationIndex(this.user);
         const record = runtime?.index.getSource(Number(id), 'actor');
         return runtime && currentActorRecord(runtime, record) ? record : null;
+    },
+
+    actorSessionsNear(loc, radius, accept = null) {
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return [];
+        return runtime.index.rangeFacet(loc, radius, { accept: record => currentActorRecord(runtime, record)
+            && (!accept || accept(record.session)) })
+            .sort((a, b) => a.order - b.order).map(record => record.session);
+    },
+
+    actorPresenceSessions(kind = 'onlineHuman', targetId = null) {
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return [];
+        return runtime.index.presenceSources({ kind, targetId }).filter(record => currentActorRecord(runtime, record))
+            .map(record => record.session);
+    },
+
+    actorPresenceCount() {
+        return currentUserLocationIndex(this.user)?.index.presenceSize() ?? 0;
+    },
+
+    nearestRealPlayer(loc) {
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return { record: null, session: null, distance: Infinity, count: 0 };
+        const found = runtime.index.nearestFacet(loc, { kind: 'player', accept: record => currentActorRecord(runtime, record)
+            && record.actor.fetchIsOnline?.() === true && !!record.session.accountId
+            && !String(record.session.accountId).startsWith('bot_') });
+        return { record: found?.record ?? null, session: found?.record.session ?? null,
+            distance: found?.distance ?? Infinity, count: runtime.index.presenceSize() };
     },
 
     botRealPlayerIndex: true,

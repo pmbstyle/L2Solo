@@ -8,6 +8,7 @@ const ColdStateDelta = require('./ColdStateDelta');
 const { HUNTING_TRAVEL_MS, beginHuntingTrip } = require('./HuntingTravel');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const BotErrands = require('./BotErrands');
+const { eligible: eligibleBuyer } = require('../Economy/MarketBuyerWaiters');
 const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 
 class DueHeap {
@@ -461,6 +462,7 @@ class ColdSimulationKernel {
         this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()));
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
+        this.interactionMemory.playingHours = id => this.states.get(id)?.state?.stats?.playedHours;
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
         this.versions = new Map();
         this.heap = new DueHeap();
@@ -475,6 +477,8 @@ class ColdSimulationKernel {
         this.earliestOperationalAlarm = null;
         this.decisionAlarms = new Map();
         this.decisionEvents = null;
+        this.buyerEvents = null;
+        this.buyerWakeups = new Set();
         this.nextAlarmToken = 1;
         this.inFlight = new Map();
         this.pendingReleases = new Map();
@@ -550,6 +554,7 @@ class ColdSimulationKernel {
             this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
             if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
             this.refreshCommandSource(characterId);
+            this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
             return false;
         }
@@ -570,6 +575,7 @@ class ColdSimulationKernel {
             if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
             this.stats.snapshots += 1;
             this.refreshCommandSource(characterId);
+            this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
             return true;
         }
@@ -581,6 +587,7 @@ class ColdSimulationKernel {
         if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
         this.stats.snapshots += 1;
         this.refreshCommandSource(characterId);
+        this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId);
         return true;
     }
@@ -597,6 +604,8 @@ class ColdSimulationKernel {
         const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
+        this.buyerEvents?.remove(id);
+        this.buyerWakeups.delete(id);
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
@@ -772,10 +781,28 @@ class ColdSimulationKernel {
         return !!entry && isSchedulableKind(lifecycleKind(entry.state, entry.context));
     }
 
+    buyerStateChanged(characterId) {
+        this.buyerEvents?.ownerChanged(characterId, this.now());
+        if (!eligibleBuyer(this.states.get(characterId)?.state)) this.buyerWakeups.delete(characterId);
+    }
+
+    wakeBuyer(characterId, timestamp = this.now()) {
+        const id = Number(characterId);
+        if (this.stopping || !eligibleBuyer(this.states.get(id)?.state) || this.buyerWakeups.has(id)) return false;
+        this.buyerWakeups.add(id);
+        if (!this.busy(id)) this.requeue(id, timestamp);
+        return true;
+    }
+
     ensureScheduled(characterId, dueAt = null) {
         const id = Number(characterId);
         const current = this.states.get(id);
-        if (!current || this.busy(id) || this.hasNormalCoverage(id)) return false;
+        if (!current || this.busy(id)) return false;
+        if (this.buyerWakeups.has(id) && eligibleBuyer(current.state)) {
+            if (!this.hasNormalCoverage(id) || this.scheduleTokens.get(id).dueAt > this.now()) this.requeue(id, this.now());
+            return true;
+        }
+        if (this.hasNormalCoverage(id)) return false;
         if (this.hasAcceptedPartyGrant(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
         this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now(), current.context, this.partySession));
         return true;
@@ -828,7 +855,8 @@ class ColdSimulationKernel {
                 this.requeue(id, Math.max(timestamp + 1000, encounter.expiresAt + 1000));
                 continue;
             }
-            const kind = lifecycleKind(current.state, current.context);
+            const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state)
+                ? 'command' : lifecycleKind(current.state, current.context);
             if (kind === 'resolver') {
                 this.claiming.add(id);
                 this.claimStartedAt.set(id, this.now());
@@ -965,6 +993,7 @@ class ColdSimulationKernel {
         if (!checkpoint) return null;
         const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
             kind, checkpoint, context: current.context, version: current.version, sent: false };
+        if (kind === 'lifecycle' && this.buyerWakeups.delete(id)) attempt.marketWakeup = true;
         this.commandStartedAt.set(id, attempt);
         this.commanding.add(id);
         return attempt;
@@ -1036,14 +1065,19 @@ class ColdSimulationKernel {
                     context: current.context,
                     precomputedPlan: lifecyclePlan,
                     precomputedResult: result,
-                    computedAt: timestamp
+                    computedAt: timestamp,
+                    ...(attempt.marketWakeup ? { marketWakeup: true } : {})
                 }]
             });
-            if (sent === false && this.cancelCommand(id, attempt)) this.requeue(id, this.now() + 5000);
+            if (sent === false && this.cancelCommand(id, attempt)) {
+                if (attempt.marketWakeup) this.buyerWakeups.add(id);
+                this.requeue(id, this.now() + 5000);
+            }
         } catch (error) {
             if (!this.currentCommand(id, attempt)) return;
             this.stats.errors += 1;
             this.cancelCommand(id, attempt);
+            if (attempt.marketWakeup) this.buyerWakeups.add(id);
             this.requeue(id, this.now() + 5000);
         }
     }
@@ -1508,15 +1542,18 @@ class ColdSimulationKernel {
                 stats: { ...(run.party.stats || {}), ...(resolution.partyPatch?.stats || {}) },
                 nextResolveAt: resolution.nextResolveAt
             };
-            const memoryGroup = raid || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
+            const paidHelp = run.party.stats?.agreement?.help?.status === 'funded';
+            const memoryGroup = raid || paidHelp || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
-            if (raid) {
+            if (raid || paidHelp) {
                 resolvedParty.updatedAt = Math.max(startedAt, Number(run.party.updatedAt) + 1);
                 memoryGroup.partyChanges = [{ partyId: run.party.partyId, memberIds: run.party.memberIds,
                     expectedUpdatedAt: run.party.updatedAt, updatedAt: resolvedParty.updatedAt,
                     nextResolveAt: resolvedParty.nextResolveAt, statsJson: JSON.stringify(resolvedParty.stats),
                     status: resolvedParty.status, cohesion: resolvedParty.cohesion, risk: resolvedParty.risk }];
+            }
+            if (raid) {
                 // Even a preparation or unavailable-boss result is atomic.
                 const snapshot = staged.snapshot || run.spot.raidAuthority || {
                     key: raids.keyFor(run.spot, run.targetNpcId), raidInstanceId: run.spot.raidInstanceId,
@@ -1944,6 +1981,8 @@ class ColdSimulationKernel {
 
     async shutdown() {
         this.stopping = true;
+        this.buyerEvents?.clear();
+        this.buyerWakeups.clear();
         this.pendingReleases.clear();
         this.commanding.clear();
         this.commandStartedAt.clear();

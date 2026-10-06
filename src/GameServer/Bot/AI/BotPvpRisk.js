@@ -49,7 +49,7 @@ function evaluate(context = {}) {
     const visible = Visible.canWin({ own: { look: context.ownLook, people: Math.max(1, Number(context.ownPeople) || 1) },
         other: { look: context.threatLook, people: Math.max(1, Number(context.threatPeople) || 1),
             strength: context.threatStrength },
-        traits: context.traits, fear: context.fear || 0 });
+        traits: context.traits, fear: context.fear || 0, knowledge: context.knowledge });
     // One roll per sighting (context.key): unwilling counts as the gap against.
     const willing = Visible.willing(visible, context.key, 'pk_sighting');
     let score = (!willing ? -VISIBLE_GAP : visible.verdict === 'stronger' ? VISIBLE_GAP : 0) + allies * 1.4;
@@ -164,6 +164,7 @@ function defenseDecision(session, threats, { allyAllowed = () => true, key = nul
         !Threats.inPeace(member.actor) && Threats.distance(session.actor, member.actor) <= Threats.PARTY_RADIUS);
     const opponents = opponentsOf(session, threats);
     const voice = invoke('GameServer/Bot/AI/BotChatVoice');
+    const persona = voice.profile(session);
     const traits = { caution: voice.trait(session, 'caution'), assertiveness: voice.trait(session, 'assertiveness'),
         empathy: voice.trait(session, 'empathy') };
     const own = [session.actor, ...allies.map(member => member.actor)];
@@ -174,7 +175,8 @@ function defenseDecision(session, threats, { allyAllowed = () => true, key = nul
         own: { look: Visible.best(own.map(Visible.actorLook)), people: own.length + pets(own),
             strength: own.reduce((sum, actor) => sum + condition(actor), 0) + pets(own) },
         other: Visible.actorSide(enemies),
-        traits, fear: fearOf(session.actor, threats) });
+        traits, fear: fearOf(session.actor, threats),
+        knowledge: persona ? { source: session, persona, key: key || `defense:${actorId(session.actor)}:${actorId(threats[0])}` } : null });
     const fight = Visible.willing(verdict, ...(key || ['defense', actorId(session.actor), actorId(threats[0]), Date.now()]));
     return {
         action: fight ? 'fight' : 'flee',
@@ -193,9 +195,10 @@ function defenseDecision(session, threats, { allyAllowed = () => true, key = nul
 // What a hunter sees of a PK, for evaluate().
 function sighting(session, pk, now = Date.now()) {
     const threat = Visible.actorSide([...opponentsOf(session, [pk]).values()]);
+    const persona = invoke('GameServer/Bot/AI/BotChatVoice').profile(session);
     return { ownLook: Visible.actorLook(session.actor), ownPeople: Visible.actorPeople(session.actor),
         threatLook: threat.look, threatPeople: threat.people, threatStrength: threat.strength, traits: invoke('GameServer/Bot/AI/BotChatVoice').profile(session)?.traits,
-        fear: fearOf(session.actor, [pk], now) };
+        fear: fearOf(session.actor, [pk], now), knowledge: persona ? { source: session, persona, key: `sighting:${actorId(session.actor)}:${actorId(pk)}:${now}` } : null };
 }
 
 module.exports = { evaluate, sighting, isCombatAlly, sameClan, sameParty, combatStrength, defenseDecision, opponentsOf, fearOf };

@@ -1,163 +1,6 @@
-const BotGear = invoke('GameServer/Bot/AI/BotGear');
-const DataCache = invoke('GameServer/DataCache');
-const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
-const PersonaEconomicPolicy = invoke('GameServer/Bot/Economy/PersonaEconomicPolicy');
-const WealthInvestmentPolicy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
-const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
-const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 
-const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
-// An errand (a supply the bot hunts with, an input of its craft) goes before
-// a material purchase (82) and the voluntary sale (74), after recovery (90).
-const ERRAND_PRIORITY = 83;
-const NPC_GEAR_PRIORITY = {
-    weapon: 88,
-    armor: 87,
-    jewelry: 78,
-    other: 76
-};
-// Weapons make the largest immediate difference, then core armour. Paired
-// jewellery is represented by its concrete paperdoll sides in cold inventory,
-// so both copies participate in ordinary progression.
-const EQUIPMENT_PRIORITY = [7, 10, 15, 11, 8, 6, 9, 12, 3, 1, 2, 4, 5];
-const EQUIPMENT_SLOT_NAMES = {
-    1: 'right_earring',
-    2: 'left_earring',
-    3: 'necklace',
-    4: 'right_ring',
-    5: 'left_ring',
-    6: 'head',
-    7: 'weapon',
-    8: 'shield',
-    9: 'hands',
-    10: 'chest',
-    11: 'pants',
-    12: 'feet',
-    15: 'full_armor'
-};
-
-let itemIndexSource = null;
-let itemIndex = new Map();
-
-function itemBySelfId(selfId) {
-    const items = DataCache.items || [];
-    if (itemIndexSource !== items) {
-        itemIndexSource = items;
-        itemIndex = new Map(items.map((item) => [Number(item.selfId), item]));
-    }
-    return itemIndex.get(Number(selfId)) || null;
-}
-
-function percentage(value, maximum) {
-    const max = Math.max(1, Number(maximum) || 0);
-    return Math.max(0, Math.min(1, Number(value) / max));
-}
-
-function rankIndex(rank) {
-    const index = RANK_ORDER.indexOf(String(rank || 'none').toLowerCase());
-    return index >= 0 ? index : 0;
-}
-
-function affordableNpcGearPriority(gear = {}) {
-    if (!gear.npcProgression) return null;
-    const slotPriority = GearLifecycle.slotPriority(gear.slot);
-    if (slotPriority === 3) return NPC_GEAR_PRIORITY.weapon;
-    if (slotPriority === 2) return NPC_GEAR_PRIORITY.armor;
-    if (slotPriority === 1) return NPC_GEAR_PRIORITY.jewelry;
-    return NPC_GEAR_PRIORITY.other;
-}
-
-function equipmentNeed(state, escrow = 0) {
-    if (!GearLifecycle.isGearFocusActive(state)) return null;
-    const equipment = state.stats?.equipment;
-    if (!Array.isArray(equipment)) return null;
-
-    const build = state.stats?.build || {};
-    const classId = Number(state.stats?.classId || build.classId || 0);
-    const plan = BotGear.planFor({ classId, level: Number(state.level || build.level || 1) });
-    const desiredItem = EQUIPMENT_PRIORITY
-        .map((slot) => plan.items.find((item) => Number(item.slot) === slot))
-        .find((item) => {
-            if (!item) return false;
-            const currentItem = equipment.find((equipped) => Number(equipped.slot) === Number(item.slot));
-            const desiredRank = String(item.rank || build.grade || 'none').toLowerCase();
-            return !currentItem || rankIndex(currentItem.rank) < rankIndex(desiredRank);
-        }) || null;
-    const acquisitionPlan = state.stats?.equipmentPlan;
-    // Drop/craft acquisition is executed by the cold resolver itself, not by
-    // a market goal. This also covers ready/blocked craft states: turning a
-    // temporarily blocked C-grade recipe into a generic Giran shopping trip
-    // would make an unavailable NPC item stall normal leveling. A later plan
-    // refresh can still switch to a concrete market offer when one exists.
-    if (['direct_drop', 'craft'].includes(acquisitionPlan?.strategy)
-        || acquisitionPlan?.status === 'blocked') return null;
-    const plannedTarget = acquisitionPlan?.strategy === 'market' && acquisitionPlan?.target
-        ? itemBySelfId(acquisitionPlan.target.selfId)
-        : null;
-    const plannedSlot = Number(acquisitionPlan?.target?.slot || plannedTarget?.etc?.slot || 0);
-    const buyingCombinationBlade = acquisitionPlan?.combine?.resultId
-        && Number(acquisitionPlan.combine.resultId) !== Number(plannedTarget?.selfId);
-    const plannedAlreadyEquipped = !buyingCombinationBlade && plannedTarget && plannedSlot > 0 && equipment.some((item) => (
-        Number(item.slot) === plannedSlot && Number(item.selfId) === Number(plannedTarget.selfId)
-    ));
-    const npcOnlyTier = Number(state.level || build.level || 1) < 40;
-    const concreteNpcPlan = acquisitionPlan?.status === 'active'
-        && acquisitionPlan?.strategy === 'market'
-        && acquisitionPlan?.market?.sourceType === 'npc'
-        && plannedTarget;
-    // No-grade and D-grade equipment is owned by GearAcquisitionPlanner's
-    // concrete NPC-shop plan. Do not fall back to an exact BotGear catalog
-    // item after the NPC kit is already adequate (or while its purchased
-    // target is waiting for the next resolver pass): that loses the shop town
-    // and turns ordinary starter gear into a generic Giran WTB goal.
-    if (npcOnlyTier && (!concreteNpcPlan || plannedAlreadyEquipped)) return null;
-    const selectedItem = plannedTarget && !plannedAlreadyEquipped ? plannedTarget : desiredItem;
-    if (!selectedItem) return null;
-
-    const currentItem = equipment.find((item) => Number(item.slot) === Number(selectedItem.etc?.slot || selectedItem.slot)) || null;
-    const desiredRank = String(selectedItem.etc?.rank || selectedItem.rank || build.grade || 'none').toLowerCase();
-
-    // A just-completed market plan remains on the state until the next
-    // resolver pass.  Once its target is equipped, the generic build may pick
-    // a different next slot; do not send that new purchase to the old offer's
-    // town or fund it with the old price.
-    const usingPlannedTarget = Number(selectedItem.selfId) === Number(plannedTarget?.selfId);
-    const template = itemBySelfId(selectedItem.selfId);
-    const plannedMarket = usingPlannedTarget ? acquisitionPlan?.market : null;
-    const quotedPrice = Math.max(0, Number(plannedMarket?.price || 0));
-    const price = quotedPrice || BotMarketPricing.referencePrice({
-        selfId: selectedItem.selfId, basePrice: template?.template?.price
-    });
-    return {
-        currentItem,
-        desiredRank,
-        slot: Number(selectedItem.etc?.slot || selectedItem.slot),
-        slotName: EQUIPMENT_SLOT_NAMES[Number(selectedItem.etc?.slot || selectedItem.slot)] || `slot_${selectedItem.etc?.slot || selectedItem.slot}`,
-        desiredItem: {
-            selfId: Number(selectedItem.selfId),
-            name: selectedItem.name || selectedItem.template?.name || template?.template?.name || `Item ${selectedItem.selfId}`,
-            price
-        },
-        marketTown: plannedMarket?.town || null,
-        priceSource: quotedPrice > 0 ? 'offer' : 'reference',
-        sourceType: plannedMarket?.sourceType || null,
-        // A plan made before every purchase kept a reserve, or no plan at all
-        // (a class-build goal at 40+), still keeps the operating reserve.
-        reserve: Number(plannedMarket?.reserve || 0) || PurchaseFunding.operatingReserve(state, escrow),
-        clanRequired: acquisitionPlan?.clanGoal?.priority === 'required',
-        npcProgression: plannedMarket?.sourceType === 'npc'
-            || acquisitionPlan?.partyNeedReason === 'npc_progression'
-    };
-}
-
-// The goal a full or junk-heavy bag forces (need from
-// ItemDisposition.inventoryCleanupNeed). An over-capacity bag blocks native
-// trades and keeps every later drop in the same failure loop, so the sale
-// stays below recovery and death but outranks progression and adena.
 function cleanupGoal(need) {
     return {
         type: 'sell_inventory',
@@ -177,254 +20,52 @@ function cleanupGoal(need) {
     };
 }
 
-function routePlan(state, spot) {
-    return {
-        kind: state.party?.partyId ? 'party_route' : 'farm_route',
-        routeId: spot?.route?.id || state.stats?.route?.id || null,
-        spotId: spot?.id || state.spotId || null,
-        expectedBenefit: 'experience_and_sp',
-        risk: Number(spot?.risk || 0)
-    };
-}
-
+// Survival is a hard native floor. Every voluntary activity is one leaf of
+// the same wish network; there is no weapon/material/sale priority ladder.
 function evaluate(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
-    const spot = options.spot || null;
-    const level = Math.max(1, Number(state.level || 1));
-    const hpPct = percentage(state.vitals?.hp, state.vitals?.maxHp);
-    const mpPct = percentage(state.vitals?.mp, state.vitals?.maxMp);
-    const candidates = [];
-
-    if (state.activity === 'dead' || hpPct <= 0.05) {
-        candidates.push({
-            type: 'recover',
-            priority: 100,
-            target: { condition: 'alive_and_recovered' },
-            plan: { kind: 'town_return', expectedBenefit: 'safe_recovery', risk: 0 },
-            blockers: [],
-            nextReviewAt: timestamp + 60000
-        });
-        return candidates;
-    }
-
-    // Loaded on use, like the AFK trade service below.
-    const escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
-    let fundedPurchasePriority = null;
-    const gear = equipmentNeed(state, escrow);
-    if (gear) {
-        const requiredAdena = PurchaseFunding.shortfall(state, gear.desiredItem.price, gear.reserve, escrow);
-        const fundedMarketOffer = requiredAdena === 0 && gear.priceSource === 'offer' && gear.marketTown;
-        const weaponUpgrade = [7, 14].includes(gear.slot);
-        const wealthInvestment = WealthInvestmentPolicy.investmentOpportunity(state, gear.desiredItem.price,
-            gear.reserve, escrow);
-        const npcPurchasePriority = requiredAdena === 0 ? affordableNpcGearPriority(gear) : null;
-        const clanPurchasePriority = requiredAdena === 0 && gear.clanRequired ? 89 : null;
-        // A compatible weapon bridge is itself recovery: the current weapon
-        // cannot execute this class build at all. Let a funded NPC bridge beat
-        // ordinary HP/MP recovery so stale party_wait states can reach town;
-        // genuinely dead states still return from evaluate() above.
-        const weaponBridgePriority = requiredAdena === 0
-            && state.stats?.equipmentPlan?.weaponBridge ? 91 : null;
-        const gearPriority = weaponBridgePriority
-            || clanPurchasePriority
-            || npcPurchasePriority
-            || (wealthInvestment?.affordable ? 81 : requiredAdena > 0 ? 72 : 58);
-        if (requiredAdena === 0) fundedPurchasePriority = gearPriority;
-        candidates.push({
-            type: 'upgrade_gear',
-            // An affordable static-shop upgrade must outrank inventory sales,
-            // otherwise the bot can keep opening sell stores while carrying
-            // enough Adena for the weapon or armour that unlocks progression.
-            // Recovery remains higher at 90, and jewellery stays below the
-            // weapon/core-armour priorities while still beating a normal sale.
-            // A funded clan assignment is stronger than a voluntary wealth
-            // sale, but recovery and forced inventory cleanup still win.
-            priority: gearPriority,
-            target: {
-                equipmentSlot: gear.slotName,
-                requiredRank: gear.desiredRank,
-                currentItemId: gear.currentItem?.selfId || null,
-                itemId: gear.desiredItem.selfId,
-                itemName: gear.desiredItem.name,
-                itemSlot: gear.slot,
-                adena: gear.desiredItem.price
-            },
-            plan: {
-                ...routePlan(state, spot),
-                expectedBenefit: requiredAdena > 0
-                    ? weaponUpgrade ? 'adena_for_weapon_upgrade' : 'adena_for_gear_upgrade'
-                    : weaponUpgrade ? 'market_search_for_weapon' : 'market_search_for_gear',
-                estimatedCost: gear.desiredItem.price,
-                priceSource: gear.priceSource,
-                sourceType: gear.sourceType,
-                reserve: gear.reserve,
-                requiredAdena,
-                marketTown: gear.marketTown,
-                ...(wealthInvestment ? {
-                    personaDrive: 'wealth',
-                    wealthInvestment: {
-                        reason: wealthInvestment.reason,
-                        affordable: wealthInvestment.affordable,
-                        reserve: wealthInvestment.reserve,
-                        spotRisk: wealthInvestment.pressure
-                    }
-                } : {})
-            },
-            // A funded purchase can travel straight to its quoted market;
-            // only earning the missing Adena still requires a farming spot.
-            blockers: spot || fundedMarketOffer ? [] : ['missing_spot'],
-            nextReviewAt: timestamp + 10 * 60 * 1000
-        });
-    }
-
-    if (RestPolicy.needsRest(state, hpPct, mpPct) || state.activity === 'resting') {
-        candidates.push({
-            type: 'recover',
-            priority: 90,
-            target: { hpPct: 0.8, mpPct: 0.65 },
-            plan: { kind: 'rest', expectedBenefit: 'restore_vitals', risk: 0 },
-            blockers: [],
-            nextReviewAt: timestamp + 60000
-        });
-    }
-
-    const minimumAdena = Math.max(120, level * 120);
-    if (Number(state.adena || 0) < minimumAdena) {
-        candidates.push({
-            type: 'earn_adena',
-            priority: 65,
-            target: { adena: minimumAdena },
-            plan: { ...routePlan(state, spot), expectedBenefit: 'adena_and_loot' },
-            blockers: spot ? [] : ['missing_spot'],
-            nextReviewAt: timestamp + 8 * 60 * 1000
-        });
-    }
-
-    const craftPlan = state.stats?.equipmentPlan;
-    const marketMaterial = craftPlan?.status === 'active' && craftPlan?.strategy === 'craft'
-        && Number(state.stats?.marketRetryAfter || 0) <= timestamp
-        ? (() => {
-            const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-            const spendable = PurchaseFunding.spendable(state, escrow);
-            const adenaPerKill = HuntEfficiency.hourValue(state, timestamp).perKill;
-            // Clan beneficiaries can spend a modest premium to finish a shared
-            // equipment goal sooner; personal crafting keeps a savings margin.
-            const farmPriceFactor = craftPlan.clanGoal?.clanId ? 1.35 : 0.9;
-            // An offer costs its price and the trip to its town (the landed
-            // price, group C item 7): the bot buys there, one trip.
-            const trip = invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
-            return (craftPlan.materials || []).flatMap((material) => {
-                const missing = Math.max(0, Number(material.amount || 0)
-                    - Number(state.inventory?.[material.selfId]?.amount || 0));
-                const farmEffort = Number(material.farmEffort);
-                const estimatedMissing = Math.max(1, Number(material.missing || missing));
-                if (!missing || !Number.isFinite(farmEffort) || farmEffort <= 0) return [];
-                const farmEffortPerItem = farmEffort / estimatedMissing;
-                return AfkTrade.offers(material.selfId, AfkTrade.SELL,
-                    { characterId: state.characterId })
-                    .flatMap((offer) => {
-                        const count = Math.min(missing, Number(offer.count));
-                        if (!(count > 0) || !(Number(offer.price) > 0) || Number(offer.price) > spendable) return [];
-                        const landed = Number(offer.price) + Number(trip(offer.town)) / count;
-                        if (!Number.isFinite(landed) || landed / adenaPerKill > farmEffortPerItem * farmPriceFactor) return [];
-                        return [{ material, missing, offer, savings: (farmEffortPerItem - landed / adenaPerKill) * count }];
-                    });
-            }).sort((a, b) => b.savings - a.savings || a.offer.price - b.offer.price)[0] || null;
-        })() : null;
-    const plannedMaterial = marketMaterial?.material || (craftPlan?.marketFallback && craftPlan?.next?.itemId
-        ? craftPlan.materials?.find((material) => Number(material.selfId) === Number(craftPlan.next.itemId))
-            || { selfId: Number(craftPlan.next.itemId), amount: Number(craftPlan.next.requiredTotal || craftPlan.next.amount || 1) }
-        : null);
-    const wantedMaterial = plannedMaterial ? {
-        ...plannedMaterial,
-        missing: plannedMaterial.amount === undefined ? Number(plannedMaterial.missing || 0)
-            : Math.max(0, Number(plannedMaterial.amount) - Number(state.inventory?.[plannedMaterial.selfId]?.amount || 0))
-    } : null;
-    if (wantedMaterial?.missing > 0 && Number(state.stats?.marketRetryAfter || 0) <= timestamp) {
-        candidates.push({
-            type: 'buy_craft_material',
-            priority: 82,
-            target: {
-                itemId: Number(wantedMaterial.selfId),
-                itemName: (state.inventory?.[String(wantedMaterial.selfId)] || {}).name || `Material ${wantedMaterial.selfId}`,
-                amount: Number(wantedMaterial.missing)
-            },
-            plan: { kind: 'market_buy', expectedBenefit: 'market_buy_craft_material', recipeId: craftPlan.recipeId,
-                ...(marketMaterial ? { marketTown: marketMaterial.offer.town,
-                    priceSource: 'offer', estimatedCost: Number(marketMaterial.offer.price),
-                    sourceType: marketMaterial.offer.sourceType } : {}) },
-            blockers: [],
-            nextReviewAt: timestamp + 10 * 60 * 1000
-        });
-        // A material the bot can already pay for is a funded purchase like the
-        // gear above: the voluntary sale below waits for it (E9, 2026-10-03).
-        if (marketMaterial) fundedPurchasePriority = Math.max(fundedPurchasePriority || 0, 82);
-    }
-
-    // An errand another job planned (ColdMarketService.acquire: a shot
-    // restock, a crafter's input, a clan order): a purchase in its town. A
-    // bot in a party gets there by its party's market break.
+    const floor = SurvivalFloor.forState(state, timestamp);
+    if (floor?.action === 'revive') return [{ type: 'recover', priority: 100,
+        target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' }, blockers: [] }];
+    if (floor?.action === 'rest') return [{ type: 'recover', priority: 100,
+        target: { hpPct: floor.hpRatio, mpPct: floor.mpRatio },
+        plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }];
+    if (floor?.action === 'unload') return [{ ...cleanupGoal(floor), priority: 100 }];
     const errand = invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
-    if (errand?.town && Number(errand.selfId) > 0) {
-        candidates.push({
-            type: 'market_errand',
-            priority: ERRAND_PRIORITY,
-            target: { itemId: Number(errand.selfId), amount: Number(errand.amount || 1) },
-            plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
-            blockers: [],
-            nextReviewAt: timestamp + 10 * 60 * 1000
-        });
+    if (errand?.town && errand.selfId > 0) return [{ type: 'market_errand', priority: 80,
+        target: { itemId: errand.selfId, amount: errand.amount },
+        plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
+        blockers: [] }];
+    const context = Economy.forState(state, { ...options, timestamp });
+    const leaf = context.network.activity;
+    if (!leaf) return [];
+    const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
+    const wish = context.network.queue.find(row => row.key === leaf.rootKey);
+    const common = { priority: 50, blockers: [], inputKey: context.inputKey,
+        plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
+            recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost: leaf.price, economyInputKey: context.inputKey,
+            targetId: leaf.targetId, economyActivity: leaf.activity } };
+    if (leaf.activity === 'shopping' && itemId) {
+        const gear = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
+        const slot = Number(gear?.etc?.slot || 0);
+        const offer = context.board?.heads(itemId, 1, { excludeOwner: state.characterId })?.[0];
+        const npc = invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(itemId)[0];
+        const town = offer?.town || npc?.town || state.currentRegion;
+        return [{ ...common, type: slot ? 'upgrade_gear' : 'buy_craft_material',
+            target: { itemId, itemSlot: slot, amount: Math.max(1, Math.ceil(leaf.amount || wish?.object?.amount || 1)), adena: leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price },
+            plan: { ...common.plan, expectedBenefit: slot ? 'market_search_for_gear' : 'market_buy_craft_material',
+                marketTown: town, sourceType: offer ? 'afk' : npc ? 'npc' : null,
+                purpose: wish?.object?.kind, requiredAdena: 0, reserve: Economy.survivalReserve(state) } }];
     }
-
-    const inventoryCleanup = ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
-    if (inventoryCleanup) {
-        candidates.push({ ...cleanupGoal(inventoryCleanup), nextReviewAt: timestamp + 10 * 60 * 1000 });
-    }
-
-    const sale = ItemDisposition.saleSummary(state);
-    const wealthSale = PersonaEconomicPolicy.wealthSaleOpportunity(state, sale);
-    if (sale.itemCount >= 3 || sale.marketValue >= 1000 || wealthSale) {
-        candidates.push({
-            type: 'sell_inventory',
-            // A full bag is capital, not a reason to keep grinding with no
-            // adena. Recovery and death still win, but an equipped bot with
-            // useful surplus should reach the market before another generic
-            // earn-adena / upgrade-funding loop.
-            // A voluntary sale waits for a purchase the bot can already pay
-            // for (the upgrade rule above), also for a wealth persona: its
-            // wealth is gear value plus Adena (the author, 2026-10-02).
-            priority: fundedPurchasePriority
-                ? Math.min(74 + Number(wealthSale?.priorityBonus || 0), fundedPurchasePriority - 1)
-                : 74 + Number(wealthSale?.priorityBonus || 0),
-            target: {
-                itemCount: sale.itemCount,
-                marketValue: sale.marketValue,
-                focusItem: wealthSale?.focus || null
-            },
-            plan: {
-                kind: 'market_sell',
-                expectedBenefit: 'market_sale_inventory',
-                risk: 0,
-                personaDrive: wealthSale ? 'wealth' : null,
-                personaReason: wealthSale?.reason || null
-            },
-            blockers: [],
-            nextReviewAt: timestamp + 10 * 60 * 1000
-        });
-    }
-
-    if (level < ProgressionCap.effectiveLevelCap()) {
-        candidates.push({
-            type: 'progress_level',
-            priority: 35,
-            target: { level: level + 1 },
-            plan: routePlan(state, spot),
-            blockers: spot ? [] : ['missing_spot'],
-            nextReviewAt: timestamp + 12 * 60 * 1000
-        });
-    }
-
-    return candidates;
+    if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',
+        target: { itemIds: leaf.items || [], itemCount: leaf.items?.length || 0 },
+        plan: { ...common.plan, kind: 'market_sell', expectedBenefit: 'market_sale_inventory' } }];
+    if (leaf.activity === 'improving') return [{ ...common, type: 'improving', target: { improvement: leaf.improvement },
+        plan: { ...common.plan, marketTown: 'Giran', expectedBenefit: 'improvement' } }];
+    if (leaf.activity === 'hunting') return [{ ...common, type: leaf.funding ? 'earn_adena' : 'progress_level',
+        target: leaf.funding ? { adena: wish?.price || 0 } : { level: Number(state.level) + 1 },
+        plan: { ...common.plan, kind: 'farm_route', expectedBenefit: leaf.funding ? 'adena_and_loot' : 'experience_and_sp' } }];
+    return [{ ...common, type: leaf.activity, target: { itemId, targetId: leaf.targetId },
+        plan: { ...common.plan, expectedBenefit: leaf.activity } }];
 }
-
 module.exports = { evaluate, cleanupGoal };

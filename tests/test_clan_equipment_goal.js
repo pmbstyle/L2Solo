@@ -187,8 +187,12 @@ async function main() {
         const [followUp] = await Database.execute([`SELECT status, availableAt
             FROM clan_actions WHERE clanId = ? AND actionType = 'goal_plan' AND status = 'pending'
             ORDER BY id DESC LIMIT 1`, [created.clanId]]);
-        assert(followUp, 'an L3 equipment goal must keep a bounded periodic priority review queued');
-        assert(Number(followUp.availableAt) >= Date.now(), 'an unchanged equipment review must use the retry cadence');
+        assert.strictEqual(followUp, undefined, 'an unchanged autonomous equipment goal waits for its own input event');
+        require('../src/GameServer/Clan/ClanReviewEvents').changed(created.clanId, 'member_gear');
+        await ClanActionService.scheduleReviews();
+        const [eventReview] = await Database.execute([`SELECT availableAt FROM clan_actions
+            WHERE clanId=? AND actionType='goal_plan' AND status='pending'`, [created.clanId]]);
+        assert(Number(eventReview.availableAt) <= Date.now(), 'the addressed gear event admits a current review immediately');
 
         console.log('Clan equipment goal checks passed');
     } finally {

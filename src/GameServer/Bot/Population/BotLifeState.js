@@ -557,6 +557,11 @@ function recordFromSession(session, phase, reason = '') {
     const characterId = Number(actor.fetchId());
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
+        ...Object.fromEntries(['playedHours', 'economyClock', 'frustration', 'lifelongKills', 'peoplePoints'].map(key => [key, session.coldLifeState?.stats?.[key] ?? cache.get(characterId)?.stats?.[key] ?? 0])),
+        peopleEpisode: session.coldLifeState?.stats?.peopleEpisode ?? cache.get(characterId)?.stats?.peopleEpisode ?? null,
+        ...(session.peopleKnowledge || {}),
+        playedHours: require('../../Social/RelationshipContext').playedHours(session, timestamp),
+        pk: Number(actor.fetchPk?.() || 0),
         role: session.botStatus?.role || null,
         deathExperience: actor.deathExperience ? { ...actor.deathExperience } : null,
         karma: Number(actor.fetchKarma?.() || 0),
@@ -590,6 +595,8 @@ function recordFromSession(session, phase, reason = '') {
         // The resolver rebuilds those values deterministically after effects
         // expire, rather than retaining a stale buffed total indefinitely.
         coldCombat: ColdCombatProfile.capture(actor, timestamp),
+        hennas: [...(session.hennas || [])],
+        soulCrystalQuest: session.questStates?.get(350)?.isStarted() === true,
         leaderId: session.followPlayerSession?.actor?.fetchId ? Number(session.followPlayerSession.actor.fetchId()) : null,
         supplyErrand: session.companionShopping?.kind === 'player_resource_purchase'
             ? {
@@ -851,12 +858,19 @@ function save(row, options = {}) {
 
 function hydrateCache() {
     return Database.execute([
-        `SELECT * FROM ${TABLE}`,
+        `SELECT states.*, (SELECT json_group_array(json_object('slot', slot, 'symbolId', symbolId))
+            FROM character_hennas WHERE characterId = states.characterId) AS nativeHennas,
+            EXISTS(SELECT 1 FROM character_quests WHERE characterId = states.characterId AND questId = 350 AND state = 'started') AS nativeCrystalQuest
+            FROM ${TABLE} states`,
         []
     ]).then((rows) => {
         rows.forEach((row) => {
             const state = normalize(row);
+            state.stats.hennas = [null,null,null];
+            for (const symbol of parseJson(row.nativeHennas, [])) state.stats.hennas[symbol.slot - 1] = symbol.symbolId;
+            state.stats.soulCrystalQuest = !!row.nativeCrystalQuest;
             cache.set(state.characterId, state);
+            invoke('GameServer/Bot/Economy/CraftWorkshopService').register(state);
         });
         return rows.length;
     });
@@ -876,7 +890,8 @@ function preserveStarterLootProvenance(previousInventory = {}, observedInventory
 function classProgressionNeeded(state, classId, level) {
     const knownLevel = Number(state.stats?.classProgressionLevel || 0);
     const knownClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId);
-    return knownLevel < Number(level || 1) || knownClassId !== Number(classId);
+    return knownLevel < Number(level || 1) || knownClassId !== Number(classId)
+        || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(state);
 }
 
 function refreshColdCombatProfile(state) {
@@ -934,7 +949,8 @@ function applyClassProgression(state, profile = {}) {
             }
         };
         if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-        return refreshColdCombatProfile(reconcileEquipmentInventory(progressedState));
+        return refreshColdCombatProfile(reconcileEquipmentInventory(
+            invoke('GameServer/Skills/SkillBookCatalog').applyTraining(progressedState, resolved)));
     });
 }
 
@@ -2505,10 +2521,13 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: timestamp
         };
+        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { timestamp });
+        Object.assign(nextState.stats, economy.statsPacket);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
-        const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
+        const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId
+            || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(nextState);
         const characterId = nextState.characterId;
         // The cached input remains current until this resolve publishes its
         // own snapshot. Recheck that capability at assigned native writers.
@@ -2547,7 +2566,8 @@ const BotLifeState = {
                 }
             };
             if (resolved.transitions?.length) delete progressedState.stats.equipmentPlan;
-            const equippedProgressedState = reconcileEquipmentInventory(progressedState);
+            const equippedProgressedState = reconcileEquipmentInventory(
+                invoke('GameServer/Skills/SkillBookCatalog').applyTraining(progressedState, resolved));
             const profileReady = needsClassProgression
                 ? (options.projectClassProgression === true
                     ? projectColdCombatProfile(equippedProgressedState, timestamp)
@@ -2592,8 +2612,15 @@ const BotLifeState = {
                             : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
                     })
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
-                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve', nativeWriteOptions))
-                    .then(() => {
+                    .then(() => result.soulCrystals?.length
+                        ? Database.applyColdSoulCrystalResults(row.characterId, result.soulCrystals, nativeWriteOptions || {}) : null)
+                    .then(() => syncInventorySummary(row.characterId, profiledState.inventory, newDeath ? 'resolve_death' : 'resolve', nativeWriteOptions))
+                    .then((deathDrop) => {
+                        if (deathDrop?.inventory) {
+                            row.inventorySummary = safeJson(deathDrop.inventory);
+                            row.statsJson = safeJson({ ...parseJson(row.statsJson, {}), pkDropDeathSequence: deathDrop.deathSequence });
+                            require('../../Actor/Generics/PkDeathDrop').spawn(row.characterId, profiledState.loc, deathDrop.drops);
+                        }
                         const publish = () => {
                             const snapshot = normalize(row);
                             cache.set(snapshot.characterId, snapshot);
@@ -2624,6 +2651,22 @@ const BotLifeState = {
                 preparedOptions.workerAdmission = options.workerAdmission;
             }
             return this.prepareResolve(state, result, preparedOptions);
+        });
+    },
+
+    reviewTrainingAfterCommit(state, options = {}) {
+        if (!state || state.phase !== 'cold' || state.simulation?.ownerId !== 'legacy_main' || state.activity === 'dead') return Promise.resolve(state);
+        return this.serializeClanLevelUp(state.characterId, async () => {
+            if (cache.get(state.characterId) !== state) return cache.get(state.characterId) || state;
+            if (!classProgressionNeeded(state, state.stats?.classId, state.level)) return state;
+            const beforeWrite = Database.createColdTrainingGuard(state, () => {
+                options.beforeWrite?.();
+                if (cache.get(state.characterId) !== state) throw Error('cold_training_source_retired');
+            });
+            const resolved = await BotClassProgression.reconcile({ characterId: state.characterId,
+                classId: state.stats?.classId || 0, level: state.level, seed: state.characterId }, { beforeWrite });
+            const row = await Database.publishColdTraining(state.characterId, resolved, { beforeWrite });
+            return this.acceptLifecycleRow(row, 'paid_training');
         });
     },
 
@@ -3532,15 +3575,17 @@ const BotLifeState = {
         const next = previous.catch(() => {}).then(async () => {
             const enemies = invoke('GameServer/Bot/AI/BotEnemyMemory').snapshot(session);
             const incidents = invoke('GameServer/Social/PvpResponsibility').snapshot(session.actor);
+            const people = session.peopleKnowledge;
             const current = cache.get(id);
             if (!current || current.phase !== 'hot' || (JSON.stringify(current.stats?.pvpEnemies || []) === JSON.stringify(enemies)
-                && JSON.stringify(current.stats?.pvpIncidents || []) === JSON.stringify(incidents))) return false;
+                && JSON.stringify(current.stats?.pvpIncidents || []) === JSON.stringify(incidents)
+                && (!people || current.stats?.peoplePoints === people.peoplePoints && current.stats?.peopleEpisode === people.peopleEpisode))) return false;
             await Database.execute([
-                `UPDATE ${TABLE} SET statsJson = json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?), '$.pvpIncidents', json(?)) WHERE characterId = ? AND phase = 'hot'`,
-                [JSON.stringify(enemies), JSON.stringify(incidents), id]
+                `UPDATE ${TABLE} SET statsJson = json_patch(json_set(COALESCE(statsJson, '{}'), '$.pvpEnemies', json(?), '$.pvpIncidents', json(?)), json(?)) WHERE characterId = ? AND phase = 'hot'`,
+                [JSON.stringify(enemies), JSON.stringify(incidents), JSON.stringify(people || {}), id]
             ], 'bot:enemy-memory');
             const latest = cache.get(id);
-            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), pvpEnemies: enemies, pvpIncidents: incidents } });
+            if (latest) cache.set(id, { ...latest, stats: { ...(latest.stats || {}), ...(people || {}), pvpEnemies: enemies, pvpIncidents: incidents } });
             return true;
         }).catch(error => {
             utils.infoWarn('BotLife', 'failed enemy memory for %s: %s', id, error.message);
@@ -3626,6 +3671,10 @@ const BotLifeState = {
         if (typeof listener !== 'function') return () => {};
         changeListeners.add(listener);
         return () => changeListeners.delete(listener);
+    },
+
+    subscribePublications(listener, options = {}) {
+        return cache.subscribePublications(listener, options);
     },
 
     subscribeMarketReviewChanges(listener) {

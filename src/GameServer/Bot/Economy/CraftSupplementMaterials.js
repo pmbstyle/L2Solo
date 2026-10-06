@@ -1,9 +1,4 @@
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
-const DataCache = invoke('GameServer/DataCache');
-
-function isSupplementalMaterial(selfId) {
-    const name = ItemTemplateIndex.find(DataCache.items, selfId)?.template?.name || '';
-    return /^(Crystal:|Gemstone\s)/i.test(name);
-}
-
+// Kept for callers of the old preparation interface. Every recipe ingredient
+// now has to be owned or acquired on the normal purchase path.
+function isSupplementalMaterial() { return false; }
 module.exports = { isSupplementalMaterial };

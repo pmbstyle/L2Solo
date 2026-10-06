@@ -41,7 +41,8 @@ function record(source, mob, now = Date.now(), rng = Math.random) {
         !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(attacker) &&
         !invoke('GameServer/World/ArenaCombatRules').isArenaParticipant(claim.owner)) {
         claim.memoryEvent = { key: `mob:${randomUUID()}`, sourceId: Number(claim.owner.fetchId()),
-            targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now };
+            targetId: Number(attacker.fetchId()), type: 'mob_contested', at: now,
+            lossExp: Math.max(0, Number(mob.fetchRewardExp?.() || mob.rewards?.exp || mob.model?.exp || 0)) };
         claim.memoryEvent = invoke('GameServer/Clan/ClanSocialEvidence').attach(claim.memoryEvent,
             claim.owner, attacker, claim.memoryEvent.key, 'aggression');
     }

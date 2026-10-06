@@ -11,8 +11,9 @@ const { seeded } = require('../AI/TendencyRoll');
 class ColdCompetitionMonitor {
     // ownSide(states, timestamp): how a side knows itself (U26). The worker passes the
     // exact one (ColdPvpResolver.ownSide); standalone tests see themselves as others do.
-    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true, ownSide = Visible.stateSide, onCooldown = () => {} }) {
+    constructor({ capacityForSpot, personaFor, isTargetAllowed = () => true, ownSide = Visible.stateSide, onCooldown = () => {}, knowledgeFor = () => null }) {
         this.ownSide = ownSide;
+        this.knowledgeFor = knowledgeFor;
         this.onCooldown = onCooldown;
         this.capacityForSpot = capacityForSpot;
         this.personaFor = personaFor;
@@ -193,7 +194,9 @@ class ColdCompetitionMonitor {
             const look = unit => ({ ...unit, own: this.ownSide(unit.members, timestamp), seen: Visible.stateSide(unit.members, timestamp) });
             const key = `competition:${Math.floor(timestamp / INTERVAL_MS)}:${group.key}:${[actor.id, peer.id].sort((a, b) => a - b).join(':')}`;
             const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
-                actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key });
+                actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key,
+                actorKnowledge: this.knowledgeFor(actor.state, this.personaFor(actor.state), `${key}:0`),
+                peerKnowledge: this.knowledgeFor(peer.state, this.personaFor(peer.state), `${key}:1`) });
             // Cooling down a conflict must not prevent leaving the spot or cooperating.
             if (outcome.action === 'contest' && conflictCooling) { this.report.skipped.conflictCooldown++; continue; }
             const event = { at: timestamp, key,

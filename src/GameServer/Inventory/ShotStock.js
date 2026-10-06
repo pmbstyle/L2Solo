@@ -122,7 +122,8 @@ function planForState(state) {
 // shot crafters' surplus (ColdShotEconomyService), so nothing the restock has
 // just bought is sold back.
 function keptAmounts(state) {
-    return { [planForState(state).selfId]: PURCHASE_TARGET_AMOUNT };
+    const stock = invoke('GameServer/Bot/Economy/EconomyContext').forState(state).stock('shots');
+    return { [stock.itemId]: stock.target };
 }
 
 function planFor({ classId, rank = 'none' } = {}) {
@@ -325,28 +326,34 @@ function restockPlan(value, options = {}) {
         : shotAmount(value, plan);
     const adena = Math.max(0, Number(options.adena ?? (actor
         ? value.backpack.fetchItemFromSelfId?.(57)?.fetchAmount?.() : value?.adena) ?? 0) || 0);
-    const level = Math.max(1, Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1);
-    const reserve = PurchaseFunding.operatingReserve({ adena, level });
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const state = actor ? Economy.stateForActor(value) : value;
+    const context = Economy.forState(state);
+    const stock = context.stock('shots');
+    const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
+    const reserve = PurchaseFunding.operatingReserve(state);
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
-        .cheapestPurchase(plan.selfId));
+        .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
-    const needed = npcPrice > 0 && currentAmount < DEFAULT_TARGET_AMOUNT;
-    const left = needed ? PURCHASE_TARGET_AMOUNT - currentAmount : 0;
+    const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve) : context.purchaseBudget(plan.selfId);
+    const maxPrice = npcPrice > 0 ? npcPrice - 1 : context.worth(plan.selfId) ?? context.price(plan.selfId);
+    const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.usePerHour);
+    const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
-    const money = Math.max(0, adena - reserve - potionCost);
+    const money = Math.min(allowance, Math.max(0, adena - reserve - potionCost));
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
     // the one rule for a stack purchase (OfferQuery.fill).
     const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
-    const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice: npcPrice - 1 });
+    const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice });
     const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price }));
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
-    const npcAmount = npcRestockAmount({ needed, targetAmount: PURCHASE_TARGET_AMOUNT, currentAmount,
-        unitPrice: npcPrice, adena, reserve, potionCost }, shopAmount, shopCost);
+    const npcAmount = npcRestockAmount({ needed, targetAmount, currentAmount,
+        unitPrice: npcPrice, adena: Math.min(adena, money + reserve + potionCost), reserve, potionCost }, shopAmount, shopCost);
     return {
         plan,
         currentAmount,
-        targetAmount: PURCHASE_TARGET_AMOUNT,
+        targetAmount,
         needed,
         shops,
         npcAmount,
@@ -359,7 +366,7 @@ function restockPlan(value, options = {}) {
     };
 }
 
-// The NPC part of a restock (restockPlan): the rest up to 3,000 with the money
+// The NPC part of a restock (restockPlan): the remaining hours of stock with the money
 // left after the players' shops. `bought` and `spent` are what the shop lines
 // bought, so a line that fails at purchase leaves its shots and money to the NPC.
 function npcRestockAmount(restock, bought = 0, spent = 0) {
@@ -429,8 +436,10 @@ function restockAfterWeaponChange(actor, slots = [], logTag = 'BotGear') {
         .catch((error) => utils.infoWarn(logTag, 'failed to refresh shots for %s: %s', actor.fetchName?.(), error.message));
 }
 
-function needsActorRestock(actor, threshold = 0) {
-    return shotAmount(actor) <= Number(threshold || 0);
+function needsActorRestock(actor) {
+    const context = invoke('GameServer/Bot/Economy/EconomyContext').forActor(actor);
+    const stock = context.stock('shots');
+    return stock.needed && context.purchaseBudget(stock.itemId) > 0;
 }
 
 // Where a hot bot goes for its shots in `town`: the best seller there, a

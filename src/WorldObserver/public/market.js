@@ -1,3 +1,6 @@
+/* eslint-env browser */
+/* global MarketModel */
+
 const marketState = {
     data: null,
     loading: false,
@@ -30,6 +33,8 @@ const marketEls = {
     volume: document.querySelector('#marketPageVolume'),
     tradeUnits: document.querySelector('#marketPageTradeUnits'),
     volumeScope: document.querySelector('#marketPageVolumeScope'),
+    counterRows: document.querySelector('#marketCounterRows'),
+    adenaRows: document.querySelector('#marketAdenaRows'),
     search: document.querySelector('#marketSearch'),
     sideTabs: document.querySelector('#marketSideTabs'),
     town: document.querySelector('#marketTown'),
@@ -459,6 +464,22 @@ function renderMarketTrades() {
     }).join('') : '<div class="list-empty">No trades recorded since server start.</div>';
 }
 
+function renderMarketEconomy() {
+    const economy = MarketModel.economy(marketState.data);
+    const labels = { gear: 'Equipment', shot: 'Shots', recipe: 'Recipes', material: 'Materials' };
+    marketEls.counterRows.innerHTML = economy.counters.length ? economy.counters.map((row) => `<tr>
+        <td>${escapeMarketHtml(labels[row.kind] || row.kind)}</td><td>${escapeMarketHtml(row.grade === 'none' ? 'No grade' : row.grade.toUpperCase())}</td>
+        <td>${row.priceIndex === null ? '—' : Number(row.priceIndex).toFixed(1)}</td>
+        <td>${marketNumber(row.deals)}</td><td>${Number(row.buyersPerHour).toFixed(1)}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="list-empty">Price indices unavailable.</td></tr>';
+    marketEls.adenaRows.innerHTML = economy.available ? economy.buckets.map((row) => `<tr>
+        <td>${escapeMarketHtml(new Date(row.at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' }))}${row.partial ? ' · partial' : ''}</td>
+        <td>${row.observed ? marketNumber(row.sources) : '—'}</td>
+        <td>${row.observed ? marketNumber(row.sinks) : '—'}</td>
+        <td>${row.observed ? `${row.net > 0 ? '+' : ''}${marketNumber(row.net)}` : '—'}</td>
+    </tr>`).join('') : '<tr><td colspan="4" class="list-empty">Hourly balance unavailable.</td></tr>';
+}
+
 function renderMarketPage() {
     if (!marketState.data) return;
     renderMarketSummary();
@@ -466,6 +487,7 @@ function renderMarketPage() {
     renderMarketTable();
     renderMarketTowns();
     renderMarketTrades();
+    renderMarketEconomy();
 }
 
 async function refreshMarket() {

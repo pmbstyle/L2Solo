@@ -1,4 +1,5 @@
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const FULL_ENTER_RADIUS = 3500;
 const FULL_EXIT_RADIUS = 4000;
 const PROMOTION_HOLD_MS = 8000;
@@ -92,7 +93,7 @@ function promote(session, reason = 'player_interaction', now = Date.now()) {
     return true;
 }
 
-function playerContext(session, realPlayers, now) {
+function playerContext(session, realPlayers, now, World = null) {
     const bot = session?.actor;
     if (!bot) return null;
     if (session.clanAllianceQuest) return 'player_clan_quest';
@@ -101,7 +102,8 @@ function playerContext(session, realPlayers, now) {
         const group = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(session);
         if (group.some(member => member.actor?.state?.fetchHits?.() || member.actor?.state?.fetchCasts?.()
             || now - Number(member.incomingThreatAt || 0) < PLAYER_THREAT_HOLD_MS
-            || realPlayers.some(player => distance2d(member.actor, player.actor) <= CLIENT_VISIBILITY_RADIUS))) return 'hot_party';
+            || (World ? ActorQueries.near(World, member.actor, CLIENT_VISIBILITY_RADIUS, isRealPlayerSession).length > 0
+                : realPlayers.some(player => distance2d(member.actor, player.actor) <= CLIENT_VISIBILITY_RADIUS)))) return 'hot_party';
     }
     if (session.chatArrivalActive || session.inConversation || session.activeTrade || session.pendingPartyInvite) return 'player_interaction';
 
@@ -109,6 +111,17 @@ function playerContext(session, realPlayers, now) {
     const currentTargetId = Number(session.currentTargetId || bot.fetchDestId?.() || 0);
     const incomingThreatId = Number(session.incomingThreatId || 0);
     const incomingRecent = now - Number(session.incomingThreatAt || 0) <= PLAYER_THREAT_HOLD_MS;
+    if (World) {
+        // Current target, incoming actor and reverse selection are addressed;
+        // preserve registration order for the original reason precedence.
+        const candidates = new Set(World.actorPresenceSessions('onlineHuman', botId));
+        for (const id of [currentTargetId, incomingRecent ? incomingThreatId : 0]) {
+            const candidate = ActorQueries.byId(World, id);
+            if (candidate && isRealPlayerSession(candidate)) candidates.add(candidate);
+        }
+        realPlayers = [...candidates].sort((a, b) => World.registeredActorById(actorId(a.actor)).order
+            - World.registeredActorById(actorId(b.actor)).order);
+    }
     for (const playerSession of realPlayers) {
         const player = playerSession.actor;
         const playerId = actorId(player);
@@ -122,11 +135,13 @@ function playerContext(session, realPlayers, now) {
 function evaluate(session, sessions = [], now = Date.now()) {
     const bot = session?.actor;
     const state = stateFor(session);
-    const realPlayers = (Array.isArray(sessions) ? sessions : []).filter(isRealPlayerSession);
-    const nearestDistance = realPlayers.reduce((nearest, playerSession) => (
+    const World = ActorQueries.native(sessions) ? sessions : null;
+    const realPlayers = World ? [] : (Array.isArray(sessions) ? sessions : []).filter(isRealPlayerSession);
+    const nearest = World ? ActorQueries.nearestPlayer(World, bot) : null;
+    const nearestDistance = nearest ? nearest.distance : realPlayers.reduce((nearest, playerSession) => (
         Math.min(nearest, distance2d(bot, playerSession.actor))
     ), Infinity);
-    const context = playerContext(session, realPlayers, now);
+    const context = playerContext(session, realPlayers, now, World);
     if (context) promote(session, context, now);
     const visibleCombat = nearestDistance <= CLIENT_VISIBILITY_RADIUS && !!(
         bot?.state?.fetchHits?.() || bot?.state?.fetchCasts?.() || bot?.state?.fetchCombats?.()
@@ -147,7 +162,7 @@ function evaluate(session, sessions = [], now = Date.now()) {
         reason = 'far_visible';
     } else {
         tier = 'preload';
-        reason = realPlayers.length ? 'outer_preload' : 'no_real_players';
+        reason = (nearest ? nearest.count : realPlayers.length) ? 'outer_preload' : 'no_real_players';
     }
     state.tier = tier;
     state.reason = reason;

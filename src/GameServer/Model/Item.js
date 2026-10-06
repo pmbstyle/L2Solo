@@ -1,3 +1,6 @@
+const inventoryOwners = new WeakMap();
+const inventoryBindings = new WeakMap();
+
 class ItemModel {
     constructor(data) {
         this.model = data;
@@ -10,11 +13,36 @@ class ItemModel {
     }
 
     setAmount(data) {
+        const changed = this.model.amount !== data;
         this.model.amount = data;
+        const binding = inventoryOwners.get(this);
+        if (changed && binding && inventoryBindings.get(binding.backpack) === binding
+            && binding.backpack.items === binding.items && binding.items.length === binding.count
+            && binding.members.has(this)) {
+            binding.backpack.inventoryRevision = Number(binding.backpack.inventoryRevision || 0) + 1;
+            binding.backpack.onInventoryChange?.();
+        }
+    }
+
+    static bindInventory(backpack, items = backpack.fetchItems()) {
+        const previous = inventoryBindings.get(backpack);
+        if (previous?.items === items && previous.count === items.length) return;
+        const binding = { backpack, items, count: items.length, members: new Set(items) };
+        inventoryBindings.set(backpack, binding);
+        for (const item of items) inventoryOwners.set(item, binding);
     }
 
     setEnchantLevel(data) {
-        this.model.enchant = Math.max(0, Number(data) || 0);
+        const next = Math.max(0, Number(data) || 0);
+        const changed = this.model.enchant !== next;
+        this.model.enchant = next;
+        const binding = inventoryOwners.get(this);
+        if (changed && binding && inventoryBindings.get(binding.backpack) === binding
+            && binding.backpack.items === binding.items && binding.items.length === binding.count
+            && binding.members.has(this)) {
+            binding.backpack.inventoryRevision = Number(binding.backpack.inventoryRevision || 0) + 1;
+            binding.backpack.onInventoryChange?.();
+        }
     }
 
     setPetData(data) {

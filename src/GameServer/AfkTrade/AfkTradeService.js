@@ -51,6 +51,7 @@ const boardChangeListeners = new Set();
 let boardReady = false;
 let boardChangeDepth = 0;
 const changedOwners = new Set();
+const changedItemIds = new Set();
 
 function notifyBoardChange(change) {
     for (const listener of boardChangeListeners) {
@@ -67,8 +68,10 @@ function boardChange(work) {
     finally {
         if (--boardChangeDepth === 0 && changedOwners.size) {
             const ownerIds = [...changedOwners];
+            const selfIds = [...changedItemIds];
             changedOwners.clear();
-            notifyBoardChange({ ownerIds, ready: boardReady });
+            changedItemIds.clear();
+            notifyBoardChange({ ownerIds, selfIds, ready: boardReady });
         }
     }
 }
@@ -94,6 +97,7 @@ function unindexProjection(projection) {
     const recordId = projection?.indexedRecordId;
     if (!recordId) return;
     changedOwners.add(Number(projection.shop.ownerId));
+    for (const line of projection.boardRow?.[6] || []) changedItemIds.add(line[1]);
     board.remove(recordId);
     TableChannel.shared.changed('board', { key: recordId, removed: true });
     projection.indexedRecordId = null;
@@ -107,6 +111,7 @@ function indexProjection(projection) {
     if (!row[6].length) return;
     board.put(recordOf(row), projection);
     changedOwners.add(Number(projection.shop.ownerId));
+    for (const line of row[6]) changedItemIds.add(line[1]);
     TableChannel.shared.changed('board', row);
     projection.indexedRecordId = row[0];
     projection.boardRow = row;
@@ -657,6 +662,14 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null,
     );
     refreshRecord(result.shop);
     await notifyCommitted(result, kind);
+    if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(result.line?.selfId))) {
+        const buyer = onlineSession(kind === 'sale' ? counterpartyId : result.shop.ownerId);
+        if (buyer && isBotSession(buyer)) {
+            await invoke('GameServer/Bot/BotSkillTraining').review(buyer).catch((error) => {
+                utils.infoWarn('BotSkills', 'training after book purchase failed: %s', error.message);
+            });
+        }
+    }
     if (String(result.shop?.ownerAccount || '').startsWith('bot_')
         && Number(result.shop.storeType) === SELL && kindOf(result.shop) === 'shop') {
         await invoke('GameServer/Bot/Economy/BotAfkMarketService').pruneResourceLots(result.shop.ownerId);
@@ -1007,6 +1020,7 @@ function clearBoard() {
     entriesByOwner.clear();
     board.clear();
     changedOwners.clear();
+    changedItemIds.clear();
 }
 
 // Restores the board at start. The old world's bot records close once
@@ -1024,6 +1038,11 @@ async function init() {
     }
     // NodeL2 starts this after history/DataCache and before player listeners
     // or bot workers. Migrated open lines begin at the durable world counts.
+    // Retained confirmed deals are an incomplete lower bound of the old world.
+    // Preserve already committed counters; the once-only marker prevents replay.
+    invoke('GameServer/Bot/AI/KnowledgeLearning').stages();
+    const experience = await Database.initializeBotMarketTrades('history');
+    (experience.rows || []).forEach(row => LifeState.acceptLifecycleRow(row));
     await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));

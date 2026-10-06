@@ -13,8 +13,9 @@ const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 
 const HOUR = 60 * 60 * 1000;
-// Needs cache per clan: what each member wears, refreshed hourly.
+// Derived physical equipment cache; addressed clan changes invalidate it.
 const clanWorn = new Map();
+require('./ClanReviewEvents').subscribe(clanId => clanWorn.delete(clanId));
 // Spare wearable items each member already had at the previous supplies pass.
 const seenSpare = new Map();
 
@@ -68,12 +69,16 @@ async function depositHot(member, clan, rows, demand, limit, goalKey) {
 
 async function wornByClan(clan) {
     const cached = clanWorn.get(number(clan.id));
-    if (cached && Date.now() - cached.at < HOUR) return cached.rows;
+    if (cached?.rows && Date.now() - cached.at < HOUR) return cached.rows;
+    const input = {};
+    clanWorn.set(number(clan.id), input);
     const rows = new Map();
     for (const member of clan.members || []) {
         if (member.phase === 'cold') rows.set(number(member.characterId), await Database.fetchItems(member.characterId));
     }
-    clanWorn.set(number(clan.id), { at: Date.now(), rows });
+    if (clanWorn.get(number(clan.id)) === input) {
+        input.at = Date.now(); input.rows = rows;
+    }
     if (clanWorn.size > 128) clanWorn.delete(clanWorn.keys().next().value);
     return rows;
 }

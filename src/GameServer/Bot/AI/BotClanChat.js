@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const ClanService = invoke('GameServer/Clan/ClanService');
@@ -27,7 +28,7 @@ function boundedSet(map, key, value, limit = HISTORY_LIMIT) {
 function audience(source, expectedClanId = 0) {
     const World = invoke('GameServer/World/World');
     const checked = new Map();
-    return (World.user?.sessions || []).filter(session => {
+    return ActorQueries.humans(World).filter(session => {
         if (!session.accountId || String(session.accountId).startsWith('bot_') ||
             !session.socket || typeof session.socket.write !== 'function' || session.actor?.fetchIsOnline?.() === false) return false;
         const clanId = Number(session.actor?.fetchClanId?.() || 0);
@@ -67,7 +68,7 @@ function isBotSession(session) {
 function memberBot(characterId) {
     const World = invoke('GameServer/World/World');
     const session = invoke('GameServer/Bot/BotManager').findSessionById(characterId) ||
-        World.user?.sessions?.find(entry => id(entry) === characterId);
+        ActorQueries.byId(World, characterId);
     if (session) return isBotSession(session) && !Identity.isStaticService(session) &&
         session.actor?.fetchIsOnline?.() !== false && !session.actor?.isDead?.() ? session : null;
     const cold = invoke('GameServer/Bot/Population/BotLifeState').cachedState(characterId);

@@ -1,0 +1,114 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+require('../src/Global');
+const Database = invoke('Database');
+const Data = invoke('GameServer/DataCache');
+const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
+const Skillset = invoke('GameServer/Actor/Skillset');
+const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+
+async function main() {
+    const directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-skill-books-'));
+    options.default.Database.path = path.join(directory, 'world.sqlite');
+    options.default.Database.historyPath = path.join(directory, 'history.sqlite');
+    try {
+        Data.init(); Database.init(); assert(Database.isReady());
+        await Database.createAccount('bot_pop_books', 'fixture');
+        const id = Number((await Database.createCharacter('bot_pop_books', { name: 'BookLearner', race: 0,
+            classId: 10, maxHp: 100, maxMp: 100, sex: 0, face: 0, hair: 0, hairColor: 0,
+            locX: 0, locY: 0, locZ: 0 })).insertId);
+        await Database.updateCharacterExperience(id, 14, Number(Data.experience[13]) + 1, 10000);
+        const first = Catalog.nextTraining(10, 14, 1011);
+        assert.equal(first.bookId, 1152); assert.equal(first.sp, 160);
+        assert.equal((await Database.learnBotSkill(id, 1011, first.level)).reason, 'missing_book');
+        assert.equal((await Database.learnBotSkill(id, 1011, first.level + 1)).reason, 'ineligible_rank');
+        await Database.setItem(id, { selfId: first.bookId, name: 'Spellbook: Heal', amount: 2 });
+        const snapshot = async () => ({ character: await Database.fetchCharacters('bot_pop_books'),
+            skills: await Database.fetchSkills(id), items: await Database.fetchItems(id) });
+        const before = await snapshot();
+        let calls = 0;
+        await assert.rejects(Database.learnBotSkill(id, 1011, first.level, { beforeWrite() {
+            if (++calls === 4) throw Error('retired_before_skill_write');
+        } }), /retired_before_skill_write/);
+        assert.equal(calls, 4); assert.deepEqual(await snapshot(), before, 'SP, book and rank roll back together');
+        const paid = await Database.learnBotSkill(id, 1011, first.level);
+        assert.equal(paid.learned, true); assert.equal(paid.spentSp, 160);
+        assert.equal((await Database.fetchItems(id))[0].amount, 1);
+        const second = Catalog.nextTraining(10, 14, 1011, first.level);
+        assert.equal(second.bookId, null);
+        const promoted = await Database.learnBotSkill(id, 1011, second.level);
+        assert.equal(promoted.learned, true); assert.deepEqual(promoted.consumedBooks, []);
+        assert.equal((await Database.fetchItems(id))[0].amount, 1, 'a rank upgrade never consumes another book');
+        assert.equal((await Database.learnBotSkill(id, 1011, first.level)).reason, 'already_known');
+        await Database.updateCharacterExperience(id, 14, Number(Data.experience[13]) + 1, 0);
+        const next = Catalog.nextTraining(10, 14, 1011, second.level);
+        assert.equal((await Database.learnBotSkill(id, 1011, next.level)).reason, 'insufficient_sp');
+
+        const empty = { characterId: id, level: 14, sp: 1000, inventory: {}, stats: { classId: 10,
+            coldCombat: { classId: 10, skillSource: 'database', skills: [] } } };
+        assert.equal(Catalog.missingBooks(empty).find((book) => book.skillId === 1011).selfId, 1152);
+        assert.equal(Profile.treeSnapshot(empty).skills.length, 0);
+        assert.equal(Profile.profileFor(empty).skills.length, 0, 'empty DB kit cannot acquire free tree skills in combat');
+        const held = { ...empty, inventory: { 1152: { selfId: 1152, name: 'Spellbook: Heal', amount: 2,
+            kind: 'Other.Spellbook', rank: 'none', basePrice: 100 } } };
+        assert(Catalog.needsTraining(held)); assert.equal(Disposition.isNpcOnlyItem(held.inventory[1152]), false);
+        const sale = Disposition.saleCandidates(held, { allowPreTradeCleanup: true });
+        assert.equal(sale.find((row) => row.selfId === 1152).count, 1, 'keep the first own book; surplus is real board stock');
+        assert.equal(Disposition.skillBookSlotCount(held, sale), 0, 'market books do not force NPC cleanup');
+        const incoming = Catalog.applyTraining({ ...held, sp: 1500 }, paid);
+        assert.equal(incoming.sp, 1340); assert.equal(incoming.inventory[1152].amount, 1);
+        const instanced = Catalog.applyTraining({ ...held, inventory: { 1152: { ...held.inventory[1152],
+            instances: [{ id: paid.consumedBooks[0].objectId, selfId: 1152, amount: 2 }] } } }, paid);
+        assert.equal(instanced.inventory[1152].instances[0].amount, 1, 'the physical instance mirrors the paid remainder');
+
+        // The public bot path stops an unaffordable rank; it cannot skip it
+        // and award a later rank from the character's level alone.
+        await new Skillset().awardSkills(id, 10, 14, { botTraining: true });
+        assert.equal((await Database.fetchSkill(id, 1011))[0].level, second.level);
+        assert.equal((await Database.fetchItems(id))[0].amount, 1);
+        const treeSource = Data.skillTree;
+        const realLearn = Database.learnBotSkill;
+        try {
+            const mage = treeSource.find((tree) => tree.classId === 10);
+            Data.skillTree = [{ ...mage, skills: mage.skills.filter((skill) => skill.selfId === 1011) }];
+            await Database.deleteSkills(id);
+            await Database.updateCharacterExperience(id, 14, Number(Data.experience[13]) + 1, 100000);
+            const session = { accountId: 'bot_pop_books', dataSendToMe() {}, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
+            const Actor = invoke('GameServer/Actor/Actor');
+            session.actor = new Actor(session, { ...utils.crushOb(Data.classTemplates.find((row) => row.classId === 10)),
+                ...(await Database.fetchCharacters('bot_pop_books'))[0], items: await Database.fetchItems(id),
+                paperdoll: utils.tupleAlloc(16, {}) });
+            let earned = false;
+            const Queue = invoke('GameServer/Persistence/CharacterWriteQueue');
+            Database.learnBotSkill = async function(...args) {
+                const result = await realLearn.apply(this, args);
+                if (result.learned && !earned) {
+                    earned = true;
+                    session.actor.setSp(session.actor.fetchSp() + 500);
+                    Queue.experience(id, 14, session.actor.fetchExp(), session.actor.fetchSp());
+                }
+                return result;
+            };
+            const Training = invoke('GameServer/Bot/BotSkillTraining');
+            const work = Training.review(session);
+            assert.equal(Training.review(session), work, 'concurrent events share the native training chain');
+            const trained = await work;
+            await Queue.flushCharacter(id);
+            assert(trained.learnedCount > 1);
+            assert.equal(session.actor.fetchSp(), 100500 - trained.spentSp);
+            assert.equal((await Database.fetchCharacters('bot_pop_books'))[0].sp, session.actor.fetchSp(),
+                'SP earned during learning survives; queued hot writes cannot refund an earlier rank');
+            assert.equal((await Database.fetchItems(id)).length, 0);
+            assert.equal(session.actor.backpack.fetchItems().length, 0);
+            assert.equal(session.actor.skillset.fetchSkill(1011).fetchLevel(), (await Database.fetchSkill(id, 1011))[0].level);
+        } finally { Data.skillTree = treeSource; Database.learnBotSkill = realLearn; }
+        console.log('Bot skill books: real SQLite cost/rollback, first book, rank/SP eligibility, public training, board reservation and authoritative cold kit passed');
+    } finally {
+        await Database.close(); fs.rmSync(directory, { recursive: true, force: true });
+    }
+}
+main().catch((error) => { console.error(error); process.exitCode = 1; });

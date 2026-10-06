@@ -3,7 +3,6 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const SystemMessage = invoke('GameServer/Network/Response/SystemMessage');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
-const ClassProgression = invoke('GameServer/ClassProgression');
 
 const hennaData = require('../../../data/Henna/c4-henna.json');
 const hennaTreeData = require('../../../data/Henna/c4-henna-trees.json');
@@ -28,9 +27,10 @@ function symbolOf(session, slot) {
 }
 
 function availableFor(session) {
-    const ids = TREES.get(Number(session.actor.fetchClassId?.())) || [];
-    return ids.map((symbolId) => SYMBOLS.get(symbolId)).filter(Boolean);
+    return availableForClass(session.actor.fetchClassId?.());
 }
+
+const { availableForClass, slotsForClass, totals } = require('./HennaRules');
 
 function fetchDye(session, dyeSelfId) {
     return session.actor.backpack.fetchItemFromSelfId(dyeSelfId) || null;
@@ -38,20 +38,14 @@ function fetchDye(session, dyeSelfId) {
 
 function availableSlots(session) {
     // Lisvus: 1 + ClassId.level(), with three physical storage slots.
-    return Math.min(SLOT_COUNT, ClassProgression.lineage(session.actor.fetchClassId?.()).length);
+    return slotsForClass(session.actor.fetchClassId?.());
 }
 
 function refreshHennaStats(session) {
-    const totals = {};
-    STAT_KEYS.forEach((stat) => {
-        totals[stat] = fetchSlots(session)
-            .reduce((total, symbolId) => total + ((symbolId && SYMBOLS.get(symbolId)?.[stat]) || 0), 0);
-        // The aggregate bonus is capped; negative penalties remain additive.
-        totals[stat] = Math.min(5, totals[stat]);
-    });
-    session.actor.hennaStats = totals;
+    const bonuses = totals(fetchSlots(session));
+    session.actor.hennaStats = bonuses;
     invoke(path.actor).calculateStats(session, session.actor);
-    return totals;
+    return bonuses;
 }
 
 // Restore persists on the character table, so a missing session row simply means
@@ -169,7 +163,7 @@ const HennaService = {
     fetchRemoveList,
     removeSymbol,
     refreshHennaStats,
-    availableSlots
+    availableSlots, availableForClass, slotsForClass, totals
 };
 
 module.exports = HennaService;

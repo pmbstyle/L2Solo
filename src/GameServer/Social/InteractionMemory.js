@@ -11,18 +11,29 @@ class InteractionMemory {
         this.loading = new Map();
         this.pendingBatches = 0;
         this.clanSocial = null;
+        this.fastLayers = new Map();
+        this.playingHours = () => undefined;
     }
 
     accept(snapshot) {
         Policy.validate(snapshot);
         const current = this.snapshots.get(snapshot.ownerId);
         if (current && current.revision >= snapshot.revision) return false;
+        if (snapshot.appliedEvents?.length) {
+            if (!this.fastLayers.has(snapshot.ownerId)) this.fastLayers.set(snapshot.ownerId, new Map());
+            const rows = this.fastLayers.get(snapshot.ownerId);
+            for (const raw of snapshot.appliedEvents) {
+                const event = Policy.event(raw), key = `${event.kind}:${event.targetId}`;
+                rows.set(key, require('./RelationshipLayers').fast(rows.get(key), event));
+            }
+        }
         // Replay records stay in SQLite; decisions and IPC need only relations.
         const copy = JSON.parse(JSON.stringify({ version: snapshot.version, ownerId: snapshot.ownerId,
             revision: snapshot.revision, replayFloor: snapshot.replayFloor, readOnly: true,
             relations: snapshot.relations, recent: [] }));
+        if (snapshot.fast) this.fastLayers.set(copy.ownerId, new Map(snapshot.fast));
         this.snapshots.set(copy.ownerId, copy);
-        this.views.set(copy.ownerId, Policy.view(copy));
+        this.views.set(copy.ownerId, Policy.view(copy, () => this.playingHours(copy.ownerId), this.fastLayers.get(copy.ownerId)));
         return true;
     }
 
@@ -67,10 +78,29 @@ class InteractionMemory {
         this.pendingBatches++;
         try {
             const result = await this.repository.recordBatch(events);
-            if (result.ok) result.snapshots.forEach(snapshot => this.accept(snapshot));
+            if (result.ok) {
+                this.acceptCommitted(result, events);
+            }
             return result.ok ? { ...result, snapshots: result.snapshots.map(snapshot => this.snapshot(snapshot.ownerId)) } : result;
         } finally {
             this.pendingBatches--;
+        }
+    }
+
+    acceptCommitted(result, events = []) {
+        events.forEach((event, i) => {
+            if (result.statuses?.[i] !== 'applied') return;
+            if (!this.fastLayers.has(event.sourceId)) this.fastLayers.set(event.sourceId, new Map());
+            const rows = this.fastLayers.get(event.sourceId), key = `${event.kind || 'character'}:${event.targetId}`;
+            rows.set(key, require('./RelationshipLayers').fast(rows.get(key), event));
+        });
+        for (const snapshot of result.snapshots || result.memorySnapshots || []) {
+            const rows = this.fastLayers.get(snapshot.ownerId);
+            if (rows) {
+                const kept = new Set(snapshot.relations.map(row => `${row.kind}:${row.targetId}`));
+                for (const key of rows.keys()) if (!kept.has(key)) rows.delete(key);
+            }
+            this.accept(snapshot);
         }
     }
 
@@ -85,7 +115,7 @@ class InteractionMemory {
 
     snapshot(ownerId) {
         const snapshot = this.snapshots.get(ownerId);
-        return snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
+        return snapshot ? JSON.parse(JSON.stringify({ ...snapshot, ...(this.fastLayers.has(ownerId) ? { fast: [...this.fastLayers.get(ownerId)] } : {}) })) : null;
     }
 
     assess(source, target, context = {}, now = Date.now()) {
@@ -114,6 +144,7 @@ class InteractionMemory {
     forget(ownerId) {
         this.snapshots.delete(ownerId);
         this.views.delete(ownerId);
+        this.fastLayers.delete(ownerId);
     }
 }
 

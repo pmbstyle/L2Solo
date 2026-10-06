@@ -1,7 +1,4 @@
-const MIN_PROFIT = 1000;
-const MIN_RETURN = 0.25;
-const MAX_WALLET_SHARE = 0.2;
-const WALLET_RESERVE = 10000;
+const Profit = require('./CraftProfitPolicy');
 
 // The basket of one craft: what the crafter owns of each material (at its
 // own value) and, for the rest, one purchase in the town where it costs the
@@ -43,32 +40,30 @@ function basketFor(recipe, planFor, ownedFor = () => null) {
 // rate, less the cost of the basket. Also the value a crafter puts on a
 // material or a recipe (PriceBelief.demandValue).
 function craftMargin(recipe, productPrice, basketCost) {
-    const successRate = Math.max(0, Math.min(100, Number(recipe?.successRate || 0))) / 100;
-    return Math.floor(Number(productPrice) * Number(recipe?.productCount || 0) * successRate) - Number(basketCost);
+    return Profit.revenue(recipe, productPrice) - Number(basketCost);
 }
 
 // The best exit of a craft: exits [{ price, count, trip }] with trip what the
 // sale's trip costs (a buy ad answered in its town; none for a static buyer).
-function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => null) {
+function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => null, context = {}) {
     const successRate = Math.max(0, Math.min(100, Number(recipe?.successRate || 0))) / 100;
     const outputCount = Number(recipe?.productCount || 0);
     if (!recipe || recipe.type !== 'dwarven' || successRate <= 0 || outputCount <= 0
         || Number(state?.vitals?.mp || 0) < Number(recipe.mpCost || 0)) return null;
     const basket = basketFor(recipe, planFor, ownedFor);
-    if (!basket || basket.cost <= 0 || basket.cashCost > Number(state.adena || 0) * MAX_WALLET_SHARE
-        || Number(state.adena || 0) - basket.cashCost < WALLET_RESERVE) return null;
+    if (!basket || basket.cost <= 0 || basket.cashCost > Number(state.adena || 0)) return null;
     return exits.filter((exit) => Number.isFinite(Number(exit.price)) && Number(exit.price) > 0
             && Number(exit.count) >= outputCount)
         .map((exit) => {
             const revenue = Number(exit.price) * outputCount;
-            const expectedProfit = craftMargin(recipe, exit.price, basket.cost) - Math.ceil(Number(exit.trip) || 0);
-            return { recipe, basket, exit, revenue, expectedProfit, successRate };
+            const margin = Profit.margin(recipe, exit.price, basket.cost, { ...context, tripCost: Number(exit.trip) || 0 });
+            const expectedProfit = margin?.profit ?? -Infinity;
+            return { recipe, basket, exit, revenue, expectedProfit, successRate, hours: margin?.hours };
         })
-        .filter((candidate) => candidate.expectedProfit >= Math.max(MIN_PROFIT, Math.ceil(basket.cost * MIN_RETURN)))
+        .filter((candidate) => candidate.expectedProfit > 0)
         .sort((a, b) => b.expectedProfit - a.expectedProfit || b.revenue - a.revenue)[0] || null;
 }
 
 module.exports = {
-    MIN_PROFIT, MIN_RETURN, MAX_WALLET_SHARE, WALLET_RESERVE,
     basketFor, craftMargin, opportunityFor
 };

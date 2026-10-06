@@ -1,4 +1,5 @@
 const PveEncounter = require('./ColdPveEncounter');
+const ColdSoulCrystal = require('./ColdSoulCrystal');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
@@ -16,6 +17,7 @@ const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const Karma = invoke('GameServer/Karma');
+const SurvivalFloor = require('./SurvivalFloor');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -1083,6 +1085,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         return null;
     }
 
+    if (ColdSoulCrystal.tryCast(fighter, mob, mobHp, at)) return null;
     const profile = fighter.profile;
     const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
         { mob, party, summon: fighter.summon });
@@ -1147,6 +1150,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         vitals,
         cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
         readyAt: Number(pending?.botReadyAt || 0),
+        soulCrystalMark: pending?.soulCrystalMark || null,
         shot: coldShotSupply(fightState),
         shotActions: 0,
         skillUses: 0,
@@ -1237,6 +1241,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         return {
             won: false,
             encounter: !died ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
+                soulCrystalMark: soloFighter.soulCrystalMark || null,
                 botReadyAt: Math.max(0, soloFighter.readyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time)
             }) : null,
             died,
@@ -1261,6 +1266,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         };
     }
 
+    ColdSoulCrystal.outcome(soloFighter, mob, rng(), { at: timestamp + time });
     const rewards = ColdKillRewards.roll({
         spot,
         kills: [{ npcSelfId: mob.selfId, overhitContext }],
@@ -1292,7 +1298,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         charges: soloFighter.charges,
         chargeExpiresAt: soloFighter.chargeExpiresAt,
         effects: soloFighter.profile.effects,
-        inventory: fightState.inventory,
+        inventory: soloFighter.state.inventory,
+        soulCrystals: soloFighter.soulCrystals || [],
         summon: soloFighter.summon || null,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions,
@@ -1395,6 +1402,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             },
             cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
             readyAt: Number(pending?.readyAt?.[state.characterId] || 0),
+            soulCrystalMark: pending?.soulCrystalMarks?.[state.characterId] || null,
             actions: 0,
             shot: coldShotSupply(fighterState),
             shotActions: 0,
@@ -1436,6 +1444,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     const Help = require('../../Social/CombatHelpPolicy');
     const help = new Map();
     let lastVictim = null;
+    let lastKiller = null;
     const rescued = helper => {
         if (lastVictim && helper !== lastVictim.fighter && time - lastVictim.at < Help.THREAT_MS
             && Help.injured(lastVictim.fighter.vitals.hp, lastVictim.fighter.vitals.maxHp)) {
@@ -1470,7 +1479,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobHp -= summonDamage(nextSummon, mob, rng);
             nextSummon.summonActions += 1;
             nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
-            if (mobHp <= 0) { rescued(nextSummon); break; }
+            if (mobHp <= 0) { lastKiller = nextSummon; rescued(nextSummon); break; }
         }
         else if (botActs) {
             next.actions += 1;
@@ -1488,7 +1497,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                     encounterId: mob.selfId || targetNpcId,
                     timestamp: timestamp + time
                 });
-                rescued(next);
+                lastKiller = next; rescued(next);
                 break;
             }
         } else {
@@ -1527,12 +1536,21 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     fighters.filter((fighter) => fighter.vitals.hp > 0)
         .forEach((fighter) => applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER));
 
+    const crystalRule = invoke('GameServer/Items/SoulCrystalProgression').catalog.npcs[mob.selfId];
+    if (mobHp <= 0 && lastKiller && crystalRule) {
+        const alive = fighters.filter(f => f.vitals.hp > 0);
+        let recipients = crystalRule.absorbType === 'LAST_HIT' ? [lastKiller] : alive;
+        if (crystalRule.absorbType === 'PARTY_ONE_RANDOM' && recipients.length) recipients = [recipients[Math.floor(rng() * recipients.length)]];
+        const roll = rng();
+        for (const fighter of recipients) ColdSoulCrystal.outcome(fighter, mob, roll, { boss: crystalRule.maxStage > 10, requiredMark: lastKiller.soulCrystalMark, at: timestamp + time });
+    }
     return {
         won: mobHp <= 0,
         timedOut: mobHp > 0 && fighters.some((fighter) => fighter.vitals.hp > 0),
         encounter: mobHp > 0 && (sharedEncounter || fighters.every(fighter => fighter.vitals.hp > 0))
             ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
                 mobReadyAt: Math.max(0, mobReadyAt - time),
+                soulCrystalMarks: Object.fromEntries(fighters.filter(f => f.soulCrystalMark).map(f => [f.state.characterId,f.soulCrystalMark])),
                 readyAt: Object.fromEntries(fighters.map(f => [f.state.characterId, Math.max(0, f.readyAt - time)]))
             }) : null,
         members: fighters,
@@ -1695,6 +1713,17 @@ const BackgroundResolver = {
             return resolveRest(state, elapsedMs, timestamp);
         }
 
+        const floor = SurvivalFloor.forState(state, timestamp);
+        if (floor?.action === 'rest') {
+            const resting = resolveRest(state, 0, timestamp, { requireMana: true });
+            resting.debug.reason = 'survival_no_mp';
+            return resting;
+        }
+        if (floor?.action === 'unload') {
+            return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: timestamp + 30000, debug: { reason: `survival_${floor.reason}`, fights: 0, wins: 0 } };
+        }
+
         if (require('./ClanPartyDuty').waiting(state)) return require('./ClanPartyDuty').hold(state, timestamp);
 
         if (require('./RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
@@ -1778,6 +1807,7 @@ const BackgroundResolver = {
         const drunkPotions = {};
         let combatMs = 0;
         const foughtNpcIds = [];
+        const soulCrystals = [];
         let attemptedFights = 0;
         let completedFights = 0;
 
@@ -1811,6 +1841,7 @@ const BackgroundResolver = {
             patch.vitals.mp = result.mp;
             patch.vitals.maxMp = result.maxMp;
             patch.inventory = result.inventory || patch.inventory || state.inventory;
+            soulCrystals.push(...(result.soulCrystals || []));
             patch.stats = {
                 ...(patch.stats || state.stats || {}),
                 coldCombat: {
@@ -1901,6 +1932,7 @@ const BackgroundResolver = {
             patch,
             events,
             materialize,
+            soulCrystals,
             nextResolveAt: patch.stats?.restUntil || timestamp + huntCycleDelayMs(rng()),
             debug: {
                 elapsedMs,
@@ -1954,3 +1986,4 @@ BackgroundResolver.resolveSolo = (options = {}) => {
     return result;
 };
 module.exports = BackgroundResolver;
+BackgroundResolver.coldRestRegenPerTick = coldRestRegenPerTick;

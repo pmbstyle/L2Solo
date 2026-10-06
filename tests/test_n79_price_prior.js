@@ -1,7 +1,8 @@
 const assert = require('assert');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
-// A fixed test curve checks the context wiring, not the pending learning pace.
+// A fixed test curve isolates context wiring; actual ON grade learning is
+// covered by test_n79_learning_startup with the production helper.
 const originalInvoke = global.invoke;
 const errorCalls = [];
 global.invoke = (name) => name === 'GameServer/Bot/Economy/PriceLearning'

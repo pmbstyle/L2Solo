@@ -21,6 +21,16 @@ class ActorModel extends CreatureModel {
         publishLocation(this);
     }
 
+    setDestId(id) {
+        super.setDestId(id);
+        publishLocation(this);
+    }
+
+    clearDestId() {
+        super.clearDestId();
+        publishLocation(this);
+    }
+
     setLocY(data) {
         super.setLocY(data);
         publishLocation(this);
@@ -200,7 +210,10 @@ class ActorModel extends CreatureModel {
     }
 
     setClanId(data) {
+        const previous = this.model.clanId;
         this.model.clanId = data;
+        const events = require('../Clan/ClanReviewEvents');
+        events.changed(previous, 'membership'); events.changed(data, 'membership');
     }
 
     setClanPrivileges(data) {

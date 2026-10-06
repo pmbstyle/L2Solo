@@ -175,11 +175,13 @@ function required(traits, fearOf = 0) {
 // visibly better gear and at least as many people = stronger, almost always;
 // visibly worse and no more people = weaker, almost never; anything else looks
 // even and the chance follows the odds against the author's threshold.
-function canWin({ own, other, traits, fear: fearOf = 0 }) {
+function canWin({ own, other, traits, fear: fearOf = 0, knowledge = null }) {
     const people = own.people / Math.max(1, other.people);
     const gear = compare(own.look, other.look);
     const verdict = gear > 0 && people >= 1 ? 'stronger' : gear < 0 && people <= 1 ? 'weaker' : 'even';
-    const ratio = (own.strength ?? own.people) / Math.max(0.25, other.strength ?? other.people);
+    const seenStrength = other.strength ?? other.people;
+    const estimated = knowledge ? require('./PeopleKnowledge').estimate(seenStrength, knowledge.source, knowledge.persona, knowledge.key) : seenStrength;
+    const ratio = (own.strength ?? own.people) / Math.max(0.25, estimated);
     const need = required(traits, fearOf);
     const chance = Tendency.chance(verdict === 'stronger' ? 1 : verdict === 'weaker' ? 0 : 0.5 + SLOPE * (ratio - need));
     return { verdict, chance, ratio: Math.round(ratio * 100) / 100, required: need };

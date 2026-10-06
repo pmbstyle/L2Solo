@@ -795,9 +795,20 @@ class ColdSimulationCoordinator {
         };
         const unsafeSoloGround = !partyRoute && currentGround
             && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
+        const economy = !partyRoute ? invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
+            spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory
+        }) : null;
+        const leaf = economy?.network.activity;
+        const wished = leaf?.activity === 'hunting' && leaf.spotId
+            ? index.spots.get(String(leaf.spotId)) : null;
+        const wishDestination = wished && wished.raidBoss !== true
+            && !excludedSpotIds.has(String(wished.id))
+            && LevelingRoutes.isSpotAllowedForState(wished, state, soloOptions())
+            && SpotService.isSuitable(wished, Number(state.level || 1), options)
+            && SpotProfiles.hasCapacityForStates(wished, routedMembers, index.occupancy) ? wished : null;
         const sharedSpot = party?.stats?.objective?.spotId;
         let selected = partyRoute && sharedSpot && !excludedSpotIds.has(String(sharedSpot))
-            ? index.spots.get(String(sharedSpot)) || null : fallbackSpot;
+            ? index.spots.get(String(sharedSpot)) || null : wishDestination || fallbackSpot;
         try {
             // A party-mode search of a lone member builds no profiles at all.
             if (!selected) selected = SpotProfiles.findForState(routeState, !partyRoute
@@ -920,20 +931,25 @@ class ColdSimulationCoordinator {
                     || index.compactPartyMemberIds?.has(memberId);
                 return compact ? compactPartyMemberContext(member) : member;
             });
+        const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
+        const economy = !party ? invoke('GameServer/Bot/Economy/EconomyContext').forState(state,
+            { spots: index.profiles, occupancy: index.occupancy, timestamp: index.timestamp, memory: interactionMemory }) : null;
+        const leaf = economy?.network.activity;
         const context = {
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
-            interactionMemory: invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId)),
+            interactionMemory,
+            productionStatus: state.stats?.production ? invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (interactionMemory.relations || []).map(row => row.targetId)) : null,
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
             // The worker cannot see AFK shops: hand it the Adena the bot's own
             // buy order holds, which still counts as purchase budget.
             buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
             targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
-                : directDropTargetNpcId(state.stats?.equipmentPlan),
+                : leaf?.activity === 'hunting' ? (leaf.npcId || null) : null,
             isPartyLeader: !!party,
             party,
             partyMembers,
-            route: this.routeFor(state, spot, party, fullPartyMembers, index)
+            route: this.routeFor(state, spot, party, fullPartyMembers, { ...index, memory: interactionMemory })
         };
         this.projectionRetention.prepare(state, context, index.partyGeneration);
         return context;
@@ -1589,13 +1605,14 @@ class ColdSimulationCoordinator {
     }
 
     async afterCommit(entry, committed = {}) {
-        if (committed.raidPartyRow && Number(BackgroundPartyState.find(committed.raidPartyRow.partyId)?.updatedAt || 0)
-            < Number(committed.raidPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committed.raidPartyRow);
+        const committedPartyRow = committed.partyRow || committed.raidPartyRow;
+        if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
+            < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
         if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
         if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
             await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
         }
-        const state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
+        let state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
         await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
         // The bot looked at its board lines in the worker: its new asks.
         if (entry.proposal.market) {
@@ -1608,10 +1625,18 @@ class ColdSimulationCoordinator {
                 utils.infoWarn('BotGoals', 'equipment goal advance enqueue failed for %s: %s',
                     state.characterId, error?.message || error);
             });
+        const source = entry.proposal[PROPOSAL_SOURCE];
+        const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
+        if (sourceCurrent()) {
+            const beforeWrite = () => {
+                if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
+            };
+            state = await this.reviewCommittedEconomy(state, beforeWrite);
+        }
         if (entry.proposal.partyResolution?.party) {
             const party = entry.proposal.partyResolution.party;
-            if (!committed.raidPartyRow) await BackgroundPartyState.createOrUpdate(party);
-            if (!committed.raidPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
+            if (!committedPartyRow) await BackgroundPartyState.createOrUpdate(party);
+            if (!committedPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
                 await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
                     .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
                         party.partyId, error?.message || error));
@@ -1656,6 +1681,22 @@ class ColdSimulationCoordinator {
         Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
         GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []);
         return state;
+    }
+
+    async reviewCommittedEconomy(state, beforeWrite) {
+        // The native commit has released its lease before these actions.
+        // Each action validates the current row again inside its writer.
+        state = LifeState.cachedState(state.characterId) || state;
+        state = await LifeState.reviewTrainingAfterCommit(state, { beforeWrite }).catch(error => {
+            utils.infoWarn('BotSkills', 'postcommit training failed for %s: %s', state.characterId, error.message);
+            return LifeState.cachedState(state.characterId) || state;
+        });
+        const improved = await invoke('GameServer/Bot/Economy/BotImprovementService')
+            .reviewCold(state, { beforeWrite }).catch(error => {
+                utils.infoWarn('BotEquipment', 'postcommit improvement failed for %s: %s', state.characterId, error.message);
+                return { state: LifeState.cachedState(state.characterId) || state };
+            });
+        return improved.state || state;
     }
 
     async handleCommitResults(results = []) {
@@ -1824,7 +1865,14 @@ class ColdSimulationCoordinator {
                 return Protocol.sameCommandCheckpoint(checkpoint, latest) ? null : { reason: 'stale_command' };
             }
         });
-        return this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
+        const result = await this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
+        if (result?.ok && sourceCurrent() && !this.stopping) {
+            const current = LifeState.cachedState(identity.characterId);
+            if (current) result.state = await this.reviewCommittedEconomy(current, () => {
+                if (!sourceCurrent() || this.stopping) throw Error('cold_postcommit_source_retired');
+            });
+        }
+        return result;
     }
 
     async executeMarketReviewCommand(request, sourceCurrent = () => true) {

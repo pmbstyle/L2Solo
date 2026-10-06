@@ -1,3 +1,5 @@
+const CombinedErrands = require('../Population/CombinedErrandPolicy');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -13,7 +15,7 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
 // keeps it): after it the job that sent it plans again.
-const ERRAND_MS = 30 * 60 * 1000;
+const ERRAND_MS = CombinedErrands.ERRAND_MS;
 
 // A failed purchase writes the bot's pre-trade state back as cold. While the
 // job awaited the trade the bot may have been activated: its row is hot and
@@ -228,8 +230,8 @@ async function buyNpcStack(state, selfId, amount, unitPrice) {
 
 // The bot's errand while it still stands (ERRAND_MS), else null.
 function pendingErrand(state, timestamp = Date.now()) {
-    const errand = state?.stats?.marketErrand;
-    return errand && timestamp - Number(errand.at || 0) < ERRAND_MS ? errand : null;
+    const errands = CombinedErrands.pending(state, timestamp);
+    return errands.find(errand => errand.town === state?.currentRegion) || errands[0] || null;
 }
 
 function errandGoal(errand) {
@@ -244,7 +246,9 @@ function errandGoal(errand) {
 // the state unsaved (a caller that saves it). A bot in a party keeps the
 // errand: its party's market break takes it there (NeedsEvaluator).
 async function acquire(state, selfId, amount, options = {}) {
-    const plan = planPurchase(state, selfId, amount, options);
+    const visitTown = state.stats?.travel?.townName || (state.activity === 'shopping' ? state.currentRegion : null);
+    const local = visitTown ? planPurchase(state, selfId, amount, { ...options, towns: [visitTown] }) : null;
+    const plan = local || planPurchase(state, selfId, amount, options);
     if (!plan) return { state, bought: false, units: 0, traveling: false, plan: null };
     if (state.activity === 'shopping' && plan.town === state.currentRegion) {
         const bought = await buyHere(state, plan);
@@ -253,9 +257,10 @@ async function acquire(state, selfId, amount, options = {}) {
     const errand = { selfId: Number(selfId), amount: Number(amount), town: plan.town, money: Number.isFinite(plan.money) ? plan.money : null,
         maxPrice: Number.isFinite(options.maxPrice) ? options.maxPrice : null, purpose: options.purpose || 'supply',
         tag: options.tag || null, at: Number(options.timestamp || Date.now()) };
-    const withErrand = { ...state, stats: { ...(state.stats || {}), marketErrand: errand } };
+    const withErrand = CombinedErrands.enqueue(state, errand);
     const from = state.activity === 'shopping' ? { ...withErrand, activity: 'hunting' } : withErrand;
-    const travel = state.party?.partyId || state.partyId ? null : GoalExecutor.beginMarketTravel(from, errandGoal(errand));
+    const travel = state.party?.partyId || state.partyId || (state.activity === 'shopping' && state.stats?.townVisit?.completed !== true)
+        ? null : GoalExecutor.beginMarketTravel(from, errandGoal(errand));
     if (travel && state.activity === 'shopping') travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
     const next = travel || withErrand;
     if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan };
@@ -275,7 +280,8 @@ async function buyErrand(state) {
         money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity });
     const bought = plan ? await buyHere(state, plan) : { state, units: 0, hot: false };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
-    const cleared = { ...bought.state, stats: { ...(bought.state.stats || {}), marketErrand: null,
+    const remaining = CombinedErrands.complete(bought.state, errand);
+    const cleared = { ...remaining, stats: { ...remaining.stats,
         lastErrand: { purpose: errand.purpose, selfId: errand.selfId, units: bought.units, tag: errand.tag || null, at: Date.now() } } };
     const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
     await GoalState.clear(state.characterId, 'completed').catch(() => null);
@@ -303,6 +309,9 @@ const ColdMarketService = {
             return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
         }
         if (goal.plan?.marketTown && String(goal.plan.marketTown) !== String(state.currentRegion)) {
+            if (state.stats?.townVisit && state.stats.townVisit.completed !== true) {
+                return Promise.resolve({ state, purchased: false, reason: 'other_town_deferred' });
+            }
             const travel = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting' }, goal);
             if (travel) {
                 travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
@@ -364,6 +373,36 @@ const ColdMarketService = {
             }
             return GoalState.clear(state.characterId, 'completed').then(() => bought);
         });
+    },
+    async finishTownErrands(state) {
+        if (!state || state.activity !== 'shopping' || state.phase === 'hot') return state;
+        let current = state;
+        // A finite snapshot; every purchase replans against current quotes and current wallet.
+        for (const errand of CombinedErrands.pending(state, Date.now(), state.currentRegion)) {
+            if (LifeState.hotRow(current.characterId)) return LifeState.hotRow(current.characterId);
+            if (!CombinedErrands.pending(current).some(other => CombinedErrands.key(other) === CombinedErrands.key(errand)
+                && Number(other.at) === Number(errand.at) && Number(other.amount) === Number(errand.amount))) continue;
+            const next = await buyErrand(CombinedErrands.withPending(current, [errand,
+                ...CombinedErrands.pending(current).filter(other => CombinedErrands.key(other) !== CombinedErrands.key(errand))]));
+            current = next?.state || current;
+            if (next?.reason === 'bot_went_hot') return current;
+        }
+        const plan = ShotStock.planForState(current);
+        const localPrices = staticOffers(plan.selfId).filter(offer => offer.town === current.currentRegion);
+        const unitPrice = localPrices.length ? Math.min(...localPrices.map(offer => Number(offer.price))) : 0;
+        const restock = ShotStock.restockPlan(current, { plan, unitPrice });
+        if (restock.needed && restock.amount > 0) {
+            const purchase = planPurchase(current, plan.selfId, restock.targetAmount - restock.currentAmount, {
+                towns: [current.currentRegion], money: Math.max(0, restock.adena - restock.reserve - restock.potionCost)
+            });
+            if (purchase) {
+                const bought = await buyHere(current, purchase);
+                current = bought.state;
+                if (bought.hot) return current;
+            }
+        }
+        return { ...current, stats: { ...current.stats,
+            townVisit: current.stats?.townVisit ? { ...current.stats.townVisit, completed: true } : null } };
     },
     buyOffer,
     tripFrom,

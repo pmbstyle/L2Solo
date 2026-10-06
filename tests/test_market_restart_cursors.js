@@ -58,6 +58,7 @@ async function restart() {
 async function run() {
     clean();
     options.default.Database.path = path.relative(process.cwd(), databasePath);
+    options.default.Database.historyPath = historyPath;
     Database.init();
     assert(Database.isReady());
     DataCache.init();
@@ -127,8 +128,8 @@ async function run() {
         'migrated BUY keeps its authored bid as a conservative worth floor');
     assert.strictEqual((await storedShop(player.id)).lines[0].pricing, undefined);
     assert.strictEqual((await Database.initializeBoardPricing()).initialized, 0);
-    assert.strictEqual((await Database.execute(["SELECT COUNT(*) AS n FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].n, 0,
-        'line migration must not silently choose historical or zero own experience');
+    assert.strictEqual((await Database.execute(["SELECT value FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].value, 'history',
+        'startup explicitly seeds retained history before line pricing');
     console.log('schema57 rollback, single book removal, unrelated stats and durable line initialization: pass');
     await Database.buyFromAfkTradeShop(buyer.id, { shopId: migrated.id, ownerId: owner.id,
         lineId: migrated.lines[0].id, amount: 1, expectedPrice: 100, expectedRevision: 1 });
@@ -202,6 +203,10 @@ async function run() {
 
     // Seed policy is explicit and independent. These are two disposable
     // scenarios, not a choice for the running world.
+    // This disposable scenario reopens the one-time initializer independently
+    // of the startup choice already verified above. Existing learned owners stay.
+    await Database.execute(["DELETE FROM world_meta WHERE key = 'botMarketTradesInitialized'"]);
+    await Database.execute(["UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.marketTrades') WHERE characterId = ?", [inactive.id]]);
     const legacyOwner = await bot('HistorySeed');
     await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });
     await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });

@@ -173,6 +173,7 @@ function isSpareConsumable(item, template = templateFor(item?.selfId)) {
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
     if (isEquipmentItem(item, template)) return false;
+    if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(item?.selfId))) return false;
     if (isMarketRecipeItem(item)) return false;
     const kind = kindFor(item, template);
     return NPC_ONLY_KINDS.some((prefix) => kind.startsWith(prefix))
@@ -180,8 +181,7 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
         || isRecipeItem(item, template)
         // Some later C4 skill books lost their canonical Other.Spellbook
         // kind in the source datapack. Orc skill books are named Amulet.
-        // Neither is useful bot inventory: every class liquidates them at an
-        // NPC shop instead of listing or warehousing them.
+        // Unmapped books remain NPC cleanup; mapped C4 books have real demand.
         || isSkillBookItem(item, template);
 }
 
@@ -238,7 +238,7 @@ function npcOnlySlotCount(state = {}, candidates) {
 }
 
 function skillBookSlotCount(state = {}, candidates) {
-    return liquidationSlotCount(state, isSkillBookItem, candidates);
+    return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item), candidates);
 }
 
 function inventoryCleanupNeed(state = {}, options = {}) {
@@ -366,6 +366,9 @@ function reservedEquipmentAmounts(state) {
     const craft = reservedCraftAmounts(state);
     const combination = reservedCombinationAmounts(state);
     const upgrades = reservedUpgradeAmounts(state);
+    for (const book of invoke('GameServer/Skills/SkillBookCatalog').requiredBooks(state)) {
+        upgrades[book.selfId] = Math.max(Number(upgrades[book.selfId] || 0), 1);
+    }
     const targetId = Number(state?.stats?.equipmentPlan?.target?.selfId || 0);
     if (targetId && Number(state?.inventory?.[targetId]?.amount || 0) > 0
         && !state.inventory[targetId].equipped) upgrades[targetId] = 1;
@@ -451,10 +454,11 @@ function saleCandidates(state, options = {}) {
         if (options.onlyNpc === true && !npcOnly) return [];
         const clanProgression = isClanProgressionItem(item);
         if (!npcOnly && !clanProgression && !isMarketRecipeItem(item)
+            && !invoke('GameServer/Skills/SkillBookCatalog').isBook(selfId)
             && !isEnchantScroll(item)
             && !SELLABLE_KINDS.some((prefix) => kind.startsWith(prefix))) return [];
 
-        // Recipes and spellbooks are explicit NPC-only cleanup targets. They
+        // NPC-only recipes and unmapped books are explicit cleanup targets. They
         // must not inherit the generic starter-loot protection, otherwise a
         // generated bot can carry the same book forever after a market visit.
         const protectedAmount = npcOnly ? 0 : protectedStarterLootAmount(item, kind);
@@ -471,19 +475,31 @@ function saleCandidates(state, options = {}) {
             ? clanPrice
             : npcOnly ? Math.max(priceFor(state, item, template), NpcSellRules.npcBuyPrice(base)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
-        return [{
+        const candidate = {
             selfId,
             name: item.name || template?.template?.name || `Item ${selfId}`,
             kind,
             rank: isMarketRecipeItem(item)
                 ? recipeProductRank(item) : item.rank || template?.etc?.rank || 'none',
             count: sellableCount,
-            // A stack can mix enchant levels; do not advertise its highest
-            // enchant as if every instance had it. Only mark comparability.
-            npcComparable: saleEnchant(item) === 0,
+            enchant: 0, npcComparable: true,
             price,
             basePrice: base
-        }];
+        };
+        if (!Array.isArray(item.instances) || !item.instances.length) return [{ ...candidate,
+            enchant:Number(item.enchant || 0),npcComparable:Number(item.enchant || 0)===0 }];
+        const groups = new Map();
+        let left = sellableCount;
+        for (const instance of item.instances) {
+            if (instance.equipped || left <= 0) continue;
+            const count = Math.min(left, Number(instance.amount || 1));
+            const enchant = Number(instance.enchant || 0);
+            const row = groups.get(enchant) || { ...candidate,count:0,enchant,npcComparable:enchant===0,
+                objectId:Number(instance.id),objectIds:[] };
+            row.count += count;row.objectIds.push(Number(instance.id));groups.set(enchant,row);left -= count;
+        }
+        if (left > 0) { const row = groups.get(0) || {...candidate,count:0};row.count += left;groups.set(0,row); }
+        return [...groups.values()];
     }).sort((a, b) => {
         const craftedShotId = Number(state?.stats?.shotCraft?.productId || 0);
         const craftedPriority = Number(b.selfId === craftedShotId) - Number(a.selfId === craftedShotId);

@@ -7,6 +7,7 @@ const TABLE = 'bot_background_parties';
 const cache = new Map();
 const acceptedStamps = new Map();
 let cacheGeneration = 0;
+const publicationListeners = new Set();
 
 function acceptedParty(snapshot) {
     const current = cache.get(snapshot.partyId);
@@ -16,6 +17,10 @@ function acceptedParty(snapshot) {
     cache.set(snapshot.partyId, snapshot);
     acceptedStamps.set(snapshot.partyId, stamp);
     cacheGeneration++;
+    for (const listener of publicationListeners) {
+        try { listener(snapshot, current || null); }
+        catch (error) { utils.infoWarn('BotParty', 'publication listener failed: %s', error?.message || error); }
+    }
     return snapshot;
 }
 let initialized = false;
@@ -115,6 +120,7 @@ function rowFromParty(party) {
 }
 
 function save(row) {
+    if (Database.isReady() && typeof Database.saveBackgroundParty === 'function') return Database.saveBackgroundParty(row);
     return Database.execute([
         `INSERT INTO ${TABLE} (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
@@ -152,6 +158,11 @@ function save(row) {
 }
 
 const BackgroundPartyState = {
+    subscribeChanges(listener) {
+        if (typeof listener !== 'function') throw new TypeError('invalid_party_publication_listener');
+        publicationListeners.add(listener);
+        return () => publicationListeners.delete(listener);
+    },
     init() {
         if (initialized) return Promise.resolve(true);
         if (initStarted) return initPromise;
@@ -232,7 +243,8 @@ const BackgroundPartyState = {
                 // Only the whole-party lifecycle can change a hot roster.
                 // A cold maintenance job may have prepared this save before activation.
                 if (!result.affectedRows) return null;
-                return this.acceptCommit(prepared);
+                (result.lifeRows || []).forEach(row => invoke('GameServer/Bot/Population/BotLifeState').acceptNewerLifecycleRow(row));
+                return result.row ? this.acceptRow(result.row) : this.acceptCommit(prepared);
             });
         }).catch((err) => {
             utils.infoWarn('BotParty', 'failed to save background party %s: %s', prepared.snapshot.partyId, err.message);

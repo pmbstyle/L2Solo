@@ -45,6 +45,44 @@ class LifeStateCache extends Map {
         // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
         // Kept on every write like the cells; read only by walkersNear.
         this.walkers = new Map();
+        this.publicationListeners = new Set();
+    }
+
+    publish(packet) {
+        for (const subscription of this.publicationListeners) {
+            if (!subscription.active) continue;
+            try { subscription.listener(packet); }
+            catch (error) { global.utils?.infoWarn?.('BotLife', 'publication listener failed: %s', error?.message || error); }
+        }
+    }
+
+    subscribePublications(listener, { replay = false } = {}) {
+        if (typeof listener !== 'function') throw new TypeError('invalid_life_publication_listener');
+        const subscription = { listener, active: true, handle: null };
+        this.publicationListeners.add(subscription);
+        if (replay) {
+            const iterator = this.entries();
+            let remaining = this.size;
+            const page = () => {
+                subscription.handle = null;
+                let inspected = 0;
+                while (subscription.active && remaining > 0 && inspected++ < 64) {
+                    const next = iterator.next(); remaining--;
+                    if (next.done) { remaining = 0; break; }
+                    const [characterId, state] = next.value;
+                    if (this.get(characterId) !== state) continue;
+                    try { listener({ characterId, state, previousState: null, kind: 'put' }); }
+                    catch (error) { global.utils?.infoWarn?.('BotLife', 'publication replay failed: %s', error?.message || error); }
+                }
+                if (subscription.active && remaining > 0) subscription.handle = setImmediate(page);
+            };
+            subscription.handle = setImmediate(page);
+        }
+        return () => {
+            subscription.active = false;
+            if (subscription.handle) clearImmediate(subscription.handle);
+            this.publicationListeners.delete(subscription);
+        };
     }
 
     passiveWorkerStateSources(role) {
@@ -151,6 +189,7 @@ class LifeStateCache extends Map {
         if (run) this.walkers.set(id, run);
         else this.walkers.delete(id);
         this.revision++;
+        this.publish({ characterId: id, state, previousState: previous || null, kind: 'put' });
         return this;
     }
 
@@ -162,7 +201,10 @@ class LifeStateCache extends Map {
         this.removeOrder(id);
         if (record) this.occupancy.remove(stateKey(record.source));
         ShopPlaces.release(ShopPlaces.stateOwner(id));
-        if (removed) this.revision++;
+        if (removed) {
+            this.revision++;
+            this.publish({ characterId: id, state: null, previousState: record?.source || null, kind: 'remove' });
+        }
         return removed;
     }
 
@@ -172,6 +214,7 @@ class LifeStateCache extends Map {
         this.ordered = []; this.orderEntries.clear(); this.occupancy.clear();
         ShopPlaces.releaseStates();
         this.revision++;
+        this.publish({ characterId: null, state: null, previousState: null, kind: 'reset' });
     }
 
     recent(limit) {

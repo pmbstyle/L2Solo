@@ -65,7 +65,7 @@ function rowPoint(row) {
 }
 
 function validateRow(id, row, worldGeneration) {
-    objectFields(row, ROW_FIELDS);
+    objectFields(row, Object.hasOwn(row ?? {}, 'presence') ? [...ROW_FIELDS, 'presence'] : ROW_FIELDS);
     if (!positive(id) || row.id !== id || !positive(row.worldGeneration)
         || row.worldGeneration !== worldGeneration || !positive(row.sourceGeneration)
         || !positive(row.publication) || row.sourceGeneration > row.publication || !positive(row.order)) {
@@ -73,6 +73,13 @@ function validateRow(id, row, worldGeneration) {
     }
     objectFields(row.axes, ['x', 'y', 'z']);
     axis(row.axes.x); axis(row.axes.y); axis(row.axes.z);
+    if (row.presence) {
+        objectFields(row.presence, ['online', 'realPlayer', 'targetId']);
+        if (typeof row.presence.online !== 'boolean' || typeof row.presence.realPlayer !== 'boolean'
+            || !Number.isFinite(row.presence.targetId) || row.presence.targetId < 0) {
+            throw new TypeError('invalid_passive_actor_presence');
+        }
+    } else if (Object.hasOwn(row, 'presence')) throw new TypeError('invalid_passive_actor_presence');
     return rowPoint(row);
 }
 
@@ -178,6 +185,7 @@ function makeStore(index, owner, descriptor, binding, readers = index) {
             // The provider reads ORIGINAL received data, retaining no point facts.
             index.updateFacet(id, 'actor', record, 'raw_xy', point
                 ? { enabled: true, loc: () => rowPoint(row) } : { enabled: false });
+            index.updateActorPresence(id, record, row.presence ?? { online: false, realPlayer: false, targetId: 0 });
             return true;
         },
         remove(id, absence, chain) {

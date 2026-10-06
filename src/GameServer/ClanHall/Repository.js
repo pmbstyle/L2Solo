@@ -1,4 +1,5 @@
 const Policy = require('./Policy');
+const ReviewEvents = require('../Clan/ClanReviewEvents');
 const { integer: n, DAY, WEEK, AUCTION_DURATION } = Policy;
 const json = (raw) => {
     try {
@@ -54,8 +55,19 @@ module.exports = function ({
                 AUCTION_DURATION
             ]);
     }
-    const tx = (fn, tag) => inTransaction(fn, 'clan-hall:' + tag);
+    let transactionChanges = null;
+    const tx = (fn, tag) => inTransaction(() => {
+        const changes = new Set(), previous = transactionChanges;
+        transactionChanges = changes;
+        try { return { result: fn(), changed: [...changes] }; }
+        finally { transactionChanges = previous; }
+    }, 'clan-hall:' + tag).then(({ result, changed }) => {
+        // Only a successful commit wakes planners. A rollback emits nothing.
+        for (const id of changed) ReviewEvents.changed(id, 'treasury');
+        return result;
+    });
     function event(clanId, hallId, kind, amount, at) {
+        transactionChanges?.add(clanId);
         write('INSERT INTO clan_hall_events(clanId,hallId,kind,amount,at) VALUES (?,?,?,?,?)', [
             clanId,
             hallId,
@@ -86,6 +98,7 @@ module.exports = function ({
     function money(id, delta, hallId, kind, timestamp, characterId = null) {
         if (!delta) return true;
         if (delta < 0 && available(id) < -delta) return false;
+        transactionChanges?.add(id);
         const rows = all('SELECT * FROM clan_warehouse_items WHERE clanId=? AND selfId=57 ORDER BY id', [id]);
         if (delta > 0) {
             if (rows.length)
@@ -249,7 +262,9 @@ module.exports = function ({
                       Policy.desired(
                           Policy.definition(h.id),
                           all(
-                              'SELECT c.level,c.classId,l.currentRegion FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id WHERE c.clanId=?',
+                              `SELECT c.id AS characterId,c.level,c.classId,l.currentRegion,l.adena,l.statsJson,l.inventorySummary,
+                            p.traitsJson,p.primaryDrive,p.archetype FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
+                            LEFT JOIN bot_personas p ON p.characterId=c.id WHERE c.clanId=? ORDER BY c.id`,
                               [c.id]
                           )
                       )
@@ -385,7 +400,8 @@ module.exports = function ({
         fetchClanHallAuctions(id = 0) {
             return tx(
                 () =>
-                    all('SELECT * FROM clan_halls ORDER BY id').map((h) => ({
+                    (one("SELECT name FROM sqlite_master WHERE type='table' AND name='clan_halls'")
+                        ? all('SELECT * FROM clan_halls ORDER BY id') : []).map((h) => ({
                         ...h,
                         functions: json(h.functionsJson),
                         ownBid:
@@ -426,16 +442,27 @@ module.exports = function ({
                 return upgrade(c, h, kind, Number(level), timestamp);
             }, 'configure');
         },
-        planClanHallFinance(clanId, timestamp = Date.now(), rng = Math.random) {
+        planClanHallFinance(clanId, timestamp = Date.now()) {
             return tx(() => {
                 const c = clan(Number(clanId));
                 if (!c || c.mode !== 'autonomous' || c.level < 2 || c.dissolvingExpiryTime)
                     return { ok: true, skipped: true };
                 const current = snapshot(c.id),
                     members = all(
-                        'SELECT c.level,c.classId,l.currentRegion FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id WHERE c.clanId=?',
+                        `SELECT c.id AS characterId,c.level,c.classId,l.currentRegion,l.adena,l.statsJson,l.inventorySummary,
+                            p.traitsJson,p.primaryDrive,p.archetype FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
+                            LEFT JOIN bot_personas p ON p.characterId=c.id WHERE c.clanId=? ORDER BY c.id`,
                         [c.id]
                     );
+                for (const member of members) {
+                    member.stats = json(member.statsJson);
+                    member.inventory = json(member.inventorySummary);
+                    member.persona = { traits: json(member.traitsJson), primaryDrive: member.primaryDrive, archetype: member.archetype };
+                }
+                const lots = all('SELECT * FROM clan_halls').map(row => ({ ...Policy.definition(row.id), ...row, functions: json(row.functionsJson) }));
+                const economy = invoke('GameServer/Clan/ClanEconomyContext').forClan({ ...c, state: json(c.stateJson), members }, {
+                    warehouse: all('SELECT * FROM clan_warehouse_items WHERE clanId=?', [c.id]), halls: lots
+                });
                 let goal = current.goal,
                     h = current.hall;
                 if (h) {
@@ -456,7 +483,8 @@ module.exports = function ({
                         protected: protectedAmount(c),
                         updatedAt: timestamp
                     };
-                    if (next && spendable(c) >= desiredReserve) upgrade(c, h, ...next, timestamp);
+                    if (next && spendable(c) >= desiredReserve && economy.budgetFor('hall_upgrade', h.id) >= desiredReserve - economy.reserve)
+                        upgrade(c, h, ...next, timestamp);
                 } else if (current.bid) {
                     goal = {
                         ...goal,
@@ -469,23 +497,13 @@ module.exports = function ({
                         updatedAt: timestamp
                     };
                 } else {
-                    h = one('SELECT * FROM clan_halls WHERE id=? AND ownerId=0', [n(goal.hallId)]);
-                    if (!h)
-                        h = Policy.target(
-                            all('SELECT * FROM clan_halls WHERE ownerId=0').map((r) => ({
-                                ...Policy.definition(r.id),
-                                ...r
-                            })),
-                            members,
-                            rng
-                        );
+                    h = economy.hall;
                     if (!h) goal = { status: 'waiting_auction', target: 0, progress: 0, updatedAt: timestamp };
                     else {
                         const def = Policy.definition(h.id);
-                        const planned =
-                            goal.hallId === h.id && goal.round === h.round && goal.bid
-                                ? goal.bid
-                                : Policy.bidAmount(def.minimumBid, rng);
+                        const maintenance = Policy.reserve(def, Policy.desired(def, members));
+                        const valued = Math.min(economy.hallBid(h), Math.max(0, spendable(c) - maintenance));
+                        const planned = Math.max(def.minimumBid, valued);
                         const target = planned + Policy.reserve(def, Policy.desired(def, members));
                         goal = {
                             status: 'saving',
@@ -501,6 +519,8 @@ module.exports = function ({
                             goal = { ...goal, status: 'bidding', target: 0, progress: 0 };
                     }
                 }
+                goal.economy = { focus: economy.network.focus, dormant: economy.network.dormant,
+                    moneyPrice: economy.moneyPrice, incomePerHour: economy.incomePerHour };
                 saveGoal(c.id, goal);
                 return { ok: true, goal };
             }, 'plan');
@@ -510,14 +530,27 @@ module.exports = function ({
         // a purchase that failed). Money the member keeps is not earnings: its dues
         // mark moves with it (moveMark); money spent at once on a clan purchase does
         // not move it.
-        payClanMember({ clanId, characterId, amount, kind, moveMark = true, timestamp = Date.now() }) {
+        payClanMember({ clanId, characterId, amount, kind, moveMark = true, progressionGoal = null, timestamp = Date.now() }) {
             const pay = Math.trunc(Number(amount) || 0);
             return withCharacterFlush(Number(characterId), () =>
                 tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId);
                     if (!c || c.mode !== 'autonomous' || !pay) return { ok: false, code: 'clan_payment_invalid' };
-                    if (pay > 0 && spendable(c) < pay) return { ok: false, code: 'clan_funds_short' };
+                    const currentGoal = json(c.stateJson).goal;
+                    // Only the exact still-current progression purchase spends
+                    // its own earmark. Ordinary member/hall payments cannot.
+                    const progressionPurchase = progressionGoal && kind === 'clan_level_purchase'
+                        && currentGoal?.type === 'item' && currentGoal.status !== 'completed' && currentGoal?.plan?.kind === 'market'
+                        && Number(currentGoal.target?.itemId) === Number(progressionGoal.target?.itemId)
+                        && Number(currentGoal.updatedAt) === Number(progressionGoal.updatedAt)
+                        && Number(currentGoal.plan.maxPrice) === Number(progressionGoal.plan?.maxPrice)
+                        && pay <= n(currentGoal.plan.maxPrice);
+                    const residence = progressionPurchase && one("SELECT name FROM sqlite_master WHERE type='table' AND name='clan_halls'")
+                        ? one('SELECT * FROM clan_halls WHERE ownerId=?', [c.id]) : null;
+                    const maintenance = residence ? Policy.reserve(Policy.definition(residence.id), json(residence.functionsJson)) : 0;
+                    const budget = progressionPurchase ? Math.max(0, available(c.id) - maintenance) : spendable(c);
+                    if (pay > 0 && budget < pay) return { ok: false, code: 'clan_funds_short' };
                     const member = memberWallet(id, timestamp);
                     if (!member) return { ok: false, code: 'member_busy' };
                     if (pay < 0 && member.amount < -pay) return { ok: false, code: 'member_funds_short' };

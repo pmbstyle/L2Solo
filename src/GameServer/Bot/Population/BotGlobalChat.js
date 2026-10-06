@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
@@ -14,7 +15,7 @@ const lastTextByTopic = new Map();
 
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
-    return (World.user?.sessions || []).filter((session) => (
+    return ActorQueries.humans(World).filter((session) => (
         session.socket && typeof session.socket.write === 'function' &&
         session.accountId && !String(session.accountId).startsWith('bot_')
     ));

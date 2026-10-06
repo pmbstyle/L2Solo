@@ -63,6 +63,21 @@ function pendingTargetAmount(plan) {
 }
 
 function checkedPlan(session, state, town, options = {}) {
+    // Autonomous hot bots buy the same funded leaf as cold actors. Player
+    // companion requests retain their explicitly assigned native errands.
+    if (session.partyCompanion !== true) {
+        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+        const leaf = economy.network.activity;
+        const selfId = Number(leaf?.itemId || 0);
+        if (leaf?.activity !== 'shopping' || !selfId) return { plan: null, offers: [] };
+        const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, selfId);
+        const amount = Math.max(1, Math.ceil(leaf.amount || 1));
+        const budget = Math.min(PurchaseFunding.spendable(state) / amount, economy.worth(selfId) ?? Infinity);
+        const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget });
+        return { plan: offer ? { status: 'active', strategy: 'market', economyInputKey: economy.inputKey,
+            target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
+            market: { sourceType: offer.sourceType } } : null, offers: offer ? [offer] : [] };
+    }
     const previous = state.stats?.equipmentPlan;
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
     const offerCache = new Map();
@@ -144,6 +159,7 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
         itemName: offer.itemName || plan.target.name,
         slot: Number(plan.target.slot || 0),
         price: Number(offer.price),
+        amount: Math.min(Number(offer.count || Infinity), Number(plan.amount || 1)),
         purchaseCount,
         excludedSlots: [...excludedSlots],
         target: offer.sourceType === 'npc'

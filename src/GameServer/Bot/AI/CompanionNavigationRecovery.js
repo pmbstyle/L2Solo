@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const MAX_ROUTE_FAILURES = 3;
 const MAX_WORK_BUDGET_FAILURES = 3;
 const BASE_RETRY_DELAY_MS = 1000;
@@ -63,15 +64,16 @@ function failedDiagnostic(session, target, state) {
 function resolveTargetActor(target) {
     const actorId = Number(target?.actorId || 0);
     if (!actorId) return null;
+    const World = invoke('GameServer/World/World');
     const cached = targetActorCache.get(target);
     if (Number(cached?.fetchId?.() || 0) === actorId
+        && (!ActorQueries.native(World) || cached.fetchKind
+            || World.registeredActorById(actorId)?.actor === cached)
         && cached.fetchIsOnline?.() !== false
         && cached.isDead?.() !== true) return cached;
     targetActorCache.delete(target);
 
-    const World = invoke('GameServer/World/World');
-    const userActor = (World.user?.sessions || [])
-        .find((candidate) => Number(candidate?.actor?.fetchId?.() || 0) === actorId)?.actor || null;
+    const userActor = ActorQueries.byId(World, actorId)?.actor || null;
     const actor = userActor || (World.npc?.spawns || [])
         .find((candidate) => Number(candidate?.fetchId?.() || 0) === actorId) || null;
     if (actor) targetActorCache.set(target, actor);

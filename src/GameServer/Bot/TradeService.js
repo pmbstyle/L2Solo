@@ -41,6 +41,8 @@ function nativeStoreItems(store) {
 // Preview and queued execution share this gate so neither buyer selection
 // nor a direct/stale arrival can liquidate gear through a static buyer.
 function acceptsSellerItem(actor, storeItem, inventoryItem) {
+    if (storeItem[staticPriceSource] && isBotActor(actor)
+        && require('./Economy/ProductionPolicy').buyersDisabled()) return false;
     return !storeItem[staticPriceSource] || !isBotActor(actor)
         || String(inventoryItem?.fetchKind?.() || itemTemplate(storeItem.selfId)?.template?.kind || '')
             .startsWith('Other.Material');
@@ -356,7 +358,8 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
                 throw new Error("Item is not available.");
             }
             if (storeItem[staticPriceSource] && isBotActor(actor)
-                && !invoke('GameServer/Inventory/ShotStock').SHOT_IDS.includes(Number(selfId))) {
+                && (!invoke('GameServer/Inventory/ShotStock').SHOT_IDS.includes(Number(selfId))
+                    || !require('./Economy/ProductionPolicy').allowsFixedShot(selfId))) {
                 throw new Error('Static merchant item is unavailable to bots.');
             }
             const unitPrice = storeItemPrice(store, storeItem, actor);

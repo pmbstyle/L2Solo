@@ -102,5 +102,17 @@
         };
     }
 
-    return Object.freeze({ activeOffers, filterOffers, groupOffers, sortRows, summary });
+    function economy(data) {
+        const current = data?.economy || {};
+        const buckets = [...(current.adena?.buckets || [])].sort((left, right) => right.at - left.at);
+        const completed = buckets.filter((row) => !row.partial && row.observed);
+        return { counters: current.counters || [], buckets,
+            available: Boolean(current.adena),
+            completed: completed.reduce((sum, row) => ({
+                hours: sum.hours + 1, sources: sum.sources + row.sources,
+                sinks: sum.sinks + row.sinks, net: sum.net + row.net
+            }), { hours: 0, sources: 0, sinks: 0, net: 0 }) };
+    }
+
+    return Object.freeze({ activeOffers, filterOffers, groupOffers, sortRows, summary, economy });
 }));

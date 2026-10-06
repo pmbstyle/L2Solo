@@ -35,8 +35,10 @@ function roll({ spot, kills, killerLevel, rng, spoiler = null, dropOwners = 0 })
     const OverhitReward = invoke('GameServer/Progression/OverhitReward');
     const progression = kills.map((kill) => {
         const base = BackgroundDropResolver.progressionForFight({ spot, npcSelfId: kill.npcSelfId, rng });
-        const overhit = OverhitReward.resolveContext(kill.overhitContext, base.exp);
-        return { exp: overhit.adjustedExp, sp: base.sp, overhit };
+        const penalized = invoke('GameServer/Progression/MobExperience').rewards(base.exp, base.sp, killerLevel,
+            BackgroundDropResolver.npcLevel(spot, kill.npcSelfId));
+        const overhit = OverhitReward.resolveContext(kill.overhitContext, penalized.exp);
+        return { exp: overhit.adjustedExp, sp: penalized.sp, overhit };
     });
     const rolls = kills.map((kill) => BackgroundDropResolver.rollRewardsForFight({
         spot,

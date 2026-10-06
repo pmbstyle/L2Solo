@@ -28,7 +28,8 @@ function reviewDecision(state, existing, options, timestamp) {
     const marketCandidate = candidates.find(isMarketGoal);
     const activeMarketGoal = isMarketGoal(existing?.current);
     if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
-        && !marketCandidate && !activeMarketGoal) return { result: existing, unchanged: true, goal: null, candidates };
+        && !marketCandidate && !activeMarketGoal
+        && candidates[0]?.plan?.economyInputKey === existing.current.plan?.economyInputKey) return { result: existing, unchanged: true, goal: null, candidates };
 
     const goal = GoalPlanner.plan(candidates, timestamp);
     if (!goal) return { result: null, unchanged: true, goal: null, candidates };

@@ -39,7 +39,7 @@ function bidFor(state, goal) {
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
     const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, {});
-    let worth = requestedPrice;
+    let worth = ctx.economy.worth(selfId) ?? requestedPrice;
     if (!(worth > 0)) {
         const belief = PriceBelief.prior(selfId, ctx);
         if (!belief) return null;

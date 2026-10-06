@@ -24,6 +24,7 @@ function die(session, actor, context = {}) {
 
     const victimSession = actor.session || session;
     const ArenaDuelService = invoke('GameServer/World/ArenaDuelService');
+    if (!ArenaDuelService.duelForActor?.(actor)) require('./PkDeathDrop').drop(victimSession, actor);
     if (typeof actor.fetchExp === 'function' && typeof actor.setExpSp === 'function' && !actor.fetchKind) {
         const killer = context.killer ?? context.source;
         invoke('GameServer/Progression/DeathExperience').applyDeathPenalty(victimSession, actor, {
@@ -58,7 +59,19 @@ function die(session, actor, context = {}) {
     // therefore be routed through actor.session or the player death branch
     // is missed whenever the ephemeral clone lands the final hit.
     if (ArenaDuelService.onPlayerDeath?.(victimSession)) return;
-    if (session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true) {
+    if (victimSession?.accountId?.startsWith?.('bot_') && victimSession.arenaEphemeral !== true) {
+        const Life = invoke('GameServer/Bot/Population/BotLifeState');
+        const prior = victimSession.coldLifeState || Life.cachedState(actor.fetchId());
+        if (prior) {
+            const timestamp = Number(context.timestamp || Date.now());
+            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(prior, { timestamp });
+            const progress = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(prior, {
+                timestamp, losses: 1, lossHours: economy.deathHours, persona: economy.persona,
+                knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
+                startedAt: Number(victimSession.botStartedAt || timestamp)
+            });
+            victimSession.coldLifeState = { ...prior, stats: { ...prior.stats, ...progress } };
+        }
         Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'death',

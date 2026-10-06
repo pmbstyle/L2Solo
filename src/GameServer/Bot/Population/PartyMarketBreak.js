@@ -1,4 +1,10 @@
-const cleanupNeed = (member, now) => invoke('GameServer/Bot/Economy/ItemDisposition').inventoryCleanupNeed(member, { now });
+const SurvivalFloor = require('./SurvivalFloor');
+const cleanupNeed = (member, now) => {
+    const floor = SurvivalFloor.forState(member, now);
+    return floor?.action === 'unload'
+        ? { ...floor, reason: floor.reason === 'no_slot' ? 'inventory_capacity' : 'inventory_overweight' }
+        : invoke('GameServer/Bot/Economy/ItemDisposition').inventoryCleanupNeed(member, { now });
+};
 const cleanupGoal = (need) => invoke('GameServer/Bot/Goals/NeedsEvaluator').cleanupGoal(need);
 
 const RESERVATION_MS = 15 * 60 * 1000;
@@ -17,13 +23,13 @@ function memberNeed(party, member, now = Date.now()) {
 function allowed(party, member, now = Date.now(), need = undefined) {
     if (!clanDuty(party)) return true;
     if (pending(party, now).length) return false;
-    return (need === undefined ? cleanupNeed(member, now) : need)?.reason === 'inventory_capacity';
+    return ['inventory_capacity', 'inventory_overweight'].includes((need === undefined ? cleanupNeed(member, now) : need)?.reason);
 }
 // A clan duty is left only for a bag over its slot limit.
 function goal(party, member, current, now, need = undefined) {
     if (!clanDuty(party)) return current;
     const bag = need === undefined ? cleanupNeed(member, now) : need;
-    if (bag?.reason !== 'inventory_capacity') return null;
+    if (!['inventory_capacity', 'inventory_overweight'].includes(bag?.reason)) return null;
     return { ...cleanupGoal(bag), status: 'active' };
 }
 function departure(party, member, travel, now, given = undefined) {

@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
@@ -181,7 +182,7 @@ function nearbySnapshot(bot) {
     let eligibleAttackableNpcs = 0;
     const attackableNames = new Map();
 
-    World.user.sessions.forEach((session) => {
+    ActorQueries.near(World, bot, 1500).forEach((session) => {
         const actor = session.actor;
         if (!actor || actor === bot || !actor.fetchIsOnline()) return;
         if (distance2d(actorLocation(actor), loc) > 1500) return;

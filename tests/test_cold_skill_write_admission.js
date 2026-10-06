@@ -40,8 +40,9 @@ async function seed() {
     const id=Number((await Database.createCharacter(account,{name:`SkillAdmission${serial}`,race:0,classId:0,
         sex:0,face:0,hair:0,hairColor:0,maxHp:100,maxMp:100,locX:83000,locY:148000,locZ:-3400})).insertId);
     const level=7,time=Date.now();
+    await Database.updateCharacterExperience(id,level,Number(Data.experience[level-1])+1,100000);
     assert(await Life.upsertState({characterId:id,accountName:account,name:`SkillAdmission${serial}`,level,
-        exp:Number(Data.experience[level-1])+1,sp:120,adena:0,inventory:{},phase:'cold',activity:'resting',
+        exp:Number(Data.experience[level-1])+1,sp:100000,adena:0,inventory:{},phase:'cold',activity:'resting',
         loc:{locX:83000,locY:148000,locZ:-3400},vitals:{hp:85,maxHp:100,mp:70,maxMp:100},
         timing:{lastResolvedAt:time-45000,nextResolveAt:time+30000},
         stats:{classId:0,classProgressionLevel:0,classProgressionClassId:0,restUntil:time+30000}},'skill_admission_seed'));
@@ -176,7 +177,9 @@ async function producerCapture(kind) {
         await wait(entered.promise,'real skill read before producer options mutation');
         assert.equal(facts(id).skills.filter(row=>row.characterId===id).length,0);
         bag.beforeWrite=()=>{throw Error('must_not_adopt_late_producer_options');};
-        gate.resolve();await job;assert.equal(calls,9);assert.equal((await Database.fetchSkills(id)).length,9);
+        gate.resolve();await job;
+        if(kind==='award')assert.equal(calls,9);else assert(calls>=9,'paid learning retains the captured callback at every native write');
+        assert.equal((await Database.fetchSkills(id)).length,9);
     } finally {gate.resolve();await job?.catch(()=>null);Database.fetchSkill=fetchSkill;}
 }
 async function workerQueue(mode) {
@@ -199,8 +202,8 @@ async function workerQueue(mode) {
     c.population={executeWorkerLifecycleCommand(...args){admission=args[2]?.workerAdmission;
         return Population.executeWorkerLifecycleCommand(...args);}};
     c.contextIndex=()=>({});c.contextFor=()=>({});
-    const fetchSkill=Database.fetchSkill,setSkill=Database.setSkill;
-    Database.setSkill=function(...args){if(args[1]===id)queued.resolve();return setSkill.apply(this,args);};
+    const fetchSkill=Database.fetchSkill,learnBotSkill=Database.learnBotSkill;
+    Database.learnBotSkill=function(...args){if(args[0]===id)queued.resolve();return learnBotSkill.apply(this,args);};
     Database.fetchSkill=async function(...args){
         const rows=await fetchSkill.apply(this,args);
         if(args[0]===id&&++reads===1){
@@ -254,7 +257,7 @@ async function workerQueue(mode) {
                 assert.equal(result.retryAfterMs,1000);assert.deepEqual(result.commandCheckpoint,request.commandCheckpoint);}
         }
     }finally{gate.resolve();await control?.catch(()=>null);await c.commandTail.catch(()=>null);
-        Database.fetchSkill=fetchSkill;Database.setSkill=setSkill;global.setImmediate=realImmediate;stopGate.resolve();if(stop)await stop;}
+        Database.fetchSkill=fetchSkill;Database.learnBotSkill=learnBotSkill;global.setImmediate=realImmediate;stopGate.resolve();if(stop)await stop;}
 }
 async function check(name,work){try{await work();console.log('PASS',name);}catch(error){failures.push(name);console.error('FAIL',name,error.stack);}}
 (async()=>{

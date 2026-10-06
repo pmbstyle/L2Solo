@@ -108,8 +108,9 @@ function evaluate(state, options = {}) {
             decisions.push({ ...hard, item });
             continue;
         }
-        if (kept.has(Number(item.selfId))) {
-            decisions.push({ action: 'list', reason: 'kept_line', item: { ...item, price: kept.get(Number(item.selfId)),
+        const keptKey = `${item.selfId}:${item.enchant || 0}`;
+        if (kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId))) {
+            decisions.push({ action: 'list', reason: 'kept_line', item: { ...item, price: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
                 marketReason: 'kept_line' } });
             keptLines += 1;
             continue;
@@ -131,7 +132,7 @@ function evaluate(state, options = {}) {
         if (chosen.has(decision)) {
             const price = decision.priced.ask.price;
             decision.item = { ...decision.item, price, marketReason: 'expected_value',
-                pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL }) };
+                pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL, enchant: decision.item.enchant || 0 }) };
             continue;
         }
         decision.action = 'warehouse';

@@ -1127,11 +1127,14 @@ const FALLBACKS = {
     orc_amulets: ['orcAmulets']
 };
 
-// Shot production belongs to crafters; dedicated static traders remain the
-// expensive fallback. Apply to all catalogs, including legacy fallback lists.
+// No-grade shots belong to ordinary grocers. D+ production belongs to
+// crafters; configured bot fallback is controlled by the production switch.
 const SHOT_IDS = new Set([1835, 2509, 3947, 1463, 1464, 1465, 1466, 1467,
     2510, 2511, 2512, 2513, 2514, 3948, 3949, 3950, 3951, 3952]);
-function allowedEntry(entry) { return !SHOT_IDS.has(Number(typeof entry === 'number' ? entry : entry.selfId)); }
+function allowedEntry(entry) {
+    const id = Number(typeof entry === 'number' ? entry : entry.selfId);
+    return !SHOT_IDS.has(id) || [1835, 2509, 3947].includes(id);
+}
 
 // Lists are rebuilt on every lookup, so the rate is read once per build;
 // resolving it for each row made shop lookups dominate bot planning time.

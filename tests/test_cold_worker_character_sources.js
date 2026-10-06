@@ -78,6 +78,14 @@ module.exports.inspectSources = async name => {
         const projected = await LifeStateProjector.prepareResolve(needsTree, { patch: {}, materialize: {}, debug: {} },
             { persist: false, projectClassProgression: true, timestamp: original.updatedAt + 1 });
         assert(projected.stats.classProgressionLevel >= 1); assert(projected.stats.coldCombat);
+        const authoritative = { ...needsTree, stats: { ...needsTree.stats,
+            coldCombat: { skillSource: 'database', classId: 0, skills: [] } } };
+        const outcome = { patch: {}, materialize: {}, debug: {}, soulCrystals: [{ objectId: 7, fromId: 4629, toId: 4630 }] };
+        const native = await kernel.projectResolve(authoritative, outcome, original.updatedAt + 1);
+        assert.deepStrictEqual(native.state.stats.coldCombat.skills, [], 'projection cannot grant unpaid tree ranks');
+        assert.strictEqual(native.durable.classId, 0);
+        assert.strictEqual(native.durable.skills, undefined, 'the accepted native writer must not receive a free skill grant');
+        assert.deepStrictEqual(native.durable.soulCrystals, outcome.soulCrystals, 'real resolve outcomes reach the fenced writer');
         assert.strictEqual(Runtime.index.getSource(1,'state').source, original);
         assert(!Object.keys(require.cache).some(file => /\/(GeodataEngine|ActivationPlacement)\.js$/.test(file)));
         return { oldPacketPreserved: true, pureTreeProjected: true };

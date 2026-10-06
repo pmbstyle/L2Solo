@@ -21,6 +21,7 @@ const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const { performance } = require('perf_hooks');
+const ActorQueries = require('../World/ActorSpatialQueries');
 
 // Visibility refreshes and damage can request an immediate AI pass from
 // several nearby actors at once.  Without a small gate each request cancels
@@ -52,6 +53,7 @@ function isRealPlayerSession(session) {
 }
 
 function realPlayerSessions(World) {
+    if (ActorQueries.native(World)) return ActorQueries.humans(World, isRealPlayerSession, true);
     const sessions = World?.user?.sessions;
     if (!Array.isArray(sessions)) return null;
     const timestamp = Date.now();
@@ -255,8 +257,7 @@ const BotAI = {
         const bot = session.actor;
         if (!bot) return 3000;
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = realPlayerSessions(World) || [];
-        const context = HotActorLodPolicy.evaluate(session, onlinePlayers);
+        const context = HotActorLodPolicy.evaluate(session, ActorQueries.native(World) ? World : realPlayerSessions(World) || []);
         const lodDelay = HotActorLodPolicy.nextTickDelay(session, context);
         return session.plan === 'shopping' && context.tier === 'full'
             ? Math.min(1500, lodDelay)
@@ -406,8 +407,9 @@ const BotAI = {
         if (session.supplyErrandPhase === 'cold' || session.supplyErrandPhase === 'returning') return;
 
         const World = invoke('GameServer/World/World');
-        const onlinePlayers = realPlayerSessions(World) || [];
-        lodContext = HotActorLodPolicy.evaluate(session, onlinePlayers, tickStartedAt);
+        const nativeActors = ActorQueries.native(World);
+        const onlinePlayerCount = nativeActors ? World.actorPresenceCount() : (realPlayerSessions(World) || []).length;
+        lodContext = HotActorLodPolicy.evaluate(session, nativeActors ? World : realPlayerSessions(World) || [], tickStartedAt);
         PopulationService.recordHotTick(session);
         invoke('GameServer/Bot/Population/BotGlobalChat').offerReply(session, tickStartedAt);
         const botDead = bot.isDead();
@@ -484,7 +486,7 @@ const BotAI = {
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
 
-        if (!botDead && onlinePlayers.length > 0 && visibleRealPlayers.length === 0 && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
+        if (!botDead && onlinePlayerCount > 0 && visibleRealPlayers.length === 0 && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -928,7 +930,7 @@ const BotAI = {
         const World = invoke('GameServer/World/World');
         const packet = ServerResponse.speak(session.actor, { kind: 8, text: text });
 
-        World.user.sessions.forEach((user) => {
+        ActorQueries.humans(World).forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
                 user.dataSendToMe(packet);
             }

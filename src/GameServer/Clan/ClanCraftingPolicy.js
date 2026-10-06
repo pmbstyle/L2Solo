@@ -1,8 +1,6 @@
 // Shared by the planning worker and the runtime. No live-world dependencies.
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const DualSwords = invoke('GameServer/Items/C4DualSwordCombinations');
-const DataCache = invoke('GameServer/DataCache');
-const ItemIndex = require('../Item/ItemTemplateIndex');
 
 const RESOURCE_IDS = new Set([
     ...Array.from({ length: 32 }, (_, index) => 1864 + index),
@@ -10,7 +8,7 @@ const RESOURCE_IDS = new Set([
     5220, 5549, 5550, 5551, 5552
 ]);
 const isResource = (id) => RESOURCE_IDS.has(Number(id));
-const isSupplement = (id) => /^(Crystal:|Gemstone\s)/i.test(ItemIndex.find(DataCache.items, id)?.template?.name || '');
+const isSupplement = require('../Bot/Economy/CraftSupplementMaterials').isSupplementalMaterial;
 const clanIdFor = (state) => Number(state?.clanId ?? state?.stats?.clanId ?? 0);
 const resolveRecipe = (id) => Recipes.resolveByRecipeId(id) || DualSwords.resolveByRecipeId(id);
 const isPersonalCraft = (state, plan = state?.stats?.equipmentPlan) => clanIdFor(state) > 0

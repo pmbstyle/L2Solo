@@ -26,13 +26,7 @@ function levelUp(session, actor, nextLevel) {
     // starter-class skills after their level has crossed a transfer threshold.
     const isBot = session.accountId?.startsWith('bot_') === true;
     const awardSkills = isBot
-        ? invoke('GameServer/Bot/BotClassProgression').reconcile({
-            characterId: id,
-            classId,
-            level,
-            seed: id
-        }).then((progression) => {
-            if (Number(progression.classId) !== Number(classId)) actor.setClassId(progression.classId);
+        ? invoke('GameServer/Bot/BotSkillTraining').review(session).then(() => {
             return new Promise((resolve) => actor.skillset.populate(id, resolve));
         })
         : actor.skillset.awardSkills(id, classId, level);
@@ -72,6 +66,7 @@ function levelUp(session, actor, nextLevel) {
 
     const ClanService = invoke('GameServer/Clan/ClanService');
     const clanUpdate = ClanService.updateActorMember(actor);
+    require('../../Clan/ClanReviewEvents').changed(actor.fetchClanId(), 'member_level');
     if (clanUpdate?.clan) {
         ClanService.onlineSessions(clanUpdate.clan).forEach((memberSession) => {
             memberSession.dataSendToMe(ServerResponse.pledgeShowMemberListUpdate(clanUpdate.member));

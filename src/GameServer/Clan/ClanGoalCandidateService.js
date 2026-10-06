@@ -8,6 +8,23 @@ const CACHE_TTL_MS = 30 * 1000;
 const MAX_CACHE_ENTRIES = 128;
 const DEFAULT_LIMIT = 8;
 const cache = new Map();
+const cacheGroups = new Map();
+
+function removeCache(key) {
+    const entry = cache.get(key);
+    if (!entry) return;
+    cache.delete(key);
+    const group = cacheGroups.get(entry.clanId);
+    group?.delete(key);
+    if (!group?.size) cacheGroups.delete(entry.clanId);
+}
+
+require('./ClanReviewEvents').subscribe(clanId => {
+    const group = cacheGroups.get(clanId);
+    if (!group) return;
+    for (const key of group) cache.delete(key);
+    cacheGroups.delete(clanId);
+});
 
 const metrics = {
     builds: 0,
@@ -61,9 +78,9 @@ function fingerprint(clan, previousGoal = null) {
 
 function prune(now = Date.now()) {
     for (const [key, entry] of cache) {
-        if (now - entry.createdAt > CACHE_TTL_MS) cache.delete(key);
+        if (now - entry.createdAt > CACHE_TTL_MS) removeCache(key);
     }
-    while (cache.size > MAX_CACHE_ENTRIES) cache.delete(cache.keys().next().value);
+    while (cache.size > MAX_CACHE_ENTRIES) removeCache(cache.keys().next().value);
 }
 
 function routeSnapshot(plan = {}) {
@@ -239,6 +256,9 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         metrics.cacheHits += 1;
         return { ...cached.value, cacheHit: true };
     }
+    const clanId = number(clan.id);
+    const group = cacheGroups.get(clanId) || new Set();
+    cacheGroups.set(clanId, group);
     const planning = await EquipmentService.planningForClan(clan, previousGoal, { ...options, occupancy });
     let candidates = rankedCandidates(clan, previousGoal, planning, options.limit);
     const selectedMember = planning.selection?.member;
@@ -288,7 +308,12 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
             ? candidates.length > 0
             : candidates.length > 1 && reason !== 'goal_progressing'
     };
-    cache.set(key, { createdAt: Date.now(), value });
+    // An input event received while planning was awaiting belongs to a fresh
+    // review; it must not reinstall this older candidate snapshot in the cache.
+    if (cacheGroups.get(clanId) === group) {
+        cache.set(key, { clanId, createdAt: Date.now(), value });
+        group.add(key);
+    }
     const durationMs = Date.now() - startedAt;
     metrics.builds += 1;
     metrics.buildMs += durationMs;
@@ -313,6 +338,7 @@ module.exports = {
     },
     reset() {
         cache.clear();
+        cacheGroups.clear();
         Object.keys(metrics).forEach((key) => { metrics[key] = 0; });
     }
 };

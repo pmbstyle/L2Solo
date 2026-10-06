@@ -66,8 +66,8 @@ function inside(hall, actor) {
 }
 // Separate from clan.state.goal: a residence never changes assignments or level quests.
 // Below level 2 all clan money is the next level's fund. From level 2 only a
-// planned progression purchase is protected: the Blood Mark is hunted, not
-// bought, so no fixed price is held for it.
+// planned progression purchase is protected; a market plan holds its actual
+// quoted price. There is no fixed Blood Mark price reserve.
 function progressionReserve(clan, goal) {
     if (Number(clan.level) < 2) return Infinity;
     const progression = goal?.type === 'level' || goal?.type === 'item';

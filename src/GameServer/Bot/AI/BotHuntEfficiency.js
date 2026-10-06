@@ -6,10 +6,6 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const MAX_SPOTS = 8;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-// Income grows steeply with level (zones and gear grades), about 2-4x from one
-// band to the next and about 2x inside one: 10 levels keep a band's bots alike
-// and still give each band of a full world a hundred or more samples.
-const BAND_LEVELS = 10;
 // The bot hunts in a party or alone: the author keeps the two apart.
 function situationOf(state, mode) {
     const grouped = mode ? ['party','duo','party_pve'].includes(mode)
@@ -26,9 +22,6 @@ function signature(state, mode) {
     return ['net-xp-v1',Roles.classIdOf(state),level,situationOf(state,mode),Rates.profile().exp,...equipped].join(':');
 }
 // The situation a row was recorded in (the fourth part of its signature).
-function rowSituation(row) {
-    return String(row?.signature || '').split(':')[3] === 'party' ? 'party' : 'solo';
-}
 function levelOf(state) {
     return Number(state.fetchLevel?.() || state.level || state.stats?.level || 1);
 }
@@ -46,7 +39,7 @@ function lootValue(items = []) {
 }
 // One sample of a spot: cycleMs is the round's time on the spot, from its
 // start to the next round (the fights, the rest, the wait between rounds).
-function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, kills = 0, timestamp = Date.now(), share = null }) {
+function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, kills = 0, timestamp = Date.now() }) {
     const key = signature(state);
     const prior = Array.isArray(state.stats?.huntEfficiency) ? state.stats.huntEfficiency : [];
     const kept = prior.filter(row => row.signature === key && timestamp >= row.at && timestamp-row.at < MAX_AGE_MS);
@@ -61,7 +54,7 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, kills = 
         kills:mix('kills',Math.max(0,Number(kills)||0)),
         source:'cold_round' };
     const rows = [next,...kept.filter(row=>row.spotId!==spotId)].slice(0,MAX_SPOTS);
-    noteLevelBand(state, rows, timestamp, share ?? onSpotShare(state));
+
     return rows;
 }
 
@@ -99,7 +92,13 @@ function onSpotShare(state) {
 // result that was no hunting round.
 function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), startedAt = SERVER_STARTED_AT } = {}) {
     const debug = result?.debug || {};
-    if (!(Number(debug.combatMs) > 0 || Number(debug.fights) > 0)) return {};
+    const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+    const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
+    const life = Valuation.progressStats(state, { timestamp, startedAt, kills: debug.wins,
+        losses: debug.deaths || (state.activity !== 'dead' && result.patch?.activity === 'dead' ? 1 : 0),
+        lossHours: invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp }).deathHours, risky: !!state.stats?.pvpIntent,
+        persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: Learning.knowledgeEnabled() });
+    if (!(Number(debug.combatMs) > 0 || Number(debug.fights) > 0)) return life;
     const cycleMs = Math.max(0, Number(result.nextResolveAt || 0) - timestamp);
     const huntClock = nextClock(state, timestamp, cycleMs, startedAt);
     const items = result.materialize?.items || [];
@@ -108,7 +107,7 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
         adena: Number(result.materialize?.adena || 0), loot: lootValue(items), kills: Number(debug.wins || 0),
         share: onSpotShare({ stats: { huntClock } })
     });
-    return { huntEfficiency, huntClock };
+    return { ...life, huntEfficiency, huntClock };
 }
 function sampledRows(state, timestamp, mode) {
     const rows = state.stats?.huntEfficiency;
@@ -142,102 +141,31 @@ function bestIncome(rows, share = 1) {
     return best;
 }
 
-// The measured hour value of the sampled bots of each level band: the latest
-// best income of each bot, the median read in O(1). New samples arrive on
-// every cold commit, so a band is re-sorted at most once a minute after a new
-// sample (a median over 6 hours of samples) or once its oldest sample expired.
-// Each thread keeps its own table, fed by the samples it records or the cold
-// commits it applies.
-// Bands are kept by situation too: a party member's hour is its own share
-// of a party's income, not a solo hunter's (E44).
-const BAND_RESORT_MS = 60 * 1000;
-const bands = new Map();
-function bandOf(level) {
-    return Math.floor(Math.max(1, Number(level) || 1) / BAND_LEVELS);
-}
-function noteLevelBand(state, rows, timestamp, share = 1) {
-    const id = Number(state.characterId || 0);
-    if (!id) return;
-    const sampled = rows.filter(row => row.samples >= 3);
-    const best = bestIncome(sampled, share);
-    if (!best) return;
-    const key = `${bandOf(levelOf(state))}:${rowSituation(sampled[0])}`;
-    if (!bands.has(key)) bands.set(key, { values: new Map(), median: null, changed: false });
-    const entry = bands.get(key);
-    entry.values.set(id, { ...best, at: timestamp });
-    entry.changed = true;
-}
-// A cold commit applied on the main thread: its samples were recorded in the
-// worker, where record() already kept only the rows of the bot's signature.
-function observe(state, timestamp = Date.now()) {
-    const rows = state?.stats?.huntEfficiency;
-    if (!Array.isArray(rows) || !rows.length) return;
-    noteLevelBand(state, rows.filter(row => timestamp >= row.at && timestamp - row.at < MAX_AGE_MS
-        && Number(row.cycleMs) > 0), timestamp, onSpotShare(state));
-}
-function bandMedian(key, timestamp) {
-    const entry = bands.get(key);
-    if (!entry) return null;
-    const stale = !entry.median
-        || timestamp - entry.median.oldestAt >= MAX_AGE_MS
-        || (entry.changed && timestamp - entry.median.sortedAt >= BAND_RESORT_MS);
-    if (stale) {
-        entry.changed = false;
-        const perHour = [], perKill = [], expPerHour = [];
-        let oldestAt = Infinity;
-        for (const [id, value] of entry.values) {
-            if (timestamp - value.at >= MAX_AGE_MS) { entry.values.delete(id); continue; }
-            perHour.push(value.perHour);
-            perKill.push(value.perKill);
-            expPerHour.push(value.expPerHour);
-            oldestAt = Math.min(oldestAt, value.at);
-        }
-        if (!perHour.length) { entry.median = null; return null; }
-        perHour.sort((a, b) => a - b);
-        perKill.sort((a, b) => a - b);
-        expPerHour.sort((a, b) => a - b);
-        const middle = Math.floor(perHour.length / 2);
-        entry.median = { perHour: perHour[middle], perKill: perKill[middle], expPerHour: expPerHour[middle],
-            bots: perHour.length, oldestAt,
-            sortedAt: timestamp };
-    }
-    return entry.median;
-}
-// The median of the bot's level band in its situation; an empty band
-// borrows the nearest measured one of that situation, lower first; a
-// situation nobody has measured yet borrows the other one the same way.
-function levelBandValue(level, timestamp, situation = 'solo') {
-    const own = bandOf(level);
-    for (const kind of [situation, situation === 'party' ? 'solo' : 'party']) {
-        const median = bandMedian(`${own}:${kind}`, timestamp);
-        if (median) return median;
-        for (let distance = 1; distance <= 10; distance += 1) {
-            const near = bandMedian(`${own - distance}:${kind}`, timestamp) || bandMedian(`${own + distance}:${kind}`, timestamp);
-            if (near) return near;
-        }
-    }
-    return null;
-}
-// What an hour of hunting is worth to this bot now: its own best measured
-// income, counted over all its time by its on-spot share, else the measured
-// median of its level band in its situation. Before any bot of the
-// world has a sample, the planner's per-kill estimate at the author's six
-// kills per ten minutes stands in. expPerHour is the exp per hour of the row
-// that gave the income (the band's median of those), null when nothing is
-// measured.
-function hourValue(state, timestamp = Date.now(), mode) {
+// No cohort median: a bot calibrates the common table only with its own
+// samples. This base income is independent from the wish network, so price
+// priors and providers cannot recurse through the common value of an hour.
+function huntIncome(state, timestamp = Date.now(), mode) {
     const own = bestIncome(sampledRows(state, timestamp, mode), onSpotShare(state));
-    if (own) return { perHour: Math.round(own.perHour), perKill: Math.max(1, Math.round(own.perKill)),
-        expPerHour: Math.round(own.expPerHour), source: 'own' };
-    const level = levelOf(state);
-    const band = levelBandValue(level, timestamp, situationOf(state, mode));
-    if (band) return { perHour: Math.round(band.perHour), perKill: Math.max(1, Math.round(band.perKill)),
-        expPerHour: Math.round(band.expPerHour), source: 'level_band' };
-    const perKill = Math.max(20, level * 25);
-    return { perHour: perKill * 36, perKill, expPerHour: null, source: 'default' };
+    if (own) return { ...own, source: 'own' };
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const role = state.party?.role || state.stats?.role || Roles.inferRole(state.stats?.classId || state.classId || 0);
+    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
+    const current = state.spotId && Table.value(state.spotId, tableRole, levelOf(state), true);
+    const progress = current || Table.best(tableRole, levelOf(state), true);
+    const row = current?.adena + current?.loot > 0 ? current : Table.best(tableRole, levelOf(state), true, 'income');
+    if (!row) return { perHour: 0, perKill: 0, expPerHour: 0, source: 'unavailable' };
+    const income = row.adena + row.loot;
+    return { perHour: income * onSpotShare(state), perKill: row.kills > 0 ? income / row.kills : 0,
+        expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
+        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId };
 }
-function resetLevelBands() {
-    bands.clear();
+function hourValue(state, timestamp = Date.now(), mode) {
+    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp, mode });
+    return { perHour: context.hourAdena, perKill: context.hunt.perKill,
+        expPerHour: context.hunt.expPerHour, source: 'wish_network' };
 }
+// Kept as lifecycle adapters for callers which accepted earlier samples.
+function observe() {}
+function resetLevelBands() {}
 module.exports = { record, recordRound, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
-    resetLevelBands, BAND_LEVELS, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
+    resetLevelBands, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };

@@ -172,5 +172,5 @@ function snapshot(selfId, options = {}) {
     };
 }
 
-module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals,
+module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals, signalsOfState,
     snapshot, supplyFor, timestampForWanted };

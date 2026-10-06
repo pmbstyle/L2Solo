@@ -6,6 +6,7 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotErrands = invoke('GameServer/Bot/Population/BotErrands');
 const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
 const TravelRoutes = invoke('GameServer/Bot/Travel/TravelRoutes');
+const CombinedErrands = require('../Population/CombinedErrandPolicy');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
@@ -33,8 +34,9 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     const sellingInventory = goal.type === 'sell_inventory' && goal.plan?.expectedBenefit === 'market_sale_inventory';
     const cleanupReason = goal.target?.cleanupReason || goal.plan?.cleanupReason;
     const forcedInventoryCleanup = sellingInventory && !!cleanupReason && cleanupReason !== 'inventory_half_full';
-    if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory) return null;
-    if (invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
+    const improving = goal.type === 'improving' && goal.target?.improvement?.kind !== 'enchant';
+    if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory && !improving) return null;
+    if (!improving && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
@@ -45,8 +47,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
-    const trip = (destination, shopTown = null) => ColdTrip.toTown(state, {
-        reason: buyingGear || buyingMaterial || buyingErrand ? goal.plan.expectedBenefit : 'market_sale_inventory',
+    const trip = (destination, shopTown = null) => ColdTrip.toTown(CombinedErrands.visit(state, destination.name, timestamp, goal.type), {
+        reason: buyingGear || buyingMaterial || buyingErrand || improving ? goal.plan.expectedBenefit : 'market_sale_inventory',
         from,
         to: { ...destination.center },
         townName: destination.name,
@@ -67,6 +69,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
 
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
+    if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
+        || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;
     let destination = state.stats?.marketReturn;
     const returningParty = state.stats?.partyMarketReturn
         ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.stats.partyMarketReturn.partyId) : null;

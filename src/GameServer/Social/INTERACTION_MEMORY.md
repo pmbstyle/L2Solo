@@ -3,8 +3,8 @@
 This module provides durable bounded memory, a shared decision view, and a
 transactional cold-outcome event channel. Resource competition, party decisions
 and independent revenge consume it in both simulation modes. `partyHistory`
-and `pvpEnemies` remain as legacy history; player-to-bot `BotSocialMemory` is a
-separate system. Physical PvP and hot/cold encounters are documented in
+and `pvpEnemies` remain as legacy history. Player-to-bot `BotSocialMemory` now
+projects the same directed character relations instead of owning another store. Physical PvP and hot/cold encounters are documented in
 `../Bot/Population/COLD_COMPETITION.md`.
 
 ## State and cost
@@ -18,11 +18,15 @@ read-time view, not a migration or a second write of the same episode.
 Unloaded shared memory defers admission. Named cold invitations hydrate the
 requested bot before evaluating; availability previews only read shared caches.
 
-Each rememberer has at most 32 character relations, 8 clan impressions and 8
-alliance impressions. Relations are directed; membership is separate from
-personal trust/hostility. Half the slots retain strong relations, the rest recent
-ones. Scores decay with a seven-day half-life at read/update time, without timers.
-This is an initial tuning policy, not an assertion about historical C4 rules.
+Relations are directed; membership is separate from personal trust/hostility.
+Each owner retains all player relations and strong trust/hostility, plus up to
+32 ordinary character relations, 8 clan impressions and 8 alliance impressions.
+Half the ordinary slots prefer strong evidence, the rest recent evidence.
+The three layers discount by the owner's playing hours: irritation lasts minutes
+to an hour and lives only in RAM, costed grievance/gratitude lasts a day or two,
+and trust/hostility lasts weeks. Loyalty and resilience set those durations.
+Reads discount lazily, with no timer or population sweep. Old rows without a
+playing-hour stamp keep their former seven-day wall-time discount until updated.
 
 Each durable snapshot includes up to 128 replay records and three recent reasons
 per relation. A persisted timestamp watermark rejects old deliveries after their
@@ -37,13 +41,13 @@ participants/type/time is an error. Keys are immutable episode identifiers, at
 most 96 ASCII letters/digits/colon/underscore/dot/hyphen. Do not use a fresh UUID
 on every retry. One hit callback is not one social episode.
 
-Migration 37 adds `bot_interaction_memory`, one indexed snapshot per character,
-deleted with the owning character. It is deliberately separate from lifecycle
-`statsJson` so stale worker saves cannot overwrite recent interactions. The
-existing generic `SocialGraphRepository` has an unbounded journal and relation
-set; this bounded projection reuses the relation concepts without dual-writing
-every incident into that unlimited history. There is one authoritative store
-for this memory and the existing single SQLite writer remains the only writer.
+Migration 58 replaces the old interaction snapshot and player-bot tables with
+`interaction_owners`, indexed `interaction_relations` pair rows and one
+`interaction_journal`. Existing player counters migrate into their directed pair.
+Only changed pairs and new journal events are written. The store remains separate
+from lifecycle `statsJson`, so stale worker lifecycle saves cannot overwrite social
+memory. The existing single SQLite writer owns transactions; cold memory still
+commits atomically with the accepted physical outcome.
 
 In RAM and exported worker snapshots the replay ledger is omitted. Decision
 reads perform three map lookups and bounded arithmetic; no SQL, LLM, graph walk
@@ -162,7 +166,7 @@ uncommitted episodes. Graceful server shutdown drains it before closing SQLite
 and reports remaining writes if its drain deadline is exhausted.
 
 The Observer bot-detail API exposes `interactionMemory`: readiness, revision,
-bounded relations with decayed scores, reasons and age. `memory.inspect(id)`
+retained relations with decayed scores, reasons and age. `memory.inspect(id)`
 provides the same diagnostic view without SQL; `memory.events.snapshot()` exposes
 queue depth and delivery counters. This does not add a new Observer UI panel.
 
@@ -208,6 +212,7 @@ that resolver is outside this foundation.
 - `node tests/test_interaction_memory_persistence.js`
 - `node --expose-gc scripts/benchmark-interaction-memory.js`
 
-The benchmark constructs 2,000 full 48-relation views without server or SQL.
+The benchmark constructs 2,000 ordinary 48-relation views without server or SQL;
+retained player/strong relations can exceed that ordinary budget.
 It reports heap growth after GC, serialized sizes and 100,000 assessments.
 Numbers are local synthetic measurements, not live player-latency guarantees.

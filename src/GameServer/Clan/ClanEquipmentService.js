@@ -703,15 +703,31 @@ async function planningForClan(clan, previousGoal = null, options = {}) {
         const windowComplete = (index + 1) % planningWindow === 0 || index + 1 === members.length;
         if (windowComplete && [...plans.values()].some(Policy.isAcquisitionPlan)) break;
     }
-    const selection = Policy.selectTargetMember(clan.members, plans, previousGoal, {
+    let selection = Policy.selectTargetMember(clan.members, plans, previousGoal, {
         previousFulfilled,
         roleFor: ClanPolicy.rosterRole
     });
+    const economy = require('./ClanEconomyContext').forClan(clan, { warehouse: warehouseRows,
+        halls: await Database.fetchClanHallAuctions(),
+        equipment: [...plans].filter(([, plan]) => Policy.isAcquisitionPlan(plan))
+            .map(([memberId, plan]) => ({ memberId, plan })) });
+    const moneyWish = economy.network.queue.find(wish => wish.object.kind === 'equipment' && wish.funded);
+    const freeWish = economy.network.plans.get(economy.network.focus?.[0]);
+    const desired = moneyWish || (freeWish?.price === 0 && economy.focusObject?.kind === 'equipment'
+        ? { object: economy.focusObject, valueHours: 0 } : null);
+    if (desired) {
+        const member = members.find(row => memberId(row) === desired.object.memberId);
+        const plan = plans.get(desired.object.memberId);
+        if (member && plan) selection = { member, plan, priority: desired.valueHours, selectedBy: 'clan_wish_network' };
+    } else if (selection?.plan?.strategy === 'market' && economy.network.queue.some(wish => wish.object.kind === 'equipment')) {
+        selection = null;
+    }
     return {
         spots,
         occupancy,
         warehouseRows,
         plans,
+        economy,
         selection,
         previousFulfilled,
         workerFingerprint,
@@ -791,7 +807,7 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
     const memberIdValue = number(selectedCandidate?.memberId);
     const itemId = number(selectedCandidate?.itemId);
     const slot = number(selectedCandidate?.slot);
-    if (!memberIdValue) return planning.selection;
+    if (!memberIdValue || planning.economy) return planning.selection;
     const member = (clan.members || []).find((entry) => memberId(entry) === memberIdValue);
     const plan = planning.plans.get(memberIdValue);
     if (!member || !Policy.isAcquisitionPlan(plan)) return planning.selection;

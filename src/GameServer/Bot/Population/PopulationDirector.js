@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
@@ -64,7 +65,7 @@ function summarizeHistogram(histogram, targetLevel) {
 
 function realPlayerLevels() {
     const World = invoke('GameServer/World/World');
-    return World.user.sessions
+    return ActorQueries.humans(World)
         .filter((session) => (
             session.actor &&
             session.actor.fetchIsOnline() &&

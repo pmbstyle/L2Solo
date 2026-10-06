@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 require('../src/Global');
 const Database = invoke('Database');
+invoke('GameServer/DataCache').init();
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Enemy = invoke('GameServer/Bot/AI/BotEnemyMemory');
 const Social = invoke('GameServer/Social/InteractionMemoryRuntime');

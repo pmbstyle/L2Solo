@@ -28,20 +28,27 @@ async function main() {
         const poor = actor(31, backpack());
         poor.backpack.insertItem(501, Number(sword.selfId), { amount: 1 });
         poor.backpack.equipPaperdoll(7, 501, Number(sword.selfId));
+        poor.backpack.fetchItemRaw(501).setEquipped(true);
+        poor.backpack.fetchItemRaw(501).setSlot(7);
         await ShotStock.restockAfterWeaponChange(poor, [7]);
         assert.strictEqual(ShotStock.shotAmount(poor), 0, 'a member without adena must not receive free shots');
         assert.strictEqual(writes.length, 0, `no shot or adena row may be written, got ${JSON.stringify(writes)}`);
 
         // Armour does not change the shot grade: nothing is bought.
-        const rich = actor(32, backpack([{ id: 601, selfId: 57, amount: 1000000 }]));
+        // The shared queue first funds the member's gear wishes. This purse
+        // also funds its measured shot stock, rather than assuming any cash
+        // must force an otherwise unfunded consumable purchase.
+        const rich = actor(32, backpack([{ id: 601, selfId: 57, amount: 10000000 }]));
         rich.backpack.insertItem(502, Number(sword.selfId), { amount: 1 });
         rich.backpack.equipPaperdoll(7, 502, Number(sword.selfId));
+        rich.backpack.fetchItemRaw(502).setEquipped(true);
+        rich.backpack.fetchItemRaw(502).setSlot(7);
         await ShotStock.restockAfterWeaponChange(rich, [10]);
         assert.strictEqual(writes.length, 0, 'an armour change must not touch shots');
 
         // A weapon change buys the restock with the member's adena.
         await ShotStock.restockAfterWeaponChange(rich, [7]);
-        assert(Number(rich.backpack.fetchItemFromSelfId(57).fetchAmount()) < 1000000, 'the restock is paid from the member adena');
+        assert(Number(rich.backpack.fetchItemFromSelfId(57).fetchAmount()) < 10000000, 'the funded restock is paid from the member adena');
         assert(ShotStock.shotAmount(rich) > 0, 'the bought shots are in the bag');
 
         // The warehouse exchange goes through the same restock.

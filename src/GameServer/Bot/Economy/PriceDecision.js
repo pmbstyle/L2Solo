@@ -28,28 +28,16 @@ const NEAR_BEST = 0.02;
 // How differently buyers see the same offers (e13: their understanding error).
 const PERCEPTION = 0.08;
 const RIVALS_SEEN = 20;
-const MONEY_BASE_PER_HOUR = 0.02;
-const MONEY_NEED_PER_HOUR = 0.05;
-
-// The value of money per hour until step 3.5 prices money: a base rate plus
-// the bot's need (its hour against its Adena).
-function valueOfMoney(hour, adena) {
-    const earning = Math.max(0, Number(hour) || 0);
-    const held = Math.max(0, Number(adena) || 0);
-    if (!(earning + held > 0)) return MONEY_BASE_PER_HOUR + MONEY_NEED_PER_HOUR;
-    return MONEY_BASE_PER_HOUR + MONEY_NEED_PER_HOUR * earning / (held + earning);
+// The shared network prices money in hours per Adena; multiplied by the
+// value of one hour it is a dimensionless urgency for an hour of waiting.
+function valueOfMoney(hour, moneyPrice) {
+    return Math.max(0, Number(hour) || 0) * Math.max(0, Number(moneyPrice) || 0);
 }
-
-// The trader's parameters from its persona and its state.
-function traderOf(persona, { hour, adena }) {
+function traderOf(persona, { hour, moneyPrice = 0 }) {
     const traits = persona?.traits || {};
-    const commitment = Number(traits.commitment ?? 0.5);
-    return {
-        wait: valueOfMoney(hour, adena) * (1.5 - commitment),
-        assertiveness: Number(traits.assertiveness ?? 0.5),
-        caution: Number(traits.caution ?? 0.5),
-        understanding: Number(persona?.understanding ?? 0.3)
-    };
+    return { wait: valueOfMoney(hour, moneyPrice) * (1.5 - Number(traits.commitment ?? 0.5)),
+        assertiveness: Number(traits.assertiveness ?? 0.5), caution: Number(traits.caution ?? 0.5),
+        understanding: Number(persona?.understanding ?? 0.3) };
 }
 
 // Standard normal distribution function (Abramowitz and Stegun 7.1.26).
@@ -92,7 +80,7 @@ function priorPerLine(key, board, timestamp) {
 // tripCost(town): a buyer's trip there in Adena (OfferOrder.tripCost of the
 // trader); npcOffers: the NPC shops selling the item ({ price, town }).
 function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, tripCost = null,
-    npcOffers = [], timestamp = Date.now() } = {}) {
+    npcOffers = [], timestamp = Date.now(), enchant = 0 } = {}) {
     const id = Number(selfId);
     const trip = (where) => (tripCost ? Math.min(Number(tripCost(where)) || 0, Number.MAX_SAFE_INTEGER) : 0);
     const key = MarketCounters.counterOf(id);
@@ -102,12 +90,12 @@ function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, 
     const rivals = [];
     let others = 0;
     for (const line of board ? board.list(id, SELL) : []) {
-        if (line.ownerId === Number(ownerId) || line.enchant) continue;
+        if (line.ownerId === Number(ownerId) || Number(line.enchant || 0) !== Number(enchant)) continue;
         others += 1;
         if (rivals.length < RIVALS_SEEN) rivals.push({ landed: line.price + trip(line.town), units: line.count });
     }
     let npcLanded = Infinity;
-    for (const offer of npcOffers || []) {
+    for (const offer of enchant > 0 ? [] : npcOffers || []) {
         if (offer?.price > 0) npcLanded = Math.min(npcLanded, Number(offer.price) + trip(offer.town));
     }
     return {

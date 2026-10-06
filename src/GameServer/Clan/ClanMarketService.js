@@ -7,6 +7,9 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
+const ClanEconomy = require('./ClanEconomyContext');
+const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const metrics = {
     resolves: 0,
@@ -53,6 +56,12 @@ async function resolveClan(clan) {
         : Infinity;
     const maxUnitPrice = order ? number(order.maxUnitPrice) : Infinity;
     const candidates = ClanOrderService.marketMembers(clan, [...assigned]);
+    const warehouse = playerControlled ? [] : await Database.fetchClanWarehouseItems(clan.id);
+    const initialOffer = playerControlled ? null : MarketOpportunity.bestOffer(itemId, { budget: Infinity });
+    const economy = playerControlled ? null : ClanEconomy.forClan(clan, {
+        warehouse, halls: await Database.fetchClanHallAuctions(), proofOffer: initialOffer });
+    const clanBudget = economy ? Math.min(economy.budgetFor('level', itemId),
+        invoke('GameServer/ClanHall/Policy').freeAdena(warehouse, clan, clan.state?.mode, null)) : 0;
     // A member on its errand for the clan is on its way; one back from it
     // holds the item and deposits it (the purchase was made in the seller's
     // town, the one purchase path, ColdMarketService.acquire).
@@ -74,7 +83,9 @@ async function resolveClan(clan) {
     for (const candidate of candidates) {
         const state = await stateFor(candidate.characterId);
         if (!state || state.phase !== 'cold' || String(state.partyId || '') !== '') continue;
-        const nextOffer = ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget));
+        const nextOffer = playerControlled ? ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget))
+            : MarketOpportunity.bestOffer(itemId, { buyerCharacterId: state.characterId,
+                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state) + clanBudget) });
         if (nextOffer) {
             offer = nextOffer;
             buyer = state;
@@ -89,15 +100,27 @@ async function resolveClan(clan) {
 
     // The member buys in the offer's town (б5): at once when it stands there,
     // else it goes there with an errand and deposits at a later resolve.
+    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price)) - PurchaseFunding.spendable(buyer));
+    if (clanPart > 0) {
+        const paid = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: clanPart,
+            kind: 'clan_level_purchase', moveMark: false, progressionGoal: goal });
+        if (!paid.ok) return { ok: false, code: paid.code };
+        buyer = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(buyer.characterId);
+    }
     const placed = { price: Number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
     const purchase = await ColdMarketService.acquire(buyer, itemId, 1, {
         towns: offer.town ? [offer.town] : null, maxPrice: Number(offer.price), npc: offer.sourceType === 'npc',
-        purpose: 'clan', tag: { clanId: clan.id, offer: placed }
+        purpose: 'clan', money: Number(offer.price), tag: { clanId: clan.id, offer: placed, clanPart }
     });
     if (!purchase.bought || !purchase.state) {
         if (purchase.traveling || purchase.state?.stats?.marketErrand) {
             recordReason('market_buyer_traveling');
             return { ok: true, skipped: true, reason: 'market_buyer_traveling' };
+        }
+        if (clanPart > 0) {
+            const refund = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: -clanPart,
+                kind: 'clan_level_purchase_refund', moveMark: false });
+            if (refund.ok) LifeState.acceptNewerLifecycleRow(refund.row);
         }
         metrics.blocked += 1;
         recordReason(Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE);
@@ -117,13 +140,21 @@ async function deposit(clan, goal, itemId, buyer, purchase, offer, { playerContr
         recordReason('market_purchase_inventory_missing');
         return { ok: false, code: 'market_purchase_inventory_missing', purchase };
     }
+    // Funding changes the warehouse revision and the purchase advances the
+    // member's native lifecycle. Deposit against those completed writes.
+    const currentClan = await GoalService.clanProjectionById(clan.id);
+    const currentGoal = currentClan?.state?.goal;
+    if (!currentGoal || Number(currentGoal.updatedAt) !== Number(goal.updatedAt)
+        || Number(currentGoal.target?.itemId) !== itemId || currentGoal.plan?.kind !== 'market') {
+        return { ok: false, code: 'clan_market_goal_changed', purchase };
+    }
     const deposited = await Database.transferInventoryToClanWarehouse({
         clanId: clan.id,
         characterId: buyer.characterId,
         item,
         amount: 1,
-        expectedWarehouseRevision: number(clan.state?.warehouseRevision),
-        expectedSimulationRevision: number(purchase.state.simulationRevision),
+        expectedWarehouseRevision: number(currentClan.state?.warehouseRevision),
+        expectedSimulationRevision: number(purchase.state.simulation?.revision),
         resolveKey: `${clan.id}:market:${goal.updatedAt}:${buyer.characterId}:${itemId}`
     });
     if (!deposited.ok) {
@@ -131,11 +162,12 @@ async function deposit(clan, goal, itemId, buyer, purchase, offer, { playerContr
         recordReason(deposited.code);
         return { ok: false, code: deposited.code, purchase, deposited };
     }
+    if (deposited.state) LifeState.acceptNewerLifecycleRow(deposited.state);
     metrics.deposited += 1;
     recordReason('market_item_to_clan_warehouse');
     const demandKey = playerControlled ? `player-order:${number(order?.id)}:${itemId}` : `${clan.id}:level-${number(clan.level)}:${itemId}`;
     const remaining = playerControlled ? Math.max(1, number(goal.required) - number(goal.progress) - 1) : 1;
-    const demandMaxPrice = playerControlled ? Math.max(1, number(order?.maxUnitPrice)) : Config.bloodMarkMaxPrice;
+    const demandMaxPrice = playerControlled ? Math.max(1, number(order?.maxUnitPrice)) : Math.max(1, number(offer.price));
     await Database.upsertClanMarketDemand({
         clanId: clan.id,
         itemId,

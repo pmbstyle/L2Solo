@@ -80,7 +80,7 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
     const loot = members.map(() => []);
     rewards.loot.forEach(({ drops, owner, spoil }) => {
         if (drops.length) loot[owner].push(...drops);
-        if (spoilerIndex >= 0) loot[spoilerIndex].push(...spoil);
+        if (spoilerIndex >= 0) loot[spoilerIndex].push(...spoil.map(item => ({ ...item, partySpoil: true })));
     });
 
     return members.map((state, index) => ({
@@ -337,6 +337,7 @@ const BackgroundPartyResolver = {
         let avoidedReason = null;
         const combatHelp = new Map();
         const memberShotActions = new Map();
+        const memberSoulCrystals = new Map();
         let combatMembers = members.map((state) => ({
             ...state,
             vitals: pending ? { ...state.vitals } : BackgroundResolver.applyStandingRegen(state, state.vitals, elapsedMs, timestamp)
@@ -372,6 +373,11 @@ const BackgroundPartyResolver = {
             for (const member of encounter.members) {
                 const id = Number(member.state.characterId);
                 memberShotActions.set(id, (memberShotActions.get(id) || 0) + Number(member.shotActions || 0));
+                if (member.soulCrystals?.length) {
+                    const outcomes = memberSoulCrystals.get(id) || [];
+                    outcomes.push(...member.soulCrystals);
+                    memberSoulCrystals.set(id, outcomes);
+                }
             }
             combatMembers = encounter.members.map((member) => ({
                 ...member.state,
@@ -445,6 +451,7 @@ const BackgroundPartyResolver = {
                         activity,
                         spotId: spot.id,
                         deathCount,
+                        inventory: resolved.inventory || state.inventory,
                         vitals: {
                             hp,
                             maxHp: vitals.maxHp,
@@ -467,6 +474,7 @@ const BackgroundPartyResolver = {
                     events: [],
                     memoryEvents: memoryEvents.filter(event => event.sourceId === Number(state.characterId)),
                     materialize: { exp, sp, adena, items },
+                    soulCrystals: memberSoulCrystals.get(Number(state.characterId)) || [],
                     // One cold raid slice represents fifteen seconds of real
                     // combat. Keep an active boss on that cadence so a remote
                     // raid does not spend most of its lifetime sleeping
@@ -498,7 +506,8 @@ const BackgroundPartyResolver = {
             });
         });
 
-        const lootDistribution = PartyLootAllocator.transferGearDrops(memberResults);
+        const lootDistribution = require('./PartyAgreement').allocate(memberResults, party.stats?.agreement,
+            { rng, needScore: require('./PartyGoalPolicy').itemNeed }) || PartyLootAllocator.transferGearDrops(memberResults);
         let distributedMemberResults = lootDistribution.memberResults;
         let partyRestUntil = null;
 
@@ -631,6 +640,7 @@ const BackgroundPartyResolver = {
                 cohesion: clamp(Number(party.cohesion || 0.65) + cohesionDelta, 0.1, 1),
                 risk: clamp(Number(party.risk || 0.25) + riskDelta, 0.05, 0.95),
                 stats: {
+                    ...(lootDistribution.agreement ? { agreement: lootDistribution.agreement } : {}),
                     pveEncounter: raid ? null : pending,
                     ...(raid ? { raidEncounter: raidSnapshot } : {}),
                     assemblyWait: null,

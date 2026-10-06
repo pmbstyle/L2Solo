@@ -19,14 +19,19 @@ const packets = [];
 function bot(id, x = 0, z = 0) {
     const actor = { fetchId: () => id, fetchName: () => `Bot${id}`, fetchLocX: () => x,
         fetchLocY: () => 0, fetchLocZ: () => z, fetchIsOnline: () => true, isDead: () => false };
-    return { botSession: true, accountId: `bot_${id}`, actor, plan: 'resting',
-        dataSendToOthers(packet) { packets.push(packet); } };
+    const session = { botSession: true, accountId: `bot_${id}`, actor, plan: 'resting',
+        fetchAccountId() { return this.accountId; }, dataSendToOthers(packet) { packets.push(packet); } };
+    actor.session = session; World.insertUser(session); return session;
 }
-const player = { accountId: 'player', socket: { write() {} }, dataSendToMe(packet) { packets.push(packet); } };
+const player = { accountId: 'player', socket: { write() {} }, fetchAccountId() { return this.accountId; },
+    actor: { fetchId: () => 9000000, fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, fetchIsOnline: () => true },
+    dataSendToMe(packet) { packets.push(packet); } };
+player.actor.session = player;
 function reset() {
     Reactions.reset(); Budget.reset(); GlobalChat.reset(); packets.length = 0;
-    World.user = { sessions: [player] };
-    World.fetchVisibleRealPlayers = () => World.user.sessions;
+    World.user = { sessions: [] };
+    World.insertUser(player);
+    World.fetchVisibleRealPlayers = () => World.user.sessions.filter(session => session === player);
     Config.chatReactionsEnabled = true; Config.chatReactionChance = 1;
     Config.globalChatEnabled = true; Config.globalChatImportantChance = 1; Config.globalChatMinIntervalMs = 180000;
     now += 1000000;

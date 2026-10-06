@@ -102,7 +102,7 @@ function withPersistedStats(state, result) {
         const persisted = { ...state, name: result.row.characterName || state.name, stats };
         // The commit merged what the board held for the bot (deals, closed
         // records): the stored bag is the one the bot goes on with.
-        if (!result.settled) return persisted;
+        if (!result.settled && !result.pkDrops?.length) return persisted;
         return { ...persisted, adena: Number(result.row.adena || 0), inventory: JSON.parse(result.row.inventorySummary || '{}') };
     } catch (_) {
         return state;
@@ -117,6 +117,11 @@ function reflect(result, committedState = null) {
     }
     const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
     BotLifeState.acceptSimulationOwnership(result.characterId, result, committedState);
+    if (result.pkDrops?.length) {
+        const row = result.row;
+        require('../../Actor/Generics/PkDeathDrop').spawn(result.characterId,
+            { locX: row.locX, locY: row.locY, locZ: row.locZ }, result.pkDrops);
+    }
     return result;
 }
 
@@ -327,10 +332,10 @@ function commitAndReleaseBatch(entries = [], options = {}) {
                 mp: Number(nextState.vitals?.mp || 0),
                 maxMp: Number(nextState.vitals?.maxMp || 0),
                 ...(entry.proposal?.durable?.classId !== undefined ? {
-                    classId: Number(entry.proposal.durable.classId),
-                    skills: entry.proposal.durable.skills || []
+                    classId: Number(entry.proposal.durable.classId)
                 } : {}),
                 ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
+                ...(entry.proposal?.durable?.soulCrystals?.length ? { soulCrystals: entry.proposal.durable.soulCrystals } : {}),
                 ...(inventoryChanged ? { inventory: canonicalInventory } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,

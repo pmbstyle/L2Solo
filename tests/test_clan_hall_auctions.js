@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 const Database = invoke('Database');
 const Policy = require('../src/GameServer/ClanHall/Policy');
 const Runtime = require('../src/GameServer/ClanHall/Runtime');

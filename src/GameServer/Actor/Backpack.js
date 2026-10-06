@@ -39,6 +39,7 @@ const FISHING_ROD_GRADES = {
 };
 
 function recordEquipmentEvent(session, item, action) {
+    require('../Clan/ClanReviewEvents').changed(session?.actor?.fetchClanId?.(), 'member_gear');
     if (!session?.accountId?.startsWith?.('bot_') || !item) return;
     Promise.resolve(BotEventJournal.record({
         botId: session.actor?.fetchId?.(),
@@ -68,6 +69,9 @@ class Backpack extends BackpackModel {
             if (item.slot) delete itemDetails.etc.slot; this.items.push(new Item(id, {
                 ...item, ...utils.crushOb(itemDetails)
             }));
+            this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
+            Item.bindInventory(this);
+            this.onInventoryChange?.();
         });
     }
 
@@ -79,6 +83,7 @@ class Backpack extends BackpackModel {
         this.fetchItem(id, (item) => {
             if (item.fetchPetLocked?.()) return;
             const total = item.fetchAmount() - amount;
+            this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
             if (total > 0) {
                 // Update memory state instantly
                 item.setAmount(total);
@@ -92,6 +97,8 @@ class Backpack extends BackpackModel {
             else {
                 // Update memory state instantly
                 this.items = this.fetchItems().filter((ob) => ob.fetchId() !== id);
+                Item.bindInventory(this);
+                this.onInventoryChange?.();
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 
@@ -185,7 +192,10 @@ class Backpack extends BackpackModel {
     }
 
     updateAmount(id, amount) {
-        this.fetchItem(id, (item) => { item.setAmount(amount); });
+        this.fetchItem(id, (item) => {
+            if (item.fetchAmount() !== amount) this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
+            item.setAmount(amount);
+        });
     }
 
     useItem(session, id) {

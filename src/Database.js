@@ -1,6 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const mutationAdmission = new AsyncLocalStorage();
+function checkMutationAdmission() {
+    const guard = mutationAdmission.getStore();
+    if (guard && guard() !== undefined) throw new TypeError('invalid_mutation_admission');
+}
 const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
@@ -176,7 +182,8 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             metrics.pending -= 1;
             if (typeof onTiming === 'function') {
                 // Observability must never turn a committed operation into a failure.
-                try { onTiming({ waitMs: wait, runMs: now() - startedAt }); } catch (_) {}
+                try { onTiming({ waitMs: wait, runMs: now() - startedAt }); }
+                catch (_) { /* Timing delivery is best effort. */ }
             }
         }
     };
@@ -200,6 +207,7 @@ function run(sql, params = [], operation, readOverride = null, onTiming = null) 
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         const statement = Statements.prepare(connection, sql);
+        if (!isReadStatement(sql)) checkMutationAdmission();
         if (read) return normalizeRows(statement.all(...params));
         const result = statement.run(...params);
         return {
@@ -1402,6 +1410,7 @@ function applySchemaMigrations() {
         UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.priceBeliefs')
             WHERE json_valid(statsJson) AND json_type(statsJson, '$.priceBeliefs') IS NOT NULL;
     `)]);
+    migrations.push([58, () => require('./GameServer/Social/InteractionMemoryRows').install(connection)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -1423,20 +1432,24 @@ function applySchemaMigrations() {
 }
 
 function one(sql, params = []) {
+    if (!isReadStatement(sql)) checkMutationAdmission();
     return normalizeRow(Statements.prepare(connection, sql).get(...params));
 }
 
 function all(sql, params = []) {
+    if (!isReadStatement(sql)) checkMutationAdmission();
     return normalizeRows(Statements.prepare(connection, sql).all(...params));
 }
 
 function write(sql, params = []) {
+    checkMutationAdmission();
     const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 
 // Capture before a native flush can await; skill writers capture at their call.
 // Each admitted writer keeps its original SQL queue.
+const coldTrainingGuards = new WeakMap();
 function captureWriteAdmission(options, errorCode, characterId, rowStatement = null) {
     let beforeWrite, nativeProof, present = false, captureFailed = false, captureError;
     try {
@@ -1455,7 +1468,7 @@ function captureWriteAdmission(options, errorCode, characterId, rowStatement = n
         captureFailed = true;
         captureError = error;
     }
-    return Object.freeze({ beforeWrite, nativeProof, present, captureFailed, captureError, errorCode });
+    return Object.freeze({ beforeWrite, nativeProof, coldTraining: coldTrainingGuards.get(beforeWrite), present, captureFailed, captureError, errorCode });
 }
 
 function checkCapturedWriteAdmission(admission, characterId) {
@@ -1467,6 +1480,14 @@ function checkCapturedWriteAdmission(admission, characterId) {
             if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
             throw new TypeError(admission.errorCode);
         }
+    }
+    if (admission.coldTraining) {
+        const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
+        const row = one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')} FROM bot_life_state WHERE characterId = ?`, [characterId]);
+        const current = Protocol.commandCheckpoint(row && { ...row, activityStartedAt: row.activityStartedAt || 0,
+            nextResolveAt: row.nextResolveAt || 0, lastResolvedAt: row.lastResolvedAt || 0, lastHotAt: row.lastHotAt || 0 });
+        if (current?.phase !== 'cold' || current.simulationOwner !== LEGACY_SIMULATION_OWNER
+            || !Protocol.sameCommandCheckpoint(admission.coldTraining, current)) throw Error('cold_training_source_retired');
     }
     if (admission.nativeProof) {
         NativeWriteCheckpoint.checkTarget(admission.nativeProof, characterId);
@@ -1859,6 +1880,63 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]));
 }
 
+// The funded order belongs to the native party row. Worker patches may
+// advance the hunt and its loot cursor, but cannot mint/replay its escrow.
+function partyAgreementUnsafe(previous, proposed) {
+    const oldStats = jsonObject(previous?.statsJson), stats = jsonObject(proposed.statsJson);
+    const oldAgreement = oldStats.agreement, agreement = stats.agreement;
+    const ids = JSON.parse(proposed.memberIdsJson || previous?.memberIdsJson || '[]').map(Number);
+    let help = oldAgreement?.help;
+    const touched = new Set();
+    const ready = id => {
+        const row = coldSimulationRow(id);
+        if (!row || row.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER || row.simulationLeaseId) {
+            throw new Error('party_payment_owner_busy');
+        }
+        return row;
+    };
+    const move = (id, amount, debit = false) => {
+        if (!amount) return;
+        const row = ready(id);
+        if (debit) afkTradeDebitAdenaUnsafe(id, amount); else afkTradeCreditAdenaUnsafe(id, amount);
+        writeColdInventorySnapshotUnsafe(id, row, [57]); touched.add(id);
+    };
+    if (!previous && agreement?.help?.status === 'proposed') {
+        const order = agreement.help, payerId = Number(order.payerId), fee = Number(order.fee);
+        const helperIds = ids.filter(id => id !== payerId);
+        if (ids.length < 2 || ids.length > 9 || new Set(ids).size !== ids.length
+            || !ids.includes(payerId) || !helperIds.length || !Number.isSafeInteger(fee) || fee <= 0
+            || !Number.isSafeInteger(order.itemId) || order.itemId <= 0
+            || !Number.isSafeInteger(order.count) || order.count <= 0) throw new Error('invalid_party_help_order');
+        ids.forEach(id => {
+            if (ready(id).partyId !== proposed.partyId) throw new Error('party_help_membership_changed');
+        });
+        move(payerId, fee, true);
+        const amount = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId = ? AND selfId = ?',
+            [payerId, order.itemId]).amount);
+        help = { ...order, helperIds, remaining: fee, paid: 0, delivered: 0, baselineAmount: amount, status: 'funded' };
+    }
+    if (help?.status === 'funded') {
+        const currentIds = new Set(ids);
+        const helpers = help.helperIds.filter(id => currentIds.has(id));
+        const terminal = !['active', 'hot'].includes(proposed.status) || !currentIds.has(help.payerId) || !helpers.length;
+        if (terminal) {
+            move(help.payerId, help.remaining);
+            help = { ...help, remaining: 0, refunded: Number(help.remaining), status: 'cancelled' };
+        } else {
+            const amount = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId = ? AND selfId = ?',
+                [help.payerId, help.itemId]).amount);
+            const delivered = Math.min(help.count, Math.max(help.delivered, amount - help.baselineAmount));
+            const due = Math.min(help.remaining, Math.max(0, Math.floor(help.fee * delivered / help.count) - help.paid));
+            helpers.forEach((id, index) => move(id, Math.floor(due / helpers.length) + (index < due % helpers.length ? 1 : 0)));
+            help = { ...help, delivered, paid: help.paid + due, remaining: help.remaining - due,
+                status: delivered >= help.count ? 'completed' : 'funded' };
+        }
+    }
+    if (oldAgreement || agreement) stats.agreement = { ...oldAgreement, ...agreement, ...(help ? { help } : { help: null }) };
+    return { row: { ...proposed, statsJson: JSON.stringify(stats) }, touched };
+}
+
 function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
     const row = one('SELECT inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
     if (!row) return false;
@@ -2198,7 +2276,33 @@ function syncColdDeathExperienceUnsafe(characterId, record, timestamp) {
         pending ? '' : record.resolutionReason || existing?.resolutionReason || 'cold_recovery']);
 }
 
+// The accepted fight proposal carries the actual Drain Soul mark. The
+// native lease/admission transaction still owns the physical source check.
+function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
+    if (!Array.isArray(steps) || steps.length > 18) throw Error('invalid_cold_soul_crystals');
+    const Native = invoke('GameServer/Items/SoulCrystalProgression');
+    const quest = one('SELECT state FROM character_quests WHERE characterId = ? AND questId = 350', [characterId]);
+    if (steps.length && quest?.state !== 'started') throw Error('cold_soul_crystal_quest_changed');
+    for (const step of steps) {
+        guard();
+        const item = one('SELECT * FROM items WHERE characterId = ? AND id = ?', [characterId, step.objectId]);
+        const rule = Native.catalog.npcs[step.npcId], crystal = Native.catalog.crystals[step.fromId];
+        const total = one(`SELECT SUM(amount) AS count FROM items WHERE characterId = ? AND selfId IN (${Native.crystalIds.map(() => '?').join(',')})`, [characterId,...Native.crystalIds]);
+        if (!rule || !crystal || !item || item.amount !== 1 || item.equipped || item.selfId !== step.fromId || total.count !== 1
+            || !Number.isFinite(step.roll) || step.roll < 0 || step.roll >= 1
+            || step.skillId !== 2096 || rule.maxStage <= 10 && (!Number.isFinite(step.maxHp) || !(step.maxHp > 0) || !Number.isFinite(step.absorbedHp) || !(step.absorbedHp > 0) || step.absorbedHp > step.maxHp / 2)) throw Error('cold_soul_crystal_source_changed');
+        const outcome = Native.outcomeFor(rule, crystal.stage, step.npcId, step.roll);
+        const targetId = outcome === 'success' ? crystal.nextId : outcome === 'broken' ? crystal.brokenId : null;
+        if (!targetId || targetId !== step.toId) throw Error('cold_soul_crystal_outcome_changed');
+        const target = invoke('GameServer/DataCache').items.find(row => row.selfId === targetId);
+        if (!target) throw Error('cold_soul_crystal_template_missing');
+        guard();
+        write('UPDATE items SET selfId = ?, name = ? WHERE id = ? AND characterId = ?', [targetId,target.template.name,item.id,characterId]);
+    }
+}
+
 function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
+    const before = one('SELECT hp,karma,pk FROM characters WHERE id = ?', [characterId]);
     // Use the persisted XP delta inside the fenced transaction: unchanged
     // snapshots cannot wash karma twice, and non-combat updates grant none.
     write(`UPDATE characters SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
@@ -2221,6 +2325,7 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
             selfId, String(skill.name || `Skill ${selfId}`), skill.passive ? 1 : 0, level, characterId
         ]);
     });
+    if (physical.soulCrystals?.length) applySoulCrystalStepsUnsafe(characterId, physical.soulCrystals);
     if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
     if (physical.pvpKills?.length) {
         if (physical.pvpKills.length > 18) throw Error('cold PvP: too many kills');
@@ -2239,9 +2344,31 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
         }
         write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
             [current.pvp, current.pk, current.karma, characterId]);
-        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?) WHERE characterId = ?",
-            [current.karma, characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?, '$.pk', ?) WHERE characterId = ?",
+            [current.karma, current.pk, characterId]);
     }
+    return Number(before?.hp) > 0 && Number(physical.hp) <= 0
+        ? dropPkDeathItemsUnsafe(characterId).drops : [];
+}
+
+function dropPkDeathItemsUnsafe(characterId) {
+    const life = one('SELECT deathCount,statsJson FROM bot_life_state WHERE characterId=?', [characterId]);
+    const stats = jsonObject(life?.statsJson), death = Number(life?.deathCount || stats.deaths || 0);
+    if (!life || death <= Number(stats.pkDropDeathSequence || 0)) return { drops: [] };
+    const current = one('SELECT hp,karma,pk FROM characters WHERE id=?', [characterId]);
+    if (Number(current?.hp) > 0) return { drops: [] };
+    const Data = invoke('GameServer/DataCache');
+    const Templates = require('./GameServer/Item/ItemTemplateIndex');
+    const inventory = all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]).map(item => {
+        const template = Templates.find(Data.items, item.selfId);
+        return { ...template?.template, ...template?.etc, ...item };
+    });
+    const drops = require('./GameServer/PkDropPolicy').rollPlan({ karma: current?.karma, pk: current?.pk, inventory });
+    for (const item of drops) write('DELETE FROM items WHERE id=? AND characterId=?', [item.id, characterId]);
+    const summary = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]));
+    write("UPDATE bot_life_state SET inventorySummary=?, statsJson=json_set(statsJson,'$.pkDropDeathSequence',?) WHERE characterId=?",
+        [JSON.stringify(summary), death, characterId]);
+    return { drops, inventory: summary, deathSequence: death };
 }
 
 // `parsedStats`, when given, is parsedObject(row.statsJson) computed earlier.
@@ -3048,12 +3175,15 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
 
 function commitInteractionMemoryUnsafe(batch, timestamp) {
     const snapshots = new Map();
+    const before = new Map();
+    const Rows = require('./GameServer/Social/InteractionMemoryRows');
     const changed = new Set();
     const statuses = [];
     for (const event of batch) {
         if (!snapshots.has(event.sourceId)) {
-            const row = one('SELECT snapshotJson FROM bot_interaction_memory WHERE ownerId = ?', [event.sourceId]);
-            snapshots.set(event.sourceId, row ? InteractionMemoryPolicy.validate(JSON.parse(row.snapshotJson)) : InteractionMemoryPolicy.empty(event.sourceId));
+            const snapshot = Rows.load({ one, all }, event.sourceId);
+            snapshots.set(event.sourceId, snapshot);
+            before.set(event.sourceId, snapshot);
         }
         const result = InteractionMemoryPolicy.apply(snapshots.get(event.sourceId), event, timestamp);
         if (!['applied', 'duplicate', 'rate_limited'].includes(result.status)) {
@@ -3065,9 +3195,7 @@ function commitInteractionMemoryUnsafe(batch, timestamp) {
     }
     // No write until every event passes; both directed memories are atomic.
     for (const ownerId of changed) {
-        write(`INSERT INTO bot_interaction_memory(ownerId, snapshotJson, updatedAt) VALUES (?, ?, ?)
-            ON CONFLICT(ownerId) DO UPDATE SET snapshotJson = excluded.snapshotJson, updatedAt = excluded.updatedAt`,
-        [ownerId, JSON.stringify(snapshots.get(ownerId)), timestamp]);
+        Rows.save({ write }, before.get(ownerId), snapshots.get(ownerId));
     }
     commitClanSocialUnsafe(batch.filter((_, i) => statuses[i] === 'applied'), timestamp);
     return { ok: true, statuses, snapshots: [...snapshots.values()] };
@@ -3134,7 +3262,8 @@ function commitColdInteractionMemoryUnsafe(request) {
     // Throw to roll back the physical state too. A caller must refresh/replan,
     // never retry a rejected outcome as a separate successful social event.
     if (!result.ok) throw new Error(`interaction memory: ${result.reason}`);
-    return result.snapshots;
+    return result.snapshots.map(snapshot => ({ ...snapshot,
+        appliedEvents: events.filter((event, index) => event.sourceId === snapshot.ownerId && result.statuses[index] === 'applied') }));
 }
 
 const ClanMembership = require('./GameServer/Clan/ClanMembershipRepository')({ all, write, inTransaction, now });
@@ -3394,7 +3523,10 @@ const Database = {
     },
 
     fetchMarketTradeOverview({ timestamp = now(), recentLimit = 200 } = {}) {
-        return readHistory(() => MarketTradeOverview.fetch(History.all, { timestamp, recentLimit }),
+        return readHistory(() => ({
+            ...MarketTradeOverview.fetch(History.all, { timestamp, recentLimit }),
+            economy: require('./MarketEconomyOverview').fetch(History.all, { timestamp })
+        }),
             'market:trade-overview');
     },
 
@@ -3432,8 +3564,9 @@ const Database = {
         }, 'board:pricing-initialize');
     },
 
-    // The caller chooses the old world's experience explicitly. This API is
-    // independent of line migration and never runs implicitly at startup.
+    // Startup explicitly chooses retained history once, before line pricing.
+    // Existing authoritative counts are preserved; retention makes the seed
+    // an incomplete lower bound, not a reconstruction of lifelong experience.
     initializeBotMarketTrades(mode) {
         if (!['zero', 'history'].includes(mode)) return Promise.reject(new Error('invalid_market_trades_seed'));
         return flushHistory().then(() => inTransaction(() => {
@@ -4155,6 +4288,36 @@ const Database = {
         return inTransaction(() => commitInteractionMemoryUnsafe(batch, now()), 'social-memory:commit');
     },
 
+    loadInteractionMemories(ownerIds) {
+        const ids = ownerIds.map(InteractionMemoryPolicy.id);
+        if (ids.length > InteractionMemoryPolicy.MAX_BATCH) return Promise.reject(Error('interaction memory: invalid load batch'));
+        return enqueue(() => ids.map(id => require('./GameServer/Social/InteractionMemoryRows').load({ one, all }, id)), { operation: 'social-memory:load', read: true });
+    },
+
+    saveBackgroundParty(row) {
+        return inTransaction(() => {
+            const previous = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [row.partyId]);
+            if (previous?.status === 'hot' || Number(jsonObject(previous?.statsJson).clanGoalInvalidationVersion || 0)
+                > Number(jsonObject(row.statsJson).clanGoalInvalidationVersion || 0)) return { affectedRows: 0 };
+            const payment = partyAgreementUnsafe(previous, row);
+            row = payment.row;
+            const result = write(`INSERT INTO bot_background_parties (
+                partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
+                cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(partyId) DO UPDATE SET
+                leaderId = excluded.leaderId, memberIdsJson = excluded.memberIdsJson,
+                spotId = excluded.spotId, nextResolveAt = excluded.nextResolveAt,
+                cohesion = excluded.cohesion, risk = excluded.risk, status = excluded.status,
+                roleCoverageJson = excluded.roleCoverageJson, statsJson = excluded.statsJson, updatedAt = excluded.updatedAt`,
+            [row.partyId, row.leaderId, row.memberIdsJson, row.spotId, row.startedAt, row.nextResolveAt,
+                row.cohesion, row.risk, row.status, row.roleCoverageJson, row.statsJson,
+                Math.max(Number(row.updatedAt), Number(previous?.updatedAt || 0) + 1)]);
+            return { ...result, row: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [row.partyId]),
+                lifeRows: [...payment.touched].map(coldSimulationRow) };
+        }, 'bot-party:save-agreement');
+    },
+
     commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null,
         expectedPhase = 'cold', canCommitHot = null, preserveClanOperations = false } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
@@ -4213,6 +4376,7 @@ const Database = {
                 .map((row) => Number(row.characterId));
             if (reserved.length && (!review || preserveClanOperations)) return { ok: false, reason: 'clan_operation_reserved', conflicts: reserved };
 
+            const previousParty = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
             write(`INSERT INTO bot_background_parties (
                 partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
                 cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
@@ -4275,7 +4439,11 @@ const Database = {
                 });
             }
 
-            return { ok: true, partyId: party.partyId, characterIds };
+            const payment = partyAgreementUnsafe(previousParty, party);
+            write('UPDATE bot_background_parties SET statsJson = ? WHERE partyId = ?', [payment.row.statsJson, party.partyId]);
+            return { ok: true, partyId: party.partyId, characterIds,
+                partyRow: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [party.partyId]),
+                lifeRows: characterIds.map(coldSimulationRow) };
         }, 'bot-party:commit-membership');
     },
 
@@ -4586,7 +4754,7 @@ const Database = {
             }
             const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
-            if (physical) applyColdPhysicalStateUnsafe(characterId, physical);
+            const pkDrops = physical ? applyColdPhysicalStateUnsafe(characterId, physical) : [];
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.
             EconomyJournal.detail('board_settlement');
@@ -4604,6 +4772,7 @@ const Database = {
                 revision,
                 leaseUntil: 0,
                 reason: 'committed_released',
+                ...(pkDrops.length ? { pkDrops } : {}),
                 ...(request.memoryEvents !== undefined ? { memorySnapshots: commitColdInteractionMemoryUnsafe(request) || [] } : {}),
                 ...(settled ? { settled: true } : {}),
                 row: coldSimulationRow(characterId)
@@ -4622,12 +4791,21 @@ const Database = {
                     throw new Error('party conflict: incomplete atomic outcome');
                 }
                 for (const change of changes) {
+                    const previous = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
+                    const payment = partyAgreementUnsafe(previous, { ...previous, ...change });
+                    change.statsJson = payment.row.statsJson;
                     const updated = write(`UPDATE bot_background_parties SET nextResolveAt = ?, statsJson = ?, updatedAt = ?, spotId = COALESCE(?, spotId),
                         status = COALESCE(?, status), cohesion = COALESCE(?, cohesion), risk = COALESCE(?, risk)
                         WHERE partyId = ? AND status = 'active' AND updatedAt = ?`,
                     [change.nextResolveAt, change.statsJson, change.updatedAt, change.spotId ?? null,
                         change.status ?? null, change.cohesion ?? null, change.risk ?? null, change.partyId, change.expectedUpdatedAt]);
                     if (updated.affectedRows !== 1) throw new Error('party conflict: party changed during commit');
+                    for (const request of group) {
+                        const result = results.find(result => result.characterId === Number(request.characterId));
+                        result.row = coldSimulationRow(result.characterId);
+                        result.revision = Number(result.row.simulationRevision);
+                        result.partyRow = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [change.partyId]);
+                    }
                 }
                 const raidCommit = group[0].atomicGroup.raidCommit;
                 if (raidCommit) {
@@ -5186,6 +5364,11 @@ const Database = {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
     },
 
+    withMutationAdmission(beforeWrite, work) {
+        if (typeof beforeWrite !== 'function' || typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
+        return mutationAdmission.run(beforeWrite, () => Promise.resolve().then(work));
+    },
+
     cooperatively(work, sliceMs = 12) {
         const outermost = cooperative.depth === 0;
         if (outermost) {
@@ -5251,7 +5434,11 @@ const Database = {
         return withCharacterFlush(characterId, () => inTransaction(
             () => {
                 checkCapturedWriteAdmission(admission, characterId);
-                return syncInventorySummaryUnsafe(characterId, inventory);
+                const result = syncInventorySummaryUnsafe(characterId, inventory);
+                // A new ordinary cold death consumes its ordered bag once, in
+                // the same transaction that reconciles the physical inventory.
+                if (reason === 'resolve_death') return dropPkDeathItemsUnsafe(characterId);
+                return result;
             },
             reason ? `inventory:sync-summary:${reason}` : 'inventory:sync-summary'
         ));
@@ -5460,6 +5647,79 @@ const Database = {
     },
     fetchSkill(characterId, skillSelfId) {
         return selectOne('skills', ['*'], 'characterId = ? AND selfId = ?', [characterId, skillSelfId], 'skill:one');
+    },
+    createColdTrainingGuard(state, validate) {
+        const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
+        const expected = Protocol.commandCheckpoint({ characterId: state.characterId, phase: state.phase, activity: state.activity,
+            simulationOwner: state.simulation?.ownerId, simulationRevision: state.simulation?.revision,
+            simulationLeaseId: state.simulation?.leaseId || null,
+            activityStartedAt: state.timing?.activityStartedAt || 0, nextResolveAt: state.timing?.nextResolveAt || 0,
+            lastResolvedAt: state.timing?.lastResolvedAt || 0, lastHotAt: state.timing?.lastHotAt || 0, updatedAt: state.updatedAt });
+        if (!expected || expected.phase !== 'cold' || expected.simulationOwner !== LEGACY_SIMULATION_OWNER || typeof validate !== 'function') throw Error('invalid_cold_training_source');
+        const beforeWrite = () => { validate(); };
+        coldTrainingGuards.set(beforeWrite, Object.freeze({ ...expected }));
+        return beforeWrite;
+    },
+    publishColdTraining(characterId, resolved, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_skill_before_write', characterId);
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            checkCapturedWriteAdmission(admission, characterId);
+            if (!admission.coldTraining) throw Error('missing_cold_training_source');
+            const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
+            const character = one('SELECT classId,sp FROM characters WHERE id = ?', [characterId]);
+            const inventory = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? ORDER BY id',[characterId]));
+            const stats = jsonObject(row.statsJson);
+            stats.classId = character.classId; stats.classProgressionClassId = character.classId; stats.classProgressionLevel = row.level;
+            stats.classTransitions = [...(stats.classTransitions || []), ...(resolved.transitions || [])];
+            stats.coldCombat = invoke('GameServer/Bot/Population/ColdCombatProfile').legacySnapshot({stats,level:row.level},
+                all('SELECT * FROM skills WHERE characterId = ?', [characterId]), now());
+            checkCapturedWriteAdmission(admission, characterId);
+            write('UPDATE bot_life_state SET sp = ?, inventorySummary = ?, statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
+                [character.sp, JSON.stringify(inventory), JSON.stringify(stats), now(), characterId]);
+            return one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
+        }, 'cold:paid-training'));
+    },
+    learnBotSkill(characterId, skillSelfId, skillLevel, options = {}) {
+        const id = Number(characterId);
+        const admission = captureWriteAdmission(options, 'invalid_skill_before_write', id);
+        return withCharacterFlush(id, () => inTransaction(() => {
+            checkCapturedWriteAdmission(admission, id);
+            const character = one('SELECT username, classId, level, sp FROM characters WHERE id = ?', [id]);
+            if (!character || !String(character.username).startsWith('bot_')) return { learned: false, reason: 'not_bot' };
+            const known = one('SELECT level FROM skills WHERE characterId = ? AND selfId = ?', [id, skillSelfId]);
+            if (Number(known?.level || 0) >= Number(skillLevel)) return { learned: false, reason: 'already_known' };
+            const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
+            const training = Catalog.nextTraining(character.classId, character.level, skillSelfId, known?.level || 0);
+            const definition = invoke('GameServer/DataCache').skills.find((row) => Number(row.selfId) === Number(skillSelfId));
+            if (!training || training.level !== Number(skillLevel)
+                || !definition?.levels?.some((row) => Number(row.level) === training.level)) {
+                return { learned: false, reason: 'ineligible_rank' };
+            }
+            // Static workshops are authored infrastructure, rather than a
+            // progressing character. Ordinary bots pay the canonical SP/book.
+            const infrastructure = String(character.username).startsWith('bot_craft_');
+            const spentSp = infrastructure ? 0 : training.sp;
+            if (Number(character.sp) < spentSp) return { learned: false, reason: 'insufficient_sp' };
+            const book = !infrastructure && training.bookId
+                ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND amount > 0 AND equipped = 0 ORDER BY id LIMIT 1', [id, training.bookId]) : null;
+            if (!infrastructure && training.bookId && !book) return { learned: false, reason: 'missing_book' };
+            if (spentSp) {
+                checkCapturedWriteAdmission(admission, id);
+                write('UPDATE characters SET sp = sp - ? WHERE id = ?', [spentSp, id]);
+            }
+            const consumedBooks = [];
+            if (book) {
+                checkCapturedWriteAdmission(admission, id);
+                if (Number(book.amount) > 1) write('UPDATE items SET amount = amount - 1 WHERE id = ? AND characterId = ?', [book.id, id]);
+                else write('DELETE FROM items WHERE id = ? AND characterId = ?', [book.id, id]);
+                consumedBooks.push({ selfId: training.bookId, amount: 1, objectId: book.id, remaining: Number(book.amount) - 1 });
+            }
+            checkCapturedWriteAdmission(admission, id);
+            write(`INSERT INTO skills (selfId, name, passive, level, characterId) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(characterId, selfId) DO UPDATE SET name = excluded.name, passive = excluded.passive, level = excluded.level`,
+            [Number(skillSelfId), definition.template?.name || training.name || '', definition.template?.passive ? 1 : 0, training.level, id]);
+            return { learned: true, level: training.level, spentSp, consumedBooks };
+        }, 'skill:learn-bot'));
     },
     deleteSkills(characterId) {
         return remove('skills', 'characterId = ?', [characterId], 'skill:delete-all');
@@ -6296,6 +6556,137 @@ const Database = {
         }, 'crystalize'));
     },
 
+    applyColdSoulCrystalResults(characterId, steps, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_soul_crystal_before_write', characterId);
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const guard = () => {
+                checkCapturedWriteAdmission(admission, characterId);
+                const row = one('SELECT phase,simulationOwner FROM bot_life_state WHERE characterId=?',[characterId]);
+                if (row?.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER) throw Error('soul_crystal_owner_changed');
+            };
+            guard(); applySoulCrystalStepsUnsafe(characterId, steps, guard);
+            return { changed: steps.length };
+        }, 'cold:soul-crystals'));
+    },
+
+    applyBotImprovement(characterId, proposal, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_improvement_before_write', characterId);
+        const state = options.coldState;
+        const rng = typeof options.rng === 'function' ? options.rng : Math.random;
+        return withCharacterFlush(characterId, () => inTransaction(() => {
+            const guard = () => {
+                checkCapturedWriteAdmission(admission, characterId);
+                options.validate?.();
+                if (!state) {
+                    const row = one('SELECT phase, simulationOwner FROM bot_life_state WHERE characterId = ?', [characterId]);
+                    if (row && (row.phase !== 'hot' || row.simulationOwner !== LEGACY_SIMULATION_OWNER)) throw Error('improvement_hot_source_changed');
+                }
+                if (state) {
+                    const row = one('SELECT phase, simulationOwner, simulationRevision FROM bot_life_state WHERE characterId = ?', [characterId]);
+                    if (state.characterId !== characterId || row?.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER
+                        || Number(row.simulationRevision) !== Number(state.simulation?.revision || 0)) throw Error('economy_state_changed');
+                }
+            };
+            guard();
+            const mutate = (sql, args) => { guard(); return write(sql, args); };
+            const consume = (selfId, count) => {
+                const rows = all('SELECT * FROM items WHERE characterId = ? AND selfId = ? AND equipped = 0 AND amount > 0 ORDER BY id', [characterId, selfId]);
+                if (!Number.isSafeInteger(count) || count < 1 || rows.reduce((n, r) => n + r.amount, 0) < count) throw Error('improvement_missing_materials');
+                let left = count;
+                for (const row of rows) {
+                    const amount = Math.min(left, row.amount); if (!amount) continue;
+                    if (row.amount > amount) mutate('UPDATE items SET amount = amount - ? WHERE id = ? AND characterId = ?', [amount, row.id, characterId]);
+                    else mutate('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]);
+                    left -= amount;
+                }
+            };
+            let result, changedIds = [], hennas;
+            const Policy = invoke('GameServer/Bot/Economy/BotImprovementPolicy');
+            if (proposal.kind === 'enchant') {
+                const Rules = invoke('GameServer/Items/C4EnchantRules');
+                const item = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [proposal.objectId, characterId]);
+                const scroll = Rules.resolveScroll(proposal.scrollId), config = Rules.configWith(globalThis.options?.default?.Enchant);
+                if (!item || item.selfId !== proposal.itemId || Number(item.enchant) !== proposal.from
+                    || !Rules.validTarget(Policy.adapter(item), scroll)) throw Error('improvement_source_changed');
+                const category = Rules.categoryOf(Policy.adapter(item)), max = Rules.maxFor(category, config);
+                if (max && item.enchant >= max || scroll.scrollType === 'blessed' && Rules.isSafe(Policy.adapter(item), item.enchant, config)) throw Error('invalid_bot_enchant');
+                const chance = Rules.isSafe(Policy.adapter(item), item.enchant, config) ? 1 : Rules.chanceFor(category, scroll.scrollType, config) / 100;
+                const success = rng() < chance;
+                consume(proposal.scrollId, 1);
+                result = success ? 'success' : scroll.scrollType === 'blessed' ? 'blessed-fail' : 'break';
+                if (result !== 'break') mutate('UPDATE items SET enchant = ? WHERE id = ? AND characterId = ?', [success ? item.enchant + 1 : 0, item.id, characterId]);
+                else {
+                    mutate('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
+                    const crystalId = Rules.CRYSTAL_IDS[Rules.gradeOf(Policy.adapter(item))];
+                    const amount = Math.max(1, Rules.crystalCount(Policy.adapter(item), item.enchant)
+                        - Math.floor((Policy.adapter(item).fetchCristals() + 1) / 2));
+                    const held = one('SELECT id FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, crystalId]);
+                    if (held) mutate('UPDATE items SET amount = amount + ? WHERE id = ?', [amount, held.id]);
+                    else mutate('INSERT INTO items(selfId,name,amount,characterId) VALUES(?,?,?,?)', [crystalId, `Crystal ${crystalId}`, amount, characterId]);
+                    changedIds.push(crystalId);
+                }
+                changedIds.push(item.selfId, proposal.scrollId);
+            } else if (proposal.kind === 'sa') {
+                const SA = invoke('GameServer/Items/C4WeaponSAExchange');
+                const recipe = SA.resolve(proposal.npcId, proposal.recipeId);
+                const item = one('SELECT * FROM items WHERE id = ? AND characterId = ?', [proposal.objectId, characterId]);
+                if (recipe?.station !== 'blacksmith' || recipe.operation !== 'install' || !item || item.amount !== 1
+                    || recipe.sourceId !== item.selfId || item.selfId !== proposal.itemId
+                    || item.enchant !== proposal.from) throw Error('improvement_source_changed');
+                const product = invoke('GameServer/DataCache').items.find(row => row.selfId === recipe.productId);
+                if (!product) throw Error('improvement_missing_template');
+                for (const cost of SA.costs(recipe)) { consume(cost.selfId, cost.amount); changedIds.push(cost.selfId); }
+                mutate('UPDATE items SET selfId = ?, name = ?, slot = ? WHERE id = ? AND characterId = ?',
+                    [product.selfId, product.template.name, product.etc.slot, item.id, characterId]);
+                changedIds.push(item.selfId, product.selfId); result = 'sa';
+            } else if (proposal.kind === 'crystal_quest') {
+                const character = one('SELECT level FROM characters WHERE id = ?', [characterId]);
+                if (character?.level < 40 || ![4629,4640,4651].includes(proposal.starterId)) throw Error('invalid_bot_crystal_quest');
+                const Native = invoke('GameServer/Items/SoulCrystalProgression');
+                const held = all(`SELECT * FROM items WHERE characterId = ? AND selfId IN (${[...Native.crystalIds,4662,4663,4664].map(() => '?').join(',')}) AND amount > 0`,
+                    [characterId,...Native.crystalIds,4662,4663,4664]);
+                if (held.length > 1 || held[0]?.amount > 1) throw Error('soul_crystal_resonance');
+                mutate(`INSERT INTO character_quests(characterId,questId,state,variables) VALUES(?,350,'started','{"cond":"1"}')
+                    ON CONFLICT(characterId,questId) DO UPDATE SET state='started',variables=excluded.variables`, [characterId]);
+                if (!held.length || [4662,4663,4664].includes(held[0].selfId)) {
+                    if (held[0]) { consume(held[0].selfId, 1); changedIds.push(held[0].selfId); }
+                    const source = invoke('GameServer/DataCache').items.find(row => row.selfId === proposal.starterId);
+                    mutate('INSERT INTO items(selfId,name,amount,characterId) VALUES(?,?,1,?)', [source.selfId,source.template.name,characterId]);
+                    changedIds.push(proposal.starterId);
+                }
+                result = 'crystal_quest';
+            } else if (proposal.kind === 'henna') {
+                const Henna = invoke('GameServer/Henna/HennaRules');
+                const character = one('SELECT classId FROM characters WHERE id = ?', [characterId]);
+                const symbol = Henna.availableForClass(character?.classId).find(row => row.id === proposal.symbolId);
+                const rows = all('SELECT slot, symbolId FROM character_hennas WHERE characterId = ?', [characterId]);
+                const slot = [1,2,3].find(value => !rows.some(row => row.slot === value));
+                if (!symbol || !slot || rows.length >= Henna.slotsForClass(character.classId)) throw Error('invalid_bot_henna');
+                consume(symbol.dyeSelfId, symbol.dyeAmount); consume(57, symbol.price);
+                mutate('INSERT INTO character_hennas(characterId,slot,symbolId) VALUES(?,?,?)', [characterId, slot, symbol.id]);
+                hennas = [null,null,null]; for (const row of [...rows, {slot,symbolId:symbol.id}]) hennas[row.slot - 1] = row.symbolId;
+                changedIds.push(57, symbol.dyeSelfId); result = 'henna';
+            } else throw Error('invalid_bot_improvement');
+            guard();
+            if (state) {
+                const current = one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                const stats = jsonObject(current.statsJson);
+                stats.lastImprovement = { kind: proposal.kind, result, at: now(), objectId: proposal.objectId || null };
+                if (hennas) stats.hennas = hennas;
+                if (result === 'crystal_quest') stats.soulCrystalQuest = true;
+                if (result === 'break' || result === 'blessed-fail') {
+                    const lossHours = Number(proposal.lossHours || 0);
+                    stats.frustration = Number(stats.frustration || 0) + (Number.isFinite(lossHours) ? Math.max(0, lossHours) : 0);
+                    stats.dormantWishes = [[proposal.key || 'enchant', result, 0, Number(proposal.price || 0), Number(stats.playedHours || 0), 0.5], ...(stats.dormantWishes || [])].slice(0,4);
+                    stats.wishFocus = null;
+                }
+                mutate('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), characterId]);
+            }
+            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, state, changedIds);
+            return { result, coldLifeRow, hennas, questStarted: result === 'crystal_quest', changedIds, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId]) };
+        }, 'bot:improvement'));
+    },
+
     enchantInventoryItem(characterId, {
         scrollId,
         scrollSelfId,
@@ -6406,9 +6797,64 @@ const Database = {
         }, 'item:cold-safe-enchant'));
     },
 
-    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null }) {
+    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null, workshop = null }) {
         return withCharacterFlushes([crafterId, customerId], () => inTransaction(() => {
             let clanCrafter = null;
+            let workshopCrafter = null;
+            if (workshop) {
+                const recipes = invoke('GameServer/Items/C4RecipeItems');
+                const rules = invoke('GameServer/Bot/Economy/CraftShopService');
+                const recipe = recipes.resolveByRecipeId(workshop.recipeId);
+                const batches = Number(workshop.batches);
+                if (clanCraft || clanOrder || Number(crafterId) === Number(customerId) || !recipe
+                    || !Number.isSafeInteger(batches) || batches <= 0 || batches > 64) throw new Error('invalid workshop craft');
+                const rows = all(`SELECT life.*, members.id AS characterId, members.clanId, members.classId, members.level AS characterLevel,
+                           members.hp AS physicalHp, members.locX AS physicalX, members.locY AS physicalY
+                    FROM characters members LEFT JOIN bot_life_state life ON members.id = life.characterId
+                    WHERE members.id IN (?, ?)`, [crafterId, customerId]);
+                workshopCrafter = rows.find(row => Number(row.characterId) === Number(crafterId));
+                const customer = rows.find(row => Number(row.characterId) === Number(customerId));
+                for (const [row, revision] of [[workshopCrafter, workshop.crafterRevision], [customer, workshop.customerRevision]]) {
+                    if (row === customer && !row?.phase) {
+                        if (!row || Number(row.physicalHp) <= 0) throw new Error('customer unavailable');
+                        continue;
+                    }
+                    if (!row || row.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER
+                        || row.simulationLeaseId || row.partyId || Number(row.hp) <= 0
+                        || ['dead', 'respawning', 'traveling'].includes(row.activity)
+                        || Number(row.simulationRevision) !== Number(revision)) throw new Error('workshop ownership changed');
+                }
+                const stats = jsonObject(workshopCrafter.statsJson);
+                const entry = stats.workshop?.entries?.find(row => Number(row.recipeId) === Number(recipe.recipeId));
+                if (!entry || Number(entry.price) !== Number(workshop.entryPrice)
+                    || !rules.canCraft({ classId: workshopCrafter.classId, level: workshopCrafter.characterLevel }, recipe)
+                    || !one('SELECT recipeId FROM character_recipes WHERE characterId = ? AND recipeId = ?', [crafterId, recipe.recipeId])
+                    || Number(workshopCrafter.mp) < Number(recipe.mpCost) * batches
+                    || Math.hypot(Number(customer.physicalX) - Number(workshopCrafter.locX), Number(customer.physicalY) - Number(workshopCrafter.locY)) > 1200) {
+                    throw new Error('workshop unavailable');
+                }
+                const stateOf = row => ({ characterId: Number(row.characterId), clanId: Number(row.clanId),
+                    stats: jsonObject(row.statsJson) });
+                const quote = invoke('GameServer/Bot/Economy/CraftWorkshopService').quote(stateOf(workshopCrafter), stateOf(customer), recipe.recipeId);
+                if (!quote || Number(price) !== quote.price * batches || Number(workshop.fee) !== Number(price)
+                    || !Number.isSafeInteger(Number(price)) || Number(price) < 0) throw new Error('workshop price changed');
+                const required = new Map();
+                for (const input of recipe.materials) required.set(Number(input.selfId),
+                    Number(required.get(Number(input.selfId)) || 0) + Number(input.amount) * batches);
+                const supplied = new Map();
+                const ids = new Set();
+                for (const material of materials) {
+                    if (ids.has(Number(material.id)) || !Number.isSafeInteger(Number(material.amount)) || Number(material.amount) <= 0) {
+                        throw new Error('invalid workshop material');
+                    }
+                    ids.add(Number(material.id));
+                    supplied.set(Number(material.selfId), Number(supplied.get(Number(material.selfId)) || 0) + Number(material.amount));
+                }
+                if (required.size !== supplied.size || [...required].some(([id, amount]) => supplied.get(id) !== amount)
+                    || product && (Number(product.selfId) !== Number(recipe.productId)
+                        || Number(product.amount) !== Number(recipe.productCount) * batches)) throw new Error('workshop recipe changed');
+                crafterMp = Number(workshopCrafter.mp) - Number(recipe.mpCost) * batches;
+            }
             let manualOrder = null;
             if (clanOrder) {
                 manualOrder = playerClanCraftOrderUnsafe(clanCraft?.clanId, clanOrder.orderId, clanOrder.settings);
@@ -6524,16 +6970,30 @@ const Database = {
             }
             write('UPDATE characters SET mp = ? WHERE id = ?', [crafterMp, crafterId]);
             let clanStates = {};
-            if (clanCraft) {
+            if (clanCraft || workshop) {
                 const lifeState = invoke('GameServer/Bot/Population/BotLifeState');
                 for (const id of new Set([Number(crafterId), Number(customerId)])) {
-                    const inventory = id === Number(customerId)
+                    const inventory = id === Number(customerId) || workshop
                         ? lifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]))
                         : JSON.parse(clanCrafter.inventorySummary || '{}');
                     write(`UPDATE bot_life_state SET inventorySummary = ?, simulationRevision = simulationRevision + 1,
                         statsJson = json_set(statsJson, '$.clanInventoryRevision', simulationRevision + 1),
                         mp = CASE WHEN characterId = ? THEN ? ELSE mp END, updatedAt = ? WHERE characterId = ?`,
                     [JSON.stringify(inventory), crafterId, crafterMp, now(), id]);
+                }
+                if (workshop) {
+                    const production = { ...jsonObject(workshopCrafter.statsJson).production };
+                    production.crafts = Number(production.crafts || 0) + Number(workshop.batches);
+                    production.customers = Number(production.customers || 0) + 1;
+                    production.revenue = Number(production.revenue || 0) + fee;
+                    production.lastRecipeId = Number(workshop.recipeId);
+                    production.at = now();
+                    const shop = { ...jsonObject(workshopCrafter.statsJson).workshop };
+                    shop.entries = shop.entries.map(entry => Number(entry.recipeId) !== Number(workshop.recipeId) ? entry
+                        : { ...entry, fills: Number(entry.fills || 0) + Number(workshop.batches),
+                            earned: Number(entry.earned || 0) + fee });
+                    write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.production', json(?), '$.workshop', json(?)) WHERE characterId = ?",
+                        [JSON.stringify(production), JSON.stringify(shop), crafterId]);
                 }
                 clanStates = {
                     crafterState: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [crafterId])),
@@ -7987,7 +8447,10 @@ const Database = {
                 state: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [character])),
                 ledgerId: Number(ledger.insertId)
             };
-        }, 'clan-warehouse:deposit'));
+        }, 'clan-warehouse:deposit')).then(result => {
+            if (result.ok) require('./GameServer/Clan/ClanReviewEvents').changed(clan, 'warehouse');
+            return result;
+        });
     },
     exchangeClanWarehouseEquipment({ clanId, characterId, warehouseId, expectedPhase, validateLive, validateCold } = {}) {
         const clan = Number(clanId);
@@ -8417,7 +8880,10 @@ const Database = {
                 warehouseAmount,
                 warehouseRevision: Number(state.warehouseRevision || 0)
             };
-        }, 'clan-simulation:level-up'));
+        }, 'clan-simulation:level-up')).then(result => {
+            if (result.ok) require('./GameServer/Clan/ClanReviewEvents').changed(clan, 'level');
+            return result;
+        });
     },
     fetchAutonomousClanCrests() {
         return run(`SELECT clans.id, clans.level, clans.crestId, crests.data AS crestData

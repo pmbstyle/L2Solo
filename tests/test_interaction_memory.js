@@ -63,7 +63,7 @@ for (let i = 0; i < 200; i++) snapshot = Policy.apply(snapshot, make(`new:${i}`,
 for (const kind of ['clan', 'alliance']) for (let i = 0; i < 20; i++) {
     snapshot = Policy.apply(snapshot, { ...make(`${kind}:${i}`, i + 1000, 'helped_in_combat', now + 300 + i), kind }, now + 300 + i).snapshot;
 }
-for (const [kind, limit] of Object.entries(Policy.LIMITS)) assert.strictEqual(snapshot.relations.filter(row => row.kind === kind).length, limit);
+for (const [kind, limit] of Object.entries(Policy.LIMITS)) assert.strictEqual(snapshot.relations.filter(row => row.kind === kind && !row.player && row.trust < 10 && row.hostility < 10).length, limit);
 assert(snapshot.recent.length <= Policy.RECENT_LIMIT);
 assert(snapshot.relations.every(row => row.reasons.length <= Policy.REASON_LIMIT));
 assert.strictEqual(Policy.apply(snapshot, make('contest:0'), now + 400).status, 'expired_event', 'journal eviction must not enable replay');

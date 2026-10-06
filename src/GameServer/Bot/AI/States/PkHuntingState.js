@@ -1,3 +1,4 @@
+const ActorQueries = require('../../../World/ActorSpatialQueries');
 const SpeckMath = invoke('GameServer/SpeckMath');
 const World = invoke('GameServer/World/World');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
@@ -33,7 +34,7 @@ function isEligibleAttacker(session, bot, profile) {
 }
 
 function activeThreats(bot, profile) {
-    return World.user.sessions
+    return ActorQueries.near(World, bot, 1500)
         .filter((session) => isEligibleAttacker(session, bot, profile))
         .map((session) => session.actor)
         .filter((other) => {
@@ -96,7 +97,8 @@ module.exports = {
         }
 
         if (session.currentTargetId) {
-            World.fetchUser(session.currentTargetId).then((target) => {
+            (ActorQueries.native(World) ? Promise.resolve(ActorQueries.byId(World, session.currentTargetId)?.actor)
+                : World.fetchUser(session.currentTargetId)).then((target) => {
                 if (target && isEligibleTarget(target.session, bot, profile)) {
                     if (bot.state.fetchTowards?.() || bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
                     BotAI.executePvPCombat(session, bot, target, Generics);
@@ -107,7 +109,7 @@ module.exports = {
             return;
         }
 
-        const target = World.user.sessions
+        const target = ActorQueries.near(World, bot, 2500)
             .filter((candidate) => isEligibleTarget(candidate, bot, profile))
             .map((candidate) => candidate.actor)
             .filter((candidate) => distance(candidate, bot) <= 2500)

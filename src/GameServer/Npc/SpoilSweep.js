@@ -108,9 +108,12 @@ function spoilRecipientSession(session, npc, selfId) {
     const leaderSession = session?.partyCompanion === true && session.followPlayerSession
         ? session.followPlayerSession
         : session;
+    if (leaderSession?.hotBackgroundPartyId) {
+        return PartyCompanionService.resolveLootSession(session, selfId, npc, { spoil: true });
+    }
     const distribution = PartyCompanionService.distributionForLeader(leaderSession);
     if (distribution === 2 || distribution === 4) {
-        return PartyCompanionService.resolveLootSession(session, selfId, npc);
+        return PartyCompanionService.resolveLootSession(session, selfId, npc, { spoil: true });
     }
     return session;
 }

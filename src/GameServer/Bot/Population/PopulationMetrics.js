@@ -51,10 +51,12 @@ function emptyCounters() {
         coldOwnerDbRetries: 0,
         coldOwnerHandoffs: 0,
         missedEventsRecovered: 0,
+        economySafetyRepairs: 0,
         coldSafetyStateRepairs: 0,
         coldSafetyBoardRepairs: 0,
         coldSafetyQueueRepairs: 0,
         hotSafetyBoardRepairs: 0,
+        partySafetyRepairs: 0,
         legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
         warehouseCleanupOwners: 0,
@@ -264,6 +266,16 @@ const PopulationMetrics = {
 
     recordCooldown() {
         this.counters.cooldowns += 1;
+    },
+
+    recordPartySafetyRepair() {
+        this.counters.partySafetyRepairs++;
+        this.counters.missedEventsRecovered++;
+    },
+
+    recordEconomySafetyRepair() {
+        this.counters.economySafetyRepairs++;
+        this.counters.missedEventsRecovered++;
     },
 
     recordPartyFormation() {

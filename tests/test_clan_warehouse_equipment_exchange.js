@@ -35,6 +35,8 @@ async function main() {
     Database.init();
     await LifeState.init();
     await ClanService.init();
+    await Database.execute([`INSERT INTO clan_simulation_clans(clanId,mode,stateJson,createdAt,updatedAt)
+        VALUES (71,'autonomous',?,1,1)`, [JSON.stringify({ mode: 'autonomous', warehouseRevision: 0, updatedAt: 1 })]]);
     const sword = DataCache.items.find((item) => item.etc?.rank === 'd' && item.template?.kind === 'Weapon.Sword' && item.etc?.slot === 7);
     assert(sword);
     const swordId = Number(sword.selfId);
@@ -44,7 +46,7 @@ async function main() {
             [id, owner, selfId, 'Exchange gear', enchant, equipped, equipped ? slot : 0]);
     };
     const player = {
-        fetchId: () => 11, fetchClanId: () => 71, fetchClanPrivileges: () => 2047,
+        fetchId: () => 11, fetchClanId: () => 71, fetchClanPrivileges: () => 2047, fetchIsOnline: () => true,
         fetchLocX: () => 0, fetchLocY: () => 0,
         backpack: { items: [], fetchItems() { return this.items; } }
     };
@@ -65,8 +67,10 @@ async function main() {
     }
     try {
         const clanPackets = [];
-        stub(World, 'user', { sessions: [{ accountId: 'player', socket: { write() {} }, actor: player,
-            dataSendToMe: packet => clanPackets.push(packet) }] });
+        stub(World, 'user', { sessions: [] });
+        const listener = { accountId: 'player', fetchAccountId() { return this.accountId; },
+            socket: { write() {} }, actor: player, dataSendToMe: packet => clanPackets.push(packet) };
+        World.insertUser(listener);
         await insert(101, 22, 0, 1);
         await deposit(102, 3);
         let equipped = await execute('SELECT * FROM items WHERE characterId = 22 AND equipped = 1');
@@ -110,7 +114,15 @@ async function main() {
         await deposit(103, 6);
         assert.strictEqual(backpack.fetchEquippedWeapon().fetchEnchantLevel(), 3, 'an active swing must defer the exchange');
         hitting = false;
-        await Exchange.resolveBatch(Date.now() + 2000);
+        // Availability is an addressed clan input; its warehouse action must
+        // perform the exchange without the retired global equipment poll.
+        const actions = invoke('GameServer/Clan/ClanActionService');
+        await Database.enqueueClanAction({ clanId: 71, actionKey: 'test:addressed-gear', actionType: 'warehouse', priority: 100 });
+        const claim = await Database.claimClanAction();
+        assert.strictEqual(claim.action.actionType, 'warehouse');
+        const addressed = await actions.resolveAction(claim.action, { deadlineAt: Date.now() + 2000 });
+        assert.strictEqual(addressed.ok, true);
+        assert.strictEqual(addressed.result.exchanged, 1);
         assert.strictEqual(backpack.fetchEquippedWeapon().fetchEnchantLevel(), 6);
         assert.strictEqual(backpack.items.length, 1, 'live backpack must remove the old object');
         assert.strictEqual(statRefreshes, 1);

@@ -45,7 +45,9 @@ function normalize(row) {
 function list(playerId, where, currentPage, size = PAGE_SIZE, lookahead = false) {
     return Database.execute([`SELECT l.characterId AS botId, l.characterName AS name, l.level, l.activity, l.currentRegion, l.statsJson, c.classId, s.trust, s.familiarity, f.status,
         CASE WHEN r.botId IS NULL THEN 0 ELSE 1 END AS selected
-        FROM bot_social_memory s INNER JOIN bot_life_state l ON l.characterId = s.botId
+        FROM (SELECT ownerId AS botId,targetId AS playerId,
+            json_extract(rowJson,'$.trust') AS trust,json_extract(rowJson,'$.familiarity') AS familiarity
+            FROM interaction_relations WHERE kind='character') s INNER JOIN bot_life_state l ON l.characterId = s.botId
         LEFT JOIN characters c ON c.id = l.characterId
         LEFT JOIN bot_friendships f ON f.playerId = s.playerId AND f.botId = s.botId
         LEFT JOIN bot_friend_roster r ON r.playerId = s.playerId AND r.botId = s.botId
@@ -86,7 +88,9 @@ const BotFriendship = {
         const playerId = id(player), botId = Number(state?.characterId || 0);
         if (!playerId || !botId) return Promise.resolve({ ok: false, reason: 'missing_bot' });
         if (BotServiceIdentity.isStaticService(state)) return Promise.resolve({ ok: false, reason: 'merchant_duty', trust: 0, persona: null });
-        return Database.execute(['SELECT * FROM bot_social_memory WHERE playerId = ? AND botId = ?', [playerId, botId]]).then((rows) => {
+        return Database.execute([`SELECT json_extract(rowJson,'$.trust') AS trust,json_extract(rowJson,'$.familiarity') AS familiarity,
+            json_extract(rowJson,'$.social.insulted') AS insults,json_extract(rowJson,'$.abandonedAt') AS recentlyAbandonedAt
+            FROM interaction_relations WHERE kind='character' AND targetId = ? AND ownerId = ?`, [playerId, botId]]).then((rows) => {
             const social = rows[0] || {};
             const now = Date.now();
             const trust = Number(social.trust || 0);

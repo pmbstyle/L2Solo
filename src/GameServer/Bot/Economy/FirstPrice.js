@@ -23,7 +23,7 @@ const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 //
 // How long: the kills needed there, 1 / (share x amount per kill), at the
 // kill rate of the bots of that level, the same bots whose hour prices the
-// hour (BotHuntEfficiency.hourValue). Their hour over their income per kill
+// hour (BotHuntEfficiency.huntIncome). Their hour over their income per kill
 // is their kills per hour, so hours x hour = kills needed x their income per
 // kill. The table's own kill rate does not enter the hours: it is the bot in
 // the author's planned kit, counted per hour of combat and recovery, several
@@ -85,7 +85,7 @@ function dropPrice(id, item, spots, timestamp) {
     }
     if (!best) return null;
     const kills = 1 / best.perKill;
-    const hour = HuntEfficiency.hourValue({ level: best.level, stats: {} }, timestamp);
+    const hour = HuntEfficiency.huntIncome({ level: best.level, stats: {} }, timestamp);
     return { price: withinWalls(item, kills * hour.perKill), kills, hours: kills * hour.perKill / hour.perHour,
         spotId: best.spotId, npcId: best.npcId, kind: best.kind, level: best.level, hourSource: hour.source, source: 'drop' };
 }
@@ -152,7 +152,7 @@ function craftPrice(id, item, options, depth) {
     const level = crafterLevel(recipe.level);
     if (!level) return null;
     const seconds = Number(recipe.mpCost || 0) / seatedMpPerSecond(level);
-    const hour = HuntEfficiency.hourValue({ level, stats: {} }, options.timestamp);
+    const hour = HuntEfficiency.huntIncome({ level, stats: {} }, options.timestamp);
     const labour = seconds / 3600 * hour.perHour;
     const count = Math.max(1, Number(recipe.productCount || 1));
     return { price: withinWalls(item, (materials + labour) / count), materials: materials / count, labour: labour / count,
@@ -212,7 +212,7 @@ function firstPrice(itemId, { spots = [], timestamp = Date.now() } = {}) {
 
 // The first price for the market's readers (PriceBelief) and of a recipe's
 // materials, kept an hour of this thread's clock: it moves only with the
-// level bands' hours. A price whose recipe chain was cut at MAX_CRAFT_DEPTH
+// static base hunting income. A price whose recipe chain was cut at MAX_CRAFT_DEPTH
 // (deep inside another item's materials) is used there but not kept: the
 // item's own price, asked at the top, prices its whole chain.
 const CACHE_MS = 60 * 60 * 1000;

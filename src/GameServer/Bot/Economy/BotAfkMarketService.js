@@ -163,6 +163,7 @@ async function pruneResourceLots(ownerId) {
     return { changed: true, removed: lines.length - kept.length, closed: kept.length === 0 };
 }
 
+const lineKey = line => `${Number(line.selfId)}:${Number(line.enchant || 0)}`;
 function stateWithEscrow(state, stock) {
     if (Number(stock?.storeType) !== AfkTrade.SELL) return state;
     const combined = { ...(state.inventory || {}) };
@@ -177,7 +178,9 @@ function stateWithEscrow(state, stock) {
             kind: previous.kind || template?.template?.kind,
             rank: previous.rank || template?.etc?.rank,
             amount: Math.max(0, Number(previous.amount || 0)) + count,
-            enchant: Math.max(Number(previous.enchant || 0), Number(line.enchant || 0))
+            enchant: Math.max(Number(previous.enchant || 0), Number(line.enchant || 0)),
+            instances: [...(previous.instances || []), {id:Number(line.sourceObjectId || line.objectId),amount:count,
+                equipped:false,slot:line.slot,enchant:Number(line.enchant || 0)}]
         };
     }
     return { ...state, inventory: combined };
@@ -208,32 +211,32 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
     const priorityMarketItems = new Set(classified.listings
         .filter((item) => String(item.kind || '').startsWith('Other.Shot'))
         .map((item) => Number(item.selfId)));
-    const remaining = new Map(listings.map((item) => [Number(item.selfId), Number(item.count)]));
+    const remaining = new Map(listings.map((item) => [lineKey(item), Number(item.count)]));
     const listed = new Map((classified.decisions || [])
         .filter((decision) => decision.action === 'list')
-        .map((decision) => [Number(decision.item.selfId), decision]));
+        .map((decision) => [lineKey(decision.item), decision]));
     const next = [];
     const keepExisting = (line) => {
         if (next.length >= MAX_LINES) return;
-        const available = Math.max(0, Number(remaining.get(line.selfId) || 0));
+        const available = Math.max(0, Number(remaining.get(lineKey(line)) || 0));
         if (!available) return;
         const count = Math.min(line.count, available);
         next.push({ ...line, count });
-        remaining.set(line.selfId, available - count);
+        remaining.set(lineKey(line), available - count);
     };
     const appendListing = (listing) => {
         if (next.length >= MAX_LINES) return;
         const available = inventory.filter((row) => Number(row.selfId) === Number(listing.selfId)
-            && !row.equipped && Number(row.amount) > 0);
+            && !row.equipped && Number(row.amount) > 0 && Number(row.enchant || 0) === Number(listing.enchant || 0));
         for (const row of available) {
-            const count = Math.min(Number(row.amount), Math.max(0, Number(remaining.get(Number(listing.selfId)) || 0)));
+            const count = Math.min(Number(row.amount), Math.max(0, Number(remaining.get(lineKey(listing)) || 0)));
             if (count <= 0) continue;
             const stackable = ItemTemplateIndex.find(DataCache.items, row.selfId)?.etc?.stackable === true;
             const matching = stackable && next.find((line) => Number(line.selfId) === Number(row.selfId)
                 && Number(line.enchant || 0) === Number(row.enchant || 0));
             if (matching) {
                 matching.count += count;
-                remaining.set(Number(listing.selfId), Number(remaining.get(Number(listing.selfId))) - count);
+                remaining.set(lineKey(listing), Number(remaining.get(lineKey(listing))) - count);
                 break;
             }
             if (next.some((line) => Number(line.objectId) === Number(row.id))) continue;
@@ -249,7 +252,7 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
                 petData: row.petData || null,
                 pricing: listing.pricing
             });
-            remaining.set(Number(listing.selfId), Number(remaining.get(Number(listing.selfId))) - count);
+            remaining.set(lineKey(listing), Number(remaining.get(lineKey(listing))) - count);
             break;
         }
     };
@@ -267,7 +270,7 @@ function decide(state, stock, existing, options = {}) {
     const ads = AfkTrade.ownerRecords(Number(state.characterId)).filter((record) => record.kind === 'sell_ad').length;
     return ListingPolicy.evaluate(stateWithEscrow(state, stock), {
         ...options, slots: Math.max(0, ListingPolicy.BOARD_SLOTS - ads),
-        kept: new Map(existing.map((line) => [line.selfId, line.price]))
+        kept: new Map(existing.map((line) => [lineKey(line), line.price]))
     });
 }
 
@@ -284,19 +287,21 @@ function saleDecision(state, options = {}) {
 
 // The bot's buy ad lines carry the quote, its authored worth and cursors.
 function buyLines(state, goal) {
-    const bid = BuyStoreService.bidFor(state, goal);
-    if (!bid) return [];
-    const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
-    const lines = [{
-        selfId: Number(bid.selfId),
-        name: bid.name,
-        count: Number(bid.count),
-        price: Number(bid.price),
-        enchant: 0,
-        slot: Number(item?.etc?.slot || 0),
-        stackable: item?.etc?.stackable === true,
-        pricing: bid.pricing
-    }];
+    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+    const goals = context.watchList.map(row => ({ type: 'buy_craft_material',
+        target: { itemId: row.itemId, amount: row.amount },
+        plan: { estimatedCost: row.worth, purpose: row.kind } }));
+    if (goal?.target?.itemId && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
+    let wallet = Number(state.adena || 0);
+    const lines = [];
+    for (const candidate of goals.slice(0, 3)) {
+        const bid = BuyStoreService.bidFor({ ...state, adena: wallet }, candidate);
+        if (!bid) continue;
+        const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
+        lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
+            enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing });
+        wallet -= bid.count * bid.price;
+    }
     return lines;
 }
 
@@ -351,7 +356,12 @@ async function repriceSellLines(ownerId, stock, lines) {
 async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const ads = buyAds(ownerId);
-    const side = desiredSide(goal);
+    let side = desiredSide(goal);
+    if (side !== AfkTrade.BUY && state.phase === 'cold') {
+        const wanted = invoke('GameServer/Bot/Economy/EconomyContext').forState(state).watchList[0];
+        if (wanted) { goal = { type: 'buy_craft_material', target: { itemId: wanted.itemId, amount: wanted.amount },
+            plan: { estimatedCost: wanted.worth, purpose: wanted.kind } }; side = AfkTrade.BUY; }
+    }
     const lines = linesOf(ads);
     if (side !== AfkTrade.BUY) {
         if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: false };
@@ -566,15 +576,15 @@ async function listOnBoard(state, options = {}) {
 // which no ad takes (a row that changed meanwhile refuses the move).
 async function listSellAds(ownerId, state, listings, shop, inventory) {
     const records = AfkTrade.ownerRecords(ownerId);
-    const advertised = new Set(linesOf(records.filter((record) => record.kind === 'sell_ad')).map((line) => Number(line.selfId)));
-    const inShop = new Set(linesOf(shop ? [shop] : []).map((line) => Number(line.selfId)));
+    const advertised = new Set(linesOf(records.filter((record) => record.kind === 'sell_ad')).map(lineKey));
+    const inShop = new Set(linesOf(shop ? [shop] : []).map(lineKey));
     const free = Math.max(0, BoardRules.BOT_RECORDS.sell_ad - records.filter((record) => record.kind === 'sell_ad').length);
     if (!free) return { listed: 0, reason: 'board_cap_reached' };
     const configs = [];
     for (const listing of listings || []) {
         if (configs.length >= free) break;
         const selfId = Number(listing.selfId);
-        if (inShop.has(selfId) || advertised.has(selfId)) continue;
+        if (inShop.has(lineKey(listing)) || advertised.has(lineKey(listing))) continue;
         const row = inventory.find((item) => Number(item.selfId) === selfId && !Number(item.equipped)
             && Number(item.amount) > 0 && Number(item.enchant || 0) === Number(listing.enchant || 0));
         if (!row) continue;
@@ -589,7 +599,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory) {
         const town = MarketTownPolicy.shopTown(state, [line]);
         const center = ListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
         configs.push({ storeType: AfkTrade.SELL, title: marketStoreTitle([line]), town, ...center, lines: [line] });
-        advertised.add(selfId);
+        advertised.add(lineKey(listing));
     }
     if (!configs.length) return { listed: 0 };
     try {

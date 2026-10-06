@@ -15,6 +15,8 @@ const SeedPlanner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const BotNameGenerator = invoke('GameServer/Bot/Population/BotNameGenerator');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const Intake = require('./PopulationIntakePolicy');
+const ClassProgression = invoke('GameServer/ClassProgression');
 
 const NAME_GENERATOR_VERSION = 3;
 const APPEARANCE_VERSION = 2;
@@ -78,12 +80,12 @@ function expForLevel(level) {
     return Number(table[Math.max(0, Number(level || 1) - 1)] || 0);
 }
 
-function baseForIndex(index, starterRegion = null) {
+function baseForIndex(index, starterRegion = null, intake = null) {
     const race = STARTER_REGION_RACES[starterRegion];
     const pool = Number.isInteger(race)
         ? CLASS_POOL.filter((entry) => entry.race === race)
         : CLASS_POOL;
-    return { ...pick(index, pool), sex: sexForIndex(index) };
+    return { ...(intake ? Intake.choose(pool, index, intake) : pick(index, pool)), sex: sexForIndex(index) };
 }
 
 function profileForIndex(index, base = baseForIndex(index), seedProfile = null) {
@@ -576,6 +578,7 @@ const GeneratedColdSeeder = {
     cooperativeEach,
 
     ensureCraftServices() {
+        if (require('../Economy/ProductionPolicy').buyersDisabled()) return Promise.resolve({ created: 0, seeded: 0 });
         let created = 0;
         let seeded = 0;
         const slots = Array.from({ length: CRAFT_SERVICE_COUNT }, (_, slot) => slot);
@@ -633,19 +636,33 @@ const GeneratedColdSeeder = {
             .then(() => migratePopulationNames(LifeState.populationSeedStates()))
             .then(() => migratePopulationAppearances(LifeState.allStates(50000)))
             .then(() => {
+            const states = LifeState.populationSeedStates();
             const plan = SeedPlanner.plan(
                 SpotProfiles.ensure(),
-                LifeState.populationSeedStates(),
+                states,
                 limit,
                 Config.starterBotsPerRace
             );
             const batch = plan.missing.slice(0, SeedPlanner.seedBatchSize(plan, Config.generatedColdBatchSize));
+            const classCounts = Intake.classCounts(states, ClassProgression);
+            const regionalClassTotals = {};
+            const regionalIntake = {};
+            for (const slot of batch) regionalIntake[slot.starterRegion] = Number(regionalIntake[slot.starterRegion] || 0) + 1;
+            for (const profile of CLASS_POOL) {
+                regionalClassTotals[profile.race] = (regionalClassTotals[profile.race] || 0) + Number(classCounts[profile.classId] || 0);
+            }
             let created = 0;
             let seeded = 0;
             return cooperativeEach(batch, (spot) => {
                 const index = this.nextPopulationIndex++;
                 const username = `bot_pop_${index.toString(36)}`.slice(0, 16);
-                const base = baseForIndex(index, spot.starterRegion);
+                const race = STARTER_REGION_RACES[spot.starterRegion];
+                const base = baseForIndex(index, spot.starterRegion, {
+                    typeCounts: BotPersona.typeCounts(), classCounts,
+                    total: plan.targetPopulation,
+                    classTotal: Math.max(Number(plan.regionalTargets[spot.starterRegion] || 0),
+                        Number(regionalClassTotals[race] || 0) + Number(regionalIntake[spot.starterRegion] || 0))
+                });
                 const seedProfile = {
                     spot,
                     level: Math.max(1, Number(spot.minLevel || 1)),
@@ -663,11 +680,16 @@ const GeneratedColdSeeder = {
                             loc: result.loc || randomNear(spot.center, index)
                         });
                         return hydrateColdCombatProfile(state)
-                            .then((profiledState) => BotPersona.ensure(profiledState).then(() => profiledState))
+                            .then((profiledState) => BotPersona.ensure(profiledState, { archetype: base.archetype }).then(() => profiledState))
                             .then((profiledState) => LifeState.upsertState(profiledState, 'population_wave_seed'))
                             .then((saved) => {
                                 if (saved && result.created) created += 1;
-                                if (saved) seeded += 1;
+                                if (saved) {
+                                    seeded += 1;
+                                    classCounts[base.classId] = Number(classCounts[base.classId] || 0) + 1;
+                                    regionalClassTotals[race] = Number(regionalClassTotals[race] || 0) + 1;
+                                    regionalIntake[spot.starterRegion] -= 1;
+                                }
                                 return saved;
                             });
                     });

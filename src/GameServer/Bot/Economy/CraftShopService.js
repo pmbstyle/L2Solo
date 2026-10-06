@@ -335,6 +335,7 @@ function ensureRecipes(characterId, profile) {
 }
 
 module.exports = {
+    productPrice,
     MAX_PUBLIC_RECIPES,
     GiranCraftStalls,
     CraftStations,

@@ -1,5 +1,7 @@
 const DEFAULTS = {
     enabled: true,
+    staticBuyersDisabled: false,
+    staticShotsDisabled: false,
     // Personal knowledge errors and learning by own actions share one switch.
     knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,
@@ -224,6 +226,8 @@ const DEFAULTS = {
 };
 
 const ENV_KEYS = {
+    staticBuyersDisabled: 'BOT_STATIC_BUYERS_DISABLED',
+    staticShotsDisabled: 'BOT_STATIC_SHOTS_DISABLED',
     knowledgeErrorsEnabled: 'BOT_KNOWLEDGE_ERRORS_ENABLED',
     pvpAggression: 'BOT_PVP_AGGRESSION',
     enabled: 'BOT_POPULATION_ENABLED',

@@ -58,6 +58,10 @@ function actorReads(index) {
         ['get', () => index.get(1), null],
         ['getSource', () => index.getSource(1, 'actor'), null],
         ['sourceSize', () => index.sourceSize('actor'), 0],
+        ['presenceSize', () => index.presenceSize(), 0],
+        ['presenceSources', () => index.presenceSources(), 'array'],
+        ['nearestFacet', () => index.nearestFacet(point, { kind: 'player' }), null],
+        ['rangeFacet', () => index.rangeFacet(point, 7000), 'array'],
         ['sourceKeys', () => index.sourceKeys('actor'), 'iterator'],
         ['sourceValues', () => index.sourceValues('actor'), 'iterator'],
         ['sourceEntries', () => index.sourceEntries('actor'), 'iterator'],
@@ -70,7 +74,7 @@ function actorReads(index) {
     ];
 }
 function everyUnknown(index) {
-    const calls = actorReads(index); assert.equal(calls.length, 12);
+    const calls = actorReads(index); assert.equal(calls.length, 16);
     for (const [, read] of calls) unknown(read); // Admission includes iterator CREATION.
 }
 function knownEmpty(index) {
@@ -93,7 +97,7 @@ function snapshotUnknown(index) {
     });
 }
 function assertUnknownSnapshot(snapshot) {
-    assert.equal(snapshot.length, 12);
+    assert.equal(snapshot.length, 16);
     assert.equal(snapshot.every(item => item.didThrow && item.code === UNKNOWN), true);
 }
 function equalRefs(actual, expected) {
@@ -192,7 +196,7 @@ function workerMain() {
         assert.equal(Sources.actorStoreMatches(owner, Object.create(store)), false);
         assert.equal(Runtime.actorProducerReads(), port);
         everyUnknown(index); conserveState();
-        groups.push('real_early_all12_unknown_and_exact_native_association');
+        groups.push('real_early_all16_unknown_and_exact_native_association');
 
         let version = 0, copyId = 0, transferId = 0, publication = 0;
         const row = (id, x) => {
@@ -535,7 +539,7 @@ async function hostMain() {
         const result = finished.messages[0];
         assert.equal(result.kind, 'HELPER_ONLY_ACTOR_ALL_READ_FUTURE_ACCEPTANCE');
         assert.equal(result.isMainThread, false); assert(result.threadId > 0);
-        assert.equal(result.groups.length, 11); assert.equal(result.aliases.length, 12);
+        assert.equal(result.groups.length, 11); assert.equal(result.aliases.length, 16);
         assert.deepEqual(result.forbiddenRequests, []); assert.equal(result.stateOriginalConserved, true);
         conserveMain();
         assert.deepEqual(mainHeld.next(), { value: singletonActor, done: false });

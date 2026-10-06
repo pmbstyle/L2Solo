@@ -18,7 +18,7 @@ class InteractionEventQueue {
 
     enqueue(input) {
         if (this.stopping) return false;
-        const event = Policy.event(input);
+        const event = Policy.event(this.memory.enrichEvent ? this.memory.enrichEvent(input) : input);
         if (this.pending.has(event.key)) return true;
         if (this.pending.size >= 1024) { this.counters.busy++; return false; }
         this.pending.set(event.key, event);

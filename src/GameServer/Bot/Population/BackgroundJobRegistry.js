@@ -17,6 +17,8 @@ class Registry {
         this.timer = null;
         this.started = false;
         this.startedAt = 0;
+        this.deadlines = null;
+        this.deadlineTokens = new Map();
         this.metrics = { ticks: 0, due: 0, started: 0, completed: 0, skipped: 0, deferred: 0, coalesced: 0, errors: 0 };
     }
 
@@ -68,6 +70,28 @@ class Registry {
         if (this.timer) this.clearInterval(this.timer);
         this.timer = null;
         this.started = false;
+        this.deadlineTokens.clear();
+        this.deadlines = null;
+    }
+
+    armDeadline(key, dueAt, callback) {
+        if (!Number.isSafeInteger(dueAt) || dueAt < 0 || typeof callback !== 'function') {
+            throw new TypeError('invalid_background_deadline');
+        }
+        this.cancelDeadline(key);
+        this.deadlines ||= new (require('./ColdSimulationKernel').DueHeap)();
+        const token = { key, dueAt, callback };
+        this.deadlineTokens.set(key, token);
+        this.deadlines.push(token);
+        return token;
+    }
+
+    cancelDeadline(key, expected = null) {
+        const token = this.deadlineTokens.get(key);
+        if (!token || expected && token !== expected) return false;
+        this.deadlineTokens.delete(key);
+        this.deadlines.remove(token);
+        return true;
     }
 
     subscribeTicks(listener) {
@@ -80,6 +104,16 @@ class Registry {
         if (!this.started) return;
         const now = Math.floor(finiteNumber(timestamp, this.now()));
         this.metrics.ticks += 1;
+        // Every Main deadline consumer shares this heap and the existing clock.
+        for (let inspected = 0; inspected < 64 && this.started; inspected++) {
+            const token = this.deadlines?.peek();
+            if (!token || token.dueAt > now) break;
+            this.deadlines.pop();
+            if (this.deadlineTokens.get(token.key) !== token) continue;
+            this.deadlineTokens.delete(token.key);
+            try { token.callback(now); }
+            catch (error) { this.metrics.errors++; this.onError('deadline', error); }
+        }
         for (const job of this.jobs.values()) {
             if (now < job.nextDueAt) continue;
             const dueCount = Math.floor((now - job.nextDueAt) / job.intervalMs) + 1;

@@ -1,6 +1,7 @@
 'use strict';
 
 const { SPOT_CELL_SIZE } = require('./WorldConstants');
+const RawActorSpatialTree = require('./RawActorSpatialTree');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
 const VIEWS = new Set(['actor', 'state']);
 
@@ -194,6 +195,8 @@ class CharacterLocationIndex {
         this.cells = new Map();
         this.spots = new Map();
         this.groups = new Map();
+        this.rawSpatial = new RawActorSpatialTree();
+        this.actorPresence = { human: new Set(), onlineHuman: new Set(), online: new Set(), targets: new Map() };
     }
 
     put(record) {
@@ -217,7 +220,9 @@ class CharacterLocationIndex {
         const tags = memberships(record);
         let row = this.records.get(id);
         let entry = row?.[view];
+        if (view === 'actor' && entry && entry.record !== record) this.detachPresence(entry);
         if (entry && !sameSource(entry.source, source, legacy)) {
+            this.detachPresence(entry);
             this.detachRawXY(entry);
             this.detachCell(entry);
             this.detachSpot(entry);
@@ -270,6 +275,7 @@ class CharacterLocationIndex {
         const entry = row?.[view];
         if (!entry || !sameSource(entry.source, source, view === 'state' && this.legacyStateCache)) return false;
         this.detachRawXY(entry);
+        this.detachPresence(entry);
         this.detachCell(entry);
         this.detachSpot(entry);
         this.detachGroups(entry);
@@ -343,7 +349,135 @@ class CharacterLocationIndex {
         members.add(entry);
         this.cells.set(key, cell);
         entry.rawXY = { key, record: expectedRecord, loc };
+        if (entry.presence?.record === expectedRecord && entry.presence.online && entry.presence.realPlayer) {
+            (cell.rawPlayers ??= new Set()).add(entry);
+        }
+        this.refreshRawSpatial(cell);
         return true;
+    }
+
+    // Addressed publication metadata only: these Sets contain SAME canonical
+    // entries, including humans without a usable point. No actor fact book.
+    updateActorPresence(id, expectedRecord, { online, realPlayer, targetId }) {
+        const entry = this.records.get(id)?.actor;
+        if (!entry || entry.record !== expectedRecord) return false;
+        if (typeof online !== 'boolean' || typeof realPlayer !== 'boolean'
+            || !Number.isFinite(targetId) || targetId < 0) throw new TypeError('invalid_actor_presence');
+        if (this.records.get(id)?.actor !== entry || entry.record !== expectedRecord) return false;
+        const previous = entry.presence;
+        if (previous && previous.online === online && previous.realPlayer === realPlayer && previous.targetId === targetId) {
+            previous.record = expectedRecord;
+            const cell = this.cells.get(entry.rawXY?.key);
+            if (online && realPlayer && cell && entry.rawXY?.record === expectedRecord) {
+                (cell.rawPlayers ??= new Set()).add(entry); this.refreshRawSpatial(cell);
+            }
+            return true;
+        }
+        this.detachPresence(entry);
+        entry.presence = { record: expectedRecord, online, realPlayer, targetId };
+        if (online) this.actorPresence.online.add(entry);
+        if (realPlayer) this.actorPresence.human.add(entry);
+        if (online && realPlayer) {
+            this.actorPresence.onlineHuman.add(entry);
+            if (targetId) {
+                const members = this.actorPresence.targets.get(targetId) ?? new Set();
+                members.add(entry); this.actorPresence.targets.set(targetId, members);
+            }
+            const cell = this.cells.get(entry.rawXY?.key);
+            if (cell) { (cell.rawPlayers ??= new Set()).add(entry); this.refreshRawSpatial(cell); }
+        }
+        return true;
+    }
+
+    presenceSources({ kind = 'onlineHuman', targetId = null } = {}) {
+        const read = actorRead(this, 'actor');
+        if (!['human', 'onlineHuman', 'online'].includes(kind)
+            || (targetId !== null && (!Number.isFinite(targetId) || targetId < 0))) {
+            throw new TypeError('invalid_actor_presence_query');
+        }
+        const members = targetId === null ? this.actorPresence[kind] : this.actorPresence.targets.get(targetId) ?? [];
+        const records = [];
+        for (const entry of members) {
+            if (entry.record !== entry.presence?.record || this.records.get(entry.id)?.actor !== entry) continue;
+            records.push(entry.record);
+        }
+        records.sort((a, b) => (a.order ?? a.source.order ?? 0) - (b.order ?? b.source.order ?? 0));
+        return readResult(read, records);
+    }
+
+    presenceSize(kind = 'onlineHuman') {
+        const read = actorRead(this, 'actor');
+        if (!['human', 'onlineHuman', 'online'].includes(kind)) throw new TypeError('invalid_actor_presence_query');
+        return readResult(read, this.actorPresence[kind].size);
+    }
+
+    nearestFacet(loc, { view = 'actor', facet = 'raw_xy', kind = 'all', accept = null } = {}) {
+        validateRawFacet(view, facet, this.cellSize);
+        if (!['all', 'player'].includes(kind) || (accept !== null && typeof accept !== 'function')) {
+            throw new TypeError('invalid_character_query_filter');
+        }
+        const read = actorRead(this, view);
+        const point = rawPointOf(loc, null, read);
+        if (!point) throw new RangeError('invalid_character_facet_location');
+        let found = null, best = Infinity;
+        const seen = new Set();
+        this.rawSpatial.nearest(point, kind === 'player', (cell) => {
+            for (const entry of (kind === 'player' ? cell.rawPlayers : cell.rawXY) ?? []) {
+                if (seen.has(entry)) continue;
+                seen.add(entry);
+                const record = entry.record, membership = entry.rawXY;
+                const current = () => this.records.get(entry.id)?.actor === entry && entry.record === record
+                    && entry.rawXY === membership && membership?.record === record
+                    && (kind !== 'player' || entry.presence?.record === record);
+                if (!current()) continue;
+                if (accept) {
+                    read?.check(); const accepted = accept(record); read?.check();
+                    if (!accepted || !current()) continue;
+                }
+                const candidate = rawPointOf(membership.loc, current, read);
+                if (!current() || !candidate) continue;
+                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
+                const distance = dx * dx + dy * dy;
+                const order = record.order ?? record.source.order ?? 0;
+                const previousOrder = found?.record.order ?? found?.record.source.order ?? Infinity;
+                if (distance < best || (distance === best && Number.isFinite(distance) && order < previousOrder)) {
+                    best = distance; found = { record, distance: Math.sqrt(distance) };
+                }
+            }
+            return best;
+        }, () => read?.check());
+        return readResult(read, found);
+    }
+
+    rangeFacet(loc, radius, { view = 'actor', facet = 'raw_xy', kind = 'all', accept = null } = {}) {
+        validateRawFacet(view, facet, this.cellSize);
+        if (!Number.isFinite(radius) || radius < 0 || !['all', 'player'].includes(kind)
+            || (accept !== null && typeof accept !== 'function')) throw new RangeError('invalid_character_facet_radius');
+        // The small-radius path retains its outward floating-point bounds.
+        if (radius <= RAW_XY_SIZE && kind === 'all') return this.nearFacet(loc, radius, { view, facet, accept });
+        const read = actorRead(this, view), point = rawPointOf(loc, null, read);
+        if (!point) throw new RangeError('invalid_character_facet_location');
+        const records = [], seen = new Set(), radiusSquared = radius * radius;
+        this.rawSpatial.nearest(point, kind === 'player', cell => {
+            for (const entry of (kind === 'player' ? cell.rawPlayers : cell.rawXY) ?? []) {
+                if (seen.has(entry)) continue;
+                seen.add(entry);
+                const record = entry.record, membership = entry.rawXY;
+                const current = () => this.records.get(entry.id)?.actor === entry && entry.record === record
+                    && entry.rawXY === membership && membership?.record === record;
+                if (!current()) continue;
+                if (accept) {
+                    read?.check(); const accepted = accept(record); read?.check();
+                    if (!accepted || !current()) continue;
+                }
+                const candidate = rawPointOf(membership.loc, current, read);
+                if (!current() || !candidate) continue;
+                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
+                if (dx * dx + dy * dy <= radiusSquared) records.push(record);
+            }
+            return radiusSquared;
+        }, () => read?.check());
+        return readResult(read, records);
     }
 
     nearFacet(loc, radius, { view = 'actor', facet = 'raw_xy', accept = null } = {}) {
@@ -504,6 +638,8 @@ class CharacterLocationIndex {
 
     clear() {
         for (const entry of this.sourceViews.actor.values()) this.detachRawXY(entry);
+        for (const entry of this.sourceViews.actor.values()) this.detachPresence(entry);
+        this.rawSpatial.clear();
         this.clearGroups();
         this.records.clear();
         this.sourceViews.actor.clear();
@@ -604,10 +740,39 @@ class CharacterLocationIndex {
         const cell = this.cells.get(membership.key), members = cell?.rawXY;
         if (members) {
             members.delete(entry);
+            cell.rawPlayers?.delete(entry);
+            if (!cell.rawPlayers?.size) delete cell.rawPlayers;
             if (!members.size) delete cell.rawXY;
+            this.refreshRawSpatial(cell);
             if (!cell.actor && !cell.state && !cell.rawXY) this.cells.delete(membership.key);
         }
         entry.rawXY = null;
+    }
+
+    refreshRawSpatial(cell) {
+        const bounds = cell.rawXY?.size ? {
+            minX: adjacentNumber(cell.x * RAW_XY_SIZE, -1), minY: adjacentNumber(cell.y * RAW_XY_SIZE, -1),
+            maxX: adjacentNumber((cell.x + 1) * RAW_XY_SIZE, 1), maxY: adjacentNumber((cell.y + 1) * RAW_XY_SIZE, 1)
+        } : null;
+        this.rawSpatial.update(cell, bounds);
+    }
+
+    detachPresence(entry) {
+        const previous = entry.presence;
+        if (!previous) return;
+        for (const kind of ['human', 'onlineHuman', 'online']) this.actorPresence[kind].delete(entry);
+        const members = this.actorPresence.targets.get(previous.targetId);
+        if (members) {
+            members.delete(entry);
+            if (!members.size) this.actorPresence.targets.delete(previous.targetId);
+        }
+        const cell = this.cells.get(entry.rawXY?.key);
+        if (cell) {
+            cell.rawPlayers?.delete(entry);
+            if (!cell.rawPlayers?.size) delete cell.rawPlayers;
+            this.refreshRawSpatial(cell);
+        }
+        entry.presence = null;
     }
 
     detachGroups(entry) {

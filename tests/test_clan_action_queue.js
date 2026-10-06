@@ -4,6 +4,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-action-queue.sqlite');
@@ -292,6 +293,11 @@ async function main() {
             [created.clanId]
         ]);
 
+        const waiting = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });
+        assert(!waiting.some(action => action.actionType === 'contribution' && action.status === 'pending'),
+            'unchanged autonomous contributions wait for a wealth event');
+        await Database.enqueueClanAction({ clanId: created.clanId, actionType: 'goal_plan',
+            actionKey: `test:${created.clanId}:recovery-fixture`, priority: 75, payload: { reason: 'recovery_fixture' } });
         const actionsAfterFirst = await Database.fetchClanActions({ clanId: created.clanId, limit: 20 });
         assert(actionsAfterFirst.some((action) => action.actionType === 'contribution' && action.status === 'succeeded'));
         assert(actionsAfterFirst.some((action) => action.status === 'pending' || action.status === 'running'));
@@ -430,7 +436,6 @@ async function main() {
         const [claimedParty] = await Database.claimClanActions({ limit: 1 });
         assert.strictEqual(claimedParty.id, transientPartyAction.actionId);
         const actionCountBeforeDeferral = (await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 20 })).length;
-        const deferStartedAt = Date.now();
         const originalResolveClanParty = ClanPartyService.resolveClan;
         let deferredParty;
         try {
@@ -443,21 +448,17 @@ async function main() {
         } finally {
             ClanPartyService.resolveClan = originalResolveClanParty;
         }
-        assert.strictEqual(deferredParty.deferred, true, 'party readiness must defer the durable action instead of failing it');
-        assert.strictEqual(deferredParty.status, 'pending');
+        assert.strictEqual(deferredParty.deferred, undefined, 'autonomous readiness waits for an addressed member event');
+        assert.strictEqual(deferredParty.status, 'succeeded');
         const actionsAfterDeferral = await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 20 });
         assert.strictEqual(actionsAfterDeferral.length, actionCountBeforeDeferral, 'transient readiness must not append another action row');
         const samePartyAction = actionsAfterDeferral.find((action) => Number(action.id) === Number(claimedParty.id));
-        assert.strictEqual(samePartyAction.status, 'pending');
-        assert(Number(samePartyAction.availableAt) >= deferStartedAt + ClanActionService.config.actionRetryMs,
-            'the same party action must retain the configured retry delay');
+        assert.strictEqual(samePartyAction.status, 'succeeded');
         assert.strictEqual(
             actionsAfterDeferral.some((action) => action.actionType === 'party' && action.status === 'failed'),
             false,
             'party_not_ready is a transient state, not a terminal failure'
         );
-        assert(ClanActionService.metrics().deferred >= 1, 'transient action deferrals must be observable');
-        assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
         assert(ClanActionService.metrics().stages['execute:party'].count >= 1,
             'party execution latency must remain separately observable');
         const retryPlan = await Database.enqueueClanAction({
@@ -476,6 +477,8 @@ async function main() {
         } finally { goalService.resolveClan = originalResolveGoal; }
         assert.strictEqual(deferredWorkerPlan.deferred, true, 'worker failure/staleness must retry the same durable action');
         assert.strictEqual(deferredWorkerPlan.status, 'pending');
+        assert(ClanActionService.metrics().deferred >= 1, 'operational worker deferrals must be observable');
+        assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
         assert.strictEqual(
             ClanActionService.reviewDelayFor('goal_plan', { type: 'equipment' }, { changed: false }),
             ClanActionService.config.equipmentReviewMs,

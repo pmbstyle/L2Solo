@@ -965,11 +965,28 @@ const PartyCompanionService = {
         return false;
     },
 
-    resolveLootSession(looterSession, selfId, target) {
+    resolveLootSession(looterSession, selfId, target, { spoil = false } = {}) {
         const leaderSession = partyLeaderSession(looterSession);
         const members = lootMembersForLeader(leaderSession, target);
         if (!leaderSession || members.length <= 1) return looterSession;
 
+        const background = leaderSession.hotBackgroundPartyId
+            ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(leaderSession.hotBackgroundPartyId) : null;
+        const agreement = background?.stats?.agreement;
+        if (agreement) {
+            const payer = agreement.help?.status === 'funded' && Number(agreement.help.itemId) === Number(selfId)
+                ? members.find(member => Number(member.actor.fetchId()) === Number(agreement.help.payerId)) : null;
+            if (payer) return payer;
+            if (spoil && agreement.spoil === 'spoiler') return looterSession;
+            if (agreement.mode === 'turn') return nextTurnMember(leaderSession, members) || looterSession;
+            if (agreement.mode === 'random') return randomMember(members) || looterSession;
+            if (agreement.mode === 'need') {
+                const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+                const scores = members.map(session => ({ session, value: Context.forActor(session.actor, session).itemUsefulness(Number(selfId)) }));
+                const best = Math.max(...scores.map(entry => Number(entry.value) || 0));
+                return randomMember(scores.filter(entry => Number(entry.value) === best).map(entry => entry.session)) || looterSession;
+            }
+        }
         const distribution = distributionForLeader(leaderSession);
         if (distribution === 1 || distribution === 2) {
             return randomMember(members) || looterSession;

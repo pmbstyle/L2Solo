@@ -61,7 +61,20 @@ function equippedTemplates(state = {}) {
                         return pair.slice(0, Math.min(amount, pair.length));
                     })()
                     : [];
-            return slots.map((slot) => ({ ...template, etc: { ...(template.etc || {}), slot } }));
+            return slots.map((slot) => {
+                const instance = item.instances?.find(row => row.equipped && number(row.slot) === slot);
+                const enchant = number(instance?.enchant, number(item.enchant));
+                const adapter = { fetchSelfId: () => number(item.selfId), fetchId: () => number(instance?.id, number(item.selfId)),
+                    fetchEnchantLevel: () => enchant, fetchRank: () => template.etc?.rank,
+                    fetchKind: () => template.template?.kind, fetchSlot: () => slot,
+                    isWeapon: () => String(template.template?.kind || '').startsWith('Weapon.'),
+                    isArmor: () => String(template.template?.kind || '').startsWith('Armor.') };
+                const rules = invoke('GameServer/Items/C4EnchantRules');
+                const stats = { ...template.stats };
+                for (const stat of ['pAtk', 'mAtk', 'pDef', 'mDef']) stats[stat] = number(stats[stat]) + rules.statBonus(adapter, stat);
+                return { ...template, stats, etc: { ...(template.etc || {}), slot },
+                    equipmentEffect: invoke('GameServer/Items/C4EquipmentItemSkills').effectForItem(adapter) };
+            });
         })
         .filter(Boolean);
 }
@@ -419,13 +432,14 @@ function treeSnapshot(state = {}, timestamp = Date.now()) {
     // Learning at a lower level after a death must not erase previously
     // learned skills or lower their ranks (including Expertise).
     const skills = new Map((existing.skills || []).map((skill) => [number(skill.selfId), skill]));
-    for (const skill of skillsFromTree(classId, Math.max(1, number(state.level, 1)))) {
+    const authoritative = existing.skillSource === 'database' || existing.skillSource === 'hot';
+    for (const skill of authoritative ? [] : skillsFromTree(classId, Math.max(1, number(state.level, 1)))) {
         if (number(skills.get(skill.selfId)?.level) < number(skill.level)) skills.set(skill.selfId, skill);
     }
     return {
         ...existing,
         version: PROFILE_VERSION,
-        skillSource: 'tree',
+        skillSource: authoritative ? existing.skillSource : 'tree',
         capturedAt: timestamp,
         classId,
         effects: existing.effects || [],
@@ -488,6 +502,7 @@ function capture(actor, timestamp = Date.now()) {
         charges: number(actor.fetchCharges?.()),
         chargeExpiresAt: Number(actor.chargeExpiresAt) > timestamp ? Number(actor.chargeExpiresAt) : null,
         classId: number(actor.fetchClassId?.()),
+        henna: { ...(actor.hennaStats || {}) },
         base: {
             str: number(actor.fetchStr?.(), 1), dex: number(actor.fetchDex?.(), 1), con: number(actor.fetchCon?.(), 1),
             int: number(actor.fetchInt?.(), 1), wit: number(actor.fetchWit?.(), 1), men: number(actor.fetchMen?.(), 1),
@@ -525,12 +540,21 @@ function profileFor(state = {}, timestamp = Date.now()) {
         // purchase or craft must alter its next fight without waiting for a
         // hot materialisation. The hot snapshot fills only legacy states that
         // have no persisted equipped items yet.
-        equipment: equipped.length
+        equipment: state.inventory && typeof state.inventory === 'object'
             ? { ...(saved?.equipment || {}), ...legacyEquipment }
             : { ...legacyEquipment, ...(saved?.equipment || {}) },
-        effects: saved?.effects || [],
-        skills: Array.isArray(saved?.skills) && saved.skills.length ? saved.skills : skillsFromTree(classId, level)
+        effects: [...(saved?.effects || []).filter(effect => effect.category !== 'equipment_item_skill'),
+            ...equipped.map(item => item.equipmentEffect).filter(Boolean)],
+        skills: Array.isArray(saved?.skills) && (saved.skills.length || ['database', 'hot'].includes(saved.skillSource))
+            ? saved.skills : skillsFromTree(classId, level)
     };
+    const henna = invoke('GameServer/Henna/HennaRules').totals(state.stats?.hennas || []);
+    // Captured hot base stats already include the same paid symbols. Only
+    // the delta from that capture is added when the cold inventory changes.
+    for (const stat of ['STR', 'DEX', 'CON', 'INT', 'WIT', 'MEN']) {
+        const captured = number(saved?.henna?.[stat]);
+        profile.base[stat.toLowerCase()] = number(profile.base[stat.toLowerCase()], 1) + henna[stat] - captured;
+    }
     // Resolve effects and passive requirements once for this calculation.
     // A later profile rebuild gets fresh sources after gear, skill or buff changes.
     const sources = statSources(profile, timestamp);
@@ -574,7 +598,10 @@ function profileFor(state = {}, timestamp = Date.now()) {
         weapon: !!equipment.weaponKind
     });
     return {
-        ...profile, level, maxCp, cp, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
+        ...profile, level, race: number(template.template?.race),
+        maxLoad: Math.max(0, Formulas.calcMaxLoad(con) * multiplier(profile, 'maxLoadMul', timestamp, sources)
+            + add(profile, 'maxLoad', timestamp, sources)),
+        maxCp, cp, maxHp: Math.max(1, maxHp), maxMp: Math.max(1, maxMp), pAtk: Math.max(1, pAtk), mAtk: Math.max(1, mAtk),
         pDef: Math.max(1, pDef), mDef: Math.max(1, mDef), accur: Math.max(1, accur), evasion: Math.max(0, evasion),
         critical: Math.max(0, critical), mCritRate, atkSpd: Math.max(1, atkSpd), castSpd: Math.max(1, castSpd),
         weaponMask: (WEAPON_MASK_BY_KIND[equipment.weaponKind] || 0) | (number(equipment.shieldPDef) > 0 ? 1048576 : 0)

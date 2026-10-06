@@ -1,4 +1,6 @@
 const Policy = require('./WealthCraftPolicy');
+const Profit = require('./CraftProfitPolicy');
+const Workshops = require('./CraftWorkshopService');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Karma = require('../../Karma');
 const Database = invoke('Database');
@@ -13,11 +15,8 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 
-const SCAN_INTERVAL_MS = 5 * 60 * 1000;
-const lastEmptyScan = new Map();
 const inFlight = new Set();
 
 function eligible(state) {
@@ -39,7 +38,7 @@ function eligible(state) {
             && (record.lines || []).some((line) => Number(line.selfId) === outputId && Number(line.count) > 0));
         if (inInventory || inShop) return false;
     }
-    return BotPersona.of(state)?.primaryDrive === 'wealth';
+    return true;
 }
 
 function staticExits(recipe, template) {
@@ -64,7 +63,7 @@ function exitsFor(state, recipe, template, trip) {
     return [...dynamic, ...staticExits(recipe, template)].sort((a, b) => b.price - a.price);
 }
 
-function chooseOpportunity(state, knownRecipes) {
+function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
     let best = null;
     // An active market gear plan keeps what its purchase needs (price and
     // reserve): inputs are bought only with the rest of the wallet. A bot
@@ -76,10 +75,15 @@ function chooseOpportunity(state, knownRecipes) {
     // Each input is one purchase in the town where it costs the least with
     // the trip (the one purchase path): its landed price is the input's cost.
     const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
-    const trip = ColdMarket.tripFrom(state);
+    const trip = Profit.tripFor(state, context);
     const planCache = new Map();
-    const ownStock = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
-        .map((item) => [Number(item.selfId), item]));
+    const stock = context.insideContext ? Object.values(state.inventory || {}).map(item => {
+        const reserve = Math.max(Number(state.stats?.clanMaterialDemand?.[item.selfId] || 0),
+            state.stats?.equipmentPlan?.status === 'active' && Number(state.stats.equipmentPlan.target?.selfId) === Number(item.selfId) ? 1 : 0);
+        return { ...item, count: Math.max(0, Number(item.amount || 0) - Number(item.equippedCount || (item.equipped ? 1 : 0)) - reserve),
+            price: Number(context.worth?.(Number(item.selfId)) || 0) };
+    }) : ItemDisposition.saleCandidates(state, { unlimited: true });
+    const ownStock = new Map(stock.map(item => [Number(item.selfId), item]));
     const ownValueCache = new Map();
     const planFor = (selfId, missing) => {
         const key = `${selfId}:${missing}`;
@@ -108,7 +112,7 @@ function chooseOpportunity(state, knownRecipes) {
         if (!template || !recipe.materials?.length) continue;
         const exits = exitsFor(state, recipe, template, trip);
         if (!exits.length) continue;
-        const candidate = Policy.opportunityFor(budgetState, recipe, planFor, exits, ownedFor);
+        const candidate = Policy.opportunityFor(budgetState, recipe, planFor, exits, ownedFor, context);
         if (candidate && (!best || candidate.expectedProfit > best.expectedProfit)) {
             best = { ...candidate, template };
         }
@@ -123,28 +127,18 @@ async function refreshCraftedInventory(state, recipe) {
     return LifeState.refreshInventory({ ...state, inventory });
 }
 
-function materialRows(items, recipe) {
-    const selected = [];
-    for (const material of recipe.materials || []) {
-        let missing = Number(material.amount || 0);
-        for (const row of items || []) {
-            if (missing <= 0) break;
-            if (Number(row.selfId) !== Number(material.selfId) || row.equipped) continue;
-            const amount = Math.min(missing, Number(row.amount || 0));
-            if (amount <= 0) continue;
-            selected.push({ id: Number(row.id), selfId: Number(material.selfId), amount });
-            missing -= amount;
-        }
-        if (missing > 0) return null;
-    }
-    return selected;
-}
+function materialRows(items, recipe) { return Profit.materials(items, recipe); }
 
 function withOutcome(state, opportunity, outcome, extras = {}) {
     return {
         ...state,
         stats: {
             ...(state.stats || {}),
+            ...(['sold', 'waiting_for_buyer'].includes(outcome) ? { production: {
+                ...(state.stats?.production || {}),
+                crafts: Number(state.stats?.production?.crafts || 0) + 1,
+                profit: Number(state.stats?.production?.profit || 0) + (outcome === 'sold' ? Number(extras.profit || 0) : 0)
+            } } : {}),
             wealthCraft: {
                 recipeId: Number(opportunity.recipe.recipeId),
                 productId: Number(opportunity.recipe.productId),
@@ -214,8 +208,7 @@ async function execute(state, opportunity) {
             crafted: false, reason: 'buyer_changed' };
     }
 
-    const success = Number(recipe.successRate || 0) >= 100
-        || Math.random() * 100 < Number(recipe.successRate || 0);
+    const success = Profit.succeeds(recipe);
     const product = success ? {
         selfId: Number(recipe.productId),
         name: opportunity.template.template?.name || '',
@@ -313,22 +306,29 @@ async function execute(state, opportunity) {
     return { state: current, crafted: true, sold, spent, revenue, reason: outcome };
 }
 
-async function tryCraft(state, timestamp = Date.now()) {
+async function tryCraft(state) {
     if (!eligible(state)) return { state, crafted: false, reason: 'ineligible' };
     const characterId = Number(state.characterId);
     if (inFlight.has(characterId)) return { state, crafted: false, reason: 'in_flight' };
-    if (timestamp - Number(lastEmptyScan.get(characterId) || 0) < SCAN_INTERVAL_MS) {
-        return { state, crafted: false, reason: 'scan_cooldown' };
-    }
     inFlight.add(characterId);
     try {
+        state = await Workshops.review(state);
         const known = await Database.fetchCharacterRecipes(characterId);
         const opportunity = chooseOpportunity(state, known);
         if (!opportunity) {
-            lastEmptyScan.set(characterId, timestamp);
+            const context = Profit.contextFor(state);
+            const trip = Profit.tripFor(state, context);
+            for (const row of known) {
+                const recipe = Recipes.resolveByRecipeId(row.recipeId);
+                if (!recipe || !CraftShopService.canCraft(state, recipe)) continue;
+                const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
+                const exit = exitsFor(state, recipe, template, trip)[0];
+                if (!exit) continue;
+                const demanded = await Workshops.publishDemand(state, recipe, exit.price, context);
+                if (demanded !== state) return { state: demanded, crafted: false, reason: 'material_demand' };
+            }
             return { state, crafted: false, reason: 'no_profit' };
         }
-        lastEmptyScan.delete(characterId);
         return await execute(state, opportunity);
     } catch (error) {
         utils.infoWarn('BotWealth', 'wealth craft failed for %s: %s', state.name, error?.message || String(error));
@@ -338,4 +338,12 @@ async function tryCraft(state, timestamp = Date.now()) {
     }
 }
 
-module.exports = { eligible, chooseOpportunity, tryCraft };
+function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
+    if (!eligible(state)) return [];
+    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
+    const known = state.stats?.workshop?.entries || [];
+    const opportunity = chooseOpportunity(state, known, { hourAdena, worth, timestamp, insideContext: true, mpPerHour: Number(regen.mp) * 1200 });
+    return opportunity ? [{ ...opportunity, value: opportunity.expectedProfit, activity: 'crafting' }] : [];
+}
+
+module.exports = { eligible, chooseOpportunity, opportunities, tryCraft };

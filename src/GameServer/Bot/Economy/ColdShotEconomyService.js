@@ -10,6 +10,9 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = require('./MarketDemandIndex');
+const Profit = require('./CraftProfitPolicy');
+const Workshops = require('./CraftWorkshopService');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 // The one purchase path (a trip to the seller's town), loaded on use.
 const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
 
@@ -29,11 +32,9 @@ const SHOT_RANK_BY_ID = new Map([
     [1467, 's'], [2514, 's'], [3952, 's']
 ]);
 const SCAN_INTERVAL_MS = 5 * 60 * 1000;
-const MARKET_CACHE_MS = 30 * 1000;
 const scanAt = new Map();
 const active = new Set();
 let marketCache = null;
-let marketBuild = null;
 let catalogCache = null;
 
 function catalog() {
@@ -52,87 +53,64 @@ function catalog() {
 }
 
 async function marketSnapshot(now = Date.now()) {
-    if (marketCache && now - marketCache.at < MARKET_CACHE_MS) return marketCache;
-    if (marketBuild) return marketBuild;
-    marketBuild = buildMarketSnapshot(now);
-    try { return marketCache = await marketBuild; }
-    finally { marketBuild = null; }
-}
-
-async function buildMarketSnapshot(now) {
     const { itemTemplates, npcPrice } = catalog();
     const gear = new Map();
     const addGear = (selfId, price, source, count = 1, ownerId = 0, enchant = 0) => {
         const template = itemTemplates.get(Number(selfId));
         const rank = String(template?.etc?.rank || '').toLowerCase();
         const crystals = Number(template?.etc?.cristals || 0);
-        if (!CRYSTAL_BY_RANK[rank] || crystals <= 0 || !Number.isFinite(price) || price <= 0
+        if (!CRYSTAL_BY_RANK[rank] || crystals <= 0 || !(price > 0) || !Number.isFinite(price)
             || Number(enchant) > 0 || !/^(Weapon|Armor)\./.test(String(template?.template?.kind || ''))) return;
         if (!gear.has(rank)) gear.set(rank, []);
         gear.get(rank).push({ selfId: Number(selfId), price, crystals, source, count, ownerId });
     };
-    for (const [selfId, price] of npcPrice) addGear(selfId, price, 'npc');
-    const shotSupply = new Map();
-    const shotMinPrice = new Map();
-    const recipeStock = new Map();
-    const recipeHolders = new Map();
-    let visited = 0;
-    for (const shop of AfkTrade.activeShops()) {
-        if (Number(shop.storeType) !== AfkTrade.SELL) continue;
-        for (const line of shop.lines || []) {
-            if (Number(line.count) <= 0 || Number(line.price) <= 0) continue;
-            addGear(line.selfId, Number(line.price), 'afk', Number(line.count), Number(shop.ownerId), line.enchant);
-            if (SHOT_PRODUCT_IDS.has(Number(line.selfId))) {
-                shotSupply.set(Number(line.selfId), (shotSupply.get(Number(line.selfId)) || 0) + Number(line.count));
-                shotMinPrice.set(Number(line.selfId), Math.min(shotMinPrice.get(Number(line.selfId)) || Infinity, Number(line.price)));
-            }
-            if (SHOT_RECIPE_ITEM_IDS.has(Number(line.selfId))) {
-                recipeStock.set(Number(line.selfId), (recipeStock.get(Number(line.selfId)) || 0) + Number(line.count));
-            }
+    const shotSupply = new Map(), shotMinPrice = new Map(), recipeStock = new Map();
+    const recipeHolders = new Map(), shotDemand = new Map(), unlistedSupply = new Map();
+    // Static catalog keys and item-side queries; never a population or shop roster scan.
+    for (const [id, template] of itemTemplates) {
+        if (!CRYSTAL_BY_RANK[template?.etc?.rank] || !(Number(template?.etc?.cristals) > 0)) continue;
+        addGear(id, Number(npcPrice.get(id)), 'npc');
+        for (const offer of AfkTrade.offers(id, AfkTrade.SELL)) {
+            addGear(id, offer.price, 'afk', offer.count, offer.sourceId, offer.enchant);
         }
-        if (++visited % 32 === 0) await new Promise(resolve => setImmediate(resolve));
     }
-    const shotDemand = new Map();
-    const unlistedSupply = new Map();
-    const states = LifeState.allStates(5000);
-    for (const state of states) {
-        // Direct lookups avoid walking every equipment/material stack in the world.
-        for (const id of SHOT_RECIPE_ITEM_IDS) {
-            const item = state.inventory?.[id];
-            if (!item || Number(item.amount) <= 0 || state.activity === 'merchant') continue;
-            recipeStock.set(id, (recipeStock.get(id) || 0) + Number(item.amount));
-            if (Number(state.level || 0) >= 10) {
-                if (!recipeHolders.has(id)) recipeHolders.set(id, []);
-                recipeHolders.get(id).push({ characterId: Number(state.characterId),
-                    price: ItemDisposition.priceFor(state, item, itemTemplates.get(id)) });
-            }
+    for (const id of SHOT_PRODUCT_IDS) {
+        const offers = AfkTrade.offers(id, AfkTrade.SELL);
+        shotSupply.set(id, offers.reduce((sum, offer) => sum + Number(offer.count), 0));
+        shotMinPrice.set(id, offers.reduce((price, offer) => Math.min(price, Number(offer.price)), Infinity));
+        const sources = Workshops.inputSources(id);
+        const signals = sources.map(state => MarketDemandIndex.demandSignal(state, id, now))
+            .filter(signal => signal?.source === 'shots' && signal.budget > 0);
+        const owners = new Set(signals.map(signal => signal.characterId));
+        for (const offer of AfkTrade.offers(id, AfkTrade.BUY)) if (!owners.has(Number(offer.sourceId))) {
+            signals.push({ characterId: Number(offer.sourceId), amount: Number(offer.count),
+                budget: Number(offer.count) * Number(offer.price), maxPrice: Number(offer.price) });
         }
-        if (state.stats?.shotCraft) {
-            const kept = ShotStock.keptAmounts(state);
-            for (const id of SHOT_PRODUCT_IDS) {
-                const surplus = Math.max(0, Number(state.inventory?.[id]?.amount || 0) - Number(kept[id] || 0));
-                unlistedSupply.set(id, (unlistedSupply.get(id) || 0) + surplus);
-            }
-        }
-        const wanted = state.stats?.shotDemand;
-        const id = Number(wanted?.itemId || 0);
-        const signal = wanted && MarketDemandIndex.demandSignal(state, id, now);
-        if (signal?.source === 'shots' && signal.budget > 0) {
-            if (!shotDemand.has(id)) shotDemand.set(id, []);
-            shotDemand.get(id).push(signal);
-        }
-        if (++visited % 32 === 0) await new Promise(resolve => setImmediate(resolve));
+        shotDemand.set(id, signals);
+        unlistedSupply.set(id, sources.reduce((sum, state) => {
+            if (!state.stats?.shotCraft) return sum;
+            return sum + Math.max(0, Number(state.inventory?.[id]?.amount || 0) - Number(ShotStock.keptAmounts(state)[id] || 0));
+        }, 0));
+    }
+    for (const id of SHOT_RECIPE_ITEM_IDS) {
+        const offers = AfkTrade.offers(id, AfkTrade.SELL);
+        const sources = Workshops.inputSources(id).filter(state => state.activity !== 'merchant');
+        recipeStock.set(id, offers.reduce((sum, offer) => sum + Number(offer.count), 0)
+            + sources.reduce((sum, state) => sum + Number(state.inventory?.[id]?.amount || 0), 0));
+        recipeHolders.set(id, sources.filter(state => Number(state.level || 0) >= 10).map(state => ({
+            characterId: Number(state.characterId), price: ItemDisposition.priceFor(state, state.inventory[id], itemTemplates.get(id))
+        })).sort((a, b) => a.price - b.price));
     }
     for (const rows of gear.values()) rows.sort((a, b) => a.price / a.crystals - b.price / b.crystals || a.price - b.price);
-    for (const holders of recipeHolders.values()) holders.sort((a, b) => a.price - b.price);
-    return { at: now, itemTemplates, npcPrice, gear, shotSupply, shotMinPrice,
+    marketCache = { at: now, itemTemplates, npcPrice, gear, shotSupply, shotMinPrice,
         shotDemand, recipeStock, recipeHolders, unlistedSupply };
+    return marketCache;
 }
 
 function fundedDemand(index, productId, price, characterId) {
     const signals = index.shotDemand.get(Number(productId)) || [];
     return signals.reduce((sum, signal) => sum + (Number(signal.characterId) === Number(characterId) ? 0
-        : Math.min(Number(signal.amount), Math.floor(Number(signal.budget) / price))), 0);
+        : (Number(signal.maxPrice ?? Infinity) < price ? 0 : Math.min(Number(signal.amount), Math.floor(Number(signal.budget) / price)))), 0);
 }
 
 function noteBuyer(state) {
@@ -149,29 +127,10 @@ function noteBuyer(state) {
 }
 
 async function candidates(limit = 16, now = Date.now()) {
-    const index = await marketSnapshot(now);
-    const priority = (state) => {
-        const learned = state.stats?.lastRecipeBookLearning;
-        if (Number(learned?.at || 0) > now - 10 * 60 * 1000
-            && (learned.learned || []).some((entry) => SHOT_RECIPE_IDS.includes(Number(entry.recipeId)))
-            && Number(state.stats?.shotCraft?.at || 0) < Number(learned.at)) return 4;
-        const wanted = state.stats?.shotRecipeDemand;
-        const holders = index.recipeHolders.get(Number(wanted?.itemId || 0)) || [];
-        if (holders.length && Number(wanted?.maxSpend || 0) >= holders[0].price) return 3;
-        return CraftShopService.isServiceCrafter(state) ? 2 : 1;
-    };
-    return LifeState.allStates(5000)
-        .filter((state) => {
-            if (state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)
-                || now - Number(scanAt.get(Number(state.characterId)) || 0) < SCAN_INTERVAL_MS) return false;
-            if (CraftShopService.isServiceCrafter(state)) return true;
-            const plan = ShotStock.planForState(state);
-            return Number(state.inventory?.[String(plan.selfId)]?.amount || 0) < ShotStock.DEFAULT_TARGET_AMOUNT;
-        })
-        .sort((left, right) => priority(right) - priority(left)
-            || Number(scanAt.get(Number(left.characterId)) || 0)
-                - Number(scanAt.get(Number(right.characterId)) || 0))
-        .slice(0, Math.max(1, Number(limit) || 16));
+    Workshops.init();
+    return Workshops.crafterCandidates(Math.max(1, Number(limit) || 16)).filter(state =>
+        ['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)
+        && now - Number(scanAt.get(Number(state.characterId)) || 0) >= SCAN_INTERVAL_MS);
 }
 
 function hasShotSurplus(state) {
@@ -184,39 +143,37 @@ function hasShotSurplus(state) {
 
 async function reviewDemand(state, now) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)) return state;
-    const plan = ShotStock.planForState(state);
-    const current = Number(state.inventory?.[String(plan.selfId)]?.amount || 0);
-    if (current >= ShotStock.DEFAULT_TARGET_AMOUNT) {
+    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp: now });
+    const stock = context.stock('shots');
+    if (!stock.needed || !stock.missing) {
         if (!state.stats?.shotDemand) return state;
-        return await persist({ ...state, stats: { ...(state.stats || {}), shotDemand: null } },
-            'shot_market_demand_filled') || state;
+        return await persist({ ...state, stats: { ...state.stats, shotDemand: null } }, 'shot_market_demand_filled') || state;
     }
-    const staticPrice = StaticMerchantPricing.cheapestPurchase(plan.selfId);
-    if (!Number.isFinite(staticPrice) || staticPrice <= 0) return state;
-    const missing = Math.min(ShotStock.PURCHASE_TARGET_AMOUNT - current, 3000);
-    const maxSpend = Math.max(0, Math.min(Math.floor(Number(state.adena || 0) * 0.05), missing * staticPrice));
+    const price = context.price(stock.itemId);
+    if (!(price > 0)) return state;
+    const worth = context.worth(stock.itemId);
+    const maxSpend = Math.min(PurchaseFunding.spendable(state), stock.missing * (worth ?? price));
     const wanted = state.stats?.shotDemand;
-    if (!wanted || Number(wanted.itemId) !== plan.selfId || Number(wanted.amount) !== missing
-        || maxSpend > Number(wanted.maxSpend || 0) * 1.25
-        || Number(wanted.at || 0) + 15 * 60 * 1000 <= now) {
-        state = await persist({ ...state, stats: { ...(state.stats || {}),
-            shotDemand: { itemId: plan.selfId, amount: missing, maxSpend, at: now }
-        } }, 'shot_market_demand') || state;
+    if (!wanted || wanted.itemId !== stock.itemId || wanted.amount !== stock.missing || wanted.maxSpend !== maxSpend) {
+        state = await persist({ ...state, stats: { ...state.stats,
+            shotDemand: { itemId: stock.itemId, amount: stock.missing, maxSpend, at: now } } }, 'shot_market_demand') || state;
     }
-    // The restock (user Q1 A): one trip to the town where the whole amount
-    // costs the least with the trip, the board's lines there first, the NPC
-    // there as one more offer (ColdMarketService.acquire); the amount and the
-    // money follow the one restock rule of hot and cold bots (restockPlan).
-    // A bot with an errand waiting goes on that one first.
-    if (ColdMarket().pendingErrand(state, now)) return state;
-    const restock = ShotStock.restockPlan(state, { plan, unitPrice: staticPrice });
-    if (!restock.needed || restock.amount <= 0) return state;
-    const result = await ColdMarket().acquire(state, plan.selfId, restock.targetAmount - restock.currentAmount, {
-        money: Math.max(0, restock.adena - restock.reserve - restock.potionCost), purpose: 'shots', timestamp: now
+    if (require('../Population/CombinedErrandPolicy').pending(state, now)
+        .some(errand => errand.purpose === 'shots')) return state;
+    const bought = await ColdMarket().acquire(state, stock.itemId, stock.missing, {
+        money: maxSpend, purpose: 'shots', timestamp: now
     });
-    if (!result.bought || result.hot) return result.state;
-    return await persist({ ...result.state, stats: { ...(result.state.stats || {}), shotDemand: null } },
-        'shot_market_purchase') || result.state;
+    if (bought.hot) return bought.state;
+    if (!bought.bought) {
+        // A standing funded order is the real demand producer when fixed
+        // shots are disabled; no NPC-derived 5% purchasing purse.
+        const ad = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(bought.state, {
+            type: 'buy_craft_material', target: { itemId: stock.itemId, amount: stock.missing },
+            plan: { expectedBenefit: 'market_buy_craft_material', purpose: 'shots', estimatedCost: price }
+        });
+        return ad.state || bought.state;
+    }
+    return await persist({ ...bought.state, stats: { ...bought.state.stats, shotDemand: null } }, 'shot_market_purchase') || bought.state;
 }
 
 function recipeTarget(state, index = null, knownRecipeIds = []) {
@@ -237,7 +194,7 @@ function recipeTarget(state, index = null, knownRecipeIds = []) {
 
 async function obtainRecipe(state, recipe, now) {
     const itemId = Number(recipe.recipeItemId);
-    const maxSpend = Math.floor(Number(state.adena || 0) * 0.05);
+    const maxSpend = PurchaseFunding.spendable(state);
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) !== itemId
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25
@@ -322,7 +279,7 @@ function scrapCraftRoutes(state, knownRecipes, index) {
             cash += spend;
             inputs.push({ selfId: id, amount, npcPrice: npc, maxPrice: price });
         }
-        if (!Number.isFinite(cost) || cost <= 0 || cash > Number(state.adena || 0) * 0.15) continue;
+        if (!Number.isFinite(cost) || cost <= 0 || cash > PurchaseFunding.spendable(state)) continue;
         routes.push({ selfId: Number(recipe.productId), rank: template.etc.rank,
             source: 'craft', crystals: Number(template.etc.cristals), price: cost, cash,
             unitValue: cost / Number(template.etc.cristals), recipe, inputs });
@@ -332,7 +289,7 @@ function scrapCraftRoutes(state, knownRecipes, index) {
 
 function crystalRoute(state, rank, crystalId, required, index) {
     const routes = (index.gear.get(rank) || []).filter(gear => gear.ownerId !== Number(state.characterId)
-        && gear.price <= Number(state.adena || 0) * 0.15)
+        && gear.price <= PurchaseFunding.spendable(state))
         .map(gear => ({ ...gear, cash: gear.price, unitValue: gear.price / gear.crystals }));
     routes.push(...(index.scrapCraftRoutes || []).filter(route => route.rank === rank));
     for (const stock of ItemDisposition.saleCandidates(state, { unlimited: true })) {
@@ -349,7 +306,7 @@ function crystalRoute(state, rank, crystalId, required, index) {
             price: Number(offer.price), unitValue: Number(offer.price), cash: Number(offer.price) * required,
             crystals: Number(offer.count) });
     }
-    return routes.filter(route => route.cash <= Number(state.adena || 0) * 0.15)
+    return routes.filter(route => route.cash <= PurchaseFunding.spendable(state))
         .sort((a, b) => a.unitValue - b.unitValue || a.cash - b.cash)[0] || null;
 }
 
@@ -361,16 +318,17 @@ function craftCandidate(state, recipe, index) {
     const requiredCrystals = Number(recipe.materials.find(row => Number(row.selfId) === crystalId)?.amount || 0);
     const ore = recipe.materials.find(row => Number(row.selfId) !== crystalId);
     if (!requiredCrystals || !ore) return null;
-    const staticPrice = StaticMerchantPricing.cheapestPurchase(recipe.productId);
-    if (!Number.isFinite(staticPrice) || staticPrice <= 0) return null;
-    const competingPrice = Number(index.shotMinPrice?.get(Number(recipe.productId)) || Infinity);
-    const preferred = Math.max(1, Math.min(Math.floor(staticPrice * 0.9),
-        Number.isFinite(competingPrice) ? Math.floor(competingPrice * 0.98) : Infinity));
-    // What the crafter expects to sell at: under the competition and the
-    // NPC shop, never below one Adena (no listing floor, group E).
-    const npcShot = Number(index.npcPrice.get(Number(recipe.productId)) || Infinity);
-    const salePrice = Math.max(1, Math.min(preferred, Number.isFinite(npcShot) ? Math.floor(npcShot * 0.98) : Infinity));
-    if (salePrice >= staticPrice) return null;
+    const context = Profit.contextFor(state, index.at);
+    const fixed = StaticMerchantPricing.botPurchasePrice(recipe.productId);
+    const competing = Number(index.shotMinPrice?.get(Number(recipe.productId)) || Infinity);
+    const estimated = context.price?.(Number(recipe.productId))
+        || invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(recipe.productId);
+    const fundedBid = Math.max(0, ...(index.shotDemand.get(Number(recipe.productId)) || [])
+        .filter(signal => Number(signal.characterId) !== Number(state.characterId))
+        .map(signal => Number(signal.maxPrice || 0)));
+    const salePrice = Math.max(1, Math.floor(Math.min(fixed, competing,
+        Math.max(fundedBid, Number(estimated) || 0) || Infinity)));
+    if (!Number.isFinite(salePrice)) return null;
     const demand = Math.max(0, fundedDemand(index, recipe.productId, salePrice, state.characterId)
         - Number(index.shotSupply.get(Number(recipe.productId)) || 0)
         - Number(index.unlistedSupply?.get(Number(recipe.productId)) || 0));
@@ -384,10 +342,10 @@ function craftCandidate(state, recipe, index) {
     const orePrice = Number(index.npcPrice.get(Number(ore.selfId)) || Infinity);
     if (!Number.isFinite(orePrice)) return null;
     const cost = Math.ceil(crystalValue * requiredCrystals + orePrice * Number(ore.amount));
-    const profit = salePrice * Number(recipe.productCount) - cost;
-    if (profit < Math.max(1, Math.ceil(cost * 0.12))
-        || Number(state.adena || 0) < (ownedCrystals >= requiredCrystals ? 0 : gear.cash)
-            + orePrice * Number(ore.amount) + 10000) return null;
+    const margin = Profit.margin(recipe, salePrice, cost, context);
+    if (!margin || margin.profit <= 0 || PurchaseFunding.spendable(state) < (ownedCrystals >= requiredCrystals ? 0 : gear.cash)
+        + orePrice * Number(ore.amount)) return null;
+    const profit = margin.profit;
     return { recipe, output, rank, crystalId, requiredCrystals, ore, orePrice,
         gear: ownedCrystals >= requiredCrystals ? null : gear, salePrice, profit, cost, demand };
 }
@@ -449,7 +407,7 @@ async function obtainCrystals(state, candidate, batches) {
         const mp = Number(state.vitals.mp) - Number(gear.recipe.mpCost);
         const template = catalog().itemTemplates.get(gear.selfId);
         const result = await Database.craftInventoryItems(state.characterId, { materials, coldState: state, mp,
-            product: { selfId: gear.selfId, name: template.template.name, amount: 1, stackable: false, slot: template.etc.slot } });
+            product: Profit.succeeds(gear.recipe) ? { selfId: gear.selfId, name: template.template.name, amount: 1, stackable: false, slot: template.etc.slot } : null });
         state = await acceptMutation(result, { ...consumeMaterials(state, gear.recipe.materials),
             vitals: { ...state.vitals, mp } }, 'shot_scrap_crafted');
     } else if (gear.source === 'afk' || gear.source === 'npc') {
@@ -471,21 +429,7 @@ async function obtainCrystals(state, candidate, batches) {
     return { state: await acceptMutation(result, state, 'shot_crystallized'), ready: true };
 }
 
-function materialRows(items, recipe) {
-    const selected = [];
-    for (const material of recipe.materials || []) {
-        let missing = Number(material.amount || 0);
-        for (const item of items) {
-            if (missing <= 0) break;
-            if (Number(item.selfId) !== Number(material.selfId) || item.equipped) continue;
-            const amount = Math.min(missing, Number(item.amount || 0));
-            if (amount > 0) selected.push({ id: Number(item.id), selfId: Number(item.selfId), amount });
-            missing -= amount;
-        }
-        if (missing > 0) return null;
-    }
-    return selected;
-}
+function materialRows(items, recipe) { return Profit.materials(items, recipe); }
 
 async function craft(state, candidate, index, now) {
     const productPerBatch = Number(candidate.recipe.productCount);
@@ -500,7 +444,7 @@ async function craft(state, candidate, index, now) {
         Math.ceil(candidate.demand / productPerBatch),
         Math.floor(potentialCrystals / candidate.requiredCrystals),
         mpPerBatch > 0 ? Math.floor(Math.max(0, Number(state.vitals?.mp || 0) - Number(route?.recipe?.mpCost || 0)) / mpPerBatch) : 64,
-        Math.floor(Math.max(0, Number(state.adena || 0) - fixedCash - 10000)
+        Math.floor(Math.max(0, PurchaseFunding.spendable(state) - fixedCash)
             / (candidate.orePrice * orePerBatch + crystalCashPerBatch)));
     if (batches <= 0) return state;
     const crystals = await obtainCrystals(state, candidate, batches);
@@ -540,14 +484,15 @@ async function craft(state, candidate, index, now) {
     return saved;
 }
 
-async function review(state, now = Date.now()) {
+async function review(state, now = Date.now(), options = {}) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)) return { state };
     const id = Number(state.characterId);
-    if (active.has(id) || now - Number(scanAt.get(id) || 0) < SCAN_INTERVAL_MS) return { state };
+    if (active.has(id) || (!options.edge && now - Number(scanAt.get(id) || 0) < SCAN_INTERVAL_MS)) return { state };
     active.add(id);
     scanAt.set(id, now);
     try {
         state = await reviewDemand(state, now);
+        Workshops.register(state);
         noteBuyer(state);
         // Gone for its restock, or another errand waits: no craft now.
         if (state.activity === 'traveling' || ColdMarket().pendingErrand(state, now)) return { state };
@@ -558,6 +503,7 @@ async function review(state, now = Date.now()) {
         if ([...SHOT_RECIPE_ITEM_IDS].some(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0)) {
             state = await LifeState.learnCraftableRecipes(state) || state;
         }
+        state = await Workshops.review(state);
         const known = await Database.fetchCharacterRecipes(id);
         const shotRecipes = (known || []).map((row) => Recipes.resolveByRecipeId(row.recipeId))
             .filter((recipe) => recipe && SHOT_RECIPE_IDS.includes(Number(recipe.recipeId))
@@ -592,6 +538,6 @@ async function review(state, now = Date.now()) {
 }
 
 module.exports = { review, candidates, marketSnapshot, craftCandidate, recipeTarget,
-    fundedDemand, scrapCraftRoutes, hasShotSurplus, SHOT_RECIPE_IDS,
-    _resetForTests() { marketCache = null; marketBuild = null; catalogCache = null; scanAt.clear(); active.clear(); }
+    fundedDemand, scrapCraftRoutes, hasShotSurplus, SHOT_RECIPE_IDS, craft,
+    _resetForTests() { marketCache = null; catalogCache = null; scanAt.clear(); active.clear(); }
 };

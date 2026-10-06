@@ -17,6 +17,7 @@ const DEFAULT_FILE = path.resolve(__dirname, '../../../../data/Bots/spot-table.j
 
 let table = null;
 let file = DEFAULT_FILE;
+const bestRows = new Map();
 
 // A curve with no value at a gap (no curve spot hunts there) takes the
 // nearest higher gap's value, else the nearest lower one.
@@ -107,12 +108,7 @@ function lootRateFactor(spot, dropRate) {
     return at50;
 }
 
-// The C4 exp/SP penalty for monsters far below the killer (problem E11) is
-// not in the author's combat today; step 3.5(a) puts its factor of the level
-// gap (the callers' argument) here.
-function expGapFactor() {
-    return 1;
-}
+const expGapFactor = require('../../Progression/MobExperience').gapFactor;
 
 // What one hour of solo hunting gives: kills, deaths, exp, SP, adena, loot at
 // the NPC buy-back, shots and potions used, and the share of the hour spent in
@@ -172,6 +168,19 @@ function referenceLevel(spotId, role, shots = true) {
     return row ? t.spots[s][1] + row[t.f.refGap] : null;
 }
 
+// Static role/level/shot result, shared by every bot of that role. Built
+// once per game-data combination, never by walking the population.
+function best(role, level, shots = true, metric = 'exp') {
+    const key = `${role}:${level}:${Boolean(shots)}:${metric}`;
+    if (bestRows.has(key)) return bestRows.get(key);
+    let bestRow = null;
+    for (const spot of load().spots) {
+        const row = value(spot[0], role, level, shots);
+        if (row && (!bestRow || (metric === 'income' ? row.adena + row.loot > bestRow.adena + bestRow.loot : row.exp > bestRow.exp))) bestRow = { ...row, spotId: spot[0] };
+    }
+    bestRows.set(key, bestRow);
+    return bestRow;
+}
 function roles() {
     return load().roles;
 }
@@ -180,6 +189,7 @@ function roles() {
 function useFile(next = DEFAULT_FILE) {
     file = next;
     table = null;
+    bestRows.clear();
 }
 
-module.exports = { value, spotLevel, referenceLevel, roles, useFile, expGapFactor, DEFAULT_FILE };
+module.exports = { value, spotLevel, referenceLevel, roles, best, useFile, expGapFactor, DEFAULT_FILE };

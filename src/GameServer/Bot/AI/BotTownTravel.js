@@ -168,6 +168,7 @@ function request(session, bot, BotAI, reason, options = {}) {
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
     session.plan = 'shopping';
     session.shopTimer = Date.now();
+    session.shoppingRestock = undefined;
     if (options.preserveShoppingTarget !== true) session.shoppingTarget = undefined;
     if (options.announce !== false) {
         TownChatter.say(session, BotAI, 'town-trip-start', Speech.lines('town.town-trip-start', { town: town.name }));

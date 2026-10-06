@@ -45,6 +45,7 @@ function normalizeItemLookup(value) {
 }
 
 function npcOffers(selfId, town) {
+    if (!require('./ProductionPolicy').allowsNpcShot(selfId)) return [];
     const offers = [];
     const seen = new Set();
     TownNpcCatalog.rowsForTown(town).forEach((seller) => {
@@ -84,7 +85,8 @@ function botCanBuy(offer) {
     if (!offer) return false;
     const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
         || (offer.sourceType === 'private_store' && MerchantStoreConfigs[offer.sourceName]);
-    return !fixed || SHOT_IDS.has(Number(offer.selfId));
+    if (offer.sourceType === 'npc' && !require('./ProductionPolicy').allowsNpcShot(offer.selfId)) return false;
+    return !fixed || (SHOT_IDS.has(Number(offer.selfId)) && require('./ProductionPolicy').allowsFixedShot(offer.selfId));
 }
 
 // A live private store's line as an offer: a configured city merchant is
@@ -140,6 +142,7 @@ let fixedRows = null;
 let fixedByItem = new Map();
 const EMPTY_OFFERS = Object.freeze([]);
 function fixedStoreOffers(selfId = null) {
+    if (require('./ProductionPolicy').shotsDisabled()) return EMPTY_OFFERS;
     const rate = invoke('GameServer/Bot/Economy/BotEconomyPricing').economyRate();
     if (!fixedRows || fixedRate !== rate) {
         fixedRate = rate;

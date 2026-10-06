@@ -1,7 +1,6 @@
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
-const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 // Resolved on first use; invoke() re-resolves the path on every call inside spot scans.
 let SpotRiskPolicy;
@@ -371,7 +370,9 @@ function scoreSpot(spot, state = {}, options = {}) {
     const huntingGround = BotHuntingGroundPolicy.evaluate(spot, state, { ...options, ...context, tags });
     const huntingGroundPenalty = huntingGround.allowed ? 0 : 10000;
     const variation = stableVariation(spot, state);
-    const efficiencyAdjustment = (options.efficiencyScores || HuntEfficiency.scores(state,options.timestamp,context.mode)).get(spot.id) || 0;
+    const economics = (options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
+        { timestamp: options.timestamp, mode: context.mode, occupancy: options.occupancy }))(spot);
+    const efficiencyAdjustment = economics ? economics.valueHours * 100 : 0;
     const targetMatchup = TargetMatchup.spotMatchup(spot, TargetMatchup.stateProfiles(state, { ...options, mode: context.mode }),
         safetyOptions(state, { ...options, mode: context.mode }));
     const score = baseScore(spot, context) + (routeMatch ? routeMatch.score : 0)
@@ -422,7 +423,8 @@ function decorateSpot(spot, match) {
 
 function rankedSpots(spots, state = {}, options = {}) {
     options = { ...options, matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) }),
-        efficiencyScores: HuntEfficiency.scores(state,options.timestamp,modeForState(state,options)) };
+        spotEconomics: invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
+            { timestamp: options.timestamp, mode: modeForState(state, options), occupancy: options.occupancy }) };
     return (spots || [])
         .map((spot) => {
             const match = scoreSpot(spot, state, options);

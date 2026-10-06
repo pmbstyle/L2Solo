@@ -186,7 +186,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         }
         enemies.sort((a, b) => Number(b.kills || 0) - Number(a.kills || 0) || Number(b.lastSeenAt || 0) - Number(a.lastSeenAt || 0));
         const next = { ...f.state, activity: dead ? 'dead' : 'resting', vitals: f.vitals,
-            stats: { ...f.state.stats, deaths: Number(f.state.stats?.deaths || 0) + Number(dead),
+            stats: { ...require('../../Social/PeopleKnowledge').statsAfter(f.state.stats, key), deaths: Number(f.state.stats?.deaths || 0) + Number(dead),
                 restUntil: until, pvpEnemies: enemies.slice(0, 3),
                 coldPvp: { at: timestamp, until: step ? step.until : until, outcome: ongoing ? 'fighting' : outcome,
                     lastVictimId: f.lastVictimId, lastVictimAt: f.lastVictimAt,

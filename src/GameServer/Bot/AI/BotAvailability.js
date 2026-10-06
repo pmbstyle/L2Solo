@@ -141,7 +141,7 @@ const BotAvailability = {
         else if (!options.forceFriend && Math.abs(bot.fetchLevel() - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
         if (reason === 'available' && !result.clanmate && !options.forceFriend) {
-            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(botSession, result.memory);
+            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(botSession, result.memory, { peer: playerSession });
             if (!result.partyDecision.accept) {
                 reason = result.partyDecision.reason;
             }
@@ -181,7 +181,7 @@ const BotAvailability = {
         else if (!options.forceFriend && Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';
 
         if (reason === 'available' && !result.clanmate && !options.forceFriend) {
-            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(state, result.memory);
+            result.partyDecision = PersonaPartyDecisionPolicy.evaluate(state, result.memory, { peer: playerSession });
             if (!result.partyDecision.accept) {
                 reason = result.partyDecision.reason;
             }

@@ -125,7 +125,12 @@ try {
     realRecipient.socket = { write: () => { playerPackets += 1; } };
     const botRecipient = botSession(3100, 100);
     botRecipient.socket = { write: () => { botPackets += 1; } };
-    World.user = { sessions: [realRecipient, botRecipient], revision: 1 };
+    World.user = { sessions: [], revision: 1 };
+    for (const recipient of [realRecipient, botRecipient]) {
+        recipient.fetchAccountId = () => recipient.accountId;
+        recipient.actor.session = recipient;
+        World.insertUser(recipient);
+    }
     const npcInfo = Buffer.alloc(5);
     npcInfo[0] = 0x16;
     npcInfo.writeInt32LE(987654, 1);

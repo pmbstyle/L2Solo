@@ -43,6 +43,7 @@ Object.entries(ClassProgression.secondProfMap).forEach(([classId, options]) => {
 const original = {
     fetchSkill: Database.fetchSkill,
     fetchSkills: Database.fetchSkills,
+    learnBotSkill: Database.learnBotSkill,
     setSkill: Database.setSkill,
     updateSkillLevel: Database.updateSkillLevel,
     updateCharacterClassId: Database.updateCharacterClassId
@@ -58,6 +59,16 @@ function skillsFor(characterId) {
 try {
     Database.fetchSkill = (characterId, selfId) => Promise.resolve(skillsFor(characterId).filter((skill) => skill.selfId === selfId));
     Database.fetchSkills = (characterId) => Promise.resolve(skillsFor(characterId));
+    // This pure branch/tree fixture assumes funded learning. Native SP/book
+    // payment and admission are covered by the disposable SQLite book test.
+    Database.learnBotSkill = (characterId, selfId, level) => {
+        const definition = DataCache.skills.find((skill) => skill.selfId === selfId);
+        const storedSkill = skillsFor(characterId).find((skill) => skill.selfId === selfId);
+        if (storedSkill) storedSkill.level = level;
+        else skillsFor(characterId).push({ selfId, level, name: definition.template?.name,
+            passive: definition.template?.passive });
+        return Promise.resolve({ learned: true, spentSp: 0, consumedBooks: [] });
+    };
     Database.setSkill = (skill, characterId) => {
         skillsFor(characterId).push({ selfId: skill.selfId, name: skill.name, level: skill.level, passive: skill.passive });
         return Promise.resolve();

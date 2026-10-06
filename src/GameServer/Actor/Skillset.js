@@ -122,6 +122,10 @@ class Skillset {
                 }
                 skillOptions = Object.freeze({ beforeWrite: descriptor.value });
             } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
+            const botTraining = Object.getOwnPropertyDescriptor(options, 'botTraining')?.value === true;
+            const trainedDescriptor = Object.getOwnPropertyDescriptor(options, 'onTrained');
+            const onTrained = typeof trainedDescriptor?.value === 'function' ? trainedDescriptor.value : null;
+            const trainingResult = { spentSp: 0, consumedBooks: [], learnedCount: 0 };
             const createOrUpdateSkill = (skill) => {
                 const skillDetails = DataCache.skills.find((item) => item.selfId === skill.selfId);
                 if (!skillDetails) {
@@ -143,6 +147,20 @@ class Skillset {
                     const storedLevel = ownedSkill[0]?.level;
                     // Ancestor reconciliation never downgrades a trained rank.
                     if (Number(storedLevel) >= Number(resolved.level)) return;
+                    if (botTraining) {
+                        const ranks = skill.levels.filter((row) => Number(row.pLevel) <= Number(level)
+                            && Number(row.level) > Number(storedLevel || 0)).sort((a, b) => a.level - b.level);
+                        return (async () => {
+                            for (const rank of ranks.filter((row) => skillDetails.levels.some((defined) => Number(defined.level) === Number(row.level)))) {
+                                const result = await Database.learnBotSkill(id, skill.selfId, rank.level, skillOptions || {});
+                                if (!result.learned) break;
+                                trainingResult.spentSp += Number(result.spentSp || 0);
+                                trainingResult.consumedBooks.push(...result.consumedBooks || []);
+                                trainingResult.learnedCount++;
+                                onTrained?.(result);
+                            }
+                        })();
+                    }
                     if (storedLevel) return Database.updateSkillLevel(id, skill.selfId, resolved.level, skillOptions);
                     return Database.setSkill({
                         ...utils.crushOb(skill),
@@ -158,7 +176,7 @@ class Skillset {
                     const levelX = skills?.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level)) ?? [];
                     // Serial writes and the final real read all reject outward.
                     levelX.reduce((previous, skill) => previous.then(() => createOrUpdateSkill(skill)), Promise.resolve())
-                        .then(() => this.populate(id)).then(() => success(), reject);
+                        .then(() => this.populate(id)).then(() => success(trainingResult), reject);
                 } catch (error) { reject(error); }
             });
         });

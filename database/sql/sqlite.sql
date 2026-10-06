@@ -493,27 +493,6 @@ CREATE TABLE IF NOT EXISTS bot_personas (
 CREATE INDEX IF NOT EXISTS bot_personas_primaryDrive ON bot_personas(primaryDrive);
 CREATE INDEX IF NOT EXISTS bot_personas_archetype ON bot_personas(archetype);
 
-CREATE TABLE IF NOT EXISTS bot_social_memory (
-    playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    botId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-    playerName TEXT NOT NULL DEFAULT '',
-    botName TEXT NOT NULL DEFAULT '',
-    trust INTEGER NOT NULL DEFAULT 0,
-    familiarity INTEGER NOT NULL DEFAULT 0,
-    lastGroupedAt INTEGER,
-    groupRuns INTEGER NOT NULL DEFAULT 0,
-    wipesTogether INTEGER NOT NULL DEFAULT 0,
-    helpedInCombat INTEGER NOT NULL DEFAULT 0,
-    gaveUsefulLoot INTEGER NOT NULL DEFAULT 0,
-    ignoredLootRequests INTEGER NOT NULL DEFAULT 0,
-    tradesCompleted INTEGER NOT NULL DEFAULT 0,
-    insults INTEGER NOT NULL DEFAULT 0,
-    recentlyAbandonedAt INTEGER,
-    notes TEXT,
-    updatedAt INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY(playerId, botId)
-);
-
 CREATE TABLE IF NOT EXISTS bot_conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     playerId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,

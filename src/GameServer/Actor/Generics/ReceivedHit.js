@@ -125,6 +125,10 @@ function receivedHit(session, actor, hit, options = {}) {
         EffectRestrictions.wakeOnDamage(actor, victimSession || session);
     }
     const hpBefore = actor.fetchHp();
+    if (Number(hit) > 0 && source && !source.fetchKind && !actor.fetchKind) {
+        const Knowledge = require('../../Social/PeopleKnowledge');
+        Knowledge.recordActor(actor, source); Knowledge.recordActor(source, actor);
+    }
     actor.setHp(Math.max(0, hpBefore - hpDamage)); // HP bar would disappear if less than zero
     invoke('GameServer/Social/CombatHelpMemory').recordDamage(source, actor, hpBefore - actor.fetchHp());
     actor.statusUpdateVitals(actor);

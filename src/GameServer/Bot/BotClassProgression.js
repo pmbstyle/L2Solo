@@ -52,12 +52,14 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     const Skillset = invoke('GameServer/Actor/Skillset');
     if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('invalid_skill_before_write');
     const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
-    let skillOptions;
+    const trainedDescriptor = Object.getOwnPropertyDescriptor(options, 'onTrained');
+    const onTrained = typeof trainedDescriptor?.value === 'function' ? trainedDescriptor.value : undefined;
+    let skillOptions = Object.freeze({ botTraining: true, onTrained });
     if (descriptor) {
         if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
             throw new TypeError('invalid_skill_before_write');
         }
-        skillOptions = Object.freeze({ beforeWrite: descriptor.value });
+        skillOptions = Object.freeze({ beforeWrite: descriptor.value, botTraining: true, onTrained });
     } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
     const id = Number(characterId);
     let resolvedClassId = Number(classId);
@@ -67,17 +69,24 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     // The bot may have accumulated levels while cold.  Award its current tree
     // first, then walk every profession threshold it has already passed.
     const skillset = new Skillset();
+    const training = { spentSp: 0, consumedBooks: [], learnedCount: 0 };
+    const award = async (target) => {
+        const result = await skillset.awardSkills(id, target, level, skillOptions);
+        training.spentSp += Number(result?.spentSp || 0);
+        training.consumedBooks.push(...result?.consumedBooks || []);
+        training.learnedCount += Number(result?.learnedCount || 0);
+    };
     for (const ancestor of ClassProgression.lineage(resolvedClassId)) {
-        await skillset.awardSkills(id, ancestor, level, skillOptions);
+        await award(ancestor);
     }
     for (let target = nextClass(resolvedClassId, level, seed); target; target = nextClass(resolvedClassId, level, seed)) {
         await Database.updateCharacterClassId(id, target, skillOptions);
         resolvedClassId = target;
         transitions.push(target);
-        await skillset.awardSkills(id, resolvedClassId, level, skillOptions);
+        await award(resolvedClassId);
     }
 
-    return { classId: resolvedClassId, transitions };
+    return { classId: resolvedClassId, transitions, ...training };
 }
 
 module.exports = { nextClass, plan, reconcile };

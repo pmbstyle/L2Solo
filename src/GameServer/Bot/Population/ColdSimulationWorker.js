@@ -79,7 +79,6 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const LifeStateProjector = invoke('GameServer/Bot/Population/BotLifeState');
-const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
@@ -92,6 +91,7 @@ const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
 const { BoardIndex, recordOf } = require('../../AfkTrade/BoardIndex');
 const BoardReviewEvents = require('../Economy/BoardReviewEvents');
+const { MarketBuyerWaiters } = require('../Economy/MarketBuyerWaiters');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -128,12 +128,20 @@ const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const marketEvents = new BoardReviewEvents({ board: boardIndex,
     counter: (key) => MarketCounters.counter(key).deals });
 const marketCommands = new Map();
+const buyerWaiters = new MarketBuyerWaiters({
+    stateFor: id => kernel?.states.get(id)?.state,
+    demandsFor: (state, timestamp) => invoke('GameServer/Bot/Economy/MarketDemandIndex').signalsOfState(state, timestamp),
+    wake: (id, timestamp) => kernel?.wakeBuyer(id, timestamp) === true
+});
 const boardFollower = boardIndex.follower();
+let boardReplacing = false;
 tables.watch('board', {
-    reset: () => { boardFollower.reset(); marketEvents.resetBoardCoverage(); },
+    reset: () => { boardReplacing = true; boardFollower.reset(); marketEvents.resetBoardCoverage(); },
     put: (key, row) => {
+        const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
         marketEvents.ownerChanged(recordOf(row).ownerId, { current: false });
+        if (!boardReplacing && tables.ready('board')) buyerWaiters.recordChanged(recordOf(row), previous);
     },
     remove: (key) => {
         const ownerId = boardIndex.records.get(Number(key))?.[0]?.ownerId;
@@ -391,16 +399,15 @@ function startKernel(config = {}) {
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
             const afterClassId = Number(projected.stats?.classProgressionClassId ?? projected.stats?.classId ?? beforeClassId);
             const progressionChanged = beforeLevel < Number(projected.level || 1) || beforeClassId !== afterClassId;
-            const previousTransitions = state.stats?.classTransitions || [];
-            const transitions = (projected.stats?.classTransitions || []).slice(previousTransitions.length);
-            const skillClasses = [...new Set([beforeClassId, ...transitions, afterClassId].filter(Number.isFinite))];
-            const skills = progressionChanged
-                ? [...skillClasses.flatMap((classId) => ColdCombatProfile.skillRecordsFromTree(classId, projected.level))
-                    .reduce((byId, skill) => byId.set(Number(skill.selfId), skill), new Map()).values()]
-                : [];
+            // The worker projects the class, but cannot grant tree ranks.
+            // Accepted main-owned commits train against actual SP and books.
+            const durable = {
+                ...(progressionChanged ? { classId: afterClassId } : {}),
+                ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
+            };
             return {
                 state: projected,
-                durable: progressionChanged ? { classId: afterClassId, skills } : null
+                durable: Object.keys(durable).length ? durable : null
             };
         },
         planLifecycle: ({ state, context, timestamp }) => {
@@ -455,6 +462,14 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
+    kernel.buyerEvents = buyerWaiters;
+    invoke('GameServer/Bot/Economy/EconomyContext').configure({
+        board: boardReady,
+        boardVersion: () => tables.version('board'),
+        productionStatus: id => kernel.states.get(Number(id))?.context?.productionStatus,
+        spots: () => planningSpots,
+        memory: (characterId) => kernel.interactionMemory.snapshot(characterId)
+    });
     loopTimer = setInterval(() => {
         if (leaseProbe && (shuttingDown || Date.now() >= leaseProbe.replyBy)) leaseProbe = null;
         drainMarketEvents();
@@ -466,6 +481,7 @@ function startKernel(config = {}) {
         competition = new ColdCompetitionMonitor({
             capacityForSpot: invoke('GameServer/Bot/AI/LevelingRoutes').capacityForSpot,
             personaFor: state => BotPersona.of(state),
+            knowledgeFor: (source, persona, key) => persona ? { source, persona, key } : null,
             isTargetAllowed: id => allowed.has(id),
             ownSide: invoke('GameServer/Bot/Population/ColdPvpResolver').ownSide
         });
@@ -578,6 +594,7 @@ async function handle(message) {
         break;
     case 'table_page': {
         actorTables.apply(payload.tables);
+        if (tables.ready('board')) boardReplacing = false;
         break;
     }
     case 'clan_social_page':
@@ -702,6 +719,7 @@ async function handle(message) {
         leaseProbe = null;
         marketCommands.clear();
         marketEvents.clear();
+        buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
         actorTables.stop();

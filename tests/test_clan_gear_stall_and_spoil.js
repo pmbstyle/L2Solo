@@ -140,6 +140,42 @@ async function main() {
         assert.strictEqual(snapshot.candidates.some((candidate) => candidate.assessment.current), false,
             'a hard-stalled current target must leave the decision set when an executable alternative exists');
         assert.strictEqual(snapshot.deterministicCandidateId, 'equipment:7:2:99102:10');
+        const reviewGoal = { type: 'equipment', status: 'executing', goalKey: 'event-input',
+            target: { memberId: 1, itemId: 99101, slot: 7 }, createdAt: now, updatedAt: now };
+        const reviewOptions = { occupancy: {}, now };
+        await CandidateService.snapshotFor(clan, reviewGoal, reviewOptions);
+        assert.strictEqual((await CandidateService.snapshotFor(clan, reviewGoal, reviewOptions)).cacheHit, true);
+        require('../src/GameServer/Clan/ClanReviewEvents').changed(clan.id, 'board');
+        assert.strictEqual((await CandidateService.snapshotFor(clan, reviewGoal, reviewOptions)).cacheHit, false,
+            'a changed offer must replan immediately even when the member snapshot is unchanged');
+        CandidateService.reset();
+        let releasePlanning;
+        const held = new Promise(resolve => { releasePlanning = resolve; });
+        const immediatePlan = EquipmentService.planningForClan;
+        EquipmentService.planningForClan = async (...args) => { await held; return immediatePlan(...args); };
+        const pending = CandidateService.snapshotFor(clan, reviewGoal, reviewOptions);
+        require('../src/GameServer/Clan/ClanReviewEvents').changed(clan.id, 'treasury');
+        releasePlanning(); await pending;
+        EquipmentService.planningForClan = immediatePlan;
+        assert.strictEqual((await CandidateService.snapshotFor(clan, reviewGoal, reviewOptions)).cacheHit, false,
+            'planning completed after an input change cannot reinstall its old cache');
+        const events = require('../src/GameServer/Clan/ClanReviewEvents');
+        events.stop();
+        let boardChanged;
+        events.start({ subscribePublications: () => () => {} }, {
+            subscribeBoardChanges(listener) { boardChanged = listener; return () => {}; }
+        });
+        events.track({ ...clan, members: [{ ...clan.members[0], stats: { equipmentPlan: {
+            target: { selfId: 99101 }, next: { itemId: 1880 }, materials: [{ selfId: 1864, amount: 5 }]
+        } } }] });
+        const noMembershipQuery = { execute() { throw new Error('board-only input must not query members'); } };
+        boardChanged({ selfIds: [1864], ready: true });
+        assert.deepStrictEqual((await events.drain(noMembershipQuery)).map(event => event.clanId), [clan.id],
+            'the beneficiary material offer addresses its clan, not only the final goal item');
+        events.track({ ...clan, members: clan.members });
+        boardChanged({ selfIds: [1864, 1880], ready: true });
+        assert.deepStrictEqual(await events.drain(noMembershipQuery), [], 'replacing a plan detaches its old material interests');
+        events.stop();
         console.log('Clan gear stall and spoil checks passed');
     } finally {
         DataCache.npcRewards = originalRewards;

@@ -56,6 +56,15 @@ function childMain() {
         if (!active || !tables.ready('actors')) return;
         const rows = Array.from(tables.rows('actors').values());
         const originals = rows.every(row => index.getSource(row.id, 'actor').source === row);
+        const humans = rows.filter(row => row.presence.online && row.presence.realPlayer);
+        assert.equal(index.presenceSize(), humans.length);
+        assert.equal(index.presenceSources().every(record => rows.includes(record.source)), true);
+        const nearest = index.nearestFacet(point, { kind: 'player' });
+        const expected = humans.filter(row => ['number', 'string', 'boolean', 'null'].includes(row.axes.x.tag)
+            && ['number', 'string', 'boolean', 'null'].includes(row.axes.y.tag))
+            .map(row => ({ row, distance: Math.hypot(Number(row.axes.x.value ?? 0), Number(row.axes.y.value ?? 0)) }))
+            .filter(value => Number.isFinite(value.distance)).sort((a, b) => a.distance - b.distance || a.row.order - b.row.order)[0];
+        assert.equal(nearest?.record.source ?? null, expected?.row ?? null);
         port.postMessage({ kind: 'known', epoch, rows, pages, unknownWindows, identities,
             chain: tables.tables.get('actors').chain, version: tables.tables.get('actors').version, cleanups: [...cleanups],
             rawCount: index.nearFacet(point, 6000).length, stateOriginal: stateGood(), originals });

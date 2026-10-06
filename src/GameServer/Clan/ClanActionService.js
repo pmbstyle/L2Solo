@@ -9,6 +9,8 @@ const PartyService = invoke('GameServer/Clan/ClanPartyService');
 const OrderService = invoke('GameServer/Clan/ClanOrderService');
 const TitleService = invoke('GameServer/Clan/ClanTitleService');
 const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
+const ReviewEvents = require('./ClanReviewEvents');
+const { randomUUID } = require('node:crypto');
 
 const ACTION_TYPES = Object.freeze({
     PLAN: 'goal_plan',
@@ -59,7 +61,6 @@ const metrics = {
 };
 
 let bootstrapped = false;
-let nextSupplyScan = 0;
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
@@ -114,10 +115,8 @@ async function refreshQueueStats() {
 function actionTypeFor(clan, goal) {
     if (!clan || !goal || goal.status === 'completed') return null;
     if (goal.controlledBy === 'player') return OrderService.actionTypeForGoal(goal);
-    // The bots execute an equipment route through their normal lifecycle, but
-    // the clan re-evaluates the weakest/highest-priority beneficiary on the
-    // bounded retry cadence. This also repairs a lost durable plan binding
-    // without turning equipment into a per-combat-tick scheduler job.
+    // Equipment executes through member lifecycles. Its next review comes
+    // from a changed member/warehouse/offer, rather than a polling plan.
     if (goal.plan?.kind === 'alliance_trial' && number(clan.level) === 3
         && String(clan.state?.mode || '') === 'autonomous') return ACTION_TYPES.CONTRIBUTION;
     if (goal.type === 'equipment') return ACTION_TYPES.PLAN;
@@ -134,7 +133,7 @@ function workDone(actionType, result = {}) {
     if (actionType === ACTION_TYPES.CONTRIBUTION) {
         return result.advanced?.ok === true || number(result.warehouse?.deposited) > 0;
     }
-    if (actionType === ACTION_TYPES.WAREHOUSE) return number(result.deposited) > 0;
+    if (actionType === ACTION_TYPES.WAREHOUSE) return number(result.deposited) > 0 || number(result.exchanged) > 0;
     if (actionType === ACTION_TYPES.MARKET) return result.purchased === true || result.advanced?.ok === true;
     if (actionType === ACTION_TYPES.PARTY) return result.started === true || result.resolved === true || result.succeeded === true;
     return result.changed === true;
@@ -154,6 +153,9 @@ function reviewDelayFor(actionType, goal, result = {}, ok = true, productive = w
 
 function deferredRetryDelay(actionType, result = {}) {
     const reason = String(result?.code || result?.reason || '');
+    if ([ACTION_TYPES.SUPPLIES, ACTION_TYPES.WAREHOUSE].includes(actionType) && result?.warehousePending === true) {
+        return Config.actionRetryMs;
+    }
     if ([ACTION_TYPES.PLAN, ACTION_TYPES.PRODUCTION].includes(actionType) && result?.retryable === true && reason === 'clan_planning_deferred') {
         return Math.min(5000, Config.actionRetryMs);
     }
@@ -188,7 +190,7 @@ async function scheduleProduction(clan) {
     if (active) return;
     await Database.enqueueClanAction({ clanId: clan.id,
         actionType: ACTION_TYPES.PRODUCTION, priority: 30,
-        actionKey: `clan:${clan.id}:production:${Math.floor(Date.now() / Config.equipmentReviewMs)}` });
+        actionKey: `clan:${clan.id}:production:${randomUUID()}` });
 }
 
 async function resolveProduction(clan) {
@@ -213,16 +215,23 @@ async function resolveProduction(clan) {
     return { ok: true, goal: result.goal };
 }
 
-async function scheduleSupplies() {
-    if (Date.now() < nextSupplyScan) return;
-    nextSupplyScan = Date.now() + Config.resolveIntervalMs;
-    const rows = await Database.execute([`SELECT simulated.clanId FROM clan_simulation_clans simulated
-        WHERE NOT EXISTS (SELECT 1 FROM clan_actions actions WHERE actions.clanId = simulated.clanId
-            AND actions.actionType = 'supplies' AND actions.status IN ('pending', 'running'))
-        ORDER BY simulated.clanId LIMIT 64`, []], 'clan-supplies:admission');
-    for (const row of rows) await Database.enqueueClanAction({ clanId: row.clanId,
-        actionKey: `clan:${row.clanId}:supplies:${Math.floor(Date.now() / Config.resolveIntervalMs)}`,
-        actionType: ACTION_TYPES.SUPPLIES, priority: 40 });
+async function scheduleReviews() {
+    for (const event of await ReviewEvents.drain(Database)) {
+        try {
+            for (const actionType of [ACTION_TYPES.PLAN, ACTION_TYPES.SUPPLIES]) {
+                const [active] = await Database.execute([`SELECT id,status FROM clan_actions WHERE clanId=?
+                    AND actionType=? AND status IN ('pending','running') LIMIT 1`, [event.clanId, actionType]], 'clan-review:active');
+                // A running action owns its captured input. Keep the event for
+                // a later pass instead of discarding a concurrent change.
+                if (active) {
+                    if (active.status === 'running') ReviewEvents.changed(event.clanId, 'pending_review');
+                    continue;
+                }
+                await Database.enqueueClanAction({ clanId: event.clanId, actionType, priority: actionType === ACTION_TYPES.PLAN ? 75 : 40,
+                    actionKey: `clan:${event.clanId}:event:${randomUUID()}:${actionType}`, payload: { reasons: event.causes } });
+            }
+        } catch (error) { ReviewEvents.changed(event.clanId, 'review_retry'); throw error; }
+    }
 }
 
 async function bootstrap() {
@@ -344,7 +353,9 @@ async function schedulePlanAfterMarketMiss(clan, parentAction) {
 }
 
 async function loadClan(clanId) {
-    return GoalService.clanProjectionById(clanId);
+    const clan = await GoalService.clanProjectionById(clanId);
+    ReviewEvents.track(clan);
+    return clan;
 }
 
 async function execute(action, options = {}) {
@@ -392,6 +403,10 @@ async function execute(action, options = {}) {
             case ACTION_TYPES.SUPPLIES:
                 result = await WarehouseService.resolveClan(clan, { deadlineAt,
                     batchSize: Config.warehouseDepositBatchSize });
+                {
+                    const exchange = await invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveClan(clan.id, { deadlineAt });
+                    result.exchanged = number(exchange.exchanged); result.warehousePending = exchange.pending === true;
+                }
                 await scheduleProduction(clan);
                 break;
             case ACTION_TYPES.WAREHOUSE:
@@ -400,6 +415,10 @@ async function execute(action, options = {}) {
                     deadlineAt,
                     actionId: Number(action.id)
                 });
+                {
+                    const exchange = await invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveClan(clan.id, { deadlineAt });
+                    result.exchanged = number(exchange.exchanged); result.warehousePending = exchange.pending === true;
+                }
                 break;
             case ACTION_TYPES.MARKET:
                 result = await MarketService.resolveClan(clan, { actionId: Number(action.id) });
@@ -431,9 +450,12 @@ async function resolveAction(action, options = {}) {
     recordAction(action, 'running');
     try {
         const result = await execute(action, options);
-        const ok = result?.ok !== false;
+        const eventWait = String(action.actionType) === ACTION_TYPES.PARTY
+            && String(result?.code || result?.reason || '') === Contracts.REASON_CODES.PARTY_NOT_READY
+            && String((await loadClan(action.clanId))?.state?.mode || '') === 'autonomous';
+        const ok = result?.ok !== false || eventWait;
         const reasonCode = result?.code || result?.reason || (ok ? '' : 'clan_action_failed');
-        const retryDelay = deferredRetryDelay(String(action.actionType), result);
+        const retryDelay = eventWait ? null : deferredRetryDelay(String(action.actionType), result);
         if (retryDelay !== null) {
             const deferStartedAt = Date.now();
             const released = await Database.releaseClanAction({
@@ -500,9 +522,12 @@ async function resolveAction(action, options = {}) {
                 await schedulePlanAfterMarketMiss(clan, action);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
                 const productive = ok && workDone(String(action.actionType), result);
-                const delay = reviewDelayFor(String(action.actionType), goal, result, ok, productive);
-                await scheduleNext(clan, goal, action, delay);
-                if (delay > 0) metrics.retried += 1;
+                const autonomous = String(clan.state?.mode || '') === 'autonomous';
+                if (!autonomous || String(action.actionType) === ACTION_TYPES.PLAN && goal.type !== 'equipment' || productive) {
+                    const delay = autonomous ? 0 : reviewDelayFor(String(action.actionType), goal, result, ok, productive);
+                    await scheduleNext(clan, goal, action, delay);
+                    if (delay > 0) metrics.retried += 1;
+                }
             }
         } finally {
             StageMetrics.record(metrics.stages, 'follow_up', Date.now() - followUpStartedAt);
@@ -553,6 +578,10 @@ const ClanActionService = {
     config: Config,
     actionTypes: ACTION_TYPES,
     bootstrap,
+    startEvents(onWake) { ReviewEvents.start(invoke('GameServer/Bot/Population/BotLifeState'), invoke('GameServer/AfkTrade/AfkTradeService'), onWake); },
+    stopEvents: ReviewEvents.stop,
+    hasEvents: () => ReviewEvents.pending() > 0,
+    scheduleReviews,
     scheduleTitleReview,
     reviewDelayFor,
     resolveAction,
@@ -577,7 +606,7 @@ const ClanActionService = {
                 leftRunning: 0,
                 budgetStopped: false
             };
-            await scheduleSupplies();
+            await scheduleReviews();
             await refreshQueueStats();
             // Bootstrap and queue telemetry are admission overhead, not clan
             // work. Starting the execution budget before those reads caused a
@@ -679,7 +708,6 @@ const ClanActionService = {
 
     resetMetrics() {
         bootstrapped = false;
-        nextSupplyScan = 0;
         Object.keys(metrics).forEach((key) => {
             if (metrics[key] instanceof Map) metrics[key].clear();
             else metrics[key] = 0;

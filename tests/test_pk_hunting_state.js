@@ -36,9 +36,16 @@ assert.strictEqual(PkHunting.isEligibleTarget(bot, pk, profile), true, 'PKs shou
 assert.strictEqual(PkHunting.isEligibleAttacker(highPlayer, pk, profile), true, 'a stronger real player remains relevant once they attack the PK');
 
 const originalUsers = World.user;
-World.user = { sessions: [eligiblePlayer, highPlayer, bot] };
+World.user = { sessions: [] };
+for (const session of [eligiblePlayer, highPlayer, bot]) {
+    session.fetchAccountId = () => session.accountId;
+    session.actor.session = session;
+    World.insertUser(session);
+}
 assert.strictEqual(PkHunting.activeThreats(pk, profile).length, 1, 'a nearby player far above the PK level is an immediate threat even before selecting the PK');
 eligiblePlayer.actor = actor(2, 35, 500, { destId: 1 });
+eligiblePlayer.actor.session = eligiblePlayer;
+World.updateUserLocation(eligiblePlayer);
 assert.strictEqual(PkHunting.activeThreats(pk, profile).length, 2, 'a player explicitly targeting the PK is also a threat');
 World.user = originalUsers;
 

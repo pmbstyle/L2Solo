@@ -203,10 +203,13 @@ function npcDied(session, actor, npc) {
         })).catch(() => {});
     }
     const PetRuntime = invoke('GameServer/Pets/PetRuntime');
-    const overhit = invoke('GameServer/Progression/OverhitReward').consume(npc, actor, npc.fetchAcquiredExp());
+    const rewardLevel = Math.max(...participants.map(levelOf), Number(rewardActor.fetchLevel?.() || 1));
+    const base = invoke('GameServer/Progression/MobExperience').rewards(npc.fetchAcquiredExp(), npc.fetchRewardSp(),
+        rewardLevel, npc.fetchLevel?.());
+    const overhit = invoke('GameServer/Progression/OverhitReward').consume(npc, actor, base.exp);
     if (overhit.eligible) session.dataSendToMe?.(invoke('GameServer/Network/Response').systemMessage(361));
-    const remainingShare = PetRuntime.rewardDamage(npc, overhit.adjustedExp, npc.fetchRewardSp());
-    const rewards = partyRewardShares(participants, overhit.adjustedExp * remainingShare, npc.fetchRewardSp() * remainingShare);
+    const remainingShare = PetRuntime.rewardDamage(npc, overhit.adjustedExp, base.sp);
+    const rewards = partyRewardShares(participants, overhit.adjustedExp * remainingShare, base.sp * remainingShare);
 
     // C4's ordinary quest callback is attributed to the actual killer, not to
     // every party member that receives shared EXP.
@@ -221,6 +224,17 @@ function npcDied(session, actor, npc) {
         if (share) PetRuntime.award(pet, exp * share, sp * share);
         Generics.experienceReward(memberSession, memberSession.actor, exp * (1 - share), sp * (1 - share));
     });
+    for (const reward of rewards) if (reward.session?.accountId?.startsWith('bot_')) {
+        const saved = reward.session.coldLifeState;
+        if (!saved) continue;
+        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+        const state = Economy.stateForActor(reward.session.actor, reward.session);
+        const learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
+        const life = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(state, {
+            timestamp: Date.now(), startedAt: invoke('GameServer/Bot/AI/BotHuntEfficiency').SERVER_STARTED_AT,
+            kills: 1, persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: learning.knowledgeEnabled() });
+        reward.session.coldLifeState = { ...saved, stats: { ...saved.stats, ...life } };
+    }
     invoke('GameServer/Social/SharedHuntMemory').recordHot(rewards, npc);
 }
 

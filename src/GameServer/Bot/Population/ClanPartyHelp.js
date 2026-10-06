@@ -9,6 +9,7 @@ const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
 const TTL_MS = 10 * 60000;
 const RETRY_MS = 30000;
 const pending = new Map();
+const pendingListeners = new Set();
 
 function listeners(clanId) {
     return (invoke('GameServer/World/World').user?.sessions || []).some(session =>
@@ -23,6 +24,9 @@ function request(characterId, clanId, now = Date.now()) {
     if (pending.has(characterId)) return false;
     if (pending.size >= 64) return false;
     pending.set(characterId, { characterId, clanId, expiresAt: now + TTL_MS, nextAt: now });
+    for (const listener of pendingListeners) {
+        try { listener(); } catch (error) { utils.infoWarn('BotParty', 'help event failed: %s', error?.message || error); }
+    }
     return true;
 }
 
@@ -126,4 +130,10 @@ async function processOne({ commit, create, release }, now = Date.now()) {
 }
 
 module.exports = { request, processOne, hasPending: () => pending.size > 0,
+    nextDeadline() {
+        let next = Infinity;
+        for (const request of pending.values()) next = Math.min(next, request.nextAt, request.expiresAt);
+        return Number.isFinite(next) ? next : 0;
+    },
+    subscribePending(listener) { if (typeof listener !== 'function') throw new TypeError('invalid_party_help_listener'); pendingListeners.add(listener); return () => pendingListeners.delete(listener); },
     reset() { pending.clear(); }, TTL_MS, RETRY_MS };

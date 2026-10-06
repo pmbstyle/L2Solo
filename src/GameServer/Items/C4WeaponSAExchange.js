@@ -17,10 +17,11 @@ function options(npcId, sourceId, operation) {
 // Lisvus tax-only Adena ingredients are a tax base, not a service fee. The
 // current world has no castle tax service, so its effective rate is zero.
 function costs(recipe) {
-    // Installation requires only the weapon and its exact Soul Crystal at every
-    // grade. Keep sourced material costs for reference and possible restoration.
+    // Ordinary C/B smiths charge the sourced C4 gemstones as well as the
+    // exact crystal. Mammon's A/S catalogue remains its separate service.
     return recipe.operation === 'install'
-        ? recipe.costs.filter(cost => crystalIds.has(cost.selfId))
+        ? recipe.costs.filter(cost => crystalIds.has(cost.selfId)
+            || recipe.station === 'blacksmith' && [2131, 2132].includes(cost.selfId))
         : recipe.costs;
 }
 function links(npcId) {

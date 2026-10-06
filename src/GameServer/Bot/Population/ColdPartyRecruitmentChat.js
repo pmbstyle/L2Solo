@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -23,7 +24,7 @@ function coldActor(state) {
 
 function realPlayerSessions() {
     const World = invoke('GameServer/World/World');
-    return (World.user?.sessions || []).filter((session) => (
+    return ActorQueries.humans(World).filter((session) => (
         session.socket &&
         typeof session.socket.write === 'function' &&
         session.accountId &&
@@ -55,7 +56,7 @@ function recruitmentText(party, members, spot, maxSize) {
     const level = Number(leader?.level || 1);
     const group = present.length ? joinRoles(present) : 'Party';
     const place = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot, spotId: party.spotId });
-    return `${group} LFM ${joinRoles(wanted)} — Lv. ${level} party at ${place}.`.slice(0, 120);
+    return `${group} LFM ${joinRoles(wanted)} — Lv. ${level} party at ${place}. ${require('./PartyAgreement').describe(party.stats?.objective, party.stats?.agreement)}`.slice(0, 220);
 }
 
 function maybeAnnounce(party, members, spot, timestamp = Date.now()) {

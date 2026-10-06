@@ -68,11 +68,14 @@ function refreshFixedOffers() {
     }
 }
 
-function cheapestPurchase(selfId) {
+function cheapestPurchase(selfId, { forBot = false } = {}) {
     refreshNpcOffers();
     refreshFixedOffers();
     const id = Number(selfId);
-    let minimum = fixedMinimums.get(id) ?? Infinity;
+    const production = require('./ProductionPolicy');
+    let minimum = forBot && production.shotsDisabled() && (production.GRADED_SHOTS.has(id) || production.NO_GRADE_SHOTS.has(id))
+        ? Infinity : fixedMinimums.get(id) ?? Infinity;
+    if (forBot && !production.allowsNpcShot(id)) return minimum;
     for (const line of npcOffers.get(id) || []) {
         minimum = Math.min(minimum, Number(line.price ?? basePrice(id)));
     }
@@ -109,4 +112,4 @@ function priceFor(store, line) {
     return ask ? Math.max(price, Number(ask.price)) : price;
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, cheapestPurchase, priceFor, sellersOf };
+module.exports = { BUYBACK_RATIO, botPriceFor, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), priceFor, sellersOf };

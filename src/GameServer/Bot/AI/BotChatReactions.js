@@ -1,3 +1,4 @@
+const ActorQueries = require('../../World/ActorSpatialQueries');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
@@ -126,7 +127,10 @@ function openLocal(source, key, now = Date.now()) {
     // Snapshot only hot neighbours once, when the opener is spoken. A bot
     // arriving later cannot answer a line it never heard. No cold scan.
     scene.listeners = new Set();
-    for (const candidate of invoke('GameServer/Bot/BotManager').sessions || []) {
+    const World = invoke('GameServer/World/World');
+    const candidates = ActorQueries.native(World) ? ActorQueries.near(World, source.actor, LOCAL_RANGE)
+        : invoke('GameServer/Bot/BotManager').sessions || [];
+    for (const candidate of candidates) {
         if (candidate !== source && eligible(candidate) && nearby(source, candidate)) scene.listeners.add(candidate);
         if (scene.listeners.size >= 32) break;
     }

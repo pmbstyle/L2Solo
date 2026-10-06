@@ -247,10 +247,14 @@ function createNativeSource(World, Runtime) {
                 if (!valid()) throw refusal('stale_actor_publication_source');
                 const axes = Object.freeze({ x: readAxis(record.actor, 'fetchLocX'),
                     y: readAxis(record.actor, 'fetchLocY'), z: readAxis(record.actor, 'fetchLocZ') });
+                const targetId = Number(record.actor.fetchDestId?.() || 0);
+                const presence = Object.freeze({ online: record.actor.fetchIsOnline?.() === true,
+                    realPlayer: !!record.session.accountId && !String(record.session.accountId).startsWith('bot_'),
+                    targetId: Number.isFinite(targetId) && targetId > 0 ? targetId : 0 });
                 if (!valid()) throw refusal('stale_actor_publication_derivation');
                 const row = Object.freeze({ id: record.id, worldGeneration: captured.worldGeneration,
                     sourceGeneration: next.sourceGeneration, publication: next.publication,
-                    order: record.order, axes });
+                    order: record.order, axes, presence });
                 return Object.freeze({ kind: 'put', ref: next.ref, occurrence: captured, row, current: valid });
             } catch (error) {
                 return Object.freeze({ kind: 'refused', error });

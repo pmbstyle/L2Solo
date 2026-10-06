@@ -90,23 +90,30 @@ async function resolve(clanId, options) {
     const manager = invoke('GameServer/Bot/BotManager');
     let exchanged = 0;
     let inspected = 0;
+    let pending = false;
     for (const item of stock) {
-        if ((inspected > 0 && Date.now() >= deadlineAt) || exchanged >= 8) break;
+        if ((inspected > 0 && Date.now() >= deadlineAt) || exchanged >= 8) { pending = true; break; }
         let completed = true;
         const memberCursor = memberCursors.get(clanId);
         const memberStart = memberCursor?.itemId === item.id ? memberCursor.memberId : 0;
         const orderedMembers = [...members].sort((a, b) => Number(a.id <= memberStart) - Number(b.id <= memberStart) || a.id - b.id);
         for (const member of orderedMembers) {
-            if (inspected > 0 && Date.now() >= deadlineAt) { completed = false; break; }
+            if (inspected > 0 && Date.now() >= deadlineAt) { completed = false; pending = true; break; }
             memberCursors.set(clanId, { itemId: item.id, memberId: member.id });
             const session = manager.findSessionById(Number(member.id));
-            if (member.phase === 'hot' ? !available(session, clanId)
-                : member.phase !== 'cold' || !['hunting', 'resting', 'grouped'].includes(member.activity)
-                    || !coldAvailable(member.id)) continue;
+            if (!['hot', 'cold'].includes(member.phase)) continue;
             if (Identity.isStaticService({ ...member, stats: JSON.parse(member.statsJson || '{}') })) continue;
-            const inventory = member.phase === 'hot' ? liveRows(session.actor) : await Database.fetchItems(member.id);
+            const inventory = member.phase === 'hot' && session?.actor?.backpack
+                ? liveRows(session.actor) : await Database.fetchItems(member.id);
             inspected += 1;
             if (!Policy.plan(member, inventory, item)) continue;
+            if (member.phase === 'hot' ? !available(session, clanId)
+                : !['hunting', 'resting', 'grouped'].includes(member.activity) || !coldAvailable(member.id)) {
+                // Retain only an actual compatible exchange awaiting its native
+                // availability fence, rather than rediscovering all clans.
+                pending = true;
+                continue;
+            }
             const actor = session?.actor;
             const request = {
                 clanId, characterId: member.id, warehouseId: item.id, expectedPhase: member.phase,
@@ -125,6 +132,7 @@ async function resolve(clanId, options) {
                     result.returned.map((old) => `${old.selfId}+${old.enchant}`).join(', ') || 'empty slot');
                 break;
             }
+            if (['member_busy', 'ownership_conflict'].includes(result.code || result.reason)) pending = true;
         }
         if (completed) {
             itemCursors.set(clanId, Number(item.id));
@@ -132,7 +140,7 @@ async function resolve(clanId, options) {
         }
         await new Promise((resolve) => setImmediate(resolve));
     }
-    return { exchanged };
+    return { exchanged, pending };
 }
 
 function resolveClan(clanId, options = {}) {

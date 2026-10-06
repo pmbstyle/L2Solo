@@ -174,7 +174,7 @@ let coordinator = null;
         && row.simulationLeaseId === null && Number(row.simulationLeaseUntil) === 0));
     assert(Number(partyRow.nextResolveAt) > dueAt, 'leader commit must durably advance the party schedule');
     assert(Number(JSON.parse(partyRow.statsJson).fightsResolved || 0) >= 1);
-    const memories = await Database.execute(['SELECT ownerId, snapshotJson FROM bot_interaction_memory ORDER BY ownerId', []]);
+    const memories = (await Database.loadInteractionMemories(memberIds)).map(snapshot => ({ ownerId: snapshot.ownerId, snapshotJson: JSON.stringify(snapshot) }));
     assert.strictEqual(memories.length, 2, 'real worker wins must commit mutual hunt memory');
     memories.forEach(row => {
         const memory = JSON.parse(row.snapshotJson);

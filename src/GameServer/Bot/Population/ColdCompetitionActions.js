@@ -199,9 +199,9 @@ class ColdCompetitionActions {
             const results = await this.owner.commitAndReleaseBatch(next.map((state, i) => ({
                 token: grants.find(g => g.characterId === state.characterId), nextState: state,
                 atomicGroup: group, options: { allowLifecycle: true }, proposal: { baseState: states[i],
-                    ...(contest && i === 1 ? { result: { memoryEvents: [{ key: `${event.key}:contested`,
+                    ...(contest && i === 1 ? { result: { memoryEvents: [require('../../Social/RelationshipContext').enrich({ key: `${event.key}:contested`,
                         sourceId: state.characterId, targetId: states[0].characterId, kind: 'character',
-                        type: 'mob_contested', at: now }] } } : {}) }
+                        type: 'mob_contested', at: now }, state)] } } : {}) }
             })), { timestamp: this.now(), journalReason: 'competition' });
             states.forEach(s => this.onState(s.characterId));
             return results.length === 2 && results.every(r => r.ok)

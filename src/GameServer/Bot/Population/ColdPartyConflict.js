@@ -144,7 +144,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         events.push({ ...helped, key: `${event.key}:${incidentId}`, kind: 'character', at: resume?.startedAt || timestamp });
     }
     for (let i = 0; i < events.length; i++) {
-        const e = events[i];
+        const source = states.find(s => s.characterId === events[i].sourceId);
+        const e = require('../../Social/RelationshipContext').enrich(events[i], source);
         const positive = require('../../Social/CombatHelpPolicy').TYPES.includes(e.type);
         const aggressor = sides[revenge ? 0 : 1].members.some(s => s.characterId === e.targetId);
         const relation = memory.assess({ id: e.sourceId }, { id: e.targetId }, {}, timestamp);

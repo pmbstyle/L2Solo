@@ -575,6 +575,7 @@ function preferredTarget(state = {}, options = {}) {
     const allCandidates = (DataCache.items || [])
         .filter((item) => suitable(item, state, role, recipeRank || gradeForLevel(state.level)))
         .filter((item) => !excluded.has(Number(item.selfId)))
+        .filter(item => !options.wishTargetId || Number(item.selfId) === Number(options.wishTargetId))
         .map((item) => ({ item, recipe: recipesByProduct.get(Number(item.selfId)) || null }))
         .filter(({ item, recipe }) => !recipeNeedsExcludedMaterial(recipe, state, excludedMaterials)
             || !!marketOfferForTarget(item, state, options))
@@ -594,9 +595,9 @@ function preferredTarget(state = {}, options = {}) {
     const weaponFirst = !hasCurrentGradeWeapon || missingDualSword
         ? allCandidates.filter(({ item }) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0)))
         : allCandidates.filter(({ item }) => !WEAPON_SLOTS.has(Number(item.etc?.slot || 0)));
-    const progressionCandidates = weaponFirst.length ? weaponFirst : allCandidates;
+    const progressionCandidates = options.wishTargetId ? allCandidates : weaponFirst.length ? weaponFirst : allCandidates;
     const cap = progressionPriceCap(requiredRank, state.level);
-    const affordable = progressionCandidates.filter(({ item }) => Number(item.template?.price || 0) <= cap);
+    const affordable = progressionCandidates.filter(({ item }) => options.wishTargetId || Number(item.template?.price || 0) <= cap);
     // The entry weapon for some weapon families costs more than the early
     // grade cap (for example, D bows and daggers). Retain the weapon-first
     // milestone rather than declaring progression complete; shortlisting
@@ -2059,7 +2060,7 @@ function rawPlanFor(state = {}, options = {}) {
     if (isCraftService(state)) {
         return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
     }
-    if (!GearLifecycle.isGearFocusActive(state)) {
+    if (!options.wishTargetId && !GearLifecycle.isGearFocusActive(state)) {
         return {
             status: 'deferred',
             phase: GearLifecycle.phaseFor(state),
@@ -2079,7 +2080,7 @@ function rawPlanFor(state = {}, options = {}) {
         recipeCatalog: options.craftRecipes ? new Map(options.craftRecipes.map(recipe => [Number(recipe.productId), recipe])) : null,
         sourceCache: options.sourceCache || new Map()
     };
-    const preparedTarget = !options.recipeId && rankIndex(gradeForLevel(state.level)) > rankIndex('d')
+    const preparedTarget = !options.recipeId && (options.wishTargetId || rankIndex(gradeForLevel(state.level)) > rankIndex('d'))
         ? preferredTarget(state, planningOptions)
         : null;
     const preparedCraftReady = preparedTarget?.recipe
@@ -2087,7 +2088,7 @@ function rawPlanFor(state = {}, options = {}) {
             .every((material) => material.missing <= 0 || CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
     const forcedMarketPlan = marketRecoveryPlanForTarget(state, options.forceMarketTargetId, options);
     if (forcedMarketPlan) return forcedMarketPlan;
-    if (!options.recipeId && !preparedCraftReady) {
+    if (!options.recipeId && !options.wishTargetId && !preparedCraftReady) {
         const npcPlan = staticNpcUpgradePlan(state, planningOptions);
         if (npcPlan) return npcPlan;
         if (rankIndex(gradeForLevel(state.level)) <= rankIndex('d') && staticNpcKitAdequate(state, {
@@ -2098,7 +2099,7 @@ function rawPlanFor(state = {}, options = {}) {
         }
     }
     if (!GearLifecycle.allowsCrafting(state) || gradeForLevel(state.level) === 'none') {
-        const target = preferredNoGradeTarget(state, planningOptions) || preferredDropTarget(state, planningOptions);
+        const target = preparedTarget?.item || preferredNoGradeTarget(state, planningOptions) || preferredDropTarget(state, planningOptions);
         const source = target
             ? bestSourceForState(sourceForItem(target.selfId, planningOptions.spots || [], state, planningOptions), state, planningOptions)
             : null;

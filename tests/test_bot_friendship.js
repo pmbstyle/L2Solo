@@ -16,7 +16,7 @@ let requestSocial = {
 
 Database.execute = ([sql]) => {
     const text = String(sql);
-    if (text.includes('FROM bot_social_memory s INNER JOIN bot_life_state')) {
+    if (text.includes('FROM interaction_relations') && text.includes('INNER JOIN bot_life_state')) {
         return Promise.resolve([{
             botId: 103,
             name: 'ActualHealer',
@@ -39,7 +39,7 @@ Database.execute = ([sql]) => {
             selected: 0
         }]);
     }
-    if (text.includes('FROM bot_social_memory')) return Promise.resolve([requestSocial]);
+    if (text.includes('FROM interaction_relations')) return Promise.resolve([requestSocial]);
     if (text.includes('INSERT INTO bot_friendships')) return Promise.resolve([]);
     if (text.includes('FROM bot_friendships')) return Promise.resolve([{}]);
     if (text.includes('FROM bot_friend_roster WHERE playerId') && text.includes('botId')) return Promise.resolve([]);

@@ -107,7 +107,15 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
         && plan?.status === 'active' && previous.spotId === plan.next?.spotId
         && Number(previous.npcId) === Number(plan.next?.npcId || plan.targetNpcId)
         ? { ...previous, status: 'open' } : null;
-    const objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan) || sharedTarget;
+    let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan) || sharedTarget;
+    if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
+        const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+        const amount = Math.max(1, Math.floor(Number(plan?.next?.amount || 1)));
+        const fee = Math.floor(Math.min(require('../Economy/PurchaseFunding').spendable(state),
+            Math.max(0, Number(context.worth(objective.itemId)) || 0) * amount));
+        if (fee > 0) objective = { ...objective, helpDeal: { payerId: Number(state.characterId),
+            itemId: Number(objective.itemId), count: amount, fee } };
+    }
     if (!objective) return null;
     const sameRequest = ['open', 'deferred'].includes(previous?.status)
         && previous.objectiveKey === objective.objectiveKey

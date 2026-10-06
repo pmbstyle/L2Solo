@@ -3,6 +3,15 @@ const Repository = invoke('GameServer/Social/InteractionMemoryRepository');
 
 // The main-process instance. Cold workers create repository-free instances.
 const memory = new InteractionMemory(Repository);
+memory.playingHours = id => {
+    const record = invoke('GameServer/World/World').registeredActorById(id);
+    return require('./RelationshipContext').playedHours(record?.session || id);
+};
+memory.enrichEvent = event => {
+    const World = invoke('GameServer/World/World');
+    return require('./RelationshipContext').enrich(event, World.registeredActorById(event.sourceId)?.session || event.sourceId,
+        World.registeredActorById(event.targetId)?.actor);
+};
 memory.clanSocial = invoke('GameServer/Clan/ClanSocialRuntime').view;
 memory.events = new (require('./InteractionEventQueue'))(memory, {
     onCommit(ownerId) {

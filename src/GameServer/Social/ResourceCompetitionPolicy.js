@@ -49,7 +49,7 @@ function view(unit, field) {
 // key: the encounter's key; each side's can-I-win is rolled once here and
 // returned as willing [actor, peer], carried on to give-way and the PvP start.
 // willing: the rolls already taken for this encounter (a re-check reuses them).
-function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, towardActor, rng, key, willing = null }) {
+function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, towardActor, rng, key, willing = null, actorKnowledge = null, peerKnowledge = null }) {
     // A moderate shortage is already noticeable; abundant resources never provoke a dispute.
     const shortage = Math.sqrt(clamp((pressure - 1) / 2));
     if (!shortage) return { action: 'coexist', pvpIntent: false, reason: 'resource_available' };
@@ -60,8 +60,9 @@ function decide({ pressure, actor, peer, actorPersona, peerPersona, towardPeer, 
     const canGroup = (!actor.partyId || !peer.partyId)
         && Math.abs(actor.level - peer.level) <= 4
         && (actor.size + peer.size <= 5);
-    const sides = willing || [[actor, peer, a, ab], [peer, actor, b, ba]].map(([own, other, t, f], index) =>
-        Visible.willing(Visible.canWin({ own: view(own, 'own'), other: view(other, 'seen'), traits: t, fear: f.fear }), key, 'can_win', index));
+    const sides = willing || [[actor, peer, a, ab, actorKnowledge], [peer, actor, b, ba, peerKnowledge]].map(([own, other, t, f, knowledge], index) =>
+        Visible.willing(Visible.canWin({ own: view(own, 'own'), other: view(other, 'seen'), traits: t, fear: f.fear,
+            knowledge }), key, 'can_win', index));
     const cooperate = clamp(0.1 + (a.sociability + b.sociability) * 0.2 + friendly * 0.35 - hostile * 0.6, 0, 0.8);
     if (canGroup && rng() < cooperate) {
         return { action: 'offer_party', pvpIntent: false, reason: 'shared_target', willing: sides,

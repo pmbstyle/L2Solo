@@ -1,3 +1,4 @@
+const ActorQueries = require('../../../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
@@ -16,7 +17,6 @@ const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
-const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
@@ -31,6 +31,7 @@ const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
@@ -62,13 +63,18 @@ function sellTripDue(session, bot, now = Date.now()) {
     const partyId = session.hotBackgroundPartyId || null;
     const last = session.sellTripCheck;
     if (last && last.items === items && last.count === items.length && last.life === life
+        && last.revision === Number(bot.backpack.inventoryRevision || 0)
         && last.level === level && last.partyId === partyId
         && !(last.pauseEndsAt && now >= last.pauseEndsAt)) return last.need;
     const state = MarketListingPolicy.actorState(session);
     if (partyId) state.partyId = partyId;
-    const need = ItemDisposition.inventoryCleanupNeed(state, { now });
+    const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
+    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp: now });
+    const need = forced || (economy.network.activity?.activity === 'selling'
+        ? { reason: 'wish_funding', itemIds: economy.network.activity.items } : null);
     const pause = Number(state.stats?.marketSellRetryAfter || 0);
     session.sellTripCheck = { items, count: items.length, life, level, partyId,
+        revision: Number(bot.backpack.inventoryRevision || 0),
         pauseEndsAt: pause > now ? pause : 0, need };
     return need;
 }
@@ -538,6 +544,17 @@ module.exports = {
             if (trip !== 'deferred') return;
         }
 
+        const floor = SurvivalFloor.forActor(bot);
+        if (floor?.action === 'rest') {
+            bot.automation.abortAll(bot);
+            session.plan = 'resting';
+            return;
+        }
+        if (floor?.action === 'unload' && isSoloHunter(session)) {
+            const trip = startShopping(session, bot, BotAI, `Inventory ${floor.reason}. Heading to town.`);
+            if (trip !== 'deferred') return;
+        }
+
         // 1. Expire buffs check for hunting bots. A hot bot already in a
         // starter town also refreshes once per visit before going back out.
         if (!session.followPlayerSession) {
@@ -560,10 +577,21 @@ module.exports = {
             }
         }
 
-        if (isSoloHunter(session) && ShotStock.needsActorRestock(bot, 0)) {
-            const plan = ShotStock.planForActor(bot);
-            const trip = startShopping(session, bot, BotAI, `Out of ${ShotStock.describe(plan)}. Heading to town to restock.`);
-            if (trip !== 'deferred') return;
+        if (isSoloHunter(session) && Number(session.companionEquipmentRetryAt || 0) <= Date.now()) {
+            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forActor(bot, session);
+            if (session.coldLifeState) Object.assign(session.coldLifeState.stats ||= {}, economy.statsPacket);
+            if (economy.network.activity?.activity === 'improving') {
+                if (economy.network.activity.improvement?.kind !== 'enchant' && !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(economy.state)) {
+                    const trip = startShopping(session, bot, BotAI, 'Heading to town for my planned improvement.');
+                    if (trip !== 'deferred' && trip !== false) return;
+                }
+                invoke('GameServer/Bot/Economy/BotImprovementService').reviewHot(session, economy)
+                    .catch(error => utils.infoWarn('BotImprovement', '%s', error.message));
+            }
+            if (economy.network.activity?.activity === 'shopping') {
+                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.');
+                if (trip !== 'deferred' && trip !== false) return;
+            }
         }
 
         // 2. PK Spotting & Fleeing Check
@@ -571,7 +599,7 @@ module.exports = {
         let spottedPk = null;
         let pkDistance = 99999;
 
-        World.user.sessions.forEach((user) => {
+        ActorQueries.near(World, bot, 1500).forEach((user) => {
             const other = user.actor;
             if (other && other !== bot && other.fetchIsOnline() && !other.state.fetchDead() && other.fetchKarma() > 0) {
                 const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
@@ -587,7 +615,7 @@ module.exports = {
             session.pkSighting = spottedPk ? { id: spottedPk.fetchId(), at: Date.now() } : null;
         }
         if (spottedPk) {
-            const allies = World.user.sessions.filter((otherSession) => {
+            const allies = ActorQueries.near(World, bot, 1000).filter((otherSession) => {
                 const other = otherSession.actor;
                 if (!BotPvpRisk.isCombatAlly(session, otherSession, spottedPk)) return false;
                 const dist = new SpeckMath.Point3D(other.fetchLocX(), other.fetchLocY(), other.fetchLocZ()).distance(botPt);
@@ -853,6 +881,17 @@ module.exports = {
                             }
                         }
 
+                        const crystal = bot.backpack.fetchItems().find(item => invoke('GameServer/Items/SoulCrystalProgression').crystal(item));
+                        if (crystal && npc.fetchHp() <= npc.fetchMaxHp() / 2 && !npc.fetchSoulCrystalAbsorber?.(bot)
+                            && invoke('GameServer/Items/SoulCrystalProgression').canUse(session, crystal, npc)) {
+                            const itemSkill = invoke('GameServer/Items/C4ItemSkills').resolve(crystal.fetchSelfId());
+                            const skill = bot.backpack.buildItemSkill(itemSkill);
+                            if (skill && bot.fetchMp() >= skill.fetchConsumedMp() && bot.canUseSkill?.(skill) !== false) {
+                                bot.select({ id: npc.fetchId() });
+                                bot.backpack.useDrainSoulItem(session, crystal.fetchId(), itemSkill, skill);
+                                if (bot.state.fetchCasts()) return;
+                            }
+                        }
                         BotAI.executeCombat(session, bot, npc, Generics);
                     }
                 }).catch(() => {

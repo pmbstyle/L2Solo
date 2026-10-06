@@ -1,3 +1,4 @@
+const ActorQueries = require('../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
@@ -384,7 +385,7 @@ const BotManager = {
 
     activePopulationForPk(profile) {
         if (!profile) return [];
-        return World.user.sessions.filter((session) => {
+        return ActorQueries.near(World, profile.anchor, profile.activationRadius).filter((session) => {
             const actor = session?.actor;
             if (!actor || !actor.fetchIsOnline?.() || session.plan === 'merchant') return false;
             if (actor.state?.fetchDead?.() || utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) return false;
@@ -1371,7 +1372,7 @@ const BotManager = {
         
         const packet = ServerResponse.speak(session.actor, { kind: 1, text: text });
         
-        World.user.sessions.forEach((user) => {
+        ActorQueries.humans(World).forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
                 user.dataSendToMe(packet);
             }
@@ -1463,7 +1464,7 @@ const BotManager = {
         let maxCount = 0;
         let bestSector = null;
 
-        World.user.sessions.forEach((session) => {
+        ActorQueries.humans(World).forEach((session) => {
             const actor = session.actor;
             if (actor && actor.fetchIsOnline() && actor.fetchKarma() === 0 && !session.accountId?.startsWith('bot_') && !utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
                 const sx = Math.floor(actor.fetchLocX() / 4000);

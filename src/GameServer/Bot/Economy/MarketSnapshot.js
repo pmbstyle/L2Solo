@@ -8,6 +8,8 @@ const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const MarketTradeOverviewReader = invoke('MarketTradeOverviewReader');
 const World = invoke('GameServer/World/World');
+const MarketEconomyOverview = require('../../../MarketEconomyOverview');
+const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 
 function emptyTown() {
     return { dynamicWts: 0, dynamicWtb: 0, fixedWts: 0, fixedWtb: 0, sellLines: 0, buyLines: 0, sellUnits: 0, buyUnits: 0 };
@@ -392,7 +394,9 @@ async function detail() {
         ...playerStores(World.user?.sessions || [], itemsById),
         ...afkStores(afk, itemsById)
     ];
-    return { ...buildDetail({ states, stores, transactions: MarketTelemetry.transactions(), history, itemsById }), storeHistory };
+    return { ...buildDetail({ states, stores, transactions: MarketTelemetry.transactions(), history, itemsById }), storeHistory,
+        economy: { counters: MarketEconomyOverview.counterIndices(MarketCounters),
+            adena: history?.economy || null } };
 }
 
 function history(selfId, options = {}) {

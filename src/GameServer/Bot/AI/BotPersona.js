@@ -159,11 +159,12 @@ function fromTableRow(row) {
 // A persona for a new bot: its type by its class and the deficit of each type
 // against its share (counts: stored personas per type; total: the population
 // the shares are of), then traits and inclinations rolled by its seed.
-function generated(subject = {}, { counts = {}, total = 1 } = {}) {
+function generated(subject = {}, { counts = {}, total = 1, archetype: selectedType = null } = {}) {
     const characterId = idOf(subject);
     if (!characterId) return null;
     const seed = seedFor(subject);
-    const archetype = Types.chooseType(classIdOf(subject), seed, counts, total);
+    const archetype = Types.candidates(classIdOf(subject)).includes(selectedType)
+        ? selectedType : Types.chooseType(classIdOf(subject), seed, counts, total);
     return withDerived({
         characterId,
         version: VERSION,
@@ -291,7 +292,7 @@ const BotPersona = {
     },
 
     // The stored persona, or a new bot's persona made and stored once.
-    ensure(subject) {
+    ensure(subject, { archetype = null } = {}) {
         const id = idOf(subject);
         if (!id) return Promise.resolve(null);
         const cached = cache.get(id);
@@ -300,7 +301,7 @@ const BotPersona = {
         const work = this.load(id).then((existing) => {
             if (existing) return existing;
             const timestamp = now();
-            const persona = { ...generated(subject, { counts: typeCounts, total: populationTotal() }), createdAt: timestamp, updatedAt: timestamp };
+            const persona = { ...generated(subject, { counts: typeCounts, total: populationTotal(), archetype }), createdAt: timestamp, updatedAt: timestamp };
             return save(persona).then(() => {
                 remember(persona);
                 return persona;

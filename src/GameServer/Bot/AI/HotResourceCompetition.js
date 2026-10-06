@@ -125,9 +125,12 @@ function beforeAttack(session, mob, now = Date.now(), rng = Math.random) {
             own: { look: seen.look, people: seen.people }, seen };
     };
     const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
+    const actorPersona = Voice.profile(session), peerPersona = Voice.profile(claimant.session);
+    const key = `hot_competition:${id(session)}:${id(claimant.session)}:${mob.fetchId()}:${now}`;
     const outcome = Policy.decide({ pressure: (all.length / supply), actor: unit(a), peer: unit(b),
-        towardPeer: ab, towardActor: ba, actorPersona: Voice.profile(session), peerPersona: Voice.profile(claimant.session), rng,
-        key: `hot_competition:${id(session)}:${id(claimant.session)}:${mob.fetchId()}:${now}` });
+        towardPeer: ab, towardActor: ba, actorPersona, peerPersona, rng, key,
+        actorKnowledge: actorPersona ? { source: session, persona: actorPersona, key: `${key}:0` } : null,
+        peerKnowledge: peerPersona ? { source: claimant.session, persona: peerPersona, key: `${key}:1` } : null });
     all.forEach(s => { s.nextHotCompetitionAt = now + COOLDOWN_MS; });
     a.owner.hotCompetitionDecision = { mob, claimant, signature: a.signature, peerSignature: b.signature,
         action: outcome.action, until: now + COOLDOWN_MS };
