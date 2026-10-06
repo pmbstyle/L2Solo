@@ -3408,7 +3408,7 @@ const PopulationService = {
             const result = BackgroundResolver.resolveSolo({ state: karmaPlan.plannedState,
                 spot: karmaPlan.spot, targetNpcId: karmaPlan.targetNpcId, timestamp: startedAt,
                 elapsedMs: Math.max(1000, startedAt - Number(state.timing?.lastResolvedAt || startedAt - 60000)) });
-            return LifeState.applyResolve(karmaPlan.plannedState, result)
+            return LifeState.applyResolve(karmaPlan.plannedState, result, options)
                 .then(saved => ({ ok: !!saved, state: saved || state, debug: result.debug }));
         }
         const precomputedResult = workerRequest?.precomputedResult || null;

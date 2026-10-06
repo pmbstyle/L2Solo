@@ -2573,18 +2573,18 @@ const BotLifeState = {
                                 penaltyAppliedAt: deathRecord.penaltyAppliedAt,
                                 karma: profiledState.stats?.karma,
                                 sp: row.sp
-                            });
+                            }, nativeWriteOptions);
                         }
                         if (result.patch?.restoreExpPercent !== undefined) {
-                            return Database.restoreCharacterDeathExperience(row.characterId, result.patch.restoreExpPercent, timestamp)
-                                .then((restored) => restored || Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp));
+                            return Database.restoreCharacterDeathExperience(row.characterId, result.patch.restoreExpPercent, timestamp, nativeWriteOptions)
+                                .then((restored) => restored || Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
                         }
                         if (result.patch?.clearDeathExperience) {
-                            return Database.clearCharacterDeathExperience(row.characterId, result.patch.clearDeathExperience, timestamp)
-                                .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp));
+                            return Database.clearCharacterDeathExperience(row.characterId, result.patch.clearDeathExperience, timestamp, nativeWriteOptions)
+                                .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
                         }
                         return Number(state.stats?.karma || 0) > 0
-                            ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp)
+                            ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions)
                             : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
                     })
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
