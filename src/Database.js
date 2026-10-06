@@ -1434,8 +1434,8 @@ function write(sql, params = []) {
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 
-// Capture before a class flush can await; skill writers capture at their call.
-// Only these three writers use the opaque record and their original SQL queue.
+// Capture before a native flush can await; skill writers capture at their call.
+// Each admitted writer keeps its original SQL queue.
 function captureWriteAdmission(options, errorCode) {
     let beforeWrite, present = false, captureFailed = false, captureError;
     try {
@@ -8649,7 +8649,11 @@ const Database = {
                 level = ?, exp = ?, sp = ? WHERE id = ?`,
             [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience'));
     },
-    updateCharacterExperience(id, level, exp, sp) { return withCharacterFlush(id, () => update('characters', { level, exp, sp }, 'id = ?', [id], 'character:experience')); },
+    updateCharacterExperience(id, level, exp, sp, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write');
+        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "level" = ?, "exp" = ?, "sp" = ? WHERE id = ?',
+            [level, exp, sp, id], 'character:experience', admission));
+    },
     fetchCharacterDeathExperience(id) {
         return selectOne('character_death_experience', ['*'], 'characterId = ?', [Number(id)], 'character:death-exp-fetch')
             .then((rows) => rows[0] || null);

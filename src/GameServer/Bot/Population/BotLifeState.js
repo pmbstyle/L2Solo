@@ -2504,7 +2504,9 @@ const BotLifeState = {
         const currentClassId = Number(nextState.stats?.classId || 0);
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId;
         const characterId = nextState.characterId;
-        const classWriteOptions = options.persist !== false && workerOptions ? {
+        // The cached input remains current until this resolve publishes its
+        // own snapshot. Recheck that capability at assigned native writers.
+        const nativeWriteOptions = options.persist !== false && workerOptions ? {
             beforeWrite: () => checkWorkerCommandAdmission({ characterId }, workerOptions)
         } : undefined;
         const progression = needsClassProgression
@@ -2517,7 +2519,7 @@ const BotLifeState = {
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            }, classWriteOptions))
+            }, nativeWriteOptions))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 
         return progression.then((resolved) => {
@@ -2583,7 +2585,7 @@ const BotLifeState = {
                         }
                         return Number(state.stats?.karma || 0) > 0
                             ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp)
-                            : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp);
+                            : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
                     })
                     .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, 'resolve'))
