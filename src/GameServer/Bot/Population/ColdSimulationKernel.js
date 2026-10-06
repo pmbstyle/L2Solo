@@ -974,7 +974,12 @@ class ColdSimulationKernel {
             const alarmToken = this.armAlarm('claim_ack', id,
                 this.claimStartedAt.get(id) + this.claimAckTimeoutMs,
                 { stamp: requestId, characterId: id, operational: true });
-            this.claimAttempts.set(id, { requestId, alarmToken });
+            const partyId = candidate.purpose?.kind === 'party' ? String(candidate.purpose.partyId) : null;
+            this.claimAttempts.set(id, { requestId, alarmToken, partyId });
+            if (partyId) {
+                const run = this.partyRuns.get(partyId);
+                if (run) run.requestId = requestId;
+            }
         }
         this.emit('claim_request', { candidates: candidates.map(({ state, context, ...candidate }) => candidate) }, requestId);
     }
@@ -1052,22 +1057,71 @@ class ColdSimulationKernel {
         });
     }
 
+    livePartialRun(run) {
+        return !!run && !run.rejected && this.partyRuns.get(String(run.purpose.partyId)) === run
+            && run.purpose.memberIds.some(id => this.claiming.has(Number(id))
+                && this.claimAttempts.get(Number(id))?.requestId === run.requestId
+                && this.claimAttempts.get(Number(id))?.partyId === String(run.purpose.partyId));
+    }
+
+    renewalHolder(token, liveRuns = new Map()) {
+        if (this.stopping || !Protocol.leaseRenewalToken(token)) return null;
+        const id = token.characterId, entry = this.states.get(id);
+        if (entry?.state.phase !== 'cold') return null;
+        const same = grant => grant && grant.ownerId === token.ownerId && grant.revision === token.revision
+            && grant.leaseId === token.leaseId && grant.characterId === id;
+        const active = this.inFlight.get(id);
+        if (active) return same(active.grant) ? active : null;
+        const partyId = entry.state.party?.partyId || entry.state.partyId || entry.context?.party?.partyId;
+        const run = this.partyRuns.get(String(partyId || ''));
+        if (!liveRuns.has(run)) liveRuns.set(run, this.livePartialRun(run));
+        return liveRuns.get(run) && same(run.grants.get(id)) ? run : null;
+    }
+
+    *leaseRenewalPages({ replyBy } = {}) {
+        if (!Number.isSafeInteger(replyBy) || replyBy <= this.now() || this.stopping) return;
+        const runs = new Set();
+        for (const [id, attempt] of this.claimAttempts) {
+            if (!attempt.partyId || !this.claiming.has(id)) continue;
+            const run = this.partyRuns.get(attempt.partyId);
+            if (run?.requestId === attempt.requestId && !run.rejected) runs.add(run);
+        }
+        const activeHolders = [];
+        for (const active of this.inFlight.values()) activeHolders.push(active);
+        const holders = function* (kernel) {
+            // Capture only the bounded ownership window. New holders arriving
+            // during page ACK waits belong to the next renewal round.
+            for (const active of activeHolders) yield active.grant;
+            for (const run of runs) if (kernel.livePartialRun(run)) yield* run.grants.values();
+        }(this);
+        const seen = new Set();
+        let page = [], liveRuns = new Map();
+        for (const grant of holders) {
+            if (this.stopping || this.now() >= replyBy) return;
+            const token = Protocol.leaseRenewalToken(grant);
+            if (!token || token.leaseUntil <= this.now() || seen.has(token.characterId) || !this.renewalHolder(token, liveRuns)) continue;
+            seen.add(token.characterId); page.push(token);
+            if (page.length === Protocol.MAX_BATCH) { yield page; page = []; liveRuns = new Map(); }
+        }
+        if (page.length && !this.stopping && this.now() < replyBy) yield page;
+    }
+
     onLeaseRenewal(payload = {}) {
+        const liveRuns = new Map();
         (payload.renewals || []).forEach((renewal) => {
             const id = Number(renewal.characterId);
+            const holder = this.renewalHolder(renewal, liveRuns);
             const active = this.inFlight.get(id);
-            const grant = active?.grant;
-            if (!active || !grant
-                || String(grant.leaseId || '') !== String(renewal.leaseId || '')
-                || Number(grant.revision) !== Number(renewal.revision)) {
+            const grant = active?.grant || holder?.grants.get(id);
+            if (!holder || !grant) {
                 this.stats.leaseRenewalMisses += 1;
                 return;
             }
             const leaseUntil = Number(renewal.leaseUntil || 0);
             if (!Number.isFinite(leaseUntil) || leaseUntil <= Number(grant.leaseUntil || 0)) return;
-            active.grant = { ...grant, leaseUntil };
-            if (active.partyId) {
-                const run = this.partyRuns.get(String(active.partyId));
+            if (active) active.grant = { ...grant, leaseUntil };
+            if (!active || active.partyId) {
+                const run = !active ? holder : this.partyRuns.get(String(active.partyId));
                 const partyGrant = run?.grants.get(id);
                 if (partyGrant) run.grants.set(id, { ...partyGrant, leaseUntil });
             }

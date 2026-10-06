@@ -375,17 +375,14 @@ function releaseBatch(tokens = [], options = {}) {
     }).catch(recordFailure);
 }
 
-function renewActiveLeases(options = {}) {
-    const timestamp = Number(options.timestamp || Date.now());
-    const leaseMs = Math.max(1000, Number(options.leaseMs || DEFAULT_LEASE_MS));
-    return Database.renewColdSimulationLeases({
-        ownerId: OWNER_ID,
-        timestamp,
-        leaseMs
-    }).then((results) => {
+function renewActiveLeases(tokens = [], options = {}) {
+    return Database.renewColdSimulationLeases(tokens, options).then((results) => {
         results.forEach((result) => {
-            if (result.ok) reflect(result);
-            else Metrics().recordColdOwnerRejected(result.reason);
+            if (!result.ok) { Metrics().recordColdOwnerRejected(result.reason); return; }
+            const cached = invoke('GameServer/Bot/Population/BotLifeState').cachedState(result.characterId);
+            const current = cached?.simulation;
+            if (cached?.phase === 'cold' && current?.ownerId === result.ownerId && current.revision === result.revision
+                && current.leaseId === result.leaseId && options.canRenew(result) === true) reflect(result);
         });
         return results;
     }).catch(recordFailure);

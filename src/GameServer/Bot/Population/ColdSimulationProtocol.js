@@ -12,6 +12,7 @@ const MAIN_TYPES = new Set([
     // ColdTableChannel pages: limited by size only, so no batch field below.
     'table_page',
     'claim_ack',
+    'lease_renewal_probe',
     'lease_renewal',
     'commit_ack',
     'release_ack',
@@ -32,6 +33,7 @@ const WORKER_TYPES = new Set([
     'worker_presence_ack',
     'worker_repair_ack',
     'claim_request',
+    'lease_renewal_candidates',
     'proposal_batch',
     'release_request',
     'command_request',
@@ -111,6 +113,7 @@ function validateEnvelope(message, direction, options = {}) {
         catalog_page: 'rows',
         claim_request: 'candidates',
         claim_ack: 'grants',
+        lease_renewal_candidates: 'tokens',
         lease_renewal: 'renewals',
         proposal_batch: 'proposals',
         commit_ack: 'results',
@@ -124,6 +127,23 @@ function validateEnvelope(message, direction, options = {}) {
     const batch = batchField ? message.payload[batchField] : null;
     if (batchField && (!Array.isArray(batch) || batch.length > Number(options.maxBatch || MAX_BATCH))) {
         return { ok: false, reason: 'batch_size' };
+    }
+    if (message.type === 'lease_renewal_probe' && (!Number.isSafeInteger(message.payload.replyBy)
+        || message.payload.replyBy <= 0)) return { ok: false, reason: 'invalid_renewal_probe' };
+    if (message.type === 'lease_renewal_candidates' || message.type === 'lease_renewal') {
+        const payload = message.payload, ids = new Set();
+        if (message.type === 'lease_renewal_candidates' && (typeof payload.requestId !== 'string'
+            || !payload.requestId || payload.requestId.length > 160 || !Number.isSafeInteger(payload.pageIndex)
+            || payload.pageIndex < 0 || typeof payload.done !== 'boolean')) {
+            return { ok: false, reason: 'invalid_renewal_page' };
+        }
+        for (const value of batch) {
+            const token = leaseRenewalToken(value);
+            if (!token || ids.has(token.characterId) || (message.type === 'lease_renewal' && value.ok !== true)) {
+                return { ok: false, reason: 'invalid_renewal_token' };
+            }
+            ids.add(token.characterId);
+        }
     }
     if (message.type === 'worker_presence_request' || message.type === 'worker_repair_request') {
         const ids = new Set(), edges = new Set();
@@ -226,6 +246,16 @@ function validateToken(token = {}) {
     return { ok: true };
 }
 
+function leaseRenewalToken(token) {
+    if (!token || typeof token !== 'object' || Array.isArray(token)
+        || !Number.isSafeInteger(token.characterId) || token.characterId <= 0
+        || token.ownerId !== 'cold_simulation_owner' || !Number.isSafeInteger(token.revision) || token.revision < 0
+        || typeof token.leaseId !== 'string' || !token.leaseId || token.leaseId.length > 200
+        || !Number.isSafeInteger(token.leaseUntil) || token.leaseUntil <= 0) return null;
+    return { characterId: token.characterId, ownerId: token.ownerId, revision: token.revision,
+        leaseId: token.leaseId, leaseUntil: token.leaseUntil };
+}
+
 module.exports = {
     PROTOCOL_VERSION,
     MAX_BATCH,
@@ -234,6 +264,7 @@ module.exports = {
     envelopeBytes,
     validateEnvelope,
     validateToken,
+    leaseRenewalToken,
     safetyCheckpoint,
     sameSafetyCheckpoint,
     byteLength

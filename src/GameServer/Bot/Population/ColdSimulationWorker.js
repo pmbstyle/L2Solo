@@ -106,6 +106,7 @@ let shuttingDown = false;
 let competition = null;
 let competitionReady = false;
 let safetyStateReady = false;
+let leaseProbe = null;
 let safetyStateRepairs = 0;
 let safetyBoardRepairs = 0;
 let previousElu = performance.eventLoopUtilization();
@@ -148,6 +149,23 @@ function boardReady() {
 function safetyTotals() {
     return { stateRepairs: safetyStateRepairs, boardRepairs: safetyBoardRepairs,
         coverageRepairs: kernel?.stats.orphanRecoveries || 0 };
+}
+
+function sendLeasePage() {
+    const probe = leaseProbe;
+    if (!probe || shuttingDown || !kernel || kernel.stopping || Date.now() >= probe.replyBy) {
+        leaseProbe = null; return;
+    }
+    const page = probe.pages.next();
+    const tokens = page.done ? [] : page.value;
+    const msgId = Protocol.envelope('lease_renewal_candidates', epoch).msgId;
+    // One page remains outstanding. The next page is built only after main
+    // acknowledges this one, so native pressure cannot grow a queued inventory.
+    probe.waiting = msgId;
+    probe.done = page.done;
+    probe.tokens = new Map(tokens.map(token => [token.characterId, token]));
+    send('lease_renewal_candidates', { requestId: probe.requestId,
+        pageIndex: probe.pageIndex++, done: page.done, tokens }, msgId);
 }
 
 function safetyPresence(checkpoint) {
@@ -429,6 +447,7 @@ function startKernel(config = {}) {
         flushHardMs: config.flushHardMs
     });
     loopTimer = setInterval(() => {
+        if (leaseProbe && (shuttingDown || Date.now() >= leaseProbe.replyBy)) leaseProbe = null;
         drainMarketEvents();
         kernel.tick();
     }, Math.max(5, Number(config.loopIntervalMs) || 20));
@@ -545,8 +564,22 @@ async function handle(message) {
     case 'claim_ack':
         kernel?.onClaimAck(payload, message.msgId);
         break;
+    case 'lease_renewal_probe':
+        if (!kernel || shuttingDown || kernel.stopping || !safetyStateReady || Date.now() >= payload.replyBy) break;
+        if (leaseProbe && Date.now() < leaseProbe.replyBy) break;
+        leaseProbe = { requestId: message.msgId, replyBy: payload.replyBy, pageIndex: 0,
+            pages: kernel.leaseRenewalPages({ replyBy: payload.replyBy }) };
+        sendLeasePage();
+        break;
     case 'lease_renewal':
+        if (leaseProbe?.waiting !== message.msgId || Date.now() >= leaseProbe.replyBy || shuttingDown) break;
+        if (payload.renewals.some(result => {
+            const token = leaseProbe.tokens.get(result.characterId);
+            return !token || token.ownerId !== result.ownerId || token.revision !== result.revision || token.leaseId !== result.leaseId;
+        })) break;
         kernel?.onLeaseRenewal(payload);
+        if (leaseProbe.done) leaseProbe = null;
+        else sendLeasePage();
         break;
     case 'commit_ack':
         kernel?.onCommitAck(payload);
@@ -604,6 +637,7 @@ async function handle(message) {
         competition?.release(payload.events || []);
         break;
     case 'shutdown':
+        leaseProbe = null;
         marketCommands.clear();
         marketEvents.clear();
         if (shuttingDown) break;

@@ -928,6 +928,7 @@ function claimAck(kernel, payload) {
         leaseId: 'renewal-lease',
         leaseUntil: now + 1000
     };
+    renewalKernel.upsert({ state: state(90), context: {} });
     renewalKernel.inFlight.set(90, {
         grant: renewalGrant,
         state: state(90),

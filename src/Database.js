@@ -13,6 +13,7 @@ const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPo
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
 const BoardRules = require('./GameServer/AfkTrade/BoardRules');
 const BotErrands = require('./GameServer/Bot/Population/BotErrands');
+const ColdProtocol = require('./GameServer/Bot/Population/ColdSimulationProtocol');
 
 let connection;
 let queryTail = Promise.resolve();
@@ -4629,60 +4630,46 @@ const Database = {
         }, 'bot-life:cold-owner-release');
     },
 
-    renewColdSimulationLeases({
-        timestamp = now(),
+    renewColdSimulationLeases(tokens = [], {
+        now: clock = Date.now,
         leaseMs = 30000,
-        ownerId = COLD_SIMULATION_OWNER
+        canRenew
     } = {}) {
-        const cutoff = Number(timestamp);
-        const duration = Math.max(1000, Number(leaseMs) || 30000);
-        const owner = String(ownerId || COLD_SIMULATION_OWNER);
-        if (owner !== COLD_SIMULATION_OWNER || !Number.isFinite(cutoff)) return Promise.resolve([]);
-
-        return inTransaction(() => {
-            const candidates = all(`SELECT characterId, simulationRevision, simulationLeaseId, simulationLeaseUntil
-                FROM bot_life_state
-                WHERE simulationOwner = ?
-                  AND simulationLeaseId IS NOT NULL
-                  AND simulationLeaseUntil > ?`, [owner, cutoff]);
-            return candidates.map((candidate) => {
-                const leaseUntil = Math.max(
-                    Number(candidate.simulationLeaseUntil || 0),
-                    cutoff + duration
-                );
-                const result = write(`UPDATE bot_life_state
-                    SET simulationLeaseUntil = ?
-                    WHERE characterId = ? AND simulationOwner = ?
-                      AND simulationRevision = ? AND simulationLeaseId = ?
-                      AND simulationLeaseUntil > ?`, [
-                    leaseUntil,
-                    Number(candidate.characterId),
-                    owner,
-                    Number(candidate.simulationRevision),
-                    candidate.simulationLeaseId,
-                    cutoff
-                ]);
-                if (result.affectedRows !== 1) {
-                    return {
-                        ok: false,
-                        characterId: Number(candidate.characterId),
-                        ownerId: owner,
-                        revision: Number(candidate.simulationRevision),
-                        leaseId: candidate.simulationLeaseId,
-                        reason: 'renewal_cas_failed'
-                    };
-                }
-                return {
-                    ok: true,
-                    characterId: Number(candidate.characterId),
-                    ownerId: owner,
-                    revision: Number(candidate.simulationRevision),
-                    leaseId: candidate.simulationLeaseId,
-                    leaseUntil,
-                    reason: 'renewed'
-                };
-            });
-        }, 'bot-life:cold-owner-renew-batch');
+        const batch = Array.isArray(tokens) && tokens.length <= ColdProtocol.MAX_BATCH
+            ? tokens.map(ColdProtocol.leaseRenewalToken) : null;
+        const ids = new Set(batch?.filter(Boolean).map(token => token.characterId));
+        if (!batch || batch.length > ColdProtocol.MAX_BATCH || batch.some(token => !token)
+            || ids.size !== batch.length || (batch.length && (typeof clock !== 'function'
+                || typeof canRenew !== 'function' || !Number.isSafeInteger(leaseMs) || leaseMs < 1000))) {
+            return Promise.reject(new Error('invalid_lease_renewal_batch'));
+        }
+        if (!batch.length) return Promise.resolve([]);
+        return withCharacterFlushes([...ids], () => inTransaction(() => batch.map(token => {
+            const cutoff = clock();
+            if (!Number.isSafeInteger(cutoff) || cutoff < 0 || !Number.isSafeInteger(cutoff + leaseMs)) {
+                throw new Error('invalid_lease_renewal_clock');
+            }
+            const refused = reason => ({ ok: false, ...token, reason });
+            if (canRenew(token) !== true) return refused('renewal_source_changed');
+            const current = one(`SELECT phase, simulationOwner, simulationRevision, simulationLeaseId,
+                simulationLeaseUntil FROM bot_life_state WHERE characterId = ?`, [token.characterId]);
+            if (!current) return refused('missing_state');
+            if (current.phase !== 'cold') return refused('not_cold');
+            if (current.simulationOwner !== token.ownerId) return refused('owner_changed');
+            if (Number(current.simulationRevision) !== token.revision) return refused('stale_revision');
+            if (current.simulationLeaseId !== token.leaseId) return refused('lease_changed');
+            if (Number(current.simulationLeaseUntil) <= cutoff) return refused('lease_expired');
+            const leaseUntil = Math.max(Number(current.simulationLeaseUntil), cutoff + leaseMs);
+            const result = write(`UPDATE bot_life_state
+                SET simulationLeaseUntil = ?
+                WHERE characterId = ? AND phase = 'cold' AND simulationOwner = ?
+                  AND simulationRevision = ? AND simulationLeaseId = ?
+                  AND simulationLeaseUntil > ?`, [
+                leaseUntil, token.characterId, token.ownerId, token.revision, token.leaseId, cutoff
+            ]);
+            return result.affectedRows === 1 ? { ok: true, ...token, leaseUntil, reason: 'renewed' }
+                : refused('renewal_cas_failed');
+        }), 'bot-life:cold-owner-renew-batch'));
     },
 
     endPvpEncounter(key, ids, outcome = 'pvp_expired') {
