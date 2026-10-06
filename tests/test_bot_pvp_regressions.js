@@ -66,7 +66,9 @@ function actor(id, options = {}) {
 function session(actor, options = {}) {
     const session = { actor, accountId: `bot_${actor.id}`, aiActive: true, plan: 'hunting', packets: [],
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } }, ...options,
+        fetchAccountId() { return this.accountId; },
         dataSendToOthers(packet) { this.packets.push(packet); } };
+    if (session.accountId === 'player') session.accountId = `player_${actor.id}`;
     actor.session = session;
     return session;
 }
@@ -78,7 +80,8 @@ function setup(options = {}, mode = 'hunting') {
     const own = session(bot, { plan: mode });
     const enemy = actor(nextId++, { flag: 1 });
     const attacker = session(enemy, { accountId: 'player', aiActive: false });
-    World.user = { sessions: [own, attacker] };
+    World.user = { sessions: [], revision: 0 };
+    World.insertUser(own); World.insertUser(attacker);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     return { bot, own, enemy, attacker };
@@ -129,7 +132,7 @@ Potions.tryUseInCombat = () => false;
     // attacker joins the encounter already under way.
     const { bot, own, enemy } = setup({ cp: 100 });
     const extra = actor(nextId++, { level: 45, flag: 1 });
-    World.user.sessions.push(session(extra, { accountId: 'player', aiActive: false }));
+    World.insertUser(session(extra, { accountId: 'player', aiActive: false }));
     Threats.record(bot, enemy, now); tick(own); Threats.record(bot, extra, now); tick(own);
     extra.hp = 20;
     extra.effects.sleep = { key: 'sleep', type: 'debuff', expiresAt: Date.now() + 10000 };
@@ -154,12 +157,12 @@ Potions.tryUseInCombat = () => false;
     const solo = Risk.defenseDecision(own, [enemy]);
     const ally = session(actor(nextId++, { level: 80 }));
     own.coldLifeState = ally.coldLifeState = { party: { partyId: 'friendly' } };
-    World.user.sessions.push(ally);
+    World.insertUser(ally);
     const grouped = Risk.defenseDecision(own, [enemy]);
     assert(grouped.score > solo.score, 'nearby allies count toward expected success');
     const guard = session(actor(nextId++, { level: 80 }));
     attacker.coldLifeState = guard.coldLifeState = { party: { partyId: 'hostile' } };
-    World.user.sessions.push(guard);
+    World.insertUser(guard);
     assert(Risk.defenseDecision(own, [enemy]).score < grouped.score, 'a weak target is not evaluated separately from its party');
     bot.fetchCollectivePAtk = () => 200;
     const plain = Risk.combatStrength(bot).power;
@@ -199,7 +202,9 @@ Potions.tryUseInCombat = () => false;
     let populationReads = 0;
     for (let i = 0; i < 10000; i++) {
         const a = actor(nextId++);
-        World.user.sessions.push({ get actor() { populationReads++; return a; } });
+        const registered = session(a);
+        Object.defineProperty(registered, 'actor', { get() { populationReads++; return a; } });
+        World.insertUser(registered);
     }
     const clock = Date.now;
     try {
@@ -219,7 +224,7 @@ Potions.tryUseInCombat = () => false;
         const { bot, own, enemy } = setup(); enemy.level = 10;
         grievance(own, enemy);
         const strong = actor(nextId++, { rank: 'c', flag: 1 }); // U26: visibly stronger, not a hidden level and price
-        World.user.sessions.push(session(strong, { accountId: 'player2' }));
+        World.insertUser(session(strong, { accountId: 'player2' }));
         Chat.record(session(actor(nextId++)), 'revenge', now);
         Revenge.request(own, enemy, 'revenge', ['Pending revenge warning.'], true, now, () => 0);
         assert(own.pendingPvpProvocation);
@@ -276,7 +281,7 @@ Potions.tryUseInCombat = () => false;
             const leader = session(actor(nextId++), { accountId: 'human' });
             own.partyCompanion = true; own.followPlayerSession = leader;
             const ally = session(actor(nextId++), { partyCompanion: true, followPlayerSession: leader });
-            World.user.sessions.push(leader, ally);
+            World.insertUser(leader); World.insertUser(ally);
             Index.invalidate();
             bot.skills = [{ fetchSelfId: () => 1069, fetchSkillType: () => Rules.EFFECT,
                 fetchTargetKind: () => 'enemy', fetchSemantic: () => ({ effect, effectType: 'debuff', sourceTarget: 'one' }),

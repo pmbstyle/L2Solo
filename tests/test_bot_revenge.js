@@ -33,8 +33,9 @@ function character(bot = true, level = 40) {
         backpack: { fetchItems: () => [{ fetchEquipped: () => true, fetchSelfId: () => 999999, fetchPrice: () => a.gear,
             fetchSlot: () => 7, fetchRank: () => a.rank || 'none' }] }
     };
-    a.session = { actor: a, aiActive: bot, accountId: bot ? `bot_${a.id}` : 'player', plan: 'hunting',
+    a.session = { actor: a, aiActive: bot, accountId: `${bot ? 'bot' : 'player'}_${a.id}`, plan: 'hunting',
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } },
+        fetchAccountId() { return this.accountId; },
         dataSendToOthers(packet) { events.push(['chat', a.id, packet]); } };
     if (bot) SocialMemory.accept(SocialPolicy.empty(a.id));
     return a;
@@ -52,7 +53,8 @@ try {
     Tactics.support = Tactics.control = Potions.tryUseInCombat = () => false;
     const bot = character(), foe = character(false, 10), helper = character(), outsider = character();
     helper.session.persona.traits = { assertiveness: 1, empathy: 0, commitment: 1, sociability: 1, caution: 0 };
-    World.user = { sessions: [bot.session, foe.session, helper.session, outsider.session] };
+    World.user = { sessions: [], revision: 0 };
+    [bot.session, foe.session, helper.session, outsider.session].forEach(s => World.insertUser(s));
     for (let i = 0; i < 500; i++) Memory.record(bot, foe, false, now + i);
     assert.strictEqual(Memory.entries(bot.session)[0].attacks, 1, 'a burst of damage counts as one incident');
     assert.strictEqual(writes.length, 1, 'damage bursts must not cause one write per hit');
@@ -107,7 +109,7 @@ try {
     const opener = character(), ally = character(), neutral = character(false);
     ally.session.persona.traits = { assertiveness: 1, empathy: 0, commitment: 1, sociability: 1, caution: 0 };
     opener.session.coldLifeState = ally.session.coldLifeState = { party: { partyId: 'opening_party' } };
-    World.user.sessions.push(opener.session, ally.session, neutral.session);
+    [opener.session, ally.session, neutral.session].forEach(s => World.insertUser(s));
     Revenge.onAttack(opener, neutral, now, () => 0.2);
     Threats.record(neutral, opener, now);
     assert.strictEqual(ally.session.pvpRevenge?.reason, 'party_attack',
@@ -151,7 +153,7 @@ try {
     doomed.setHp = hp => { doomed.hp = hp; };
     doomed.statusUpdateVitals = () => {};
     const summon = { fetchKind: () => 'Summon', fetchOwnerId: () => killer.id, fetchId: () => 1000001 };
-    World.user.sessions.push(doomed.session, killer.session);
+    World.insertUser(doomed.session); World.insertUser(killer.session);
     const generics = invoke(path.actor), flag = invoke('GameServer/Actor/PvpFlag');
     const die = generics.die, mark = flag.mark;
     const Database = invoke('Database');

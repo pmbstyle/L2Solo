@@ -1,8 +1,8 @@
-// Shared, short-lived lookup snapshot: a burst of hits/ticks does not scan
-// the online population per actor. Membership is revalidated at every use.
+// Party membership keeps its short-lived snapshot. Actor lookup uses the
+// current World registration directly, independently of spatial eligibility.
 const REFRESH_MS = 250;
 let source, revision, length = -1, expiresAt = 0;
-let actors = new Map(), parties = new Map();
+let parties = new Map();
 
 function keys(session) {
     const leader = session.partyCompanion === true ? session.followPlayerSession : session;
@@ -18,10 +18,9 @@ function refresh() {
     const now = Date.now();
     if (sessions === source && users?.revision === revision && sessions.length === length && now < expiresAt) return;
     source = sessions; revision = users?.revision; length = sessions.length; expiresAt = now + REFRESH_MS;
-    actors = new Map(); parties = new Map();
+    parties = new Map();
     for (const session of sessions) {
         if (!session?.actor) continue;
-        actors.set(Number(session.actor.fetchId?.()), session);
         for (const key of keys(session)) {
             if (!parties.has(key)) parties.set(key, new Set());
             parties.get(key).add(session);
@@ -30,9 +29,10 @@ function refresh() {
 }
 
 function actor(id) {
-    refresh();
-    const session = actors.get(Number(id));
-    return Number(session?.actor?.fetchId?.()) === Number(id) ? session.actor : null;
+    const lookup = Number(id);
+    const registered = invoke('GameServer/World/World').registeredActorById(lookup);
+    const current = registered?.actor;
+    return Number(current?.fetchId?.()) === lookup ? current : null;
 }
 
 function members(session) {
@@ -43,5 +43,5 @@ function members(session) {
 }
 
 module.exports = { actor, members, invalidate() {
-    expiresAt = 0; source = undefined; actors.clear(); parties.clear();
+    expiresAt = 0; source = undefined; parties.clear();
 }, REFRESH_MS };

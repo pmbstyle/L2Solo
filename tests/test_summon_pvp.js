@@ -14,7 +14,7 @@ function actor(id, x = 0) {
         fetchLocY: () => 0, fetchLocZ: () => 0, fetchRadius: () => 8, fetchHead: () => 0,
         fetchIsOnline: () => true, fetchPvpFlag() { return this.flag; }, fetchKarma: () => 0,
         state: { fetchDead: () => false, setHits() {}, setCasts() {} }, isDead: () => false };
-    a.session = { actor: a, accountId: 'player' };
+    a.session = { actor: a, accountId: `player_${id}`, fetchAccountId() { return this.accountId; } };
     return a;
 }
 (async () => {
@@ -34,7 +34,8 @@ function actor(id, x = 0) {
             timer: {}, attack: { clearTimers() {}, queueTimer(fn) { timers.push(fn); } },
             automation: { abortAll() {}, scheduleAction(_s, _a, _t, _r, callback) { moves.push(callback); } } });
         owner.summon = summon;
-        World.user = { sessions: [session, target.session] };
+        World.user = { sessions: [], revision: 0 };
+        World.insertUser(session); World.insertUser(target.session);
         World.fetchNpc = () => Promise.reject(new Error('not an NPC'));
         World.fetchUser = id => Promise.resolve(World.user.sessions.find(s => s.actor.id === id)?.actor);
         Actors.receivedHit = (_s, victim, amount, options) => damage.push({ victim, amount, source: options.source });
@@ -82,7 +83,7 @@ function actor(id, x = 0) {
         session.pvpRevenge.expiresAt = 0;
         assert(!Control.isValidEnemyTarget(owner, target), 'expired revenge does not authorize PK');
         const nextTarget = actor(2000003, 40);
-        World.user.sessions.push(nextTarget.session);
+        World.insertUser(nextTarget.session);
         owner.fetchClassId = () => 14;
         owner.skillset = { skills: [] };
         owner.dest = nextTarget.id;

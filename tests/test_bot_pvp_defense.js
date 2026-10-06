@@ -58,7 +58,9 @@ function actor(id, options = {}) {
 function session(actor, options = {}) {
     const session = { actor, accountId: `bot_${actor.id}`, aiActive: true, plan: 'hunting', packets: [],
         persona: { traits: { caution: 0.3, assertiveness: 0.8, empathy: 0.4, resilience: 0.8 } }, ...options,
+        fetchAccountId() { return this.accountId; },
         dataSendToOthers(packet) { this.packets.push(packet); } };
+    if (session.accountId === 'player') session.accountId = `player_${actor.id}`;
     actor.session = session;
     return session;
 }
@@ -70,7 +72,8 @@ function setup(options = {}, mode = 'hunting') {
     const own = session(bot, { plan: mode });
     const enemy = actor(nextId++, { flag: 1 });
     const attacker = session(enemy, { accountId: 'player', aiActive: false });
-    World.user = { sessions: [own, attacker] };
+    World.user = { sessions: [], revision: 0 };
+    World.insertUser(own); World.insertUser(attacker);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     return { bot, own, enemy, attacker };
@@ -195,7 +198,7 @@ for (const hp of [100, 20]) {
     });
     const weak = actor(nextId++, { level: 10, flag: 1 });
     const bystander = actor(nextId++, { level: 1, flag: 1 });
-    World.user.sessions.push(companion, session(weak, { aiActive: false }), session(bystander, { aiActive: false }));
+    [companion, session(weak, { aiActive: false }), session(bystander, { aiActive: false })].forEach(s => World.insertUser(s));
     const wakeCount = wakes.length;
     Threats.record(bot, enemy, now);
     assert.strictEqual(wakes.length - wakeCount, 2);
@@ -227,13 +230,13 @@ function skill(id, type, target, effect, power = 100) {
     const healer = session(actor(nextId++, { classId: 15, skills: [skill(1011, Rules.HEAL, 'friendly', 'heal')] }), {
         partyCompanion: true, followPlayerSession: own
     });
-    World.user.sessions.push(healer);
+    World.insertUser(healer);
     bot.hp = 25;
     Threats.record(bot, enemy, now); tick(healer);
     assert.deepStrictEqual(casts.at(-1), { id: bot.id, selfId: 1011, ctrl: false });
     bot.hp = 100;
     const extra = actor(nextId++, { level: 60, flag: 1 });
-    World.user.sessions.push(session(extra, { aiActive: false }));
+    World.insertUser(session(extra, { aiActive: false }));
     Threats.record(bot, extra, now);
     healer.actor.skills = [skill(1069, Rules.EFFECT, 'enemy', 'sleep')];
     tick(healer);
@@ -339,7 +342,7 @@ function skill(id, type, target, effect, power = 100) {
     const { own, bot, enemy } = setup();
     own.coldLifeState = { party: { partyId: 'background_test', leaderId: bot.id } };
     const ally = session(actor(nextId++), { coldLifeState: { party: { partyId: 'background_test', leaderId: bot.id } } });
-    World.user.sessions.push(ally);
+    World.insertUser(ally);
     Threats.record(bot, enemy, now);
     tick(ally);
     assert.strictEqual(ally.currentTargetId, enemy.id, 'materialized autonomous party members also defend one another');
