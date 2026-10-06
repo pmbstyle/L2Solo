@@ -496,7 +496,9 @@ class ColdSimulationCoordinator {
             this.recordInvalid(`in_${valid.reason}`);
             return;
         }
-        if (!this.remember(message.msgId)) {
+        // A restarted worker numbers its requests from 1 again (claim:1,
+        // release:1): a duplicate is the same id from the same worker epoch.
+        if (!this.remember(`${epoch}:${message.msgId}`)) {
             this.counters.duplicateMessages += 1;
             return;
         }
