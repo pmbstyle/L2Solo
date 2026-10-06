@@ -1358,6 +1358,12 @@ function applySchemaMigrations() {
                 CHECK(kind IN ('shop', 'sell_ad', 'buy_ad', 'order'))`);
         }
         if (!columns.includes('expiresAt')) connection.exec('ALTER TABLE afk_trade_shops ADD COLUMN expiresAt INTEGER NOT NULL DEFAULT 0');
+        // Old worlds still hold their history until History.prepare below.
+        // Deleting each closed shop invokes this legacy SET NULL foreign key;
+        // its owner index cannot serve shopId and would rescan all events.
+        if (connection.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='afk_trade_events'").get()) {
+            connection.exec('CREATE INDEX IF NOT EXISTS afk_trade_events_shop_migration ON afk_trade_events(shopId)');
+        }
         connection.exec(`
             DROP INDEX IF EXISTS afk_trade_shops_active_owner;
             CREATE UNIQUE INDEX afk_trade_shops_active_owner

@@ -65,6 +65,7 @@ async function outboxRows() {
 async function tradeWritesWorldAndHistory() {
     useWorld(worldPath);
     Database.init();
+    invoke('GameServer/DataCache').init();
     assert.strictEqual(Database.stats().historyPath, historyPath);
     await Database.createAccount('history_owner', 'pw');
     await Database.createAccount('history_buyer', 'pw');

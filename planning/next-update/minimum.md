@@ -49,6 +49,17 @@ World and history recovery must be evaluated together. Generated fixture
 databases verify specific transitions; they do not replace a real-world
 upgrade rehearsal.
 
+On 2026-10-06 the actual local world was rehearsed on a disposable copy:
+schema 49 upgraded to 58 in 23 seconds, retaining all 219,647 per-owner item
+totals, clan assets and original history rows. A missing legacy AFK-event
+foreign-key index was added before migration 53 deletes closed shops.
+Two ordinary server starts restored 1,779 bot states; native C4 login,
+character creation, world entry and the same character after restart passed.
+Both shutdowns drained history and finished in about 10 seconds. World and
+history integrity checks passed; the original world files stayed unchanged
+and all server ports were closed afterward. External AI was disabled for this
+rehearsal. This does not cover a graphical client or sustained capacity.
+
 `BOT_STATIC_BUYERS_DISABLED` and `BOT_STATIC_SHOTS_DISABLED` both default to
 false. They are intended to be enabled separately after measurements. The
 existing player NPC path is retained; the no-grade NPC shot catalogue remains
