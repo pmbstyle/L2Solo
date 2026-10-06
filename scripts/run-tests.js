@@ -882,6 +882,8 @@ const tests = [
     'tests/test_cold_command_source_runtime.js',
     'tests/test_cold_command_native_admission.js',
     'tests/test_world_visibility_index.js',
+    'tests/test_character_location_view_iteration.js',
+    'tests/test_life_state_raw_source_runtime.js',
     'tests/test_cold_worker_queue_heartbeat.js'
 ];
 
@@ -971,6 +973,8 @@ const defaultConfigTests = new Set([
     'tests/test_cold_command_source_runtime.js',
     'tests/test_cold_command_native_admission.js',
     'tests/test_world_visibility_index.js',
+    'tests/test_character_location_view_iteration.js',
+    'tests/test_life_state_raw_source_runtime.js',
     'tests/test_cold_worker_queue_heartbeat.js',
     'tests/test_board_market_audit.js',
     'tests/test_board_trips.js',
