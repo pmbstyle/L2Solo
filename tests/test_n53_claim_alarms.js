@@ -31,6 +31,10 @@ function party(h, ids = [21, 22, 23]) {
         party: row, partyMembers: states, isPartyLeader: index === 0 } }));
     return row;
 }
+const claimAlarmCount = kernel => {
+    assert.strictEqual([...kernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
+    return [...kernel.alarms.values()].filter(entry => entry.alarmKind === 'claim_ack').length;
+};
 
 (async () => {
     await check('late old rejection preserves the replacement request and deadline', () => {
@@ -47,7 +51,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.notStrictEqual(first.msgId, second.msgId);
         h.kernel.onClaimAck({ rejected: [{ characterId: 1, reason: 'matching_rejection' }] }, second.msgId);
         assert.strictEqual(h.kernel.claiming.has(1), false);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
     });
 
     await check('same heap recovery bypasses an earlier normal head at capacity zero while paused', () => {
@@ -63,7 +67,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.deepStrictEqual(h.kernel.scheduleTokens.get(1), normal);
         assert.strictEqual(h.kernel.heap.peek(), head);
         assert.strictEqual(h.claims().length, 1);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
         assert.strictEqual(h.kernel.scheduleTokens.get(2).dueAt, h.now() + 1000);
     });
 
@@ -97,7 +101,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.strictEqual(h.kernel.stats.claimRecoveries, 1);
         assert.strictEqual(h.kernel.scheduleTokens.get(21), blocked);
         assert.strictEqual(h.kernel.heap.peek(), standing);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
     });
 
     await check('unchanged arm does not grow the heap and stale cancel preserves replacement', () => {
@@ -113,7 +117,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.notStrictEqual(replacement, token);
         assert.strictEqual(h.kernel.cancelAlarm('claim_ack', 3, token), false);
         assert.strictEqual(h.kernel.cancelAlarm('claim_ack', 3, replacement), true);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
     });
 
     await check('missing request identity refuses and accepted solo ACK replay is inert', async () => {
@@ -148,7 +152,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.strictEqual(h.messages.some(message => message.type === 'release_request'), false);
         h.kernel.onClaimAck({ rejected: [{ characterId: 5, reason: 'lease_active' }] }, second.msgId);
         assert.strictEqual(h.kernel.claiming.has(5), false);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
         assert.strictEqual(h.kernel.inFlight.has(5), false);
         assert.strictEqual(h.messages.some(message => message.type === 'release_request'), false);
         // A real producer can accept a later claim only after expiry/release,
@@ -175,7 +179,7 @@ function party(h, ids = [21, 22, 23]) {
         assert.strictEqual(h.kernel.partyRuns.size, 0);
         assert.strictEqual(h.kernel.claiming.size, 0);
         assert.strictEqual(h.kernel.stats.claimRecoveries, 3);
-        assert.strictEqual(h.kernel.alarms.size, 0);
+        assert.strictEqual(claimAlarmCount(h.kernel), 0);
         h.advance(1000); h.kernel.resume(); h.kernel.tick();
         const second = h.claims()[1], run = h.kernel.partyRuns.get('alarm-party');
         h.kernel.onClaimAck({ rejected: [{ characterId: 22, reason: 'old_party_page', purpose: member.purpose }],
@@ -190,7 +194,7 @@ function party(h, ids = [21, 22, 23]) {
     await check('fence and shutdown cancel only their exact pending alarms', async () => {
         const h = harness({ maxInFlight: 2 }); h.add(6); h.add(7); h.kernel.tick();
         const request = h.claims()[0]; h.kernel.fence(6);
-        assert.strictEqual(h.kernel.alarms.size, 1);
+        assert.strictEqual(claimAlarmCount(h.kernel), 1);
         h.kernel.onClaimAck({ grants: [h.grant(request.payload.candidates.find(candidate => candidate.characterId === 6))] }, request.msgId);
         assert.strictEqual(h.kernel.states.has(6), false);
         assert.strictEqual(h.kernel.claiming.has(7), true);

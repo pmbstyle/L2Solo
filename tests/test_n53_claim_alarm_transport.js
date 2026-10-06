@@ -39,7 +39,8 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
         'early refusals preserve the exact party purpose on the matching request');
     for (const reply of replies) kernel.onClaimAck(reply.payload, reply.msgId);
     assert.strictEqual(kernel.claiming.size, 0);
-    assert.strictEqual(kernel.alarms.size, 0);
+    assert.strictEqual([...kernel.alarms.values()].filter(entry => entry.alarmKind === 'claim_ack').length, 0);
+    assert.strictEqual([...kernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
     assert.strictEqual(kernel.partyRuns.size, 0, 'all-refused matching party ACK pages abort the group immediately');
     assert.strictEqual(kernel.scheduleTokens.get(61).dueAt, now + 1000);
     assert.strictEqual(emitted.some(message => message.type === 'release_request'), false);

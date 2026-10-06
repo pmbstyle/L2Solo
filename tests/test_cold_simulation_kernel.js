@@ -371,8 +371,9 @@ function claimAck(kernel, payload) {
 
     const memberOnlyKernel = recordingKernel({ resolveSolo: resolver, emit: () => {}, now: () => now });
     memberOnlyKernel.upsert({ state: state(4, { party: { partyId: 'member-only' } }), context: {} });
-    assert.strictEqual(memberOnlyKernel.heap.size, 0,
+    assert.strictEqual(memberOnlyKernel.heap.values.filter(entry => entry.kind !== 'alarm').length, 0,
         'party members must be scheduled only through their leader');
+    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
     assert.strictEqual(memberOnlyKernel.snapshot().due, 0,
         'party members must not inflate independent worker due-age telemetry');
 
@@ -412,22 +413,29 @@ function claimAck(kernel, payload) {
 
     const orphanKernel = recordingKernel({ resolveSolo: resolver, emit: () => {}, now: () => recoveryNow });
     orphanKernel.upsert({
-        state: state(7, { timing: { lastResolvedAt: recoveryNow, nextResolveAt: recoveryNow + 30000 } }),
+        state: state(7, { timing: { lastResolvedAt: recoveryNow, nextResolveAt: recoveryNow + 3600000 } }),
         context: { spot: { id: 'spot' } }
     });
-    const orphanedEntry = orphanKernel.heap.pop();
+    const orphanedEntry = orphanKernel.heap.values.find(entry => entry.kind !== 'alarm' && entry.characterId === 7);
+    assert.strictEqual(orphanKernel.heap.remove(orphanedEntry), true);
     orphanKernel.consumeHeapEntry(orphanedEntry);
     assert.strictEqual(orphanKernel.scheduleTokens.has(7), false);
     orphanKernel.tick();
+    assert.strictEqual(orphanKernel.scheduleTokens.has(7), false, 'safety has no startup/full-population pass');
+    recoveryNow += 30 * 60000;
+    orphanKernel.pause();
+    orphanKernel.tick();
     assert.strictEqual(orphanKernel.scheduleTokens.has(7), true,
-        'the periodic invariant sweep must restore an orphaned schedulable state');
+        'the thirty-minute paged safety must restore an orphaned schedulable state');
     assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1);
+    recoveryNow += 30 * 60000;
+    orphanKernel.tick();
+    assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1, 'accepted scheduler repair is counted only once');
 
     const ackRaceKernel = recordingKernel({
         resolveSolo: resolver,
         emit: () => {},
-        now: () => recoveryNow,
-        orphanSweepIntervalMs: 1000
+        now: () => recoveryNow
     });
     ackRaceKernel.upsert({ state: state(8, {
         timing: { lastResolvedAt: recoveryNow - 1000, nextResolveAt: recoveryNow }
