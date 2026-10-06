@@ -13,6 +13,7 @@ class Registry {
         this.clearInterval = typeof options.clearInterval === 'function' ? options.clearInterval : global.clearInterval;
         this.onError = typeof options.onError === 'function' ? options.onError : () => {};
         this.jobs = new Map();
+        this.tickSubscribers = new Set();
         this.timer = null;
         this.started = false;
         this.startedAt = 0;
@@ -57,6 +58,7 @@ class Registry {
         this.startedAt = Math.floor(finiteNumber(startedAt, this.now()));
         for (const job of this.jobs.values()) job.nextDueAt = this.startedAt + job.offsetMs;
         this.tick(this.startedAt);
+        if (!this.started) return this;
         this.timer = this.setInterval(() => this.tick(), this.tickMs);
         if (typeof this.timer?.unref === 'function') this.timer.unref();
         return this;
@@ -66,6 +68,12 @@ class Registry {
         if (this.timer) this.clearInterval(this.timer);
         this.timer = null;
         this.started = false;
+    }
+
+    subscribeTicks(listener) {
+        if (typeof listener !== 'function') throw new TypeError('background tick listener is required');
+        this.tickSubscribers.add(listener);
+        return () => this.tickSubscribers.delete(listener);
     }
 
     tick(timestamp = this.now()) {
@@ -113,6 +121,16 @@ class Registry {
                     job.promise = null;
                     job.lastCompletedAt = this.now();
                 });
+        }
+        // Continuations only request cooperative work. They share this
+        // existing clock even when no ordinary job is due.
+        for (const listener of [...this.tickSubscribers]) {
+            if (!this.started) break;
+            if (!this.tickSubscribers.has(listener)) continue;
+            try { listener(now); } catch (error) {
+                this.metrics.errors += 1;
+                this.onError('tick_subscriber', error);
+            }
         }
     }
 
