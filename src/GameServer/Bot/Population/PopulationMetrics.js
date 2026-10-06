@@ -50,6 +50,10 @@ function emptyCounters() {
         coldOwnerDbBusy: 0,
         coldOwnerDbRetries: 0,
         coldOwnerHandoffs: 0,
+        missedEventsRecovered: 0,
+        coldSafetyStateRepairs: 0,
+        coldSafetyBoardRepairs: 0,
+        coldSafetyQueueRepairs: 0,
         legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
         warehouseCleanupOwners: 0,
@@ -139,6 +143,7 @@ const PopulationMetrics = {
         stateRetentionPolicyRows: new Map()
     },
     timer: null,
+    coldSafetySource: null,
     delayHistogram: null,
     delayWindowStartedAt: 0,
 
@@ -146,6 +151,38 @@ const PopulationMetrics = {
         if (!this.startedAt) {
             this.startedAt = now();
         }
+    },
+
+    beginColdSafetyEpoch(epoch) {
+        if (typeof epoch !== 'string' || !epoch || epoch.length > 160) return false;
+        if (this.coldSafetySource?.epoch !== epoch) {
+            this.coldSafetySource = { epoch, stateRepairs: 0, boardRepairs: 0, coverageRepairs: 0 };
+        }
+        return true;
+    },
+
+    clearColdSafetyEpoch(epoch) {
+        if (!this.coldSafetySource || this.coldSafetySource.epoch !== epoch) return false;
+        this.coldSafetySource = null;
+        return true;
+    },
+
+    // Worker-owned cumulative accepted transitions survive a lost direct ACK.
+    // The caller establishes an epoch on creation, never from an incoming report.
+    recordColdSafetyTotals(epoch, totals) {
+        const source = this.coldSafetySource;
+        if (!source || source.epoch !== epoch || !totals || typeof totals !== 'object' || Array.isArray(totals)) return 0;
+        const fields = ['stateRepairs', 'boardRepairs', 'coverageRepairs'];
+        if (fields.some(key => !Number.isSafeInteger(totals[key]) || totals[key] < 0)) return 0;
+        const deltas = fields.map(key => Math.max(0, totals[key] - source[key]));
+        const recovered = deltas.reduce((sum, delta) => sum + delta, 0);
+        const counters = ['coldSafetyStateRepairs', 'coldSafetyBoardRepairs', 'coldSafetyQueueRepairs'];
+        if (!Number.isSafeInteger(this.counters.missedEventsRecovered + recovered)
+            || counters.some((key, index) => !Number.isSafeInteger(this.counters[key] + deltas[index]))) return 0;
+        fields.forEach((key, index) => { source[key] += deltas[index]; });
+        counters.forEach((key, index) => { this.counters[key] += deltas[index]; });
+        this.counters.missedEventsRecovered += recovered;
+        return recovered;
     },
 
     startEventLoopMonitor() {
