@@ -59,8 +59,8 @@ async function heldNative(mode) {
     coordinator.worker = worker('A');
     const originalWorker = coordinator.worker, originalEpoch = coordinator.workerEpoch;
     // Observe the genuine exported native gateway; no operation is substituted.
-    coordinator.population = { executeWorkerLifecycleCommand(current, command) {
-        calls.push(current); return Population.executeWorkerLifecycleCommand(current, command);
+    coordinator.population = { executeWorkerLifecycleCommand(...args) {
+        calls.push(args[0]); return Population.executeWorkerLifecycleCommand(...args);
     } };
     coordinator.contextIndex = () => ({}); coordinator.contextFor = () => ({});
     let stop;
