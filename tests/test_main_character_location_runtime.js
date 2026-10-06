@@ -62,11 +62,14 @@ async function main() {
 
     const hot = Life.acceptLifecycleRow(row(id, { phase: 'hot' }));
     assert.equal(cache.get(id), hot);
-    assert.equal(shared.getSource(id, 'state'), null, 'hot state remains in Map but leaves prior cold spatial membership');
+    assert.equal(shared.getSource(id, 'state').source, hot, 'hot state retains the original raw source');
+    assert.deepEqual(shared.nearSources({ ...hot.loc, locZ: 0 }, 1, { view: 'state', kind: 'cold' }), [],
+        'hot state leaves prior cold spatial membership');
     assert.equal(shared.get(id).source, target.actor);
     const pk = Life.acceptLifecycleRow(row(id, { activity: 'pk_hunting' }));
     assert.equal(cache.get(id), pk);
-    assert.equal(shared.getSource(id, 'state'), null);
+    assert.equal(shared.getSource(id, 'state').source, pk);
+    assert.deepEqual(shared.nearSources({ ...pk.loc, locZ: 0 }, 1, { view: 'state', kind: 'cold' }), []);
     let fresh = Life.acceptLifecycleRow(row(id, { updatedAt: 2 }));
     assert.equal(shared.getSource(id, 'state').source, fresh);
     assert.equal(shared.removeSource(id, 'state', accepted), false, 'late old state cannot delete its replacement');

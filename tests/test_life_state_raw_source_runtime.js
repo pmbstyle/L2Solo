@@ -1,0 +1,188 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+require('../src/Global');
+const Cache = require('../src/GameServer/Bot/Population/LifeStateCache');
+const cacheFile = require.resolve('../src/GameServer/Bot/Population/LifeStateCache');
+const observed = [], independent = [];
+require.cache[cacheFile].exports = class ObservedCache extends Cache {
+    constructor(...args) { super(...args); observed.push(this); }
+};
+const World = invoke('GameServer/World/World');
+const Model = invoke('GameServer/Model/Actor');
+const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Database = invoke('Database');
+const Runtime = require('../src/GameServer/World/CharacterLocationRuntime');
+const originalUser = World.user, originalExecute = Database.execute;
+let sqlCalls = 0;
+Database.execute = function (...args) { sqlCalls++; return originalExecute.apply(this, args); };
+const id = 9900001, origin = { locX: 0, locY: 0, locZ: -3400 };
+const row = extra => ({ characterId: id, phase: 'cold', activity: 'hunting', updatedAt: 1,
+    inventorySummary: JSON.stringify({ 57: { amount: 12, selfId: 57 } }), statsJson: '{}', ...origin, ...extra });
+const spatial = cache => cache.near(origin, 1, 20);
+const inactive = (cache, key, state) => {
+    assert.equal(cache.get(key), state);
+    const record = cache.locationIndex.getSource(key, 'state');
+    assert.equal(record?.source, state);
+    assert.equal(cache.locationIndex.records.get(key).state.indexed, false);
+    assert(!spatial(cache).includes(state));
+    return record;
+};
+
+try {
+    assert.equal(Database.isReady(), false);
+    World.user = { sessions: [], revision: 0 };
+    const session = { accountId: 'player_raw_state', fetchAccountId() { return this.accountId; } };
+    session.actor = new Model({ id, name: 'RawStateActor', username: session.accountId, clanId: 0, isOnline: false, ...origin });
+    session.actor.session = session;
+    World.insertUser(session); session.actor.setIsOnline(true);
+    const actor = Runtime.index.getSource(id, 'actor');
+    const first = Life.acceptLifecycleRow(row());
+    const cache = observed.find(candidate => candidate.get(id) === first);
+    assert(cache);
+    assert.equal(Life.cachedState(id), first);
+    assert.equal(Map.prototype.get.call(cache, id), first, 'full native Map retains original state in this brick');
+    assert.equal(Runtime.index.getSource(id, 'state').source, first);
+    assert.deepEqual(spatial(cache), [first]);
+    assert.equal(Runtime.index.getSource(id, 'actor'), actor);
+    const hot = Life.acceptLifecycleRow(row({ phase: 'hot', inventorySummary: JSON.stringify({ 57: { amount: 31, selfId: 57 } }) }));
+    assert.equal(Life.hotRow(id), hot);
+    assert.notEqual(hot, first);
+    assert.notEqual(hot.inventory, first.inventory);
+    assert.equal(hot.inventory['57'].amount, 31);
+    assert.equal(first.inventory['57'].amount, 12, 'native inventory replacement leaves old generation unchanged');
+    assert.deepEqual(spatial(cache), []);
+    assert.equal(sqlCalls, 0);
+    assert.equal(Database.isReady(), false);
+    console.log('PASS actual native Life/cache/Map/cold spatial/actor/inventory12->31 positives before raw hot contract');
+    assert.equal(Runtime.index.getSource(id, 'state')?.source, hot,
+        'actual current hot snapshot must retain its ORIGINAL reference in the common raw state slot');
+    const hotRecord = inactive(cache, id, hot);
+    assert.equal(hotRecord.phase, 'hot');
+    assert.equal(Runtime.index.removeSource(id, 'state', first), false, 'late old source cannot remove hot replacement');
+
+    const pk = Life.acceptLifecycleRow(row({ activity: 'pk_hunting' }));
+    const pkRecord = inactive(cache, id, pk);
+    assert.equal(pkRecord.phase, 'cold');
+    const warm = Life.acceptLifecycleRow(row({ phase: 'warm' }));
+    const record = inactive(cache, id, warm);
+    assert.equal(warm.phase, 'warm');
+    assert.equal(record.phase, 'hot', 'inactive index membership tag never rewrites authoritative warm phase');
+    let pointReads = 0;
+    const project = record.loc;
+    Object.defineProperty(record, 'loc', { configurable: true, get() { pointReads++; return project; } });
+    cache.set(id, warm);
+    assert.equal(Runtime.index.getSource(id, 'state'), record);
+    assert.equal(pointReads, 0, 'inactive same-source update never reads the raw record point');
+    warm.phase = 'cold';
+    cache.set(id, warm);
+    assert.equal(record.phase, 'cold');
+    assert.equal(Runtime.index.getSource(id, 'state'), record);
+    assert.deepEqual(spatial(cache), [warm]);
+    const cellMembers = Runtime.index.cells.get(Runtime.index.records.get(id).state.key).state.cold;
+    cache.set(id, warm);
+    assert.equal(Runtime.index.cells.get(Runtime.index.records.get(id).state.key).state.cold, cellMembers);
+    pointReads = 0; warm.activity = 'pk_hunting';
+    cache.set(id, warm); inactive(cache, id, warm);
+    assert.equal(pointReads, 0);
+    warm.activity = 'hunting'; warm.loc.locX = 'bad';
+    cache.set(id, warm); inactive(cache, id, warm);
+    assert.equal(pointReads, 0, 'ineligible XY is checked before strict raw point evaluation');
+    warm.loc.locX = NaN;
+    cache.set(id, warm);
+    assert.deepEqual(spatial(cache), [warm], 'retained numeric NaN truthiness projection is zero');
+    warm.phase = 'hot'; pointReads = 0;
+    cache.set(id, warm); inactive(cache, id, warm);
+    assert.equal(record.phase, 'hot'); assert.equal(pointReads, 0);
+    warm.phase = 'cold'; cache.set(id, warm);
+    assert.equal(record.phase, 'cold'); assert.deepEqual(spatial(cache), [warm]);
+    warm.phase = 'unknown'; pointReads = 0;
+    cache.set(id, warm); inactive(cache, id, warm);
+    assert.equal(warm.phase, 'unknown'); assert.equal(record.phase, 'hot'); assert.equal(pointReads, 0);
+    Object.defineProperty(record, 'loc', { value: project, configurable: true });
+    const invalidNative = Life.acceptLifecycleRow(row({ locX: 'bad' }));
+    assert(Number.isNaN(invalidNative.loc.locX));
+    assert.equal(Runtime.index.getSource(id, 'state').source, invalidNative);
+    assert.deepEqual(spatial(cache), [invalidNative], 'native normalize followed by original Cache normalization stays unchanged');
+
+    for (const value of [42, 'state', false]) {
+        const fresh = Life.acceptLifecycleRow(row());
+        cache.set(id, value);
+        assert.equal(cache.get(id), value);
+        assert.equal(Map.prototype.get.call(cache, id), value);
+        assert.equal(Runtime.index.getSource(id, 'state'), null);
+        assert.deepEqual(spatial(cache), [], 'object->primitive removes the original cell membership');
+        assert.equal(Runtime.index.removeSource(id, 'state', fresh), false);
+        assert.equal(Runtime.index.getSource(id, 'actor'), actor);
+    }
+    const samePrimitiveKeys = [id, id + 1];
+    cache.set(id + 1, false);
+    assert.deepEqual([...cache.keys()], samePrimitiveKeys, 'native Map overwrite preserves first-insertion order');
+    cache.delete(id + 1);
+    const final = Life.acceptLifecycleRow(row({ phase: 'hot' }));
+    inactive(cache, id, final);
+
+    const plain = new Cache(); independent.push(plain);
+    const zero = { characterId: 0, phase: 'cold', activity: 'hunting', updatedAt: 0, loc: origin };
+    const partial = {}, nanKey = { characterId: 3, phase: 'hot' };
+    plain.set(0, zero); plain.set('partial', partial); plain.set(NaN, nanKey);
+    assert.equal(plain.locationIndex.getSource(0, 'state').source, zero);
+    inactive(plain, 'partial', partial); inactive(plain, NaN, nanKey);
+    assert.equal(partial.phase, undefined);
+    let rawLocReads = 0;
+    const opaque = { characterId: 5, phase: 'hot', get loc() { rawLocReads++; throw new Error('raw_point_read'); } };
+    plain.set('opaque', opaque); plain.set('opaque', opaque); inactive(plain, 'opaque', opaque);
+    assert.equal(rawLocReads, 0);
+    const fn = function stateSource() {};
+    fn.characterId = 6; fn.phase = 'hot';
+    Object.defineProperty(fn, 'loc', { get() { rawLocReads++; throw new Error('function_point_read'); } });
+    plain.set('function', fn); plain.set('function', fn); inactive(plain, 'function', fn);
+    assert.equal(rawLocReads, 0, 'original function source is retained without raw location access');
+    const changed = { ...zero, updatedAt: 10 };
+    plain.set(0, changed);
+    assert.deepEqual([...plain.keys()], [0, 'partial', NaN, 'opaque', 'function']);
+    assert.equal(plain.recent(1)[0], changed);
+    assert.equal(plain.locationIndex.removeSource(0, 'state', zero), false);
+    const iterator = plain.values();
+    assert.equal(iterator.next().value, changed);
+    plain.delete('partial');
+    const appended = { characterId: 7, phase: 'hot' };
+    plain.set('tail', appended);
+    assert.equal(iterator.next().value, nanKey);
+    assert.equal([...iterator].at(-1), appended);
+    plain.forEach((value, key, receiver) => { assert.equal(receiver, plain); assert.equal(value, plain.get(key)); });
+    for (const value of [42, 'state', false]) {
+        plain.set('opaque', opaque); plain.set('opaque', value);
+        assert.equal(plain.get('opaque'), value);
+        assert.equal(plain.locationIndex.getSource('opaque', 'state'), null);
+        assert.equal(rawLocReads, 0, 'retiring raw object->primitive never evaluates old raw point');
+    }
+    const other = new Cache({ locationIndex: plain.locationIndex }); independent.push(other);
+    const prior = { characterId: 8, phase: 'hot' }, foreign = { characterId: 8, phase: 'cold', activity: 'hunting', loc: origin };
+    plain.set('shared', prior); other.set('shared', foreign);
+    plain.set('shared', 42);
+    assert.equal(plain.get('shared'), 42);
+    assert.equal(other.get('shared'), foreign);
+    assert.equal(plain.locationIndex.getSource('shared', 'state').source, foreign,
+        'object->primitive expected-source guard cannot erase a later foreign publication');
+    assert(spatial(other).includes(foreign));
+    const beforeClear = plain.revision;
+    plain.clear(); assert.equal(plain.size, 0); assert.equal(plain.revision, beforeClear + 1);
+    assert.equal(plain.locationIndex.getSource('function', 'state'), null);
+    World.user = { sessions: [], revision: 0 };
+    assert.equal(Life.cachedState(id), final);
+    assert.equal(Runtime.index.getSource(id, 'state').source, final, 'actual actor binding reset preserves inactive raw state');
+    assert.equal(Runtime.index.getSource(id, 'actor'), null);
+    World.insertUser(session);
+    cache.clear();
+    assert.equal(Life.cachedState(id), null);
+    assert.equal(Runtime.index.getSource(id, 'state'), null);
+    assert.equal(Runtime.index.getSource(id, 'actor').source, session.actor, 'actual cache clear leaves independent actor source');
+    assert.equal(sqlCalls, 0); assert.equal(Database.isReady(), false);
+    console.log('PASS native raw original source/phase+mode/getter/Map primitive+order/generation/replacement/reset; zero SQL/init');
+} finally {
+    for (const cache of [...observed, ...independent]) cache.clear();
+    World.user = originalUser;
+    Database.execute = originalExecute;
+    require.cache[cacheFile].exports = Cache;
+}

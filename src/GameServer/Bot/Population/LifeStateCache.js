@@ -77,11 +77,16 @@ class LifeStateCache extends Map {
         const run = state.phase === 'cold' && state.activity === 'traveling' ? state.stats?.travel?.run : null;
         if (run) this.walkers.set(id, run);
         else this.walkers.delete(id);
-        if (spatialState(state)) {
+        if (state && (typeof state === 'object' || typeof state === 'function')) {
+            const indexed = spatialState(state);
             if (this.locationIndex.getSource(id, 'state')?.source === state) {
-                this.locationIndex.updateSource(id, 'state', state);
+                this.locationIndex.updateSource(id, 'state', state, { indexed });
             } else {
-                this.locationIndex.setSource(id, 'state', { id, source: state, phase: 'cold', loc: () => stateLocation(state) });
+                this.locationIndex.setSource(id, 'state', { id, source: state,
+                    // This is a membership tag, not the authoritative life
+                    // phase. Warm/unknown/partial states remain raw only.
+                    get phase() { return state.phase === 'cold' ? 'cold' : 'hot'; },
+                    loc: () => stateLocation(state) }, { indexed });
             }
         } else if (previous) this.locationIndex.removeSource(id, 'state', previous);
         this.revision++;
