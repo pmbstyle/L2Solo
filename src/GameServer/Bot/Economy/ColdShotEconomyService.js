@@ -99,7 +99,8 @@ async function marketSnapshot(now = Date.now()) {
         const sources = Workshops.inputSources(id).filter(state => state.activity !== 'merchant');
         recipeStock.set(id, offers.reduce((sum, offer) => sum + Number(offer.count), 0)
             + sources.reduce((sum, state) => sum + Number(state.inventory?.[id]?.amount || 0), 0));
-        recipeHolders.set(id, sources.filter(state => Number(state.level || 0) >= 10).map(state => ({
+        recipeHolders.set(id, sources.filter(state => Number(state.level || 0) >= 10
+            && Number(state.inventory?.[id]?.amount || 0) > 0).map(state => ({
             characterId: Number(state.characterId), price: ItemDisposition.priceFor(state, state.inventory[id], itemTemplates.get(id))
         })).sort((a, b) => a.price - b.price));
     }
