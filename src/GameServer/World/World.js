@@ -8,6 +8,7 @@ const RaidBossMinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const RaidEntityIndex = invoke('GameServer/World/RaidEntityIndex');
 const NpcObjectIndex = require('./NpcObjectIndex');
 const CharacterLocationRuntime = require('./CharacterLocationRuntime');
+const PvpPartyMembershipKeys = require('./PvpPartyMembershipKeys');
 const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
 const userLocationIndexes = new WeakMap();
 const userChangeListeners = new Set();
@@ -45,6 +46,17 @@ function currentActorRecord(runtime, record) {
         && record.session.actor === record.actor && runtime.index.getSource(record.id, 'actor') === record;
 }
 
+function partyMembershipPacket(runtime, record) {
+    if (!currentActorRecord(runtime, record)) return null;
+    return { record, keys: [...new Set(PvpPartyMembershipKeys(record.session))] };
+}
+
+function publishPartyMembership(runtime, packet) {
+    if (!packet || !currentActorRecord(runtime, packet.record)) return false;
+    const { record, keys } = packet;
+    return runtime.index.updateGroups(record.id, 'actor', record, 'pvp_party', keys, record.order);
+}
+
 function attachRegisteredActor(runtime, session, membership, explicit = false) {
     const actor = session.actor;
     const id = Number(actor?.fetchId?.());
@@ -67,6 +79,7 @@ function attachRegisteredActor(runtime, session, membership, explicit = false) {
     const record = registeredActor(runtime, session, actor, id, membership);
     runtime.index.setSource(id, 'actor', record, { indexed: false });
     membership.registered = record;
+    publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
     notifyUserChange(id);
     return record;
 }
@@ -342,6 +355,7 @@ const World = {
         const retired = registeredActor(runtime, session, actor, previous.id, membership);
         runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
         membership.registered = retired;
+        publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
         notifyUserChange(previous.id);
         membership.actor = null;
         membership.id = null;
@@ -352,6 +366,36 @@ const World = {
         const runtime = currentUserLocationIndex(this.user);
         const record = runtime?.index.getSource(Number(id), 'actor');
         return runtime && currentActorRecord(runtime, record) ? record : null;
+    },
+
+    pvpPartyMembershipIndex: true,
+    pvpPartyMembershipKeys: PvpPartyMembershipKeys,
+
+    pvpPartySessionsForKey(key) {
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return [];
+        const sessions = [];
+        for (const record of runtime.index.groupSources(key)) {
+            if (currentActorRecord(runtime, record)) sessions.push(record.session);
+        }
+        return sessions;
+    },
+
+    refreshPartyMemberships(changedSessions) {
+        if (!Array.isArray(changedSessions) && !(changedSessions instanceof Set)) {
+            throw new TypeError('invalid_party_membership_sources');
+        }
+        const runtime = currentUserLocationIndex(this.user);
+        if (!runtime) return 0;
+        const packets = [];
+        for (const session of new Set(changedSessions)) {
+            const record = runtime.sessions.get(session)?.registered;
+            const packet = partyMembershipPacket(runtime, record);
+            if (packet) packets.push(packet);
+        }
+        let updated = 0;
+        for (const packet of packets) if (publishPartyMembership(runtime, packet)) updated += 1;
+        return updated;
     },
 
     notifyUserStateChanged(session, actor = session?.actor) {

@@ -1,6 +1,7 @@
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
+const RefreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ShopPlaces = require('../Economy/ShopPlaces');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
@@ -713,6 +714,7 @@ function setSessionSnapshotsPhase(session, phase) {
     for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
         if (session?.[key]) session[key] = { ...session[key], phase };
     }
+    RefreshPartyMemberships([session], invoke);
 }
 
 function save(row, options = {}) {
@@ -1720,6 +1722,7 @@ const BotLifeState = {
                 nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
             });
             session.coldLifeState = nextState;
+            RefreshPartyMemberships([session], invoke);
             return this.upsertState(nextState, reason, { releaseHot: true });
         }
 
@@ -3566,6 +3569,7 @@ const BotLifeState = {
                     if (session[key]) session[key] = { ...session[key], name,
                         stats: { ...session[key].stats, nameGeneratorVersion: version } };
                 }
+                RefreshPartyMemberships([session], invoke);
                 if (session.actor.fetchIsOnline?.()) {
                     const Response = invoke('GameServer/Network/Response');
                     session.dataSendToMe?.(Response.userInfo(session.actor));
