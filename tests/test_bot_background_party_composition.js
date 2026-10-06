@@ -57,4 +57,22 @@ assert.strictEqual(PartyComposition.roleForState({ characterId: 30, level: 39, s
 assert.strictEqual(PartyComposition.roleForState({ characterId: 31, level: 40, stats: { classId: 57, role: 'crafter' } }), 'dps',
     'a post-40 non-spoiler dwarf must fill a DPS combat slot');
 
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const Goals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
+const Invite = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
+const original = { forState: Economy.forState, forGroup: Economy.forGroup };
+let builds = 0;
+Economy.forState = Economy.forGroup = () => { builds += 1; throw new Error('party admission must not build a wish network'); };
+try {
+    const twelve = Array.from({ length: 12 }, (_, index) => ({ characterId: 1000 + index, level: 30,
+        inventory: {}, stats: { role: ['dps', 'tank', 'healer', 'buffer'][index % 4] },
+        persona: { primaryDrive: 'social', traits: { sociability: 0.8, empathy: 0.5, commitment: 0.5, caution: 0.7, ambition: 0.5 } } }));
+    PartyComposition.selectMembers(twelve);
+    PartyComposition.selectRecruits(twelve.slice(0, 2), twelve.slice(2));
+    Goals.decide(twelve[0], twelve.slice(1, 3));
+    assert(Goals.formingMembers(twelve, null).length > 0);
+    Invite.evaluate(twelve[0], { playerId: twelve[1].characterId, inviteAttempts: 1 }, { peer: twelve[1] });
+    assert.strictEqual(builds, 0);
+} finally { Object.assign(Economy, original); }
+
 console.log('Bot background party composition checks passed');

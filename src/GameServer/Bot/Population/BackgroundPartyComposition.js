@@ -1,3 +1,4 @@
+const SUPPORT_ROLES = ['tank', 'healer', 'buffer'];
 const DEFAULT_LEVEL_RANGE = 4;
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
@@ -45,6 +46,12 @@ function compareCandidate(anchor, coverage, peers = [anchor], memoryPreference) 
         return scores.get(state);
     };
     return (a, b) => {
+        const aRole = roleForState(a);
+        const bRole = roleForState(b);
+        const aSupport = SUPPORT_ROLES.includes(aRole) && !coverage[aRole] ? 0 : 1;
+        const bSupport = SUPPORT_ROLES.includes(bRole) && !coverage[bRole] ? 0 : 1;
+        if (aSupport !== bSupport) return aSupport - bSupport;
+
         const anchorClanId = clanIdForState(anchor);
         if (anchorClanId > 0) {
             const aClan = clanIdForState(a) === anchorClanId ? 0 : 1;
@@ -98,6 +105,20 @@ function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) 
     const used = new Set([Number(anchor.characterId)]);
     const coverage = roleCoverage(selected);
 
+    SUPPORT_ROLES.forEach((role) => {
+        if (selected.length >= maxSize || coverage[role]) return;
+        const support = bestCandidates(
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...selected, state])),
+            1,
+            compareCandidate(anchor, coverage, selected, memoryPreference)
+        )[0];
+        if (!support) return;
+        selected.push(support);
+        used.add(Number(support.characterId));
+        coverage[role] = 1;
+    });
+
     while (selected.length < maxSize) {
         const state = bestCandidates(
             eligible.filter((candidate) => !used.has(Number(candidate.characterId)) && sharesExperience([...selected, candidate])),
@@ -113,6 +134,7 @@ function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) 
 
     const levels = selected.map(levelOf);
     const levelSpread = Math.max(...levels) - Math.min(...levels);
+    const supportCount = SUPPORT_ROLES.filter((role) => coverage[role]).length;
     const anchorClanId = clanIdForState(anchor);
     const clanCount = anchorClanId > 0
         ? selected.filter((state) => clanIdForState(state) === anchorClanId).length
@@ -122,8 +144,7 @@ function buildAround(anchor, candidates, maxSize, levelRange, memoryPreference) 
         coverage,
         levelSpread,
         memoryScore: memoryPreference.groupScore(selected),
-        score: clanCount * 100 + selected.length * 10 - levelSpread + selected.reduce((sum, member) =>
-            sum + PersonaPartyPolicy.preference(member, selected.filter(peer => peer !== member), coverage).score, 0)
+        score: supportCount * 1000 + clanCount * 100 + selected.length * 10 - levelSpread
     };
 }
 
@@ -169,6 +190,20 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     ));
     const recruits = [];
 
+    SUPPORT_ROLES.forEach((role) => {
+        if (members.length + recruits.length >= maxSize || coverage[role]) return;
+        const recruit = bestCandidates(
+            eligible.filter((state) => !used.has(Number(state.characterId)) && roleForState(state) === role
+                && sharesExperience([...members, ...recruits, state])),
+            1,
+            compareCandidate(leader, coverage, [...members, ...recruits], memoryPreference)
+        )[0];
+        if (!recruit) return;
+        recruits.push(recruit);
+        used.add(Number(recruit.characterId));
+        coverage[role] = 1;
+    });
+
     while (members.length + recruits.length < maxSize) {
         const state = bestCandidates(
             eligible.filter((candidate) => !used.has(Number(candidate.characterId))
@@ -189,6 +224,9 @@ function selectRecruits(members = [], candidates = [], options = {}) {
 function chooseLeader(members = []) {
     return members.reduce((best, state) => {
         if (!best) return state;
+        const bestTank = roleForState(best) === 'tank';
+        const currentTank = roleForState(state) === 'tank';
+        if (currentTank !== bestTank) return currentTank ? state : best;
         if (levelOf(state) !== levelOf(best)) return levelOf(state) > levelOf(best) ? state : best;
         return Number(state.characterId || 0) < Number(best.characterId || 0) ? state : best;
     }, null);

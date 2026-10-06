@@ -154,16 +154,18 @@ async function run() {
     const solo = { hunt: { perHour: 100 } };
     const weak = Goals.participation(a, [b], { persona: social, context: solo, groupContext: { hunt: { perHour: 100 } } });
     const strong = Goals.participation(a, [b], { persona: social, context: solo, groupContext: { hunt: { perHour: 400 } } });
-    assert(strong.probability > weak.probability);
-    assert(Goals.participation(a, [b], { persona: social, context: solo, groupContext: { hunt: { perHour: 100 } }, fee: 100, hours: 0.5 }).probability > weak.probability);
+    assert.equal(strong.probability, weak.probability, 'party admission ignores hourly income');
+    assert.equal(weak.probability, Goals.participation(a, [b], { persona: social }).probability);
+    assert(Math.abs(weak.probability - 7 / 12) < 1e-12);
+    assert(Goals.participation(a, [b], { persona: social, context: solo, groupContext: { hunt: { perHour: 100 } }, fee: 100, hours: 0.5 }).probability === weak.probability);
     const candidates = [{ characterId: 901, level: 10, stats: { role: 'dps' } },
         { characterId: 902, level: 10, stats: { role: 'dps' } }, { characterId: 903, level: 14, stats: { role: 'healer' } }];
     const selected = Composition.selectMembers(candidates, { maxSize: 2, minSize: 2,
         memory: { assess: () => ({ ready: false }) } });
-    assert.deepEqual(selected.map(state => state.characterId).sort(), [901, 902], 'a healer does not displace the tighter effective group');
+    assert.deepEqual(selected.map(state => state.characterId).sort(), [901, 903], 'a free healer takes the support slot');
     const joint = Goals.joint({ stats: {} }, [a, b], { context: { network: { activity: { activity: 'hunting', spotId: 'shared', itemId: 1869, nodeKey: '1:gear' } } } });
     assert.equal(joint.objective.spotId, 'shared'); assert.equal(joint.memberGoals.length, 2);
-    console.log('PASS shared goals/hour participation/nonmandatory supports/need-turn-spoil contract');
+    console.log('PASS shared goals/trait participation/support slots/need-turn-spoil contract');
 
     const funded = await fund([a, b, c], 'paid'); assert(funded.result.ok);
     assert.equal(funded.party.stats.agreement.help.remaining, 1001);

@@ -864,12 +864,7 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
 function createBackgroundParty(members = [], objectiveOverride = null) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
     if (!requested?.clanGoalKey && requested?.sourceKind !== 'raid') {
-        const context = require('./PartyGoalPolicy').groupContext({ partyId: `forming:${members.map(member => member.characterId).join(':')}` }, members);
-        members = members.filter(member => member.stats?.partyRequest?.priority === 'required'
-            || require('./PartyGoalPolicy').decide(member, members.filter(peer => peer !== member),
-                { groupContext: context,
-                    fee: requested?.helpDeal && Number(requested.helpDeal.payerId) !== Number(member.characterId)
-                        ? Number(requested.helpDeal.fee) / Math.max(1, members.length - 1) : 0 }).accept);
+        members = require('./PartyGoalPolicy').formingMembers(members, requested);
         if (members.length < Config.partyMinSize) return Promise.resolve(null);
     }
     const leader = PartyComposition.chooseLeader(members);

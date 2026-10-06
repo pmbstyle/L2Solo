@@ -18,11 +18,7 @@ function groupContext(party, members) {
 }
 
 function decide(state, peers, options = {}) {
-    const all = [state, ...peers];
-    const context = options.context || invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
-    const grouped = options.groupContext || groupContext({ partyId: `proposal:${all.map(member => member.characterId).join(':')}` }, all);
-    return participation(state, peers, { ...options, context, groupContext: grouped,
-        hours: options.hours ?? grouped?.network?.activity?.costHours,
+    return participation(state, peers, { ...options,
         persona: options.persona || invoke('GameServer/Bot/AI/BotPersona').of(state),
         roll: options.roll ?? require('../AI/TendencyRoll').roll('party', state.characterId,
             peers.map(peer => peer.characterId).join(':'), state.stats?.partyRequest?.requestedAt || state.updatedAt) });
@@ -44,16 +40,21 @@ function joint(party, members, { context = null } = {}) {
     return { objective, memberGoals: goals, ...(context?.statsPacket || {}) };
 }
 
-function participation(state, peers, { persona, context = null, groupContext = null, fee = 0, hours = null, roll = 0.5 } = {}) {
+function participation(state, peers, { persona, roll = 0.5, bonus = 0 } = {}) {
     const traits = persona?.traits || {};
-    const solo = positive(context?.hunt?.perHour);
-    const total = positive(groupContext?.hunt?.perHour);
-    const share = total > 0 ? total / Math.max(1, peers.length + 1) : solo;
-    const economic = solo > 0 ? (share + (Number(hours) > 0 ? positive(fee) / Number(hours) : 0) - solo) / solo : 0;
+    // ARCH-NOTE: The interim party policy ignores income and help fees; escrow still pays the agreed fee.
     const social = Number(traits.sociability ?? 0.5), empathy = Number(traits.empathy ?? 0.5);
-    const score = economic + social - 0.5 + empathy * 0.25 + Number(traits.commitment ?? 0.5) * 0.15;
-    const probability = Math.max(0.02, Math.min(0.98, 0.5 + score / (2 * (1 + Math.abs(score)))));
-    return { accept: roll < probability, probability, soloPerHour: solo, sharePerHour: share, goal: declaration(state) };
+    const score = social - 0.5 + empathy * 0.25 + Number(traits.commitment ?? 0.5) * 0.15;
+    const probability = Math.max(0.02, Math.min(0.98, 0.5 + score / (2 * (1 + Math.abs(score))) + Number(bonus || 0)));
+    return { accept: roll < probability, probability, roll, goal: declaration(state) };
+}
+
+function formingMembers(members, requested) {
+    if (requested?.clanGoalKey || requested?.sourceKind === 'raid') return members;
+    return members.filter(member => member.stats?.partyRequest?.priority === 'required'
+        || decide(member, members.filter(peer => peer !== member), {
+            fee: requested?.helpDeal && Number(requested.helpDeal.payerId) !== Number(member.characterId)
+                ? Number(requested.helpDeal.fee) / Math.max(1, members.length - 1) : 0 }).accept);
 }
 
 function itemNeed(state, item, projected) {
@@ -61,4 +62,4 @@ function itemNeed(state, item, projected) {
     return positive(invoke('GameServer/Bot/Economy/EconomyContext').forState(current).itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, joint, participation, groupContext, decide, itemNeed };
+module.exports = { declaration, joint, participation, groupContext, decide, formingMembers, itemNeed };

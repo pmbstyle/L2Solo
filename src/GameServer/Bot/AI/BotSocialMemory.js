@@ -20,7 +20,7 @@ function snapshot(player, bot) {
     const relation = Memory.views.get(actorId(bot))?.relation('character', actorId(player), Date.now());
     const counts = relation?.social || {};
     return { playerId: actorId(player), botId: actorId(bot), playerName: actorName(player), botName: actorName(bot),
-        trust: relation?.trust || 0, familiarity: relation?.familiarity || 0, groupRuns: counts.party_formed || 0,
+        trust: relation?.trust || 0, familiarity: relation?.familiarity || 0, groupRuns: counts.party_formed || 0, inviteAttempts: counts.invite_attempt || 0,
         wipesTogether: counts.party_wiped || 0, helpedInCombat: counts.helped_in_combat || 0,
         gaveUsefulLoot: counts.gave_useful_loot || 0, ignoredLootRequests: counts.ignored_loot_request || 0,
         tradesCompleted: counts.trade_completed || 0, insults: counts.insulted || 0,
