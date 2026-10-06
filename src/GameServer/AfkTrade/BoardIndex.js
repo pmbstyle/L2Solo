@@ -95,10 +95,16 @@ function offerFields(line, town = null) {
     };
 }
 
+let indexSerial = 0;
 class BoardIndex {
     // groupOf(selfId): the group of an item whose open sell lines are counted
     // (the market counters, MarketCounters.counterOf); none by default.
     constructor({ groupOf = null } = {}) {
+        // itemId -> changes of its lines; a reader that looked at an item
+        // knows whether that item's lines changed since (itemRevision).
+        this.serial = ++indexSerial;
+        this.epoch = 0;
+        this.itemChanges = new Map();
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
         this.sides = new Map([[SELL, new Map()], [BUY, new Map()]]);
         // record id -> its indexed lines
@@ -113,11 +119,22 @@ class BoardIndex {
     }
 
     clear() {
+        this.epoch++;
+        this.itemChanges.clear();
         this.sides.forEach((items) => items.clear());
         this.records.clear();
         this.owners.clear();
         this.groupLines.clear();
         this.counterOwners.clear();
+    }
+
+    // A token that changes whenever a line of this item is put or removed.
+    itemRevision(selfId) {
+        return `${this.serial}.${this.epoch}.${this.itemChanges.get(Number(selfId)) || 0}`;
+    }
+
+    itemChanged(selfId) {
+        this.itemChanges.set(selfId, (this.itemChanges.get(selfId) || 0) + 1);
     }
 
     countGroup(line, step) {
@@ -185,6 +202,7 @@ class BoardIndex {
             insert(item.all, line);
             insert(town, line);
             indexed.push(line);
+            this.itemChanged(line.selfId);
             this.countGroup(line, 1);
             this.countPricedOwner(line, 1);
         }
@@ -204,6 +222,7 @@ class BoardIndex {
         owned?.delete(id);
         if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
+            this.itemChanged(line.selfId);
             this.countGroup(line, -1);
             this.countPricedOwner(line, -1);
             const items = this.sides.get(line.storeType);

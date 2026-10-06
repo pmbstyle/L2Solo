@@ -350,6 +350,7 @@ function publish(tableChannel) {
 
 // Worker: the rows of its 'market' table (a Map), read when asked.
 function useTable(rows) {
+    resets++;
     mirror = rows;
 }
 
@@ -358,7 +359,16 @@ function useSpots(source) {
     spotsSource = source || (() => []);
 }
 
+// A token that changes with every deal of the counter (and on a reset): a
+// reader that priced an item knows whether its counter moved since.
+let resets = 0;
+function revisionOf(key) {
+    const row = mirror ? mirror().get(`c:${key}`) : null;
+    return `${resets}.${row ? row[1] : counters.get(key)?.deals || 0}`;
+}
+
 function reset() {
+    resets++;
     counters.clear();
     items.clear();
     towns.clear();
@@ -366,5 +376,5 @@ function reset() {
     notifyChanged({ reset: true });
 }
 
-module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, moveOf, itemDeals, townDemand, firstPrice,
+module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, revisionOf, moveOf, itemDeals, townDemand, firstPrice,
     publish, useTable, useSpots, reset, subscribeChanges };

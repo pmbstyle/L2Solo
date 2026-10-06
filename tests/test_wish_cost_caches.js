@@ -115,6 +115,59 @@ check('per-actor wish results are bounded, least recently used out, a reused act
     assert.equal(engine.cache.size, ACTOR_LIMIT);
 });
 
+check('the board keeps a change token per item: a line of one item does not touch another', () => {
+    const { BoardIndex, SELL } = invoke('GameServer/AfkTrade/BoardIndex');
+    const board = new BoardIndex();
+    const a0 = board.itemRevision(100), b0 = board.itemRevision(200);
+    board.put({ id: 1, kind: 'shop', storeType: SELL, ownerId: 5, lines: [{ lineId: 1, selfId: 100, count: 1, price: 10 }] });
+    const a1 = board.itemRevision(100);
+    assert.notEqual(a1, a0);
+    assert.equal(board.itemRevision(200), b0);
+    board.remove(1);
+    assert.notEqual(board.itemRevision(100), a1);
+    const b1 = board.itemRevision(200);
+    board.clear();
+    assert.notEqual(board.itemRevision(200), b1);
+    assert.notEqual(new BoardIndex().itemRevision(100), board.itemRevision(100), 'another board is another source');
+});
+
+check('a wish review is rebuilt only by changes on items it read (design 16.5)', () => {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const { BoardIndex, SELL } = invoke('GameServer/AfkTrade/BoardIndex');
+    const board = new BoardIndex();
+    const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+    const deps = { board, spots };
+    const state = { characterId: 902, phase: 'cold', activity: 'hunting', level: 35, adena: 50,
+        inventory: { 1: { selfId: 1, amount: 1, equipped: true, equippedCount: 1, slot: 7 } },
+        loc: { locX: 80000, locY: 148000, locZ: -3500 }, currentRegion: 'Giran',
+        stats: { classId: 1, exp: Data.experience[34], persona: { traits: { commitment: .5, caution: .5,
+            resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .8 } },
+        timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
+    const context = Economy.forState(state, deps);
+    assert.equal(Economy.forState(state, deps), context);
+    // a line and a deal of an item nobody here looked at
+    const unread = 1 + Math.max(...Data.items.map(item => Number(item.selfId)));
+    board.put({ id: 11, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: unread, count: 1, price: 10 }] });
+    assert.equal(Economy.forState(state, deps), context, 'another item on the board rebuilds nobody');
+    // an item the review priced while it was built
+    const wished = context.network.queue.map(wish => Number(wish.object?.itemId)).find(Boolean);
+    assert.ok(wished, 'fixture: a wished item');
+    board.put({ id: 12, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: wished, count: 1, price: 10 }] });
+    const rebuilt = Economy.forState(state, deps);
+    assert.notEqual(rebuilt, context, 'a line of a wished item rebuilds');
+    assert.equal(Economy.forState(state, deps), rebuilt);
+    // a deal in the counter of an item the review read
+    Counters.deal(wished, 1000, 1, Date.now(), 7, null, 8);
+    const afterDeal = Economy.forState(state, deps);
+    assert.notEqual(afterDeal, rebuilt, 'a deal in the counter of a read item rebuilds');
+    // an item first read later through the context (worth) joins the watched items
+    const lazy = Data.items.map(item => Number(item.selfId)).find(id => id > 1000 && id !== wished && afterDeal.price(id) >= 0);
+    assert.equal(Economy.forState(state, deps), afterDeal);
+    board.put({ id: 13, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: lazy, count: 1, price: 10 }] });
+    assert.notEqual(Economy.forState(state, deps), afterDeal, 'a later read is watched too');
+});
+
 if (failures) { console.error(`${failures} failed`); process.exit(1); }
 console.log('all passed');
 process.exit(0);

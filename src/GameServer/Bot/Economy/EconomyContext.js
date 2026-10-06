@@ -7,12 +7,6 @@ const { WishNetwork, remember } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
 const engine = new WishNetwork();
 let runtime = {};
-let boardRevision = 0;
-let boardSubscription = null;
-function observeMainBoard() {
-    if (isMainThread && !boardSubscription) boardSubscription = invoke('GameServer/AfkTrade/AfkTradeService')
-        .subscribeBoardChanges(() => { boardRevision++; });
-}
 const extensions = new Map();
 function configure(providers = {}) { runtime = providers; reset(); }
 function registerProvider(key, provider) {
@@ -51,27 +45,52 @@ function stateForActor(actor, session = actor?.session) {
         activity: session?.plan || 'hunting' };
 }
 function inputKey(state, deps = {}) {
-    const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
     const stats = state.stats || {};
     const items = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount, row.equippedCount || row.equipped,
         row.slot, row.enchant, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
-    // A native bag change, own sample, price counter or relation revision is
-    // an input event. No timing poll or population-dependent snapshot.
-    const counters = Counters.COUNTER_KEYS.map(key => Counters.counter(key, deps.timestamp).deals).join(',');
+    // A native bag change, own sample or relation revision is an input event.
+    // No timing poll, no world-wide counter: the board and the market are
+    // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
-        deps.boardVersion || '', deps.productionStatus?.inputKey || '', counters, deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
+        deps.productionStatus?.inputKey || '', deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
         stats.production?.crafts || 0, positive(state.sp),
         (stats.coldCombat?.skills || state.skills || []).map(row => `${row.selfId}:${row.level}`).join(',')].join('|');
 }
+// The market as an input of one bot: the board lines and the counter of each
+// item its review read, as tokens at the time of reading. The context stays
+// valid while every token holds; a deal or a line of another item, anywhere
+// in the world, rebuilds nobody (design 16.5).
+function marketToken(board, id) {
+    const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    return `${board?.itemRevision ? board.itemRevision(id) : '-'}|${Counters.revisionOf(Counters.counterOf(id))}`;
+}
+function marketHolds(board, reads) {
+    for (const [id, token] of reads) if (marketToken(board, id) !== token) return false;
+    return true;
+}
+function marketKey(reads) {
+    let hash = 0x811c9dc5;
+    for (const [id, token] of reads) {
+        const text = `${id}=${token};`;
+        for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    }
+    return hash.toString(16);
+}
+// Board reads of the review go through here, so each item it looked at is
+// remembered with its token.
+function watchedBoard(board, watch) {
+    if (!board) return board;
+    return Object.assign(Object.create(board), {
+        first: (selfId, ...rest) => { watch(selfId); return board.first(selfId, ...rest); },
+        list: (selfId, ...rest) => { watch(selfId); return board.list(selfId, ...rest); }
+    });
+}
 function forState(state = {}, deps = {}) {
     deps = { ...runtime, ...deps };
-    observeMainBoard();
-    if (typeof deps.boardVersion === 'function') deps.boardVersion = deps.boardVersion();
-    if (deps.boardVersion == null) deps.boardVersion = boardRevision;
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
@@ -81,8 +100,11 @@ function forState(state = {}, deps = {}) {
     if (deps.productionStatus == null && isMainThread && state.stats?.production) deps.productionStatus = invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (deps.memory?.relations || []).map(row => row.targetId));
     const key = inputKey(state, { ...deps, timestamp });
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
+    const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
     const held = cache.get(actorKey);
-    if (held?.key === key) return remember(cache, actorKey, held).context;
+    if (held?.key === key && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
+    const reads = new Map();
+    const watch = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
     const Data = invoke('GameServer/DataCache');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -92,12 +114,13 @@ function forState(state = {}, deps = {}) {
     const role = state.party?.role || state.stats?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId || 0);
     const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
     const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
-    const board = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
+    const board = watchedBoard(sourceBoard, watch);
     const prices = new Map();
     const knowledgeEnabled = deps.knowledgeEnabled ?? Learning.knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
         marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
     const price = id => {
+        watch(id);
         if (!prices.has(Number(id))) {
             const belief = Belief.prior(id, priceCtx);
             prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
@@ -141,7 +164,10 @@ function forState(state = {}, deps = {}) {
     };
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
-    let network = engine.build({ actorKey, inputKey: key, ...projection,
+    // The items read so far name this network; later lazy reads (worth,
+    // purchaseBudget) still join `reads` and keep the context honest.
+    const networkKey = `${key}#${marketKey(reads)}`;
+    let network = engine.build({ actorKey, inputKey: networkKey, ...projection,
         wallet: positive(state.adena), survivalReserve: survivalReserve(state),
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
@@ -157,11 +183,12 @@ function forState(state = {}, deps = {}) {
         for (const row of opportunities.slice(0, 1)) projection.moneyPaths.push({ activity: 'crafting', kind: 'production',
             recipeId: row.recipe?.recipeId, object: row.recipe?.productId,
             incomePerHour: row.expectedProfit / Math.max(1 / 3600, row.margin?.hours || row.hours || row.basket?.hours || 1) });
-        if (opportunities.length) network = engine.build({ actorKey, inputKey: key + ':production', ...projection,
+        if (opportunities.length) network = engine.build({ actorKey, inputKey: networkKey + ':production', ...projection,
             wallet: positive(state.adena), survivalReserve: survivalReserve(state),
             playedHours: positive(state.stats?.playedHours), persona,
             previous: { focus: network.focus, dormant: network.dormant }, hourAdena: hunt.perHour, riskWeight: context.riskWeight });
     }
+    context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
     context.projection = projection;
     context.network = network;
@@ -192,7 +219,7 @@ function forState(state = {}, deps = {}) {
     };
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant };
 
-    remember(cache, actorKey, { key, context });
+    remember(cache, actorKey, { key, reads, context });
     return context;
 }
 function survivalReserve(state = {}) {
