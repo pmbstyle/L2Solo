@@ -436,7 +436,7 @@ async function handle(message) {
         }
         break;
     case 'claim_ack':
-        kernel?.onClaimAck(payload);
+        kernel?.onClaimAck(payload, message.msgId);
         break;
     case 'lease_renewal':
         kernel?.onLeaseRenewal(payload);

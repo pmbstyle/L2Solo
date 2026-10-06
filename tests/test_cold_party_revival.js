@@ -48,7 +48,7 @@ async function run() {
     const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
     const messages = [];
     const kernel = new ColdSimulationKernel({ now: () => at, resolveSolo: () => { throw Error('party must remain together'); }, resolveParty: input => Party.resolve(input),
-        emit: (type, payload) => messages.push({ type, payload }) });
+        emit: (type, payload, msgId) => messages.push({ type, payload, msgId }) });
     const roster = states(), expired = { ...party, stats: { ...party.stats, sessionExpiresAt: at - 1 } };
     roster.forEach(s => kernel.upsert({ state: s, context: s.characterId === 2
         ? { isPartyLeader: true, party: expired, partyMembers: roster, spot: { id: 'test' } } : {} }));
@@ -56,7 +56,7 @@ async function run() {
     const claim = messages.find(m => m.type === 'claim_request'); assert(claim);
     kernel.onClaimAck({ grants: claim.payload.candidates.map(c => ({ ok: true, characterId: c.characterId,
         ownerId: 'cold_simulation_owner', revision: c.expectedRevision + 1, leaseId: `revival-${c.characterId}`,
-        leaseUntil: at + 30000, purpose: c.purpose })) });
+        leaseUntil: at + 30000, purpose: c.purpose })) }, claim.msgId);
     await kernel.resolveChain;
     const batch = messages.find(m => m.type === 'proposal_batch'); assert(batch, JSON.stringify(messages));
     assert(batch.payload.proposals.every(p => p.atomicGroup?.memberIds.length === 2), 'the real worker groups revival and MP writes even without gratitude');

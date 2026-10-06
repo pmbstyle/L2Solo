@@ -1199,6 +1199,8 @@ class ColdSimulationCoordinator {
         const missing = [];
         const purposes = new Map();
         for (const candidate of message.payload.candidates || []) {
+            const purpose = candidate.purpose || null;
+            purposes.set(Number(candidate.characterId), purpose);
             if (this.economyBots.has(Number(candidate.characterId))) {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'economy_in_progress', retryAfterMs: 1000 });
                 continue;
@@ -1208,8 +1210,6 @@ class ColdSimulationCoordinator {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'missing_state' });
                 continue;
             }
-            const purpose = candidate.purpose || null;
-            purposes.set(Number(candidate.characterId), purpose);
             const partyId = String(purpose?.partyId || state.party?.partyId || state.partyId || '');
             if (partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId)) {
                 Metrics.recordColdOwnerRejected('party_hot_transition');

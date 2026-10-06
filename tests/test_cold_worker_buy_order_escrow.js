@@ -63,7 +63,7 @@ assert.notStrictEqual(GearAcquisitionPlanner.planFor(base(7, afterPosting), { sp
     let workerError;
     worker.on('error', (error) => { workerError = error; });
     worker.on('message', (message) => received.push(message));
-    const send = (type, payload) => worker.postMessage(Protocol.envelope(type, epoch, payload));
+    const send = (type, payload, msgId) => worker.postMessage(Protocol.envelope(type, epoch, payload, msgId));
     const until = async (predicate) => {
         const deadline = Date.now() + 15000;
         while (!received.some(predicate)) {
@@ -119,7 +119,7 @@ assert.notStrictEqual(GearAcquisitionPlanner.planFor(base(7, afterPosting), { sp
         const claim = await until((m) => m.type === 'claim_request');
         send('claim_ack', { grants: claim.payload.candidates.map((c) => ({ ok: true, characterId: c.characterId,
             ownerId: 'cold_simulation_owner', revision: c.expectedRevision + 1,
-            leaseId: `worker-escrow-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) });
+            leaseId: `worker-escrow-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) }, claim.msgId);
         const proposals = new Map();
         const deadline = Date.now() + 15000;
         while ([7, 8, 20, 30].some((id) => !proposals.has(id))) {

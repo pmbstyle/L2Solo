@@ -64,7 +64,7 @@ invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state)
     let workerError;
     worker.on('error', (error) => { workerError = error; });
     worker.on('message', (message) => received.push(message));
-    const send = (type, payload) => worker.postMessage(Protocol.envelope(type, epoch, payload));
+    const send = (type, payload, msgId) => worker.postMessage(Protocol.envelope(type, epoch, payload, msgId));
     const until = async (predicate, label) => {
         const deadline = Date.now() + 20000;
         while (!received.some(predicate)) {
@@ -109,7 +109,7 @@ invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state)
                 if (fresh.length) {
                     send('claim_ack', { grants: fresh.map((c) => ({ ok: true, characterId: c.characterId,
                         ownerId: 'cold_simulation_owner', revision: c.expectedRevision + 1,
-                        leaseId: `party-wait-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) });
+                        leaseId: `party-wait-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) }, message.msgId);
                 }
             }
             for (const message of received.filter((m) => m.type === 'proposal_batch')) {

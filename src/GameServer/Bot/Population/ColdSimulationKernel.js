@@ -11,39 +11,64 @@ const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
 class DueHeap {
     constructor() {
         this.values = [];
+        this.positions = new WeakMap();
+    }
+
+    set(index, entry) {
+        this.values[index] = entry;
+        this.positions.set(entry, index);
+    }
+
+    up(index) {
+        const entry = this.values[index];
+        while (index > 0) {
+            const parent = Math.floor((index - 1) / 2);
+            if (this.compare(this.values[parent], entry) <= 0) break;
+            this.set(index, this.values[parent]);
+            index = parent;
+        }
+        this.set(index, entry);
+    }
+
+    down(index) {
+        const entry = this.values[index];
+        while (true) {
+            const left = index * 2 + 1;
+            const right = left + 1;
+            if (left >= this.values.length) break;
+            let next = left;
+            if (right < this.values.length && this.compare(this.values[right], this.values[left]) < 0) next = right;
+            if (this.compare(entry, this.values[next]) <= 0) break;
+            this.set(index, this.values[next]);
+            index = next;
+        }
+        this.set(index, entry);
     }
 
     push(entry) {
         this.values.push(entry);
-        let index = this.values.length - 1;
-        while (index > 0) {
-            const parent = Math.floor((index - 1) / 2);
-            if (this.compare(this.values[parent], entry) <= 0) break;
-            this.values[index] = this.values[parent];
-            index = parent;
-        }
-        this.values[index] = entry;
+        this.up(this.values.length - 1);
     }
 
     pop() {
         if (!this.values.length) return null;
         const first = this.values[0];
-        const last = this.values.pop();
-        if (this.values.length && last) {
-            let index = 0;
-            while (true) {
-                const left = index * 2 + 1;
-                const right = left + 1;
-                if (left >= this.values.length) break;
-                let next = left;
-                if (right < this.values.length && this.compare(this.values[right], this.values[left]) < 0) next = right;
-                if (this.compare(last, this.values[next]) <= 0) break;
-                this.values[index] = this.values[next];
-                index = next;
-            }
-            this.values[index] = last;
-        }
+        this.remove(first);
         return first;
+    }
+
+    remove(entry) {
+        const index = this.positions.get(entry);
+        if (index === undefined) return false;
+        const last = this.values.pop();
+        this.positions.delete(entry);
+        if (index < this.values.length) {
+            this.set(index, last);
+            const parent = Math.floor((index - 1) / 2);
+            if (index > 0 && this.compare(last, this.values[parent]) < 0) this.up(index);
+            else this.down(index);
+        }
+        return true;
     }
 
     peek() {
@@ -333,6 +358,12 @@ class ColdSimulationKernel {
         this.nextScheduleToken = 1;
         this.claiming = new Set();
         this.claimStartedAt = new Map();
+        this.claimAttempts = new Map();
+        this.nextClaimRequest = 1;
+        this.alarms = new Map();
+        this.operationalAlarms = new Map();
+        this.earliestOperationalAlarm = null;
+        this.nextAlarmToken = 1;
         this.inFlight = new Map();
         this.partyRuns = new Map();
         this.dirty = new Map();
@@ -436,6 +467,7 @@ class ColdSimulationKernel {
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.scheduleTokens.delete(id);
+        this.cancelClaimAttempt(id);
         this.claiming.delete(id);
         this.claimStartedAt.delete(id);
         this.commanding.delete(id);
@@ -447,6 +479,79 @@ class ColdSimulationKernel {
         const token = this.nextScheduleToken++;
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: Number(dueAt || this.now()) });
         this.heap.push({ characterId: id, version: Number(version), dueAt: Number(dueAt || this.now()), scheduleToken: token });
+    }
+
+    armAlarm(kind, key, dueAt, options = {}) {
+        if (kind !== 'claim_ack' || options.operational !== true) throw new Error('unsupported_alarm');
+        if (!Number.isSafeInteger(dueAt) || dueAt < 0) throw new RangeError('invalid_alarm_deadline');
+        const id = Number(options.characterId);
+        if (!Number.isSafeInteger(id) || id <= 0 || Number(key) !== id || !this.claiming.has(id)
+            || typeof options.stamp !== 'string' || !options.stamp) throw new Error('invalid_claim_alarm');
+        const alarmKey = `${kind}:${id}`;
+        const previous = this.alarms.get(alarmKey);
+        if (previous?.stamp === options.stamp && previous.dueAt === dueAt) return previous.alarmToken;
+        if (previous) this.cancelAlarm(kind, key, previous.alarmToken);
+        const entry = { kind: 'alarm', alarmKind: kind, alarmKey, key, dueAt, stamp: options.stamp,
+            characterId: id, alarmToken: this.nextAlarmToken++ };
+        this.alarms.set(alarmKey, entry);
+        this.operationalAlarms.set(alarmKey, entry);
+        this.heap.push(entry);
+        if (!this.earliestOperationalAlarm || this.heap.compare(entry, this.earliestOperationalAlarm) < 0) {
+            this.earliestOperationalAlarm = entry;
+        }
+        return entry.alarmToken;
+    }
+
+    cancelAlarm(kind, key, expectedToken) {
+        const alarmKey = `${kind}:${Number(key)}`;
+        const entry = this.alarms.get(alarmKey);
+        if (!entry || entry.alarmToken !== expectedToken) return false;
+        this.heap.remove(entry);
+        this.alarms.delete(alarmKey);
+        this.operationalAlarms.delete(alarmKey);
+        if (this.earliestOperationalAlarm === entry) {
+            this.earliestOperationalAlarm = null;
+            // This index contains only outstanding claim deadlines, bounded
+            // by normal/atomic ownership admission; never all bot alarms.
+            for (const candidate of this.operationalAlarms.values()) {
+                if (!this.earliestOperationalAlarm || this.heap.compare(candidate, this.earliestOperationalAlarm) < 0) {
+                    this.earliestOperationalAlarm = candidate;
+                }
+            }
+        }
+        return true;
+    }
+
+    cancelClaimAttempt(characterId) {
+        const id = Number(characterId);
+        const attempt = this.claimAttempts.get(id);
+        if (attempt) this.cancelAlarm('claim_ack', id, attempt.alarmToken);
+        this.claimAttempts.delete(id);
+        this.claiming.delete(id);
+        this.claimStartedAt.delete(id);
+    }
+
+    drainOperationalAlarms(timestamp = this.now()) {
+        let fired = 0;
+        while (this.earliestOperationalAlarm && this.earliestOperationalAlarm.dueAt <= timestamp) {
+            const entry = this.earliestOperationalAlarm;
+            this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
+            const id = entry.characterId;
+            if (this.claimAttempts.get(id)?.requestId !== entry.stamp || !this.claiming.has(id)) continue;
+            const run = [...this.partyRuns.values()].find(party => party.purpose.memberIds.includes(id));
+            if (run) {
+                run.purpose.memberIds.forEach(memberId => this.cancelClaimAttempt(memberId));
+                this.partyRuns.delete(String(run.purpose.partyId));
+                this.requeue(run.purpose.leaderId, timestamp + 1000);
+                this.stats.claimRecoveries += run.purpose.memberIds.length;
+            } else {
+                this.cancelClaimAttempt(id);
+                this.requeue(id, timestamp + 1000);
+                this.stats.claimRecoveries += 1;
+            }
+            fired++;
+        }
+        return fired;
     }
 
     busy(characterId) {
@@ -482,6 +587,11 @@ class ColdSimulationKernel {
         let commandsSelected = 0;
         while (candidates.length + commandsSelected < limit && this.heap.size > 0) {
             const head = this.heap.peek();
+            if (head.kind === 'alarm') {
+                if (head.dueAt > timestamp) break;
+                this.drainOperationalAlarms(timestamp);
+                continue;
+            }
             if (!this.validHeapEntry(head)) {
                 this.heap.pop();
                 continue;
@@ -679,30 +789,7 @@ class ColdSimulationKernel {
     }
 
     recoverStalled(timestamp = this.now()) {
-        const expiredClaims = [...this.claimStartedAt.entries()]
-            .filter(([, startedAt]) => timestamp - Number(startedAt || timestamp) >= this.claimAckTimeoutMs)
-            .map(([characterId]) => Number(characterId));
-        const handledParties = new Set();
-        for (const id of expiredClaims) {
-            const partyRun = [...this.partyRuns.values()].find((run) => run.purpose.memberIds.includes(id));
-            if (partyRun) {
-                const partyId = String(partyRun.purpose.partyId);
-                if (handledParties.has(partyId)) continue;
-                handledParties.add(partyId);
-                partyRun.purpose.memberIds.forEach((memberId) => {
-                    this.claiming.delete(Number(memberId));
-                    this.claimStartedAt.delete(Number(memberId));
-                });
-                this.partyRuns.delete(partyId);
-                this.requeue(partyRun.purpose.leaderId, timestamp + 1000);
-                this.stats.claimRecoveries += partyRun.purpose.memberIds.length;
-            } else {
-                this.claiming.delete(id);
-                this.claimStartedAt.delete(id);
-                this.requeue(id, timestamp + 1000);
-                this.stats.claimRecoveries += 1;
-            }
-        }
+        this.drainOperationalAlarms(timestamp);
 
         const expiredLeases = [...this.inFlight.entries()].filter(([, active]) => (
             Number(active?.grant?.leaseUntil || 0) > 0
@@ -763,14 +850,29 @@ class ColdSimulationKernel {
         if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) return;
         this.stats.selected += candidates.length;
-        this.emit('claim_request', { candidates: candidates.map(({ state, context, ...candidate }) => candidate) });
+        const requestId = `claim:${this.nextClaimRequest++}`;
+        for (const candidate of candidates) {
+            const id = Number(candidate.characterId);
+            const alarmToken = this.armAlarm('claim_ack', id,
+                this.claimStartedAt.get(id) + this.claimAckTimeoutMs,
+                { stamp: requestId, characterId: id, operational: true });
+            this.claimAttempts.set(id, { requestId, alarmToken });
+        }
+        this.emit('claim_request', { candidates: candidates.map(({ state, context, ...candidate }) => candidate) }, requestId);
     }
 
-    onClaimAck(payload = {}) {
-        (payload.rejected || []).forEach((result) => {
+    onClaimAck(payload = {}, requestId) {
+        if (this.stopping || typeof requestId !== 'string' || !requestId) return;
+        const matches = result => this.claiming.has(Number(result.characterId))
+            && this.claimAttempts.get(Number(result.characterId))?.requestId === requestId;
+        // Unmatched grants stay inert. An abandoned native lease is cleaned
+        // by existing expiry/recovery; releasing an ACK replay could instead
+        // release the exact currently accepted solo/partial-party grant.
+        const rejected = (payload.rejected || []).filter(matches);
+        const grants = (payload.grants || []).filter(matches);
+        rejected.forEach((result) => {
             const id = Number(result.characterId);
-            this.claiming.delete(id);
-            this.claimStartedAt.delete(id);
+            this.cancelClaimAttempt(id);
             // A rejected claim carries the main process' current ownership
             // snapshot. Party claims must absorb it just like solo claims do;
             // otherwise the next party attempt repeats the same stale revision
@@ -788,10 +890,9 @@ class ColdSimulationKernel {
             }
             if (!result.state) this.requeue(id, this.now() + 1000);
         });
-        (payload.grants || []).forEach((grant) => {
+        grants.forEach((grant) => {
             const id = Number(grant.characterId);
-            this.claiming.delete(id);
-            this.claimStartedAt.delete(id);
+            this.cancelClaimAttempt(id);
             if (grant.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(grant.purpose.partyId));
                 if (run) run.grants.set(id, grant);
@@ -804,8 +905,8 @@ class ColdSimulationKernel {
             this.resolveChain = this.resolveChain.then(() => this.resolveGrant(id));
         });
         const touchedParties = new Set([
-            ...(payload.grants || []).map((entry) => entry.purpose?.partyId),
-            ...(payload.rejected || []).map((entry) => entry.purpose?.partyId)
+            ...grants.map((entry) => entry.purpose?.partyId),
+            ...rejected.map((entry) => entry.purpose?.partyId)
         ].filter(Boolean).map(String));
         touchedParties.forEach((partyId) => {
             const run = this.partyRuns.get(partyId);
@@ -816,8 +917,7 @@ class ColdSimulationKernel {
                 const releases = [...run.grants.values()].map((token) => ({ token, reason: 'party_claim_partial' }));
                 if (releases.length) this.emit('release_request', { releases });
                 run.purpose.memberIds.forEach((id) => {
-                    this.claiming.delete(Number(id));
-                    this.claimStartedAt.delete(Number(id));
+                    this.cancelClaimAttempt(id);
                 });
                 this.partyRuns.delete(partyId);
                 this.requeue(run.purpose.leaderId, this.now() + 1000);
@@ -1398,6 +1498,8 @@ class ColdSimulationKernel {
 
     async shutdown() {
         this.stopping = true;
+        for (const id of this.claimAttempts.keys()) this.cancelClaimAttempt(id);
+        for (const entry of this.alarms.values()) this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
         await this.resolveChain.catch(() => null);
         this.flush(null, true);
         return this.snapshot();

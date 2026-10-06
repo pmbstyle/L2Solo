@@ -149,7 +149,7 @@ async function main() {
     let workerError;
     worker.on('error', error => { workerError = error; });
     worker.on('message', message => received.push(message));
-    const send = (type, payload) => worker.postMessage(Protocol.envelope(type, 'assembly-test', payload));
+    const send = (type, payload, msgId) => worker.postMessage(Protocol.envelope(type, 'assembly-test', payload, msgId));
     const until = async predicate => {
         const deadline = Date.now() + 15000;
         while (!received.some(predicate)) {
@@ -175,7 +175,7 @@ async function main() {
         const claim = await until(m => m.type === 'claim_request');
         send('claim_ack', { grants: claim.payload.candidates.map(c => ({ ok: true, characterId: c.characterId,
             ownerId: 'cold_simulation_owner', revision: c.expectedRevision + 1,
-            leaseId: `worker-assembly-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) });
+            leaseId: `worker-assembly-${c.characterId}`, leaseUntil: Date.now() + 30000, purpose: c.purpose })) }, claim.msgId);
         const proposal = await until(m => m.type === 'proposal_batch');
         assert(proposal.payload.proposals.every(p => p.result.materialize.exp === 0));
         assert(proposal.payload.proposals.every(p => !p.result.memoryEvents?.length));

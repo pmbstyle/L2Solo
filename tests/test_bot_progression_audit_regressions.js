@@ -144,7 +144,7 @@ async function checkWorkerSafety() {
     const kernel = new ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw new Error('party review must not run a solo fight'); },
         resolveParty: () => { throw new Error('an unsafe clan party must be released before combat'); },
-        emit: (type, payload) => messages.push({ type, payload }) });
+        emit: (type, payload, msgId) => messages.push({ type, payload, msgId }) });
     states.forEach((state, i) => kernel.upsert({ state, context: i === 0
         ? { isPartyLeader: true, party, partyMembers: states, spot: { id: 'tower' } } : {} }));
     kernel.tick();
@@ -152,7 +152,7 @@ async function checkWorkerSafety() {
     assert.strictEqual(claim.type, 'claim_request');
     kernel.onClaimAck({ grants: claim.payload.candidates.map(c => ({ ok: true, characterId: c.characterId,
         ownerId: 'cold_simulation_owner', revision: c.expectedRevision + 1,
-        leaseId: `safety-${c.characterId}`, leaseUntil: at + 30000, purpose: c.purpose })) });
+        leaseId: `safety-${c.characterId}`, leaseUntil: at + 30000, purpose: c.purpose })) }, claim.msgId);
     await kernel.resolveChain;
     const proposals = messages.find(m => m.type === 'proposal_batch').payload.proposals;
     assert.strictEqual(proposals.length, 3);
