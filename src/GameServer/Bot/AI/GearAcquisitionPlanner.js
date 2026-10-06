@@ -1768,7 +1768,12 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
     };
 }
 
+// No spots, no sources. A caller without spots (a default `[]`, a new array
+// each call) must not evict the index built for the real spot list: the
+// cache holds one list, and the next wish review would rebuild it in full.
+const NO_SOURCES = new Map();
 function sourceIndexFor(spots = []) {
+    if (!spots?.length) return NO_SOURCES;
     const rewards = DataCache.npcRewards || [];
     if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards) {
         return sourceIndexCache.byItemId;
@@ -1829,6 +1834,11 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const cacheKey = `${Number(itemId)}:${Number(state.level || 0)}:${spoilCapable ? 1 : 0}:${allowRaidSources ? 1 : 0}`;
     if (sourceCache?.has(cacheKey)) return sourceCache.get(cacheKey);
     const sourceIndex = sourceIndexFor(spots);
+    // The resolved lists below belong to the cached spot list; no spots means none.
+    if (sourceIndex === NO_SOURCES) {
+        sourceCache?.set(cacheKey, []);
+        return [];
+    }
     const rates = ProgressionRates.profile();
     const ratesKey = `${rates.drop}:${rates.spoil}:${rates.adena}`;
     const resolvedKey = `${cacheKey}:${ratesKey}`;
