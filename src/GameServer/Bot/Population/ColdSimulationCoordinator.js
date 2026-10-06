@@ -1742,7 +1742,24 @@ class ColdSimulationCoordinator {
         if (!state) return refusal('missing_state');
         if (this.fencedBots.has(identity.characterId) || state.phase !== 'cold') return refusal('hot_handoff_fenced');
         if (!Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) return refusal('stale_command');
-        return this.population?.executeWorkerLifecycleCommand?.(state, request);
+        const owned = this.commandInflight.get(identity.characterId);
+        if (!(owned instanceof Promise)) return refusal('stale_command');
+        const checkpoint = Object.freeze({ ...Protocol.commandCheckpoint(identity.commandCheckpoint) });
+        const workerAdmission = Object.freeze({
+            characterId: identity.characterId, commandId: identity.commandId, commandCheckpoint: checkpoint,
+            check: () => {
+                if (!sourceCurrent()) return { reason: 'stale_worker_source' };
+                if (this.stopping) return { reason: 'coordinator_stopping' };
+                if (this.commandInflight.get(identity.characterId) !== owned) return { reason: 'stale_command' };
+                const latest = LifeState.cachedState(identity.characterId);
+                if (!latest) return { reason: 'missing_state' };
+                if (this.fencedBots.has(identity.characterId) || latest.phase !== 'cold') {
+                    return { reason: 'hot_handoff_fenced' };
+                }
+                return Protocol.sameCommandCheckpoint(checkpoint, latest) ? null : { reason: 'stale_command' };
+            }
+        });
+        return this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
     }
 
     async executeMarketReviewCommand(request, sourceCurrent = () => true) {

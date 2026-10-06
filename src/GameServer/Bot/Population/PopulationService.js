@@ -1,5 +1,6 @@
 const PartyMarketBreak = require('./PartyMarketBreak');
 const BackgroundCandidateQueue = require('./BackgroundCandidateQueue');
+const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, priority: admissionPriority } = require('./PartyAdmission');
 const partyAdmission = new PartyAdmission();
 const Config  = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -3394,7 +3395,7 @@ const PopulationService = {
         });
     },
 
-    resolveColdState(state, workerRequest = null) {
+    resolveColdState(state, workerRequest = null, options = {}) {
         const startedAt = Date.now();
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
         if (!joinedBackgroundParty(state) && (hallVisit.needed(state, startedAt) || state.stats?.clanHallVisit)) {
@@ -3455,7 +3456,7 @@ const PopulationService = {
                 Metrics.recordSkippedResolve('joined_party_during_transition');
                 return Promise.resolve({ ok: false, reason: 'joined_party', state });
             }
-            return LifeState.applyResolve(requestLifecycleState, result).then((updatedState) => {
+            return LifeState.applyResolve(requestLifecycleState, result, options).then((updatedState) => {
                 if (!updatedState) {
                     Metrics.recordSkippedResolve('transition_apply_failed');
                     return { ok: false, reason: 'apply_failed', state };
@@ -3798,30 +3799,37 @@ const PopulationService = {
         });
     },
 
-    async executeWorkerLifecycleCommand(state, request = {}) {
-        if (!request.precomputedResult) {
-            return Promise.resolve({ ok: false, reason: 'worker_result_required', state });
-        }
-        // Worker-owned recovery finishes before the main economy command.
-        // Reconsider a funded weapon purchase before applying another fight,
-        // which could immediately put the buyer back into recovery again.
-        if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
-            && canResumeAffordableMarketPlan(state)) {
-            const goal = await GoalService.review(state);
-            const current = LifeState.cachedState(state.characterId) || state;
-            if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
-                return { ok: false, reason: 'state_changed', state: current };
+    async executeWorkerLifecycleCommand(state, request = {}, options = {}) {
+        try {
+            checkWorkerCommandAdmission(state, options);
+            if (!request.precomputedResult) {
+                return Promise.resolve({ ok: false, reason: 'worker_result_required', state });
             }
-            const travel = await marketTravelWithRefund(current, goal?.current);
-            const latest = LifeState.cachedState(state.characterId) || current;
-            if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
-            if (travel) {
-                const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
-                return { ok: !!saved, state: saved || state,
-                    reason: saved ? 'goal_market_travel' : 'state_write_rejected' };
+            // Worker-owned recovery finishes before the main economy command.
+            // Reconsider a funded weapon purchase before applying another fight,
+            // which could immediately put the buyer back into recovery again.
+            if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
+                && canResumeAffordableMarketPlan(state)) {
+                const goal = await GoalService.review(state);
+                const current = LifeState.cachedState(state.characterId) || state;
+                if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
+                    return { ok: false, reason: 'state_changed', state: current };
+                }
+                const travel = await marketTravelWithRefund(current, goal?.current);
+                const latest = LifeState.cachedState(state.characterId) || current;
+                if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
+                if (travel) {
+                    const saved = await LifeState.upsertState(travel, 'goal_market_travel_before_combat');
+                    return { ok: !!saved, state: saved || state,
+                        reason: saved ? 'goal_market_travel' : 'state_write_rejected' };
+                }
             }
+            return await this.resolveColdState(state, request, options);
+        } catch (error) {
+            if (!(error instanceof WorkerCommandAdmissionRefusal)) throw error;
+            const latest = LifeState.cachedState(state?.characterId);
+            return { ok: false, reason: error.message, retryAfterMs: 1000, ...(latest ? { state: latest } : {}) };
         }
-        return this.resolveColdState(state, request);
     },
 
     prepareInventoryCleanupProposal(state, timestamp = Date.now(), simulation = null, before = state) {

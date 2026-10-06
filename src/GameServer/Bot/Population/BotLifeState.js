@@ -13,6 +13,7 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
+const { checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 
 const TABLE = 'bot_life_state';
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
@@ -2582,8 +2583,11 @@ const BotLifeState = {
         });
     },
 
-    applyResolve(state, result) {
-        return this.serializeClanLevelUp(state.characterId, () => this.prepareResolve(state, result, { persist: true }));
+    applyResolve(state, result, options = {}) {
+        return this.serializeClanLevelUp(state.characterId, () => {
+            checkWorkerCommandAdmission(state, options);
+            return this.prepareResolve(state, result, { persist: true });
+        });
     },
 
     syncResolvedState(state) {
