@@ -1,9 +1,23 @@
+const { createHash } = require('node:crypto');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 
 const TABLE = 'bot_background_parties';
 const cache = new Map();
+const acceptedStamps = new Map();
+let cacheGeneration = 0;
+
+function acceptedParty(snapshot) {
+    const current = cache.get(snapshot.partyId);
+    const stampOf = party => createHash('sha256').update(JSON.stringify(party)).digest('hex');
+    const stamp = stampOf(snapshot);
+    if (current && acceptedStamps.get(snapshot.partyId) === stamp && stampOf(current) === stamp) return current;
+    cache.set(snapshot.partyId, snapshot);
+    acceptedStamps.set(snapshot.partyId, stamp);
+    cacheGeneration++;
+    return snapshot;
+}
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -162,10 +176,15 @@ const BackgroundPartyState = {
             `SELECT * FROM ${TABLE} WHERE status = 'active'`,
             []
         ]).then((rows) => {
-            cache.clear();
-            rows.map((row) => normalize(row)).forEach((party) => {
-                cache.set(party.partyId, party);
-            });
+            const next = rows.map(normalize);
+            const keys = Array.from(cache.keys());
+            const changedOrder = keys.length !== next.length || next.some((party, index) => party.partyId !== keys[index]);
+            if (changedOrder) {
+                cache.clear();
+                acceptedStamps.clear();
+                cacheGeneration++;
+            }
+            next.forEach(acceptedParty);
             return Array.from(cache.values());
         });
     },
@@ -213,8 +232,7 @@ const BackgroundPartyState = {
                 // Only the whole-party lifecycle can change a hot roster.
                 // A cold maintenance job may have prepared this save before activation.
                 if (!result.affectedRows) return null;
-                this.acceptCommit(prepared);
-                return prepared.snapshot;
+                return this.acceptCommit(prepared);
             });
         }).catch((err) => {
             utils.infoWarn('BotParty', 'failed to save background party %s: %s', prepared.snapshot.partyId, err.message);
@@ -235,14 +253,16 @@ const BackgroundPartyState = {
     acceptCommit(prepared) {
         const snapshot = prepared?.snapshot;
         if (!snapshot?.partyId) return null;
-        cache.set(snapshot.partyId, snapshot);
-        return snapshot;
+        return acceptedParty(snapshot);
     },
 
     acceptRow(row) {
         const snapshot = normalize(row);
-        cache.set(snapshot.partyId, snapshot);
-        return snapshot;
+        return acceptedParty(snapshot);
+    },
+
+    generation() {
+        return cacheGeneration;
     },
 
     find(partyId) {
@@ -270,8 +290,7 @@ const BackgroundPartyState = {
             [at]
         ]).then((rows) => rows.map((row) => {
             const party = normalize(row);
-            cache.set(party.partyId, party);
-            return party;
+            return acceptedParty(party);
         })).catch((err) => {
             utils.infoWarn('BotParty', 'failed to fetch due background parties: %s', err.message);
             return [];
