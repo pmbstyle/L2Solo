@@ -736,13 +736,14 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
             const match = Matchup.evaluate(options.matchupProfiles, target);
             if (!match.eligible) resisted += 1;
             if (options.soloSafety) {
-                match.eligible &&= Matchup.soloSurvival(options.matchupProfiles, target).eligible
-                    && (!options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel);
+                match.eligible = Matchup.soloCanHunt(options.matchupProfiles, target,
+                    { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible;
             }
             return { ...entry, match };
         }).filter(entry => entry.match.eligible);
         if (!entries.length) return { avoided: true,
-            reason: resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
+            reason: options.soloSafety ? 'no_safe_solo_target'
+                : resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
     }
     const pickEntry = (candidates) => {
         const weight = entry => Math.max(1, number(entry.count, 1)) * Math.min(1, entry.match?.efficiency ?? 1) ** 2;

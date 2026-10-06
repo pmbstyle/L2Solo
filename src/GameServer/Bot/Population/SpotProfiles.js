@@ -303,6 +303,21 @@ function capacityFingerprint(occupancy = {}, maxUnits = 9, options = {}) {
 // out-of-range spots are rejected before deriving their tags. The window of
 // one target level is the same for every search of one catalog.
 const spotsNearLevelByCatalog = new WeakMap();
+// Catalogue-owned references, at most 80 level arrays; collecting/resetting a
+// catalogue releases its lists. No bot, state or matchup is retained here.
+const lowerSpotsByCatalog = new WeakMap();
+
+function lowerSpots(profiles, targetLevel) {
+    let byLevel = lowerSpotsByCatalog.get(profiles);
+    if (!byLevel) lowerSpotsByCatalog.set(profiles, byLevel = new Map());
+    let spots = byLevel.get(targetLevel);
+    if (!spots) {
+        spots = profiles.filter(profile => profile.raidBoss !== true && profile.maxLevel < targetLevel - 4);
+        byLevel.set(targetLevel, spots);
+        if (byLevel.size > 80) byLevel.delete(byLevel.keys().next().value);
+    }
+    return spots;
+}
 
 function spotsNearLevel(profiles, targetLevel) {
     let byLevel = spotsNearLevelByCatalog.get(profiles);
@@ -457,6 +472,8 @@ const SpotProfiles = {
         const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
         const mode = LevelingRoutes.modeForState(state, options);
         const routeOptions = { ...options, occupancy, excludedSpotIds, capacityUnits, ...reservationOptions,
+            spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
+                { timestamp, mode, occupancy }),
             matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // Staying on the leader's ground still admits any teammates reserved
@@ -553,16 +570,21 @@ const SpotProfiles = {
         // otherwise a perfectly healthy bot repeats missing_spot forever.
         if (!routeCandidates.length && soloSearch) {
             const recoveryState = { ...state, stats: { ...state.stats, equipmentPlan: null } };
-            routeCandidates = profiles.filter(profile => profile.raidBoss !== true
-                && profile.maxLevel >= targetLevel - 16
-                && profile.maxLevel < targetLevel - 4
-                && !excludedSpotIds.has(String(profile.id))
-                && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions)
-                && LevelingRoutes.isSpotAllowedForState(profile, recoveryState, routeOptions));
-            if (currentSpotAmong(routeCandidates, currentSpot, mustRelocate)) {
-                return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
+            const spotValue = routeOptions.spotEconomics;
+            const lower = lowerSpots(profiles, targetLevel)
+                .filter(profile => !excludedSpotIds.has(String(profile.id))
+                    && hasCapacityForStates(profile, capacityStates, occupancy, reservationOptions))
+                .map(profile => ({ profile, value: spotValue(profile)?.valueHours ?? -Infinity }))
+                .sort((a, b) => b.value - a.value || String(a.profile.id).localeCompare(String(b.profile.id)));
+            routeCandidates = [];
+            // ARCH-NOTE: with the fixed 128-probe budget, a naked level-50
+            // first-profession fighter can exhaust high-income unsafe camps
+            // before reaching safe low-income ground; full-catalogue acceptance remains open.
+            for (let checked = 0; checked < lower.length && checked < 128 && routeCandidates.length < 8; checked++) {
+                const profile = lower[checked].profile;
+                if (LevelingRoutes.isSpotAllowedForState(profile, recoveryState, routeOptions)) routeCandidates.push(profile);
             }
-            suitable = routeCandidates.filter((profile) => SpotService.isSuitable(profile, targetLevel, options));
+            suitable = [];
         }
         const guided = LevelingRoutes.bestSpot(suitable.length ? suitable : routeCandidates, state, routeOptions);
 

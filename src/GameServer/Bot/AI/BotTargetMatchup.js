@@ -199,6 +199,14 @@ function soloSurvival(profiles, target, minimum = 1.5) {
         reason: survivalRatio >= minimum ? 'solo_survival_ready' : 'insufficient_survival_margin' };
 }
 
+function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {
+    const survival = soloSurvival(profiles, target);
+    if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
+        return { ...survival, eligible: false, reason: 'recovery_level' };
+    }
+    return survival.survivalRatio === null ? { ...evaluate(profiles, target), survivalRatio: null } : survival;
+}
+
 function stateProfiles(state, options = {}) {
     if (options.matchupProfiles) return options.matchupProfiles;
     const states = (options.capacityStates?.length ? options.capacityStates : [state])
@@ -300,9 +308,10 @@ function npcVerdict(verdicts, selfId, options) {
     if (npc && huntingTargetPolicy().canHunt(npc)) {
         const target = coldCombatProfile().npcCombatStats(npc);
         const match = evaluate(options.profiles, target);
-        const survival = options.soloSafety ? soloSurvival(options.profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = match.eligible && survival.eligible && withinRecoveryLevel;
+        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, target,
+            { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible
+            : match.eligible && withinRecoveryLevel;
         // Read-only verdicts are shared. Mixed-attack and party profiles give
         // continuous efficiencies, so the pool is cleared at a bound; verdicts
         // already handed out stay valid.
@@ -362,5 +371,5 @@ function spotMatchup(spot, profiles, options = {}) {
 }
 
 module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
-    profileStats, skillStats, evaluate, soloSurvival, stateProfiles, spotMatchup,
+    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, stateProfiles, spotMatchup,
     sharedVerdictProfiles: () => sharedVerdicts.size, uniqueVerdictCount: () => uniqueVerdicts.size };

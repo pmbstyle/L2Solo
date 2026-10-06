@@ -178,8 +178,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             const matchupTarget = TargetMatchup.targetView(npc, matchupStats);
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
-                const survival = TargetMatchup.soloSurvival(matchupProfiles, matchupTarget);
-                if (targetMatchup.eligible && !survival.eligible) Object.assign(targetMatchup, survival);
+                const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, matchupTarget);
+                Object.assign(targetMatchup, { eligible: canHunt.eligible, reason: canHunt.reason });
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
