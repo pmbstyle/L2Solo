@@ -175,6 +175,8 @@ class ColdSimulationCoordinator {
         this.snapshotContinuationTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
+        this.leaseRenewalRound = null;
+        this.leaseRenewalInFlight = null;
         this.historyCleanupTimer = null;
         this.historyCleanupInFlight = null;
         this.seen = new Set();
@@ -341,13 +343,7 @@ class ColdSimulationCoordinator {
                 ColdSimulationOwner.recoverExpiredLeases().catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRecoveryIntervalMs) || 5000));
             this.renewalTimer = setInterval(() => {
-                if (!this.worker || this.stopping) return;
-                ColdSimulationOwner.renewActiveLeases({
-                    leaseMs: Math.max(2000, Number(Config.coldOwnerLeaseMs) || 30000)
-                }).then((renewals) => {
-                    const active = (renewals || []).filter((result) => result.ok);
-                    if (active.length) this.postCollections('lease_renewal', { renewals: active });
-                }).catch((error) => this.recordError(error));
+                this.beginLeaseRenewalRound();
             }, Math.max(1000, Number(Config.coldOwnerRenewalIntervalMs) || 5000));
             this.historyCleanupTimer = setInterval(() => {
                 if (this.stopping || this.historyCleanupInFlight) return;
@@ -373,6 +369,7 @@ class ColdSimulationCoordinator {
 
     startWorker() {
         if (this.worker || this.stopping) return;
+        this.cancelLeaseRenewalRound();
         this.workerEpoch = `cold-worker:${process.pid}:${randomUUID()}`;
         this.projectionRetention.reset();
         this.ready = false;
@@ -461,6 +458,9 @@ class ColdSimulationCoordinator {
         this.counters.bytesIn += valid.bytes;
         const payload = message.payload || {};
         switch (message.type) {
+        case 'lease_renewal_candidates':
+            await this.handleLeaseRenewalCandidates(message, worker, epoch);
+            break;
         case 'ready':
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
@@ -1828,6 +1828,97 @@ class ColdSimulationCoordinator {
         return paused;
     }
 
+    currentLeaseRenewalRound(round) {
+        return !!round && this.leaseRenewalRound === round && !round.cancelled
+            && this.worker === round.worker && this.workerEpoch === round.epoch
+            && this.ready && this.snapshotsLoaded && !this.stopping && Date.now() < round.replyBy;
+    }
+
+    canRenewLease(round, token) {
+        if (!this.currentLeaseRenewalRound(round) || this.fencedBots.has(token.characterId)
+            || this.economyBots.has(token.characterId) || this.commandInflight.has(token.characterId)) return false;
+        const cached = LifeState.cachedState(token.characterId), current = cached?.simulation;
+        return cached?.phase === 'cold' && current?.ownerId === token.ownerId
+            && current.revision === token.revision && current.leaseId === token.leaseId;
+    }
+
+    cancelLeaseRenewalRound(round = this.leaseRenewalRound) {
+        if (!round) return;
+        round.cancelled = true;
+        if (this.leaseRenewalRound === round) this.leaseRenewalRound = null;
+        // Actual native work retains its exclusion token until finally. A
+        // replacement worker must not overlap the old character flush/SQL.
+    }
+
+    beginLeaseRenewalRound() {
+        const previous = this.leaseRenewalRound;
+        if (previous && !this.currentLeaseRenewalRound(previous)) this.cancelLeaseRenewalRound(previous);
+        if (this.leaseRenewalRound || this.leaseRenewalInFlight || !this.worker || !this.ready
+            || !this.snapshotsLoaded || this.stopping) return false;
+        const round = {
+            worker: this.worker, epoch: this.workerEpoch, msgId: randomUUID(),
+            replyBy: Date.now() + Math.max(1000, Math.trunc(Number(Config.coldOwnerRenewalIntervalMs) || 5000)),
+            nextPage: 0, pendingPages: 0, doneSeen: false, cancelled: false,
+            ids: new Set(), tail: Promise.resolve()
+        };
+        this.leaseRenewalRound = round;
+        try {
+            if (this.post('lease_renewal_probe', { replyBy: round.replyBy }, round.msgId) === round.msgId) return true;
+        } catch (error) { this.recordError(error); }
+        this.cancelLeaseRenewalRound(round);
+        return false;
+    }
+
+    handleLeaseRenewalCandidates(message, worker, epoch) {
+        const round = this.leaseRenewalRound, payload = message.payload;
+        if (!this.currentLeaseRenewalRound(round) || round.worker !== worker || round.epoch !== epoch
+            || payload.requestId !== round.msgId || payload.pageIndex !== round.nextPage || round.doneSeen) return Promise.resolve(false);
+        // The Kernel ownership window is at most 128 claims; each can hold a
+        // partial batch of at most MAX_BATCH grants. This is not a bot catalog.
+        if (round.ids.size + payload.tokens.length > 128 * Protocol.MAX_BATCH
+            || (!payload.done && !payload.tokens.length)
+            || payload.tokens.some(token => round.ids.has(token.characterId))) {
+            this.cancelLeaseRenewalRound(round);
+            return Promise.resolve(false);
+        }
+        // Reserve before awaiting: onMessage handlers can overlap while a
+        // native character flush is pending. A final page still owns its work.
+        round.nextPage += 1;
+        payload.tokens.forEach(token => round.ids.add(token.characterId));
+        round.pendingPages += 1;
+        round.doneSeen = payload.done;
+        const job = round.tail.then(async () => {
+            if (!this.currentLeaseRenewalRound(round)) return false;
+            const flight = { round, msgId: message.msgId };
+            this.leaseRenewalInFlight = flight;
+            try {
+                const renewals = await ColdSimulationOwner.renewActiveLeases(payload.tokens, {
+                    now: Date.now,
+                    leaseMs: Math.max(2000, Math.trunc(Number(Config.coldOwnerLeaseMs) || 30000)),
+                    canRenew: token => this.canRenewLease(round, token)
+                });
+                if (!this.currentLeaseRenewalRound(round)) return false;
+                const accepted = renewals.filter(result => result.ok && this.canRenewLease(round, result));
+                // Even an empty page needs its exact acknowledgement so the
+                // worker can continue its bounded, backpressured iterator.
+                return this.post('lease_renewal', { renewals: accepted }, message.msgId) === message.msgId;
+            } finally {
+                if (this.leaseRenewalInFlight === flight) this.leaseRenewalInFlight = null;
+            }
+        }).catch(error => {
+            this.recordError(error);
+            this.cancelLeaseRenewalRound(round);
+            return false;
+        }).finally(() => {
+            round.pendingPages -= 1;
+            if (!round.pendingPages && (round.doneSeen || !this.currentLeaseRenewalRound(round))) {
+                this.cancelLeaseRenewalRound(round);
+            }
+        });
+        round.tail = job;
+        return job;
+    }
+
     onWorkerError(error) {
         this.counters.workerErrors += 1;
         this.recordError(error);
@@ -1835,6 +1926,7 @@ class ColdSimulationCoordinator {
 
     onWorkerExit(code, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        this.cancelLeaseRenewalRound();
         this.cancelSafety();
         Metrics.clearColdSafetyEpoch(epoch);
         this.projectionRetention.reset();
@@ -1873,6 +1965,7 @@ class ColdSimulationCoordinator {
     }
 
     async stopCurrent(worker, epoch) {
+        this.cancelLeaseRenewalRound();
         this.cancelSafety();
         this.projectionRetention.reset();
         if (!this.started) return { stopped: true };
