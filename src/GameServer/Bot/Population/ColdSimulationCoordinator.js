@@ -477,7 +477,7 @@ class ColdSimulationCoordinator {
             } else if (payload.phase === 'snapshots_loaded') {
                 this.snapshotsLoaded = true;
                 this.lastWorkerSnapshot = payload;
-                utils.infoSuccess('ColdWorker', 'ready states=%d due=%d', Number(payload.states || 0), Number(payload.due || 0));
+                utils.infoSuccess('ColdWorker', 'ready states=%d queueHead=%s', Number(payload.states || 0), payload.queueHead?.kind || 'unknown');
             } else if (payload.phase === 'state_loaded') {
                 const waiter = this.waiters.get(message.msgId);
                 if (waiter) {

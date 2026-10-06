@@ -472,7 +472,7 @@ function startKernel(config = {}) {
         const elu = performance.eventLoopUtilization(previousElu);
         previousElu = performance.eventLoopUtilization();
         send('heartbeat', {
-            ...kernel.snapshot(),
+            ...kernel.heartbeatSnapshot(),
             safety: safetyTotals(),
             competition: competition?.snapshot() || null,
             tables: tables.summary(),
@@ -547,11 +547,11 @@ async function handle(message) {
             send('ready', {
                 phase: 'state_loaded',
                 characterId: Number(payload.rows?.[0]?.state?.characterId || 0),
-                ...kernel.snapshot()
+                ...kernel.heartbeatSnapshot()
             }, message.msgId);
         } else if (payload.done) {
             competitionReady = true;
-            send('ready', { phase: 'snapshots_loaded', ...kernel.snapshot() }, message.msgId);
+            send('ready', { phase: 'snapshots_loaded', ...kernel.heartbeatSnapshot() }, message.msgId);
         }
         break;
     case 'worker_presence_request':
