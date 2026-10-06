@@ -1,6 +1,11 @@
 'use strict';
 
-// Ignored source draft. Native attachment/read authorization is unavailable.
+const { isMainThread, workerData } = require('worker_threads');
+const nativeEpoch = String(workerData?.workerEpoch || 'cold-worker');
+const actorStores = new WeakMap();
+let nativeAttempted = false;
+
+// Shared passive backing for isolated stores and the authentic native Worker.
 const CharacterLocationIndex = require('./CharacterLocationIndex');
 const TableMirror = require('../Bot/Population/TableMirror');
 const { MAX_BATCH, MAX_MESSAGE_BYTES } = require('../Bot/Population/ColdSimulationProtocol');
@@ -83,7 +88,9 @@ function ownerBinding(owner, descriptor) {
     return binding;
 }
 
-function makeStore(index, owner, descriptor, binding) {
+function makeStore(index, owner, descriptor, binding, readers = index) {
+    if (actorStores.has(owner)) throw new TypeError('actor_store_already_registered');
+    if (ownerBinding(owner, descriptor) !== binding) throw new TypeError('changed_actor_store_owner');
     let disposed = false;
     let copy = null;
     let sweep = null;
@@ -105,13 +112,13 @@ function makeStore(index, owner, descriptor, binding) {
         if (!sameCopy(chain)) throw new TypeError('stale_actor_store_copy');
     };
     const recordOf = (id) => {
-        const record = index.getSource(id, 'actor');
+        const record = readers.getSource(id, 'actor');
         if (record && record[COPY]?.owner !== owner) throw new TypeError('foreign_actor_store_source');
         return record;
     };
     const records = () => {
         active();
-        const original = index.sourceEntries('actor');
+        const original = readers.sourceEntries('actor');
         return {
             next() {
                 active();
@@ -140,8 +147,8 @@ function makeStore(index, owner, descriptor, binding) {
             chainOf(chain);
             if (sameCopy(chain)) throw new TypeError('duplicate_actor_store_copy');
             // O(1), before any current-copy rows. No reset/clear/enable-all scan.
-            const remaining = index.sourceSize('actor');
-            const iterator = index.sourceEntries('actor');
+            const remaining = readers.sourceSize('actor');
+            const iterator = readers.sourceEntries('actor');
             copy = Object.freeze({ attachmentId: chain.attachmentId, copyId: chain.copyId,
                 worldGeneration: chain.worldGeneration });
             sweep = { copy, remaining, iterator };
@@ -158,7 +165,7 @@ function makeStore(index, owner, descriptor, binding) {
                 throw new TypeError('stale_actor_store_publication');
             }
             currentChain(chain);
-            if (index.getSource(id, 'actor') !== before) throw new TypeError('changed_actor_store_source');
+            if (readers.getSource(id, 'actor') !== before) throw new TypeError('changed_actor_store_source');
             let record = before?.source === row ? before : null;
             if (!record) {
                 record = { id, source: row, phase: 'hot', realPlayer: false,
@@ -183,7 +190,7 @@ function makeStore(index, owner, descriptor, binding) {
                 || (record.source.worldGeneration === absence.worldGeneration
                     && record.source.publication > absence.throughPublication)) return false;
             currentChain(chain);
-            if (index.getSource(id, 'actor') !== record) throw new TypeError('changed_actor_store_source');
+            if (readers.getSource(id, 'actor') !== record) throw new TypeError('changed_actor_store_source');
             return index.removeSource(id, 'actor', record.source);
         },
         cleanup(limit) {
@@ -203,7 +210,7 @@ function makeStore(index, owner, descriptor, binding) {
                 const [id, record] = item.value;
                 active();
                 if (job !== sweep || job.copy !== copy) throw new TypeError('stale_actor_store_cleanup');
-                const current = index.getSource(id, 'actor');
+                const current = readers.getSource(id, 'actor');
                 if (current !== record) continue;
                 if (record[COPY]?.owner !== owner) throw new TypeError('foreign_actor_store_source');
                 if (record[COPY].copy !== copy) index.removeSource(id, 'actor', record.source);
@@ -218,7 +225,7 @@ function makeStore(index, owner, descriptor, binding) {
         },
         get(id) { active(); return recordOf(id)?.source; },
         has(id) { active(); return !!recordOf(id); },
-        get size() { active(); return index.sourceSize('actor'); },
+        get size() { active(); return readers.sourceSize('actor'); },
         entries,
         keys() {
             const original = entries();
@@ -234,7 +241,12 @@ function makeStore(index, owner, descriptor, binding) {
         [Symbol.iterator]: entries,
         dispose() { if (disposed) return; disposed = true; sweep = null; }
     };
-    return Object.freeze(store);
+    const backing = Object.freeze(store);
+    if (ownerBinding(owner, descriptor) !== binding) throw new TypeError('changed_actor_store_owner');
+    actorStores.set(owner, { index, binding, store: backing, nativeGuard: null,
+        // This is private factory state, never a caller-supplied readiness claim.
+        current: () => !disposed && ownerBinding(owner, descriptor) === binding });
+    return backing;
 }
 
 function standalone() {
@@ -258,10 +270,166 @@ function standalone() {
     return Object.freeze({ index, createStore });
 }
 
-function native() {
-    if (arguments.length !== 0) throw new TypeError('invalid_actor_store_native_arguments');
-    // No Runtime/World import or synthetic owner/role while prerequisites are absent.
-    throw new TypeError('actor_store_native_attachment_unavailable');
+// Only a genuine factory registration resolves; no supplied shape or callback.
+function actorStoreIndex(owner) {
+    const association = actorStores.get(owner);
+    if (!association) return null;
+    try {
+        if (!association.current()) return null;
+        association.nativeGuard?.();
+        if (!association.current()) return null;
+        return association.index;
+    } catch {
+        return null;
+    }
 }
 
-module.exports = Object.freeze({ standalone, native });
+// Grant reads only to the exact privately registered backing, never a shape.
+function actorStoreMatches(owner, backing) {
+    const association = actorStores.get(owner);
+    return !!association && association.store === backing
+        && actorStoreIndex(owner) === association.index;
+}
+
+function native() {
+    if (arguments.length !== 0) throw new TypeError('invalid_actor_store_native_arguments');
+    if (isMainThread) throw new TypeError('actor_store_native_attachment_unavailable');
+    if (nativeAttempted) throw new TypeError('actor_store_native_already_acquired');
+    // A failed native acquisition is sticky; no supplied role or retry/reset API.
+    nativeAttempted = true;
+    const Runtime = require('./CharacterLocationRuntime');
+    if (typeof Runtime.actorProducerReads !== 'function'
+        || typeof Runtime.nativeActorMirror !== 'function'
+        || typeof Runtime.attachActorReadOwner !== 'function'
+        || typeof TableMirror.nativeActorMirrorOwner !== 'function'
+        || typeof TableMirror.actorStoreOwner !== 'function') {
+        throw new TypeError('actor_store_native_attachment_unavailable');
+    }
+    const index = Runtime.index;
+    const role = Runtime.workerProjectorRole();
+    if (!(index instanceof CharacterLocationIndex) || index.legacyStateCache !== true
+        || !Runtime.isWorkerProjectorRole(role, index)) {
+        throw new TypeError('invalid_worker_actor_store_role');
+    }
+    const mirror = Runtime.nativeActorMirror();
+    const consent = TableMirror.nativeActorMirrorOwner(mirror);
+    if (!mirror || !consent || consent.mirror !== mirror || consent.index !== index
+        || consent.role !== role || consent.epoch !== nativeEpoch) {
+        throw new TypeError('invalid_worker_actor_store_mirror');
+    }
+    const port = Runtime.actorProducerReads();
+    if (!port || typeof port.getSource !== 'function' || typeof port.sourceSize !== 'function'
+        || typeof port.sourceEntries !== 'function') {
+        throw new TypeError('invalid_worker_actor_producer_reads');
+    }
+    const scope = { live: true, attachment: null };
+    const current = () => {
+        if (!scope.live || Runtime.index !== index || Runtime.workerProjectorRole() !== role
+            || !Runtime.isWorkerProjectorRole(role, index)
+            || Runtime.nativeActorMirror() !== mirror
+            || TableMirror.nativeActorMirrorOwner(mirror) !== consent
+            || Runtime.actorProducerReads() !== port) {
+            throw new TypeError('stale_worker_actor_store_source');
+        }
+    };
+    const createStore = (owner, descriptor) => {
+        current();
+        const binding = ownerBinding(owner, descriptor);
+        if (binding.mirror !== mirror) throw new TypeError('invalid_worker_actor_store_mirror');
+        if (scope.attachment || actorStores.has(owner)) {
+            throw new TypeError('actor_store_already_attached');
+        }
+        const association = { index, live: true, check: null, stage: 'allocating' };
+        scope.attachment = association;
+        const active = () => {
+            current();
+            if (!association.live || scope.attachment !== association
+                || ownerBinding(owner, descriptor) !== binding) {
+                throw new TypeError('stale_actor_store_owner');
+            }
+        };
+        association.check = active;
+        const step = (original) => Object.freeze({
+            next() {
+                active();
+                const result = original.next();
+                active();
+                return result;
+            },
+            [Symbol.iterator]() { return this; }
+        });
+        const read = (name, args) => {
+            active();
+            const result = Reflect.apply(port[name], port, args);
+            active();
+            return result;
+        };
+        const readers = Object.freeze({
+            getSource(id, view) { return read('getSource', [id, view]); },
+            sourceSize(view) { return read('sourceSize', [view]); },
+            sourceEntries(view) { return step(read('sourceEntries', [view])); }
+        });
+        let store;
+        const retire = () => {
+            association.live = false;
+            association.stage = 'retired';
+            scope.live = false;
+        };
+        try {
+            store = makeStore(index, owner, descriptor, binding, readers);
+            active();
+            const call = (name, args) => {
+                active();
+                const result = Reflect.apply(store[name], store, args);
+                active();
+                return result;
+            };
+            const backing = Object.freeze({
+                beginCopy(...args) { return call('beginCopy', args); },
+                put(...args) { return call('put', args); },
+                remove(...args) { return call('remove', args); },
+                cleanup(...args) { return call('cleanup', args); },
+                get(...args) { return call('get', args); },
+                has(...args) { return call('has', args); },
+                get size() {
+                    active();
+                    const result = store.size;
+                    active();
+                    return result;
+                },
+                keys() { return step(call('keys', [])); },
+                values() { return step(call('values', [])); },
+                entries() { return step(call('entries', [])); },
+                records() { return step(call('records', [])); },
+                [Symbol.iterator]() { return this.entries(); },
+                dispose() {
+                    if (!association.live) return;
+                    retire();
+                    store.dispose();
+                }
+            });
+            // Authentic pending identity is available for Runtime's O(1) install;
+            // neither this registration nor install advertises a whole actor cut.
+            association.stage = 'installing';
+            const registration = actorStores.get(owner);
+            if (!registration || registration.index !== index || registration.binding !== binding
+                || registration.store !== store) throw new TypeError('invalid_native_actor_store_registration');
+            registration.store = backing;
+            registration.nativeGuard = active;
+            Runtime.attachActorReadOwner(owner);
+            active();
+            association.stage = 'installed';
+            return backing;
+        } catch (error) {
+            retire();
+            // Preserve the original installation failure, including falsy values.
+            // An unreturned allocation is cleaned here; no row rollback is claimed.
+            try { store?.dispose(); } catch { /* original failure remains authoritative */ }
+            throw error;
+        }
+    };
+    current();
+    return Object.freeze({ index, createStore });
+}
+
+module.exports = Object.freeze({ standalone, native, actorStoreIndex, actorStoreMatches });

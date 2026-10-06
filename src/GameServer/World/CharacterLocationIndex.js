@@ -4,6 +4,69 @@ const { SPOT_CELL_SIZE } = require('./WorldConstants');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
 const VIEWS = new Set(['actor', 'state']);
 
+// Only the early Worker allocation enters this gate. Facts remain canonical.
+const ACTOR_READ_GATES = new WeakMap();
+function actorUnknown() {
+    const error = new TypeError('character_actor_view_unknown');
+    error.code = 'CHARACTER_ACTOR_VIEW_UNKNOWN';
+    return error;
+}
+function actorRead(index, view) {
+    const gate = view === 'actor' && ACTOR_READ_GATES.get(index);
+    if (!gate) return null;
+    const owner = gate.owner;
+    const Mirror = require('../Bot/Population/TableMirror');
+    const Sources = require('./CharacterActorSources');
+    if (!owner || Sources.actorStoreIndex(owner) !== index) throw actorUnknown();
+    const receipt = Mirror.actorStoreRead(owner);
+    const read = { check() {
+        if (gate.owner !== owner || Sources.actorStoreIndex(owner) !== index
+            || !Mirror.actorStoreReadCurrent(owner, receipt)) throw actorUnknown();
+    } };
+    read.check();
+    return read;
+}
+function readResult(read, result) { read?.check(); return result; }
+function readIterator(read, original) {
+    if (!read) return original;
+    const wrapped = { [Symbol.iterator]() { return this; } };
+    for (const method of ['next', 'return', 'throw']) {
+        if (typeof original[method] !== 'function') continue;
+        wrapped[method] = (...args) => {
+            read.check();
+            const item = Reflect.apply(original[method], original, args);
+            read.check();
+            return item;
+        };
+    }
+    read.check();
+    return wrapped;
+}
+function createWorkerActorIndex() {
+    const { isMainThread } = require('worker_threads');
+    if (arguments.length !== 0 || isMainThread) throw new TypeError('invalid_worker_actor_allocation');
+    const index = new CharacterLocationIndex({ legacyStateCache: true });
+    const gate = { owner: null, consumed: false };
+    ACTOR_READ_GATES.set(index, gate);
+    const actorOnly = view => { if (view !== 'actor') throw new TypeError('invalid_actor_producer_view'); };
+    const producerReads = Object.freeze({
+        getSource(id, view) { actorOnly(view); return index.records.get(id)?.actor?.record ?? null; },
+        sourceSize(view) { actorOnly(view); return index.sourceViews.actor.size; },
+        sourceEntries(view) { actorOnly(view); return sourceRecordEntries(index.sourceViews.actor.entries()); }
+    });
+    const installOwner = owner => {
+        if (gate.consumed) throw new TypeError('worker_actor_owner_already_installed');
+        gate.consumed = true;
+        const Sources = require('./CharacterActorSources');
+        const Mirror = require('../Bot/Population/TableMirror');
+        if (Sources.actorStoreIndex(owner) !== index || !Mirror.actorStoreOwner(owner)) {
+            throw new TypeError('invalid_worker_actor_read_owner');
+        }
+        gate.owner = owner;
+    };
+    return Object.freeze({ index, producerReads, installOwner });
+}
+
 const RAW_XY_SIZE = 6000;
 const RAW_XY_LIMIT = 2 ** 65;
 const neighborBits = new DataView(new ArrayBuffer(8));
@@ -31,13 +94,17 @@ function rawAxisKeys(value) {
     return Array.from({ length: count }, (_, offset) => low + offset);
 }
 
-function rawPointOf(loc, current = null) {
+function rawPointOf(loc, current = null, read = null) {
+    read?.check();
     const point = typeof loc === 'function' ? loc() : loc;
+    read?.check();
     if (current && !current()) return null;
     if (!point) return null;
     const locX = point.locX;
+    read?.check();
     if (current && !current()) return null;
     const locY = point.locY;
+    read?.check();
     if (current && !current()) return null;
     return Number.isFinite(locX) && Number.isFinite(locY) ? { locX, locY } : null;
 }
@@ -73,11 +140,20 @@ function cellMembers() {
     return { all: new Set(), hot: new Set(), cold: new Set(), player: new Set() };
 }
 
-function pointOf(loc) {
+function queryAxis(point, name, read) {
+    read?.check();
+    const value = point[name];
+    read?.check();
+    return value;
+}
+
+function pointOf(loc, read = null) {
+    read?.check();
     const point = typeof loc === 'function' ? loc() : loc;
-    if (!point || !Number.isFinite(point.locX) || !Number.isFinite(point.locY)
-        || !Number.isFinite(point.locZ)) throw new RangeError('invalid_character_location');
-    return point;
+    read?.check();
+    if (!point || !Number.isFinite(queryAxis(point, 'locX', read)) || !Number.isFinite(queryAxis(point, 'locY', read))
+        || !Number.isFinite(queryAxis(point, 'locZ', read))) throw new RangeError('invalid_character_location');
+    return readResult(read, point);
 }
 
 function cellCoordinate(value, size) {
@@ -209,27 +285,32 @@ class CharacterLocationIndex {
 
     getSource(id, view) {
         validateView(view);
-        return this.records.get(id)?.[view]?.record ?? null;
+        const read = actorRead(this, view);
+        return readResult(read, this.records.get(id)?.[view]?.record ?? null);
     }
 
     sourceSize(view) {
         validateView(view);
-        return this.sourceViews[view].size;
+        const read = actorRead(this, view);
+        return readResult(read, this.sourceViews[view].size);
     }
 
     sourceKeys(view) {
         validateView(view);
-        return this.sourceViews[view].keys();
+        const read = actorRead(this, view);
+        return readIterator(read, this.sourceViews[view].keys());
     }
 
     sourceValues(view) {
         validateView(view);
-        return sourceRecords(this.sourceViews[view].values());
+        const read = actorRead(this, view);
+        return readIterator(read, sourceRecords(this.sourceViews[view].values()));
     }
 
     sourceEntries(view) {
         validateView(view);
-        return sourceRecordEntries(this.sourceViews[view].entries());
+        const read = actorRead(this, view);
+        return readIterator(read, sourceRecordEntries(this.sourceViews[view].entries()));
     }
 
     updateFacet(id, view, expectedRecord, facet, payload) {
@@ -271,7 +352,8 @@ class CharacterLocationIndex {
         if (!Number.isFinite(radius) || radius < 0 || radius > RAW_XY_SIZE) {
             throw new RangeError('invalid_character_facet_radius');
         }
-        const point = rawPointOf(loc);
+        const read = actorRead(this, view);
+        const point = rawPointOf(loc, null, read);
         if (!point) throw new RangeError('invalid_character_facet_location');
         const xs = rawAxisKeys(point.locX), ys = rawAxisKeys(point.locY);
         const radiusSquared = radius * radius;
@@ -284,15 +366,20 @@ class CharacterLocationIndex {
                 const current = () => this.records.get(entry.id)?.actor === entry
                     && entry.record === record && entry.rawXY === membership && membership?.record === record;
                 if (!current()) continue;
-                if (accept && !accept(record)) continue;
+                if (accept) {
+                    read?.check();
+                    const accepted = accept(record);
+                    read?.check();
+                    if (!accepted) continue;
+                }
                 if (!current()) continue;
-                const candidate = rawPointOf(membership.loc, current);
+                const candidate = rawPointOf(membership.loc, current, read);
                 if (!current() || !candidate) continue;
                 const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
                 if (dx * dx + dy * dy <= radiusSquared) found.push(record);
             }
         }
-        return found;
+        return readResult(read, found);
     }
 
     updateGroups(id, view, expectedRecord, family, keys, order) {
@@ -345,7 +432,8 @@ class CharacterLocationIndex {
 
     groupSources(key, { view = 'actor', family = 'pvp_party' } = {}) {
         validateGroupQuery(view, family);
-        return sourceRecords(this.groups.get(key)?.entries ?? []);
+        const read = actorRead(this, view);
+        return readIterator(read, sourceRecords(this.groups.get(key)?.entries ?? []));
     }
 
     near(loc, radius, { kind = 'all' } = {}) {
@@ -361,21 +449,27 @@ class CharacterLocationIndex {
             throw new RangeError('invalid_character_query_bounds_mode');
         }
         if (!Number.isFinite(radius) || radius < 0) throw new RangeError('invalid_character_radius');
-        const point = pointOf(loc);
-        const minX = Math.floor((point.locX - radius) / this.cellSize);
-        const maxX = Math.floor((point.locX + radius) / this.cellSize);
-        const minY = Math.floor((point.locY - radius) / this.cellSize);
-        const maxY = Math.floor((point.locY + radius) / this.cellSize);
+        const read = actorRead(this, view);
+        const point = pointOf(loc, read);
+        const minX = Math.floor((queryAxis(point, 'locX', read) - radius) / this.cellSize);
+        const maxX = Math.floor((queryAxis(point, 'locX', read) + radius) / this.cellSize);
+        const minY = Math.floor((queryAxis(point, 'locY', read) - radius) / this.cellSize);
+        const maxY = Math.floor((queryAxis(point, 'locY', read) + radius) / this.cellSize);
         const safeBounds = [minX, maxX, minY, maxY].every(Number.isSafeInteger);
         if (!safeBounds && !allowUnsafeCellBounds) throw new RangeError('invalid_character_cell');
         const radiusSquared = radius * radius;
         const records = [];
         const append = (cell) => {
             for (const entry of cell?.[view]?.[kind] ?? []) {
-                if (accept && !accept(entry.record)) continue;
-                const current = pointOf(entry.record.loc);
-                const dx = current.locX - point.locX;
-                const dy = current.locY - point.locY;
+                if (accept) {
+                    read?.check();
+                    const accepted = accept(entry.record);
+                    read?.check();
+                    if (!accepted) continue;
+                }
+                const current = pointOf(entry.record.loc, read);
+                const dx = queryAxis(current, 'locX', read) - queryAxis(point, 'locX', read);
+                const dy = queryAxis(current, 'locY', read) - queryAxis(point, 'locY', read);
                 if (dx * dx + dy * dy <= radiusSquared) records.push(entry.record);
             }
         };
@@ -395,7 +489,7 @@ class CharacterLocationIndex {
             if (safeBounds) cells.sort((left, right) => left.x - right.x || left.y - right.y);
             for (const cell of cells) append(cell);
         }
-        return records;
+        return readResult(read, records);
     }
 
     inSpot(spotId) {
@@ -404,7 +498,8 @@ class CharacterLocationIndex {
 
     inSpotSources(spotId, { view = 'actor' } = {}) {
         validateView(view);
-        return Array.from(this.spots.get(spotId)?.[view] ?? [], (entry) => entry.record);
+        const read = actorRead(this, view);
+        return readResult(read, Array.from(this.spots.get(spotId)?.[view] ?? [], (entry) => entry.record));
     }
 
     clear() {
@@ -539,4 +634,5 @@ class CharacterLocationIndex {
     }
 }
 
+Object.defineProperty(CharacterLocationIndex, 'createWorkerActorIndex', { value: createWorkerActorIndex });
 module.exports = CharacterLocationIndex;

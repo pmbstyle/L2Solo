@@ -1,7 +1,6 @@
 'use strict';
 
-// UNEXECUTED PURE future contract. Generic providers here are NOT Native
-// issuer/Worker/Runtime/read authorization. Root must approve an assembly.
+// Pure stream contract; generic providers do not establish native delivery.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const sourceRoot = path.resolve(process.env.N53_GAME_ROOT || path.join(__dirname, '..'));
@@ -10,6 +9,10 @@ const Pages = require(path.join(sourceRoot, 'src/GameServer/Bot/Population/ColdM
 const Protocol = require(path.join(sourceRoot, 'src/GameServer/Bot/Population/ColdSimulationProtocol'));
 const TableMirror = require(path.join(sourceRoot, 'src/GameServer/Bot/Population/TableMirror'));
 const Sources = require(path.join(sourceRoot, 'src/GameServer/World/CharacterActorSources'));
+const UNKNOWN = 'CHARACTER_ACTOR_VIEW_UNKNOWN';
+const publicSize = mirror => {
+    try { return mirror.rows('actors').size; } catch (error) { return error.code; }
+};
 const originalImmediate = global.setImmediate;
 const immediateDescriptor = Object.getOwnPropertyDescriptor(global, 'setImmediate');
 const outcomes = [], fixtures = [], turnMetrics = [];
@@ -77,14 +80,14 @@ function provider(count = 0, axis = id => id) {
 function mirror() {
     const standalone = Sources.standalone(), value = new TableMirror();
     let backing;
-    value.attachStore('actors', (owner, descriptor) => {
+    const owner = value.attachStore('actors', (owner, descriptor) => {
         backing = standalone.createStore(owner, descriptor);
         return backing;
     });
     const originalState = { characterId: 1, packet: 'independent pure source' };
     const stateRecord = { id: 1, source: originalState, phase: 'cold' };
     standalone.index.setSource(1, 'state', stateRecord, { indexed: false });
-    return { value, backing, index: standalone.index, conserve() {
+    return { value, backing, owner, index: standalone.index, conserve() {
         assert.equal(standalone.index.getSource(1, 'state'), stateRecord);
         assert.equal(stateRecord.source, originalState);
         assert.deepEqual(originalState, { characterId: 1, packet: 'independent pure source' });
@@ -198,7 +201,10 @@ async function main() {
         assert(state.frames.every(frame => frame.readyBefore === false));
         assert.equal(state.source.stats.captures, 1); assert.equal(state.source.stats.next, 257);
         assert.equal(state.channel.actorStats.inspections, 257);
-        assert(state.receiver.value.tables.get('actors').rows === state.receiver.backing);
+        const publicRows = state.receiver.value.rows('actors');
+        assert.equal(state.receiver.value.tables.get('actors').rows, publicRows);
+        assert.notEqual(publicRows, state.receiver.backing);
+        assert.equal(Sources.actorStoreMatches(state.receiver.owner, state.receiver.backing), true);
     });
     await check('live_capture_churn_cutoff_and_post_cut_new_ids', async () => {
         const state = fixture(130); let baseline = false, cut = false;
@@ -285,7 +291,7 @@ async function main() {
         const state = fixture(4); attach(state); await settle(state); matches(state);
         const observed = [];
         state.receiver.value.watch('ordinary', { reset() {}, put() { observed.push([state.receiver.value.ready('actors'),
-            state.receiver.value.rows('actors').size]); }, remove() {} });
+            publicSize(state.receiver.value)]); }, remove() {} });
         const descriptor = state.receiver.value.tables.get('actors'), oldChain = descriptor.chain;
         const lastVersion = state.receiver.value.version('actors');
         assert.deepEqual(state.receiver.value.apply([{ name: 'ordinary', from: null, to: 1, full: true, last: 1,
@@ -293,8 +299,9 @@ async function main() {
             full: false, last: 1, attachmentId: oldChain.attachmentId, copyId: oldChain.copyId,
             transferId: oldChain.transferId + 1, pageIndex: 0, worldGeneration: oldChain.worldGeneration,
             rows: [], removed: [] }]), ['actors']);
-        assert.deepEqual(observed, [[false, 0]]);
-        assert.equal(state.receiver.value.ready('actors'), false); assert.equal(state.receiver.value.rows('actors').size, 0);
+        assert.deepEqual(observed, [[false, UNKNOWN]]);
+        assert.equal(state.receiver.value.ready('actors'), false);
+        assert.throws(() => state.receiver.value.rows('actors').size, { code: UNKNOWN });
         assert.equal(state.receiver.backing.size, 4);
         state.channel.resync(state.cold, state.epoch, ['actors']); await settle(state); matches(state);
     });
@@ -314,7 +321,7 @@ async function main() {
             } catch (error) { threw = true; caught = error; }
             assert.equal(threw, true); assert.equal(caught, originalError);
             assert.equal(state.receiver.value.ready('actors'), false);
-            assert.equal(state.receiver.value.rows('actors').size, 0);
+            assert.throws(() => state.receiver.value.rows('actors').size, { code: UNKNOWN });
             assert.equal(table.applyInProgress, false); assert.equal(table.waiting, true);
             assert.equal(table.chain, chain); assert.equal(table.version, version);
             assert.deepEqual(Array.from(state.receiver.backing.entries()), backingRows);

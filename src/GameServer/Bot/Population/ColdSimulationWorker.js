@@ -116,7 +116,9 @@ let safetyBoardRepairs = 0;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
-const tables = new TableMirror();
+const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
+const actorSources = require('../../World/CharacterActorSources').native();
+tables.attachStore('actors', actorSources.createStore);
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });

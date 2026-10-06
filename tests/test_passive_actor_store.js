@@ -1,7 +1,6 @@
 'use strict';
 
-// Future PURE optional-store endpoint. Not executed and not a native feed.
-// Actual optional Mirror/helper must be separately approved/transferred first.
+// Pure optional-store endpoint; native Worker attachment has a separate fixture.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const sourceRoot = path.resolve(process.env.N53_GAME_ROOT
@@ -11,6 +10,10 @@ const Sources = require(path.join(sourceRoot, 'src/GameServer/World/CharacterAct
 const sources = Sources.standalone();
 const { index } = sources;
 const mirror = new TableMirror();
+const UNKNOWN = 'CHARACTER_ACTOR_VIEW_UNKNOWN';
+const publicSize = () => {
+    try { return mirror.rows('actors').size; } catch (error) { return error.code; }
+};
 const outcomes = [];
 let backing, descriptor, owner;
 const tag = (value) => value === undefined ? { tag: 'undefined' } : value === null ? { tag: 'null' }
@@ -41,6 +44,7 @@ try {
         assert.equal(metadata.mirror, mirror);
         assert.equal(mirror.tables.get('actors'), descriptor);
         assert.equal(descriptor.rows instanceof Map, false);
+        assert.equal(descriptor.rows, mirror.rows('actors'));
         assert.equal(mirror.ready('actors'), false);
         assert.equal(index.sourceSize('actor'), 0);
         assert.throws(() => mirror.attachStore('actors', sources.createStore), TypeError);
@@ -101,7 +105,7 @@ try {
         actors(piece(2, 5, 0, { from: null, to: 5, full: true, last: 0,
             rows: [[1, firstNewCopy]] }));
         assert.equal(mirror.ready('actors'), false);
-        assert.equal(mirror.rows('actors').size, 0);
+        assert.throws(() => mirror.rows('actors').size, { code: UNKNOWN });
         // Private isolated Index diagnostics only; no native advertised actor read.
         assert.equal(backing.get(1), firstNewCopy);
         actors(piece(2, 5, 1, { from: 5, to: 5, full: false, last: 1, rows: [[131, newTail]] }));
@@ -123,7 +127,7 @@ try {
         assert.deepEqual(mirror.apply([piece(2, 7, 0, { from: 9, to: 10, full: false, last: 1,
             rows: [[1, row(1, 700)]] })]), ['actors']);
         assert.equal(mirror.ready('actors'), false);
-        assert.equal(mirror.rows('actors').size, 0);
+        assert.throws(() => mirror.rows('actors').size, { code: UNKNOWN });
         assert.equal(backing.get(1), retained);
         assert.deepEqual(mirror.apply([piece(2, 8, 0, { from: 10, to: 11, full: false, last: 1,
             removed: [{ id: 1, worldGeneration: 1, throughPublication: 900 }] })]), []);
@@ -131,11 +135,11 @@ try {
     });
     check('whole_apply_ordinary_prefix_watcher_unknown_before_actor_full', () => {
         const observed = [];
-        mirror.watch('ordinary', { reset() {}, put() { observed.push([mirror.ready('actors'), mirror.rows('actors').size]); }, remove() {} });
+        mirror.watch('ordinary', { reset() {}, put() { observed.push([mirror.ready('actors'), publicSize()]); }, remove() {} });
         assert.deepEqual(mirror.apply([{ name: 'ordinary', from: null, to: 1, full: true, last: 1,
             rows: [[1, { label: 'ordinary original' }]], removed: [] },
         piece(3, 9, 0, { from: null, to: 12, full: true, last: 1, rows: [[1, row(1, 1000)]] })]), []);
-        assert.deepEqual(observed, [[false, 0]]);
+        assert.deepEqual(observed, [[false, UNKNOWN]]);
         assert.equal(mirror.ready('actors'), false);
         const cleanup = mirror.cleanupStore('actors', 64);
         assert.equal(cleanup.done, true);
