@@ -937,6 +937,7 @@ const tests = [
     'tests/test_bot_production_chain.js',
     'tests/test_clan_wish_economy.js',
     'tests/test_economy_context.js',
+    'tests/test_wish_cost_caches.js',
     'tests/test_minimum_relations_pk.js',
     'tests/test_bot_improvements.js',
     'tests/test_database_mutation_admission.js',
