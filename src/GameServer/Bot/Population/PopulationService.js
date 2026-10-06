@@ -3705,7 +3705,7 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
-        return LifeState.applyResolve(effectiveState, result)
+        return LifeState.applyResolve(effectiveState, result, options)
             .then((updatedState) => {
             if (!updatedState) {
                 Metrics.recordSkippedResolve('cold_apply_failed');
