@@ -1434,36 +1434,45 @@ function write(sql, params = []) {
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
 
-// Only the two skill writers use this optional admission. The normal SQL
-// queue, its write timing and result stay the same as run's nonread branch.
-function guardedSkillWrite(sql, params, operation, options = {}) {
+// Capture before a class flush can await; skill writers capture at their call.
+// Only these three writers use the opaque record and their original SQL queue.
+function captureWriteAdmission(options, errorCode) {
     let beforeWrite, present = false, captureFailed = false, captureError;
     try {
-        if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError('invalid_skill_before_write');
+        if (!options || typeof options !== 'object' || Array.isArray(options)) throw new TypeError(errorCode);
         const descriptor = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
         if (descriptor) {
             present = true;
             if (!Object.prototype.hasOwnProperty.call(descriptor, 'value') || typeof descriptor.value !== 'function') {
-                throw new TypeError('invalid_skill_before_write');
+                throw new TypeError(errorCode);
             }
             beforeWrite = descriptor.value;
-        } else if ('beforeWrite' in options) throw new TypeError('invalid_skill_before_write');
+        } else if ('beforeWrite' in options) throw new TypeError(errorCode);
     } catch (error) {
         captureFailed = true;
         captureError = error;
     }
+    return Object.freeze({ beforeWrite, present, captureFailed, captureError, errorCode });
+}
+
+function guardedNativeWrite(sql, params, operation, admission) {
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation})`);
-        if (captureFailed) throw captureError;
-        if (present) {
+        if (admission.captureFailed) throw admission.captureError;
+        if (admission.present) {
+            const beforeWrite = admission.beforeWrite;
             const verdict = beforeWrite();
             if (verdict !== undefined) {
                 if (verdict instanceof Promise) Promise.prototype.then.call(verdict, undefined, () => {});
-                throw new TypeError('invalid_skill_before_write');
+                throw new TypeError(admission.errorCode);
             }
         }
         return write(sql, params);
     }, { operation, read: false });
+}
+
+function guardedSkillWrite(sql, params, operation, options = {}) {
+    return guardedNativeWrite(sql, params, operation, captureWriteAdmission(options, 'invalid_skill_before_write'));
 }
 
 const GENERATED_BOT_FILTER = `(
@@ -8721,7 +8730,11 @@ const Database = {
     updateCharacterVitals(id, hp, maxHp, mp, maxMp) { return withCharacterFlush(id, () => update('characters', { hp, maxHp, mp, maxMp }, 'id = ?', [id], 'character:vitals')); },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
-    updateCharacterClassId(id, classId) { return withCharacterFlush(id, () => update('characters', { classId }, 'id = ?', [id], 'character:class')); }
+    updateCharacterClassId(id, classId, options = {}) {
+        const admission = captureWriteAdmission(options, 'invalid_class_before_write');
+        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "classId" = ? WHERE id = ?',
+            [classId, id], 'character:class', admission));
+    }
 };
 
 const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, write, run, withCharacterFlushes });

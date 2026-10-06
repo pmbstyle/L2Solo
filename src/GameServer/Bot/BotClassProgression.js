@@ -71,7 +71,7 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
         await skillset.awardSkills(id, ancestor, level, skillOptions);
     }
     for (let target = nextClass(resolvedClassId, level, seed); target; target = nextClass(resolvedClassId, level, seed)) {
-        await Database.updateCharacterClassId(id, target);
+        await Database.updateCharacterClassId(id, target, skillOptions);
         resolvedClassId = target;
         transitions.push(target);
         await skillset.awardSkills(id, resolvedClassId, level, skillOptions);
