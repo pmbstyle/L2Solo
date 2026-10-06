@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
 require(gameRoot + '/src/Global');
+invoke('GameServer/DataCache').init();
 const Database = invoke('Database');
 const Policy = require(gameRoot + '/src/GameServer/Social/InteractionMemoryPolicy');
 const Memory = require(gameRoot + '/src/GameServer/Social/InteractionMemory');

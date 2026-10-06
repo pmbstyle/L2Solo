@@ -1,5 +1,8 @@
 'use strict';
 const Policy = require('./InteractionMemoryPolicy');
+// Only loaded snapshots with legacy overflow carry this weak, transient tail.
+// Keys cost about 32 B each; it holds no row payload and disappears on save or GC.
+const trimmedRows = new WeakMap();
 
 function install(connection) {
     connection.exec(`CREATE TABLE IF NOT EXISTS interaction_owners (
@@ -19,7 +22,7 @@ function install(connection) {
     const all = (sql, values) => connection.prepare(sql).all(...values);
     for (const legacy of all('SELECT ownerId,snapshotJson FROM bot_interaction_memory', [])) {
         if (one('SELECT ownerId FROM interaction_owners WHERE ownerId=?', [legacy.ownerId])) continue;
-        const snapshot = Policy.validate(JSON.parse(legacy.snapshotJson));
+        const snapshot = Policy.validate(Policy.trim(JSON.parse(legacy.snapshotJson), Date.now()));
         save({ write }, Policy.empty(snapshot.ownerId), snapshot);
     }
     // The former player-bot store becomes directed character relations. Its
@@ -45,12 +48,21 @@ function install(connection) {
     }
     connection.exec('DROP TABLE bot_interaction_memory; DROP TABLE IF EXISTS bot_social_memory;');
 }
-function load({ one, all }, ownerId) {
+function load({ one, all, now = Date.now }, ownerId) {
     const header = one('SELECT revision,replayFloor FROM interaction_owners WHERE ownerId=?', [ownerId]);
     if (!header) return Policy.empty(ownerId);
-    return Policy.validate({ ...Policy.empty(ownerId), revision: Number(header.revision), replayFloor: Number(header.replayFloor),
+    const original = { ...Policy.empty(ownerId), revision: Number(header.revision), replayFloor: Number(header.replayFloor),
         relations: all('SELECT rowJson FROM interaction_relations WHERE ownerId=? ORDER BY kind,targetId', [ownerId]).map(row => JSON.parse(row.rowJson)),
-        recent: all('SELECT eventJson FROM interaction_journal WHERE ownerId=? ORDER BY at DESC,eventKey', [ownerId]).map(row => JSON.parse(row.eventJson)) });
+        recent: all('SELECT eventJson FROM interaction_journal WHERE ownerId=? ORDER BY at DESC,eventKey', [ownerId]).map(row => JSON.parse(row.eventJson)) };
+    const snapshot = Policy.validate(Policy.trim(original, now()));
+    if (snapshot.relations.length < original.relations.length) {
+        const kept = new Set(snapshot.relations.map(row => `${row.kind}:${row.targetId}`));
+        // ARCH-NOTE: trimming before validation removes the old rows from the diff's
+        // `before`; weak discarded keys let its next write delete them without SQL reads.
+        trimmedRows.set(snapshot, original.relations.filter(row => !kept.has(`${row.kind}:${row.targetId}`))
+            .map(row => ({ kind: row.kind, targetId: row.targetId })));
+    }
+    return snapshot;
 }
 function save({ write }, before, after) {
     write(`INSERT INTO interaction_owners(ownerId,revision,replayFloor) VALUES (?,?,?)
@@ -66,10 +78,15 @@ function save({ write }, before, after) {
         [after.ownerId, row.kind, row.targetId, JSON.stringify(row)]);
     }
     for (const row of previous.values()) write('DELETE FROM interaction_relations WHERE ownerId=? AND kind=? AND targetId=?', [after.ownerId, row.kind, row.targetId]);
+    const kept = new Set(after.relations.map(row => `${row.kind}:${row.targetId}`));
+    for (const row of trimmedRows.get(before) || []) if (!kept.has(`${row.kind}:${row.targetId}`)) {
+        write('DELETE FROM interaction_relations WHERE ownerId=? AND kind=? AND targetId=?', [after.ownerId, row.kind, row.targetId]);
+    }
     const oldKeys = new Set(before.recent.map(event => event.key));
     for (const event of after.recent) if (!oldKeys.has(event.key)) write(
         'INSERT INTO interaction_journal(ownerId,eventKey,eventJson,at) VALUES (?,?,?,?)',
         [after.ownerId, event.key, JSON.stringify(event), event.at]);
     write('DELETE FROM interaction_journal WHERE ownerId=? AND at<=?', [after.ownerId, after.replayFloor]);
+    trimmedRows.delete(before);
 }
 module.exports = { install, load, save };

@@ -70,6 +70,58 @@ assert.strictEqual(Policy.apply(snapshot, make('future', 2, 'attacked', now + 1)
     assert(loot.grudge > 0);
 }
 
+{
+    const Layers = require('../src/GameServer/Social/RelationshipLayers');
+    const traits = { loyalty: 0.5, resilience: 0.5 };
+    const killer = Policy.apply(Policy.empty(1), { ...make('killer', 2, 'killed'), playedHours: 100, traits }, now).snapshot.relations[0];
+    let crowded = Policy.apply(Policy.empty(1), { ...make('known-player', 3, 'chat'), player: true }, now).snapshot;
+    for (let i = 0; i < 60; i++) crowded = Policy.apply(crowded,
+        { ...make(`different-killer:${i}`, 10 + i, 'killed', now + i), playedHours: 100, traits }, now + i).snapshot;
+    assert.strictEqual(crowded.relations.filter(row => !row.player).length, 48);
+    assert(crowded.relations.some(row => row.targetId === 3 && row.player && row.hostility === 0));
+    for (let targetId = 54; targetId < 70; targetId++) assert(crowded.relations.some(row => row.targetId === targetId),
+        'the sixteen strongest protected rows use deterministic recency ties');
+    assert(Policy.protectedRelation(killer, now, 150));
+    assert(!Policy.protectedRelation(killer, now, 200), 'protection fades on the same playing-hour clock as feelings');
+    const faded = 12 * 0.5 ** (100 / Layers.durations(traits).long);
+    assert(Math.abs(Policy.strength(killer, now + 100 * 86400000, 200) - faded) < 1e-10,
+        'strength uses played hours even when wall-clock age is very different');
+    assert(!Policy.protectedRelation({ ...killer, gameAt: undefined }, now + 3 * 86400000));
+
+    const rows = Array.from({ length: 49 }, (_, i) => ({ ...killer, targetId: i + 100, order: 1 }));
+    assert.doesNotThrow(() => Policy.validate({ ...Policy.empty(1), revision: 1, relations: rows.slice(0, 48) }));
+    assert.throws(() => Policy.validate({ ...Policy.empty(1), revision: 1, relations: rows }), /invalid relation/);
+    assert.doesNotThrow(() => Policy.validate({ ...Policy.empty(1), revision: 1,
+        relations: [...rows.slice(0, 48), ...rows.slice(0, 3).map((row, i) => ({ ...row, targetId: 200 + i, player: true }))] }));
+
+    // A load trims the returned view, but the next save must also remove the old SQL rows.
+    const { DatabaseSync } = require('node:sqlite');
+    const Rows = require('../src/GameServer/Social/InteractionMemoryRows');
+    const db = new DatabaseSync(':memory:');
+    try {
+        db.exec(`CREATE TABLE interaction_owners(ownerId INTEGER PRIMARY KEY,revision INTEGER,replayFloor INTEGER);
+            CREATE TABLE interaction_relations(ownerId INTEGER,kind TEXT,targetId INTEGER,rowJson TEXT,PRIMARY KEY(ownerId,kind,targetId));
+            CREATE TABLE interaction_journal(ownerId INTEGER,eventKey TEXT,eventJson TEXT,at INTEGER,PRIMARY KEY(ownerId,eventKey));
+            INSERT INTO interaction_owners VALUES(1,1,-1);`);
+        const sql = { one: (query, values) => db.prepare(query).get(...values),
+            all: (query, values) => db.prepare(query).all(...values),
+            write: (query, values) => db.prepare(query).run(...values), now: () => now };
+        for (let i = 0; i < 54; i++) {
+            const row = { ...killer, targetId: 100 + i, hostility: 12 + i, at: now + i };
+            sql.write('INSERT INTO interaction_relations VALUES(?,?,?,?)', [1, 'character', row.targetId, JSON.stringify(row)]);
+        }
+        const loaded = Rows.load(sql, 1);
+        assert.strictEqual(loaded.relations.length, 48);
+        for (let targetId = 138; targetId < 154; targetId++) assert(loaded.relations.some(row => row.targetId === targetId),
+            'the protected pool keeps the strongest decayed feelings');
+        Rows.save(sql, loaded, loaded);
+        assert.strictEqual(sql.one('SELECT count(*) count FROM interaction_relations WHERE ownerId=1', []).count, 48);
+        Rows.save(sql, loaded, loaded);
+        assert.strictEqual(sql.one('SELECT count(*) count FROM interaction_relations WHERE ownerId=1', []).count, 48,
+            'repeat saves do not recreate trimmed rows');
+    } finally { db.close(); }
+}
+
 const worker = new Memory();
 worker.accept(main.snapshot(1));
 assert.throws(() => Policy.apply(worker.snapshot(1), make('worker-reduce'), now), /read-only/);
