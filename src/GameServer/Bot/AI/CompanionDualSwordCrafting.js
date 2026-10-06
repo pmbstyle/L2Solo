@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const Recipes = invoke('GameServer/Items/C4DualSwordCombinations');
@@ -58,6 +59,7 @@ function plan(session, bot, town, state, candidate = state.stats?.equipmentPlan)
         session.coldLifeState = {...state,stats:{...state.stats,equipmentPlan:{
             ...candidate,status:'complete',completedAt:Date.now(),reason:'dual_sword_equipped'
         }}};
+        refreshPartyMemberships([session], invoke);
         return {handled:true,errand:null};
     }
     const missing = recipe.materials.filter(m => count(state.inventory,m.selfId) < m.amount);
@@ -80,6 +82,7 @@ function plan(session, bot, town, state, candidate = state.stats?.equipmentPlan)
         combine:{type:'dual_sword',resultId:recipe.productId,requirements:recipe.materials},
         materials:recipe.materials.map(m=>({...m,owned:count(state.inventory,m.selfId),missing:Math.max(0,m.amount-count(state.inventory,m.selfId))})) };
     session.coldLifeState = { ...state,stats:{...state.stats,equipmentPlan:refreshed} };
+    refreshPartyMemberships([session], invoke);
     if (!target) return {handled:true,errand:null};
     if (missing.length && !count(state.inventory,recipe.productId)) {
         const warehouse = Services.targetFor(Services.ROLES.WAREHOUSE,town.name,{
@@ -107,6 +110,7 @@ function refreshState(session,bot) {
     const previous = session.coldLifeState || {};
     session.coldLifeState = {...previous,inventory:Life.inventorySummaryFromItems(bot.backpack.fetchItems()),
         adena:Number(bot.backpack.fetchItemFromSelfId(57)?.fetchAmount() || 0)};
+    refreshPartyMemberships([session], invoke);
 }
 
 async function execute(session,bot,errand) {

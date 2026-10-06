@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -162,6 +163,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
         Promise.resolve().then(() => LifeState.markCold(session, 'supply_errand')).then((state) => {
             if (state && session.companionShopping?.workflowId === workflowId) {
                 session.coldLifeState = state;
+                refreshPartyMemberships([session], invoke);
             }
         }).catch(() => {});
     }
@@ -254,7 +256,10 @@ async function purchaseAtDestination(bot, errand) {
             : await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
                 expectedUnitPrice: Number(errand.unitPrice)
             });
-        if (trade.coldState && bot.session) bot.session.coldLifeState = trade.coldState;
+        if (trade.coldState && bot.session) {
+            bot.session.coldLifeState = trade.coldState;
+            refreshPartyMemberships([bot.session], invoke);
+        }
         const bought = boardSource ? { qty: trade.amount, totalAdena: trade.totalPrice } : trade;
         if (Number(bought.qty) !== Number(errand.amount)) {
             WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {

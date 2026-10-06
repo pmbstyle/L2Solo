@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -124,6 +125,7 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
         ...state,
         stats: { ...(state.stats || {}), equipmentPlan: plan }
     };
+    refreshPartyMemberships([session], invoke);
 
     const combination = DualCraft.plan(session,bot,town,session.coldLifeState,plan);
     if (combination.handled) return combination.errand;

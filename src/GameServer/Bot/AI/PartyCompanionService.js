@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
@@ -858,6 +859,7 @@ function detachState(companionSession, plan = 'hunting') {
     companionSession.followPlayerSession = null;
     companionSession.partyCompanion = false;
     invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+    refreshPartyMemberships([companionSession], invoke);
     companionSession.botStay = false;
     companionSession.stayLocation = null;
     companionSession.currentTargetId = undefined;
@@ -1105,6 +1107,7 @@ const PartyCompanionService = {
             invoke('GameServer/Bot/BotAI').cancelScheduledTick(companionSession);
         });
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+        refreshPartyMemberships(roster, invoke);
 
         leaderSession.dataSendToMe?.(ServerResponse.joinParty(1));
         roster.forEach((companionSession) => {
@@ -1160,6 +1163,7 @@ const PartyCompanionService = {
         companionSession.followPlayerSession = leaderSession;
         companionSession.partyCompanion = true;
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+        refreshPartyMemberships([companionSession], invoke);
         companionSession.botStay = false;
         companionSession.stayLocation = null;
         companionSession.currentTargetId = undefined;

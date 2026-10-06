@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Policy = invoke('GameServer/Clan/ClanWarehouseEquipmentPolicy');
@@ -33,7 +34,10 @@ function publish(session, result) {
     const received = Policy.materialize(result.received);
     backpack.items.push(received);
     backpack.equipPaperdoll(result.slot, received.fetchId(), received.fetchSelfId());
-    if (session.coldLifeState) session.coldLifeState = result.state;
+    if (session.coldLifeState) {
+        session.coldLifeState = result.state;
+        refreshPartyMemberships([session], invoke);
+    }
     // Persistence already committed both sides of the exchange. Only runtime
     // stats, item skills, toggles, and client appearance need refreshing here.
     invoke(path.actor).calculateStats(session, actor);

@@ -1,5 +1,5 @@
-// Party membership keeps its short-lived snapshot. Actor lookup uses the
-// current World registration directly, independently of spatial eligibility.
+// Native membership uses addressed current World registrations. Injected
+// legacy worlds retain their snapshot; neither path adds spatial eligibility.
 const REFRESH_MS = 250;
 let source, revision, length = -1, expiresAt = 0;
 let parties = new Map();
@@ -36,9 +36,21 @@ function actor(id) {
 }
 
 function members(session) {
-    refresh();
+    const World = invoke('GameServer/World/World');
+    const native = World.pvpPartyMembershipIndex === true;
+    if (native) {
+        if (typeof World.pvpPartyMembershipKeys !== 'function' || typeof World.pvpPartySessionsForKey !== 'function') {
+            throw new TypeError('invalid_party_membership_index');
+        }
+    } else {
+        // Explicit legacy injected worlds retain their original snapshot reader.
+        refresh();
+    }
     const found = new Set([session, session?.partyCompanion ? session.followPlayerSession : null]);
-    for (const key of keys(session)) for (const member of parties.get(key) || []) found.add(member);
+    for (const key of native ? World.pvpPartyMembershipKeys(session) : keys(session)) {
+        const selected = native ? World.pvpPartySessionsForKey(key) : parties.get(key) || [];
+        for (const member of selected) found.add(member);
+    }
     return [...found].filter(Boolean);
 }
 

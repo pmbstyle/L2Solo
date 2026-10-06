@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
@@ -79,6 +80,7 @@ function pauseSelling(session, now = Date.now()) {
     if (!life) return;
     const delay = invoke('GameServer/Bot/Economy/ColdMarketListingService').SELL_RETRY_DELAY_MS;
     session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellRetryAfter: now + delay } };
+    refreshPartyMemberships([session], invoke);
 }
 
 function isPartyCompanion(session) {

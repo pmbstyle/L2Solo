@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
@@ -41,6 +42,7 @@ function resumePreviousPlan(session, bot) {
             reason: 'newbie_blessing_done',
             at: Date.now()
         };
+        refreshPartyMemberships([session], invoke);
     } else {
         session.plan = session.preBuffPlan || 'hunting';
     }
@@ -106,6 +108,7 @@ function abandonUnreachableVisit(session, bot, BotAI) {
         session.partyCompanion = true;
         session.botStay = resume.botStay;
         session.stayLocation = resume.stayLocation;
+        refreshPartyMemberships([session], invoke);
     }
     session.newbieGuideRetryAt = Date.now() + NEWBIE_GUIDE_ROUTE_RETRY_COOLDOWN_MS;
     session.resumeAfterBuff = undefined;

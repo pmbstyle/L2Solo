@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ClanRules = require('./ClanRules');
 
 // Reuse the player costs; callers retain their existing item/treasury/trial rules.
@@ -62,6 +63,7 @@ module.exports = ({ one, write, run, withCharacterFlushes }) => {
                     if (session[key]) session[key] = { ...session[key], sp: actor.fetchSp(),
                         stats: { ...session[key].stats, clanLevelSpVersion: version } };
                 }
+                refreshPartyMemberships([session], invoke);
             }
             if (actor.fetchIsOnline?.()) {
                 const Response = loaded('../Network/Response');

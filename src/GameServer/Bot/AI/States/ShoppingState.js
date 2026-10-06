@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -118,6 +119,7 @@ function clearCompletedMarketPlan(session, bot, purchase) {
             }
         }
     };
+    refreshPartyMemberships([session], invoke);
 }
 
 function continueEquipmentShopping(session, bot, BotAI, errand) {
@@ -604,7 +606,10 @@ module.exports = {
                 const boughtSummary = store?.afkTrade === true
                     ? { qty: bought.amount, name: storeItem?.name || companionErrand.itemName, totalAdena: bought.totalPrice }
                     : bought;
-                if (bought.coldState) session.coldLifeState = bought.coldState;
+                if (bought.coldState) {
+                    session.coldLifeState = bought.coldState;
+                    refreshPartyMemberships([session], invoke);
+                }
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
                 session.companionEquipmentRetryAt = undefined;
@@ -687,7 +692,10 @@ module.exports = {
                         buyerActor: buyer,
                         state: session.coldLifeState
                         });
-                    if (result.coldState) session.coldLifeState = result.coldState;
+                    if (result.coldState) {
+                        session.coldLifeState = result.coldState;
+                        refreshPartyMemberships([session], invoke);
+                    }
                     if (result.itemsSold > 0) {
                         soldToBuyer = true;
                         const sample = result.sold.slice(0, 3).map((line) => `${line.qty}x ${line.name}`).join(', ');
@@ -761,6 +769,7 @@ module.exports = {
                         adena: Number(bot.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0),
                         inventory: LifeState.inventorySummaryFromItems(bot.backpack?.fetchItems?.() || [])
                     };
+                    refreshPartyMemberships([session], invoke);
                 }
             } catch (err) {
                 utils.infoWarn('Shopping', 'consumable restock failed for %s: %s', bot.fetchName(), err.message);
@@ -863,6 +872,7 @@ module.exports = {
             clearShoppingServiceState(session);
             if (session.coldLifeState) {
                 session.coldLifeState = { ...session.coldLifeState, activity: session.plan };
+                refreshPartyMemberships([session], invoke);
             }
             const restoreHot = () => {
                 session.supplyErrandPhase = undefined;

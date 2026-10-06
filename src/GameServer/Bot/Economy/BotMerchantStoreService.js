@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const World = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PARTY_WITHDRAWAL_WAIT_MS = 10000;
@@ -136,6 +137,7 @@ async function restoreAfterPartyFailure(session, withdrawal) {
 
     session.plan = rollback.plan;
     session.coldLifeState = rollback.coldLifeState;
+    refreshPartyMemberships([session], invoke);
     if (rollback.store) {
         rollback.store.repricing = false;
         actor.setPrivateStore?.(rollback.store);

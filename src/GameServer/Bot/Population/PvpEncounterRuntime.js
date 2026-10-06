@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 // Only active encounters are indexed. No per-tick scan of the population.
 const encounters = new Map();
 const pending = new Set();
@@ -43,13 +44,16 @@ async function finish(e, actions, reason = 'pvp_interrupted') {
             partyIds: e.sides.map(s => s.partyId), sideSizes: e.sides.map(s => s.memberIds.length),
             outcome: reason, fought: true, principals: e.sides.map(s => actions.life.cachedState(s.principalId) || { characterId: s.principalId }),
             durationMs: Math.min(at, e.expiresAt) - e.startedAt, actions: e.actions, personaFor: actions.personaFor, at });
+        const changedSessions = [];
         for (const session of sessions(e).filter(Boolean)) {
             if (session.pvpEncounter?.key === e.key) delete session.pvpEncounter;
             if (session.pvpRevenge?.reason === 'continued_encounter') delete session.pvpRevenge;
             if (session.coldLifeState?.stats?.pvpEncounter?.key === e.key) {
                 session.coldLifeState = actions.life.cachedState(Number(session.actor.fetchId()));
+                changedSessions.push(session);
             }
         }
+        refreshPartyMemberships(changedSessions, invoke);
     }
 }
 function tick(actions) {

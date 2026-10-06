@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
 
 const pending = new Map();
@@ -256,6 +257,7 @@ async function restoreAutonomousParty({ partyId, playerId, companionSessions = [
         Coordinator.markDirty?.(state, { reason: 'player_party_restored', critical: true });
     });
     const statesById = new Map(states.map((state) => [Number(state.characterId), state]));
+    const changedSessions = [];
     companionSessions.forEach((session) => {
         const id = actorId(session);
         const state = statesById.get(id);
@@ -263,10 +265,12 @@ async function restoreAutonomousParty({ partyId, playerId, companionSessions = [
         session.coldLifeState = state;
         session.hotBackgroundPartyId = state.phase === 'hot' ? party.partyId : null;
         session.plan = state.phase === 'hot' ? 'hunting' : session.plan;
+        changedSessions.push(session);
         if (state.phase === 'hot' && session.actor) {
             invoke('GameServer/Bot/BotAI').wakeup(session, { urgent: true });
         }
     });
+    refreshPartyMemberships(changedSessions, invoke);
     console.info('BotParty :: restored autonomous party %s members=%d source=%s',
         party.partyId, party.memberIds.length, source);
     return { ok: true, reason: 'autonomous_party_restored', party, states };

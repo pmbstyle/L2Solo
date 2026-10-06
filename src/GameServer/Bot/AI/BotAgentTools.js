@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
@@ -294,6 +295,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         session.followPlayerSession = null;
         session.partyCompanion = false;
         session.botStay = false;
+        refreshPartyMemberships([session], invoke);
         const reply = replyOutcome(session, decision.reply, targetSession);
         return { applied: true, reason: 'hunt', ...reply };
     }

@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
 const Shared      = invoke('GameServer/Network/Shared');
@@ -1220,6 +1221,7 @@ const BotManager = {
                         session.plan = 'hunting';
                         session.followPlayerSession = null;
                         session.partyCompanion = false;
+                        refreshPartyMemberships([session], invoke);
                     }
                 }, 800 + Math.random() * 800);
             }

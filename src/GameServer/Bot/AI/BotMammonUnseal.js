@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const Catalog = invoke('GameServer/Items/C4Unseal');
 const Mammon = invoke('GameServer/World/GiranMammon');
 const Karma = invoke('GameServer/Karma');
@@ -44,6 +45,7 @@ async function execute(session,bot,errand) {
         });
         invoke('GameServer/Bot/AI/BotEquipmentUpgrade').applyBestUpgrades(session,{force:true});
         session.coldLifeState = {...session.coldLifeState,inventory:Life.inventorySummaryFromItems(bot.backpack.fetchItems())};
+        refreshPartyMemberships([session], invoke);
         if (!candidate(session.coldLifeState) && session.coldLifeState.stats?.mammonReturn) {
             session.coldLifeState.stats = {...session.coldLifeState.stats,mammonReturn:null};
         }

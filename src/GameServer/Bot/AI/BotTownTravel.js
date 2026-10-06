@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
@@ -61,6 +62,7 @@ function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
     revealInterruptedSupplyErrand(session, bot);
     if (session.coldLifeState) {
         session.coldLifeState = { ...session.coldLifeState, activity: session.plan || 'hunting' };
+        refreshPartyMemberships([session], invoke);
     }
     const BotAI = invoke('GameServer/Bot/BotAI');
     BotAI.stop?.(session);

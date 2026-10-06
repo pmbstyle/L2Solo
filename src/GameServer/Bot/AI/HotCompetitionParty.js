@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const { randomUUID } = require('crypto');
 
 // Publish one persistent autonomous roster, never player-companion ownership.
@@ -55,6 +56,7 @@ async function form(sides, context, valid) {
             s.hotCompetitionHold = null;
         });
         invoke('GameServer/Bot/AI/BotPvpIndex').invalidate();
+        refreshPartyMemberships(sessions, invoke);
         sessions.find(s => s.actor.fetchId() === leaderId).backgroundHuntTarget = context.mob;
         const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
         if (existing) Metrics.recordPartyRecruit(1); else Metrics.recordPartyFormation();

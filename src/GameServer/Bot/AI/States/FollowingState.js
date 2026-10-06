@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -857,6 +858,7 @@ module.exports = {
             session.plan = 'hunting';
             session.followPlayerSession = null;
             session.roleDecision = null;
+            refreshPartyMemberships([session], invoke);
             return;
         }
 

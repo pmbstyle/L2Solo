@@ -1,3 +1,4 @@
+const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const BoardRules = require('./BoardRules');
 const { BoardIndex, offerFields, rowOf, recordOf } = require('./BoardIndex');
@@ -639,6 +640,7 @@ async function finalizeTrade(result, kind, counterpartyId, previousState = null,
             if (session?.[key]) session[key] = { ...session[key], stats: { ...session[key].stats,
                 marketTrades: LifeState.snapshot(Number(id))?.stats?.marketTrades || counts } };
         }
+        if (session) refreshPartyMemberships([session], invoke);
     }
     MarketCounters.deal(result.line?.selfId, result.line?.price, result.amount, Date.now(),
         kind === 'sale' ? result.shop?.ownerId : counterpartyId, result.shop?.town || null,
