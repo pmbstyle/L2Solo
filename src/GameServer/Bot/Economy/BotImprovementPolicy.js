@@ -36,9 +36,9 @@ function changedInventory(state, item, patch) {
     } else inventory[item.selfId] = { ...row, enchant: next.enchant, instances: [...instances, next] };
     return { ...state, inventory };
 }
-function gain(state, after) {
+function gain(state, after, before = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const a = Profile.profileFor(state), b = Profile.profileFor(after);
+    const a = before || Profile.powerFor(state), b = Profile.powerFor(after);
     const caster = ['mage','healer','buffer','nuker','summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
     const attack = caster ? 'mAtk' : 'pAtk', speed = caster ? 'castSpd' : 'atkSpd';
     return { attack: Math.max(0, b[attack] * b[speed] / Math.max(1, a[attack] * a[speed]) - 1),
@@ -70,13 +70,13 @@ function enchantCost(item, from, to, scroll, config) {
 function stuckCost(state, item, ctx) {
     if (!item.equipped || !adapter(item).isWeapon()) return 0;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const before = Profile.profileFor(state);
+    const before = Profile.powerFor(state);
     let remainder = changedInventory(state,item,{equipped:false});
     const spares = instances(state).filter(other => other.id !== item.id && adapter(other).isWeapon());
     const rate = profile => profile.pAtk * profile.atkSpd + profile.mAtk * profile.castSpd;
-    let remainingRate = rate(Profile.profileFor(remainder));
+    let remainingRate = rate(Profile.powerFor(remainder));
     for (const spare of spares) remainingRate = Math.max(remainingRate,
-        rate(Profile.profileFor(changedInventory(remainder,spare,{equipped:true}))));
+        rate(Profile.powerFor(changedInventory(remainder,spare,{equipped:true}))));
     const remainingIncome = ctx.hunt.perHour * Math.min(1, remainingRate / Math.max(1,rate(before)));
     const lostPerHour = Math.max(0,ctx.hunt.perHour - remainingIncome);
     if (!lostPerHour) return 0;
@@ -91,7 +91,8 @@ function opportunities(state, ctx) {
     const config = Rules.configWith(globalThis.options?.default?.Enchant);
     const horizon = Valuation.stageHours(state, ctx.hunt.expPerHour, ctx.persona);
     const weight = (ctx.persona.primaryDrive === 'progression' ? 1 : .5) + Valuation.trait(ctx.persona, 'caution');
-    const value = after => { const effect = gain(state, after); return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight; };
+    const before = invoke('GameServer/Bot/Population/ColdCombatProfile').powerFor(state);
+    const value = after => { const effect = gain(state, after, before); return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight; };
     const result = [];
     for (const item of instances(state)) {
         const a = adapter(item), category = Rules.categoryOf(a);

@@ -37,12 +37,12 @@ function worn(state, slot) {
 }
 function gearGain(state, item) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const before = Profile.profileFor(state);
+    const before = Profile.powerFor(state);
     const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, row]) => [key,
         Number(row.slot) === Number(item.etc.slot) ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
     inventory[item.selfId] = { selfId: Number(item.selfId), amount: 1, equipped: true,
         equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
-    const after = Profile.profileFor({ ...state, inventory });
+    const after = Profile.powerFor({ ...state, inventory });
     const caster = ['mage', 'healer', 'buffer', 'nuker', 'summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
     const attack = caster ? 'mAtk' : 'pAtk';
     const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
