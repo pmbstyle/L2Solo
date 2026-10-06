@@ -85,6 +85,39 @@ check('an ordinary fight (adena, exp) keeps the build entry; a gain is computed 
     assert.equal(computed, 1);
 });
 
+check('gear gains from the store equal the direct calculation, per role', () => {
+    const now = Date.now();
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const better = Data.items.find(item => String(item.template?.kind || '').startsWith('Weapon.') && item.etc?.rank === 'b'
+        && Number(item.stats?.pAtk) > Number(weapon.stats.pAtk));
+    const direct = (state, caster) => {
+        const before = Profile.powerFor(state, now);
+        const inventory = Object.fromEntries(Object.entries(state.inventory).map(([key, row]) => [key,
+            Number(row.slot) === Number(better.etc.slot) ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
+        inventory[better.selfId] = { selfId: Number(better.selfId), amount: 1, equipped: true, equippedCount: 1, slot: Number(better.etc.slot), enchant: 0 };
+        const after = Profile.powerFor({ ...state, inventory }, now);
+        const attack = caster ? 'mAtk' : 'pAtk';
+        return { attack: Math.max(0, after[attack] / Math.max(1, before[attack]) - 1),
+            defence: Math.max(0, 1 - before.pDef / Math.max(1, after.pDef), 1 - before.mDef / Math.max(1, after.mDef)) };
+    };
+    const fighter = base({ characterId: 501 }), mage = base({ characterId: 502, stats: { ...base().stats, role: 'nuker' } });
+    assert.deepEqual(Providers.gearGain(fighter, better, now), direct(fighter, false));
+    assert.deepEqual(Providers.gearGain(mage, better, now), direct(mage, true));
+    assert.deepEqual(Providers.gearGain(fighter, better, now), direct(fighter, false), 'remembered value is the same');
+});
+
+check('a build entry is shared by its owners and dies with the last one', () => {
+    const now = Date.now();
+    const a = base({ characterId: 601, level: 47 }), b = base({ characterId: 602, level: 47 });
+    const shared = Profile.buildGainsFor(a, now);
+    assert.equal(Profile.buildGainsFor(b, now), shared, 'equal builds share');
+    const levelled = base({ characterId: 601, level: 60 });
+    assert.notEqual(Profile.buildGainsFor(levelled, now), shared);
+    assert.equal(Profile.buildGainsFor(b, now), shared, 'still owned by the other bot');
+    Profile.forgetBuild(602);
+    assert.notEqual(Profile.buildGainsFor(base({ characterId: 603, level: 47 }), now), shared, 'the last owner gone, the entry is gone');
+});
+
 check('no inventory and an empty inventory are different builds', () => {
     const now = Date.now();
     const none = base(); delete none.inventory;

@@ -285,6 +285,9 @@ function forGroup(group, members, deps = {}) {
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
     remember(cache, actorKey, { key, members: contexts, context }); return context;
 }
-function forget(id) { const key = `character:${id}`; cache.delete(key); engine.forget(key); }
+function forget(id) {
+    const key = `character:${id}`; cache.delete(key); engine.forget(key);
+    invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
+}
 function reset() { cache.clear(); engine.clear(); }
 module.exports = { forState, forActor, forGroup, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };

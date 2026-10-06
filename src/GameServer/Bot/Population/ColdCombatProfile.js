@@ -809,10 +809,17 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 // The build key holds everything profileFor reads for these numbers: class,
 // level, captured base, henna capture and saved equipment, worn items with
 // slot and enchant, the effects active at `timestamp` (by id and stats),
-// skills, hennas and night. Bounded by the population, least recently used out.
+// skills, hennas and night. Each bot owns the entry of its current build
+// (several bots share one); an entry dies with its last owner, so the store
+// holds about one entry per bot, and owners not seen for long leave first.
 const buildGains = new Map();
-function buildGainLimit() {
-    return Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0);
+const ownerBuilds = new Map();
+function ownerLimit() {
+    return Math.ceil(1.25 * Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0));
+}
+function releaseBuild(key) {
+    const entry = buildGains.get(key);
+    if (entry && --entry.owners <= 0) buildGains.delete(key);
 }
 function powerKey(state = {}, timestamp = Date.now()) {
     const saved = state.stats?.coldCombat || {};
@@ -834,19 +841,37 @@ function powerFor(state = {}, timestamp = Date.now()) {
         pDef: profile.pDef, mDef: profile.mDef, maxHp: profile.maxHp };
 }
 // The build's entry: { power, gains }. `gainFor(entry, key, compute)` returns
-// the remembered [attack, defence] of one candidate or computes it once.
+// the remembered [attack, defence] of one candidate or computes it once. A
+// state without a character id gets a fresh entry that is not kept.
 function buildGainsFor(state = {}, timestamp = Date.now()) {
     const key = powerKey(state, timestamp);
+    const owner = Number(state.characterId) || 0;
     let entry = buildGains.get(key);
-    if (entry) {
-        buildGains.delete(key);
+    if (!entry) {
+        entry = { power: powerFor(state, timestamp), gains: new Map(), owners: 0 };
+        if (!owner) return entry;
         buildGains.set(key, entry);
-        return entry;
     }
-    entry = { power: powerFor(state, timestamp), gains: new Map() };
-    buildGains.set(key, entry);
-    if (buildGains.size > buildGainLimit()) buildGains.delete(buildGains.keys().next().value);
+    if (!owner) return entry;
+    const held = ownerBuilds.get(owner);
+    if (held !== key) {
+        entry.owners++;
+        if (held !== undefined) releaseBuild(held);
+    }
+    ownerBuilds.delete(owner);
+    ownerBuilds.set(owner, key);
+    while (ownerBuilds.size > ownerLimit()) {
+        const [oldest, oldKey] = ownerBuilds.entries().next().value;
+        ownerBuilds.delete(oldest);
+        releaseBuild(oldKey);
+    }
     return entry;
+}
+function forgetBuild(characterId) {
+    const key = ownerBuilds.get(Number(characterId));
+    if (key === undefined) return;
+    ownerBuilds.delete(Number(characterId));
+    releaseBuild(key);
 }
 function gainFor(entry, key, compute) {
     let gain = entry.gains.get(key);
@@ -859,7 +884,7 @@ function gainFor(entry, key, compute) {
 }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild,
     offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add

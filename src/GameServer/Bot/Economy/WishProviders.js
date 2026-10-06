@@ -37,17 +37,17 @@ function worn(state, slot) {
 }
 // What wearing `item` in its slot adds to the bot's build: remembered per
 // build and item (design 16.5), so a later review of the same build reuses it.
-function gearGain(state, item) {
+function gearGain(state, item, timestamp = Date.now(), build = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const caster = ['mage', 'healer', 'buffer', 'nuker', 'summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
-    const build = Profile.buildGainsFor(state);
+    build = build || Profile.buildGainsFor(state, timestamp);
     return Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
         const before = build.power;
         const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, row]) => [key,
             Number(row.slot) === Number(item.etc.slot) ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
         inventory[item.selfId] = { selfId: Number(item.selfId), amount: 1, equipped: true,
             equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
-        const after = Profile.powerFor({ ...state, inventory });
+        const after = Profile.powerFor({ ...state, inventory }, timestamp);
         const attack = caster ? 'mAtk' : 'pAtk';
         const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
         const defenceGain = Math.max(0, 1 - Number(before.pDef) / Math.max(1, Number(after.pDef)));
@@ -78,6 +78,8 @@ function skillGain(state, book) {
 }
 function build(state, ctx, deps = {}) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+    const timestamp = ctx.timestamp ?? Date.now();
+    const ownBuild = invoke('GameServer/Bot/Population/ColdCombatProfile').buildGainsFor(state, timestamp);
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
     const nodes = [], roots = [], values = new Map();
     const add = node => { if (nodes.length >= 64 || nodes.some(row => row.key === node.key)) return false;
@@ -155,7 +157,7 @@ function build(state, ctx, deps = {}) {
     for (const [slot, items] of gearCandidates(state)) for (const item of items) {
         if (!Planner.suitable(item, state, Planner.roleFor(state), Planner.gradeForLevel(state.level))) continue;
         if (Number(worn(state, slot)?.selfId) === Number(item.selfId)) continue;
-        const gain = gearGain(state, item);
+        const gain = gearGain(state, item, timestamp, ownBuild);
         const current = worn(state, slot);
         const currentPrice = current ? price(current.selfId) : 0;
         const market = invoke('GameServer/Bot/Economy/MarketCounters');

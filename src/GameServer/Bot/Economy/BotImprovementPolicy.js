@@ -39,10 +39,6 @@ function changedInventory(state, item, patch) {
 function caster(state) {
     return ['mage','healer','buffer','nuker','summoner'].includes(invoke('GameServer/Bot/AI/GearAcquisitionPlanner').roleFor(state));
 }
-function gain(state, after, before = null) {
-    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    return gainBetween(before || Profile.powerFor(state), Profile.powerFor(after), caster(state));
-}
 function gainBetween(a, b, caster) {
     const attack = caster ? 'mAtk' : 'pAtk', speed = caster ? 'castSpd' : 'atkSpd';
     return { attack: Math.max(0, b[attack] * b[speed] / Math.max(1, a[attack] * a[speed]) - 1),
@@ -71,16 +67,17 @@ function enchantCost(item, from, to, scroll, config) {
     const zero = coefficients[0].a / (1 - coefficients[0].b);
     return { count: coefficients[from].a + coefficients[from].b * zero, reach: 1, lossChance: 0 };
 }
-function stuckCost(state, item, ctx) {
+function stuckCost(state, item, ctx, before = null) {
     if (!item.equipped || !adapter(item).isWeapon()) return 0;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const before = Profile.buildGainsFor(state).power;
+    const timestamp = ctx.timestamp ?? Date.now();
+    before = before || Profile.buildGainsFor(state, timestamp).power;
     let remainder = changedInventory(state,item,{equipped:false});
     const spares = instances(state).filter(other => other.id !== item.id && adapter(other).isWeapon());
     const rate = profile => profile.pAtk * profile.atkSpd + profile.mAtk * profile.castSpd;
-    let remainingRate = rate(Profile.powerFor(remainder));
+    let remainingRate = rate(Profile.powerFor(remainder, timestamp));
     for (const spare of spares) remainingRate = Math.max(remainingRate,
-        rate(Profile.powerFor(changedInventory(remainder,spare,{equipped:true}))));
+        rate(Profile.powerFor(changedInventory(remainder,spare,{equipped:true}), timestamp)));
     const remainingIncome = ctx.hunt.perHour * Math.min(1, remainingRate / Math.max(1,rate(before)));
     const lostPerHour = Math.max(0,ctx.hunt.perHour - remainingIncome);
     if (!lostPerHour) return 0;
@@ -98,15 +95,19 @@ function opportunities(state, ctx) {
     // Gains come from the build (design 16.5): remembered per build and
     // candidate, so a review after an ordinary fight computes none of them.
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const build = Profile.buildGainsFor(state), magic = caster(state);
+    const timestamp = ctx.timestamp ?? Date.now();
+    const build = Profile.buildGainsFor(state, timestamp), magic = caster(state);
     const value = (key, after) => {
         const effect = Profile.gainFor(build, `${magic ? 'm' : 'p'}:${key}`,
-            () => gainBetween(build.power, Profile.powerFor(after()), magic));
+            () => gainBetween(build.power, Profile.powerFor(after(), timestamp), magic));
         return (effect.attack + effect.defence * ctx.deathHours) * horizon * weight;
     };
     const result = [];
     for (const item of instances(state)) {
         const a = adapter(item), category = Rules.categoryOf(a);
+        // What losing this weapon costs: once per item, only where a try can fail.
+        let stuck = null;
+        const stuckOnce = () => stuck ?? (stuck = stuckCost(state, item, ctx, build.power));
         if (!category || !Rules.CRYSTAL_IDS[Rules.gradeOf(a)]) continue;
         const equipped = item.equipped;
         const buyer = !equipped && ctx.board?.first(item.selfId, 3, { excludeOwner: state.characterId });
@@ -123,8 +124,8 @@ function opportunities(state, ctx) {
                 const price = positive(ctx.price(id)); if (!price) return [];
                 const cost = enchantCost(item, from, to, rule, config);
                 if (!Number.isFinite(cost.count)) return [];
-                const loss = rule.scrollType === 'blessed' ? 0 : cost.lossChance
-                    * (ctx.price(item.selfId) + stuckCost(state, item, ctx));
+                const loss = rule.scrollType === 'blessed' || !(cost.lossChance > 0) ? 0 : cost.lossChance
+                    * (ctx.price(item.selfId) + stuckOnce());
                 return [{ scrollId: Number(id), scrollType: rule.scrollType, cost,
                     price: price * cost.count, riskHours: ctx.hunt.perHour > 0 ? loss / ctx.hunt.perHour : Infinity }];
             }).filter(row => row.price <= positive(state.adena) + positive(state.inventory?.[row.scrollId]?.amount) * ctx.price(row.scrollId));
@@ -218,4 +219,4 @@ function crystalPath(state, id, ctx, spots = []) {
     }
     return best;
 }
-module.exports = { enchantedPrice, crystalPath, opportunities, instances, adapter, changedInventory, gain, enchantCost, stuckCost };
+module.exports = { enchantedPrice, crystalPath, opportunities, instances, adapter, changedInventory, enchantCost, stuckCost };
