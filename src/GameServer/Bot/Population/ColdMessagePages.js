@@ -92,4 +92,38 @@ function collectionPages(type, epoch, collections, msgId, onOversize) {
     return collectionPagesWithBytes(type, epoch, collections, msgId, onOversize).map((page) => page.payload);
 }
 
-module.exports = { collectionPages, collectionPagesWithBytes, tablePagesWithBytes, PAGE_BYTES };
+// Optional actor branch only: ONE bounded piece, no all-pages materialization,
+// no oversized-row skip-and-ready. Each bounded entry is byte-counted once.
+function streamedTablePageWithBytes(piece, budget = PAGE_BYTES - 1024, maxEntries = Protocol.MAX_BATCH) {
+    if (!piece || !Array.isArray(piece.rows) || !Array.isArray(piece.removed)
+        || !Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxEntries > Protocol.MAX_BATCH
+        || !Number.isSafeInteger(budget) || budget < 1 || budget > PAGE_BYTES - 1024
+        || piece.rows.length + piece.removed.length > maxEntries) {
+        throw new TypeError('invalid_actor_table_page');
+    }
+    const bounded = { ...piece, rows: [], removed: [] };
+    const payload = { tables: [bounded] };
+    let bytes = Protocol.byteLength(payload);
+    if (!Number.isFinite(bytes) || bytes > budget) throw new RangeError('actor_table_page_oversize');
+    let count = 0;
+    let full = false;
+    for (const field of ['rows', 'removed']) {
+        for (const value of piece[field]) {
+            const size = Protocol.byteLength(value);
+            if (!Number.isFinite(size)) throw new TypeError('invalid_actor_table_value');
+            const addition = size + (bounded[field].length ? 1 : 0);
+            if (bytes + addition > budget) {
+                if (!count) throw new RangeError('actor_table_page_oversize');
+                full = true;
+                break;
+            }
+            bounded[field].push(value);
+            bytes += addition;
+            count++;
+        }
+        if (full) break;
+    }
+    return { payload, bytes, consumedRows: bounded.rows.length, consumedRemoved: bounded.removed.length };
+}
+
+module.exports = { collectionPages, collectionPagesWithBytes, tablePagesWithBytes, streamedTablePageWithBytes, PAGE_BYTES };
