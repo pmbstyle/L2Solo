@@ -55,25 +55,40 @@ function gearGain(state, item, timestamp = Date.now(), build = null) {
         return { attack: attackGain, defence: Math.max(defenceGain, magicGain) };
     });
 }
+// Damage per second in a 60-second rotation: each skill's reuse limits its
+// casts; attacks fill time left over. A second nuke adds its own casts.
+function rotationRate(autoRate, casts, window = 60) {
+    let left = window, total = 0;
+    const ordered = [...casts].sort((a, b) => b.damage / b.castSeconds - a.damage / a.castSeconds || a.skillId - b.skillId);
+    for (const skill of ordered) {
+        const count = Math.min(Math.floor(left / skill.castSeconds), Math.ceil(window / skill.periodSeconds));
+        total += count * skill.damage;
+        left -= count * skill.castSeconds;
+    }
+    return (total + autoRate * left) / window;
+}
+function attackRate(profile) {
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const Formulas = invoke('GameServer/Formulas');
+    const autoRate = Formulas.calcPhysicalDamage(profile.pAtk, 0, profile.pDef, 0, { rng: () => 0.5 })
+        * profile.atkSpd / 1000;
+    const casts = Profile.offensiveSkills(profile).map(skill => {
+        const damage = skill.spell ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, skill.power), profile.mDef)
+            : Formulas.calcPhysicalDamage(profile.pAtk, 0, profile.pDef, skill.power, { rng: () => 0.5 });
+        const castSeconds = Math.max(0.1, Number(skill.hitTime ?? 1000) / 1000
+            * (skill.spell ? 333 / Math.max(1, profile.castSpd) : 1));
+        return { skillId: Number(skill.selfId), damage, castSeconds,
+            periodSeconds: castSeconds + Math.max(0, Number(skill.reuse || 0)) / 1000 };
+    });
+    return rotationRate(autoRate, casts);
+}
 function skillGain(state, book) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const original = state.stats?.coldCombat || {};
     const skills = Profile.skillSnapshotsFromRecords([...original.skills || [], { selfId: book.skillId, level: book.level }]);
     const after = Profile.profileFor({ ...state, stats: { ...state.stats, coldCombat: { ...original, skills } } });
     const before = Profile.profileFor(state);
-    const rate = profile => {
-        const Formulas = invoke('GameServer/Formulas');
-        const base = Formulas.calcPhysicalDamage(profile.pAtk, 0, profile.pDef, 0, { rng: () => 0.5 })
-            * profile.atkSpd / 1000;
-        return Math.max(base, ...Profile.offensiveSkills(profile).map(skill => {
-            const damage = skill.spell ? Formulas.calcMagicDamage(profile.mAtk, Math.max(1, skill.power), profile.mDef)
-                : Formulas.calcPhysicalDamage(profile.pAtk, 0, profile.pDef, skill.power, { rng: () => 0.5 });
-            const seconds = Math.max(0.1, Number(skill.hitTime || 1000) / 1000 * (skill.spell ? 333 / profile.castSpd : 1)
-                + Number(skill.reuse || 0) / 1000);
-            return damage / seconds;
-        }));
-    };
-    return { attack: Math.max(0, rate(after) / Math.max(0.001, rate(before)) - 1),
+    return { attack: Math.max(0, attackRate(after) / Math.max(0.001, attackRate(before)) - 1),
         defence: Math.max(0, 1 - before.pDef / after.pDef, 1 - before.mDef / after.mDef) };
 }
 // A review judges the bot against every drop source of every candidate: its
@@ -288,4 +303,4 @@ function buildProjection(state, ctx, deps) {
     while (kept.size > 40 && roots.length) { roots.pop(); kept = reachable(); }
     return { nodes: nodes.filter(node => kept.has(node.key)), roots, values, moneyPaths, horizon };
 }
-module.exports = { build, gearCandidates, gearGain, skillGain, worn };
+module.exports = { build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

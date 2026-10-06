@@ -656,14 +656,21 @@ function partyMusicEffect(skill, timestamp = Date.now()) {
     };
 }
 
+const ATTACK_SKILL_TYPES = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK,
+    C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
+
+function isAttackSkill(skill = {}) {
+    if (skill.passive) return false;
+    const semantic = C4SkillRules.resolveCached(skill);
+    return semantic.target === 'enemy' && ATTACK_SKILL_TYPES.has(semantic.skillType) && !semantic.notUsedInC4;
+}
+
 function offensiveSkills(profile) {
-    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
     return (profile.skills || []).filter((skill) => {
-        if (skill.passive) return false;
-        const semantic = C4SkillRules.resolve(skill);
+        if (!isAttackSkill(skill)) return false;
+        const semantic = C4SkillRules.resolveCached(skill);
         const required = number(semantic.requires?.weaponsAllowed);
-        return semantic.target === 'enemy' && allowed.has(semantic.skillType) && !semantic.notUsedInC4
-            && (!required || (required & profile.weaponMask) !== 0);
+        return !required || (required & profile.weaponMask) !== 0;
     });
 }
 
@@ -884,7 +891,7 @@ function gainFor(entry, key, compute) {
 
 module.exports = {
     PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild,
-    offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
+    isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
 };
