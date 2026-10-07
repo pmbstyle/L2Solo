@@ -25,7 +25,7 @@ module.exports.nativeEconomyDecision = (id, timestamp) => {
             usable: !invoke('GameServer/Karma').closesTowns(state.stats?.karma) }
     };
     return { decision: { ...decision }, materials: decision.materials, statsPacket: economy.statsPacket, reserveInputs,
-        queue: economy.network.queue.map(row => ({ key: row.key, materials: row.object?.materials || [] })),
+        queue: economy.network.queue.map(row => ({ key: row.key, materials: row.object?.materials || [], price: row.price, ratio: row.ratio, valueHours: row.valueHours, funded: row.funded, cumulativePrice: row.cumulativePrice, object: row.object })),
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
@@ -42,7 +42,7 @@ parentPort.on('message', message => {
 });`;
 
 module.exports = async function workerEconomyDecision(state, { context = {}, timestamp = Date.now(),
-    boardRows = [], extraStates = [] } = {}) {
+    boardRows = [], extraStates = [], tablePages = [], tables = [] } = {}) {
     const epoch = `native:economy-decision:${state.characterId}`;
     const messages = [];
     const worker = new Worker(wrapper, { eval: true, workerData: { workerEpoch: epoch,
@@ -72,8 +72,12 @@ module.exports = async function workerEconomyDecision(state, { context = {}, tim
         send('init', { config: { loopIntervalMs: 1000 } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running');
         send('pause', {}, 'pause');
-        send('table_page', { tables: [{ name: 'board', from: null, to: 0, full: true,
-            rows: boardRows, removed: [], last: true }] });
+        // Pre-paged payloads take precedence; legacy full tables use the
+        // native channel's bounded pagination. boardRows remains supported.
+        const pages = tablePages.length ? tablePages : tables.length
+            ? require('../../src/GameServer/Bot/Population/ColdTableChannel').shared.pages(tables).map(page => page.payload)
+            : [{ tables: [{ name: 'board', from: null, to: 0, full: true, rows: boardRows, removed: [], last: true }] }];
+        for (const page of pages) send('table_page', page);
         send('snapshot_page', { rows: [{ state, context }, ...extraStates], ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'native-economy'), nativeEconomyDecision: true,
