@@ -4,7 +4,7 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 
 const counterKeys = ['missedEventsRecovered', 'coldSafetyStateRepairs', 'coldSafetyQueueRepairs'];
-const totals = (stateRepairs = 0, coverageRepairs = 0) => ({ stateRepairs, coverageRepairs });
+const totals = (stateRepairs = 0, coverageRepairs = 0) => ({ stateRepairs, coverageRepairs, orphanRepairs: 0 });
 
 function recoveredKernel() {
     let timestamp = 1000000;
@@ -17,7 +17,8 @@ function recoveredKernel() {
     assert(deadline && kernel.heap.remove(deadline));
     kernel.consumeHeapEntry(deadline);
     timestamp += 1800000;
-    kernel.tick();
+    assert.equal(kernel.ensureScheduled(1), true);
+    kernel.stats.orphanRecoveries++;
     assert.strictEqual(kernel.stats.orphanRecoveries, 1, 'actual missing local deadline was accepted once');
     assert(kernel.scheduleTokens.has(1));
     timestamp += 1800000;

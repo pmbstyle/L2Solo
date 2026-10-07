@@ -84,7 +84,7 @@ class LifecycleSafetySweep {
         if (!this.cycle) {
             if (timestamp < this.nextAt) return;
             this.cycle = { generation: this.generation, startedAt: timestamp,
-                cursor: { afterId: 0 }, phase: 'read', page: null, waiting: false, retryAt: 0, edgeIdentities: new Map() };
+                cursor: { afterId: 0 }, phase: 'read', page: null, waiting: false, retryAt: 0, edgeIdentities: new Map(), totalsAtStart: this.repairTotals?.() || [0, 0, 0] };
         }
         const lease = this.admit();
         if (!lease) return;
@@ -151,6 +151,13 @@ class LifecycleSafetySweep {
                 if (!receipt || checkpoint.phase !== 'cold'
                     || !Protocol.sameSafetyCheckpoint(checkpoint, receipt.checkpoint)
                     || !Number.isSafeInteger(receipt.workerVersion) || receipt.workerVersion < 0) continue;
+                // ARCH-NOTE: the existing main presence page identifies local
+                // orphans. Send only those addressed edges, retaining the same
+                // native checkpoint/CAS fences and the fixed64-row page budget.
+                if (receipt.normal?.status === 'uncovered' && receipt.normal.reason === 'local_coverage_missing') {
+                    this.appendEdge(cycle, { edgeId: this.edgeIdentity(cycle, 'orphan', checkpoint, receipt),
+                        kind: 'orphan', checkpoint, expectedWorkerVersion: receipt.workerVersion });
+                }
                 if (receipt.normal?.status === 'uncovered' && receipt.normal.reason === 'missing_state') {
                     if (!this.cold.canRepair(checkpoint)) { this.metrics.deferred++; continue; }
                     const projected = this.cold.projection(checkpoint.characterId, checkpoint);
@@ -179,7 +186,7 @@ class LifecycleSafetySweep {
                 cycle.repairIndex++;
                 return;
             }
-            this.metrics.stateRepairAttempts++;
+            if (edge.kind === 'state') this.metrics.stateRepairAttempts++;
             this.request(cycle, 'repair', [edge], cycle.worker, () => { cycle.repairIndex++; });
         }
     }
@@ -244,6 +251,8 @@ class LifecycleSafetySweep {
         cycle.cursor = { ...cycle.page.cursor };
         if (cycle.page.done) {
             this.metrics.completedCycles++;
+            const totals = this.repairTotals?.() || [0, 0, 0];
+            this.onFinished?.(totals.map((value, i) => Math.max(0, value - cycle.totalsAtStart[i])));
             this.nextAt = cycle.startedAt + INTERVAL_MS;
             this.cycle = null;
         } else {

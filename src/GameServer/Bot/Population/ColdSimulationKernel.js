@@ -1,7 +1,6 @@
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
-const WORKER_SAFETY_INTERVAL_MS = 30 * 60000;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
@@ -351,11 +350,6 @@ class RetainedStateMap extends Map {
         super();
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
         this.sources = sources;
-        this.safetyNodes = new Map();
-        this.safetyHead = null;
-        this.safetyTail = null;
-        this.safetySequence = 0;
-        this.safetyCursor = null;
     }
 
     get(id) { return this.sources.get(id); }
@@ -370,65 +364,9 @@ class RetainedStateMap extends Map {
         for (const [id, packet] of this.entries()) Reflect.apply(callback, thisArg, [packet, id, this]);
     }
 
-    set(id, entry) {
-        const present = this.has(id);
-        this.sources.publish(id, entry);
-        if (!present) {
-            const node = { id, sequence: ++this.safetySequence, previous: this.safetyTail, next: null };
-            if (this.safetyTail) this.safetyTail.next = node;
-            else this.safetyHead = node;
-            this.safetyTail = node;
-            this.safetyNodes.set(id, node);
-        }
-        return this;
-    }
-
-    delete(id) {
-        const current = this.get(id);
-        if (!current || !this.sources.remove(id, current.state)) return false;
-        const node = this.safetyNodes.get(id);
-        if (node) {
-            if (this.safetyCursor?.next === node) this.safetyCursor.next = node.next;
-            if (node.previous) node.previous.next = node.next;
-            else this.safetyHead = node.next;
-            if (node.next) node.next.previous = node.previous;
-            else this.safetyTail = node.previous;
-            this.safetyNodes.delete(id);
-            node.previous = null;
-            node.next = null;
-        }
-        return true;
-    }
-
-    clear() {
-        this.sources.clear();
-        this.safetyNodes.clear();
-        this.safetyHead = null;
-        this.safetyTail = null;
-        this.cancelSafetyCycle();
-    }
-
-    startSafetyCycle() {
-        this.safetyCursor = { next: this.safetyHead, through: this.safetyTail?.sequence || 0 };
-    }
-
-    cancelSafetyCycle() {
-        this.safetyCursor = null;
-    }
-
-    inspectSafetyPage(limit, visit) {
-        let inspected = 0;
-        while (this.safetyCursor?.next
-            && this.safetyCursor.next.sequence <= this.safetyCursor.through && inspected < limit) {
-            const node = this.safetyCursor.next;
-            this.safetyCursor.next = node.next;
-            inspected++;
-            visit(node.id);
-        }
-        const done = !this.safetyCursor?.next || this.safetyCursor.next.sequence > this.safetyCursor.through;
-        if (done) this.cancelSafetyCycle();
-        return { inspected, done };
-    }
+    set(id, entry) { this.sources.publish(id, entry); return this; }
+    delete(id) { const current = this.get(id); return !!current && this.sources.remove(id, current.state); }
+    clear() { this.sources.clear(); }
 }
 
 class ColdSimulationKernel {
@@ -495,13 +433,6 @@ class ColdSimulationKernel {
         this.commanding = new Set();
         this.commandStartedAt = new Map();
         this.nextCommandRequest = 1;
-        this.lastOrphanSweepAt = 0;
-        this.orphanSweepIntervalMs = Math.max(WORKER_SAFETY_INTERVAL_MS,
-            Number.isSafeInteger(options.orphanSweepIntervalMs) ? options.orphanSweepIntervalMs : WORKER_SAFETY_INTERVAL_MS);
-        this.orphanRecoveryLimit = Math.max(1, Math.min(64, Math.trunc(Number(options.orphanRecoveryLimit)) || 64));
-        this.safetyStartedAt = null;
-        this.safetyAlarmToken = null;
-        this.safetyGeneration = 0;
         this.paused = false;
         this.stopping = false;
         this.resolveChain = Promise.resolve();
@@ -534,7 +465,6 @@ class ColdSimulationKernel {
             lastResolveMs: 0,
             maxResolveMs: 0
         };
-        this.armSafetyCycle(this.now() + this.orphanSweepIntervalMs);
     }
 
     upsert(entry = {}) {
@@ -673,12 +603,11 @@ class ColdSimulationKernel {
     }
 
     armAlarm(kind, key, dueAt, options = {}) {
-        if (!['claim_ack', 'worker_safety'].includes(kind) || options.operational !== true) throw new Error('unsupported_alarm');
+        if (kind !== 'claim_ack' || options.operational !== true) throw new Error('unsupported_alarm');
         if (!Number.isSafeInteger(dueAt) || dueAt < 0) throw new RangeError('invalid_alarm_deadline');
         const id = Number(options.characterId);
         if (typeof options.stamp !== 'string' || !options.stamp || Number(key) !== id
-            || (kind === 'claim_ack' && (!Number.isSafeInteger(id) || id <= 0 || !this.claiming.has(id)))
-            || (kind === 'worker_safety' && (id !== 0 || this.stopping || this.safetyStartedAt !== null))) {
+            || (kind === 'claim_ack' && (!Number.isSafeInteger(id) || id <= 0 || !this.claiming.has(id)))) {
             throw new Error('invalid_alarm_owner');
         }
         const alarmKey = `${kind}:${id}`;
@@ -762,27 +691,11 @@ class ColdSimulationKernel {
         this.claimStartedAt.delete(id);
     }
 
-    armSafetyCycle(dueAt) {
-        if (this.stopping || this.safetyStartedAt !== null) return false;
-        this.safetyAlarmToken = this.armAlarm('worker_safety', 0, dueAt,
-            { stamp: `safety:${++this.safetyGeneration}`, characterId: 0, operational: true });
-        return this.safetyAlarmToken;
-    }
-
     drainOperationalAlarms(timestamp = this.now()) {
         let fired = 0;
         while (this.earliestOperationalAlarm && this.earliestOperationalAlarm.dueAt <= timestamp) {
             const entry = this.earliestOperationalAlarm;
             this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
-            if (entry.alarmKind === 'worker_safety') {
-                if (this.stopping || this.safetyStartedAt !== null || entry.alarmToken !== this.safetyAlarmToken) continue;
-                this.safetyAlarmToken = null;
-                this.safetyStartedAt = timestamp;
-                this.lastOrphanSweepAt = timestamp;
-                this.states.startSafetyCycle();
-                fired++;
-                continue;
-            }
             const id = entry.characterId;
             if (this.claimAttempts.get(id)?.requestId !== entry.stamp || !this.claiming.has(id)) continue;
             const run = [...this.partyRuns.values()].find(party => party.purpose.memberIds.includes(id));
@@ -1158,31 +1071,12 @@ class ColdSimulationKernel {
         });
     }
 
-    recoverOrphanedSchedules() {
-        if (this.stopping || this.safetyStartedAt === null) return 0;
-        let recovered = 0;
-        const page = this.states.inspectSafetyPage(this.orphanRecoveryLimit, id => {
-            if (this.stopping || this.busy(id) || this.hasNormalCoverage(id)) return;
-            if (this.ensureScheduled(id)) recovered++;
-        });
-        this.stats.orphanRecoveries += recovered;
-        if (page.done) {
-            const nextDue = this.safetyStartedAt + this.orphanSweepIntervalMs;
-            this.safetyStartedAt = null;
-            // At most one new cycle on the following tick if a long-running
-            // cycle passed this deadline; fresh actual start anchors it.
-            this.armSafetyCycle(nextDue);
-        }
-        return recovered;
-    }
-
     tick() {
         this.stats.loopRuns += 1;
         this.stats.lastLoopAt = this.now();
         const decisionBudget = { remaining: 64 };
         this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
         this.recoverStalled(this.stats.lastLoopAt);
-        this.recoverOrphanedSchedules(this.stats.lastLoopAt);
         if (this.paused || this.stopping) return;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
         if (capacity <= 0) {
@@ -2084,9 +1978,6 @@ class ColdSimulationKernel {
         this.pendingReleases.clear();
         this.commanding.clear();
         this.commandStartedAt.clear();
-        this.states.cancelSafetyCycle();
-        this.safetyStartedAt = null;
-        this.safetyAlarmToken = null;
         for (const id of this.claimAttempts.keys()) this.cancelClaimAttempt(id);
         for (const entry of this.alarms.values()) {
             if (entry.alarmKind === 'decision') this.cancelDecisionDeadline(entry.key, entry.alarmToken);

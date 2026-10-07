@@ -193,7 +193,7 @@ function validateEnvelope(message, direction, options = {}) {
             const repair = message.type === 'worker_repair_request';
             const checkpoint = safetyCheckpoint(repair ? row?.checkpoint : row);
             if (!checkpoint || ids.has(checkpoint.characterId)
-                || (repair && (row.kind !== 'state'
+                || (repair && (!['state', 'orphan'].includes(row.kind)
                     || typeof row.edgeId !== 'string' || !row.edgeId || row.edgeId.length > 200
                     || edges.has(row.edgeId) || !Number.isSafeInteger(row.expectedWorkerVersion)
                     || row.expectedWorkerVersion < 0))) {
@@ -209,7 +209,7 @@ function validateEnvelope(message, direction, options = {}) {
         const reason = value => typeof value === 'string' && value.length > 0;
         const status = value => value && ['covered', 'deferred', 'ineligible', 'uncovered'].includes(value.status)
             && reason(value.reason);
-        if (!safety || !['stateRepairs', 'coverageRepairs'].every(key => version(safety[key]))) {
+        if (!safety || !['stateRepairs', 'coverageRepairs', 'orphanRepairs'].every(key => version(safety[key]))) {
             return { ok: false, reason: 'invalid_safety_totals' };
         }
         for (const result of batch) {
@@ -220,7 +220,7 @@ function validateEnvelope(message, direction, options = {}) {
             if (!checkpoint || checkpoint.characterId !== result.characterId || ids.has(result.characterId)
                 || !version(result.workerVersion) || (observed !== null
                     && (!observedCheckpoint || observedCheckpoint.characterId !== result.characterId))
-                || (repair ? result.kind !== 'state'
+                || (repair ? !['state', 'orphan'].includes(result.kind)
                     || typeof result.edgeId !== 'string' || !result.edgeId || result.edgeId.length > 200
                     || !['accepted', 'covered', 'deferred', 'stale', 'ineligible'].includes(result.status)
                     || !reason(result.reason)

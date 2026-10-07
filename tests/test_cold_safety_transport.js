@@ -12,8 +12,8 @@ const checkpoint = characterId => ({ characterId, phase: 'cold', activity: 'hunt
     simulationOwner: 'legacy_main', simulationRevision: 1, simulationLeaseId: null,
     simulationLeaseUntil: 0, activityStartedAt: 100, nextResolveAt: 900000,
     lastResolvedAt: 0, lastHotAt: 0, updatedAt: 1000 });
-const safety = (stateRepairs = 0, boardRepairs = 0, coverageRepairs = 0) =>
-    ({ stateRepairs, boardRepairs, coverageRepairs });
+const safety = (stateRepairs = 0, orphanRepairs = 0, coverageRepairs = 0) =>
+    ({ stateRepairs, orphanRepairs, coverageRepairs });
 
 function legacyControls() {
     const valid = Protocol.envelope('snapshot_page', epoch, { rows: [] }, 'legacy-control');
@@ -59,10 +59,9 @@ function receipts(message, totals = safety()) {
     return { results: message.payload.rows.map(row => {
         const cp = row.checkpoint || row;
         if (message.type === 'worker_presence_request') return { characterId: cp.characterId, checkpoint: { ...cp },
-            observedCheckpoint: null, workerVersion: 0, normal: { status: 'uncovered', reason: 'absent' },
-            board: { status: 'deferred', reason: 'absent', coverageVersion: 0 } };
+            observedCheckpoint: null, workerVersion: 0, normal: { status: 'uncovered', reason: 'absent' } };
         return { characterId: cp.characterId, edgeId: row.edgeId, kind: row.kind, status: 'accepted', reason: 'repaired',
-            checkpoint: { ...cp }, observedCheckpoint: { ...cp }, workerVersion: 1, boardCoverageVersion: 1 };
+            checkpoint: { ...cp }, observedCheckpoint: { ...cp }, workerVersion: 1 };
     }), safety: totals };
 }
 
@@ -93,8 +92,8 @@ async function synchronousAndPhases() {
         const p = await f.transport.request('presence', [checkpoint(1)]);
         assert.strictEqual(p.ok, true, 'synchronous ACK sees correlation installed before post');
         assert.strictEqual(p.results.length, 1);
-        const r = await f.transport.request('repair', [{ edgeId: 'stable-edge', kind: 'board', checkpoint: checkpoint(1),
-            expectedWorkerVersion: 1, expectedBoardCoverageVersion: 0 }]);
+        const r = await f.transport.request('repair', [{ edgeId: 'stable-edge', kind: 'orphan', checkpoint: checkpoint(1),
+            expectedWorkerVersion: 1,  }]);
         assert.strictEqual(r.ok, true);
         assert.notStrictEqual(f.sent[0].msgId, f.sent[1].msgId, 'each request/phase has a fresh transport ID');
         assert.strictEqual(f.sent[1].payload.rows[0].edgeId, 'stable-edge');
@@ -178,8 +177,8 @@ async function malformedReceipts() {
         }
         for (const mutate of [payload => { payload.results[0].edgeId = 'other-edge'; },
             payload => { payload.results[0].kind = 'state'; }]) {
-            const pending = f.transport.request('repair', [{ edgeId: 'expected-edge', kind: 'board',
-                checkpoint: checkpoint(1), expectedWorkerVersion: 1, expectedBoardCoverageVersion: 0 }]);
+            const pending = f.transport.request('repair', [{ edgeId: 'expected-edge', kind: 'orphan',
+                checkpoint: checkpoint(1), expectedWorkerVersion: 1,  }]);
             const payload = receipts(f.sent.at(-1));
             mutate(payload);
             f.ack(f.sent.at(-1), payload);

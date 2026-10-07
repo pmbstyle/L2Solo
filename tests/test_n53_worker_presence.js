@@ -48,17 +48,18 @@ function flat(entry) {
             });
         }
         now += period; kernel.tick();
-        while (kernel.safetyStartedAt !== null) kernel.tick();
+        assert.equal(kernel.ensureScheduled(73), true, 'addressed main-sweep repair restores one missing physical deadline');
         const replacement = kernel.scheduleTokens.get(73);
         assert.notStrictEqual(replacement.token, lost.scheduleToken);
         assert(kernel.heap.positions.has(replacement.heapEntry));
-        assert.strictEqual(kernel.stats.orphanRecoveries, 1);
+        assert.equal(kernel.recoverOrphanedSchedules, undefined);
         assert.strictEqual(kernel.scheduleTokens.get(74), healthy);
         assert.strictEqual(kernel.scheduleTokens.has(75), false);
         assert.strictEqual(kernel.scheduleTokens.has(76), false);
         assert.strictEqual(kernel.scheduleTokens.has(77), false);
-        now += period; kernel.tick(); while (kernel.safetyStartedAt !== null) kernel.tick();
-        assert.strictEqual(kernel.stats.orphanRecoveries, 1);
+        now += period; kernel.tick();
+        assert.equal(kernel.ensureScheduled(73), false);
+        assert.equal(kernel.recoverOrphanedSchedules, undefined);
     });
 
     await check('board counter coverage API is absent', () => {
@@ -77,7 +78,7 @@ function flat(entry) {
     await check('actual Protocol refuses malformed receipts and scalar totals', () => {
         const result = { characterId: 1, checkpoint: flat(full(1)), observedCheckpoint: flat(full(1)), workerVersion: 1,
             normal: { status: 'covered', reason: 'normal_schedule' } };
-        const safety = { stateRepairs: 0, coverageRepairs: 0 };
+        const safety = { stateRepairs: 0, coverageRepairs: 0, orphanRepairs: 0 };
         const message = Protocol.envelope('worker_presence_ack', 'validation', { results: [result], safety }, 'receipt');
         assert(Protocol.validateEnvelope(message, 'worker').ok);
         result.normal.status = 'pretend'; assert(!Protocol.validateEnvelope(message, 'worker').ok);
@@ -148,7 +149,7 @@ parentPort.on('message', message => { if(message.nativeControl) post({nativeCont
             }, 'worker_presence_ack');
             assert.strictEqual(response.results.length, 64);
             for (const result of response.results) assert.strictEqual(result.normal.status, 'covered');
-            assert.deepStrictEqual(response.safety, { stateRepairs: 0, coverageRepairs: 0 });
+            assert.deepStrictEqual(response.safety, { stateRepairs: 0, coverageRepairs: 0, orphanRepairs: 0 });
         });
         await check('native absent full projection accepts once; replay/fence tuple/projection gaps refuse', async () => {
             const entry = full(99), checkpoint = flat(entry);

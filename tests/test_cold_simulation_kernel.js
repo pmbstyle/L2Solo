@@ -413,7 +413,7 @@ function claimAck(kernel, payload) {
     memberOnlyKernel.upsert({ state: state(4, { party: { partyId: 'member-only' } }), context: {} });
     assert.strictEqual(memberOnlyKernel.heap.values.filter(entry => entry.kind !== 'alarm').length, 0,
         'party members must be scheduled only through their leader');
-    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
+    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 0);
     assert.strictEqual(memberOnlyKernel.snapshot().due, 0,
         'party members must not inflate independent worker due-age telemetry');
 
@@ -463,14 +463,12 @@ function claimAck(kernel, payload) {
     orphanKernel.tick();
     assert.strictEqual(orphanKernel.scheduleTokens.has(7), false, 'safety has no startup/full-population pass');
     recoveryNow += 30 * 60000;
-    orphanKernel.pause();
-    orphanKernel.tick();
-    assert.strictEqual(orphanKernel.scheduleTokens.has(7), true,
-        'the thirty-minute paged safety must restore an orphaned schedulable state');
-    assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1);
-    recoveryNow += 30 * 60000;
-    orphanKernel.tick();
-    assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1, 'accepted scheduler repair is counted only once');
+    orphanKernel.pause(); orphanKernel.tick();
+    assert.equal(orphanKernel.scheduleTokens.has(7), false, 'there is no autonomous second safety sweep');
+    assert.equal(orphanKernel.states.safetyNodes, undefined);
+    assert.equal(typeof orphanKernel.recoverOrphanedSchedules, 'undefined');
+    assert.equal(orphanKernel.ensureScheduled(7), true, 'the addressed main sweep restores a local orphan');
+    assert.equal(orphanKernel.ensureScheduled(7), false, 'a healthy scheduled state is not repaired twice');
 
     const ackRaceKernel = recordingKernel({
         resolveSolo: resolver,

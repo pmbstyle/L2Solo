@@ -13,7 +13,7 @@ function setup(fitsFrame, frameSizing) {
     const monitor = new ColdCompetitionMonitor({ capacityForSpot: spot => spot.capacity, personaFor: () => ({ traits: {} }) });
     const candidates = new Candidates({ records: id => kernel.states.locationIndex.getSource(id, 'state'),
         packets: id => kernel.states.get(id), memory: kernel.interactionMemory, monitor, deadlines: kernel,
-        sequence: id => kernel.states.safetyNodes.get(id)?.sequence, fitsFrame, frameSizing });
+        fitsFrame, frameSizing });
     kernel.decisionEvents = candidates;
     return { kernel, monitor, candidates, emitted, at: value => { time = value; } };
 }

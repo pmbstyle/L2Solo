@@ -837,6 +837,7 @@ const tests = [
     'tests/test_update_environment_visibility.js',
     'tests/test_world_visible_users.js',
     'tests/test_world_actor_grid.js',
+    'tests/test_main_safety_orphans.js',
     'tests/test_board_index.js',
     'tests/test_board_merchant_packets.js',
     'tests/test_board_offer_suspects.js',

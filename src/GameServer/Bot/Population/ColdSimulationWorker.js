@@ -113,6 +113,7 @@ let competitionReady = false;
 let safetyStateReady = false;
 let leaseProbe = null;
 let safetyStateRepairs = 0;
+let safetyOrphanRepairs = 0;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
@@ -151,7 +152,7 @@ function boardReady() {
 
 function safetyTotals() {
     return { stateRepairs: safetyStateRepairs,
-        coverageRepairs: kernel?.stats.orphanRecoveries || 0 };
+        coverageRepairs: 0, orphanRepairs: safetyOrphanRepairs };
 }
 
 function sendLeasePage() {
@@ -193,7 +194,7 @@ function safetyPresence(checkpoint) {
     result.normal = normalCovered ? { status: 'covered', reason: 'normal_schedule' }
         : kernel.paused ? { status: 'deferred', reason: 'worker_paused' }
             : !entry ? { status: 'uncovered', reason: 'missing_state' }
-                : kernel.needsNormalSchedule(id) ? { status: 'deferred', reason: 'local_coverage_missing' }
+                : kernel.needsNormalSchedule(id) ? { status: 'uncovered', reason: 'local_coverage_missing' }
                     : { status: 'ineligible', reason: 'no_normal_schedule' };
 
     return result;
@@ -205,9 +206,16 @@ function safetyRepair(row) {
     const receipt = (status, reason) => ({ edgeId: row.edgeId, characterId: id, kind: row.kind, status, reason,
         checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion });
     if (presence.workerVersion !== row.expectedWorkerVersion) return receipt('stale', 'worker_version_changed');
-    if (row.kind !== 'state') return receipt('ineligible', 'unsupported_repair');
+    if (!['state', 'orphan'].includes(row.kind)) return receipt('ineligible', 'unsupported_repair');
     const coverage = presence.normal;
     if (coverage.status !== 'uncovered') return receipt(coverage.status, coverage.reason);
+    if (row.kind === 'orphan') {
+        if (coverage.reason !== 'local_coverage_missing') return receipt('deferred', coverage.reason);
+        if (!kernel.ensureScheduled(id)) return receipt('deferred', 'schedule_not_restored');
+        safetyOrphanRepairs++;
+        presence = safetyPresence(checkpoint);
+        return receipt('accepted', 'orphan_schedule_restored');
+    }
     if (row.kind === 'state') {
         if (coverage.reason !== 'missing_state') return receipt('deferred', 'local_safety_owns_schedule');
         const entry = row.entry, state = entry?.state, context = entry?.context;
@@ -448,7 +456,7 @@ function startKernel(config = {}) {
         competitionCandidates = new ColdCompetitionCandidates({
             records: id => kernel.states.locationIndex.getSource(id, 'state'),
             packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
-            monitor: competition, deadlines: kernel, sequence: id => kernel.states.safetyNodes.get(id)?.sequence,
+            monitor: competition, deadlines: kernel,
             frameSizing: frame => {
                 const report = competition.snapshot();
                 const large = Number.MAX_SAFE_INTEGER;
@@ -458,7 +466,7 @@ function startKernel(config = {}) {
                     ...kernelReport, safety: safetyTotals(),
                     // Forecast cooldowns can make a decision alarm the new
                     // head. Include both optional shapes before those effects.
-                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'worker_safety',
+                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'claim_ack',
                         dueAt: large, overdue: false, current: false },
                     competition: { ...report, events: [],
                         recent: [], frame: { ...frame, events: [] }, at: frame.at, outcomes,

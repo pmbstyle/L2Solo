@@ -96,12 +96,9 @@ class ColdSafetyTransport {
                 || !Protocol.sameSafetyCheckpoint(requested.checkpoint, result.checkpoint)
                 || (result.observedCheckpoint !== null && !Protocol.safetyCheckpoint(result.observedCheckpoint))) return false;
             if (pending.kind === 'presence') {
-                if (!COVERAGE_STATUSES.has(result.normal?.status) || typeof result.normal.reason !== 'string'
-                    || !COVERAGE_STATUSES.has(result.board?.status) || typeof result.board.reason !== 'string'
-                    || !version(result.board.coverageVersion)) return false;
+                if (!COVERAGE_STATUSES.has(result.normal?.status) || typeof result.normal.reason !== 'string') return false;
             } else if (result.edgeId !== requested.edgeId || result.kind !== requested.kind
-                || !REPAIR_STATUSES.has(result.status) || typeof result.reason !== 'string'
-                || !version(result.boardCoverageVersion)) return false;
+                || !REPAIR_STATUSES.has(result.status) || typeof result.reason !== 'string') return false;
             seen.add(result.characterId);
         }
         return true;
@@ -126,7 +123,7 @@ class ColdSafetyTransport {
             }
             const totals = message.payload.safety;
             if (!totals || typeof totals !== 'object' || Array.isArray(totals)
-                || !['stateRepairs', 'boardRepairs', 'coverageRepairs']
+                || !['stateRepairs', 'coverageRepairs', 'orphanRepairs']
                 .every(key => Number.isSafeInteger(totals[key]) && totals[key] >= 0)) {
                 this.finish(pending, refused('invalid_ack'));
                 return;

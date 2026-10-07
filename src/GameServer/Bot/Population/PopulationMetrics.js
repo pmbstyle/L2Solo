@@ -55,6 +55,7 @@ function emptyCounters() {
         coldSafetyStateRepairs: 0,
         boardReviewWakeups: 0,
         coldSafetyQueueRepairs: 0,
+        coldSafetyOrphanRepairs: 0,
         partySafetyRepairs: 0,
         legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
@@ -158,7 +159,7 @@ const PopulationMetrics = {
     beginColdSafetyEpoch(epoch) {
         if (typeof epoch !== 'string' || !epoch || epoch.length > 160) return false;
         if (this.coldSafetySource?.epoch !== epoch) {
-            this.coldSafetySource = { epoch, stateRepairs: 0, coverageRepairs: 0 };
+            this.coldSafetySource = { epoch, stateRepairs: 0, coverageRepairs: 0, orphanRepairs: 0 };
         }
         return true;
     },
@@ -174,11 +175,11 @@ const PopulationMetrics = {
     recordColdSafetyTotals(epoch, totals) {
         const source = this.coldSafetySource;
         if (!source || source.epoch !== epoch || !totals || typeof totals !== 'object' || Array.isArray(totals)) return 0;
-        const fields = ['stateRepairs', 'coverageRepairs'];
+        const fields = ['stateRepairs', 'coverageRepairs', 'orphanRepairs'];
         if (fields.some(key => !Number.isSafeInteger(totals[key]) || totals[key] < 0)) return 0;
         const deltas = fields.map(key => Math.max(0, totals[key] - source[key]));
         const recovered = deltas.reduce((sum, delta) => sum + delta, 0);
-        const counters = ['coldSafetyStateRepairs', 'coldSafetyQueueRepairs'];
+        const counters = ['coldSafetyStateRepairs', 'coldSafetyQueueRepairs', 'coldSafetyOrphanRepairs'];
         if (!Number.isSafeInteger(this.counters.missedEventsRecovered + recovered)
             || counters.some((key, index) => !Number.isSafeInteger(this.counters[key] + deltas[index]))) return 0;
         fields.forEach((key, index) => { source[key] += deltas[index]; });

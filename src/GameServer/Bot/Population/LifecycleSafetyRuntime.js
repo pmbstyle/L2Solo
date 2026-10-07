@@ -15,6 +15,8 @@ function createLifecycleSafetyRuntime(population, coordinator) {
         && population.lifecycleSafetySweep === runtime && population.backgroundJobRegistry?.started === true;
     runtime = new LifecycleSafetySweep({
         active,
+        repairTotals: () => [Metrics.counters.coldSafetyStateRepairs, Metrics.counters.coldSafetyQueueRepairs, Metrics.counters.coldSafetyOrphanRepairs],
+        onFinished: deltas => { Metrics.lastSafetyRepairs = deltas; },
         now: () => Date.now(),
         budgetMs: Math.max(1, Number(Config.schedulerSliceMs) || 12),
         retryMs: Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000),
