@@ -31,7 +31,11 @@ const use = stock.usePerHour;
 const withShots = Table.value(native.bestSpotId, native.tableRole, 30, true);
 const withoutShots = Table.value(native.bestSpotId, native.tableRole, 30, false);
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
-const freeSlots = Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots;
+// ARCH-NOTE: empty positive-use kit stacks consume their future slots while
+// sizing E9's interval, so a refill does not sell itself back to the NPC.
+const plannedKitSlots = Number(stock.usePerHour > 0 && !warrior.inventory[stock.itemId]?.amount)
+    + Number(native.stock('potions').usePerHour > 0 && !warrior.inventory[native.stock('potions').itemId]?.amount);
+const freeSlots = Math.max(0, Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
 const noHistoryT = withShots.stacks === null ? 2 : withShots.stacks === 0 ? 24
     : Math.max(.5, Math.min(24, freeSlots / withShots.stacks));
 const b = 1 - withoutShots.exp / withShots.exp;

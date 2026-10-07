@@ -144,31 +144,40 @@ function foundation(state, deps, persona, timestamp, price) {
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
     const bestTable = spotTable || Table.best(tableRole, state.level, true);
+    const { selfId: shotItemId, perAction: shotPerAction } = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
+    const rawShots = shotPerAction > 0 ? positive(bestTable?.shots) : 0;
+    const withoutShots = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
+    const shotBenefit = Math.max(0, 1 - positive(withoutShots?.exp) / Math.max(1, positive(bestTable?.exp)));
+    const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
+    const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
     if (!(positive(state.stats?.visitEvery?.[1]) > 0) && spotTable?.stacks !== null && spotTable?.stacks !== undefined) {
         const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
         const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
-        const free = Math.max(0, Floor.inventoryLimit(race) - Floor.stateInventory(state, Data.items).slots);
+        // ARCH-NOTE: size the E9 no-history interval on the bag after its
+        // planned kit stacks exist. Otherwise an empty shot/potion row uses
+        // no slot, its refill uses one, and the shorter interval immediately
+        // sells part of that refill back to the NPC. Existing stacks retain
+        // the exact physical free-slot formula; zero-use stock reserves none.
+        const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount))
+            + Number(potionUse > 0 && !positive(state.inventory?.[potionItemId]?.amount));
+        const free = Math.max(0, Floor.inventoryLimit(race) - Floor.stateInventory(state, Data.items).slots - plannedSlots);
         bagHours = spotTable.stacks > 0 ? free / spotTable.stacks : 24;
     }
     const targetHours = require('./TownVisitInterval').targetHours(state.stats, bagHours);
     const stock = kind => {
         const shots = kind === 'shots';
-        const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
-            : invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
-        const rawUse = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
-        const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-        const benefit = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) : 0;
-        const shotCostHours = rawUse * price(plan.selfId) / Hunt.huntHour(hunt, state);
-        const use = shots && benefit < shotCostHours ? 0 : rawUse;
-        const current = positive(state.inventory?.[plan.selfId]?.amount);
+        const itemId = shots ? shotItemId : potionItemId;
+        const use = shots ? shotUse : potionUse;
+        const current = positive(state.inventory?.[itemId]?.amount);
         const target = Math.ceil(use * targetHours);
         const survivalMissing = Math.max(0, Math.ceil(use) - current);
         const missing = Math.max(0, target - Math.max(current, use));
-        const benefitHours = shots ? (use > 0 ? benefit * targetHours : 0)
+        const benefitHours = shots ? (use > 0 ? shotBenefit * targetHours : 0)
             : positive(bestTable?.deaths) * deathHours * targetHours;
-        return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
-            targetHours, target, missing, survivalMissing, unitPrice: price(plan.selfId), benefitHours,
+        return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
+            targetHours, target, missing, survivalMissing, unitPrice: price(itemId), benefitHours,
             needed: use > 0 && current < use };
     };
     const kit = [stock('shots'), stock('potions')];

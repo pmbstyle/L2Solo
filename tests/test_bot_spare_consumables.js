@@ -27,7 +27,14 @@ const state = {
 };
 
 const target = HealingPotionStock.targetAmountFor(state);
-assert(target > 3 && target < 30);
+const potionStock = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
+// ARCH-NOTE: E9's native no-history bag-fill interval reaches the 24h cap
+// here: 3.3875 potions/h -> ceil(3.3875*24)=82, beyond the old 30-stack
+// fixture. Keep a real full stock plus 20 surplus, then check both sales.
+assert.strictEqual(potionStock.targetHours, 24);
+assert.strictEqual(target, Math.ceil(potionStock.usePerHour * potionStock.targetHours));
+assert(target > 3);
+state.inventory[1061].amount = target + 20;
 assert.deepStrictEqual(HealingPotionStock.stockAmounts(state), { 1061: target },
     'the healing stock is kept strongest first up to the restock target');
 // One stock for the sale and the restock: potions at least as strong as the
@@ -63,7 +70,7 @@ for (let deal = 0; deal < 12; deal++) MarketCounters.deal(956, 6000, 1, dealsAt 
 const npc = new Map(MarketListingPolicy.evaluate(state, { unlimited: true, states: [], now: dealsAt }).npc
     .map((entry) => [entry.selfId, entry.count]));
 assert.deepStrictEqual([...npc.entries()].sort((a, b) => a[0] - b[0]),
-    [[17, 500], [736, 1], [1060, 10], [1061, 30 - target], [1661, 2], [1831, 4]],
+    [[17, 500], [736, 1], [1060, 10], [1061, 20], [1661, 2], [1831, 4]],
     'the cold visit sells arrows, keys, antidotes and the surplus of potions and Scrolls of Escape to the NPC');
 // The hot visit sells first, as the cold one: what it sells to the NPC is not
 // stored at the warehouse stop before the sale.
