@@ -10,6 +10,7 @@ const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8'
 const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
 fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
 process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
+require('./helpers/databaseIsolation');
 require('../src/Global');
 assert.strictEqual(options.default.Database.path, databasePath);
 assert.strictEqual(options.default.Database.historyPath, historyPath);
@@ -309,8 +310,7 @@ async function run() {
         MarketCounters.reset();
         BotAfkMarket._resetForTests();
     }
-    // Nobody buys its kind any more: the main review keeps the line; the
-    // bot's own look finds the NPC its best outcome and takes it back.
+    // A reset supplies no price-review edge: the main review keeps the line.
     const kept = await BotAfkMarket.reconcile(LifeState.snapshot(surplusOwnerId), null);
     assert.strictEqual(kept.changed, false, 'the main review does not decide a kept line');
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -318,10 +318,47 @@ async function run() {
     const lookCtx = { ...ListingPolicy.traderContext(LifeState.snapshot(surplusOwnerId), {}), timestamp: Date.now() };
     const look = MarketPricing.look({ ...LifeState.snapshot(surplusOwnerId), activity: 'resting' },
         board.ownerLines(surplusOwnerId), lookCtx);
-    assert(look, 'a resting bot looks at its lines');
-    assert.deepStrictEqual(look.withdrawals.map((line) => line.selfId), [45], 'nobody buys it: the NPC is its best outcome');
-    const retired = await BotAfkMarket.applyReview(surplusOwnerId, look);
-    assert.strictEqual(retired.changed, 1, 'a gear offer nobody buys is withdrawn');
+    // FX-C2b: a reset is not an advancing counter edge. Activity alone
+    // cannot initiate a new price review, even when the bot is resting.
+    assert.strictEqual(look, null, 'a reset counter does not authorize a new look');
+    const noLookItems = await Database.fetchItems(surplusOwnerId);
+    const noLookState = LifeState.snapshot(surplusOwnerId);
+    assert.deepStrictEqual(await BotAfkMarket.applyReview(surplusOwnerId, {}), { changed: 0, updated: 0 });
+    assert.deepStrictEqual(await Database.fetchItems(surplusOwnerId), noLookItems,
+        'no proposal changes no physical inventory');
+    assert.strictEqual(LifeState.snapshot(surplusOwnerId), noLookState,
+        'an empty review publishes no lifecycle state');
+    assert.strictEqual(AfkTrade.findOwnerProjection(surplusOwnerId).shop.lines[0].price, 23223,
+        'the original retained line keeps its ask');
+
+    // A separate native counter update at the original historical price
+    // reaches the real pricing decision. It may keep its standing price;
+    // neither a reprice nor an NPC withdrawal is fabricated for this input.
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const originalPrior = PriceBelief.prior;
+    let priorCalls = 0;
+    PriceBelief.prior = function (id, context) {
+        if (Number(id) === 45) priorCalls++;
+        return originalPrior.call(this, id, context);
+    };
+    try {
+        MarketCounters.deal(45, 23000, 1, lookCtx.timestamp, 999);
+        const line = board.ownerLines(surplusOwnerId).find(row => row.selfId === 45);
+        assert(MarketCounters.counter(MarketCounters.counterOf(45), lookCtx.timestamp).deals > line.pricing.seenCounter,
+            'the declared native deal advances the line counter');
+        MarketPricing.look({ ...LifeState.snapshot(surplusOwnerId), activity: 'resting' },
+            board.ownerLines(surplusOwnerId), lookCtx);
+        assert.strictEqual(priorCalls, 1, 'the actual advanced edge reaches native pricing once');
+        assert.deepStrictEqual(await Database.fetchItems(surplusOwnerId), noLookItems,
+            'computing a look alone cannot write or move escrow');
+    } finally {
+        PriceBelief.prior = originalPrior;
+        MarketCounters.reset();
+    }
+    // Explicit native owner withdrawal independently proves the old physical
+    // return invariant. The absent counter edge is not an NPC-choice proof.
+    const retired = await BotAfkMarket.withdraw(surplusOwnerId);
+    assert.strictEqual(retired.stopped, true, 'the actual owner withdrawal closes the retained shop');
     assert.strictEqual(AfkTrade.findOwnerProjection(surplusOwnerId), null);
     assert.strictEqual(amount(await Database.fetchItems(surplusOwnerId), 45), 2,
         'withdrawal must return the item from escrow');
@@ -560,7 +597,10 @@ async function run() {
     console.log('Bot AFK market state checks passed');
 }
 
-run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => {
+run().catch((error) => { console.error(error); process.exitCode = 1; }).finally(async () => {
     ListingPolicy.evaluate = originalEvaluate;
     MarketTownPolicy.shopTown = originalShopTown;
+    await AfkTrade._resetForTests();
+    await Database.close();
+    fs.rmSync(fixtureDirectory, { recursive: true, force: true });
 });
