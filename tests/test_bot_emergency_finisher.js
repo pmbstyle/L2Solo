@@ -1,5 +1,7 @@
 const assert = require('assert');
 require('../src/Global');
+// Load native data before the first economic route or combat profile check.
+invoke('GameServer/DataCache').init();
 const World = invoke('GameServer/World/World');
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Finisher = invoke('GameServer/Bot/AI/BotEmergencyFinisher');

@@ -1,6 +1,8 @@
 const assert = require('assert');
 
 require('../src/Global');
+// Load native data before the first economic route or combat profile check.
+invoke('GameServer/DataCache').init();
 
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
