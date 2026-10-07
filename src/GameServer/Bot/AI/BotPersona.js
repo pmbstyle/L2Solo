@@ -1,4 +1,8 @@
-const Database = invoke('Database');
+// ARCH-NOTE: C1/E3 the clan worker's missing-money survival fallback reads
+// an existing persona or null. Resolve the live database only at an actual
+// SQL operation so that pure lookup keeps the worker dependency guard intact.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
 const { isMainThread } = require('node:worker_threads');
 
 const Types = require('./BotPersonaTypes');
@@ -196,7 +200,7 @@ function populationTotal() {
 }
 
 function save(persona) {
-    return Database.execute([
+    return persistenceDatabase().execute([
         `INSERT INTO ${TABLE} (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(characterId) DO NOTHING`,
         [persona.characterId, persona.version, persona.seed, persona.primaryDrive, persona.archetype,
@@ -215,7 +219,7 @@ const BotPersona = {
     init() {
         if (initialized) return Promise.resolve(true);
         if (initPromise) return initPromise;
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-personas').then(() => {
+        initPromise = persistenceDatabase().execute(['SELECT 1', []], 'schema:bot-personas').then(() => {
             initialized = true;
             return true;
         }).catch((err) => {
@@ -229,7 +233,7 @@ const BotPersona = {
     // Main thread, once at boot: every stored persona into the cache, the
     // counts per type, and the 'personas' table for the background workers.
     loadAll() {
-        return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE}`, []], 'bot-personas:load-all').then((rows) => {
+        return persistenceDatabase().execute([`SELECT ${COLUMNS} FROM ${TABLE}`, []], 'bot-personas:load-all').then((rows) => {
             cache.clear();
             typeCounts = {};
             for (const row of rows || []) {
@@ -297,7 +301,7 @@ const BotPersona = {
         if (cached) return Promise.resolve(cached);
         return this.init().then((ready) => {
             if (!ready) return null;
-            return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]]).then((rows) => {
+            return persistenceDatabase().execute([`SELECT ${COLUMNS} FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]]).then((rows) => {
                 const persona = normalize(rows?.[0]);
                 if (persona) remember(persona);
                 return persona;
@@ -338,7 +342,7 @@ const BotPersona = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
         return this.init().then((ready) => {
             if (!ready) return { created: 0, exhausted: false };
-            return Database.execute([
+            return persistenceDatabase().execute([
                 `SELECT states.characterId, states.statsJson
                 FROM bot_life_state states
                 LEFT JOIN ${TABLE} personas ON personas.characterId = states.characterId

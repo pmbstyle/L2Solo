@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { Worker } = require('node:worker_threads');
 require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
@@ -12,6 +13,65 @@ const Database = invoke('Database');
 const Runtime = require('../src/GameServer/Clan/ClanPlanningCoordinator');
 const { ClanPlanningCoordinator } = Runtime;
 const { planForMember } = require('../src/GameServer/Clan/ClanEquipmentPlanner');
+
+async function sharedModulesStayPure() {
+    DataCache.init();
+    const Persona = invoke('GameServer/Bot/AI/BotPersona');
+    const Death = invoke('GameServer/Progression/DeathExperience');
+    const state = { characterId: 990001, level: 20, exp: DataCache.experience[19],
+        stats: { classId: 4 }, inventory: {}, phase: 'cold' };
+    const context = { timestamp: 123456 };
+    const personaRow = Persona.tableRow(Persona.generate(state));
+    const coldDeath = Death.applyColdDeath(state, context);
+    const restoration = Death.restoreCold(coldDeath.state, { restoreExpPercent: 30 });
+    const worker = new Worker(`
+        const assert = require('node:assert/strict');
+        const fs = require('node:fs');
+        const path = require('node:path');
+        const { parentPort, workerData } = require('node:worker_threads');
+        const root = workerData.root;
+        require(path.join(root, 'tests/helpers/databaseIsolation'));
+        const isolated = require(path.join(root, 'tests/helpers/isolatedSocialDatabase'))('clan-pure-modules');
+        try {
+            require(path.join(root, 'src/Global'));
+            isolated.assertConfigured(options.default);
+            invoke('GameServer/DataCache').init();
+            const originalInvoke = global.invoke;
+            global.invoke = name => {
+                if (name === 'Database') throw new Error('pure-worker forbidden dependency: Database');
+                return originalInvoke(name);
+            };
+            const Persona = invoke('GameServer/Bot/AI/BotPersona');
+            const Death = invoke('GameServer/Progression/DeathExperience');
+            assert.equal(Persona.of(workerData.state), null);
+            Persona.useRowSource(id => id === workerData.state.characterId ? workerData.personaRow : null);
+            const persona = Persona.of(workerData.state);
+            const coldDeath = Death.applyColdDeath(workerData.state, workerData.context);
+            const restoration = Death.restoreCold(coldDeath.state, { restoreExpPercent: 30 });
+            assert.equal(Object.keys(require.cache).some(file => /[\\/]src[\\/]Database\\.js$/.test(file)), false);
+            assert.throws(() => Persona.init(), /pure-worker forbidden dependency: Database/);
+            assert.throws(() => Death.load({ fetchId: () => workerData.state.characterId }),
+                /pure-worker forbidden dependency: Database/);
+            assert.equal(fs.existsSync(isolated.world) || fs.existsSync(isolated.history), false);
+            parentPort.postMessage({ persona, coldDeath, restoration });
+        } finally {
+            fs.rmSync(isolated.directory, { recursive: true, force: true });
+        }
+    `, { eval: true, workerData: { root: path.resolve(__dirname, '..'), state, context, personaRow } });
+    try {
+        const result = await new Promise((resolve, reject) => {
+            worker.once('message', resolve);
+            worker.once('error', reject);
+            worker.once('exit', code => reject(new Error(`pure module worker exited before its result: ${code}`)));
+        });
+        assert.deepEqual(result.persona, Persona.fromTableRow(personaRow), 'native persona rows must retain exact values');
+        assert.deepEqual(result.coldDeath, coldDeath, 'native cold death valuation must stay exact without Database');
+        assert.deepEqual(result.restoration, restoration, 'native cold restoration must stay exact without Database');
+    } finally {
+        await worker.terminate();
+    }
+    console.log('Shared persona/death modules retain native pure-worker values and reject SQL access');
+}
 
 async function parityAndIntegration() {
     DataCache.init();
@@ -195,6 +255,7 @@ parentPort.on('message', (m) => {
 }
 
 (async () => {
+    await sharedModulesStayPure();
     await parityAndIntegration();
     await workerLifecycle();
     console.log('Clan planning worker parity, stale snapshots, isolation and recovery checks passed');

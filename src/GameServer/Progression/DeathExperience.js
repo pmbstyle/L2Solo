@@ -1,6 +1,10 @@
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
-const Database = invoke('Database');
+// ARCH-NOTE: C1/E3 pure loss/restoration valuation is also read by the clan
+// worker. Resolve the database only for the existing queued persistence path
+// so those reads preserve the worker's forbidden-dependency guard.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
 
 const LUCKY_SKILL_ID = 194;
 const pendingWrites = new Map();
@@ -75,6 +79,7 @@ function calculateRestoration(actor, deathRecord, context = {}) {
 }
 
 function databaseReady() {
+    const Database = persistenceDatabase();
     return typeof Database.isReady !== 'function' || Database.isReady();
 }
 
@@ -114,7 +119,7 @@ function applyDeathPenalty(session, actor, context = {}) {
     const appliedAt = Number(context.timestamp || Date.now());
     if (!result.eligible) {
         actor.deathExperience = null;
-        const persistence = queue(characterId, () => Database.clearCharacterDeathExperience(characterId, result.reason, appliedAt));
+        const persistence = queue(characterId, () => persistenceDatabase().clearCharacterDeathExperience(characterId, result.reason, appliedAt));
         return { ...result, duplicate: false, persistence };
     }
     const level = ProgressionCap.levelForExperience(result.expAfterDeath, result.level);
@@ -130,7 +135,7 @@ function applyDeathPenalty(session, actor, context = {}) {
     };
     actor.deathExperience = record;
     synchronizeActor(session, actor, record.expAfterDeath, level);
-    const persistence = queue(characterId, () => Database.applyCharacterDeathExperience(record)).then((stored) => {
+    const persistence = queue(characterId, () => persistenceDatabase().applyCharacterDeathExperience(record)).then((stored) => {
         if (stored?.duplicate) {
             actor.deathExperience = { ...stored, pendingRestoration: true };
             synchronizeActor(session, actor, Number(stored.expAfterDeath),
@@ -149,7 +154,7 @@ function restoreFromResurrection(session, actor, context = {}) {
         local.pendingRestoration = false;
         local.resolutionReason = 'resurrection';
         if (result.eligible) synchronizeActor(session, actor, result.totalExp, result.level);
-        result.persistence = queue(characterId, () => Database.restoreCharacterDeathExperience(
+        result.persistence = queue(characterId, () => persistenceDatabase().restoreCharacterDeathExperience(
             characterId, result.restorePercent, Number(context.timestamp || Date.now())));
         return result;
     }
@@ -157,7 +162,7 @@ function restoreFromResurrection(session, actor, context = {}) {
         return { eligible: false, restoredExp: 0, reason: 'no_pending_death', persistence: Promise.resolve(null) };
     }
     if (!characterId || !databaseReady()) return { eligible: false, restoredExp: 0, reason: 'no_pending_death', persistence: Promise.resolve(null) };
-    const persistence = queue(characterId, () => Database.restoreCharacterDeathExperience(
+    const persistence = queue(characterId, () => persistenceDatabase().restoreCharacterDeathExperience(
         characterId, context.restoreExpPercent, Number(context.timestamp || Date.now()))).then((record) => {
         if (!record) return null;
         actor.deathExperience = { ...record, pendingRestoration: false };
@@ -177,7 +182,7 @@ function clearPendingRestoration(characterOrId, reason = 'invalidated', timestam
         actor.deathExperience = actor.deathExperience
             ? { ...actor.deathExperience, pendingRestoration: false, resolutionReason: reason } : null;
     }
-    return queue(characterId, () => Database.clearCharacterDeathExperience(characterId, reason, timestamp));
+    return queue(characterId, () => persistenceDatabase().clearCharacterDeathExperience(characterId, reason, timestamp));
 }
 
 function applyColdDeath(state, context = {}) {
@@ -241,7 +246,7 @@ function load(actor) {
     if (!characterId || !databaseReady()) return Promise.resolve(null);
     const previous = actor.deathExperience;
     const revision = Number(actor.deathExperienceRevision || 0);
-    return queue(characterId, () => Database.fetchCharacterDeathExperience(characterId)).then((record) => {
+    return queue(characterId, () => persistenceDatabase().fetchCharacterDeathExperience(characterId)).then((record) => {
         // An in-flight login read must not replace a newer death or revival.
         if (actor.deathExperience !== previous || Number(actor.deathExperienceRevision || 0) !== revision) return actor.deathExperience;
         actor.deathExperience = record ? {
