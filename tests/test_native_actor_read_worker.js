@@ -60,21 +60,18 @@ function actorReads(index) {
         ['sourceSize', () => index.sourceSize('actor'), 0],
         ['presenceSize', () => index.presenceSize(), 0],
         ['presenceSources', () => index.presenceSources(), 'array'],
-        ['nearestFacet', () => index.nearestFacet(point, { kind: 'player' }), null],
-        ['rangeFacet', () => index.rangeFacet(point, 7000), 'array'],
         ['sourceKeys', () => index.sourceKeys('actor'), 'iterator'],
         ['sourceValues', () => index.sourceValues('actor'), 'iterator'],
         ['sourceEntries', () => index.sourceEntries('actor'), 'iterator'],
         ['near', () => index.near(point, 0), 'array'],
         ['nearSources', () => index.nearSources(point, 0, { view: 'actor' }), 'array'],
-        ['nearFacet', () => index.nearFacet(point, 0), 'array'],
         ['inSpot', () => index.inSpot('fixture-spot'), 'array'],
         ['inSpotSources', () => index.inSpotSources('fixture-spot', { view: 'actor' }), 'array'],
         ['groupSources', () => index.groupSources('fixture-group'), 'iterator']
     ];
 }
 function everyUnknown(index) {
-    const calls = actorReads(index); assert.equal(calls.length, 16);
+    const calls = actorReads(index); assert.equal(calls.length, 13);
     for (const [, read] of calls) unknown(read); // Admission includes iterator CREATION.
 }
 function knownEmpty(index) {
@@ -97,7 +94,7 @@ function snapshotUnknown(index) {
     });
 }
 function assertUnknownSnapshot(snapshot) {
-    assert.equal(snapshot.length, 16);
+    assert.equal(snapshot.length, 13);
     assert.equal(snapshot.every(item => item.didThrow && item.code === UNKNOWN), true);
 }
 function equalRefs(actual, expected) {
@@ -248,10 +245,9 @@ function workerMain() {
             assert.deepEqual(Array.from(index.sourceKeys('actor')), [1, 2]);
             assert.deepEqual(Array.from(index.sourceValues('actor')), [one, two]);
             assert.deepEqual(Array.from(index.sourceEntries('actor')), [[1, one], [2, two]]);
-            equalRefs(index.nearFacet(point, 1).map(record => record.source), expected);
-            // Passive actor layer publishes rawXY only, not generic/spot/party facts.
-            assert.deepEqual(index.near(point, 1), []);
-            assert.deepEqual(index.nearSources(point, 1, { view: 'actor' }), []);
+            equalRefs(index.nearSources({ ...point, locZ: 0 }, 1).map(record => record.source), expected);
+            equalRefs(index.near(point, 1).map(record => record.source), expected);
+            equalRefs(index.nearSources(point, 1, { view: 'actor' }).map(record => record.source), expected);
             assert.deepEqual(index.inSpot('fixture-spot'), []);
             assert.deepEqual(index.inSpotSources('fixture-spot', { view: 'actor' }), []);
             assert.deepEqual(Array.from(index.groupSources('fixture-group')), []);
@@ -306,7 +302,7 @@ function workerMain() {
         groups.push('original_native_steps_after_delegate_and_done_invalidation');
 
         for (const query of [(loc) => index.near(loc, 0),
-            (loc) => index.nearSources(loc, 0, { view: 'actor' }), (loc) => index.nearFacet(loc, 0)]) {
+            (loc) => index.nearSources(loc, 0, { view: 'actor' })]) {
             let laterAxes = 0;
             const origin = { get locX() { full(expected, true); return 0; },
                 get locY() { laterAxes++; return 0; }, get locZ() { laterAxes++; return 0; } };
@@ -329,16 +325,16 @@ function workerMain() {
         groups.push('provider_axis_steps_ready_to_ready_and_original_falsy_throw');
 
         let filtered = 0;
-        assert.deepEqual(index.nearFacet(point, 1, { accept() { filtered++; return false; } }), []);
+        assert.deepEqual(index.nearSources({ ...point, locZ: 0 }, 1, { accept() { filtered++; return false; } }), []);
         assert.equal(filtered, 2);
         filtered = 0;
-        unknown(() => index.nearFacet(point, 1, { accept() { filtered++; full(expected, true); return false; } }));
+        unknown(() => index.nearSources({ ...point, locZ: 0 }, 1, { accept() { filtered++; full(expected, true); return false; } }));
         assert.equal(filtered, 1); currentRefs();
         let callbacks = 0;
         unknown(() => facade.forEach(() => { callbacks++; full(expected, true); return false; }));
         assert.equal(callbacks, 1); currentRefs();
         for (const original of [undefined, null, 0]) {
-            exactThrow(() => index.nearFacet(point, 1, { accept() { full(expected, true); throw original; } }), original);
+            exactThrow(() => index.nearSources({ ...point, locZ: 0 }, 1, { accept() { full(expected, true); throw original; } }), original);
             currentRefs();
             exactThrow(() => facade.forEach(() => { full(expected, true); throw original; }), original);
             currentRefs();
@@ -539,7 +535,7 @@ async function hostMain() {
         const result = finished.messages[0];
         assert.equal(result.kind, 'HELPER_ONLY_ACTOR_ALL_READ_FUTURE_ACCEPTANCE');
         assert.equal(result.isMainThread, false); assert(result.threadId > 0);
-        assert.equal(result.groups.length, 11); assert.equal(result.aliases.length, 16);
+        assert.equal(result.groups.length, 11); assert.equal(result.aliases.length, 13);
         assert.deepEqual(result.forbiddenRequests, []); assert.equal(result.stateOriginalConserved, true);
         conserveMain();
         assert.deepEqual(mainHeld.next(), { value: singletonActor, done: false });

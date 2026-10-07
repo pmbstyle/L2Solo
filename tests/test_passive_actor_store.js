@@ -65,7 +65,7 @@ try {
         assert.equal(index.getSource(1, 'actor').source, originals[0]);
         assert(Object.is(backing.get(1).axes.x.value, -0));
         assert.equal(index.getSource(1, 'actor').phase, 'hot');
-        assert.equal(index.records.get(1).actor.indexed, false);
+        assert.equal(index.records.get(1).actor.indexed, true);
         assert.deepEqual(Array.from(backing.keys()), originals.map((value) => value.id));
     });
     const originalEntry = index.records.get(1).actor;
@@ -77,7 +77,7 @@ try {
         assert.equal(backing.get(1), replacement);
         assert.equal(index.removeSource(1, 'actor', originals[0]), false);
         assert.equal(Array.from(backing.keys())[0], 1);
-        assert(index.nearFacet({ locX: 6000, locY: 0 }, 0).includes(index.getSource(1, 'actor')));
+        assert(index.nearSources({ locX: 6000, locY: 0, locZ: 0 }, 0).includes(index.getSource(1, 'actor')));
     });
     check('strict_private_domain_and_stale_chain_before_eviction', () => {
         const current = index.getSource(1, 'actor');

@@ -43,8 +43,8 @@ try {
     for (const session of [source, visiblePlayer, visibleBot, boundaryPlayer, offlinePlayer]) World.insertUser(session);
 
     assert.deepStrictEqual(
-        World.fetchVisibleUsers(source, source.actor),
-        [visiblePlayer, visibleBot],
+        new Set(World.fetchVisibleUsers(source, source.actor)),
+        new Set([visiblePlayer, visibleBot]),
         'the numeric visibility check must preserve the strict 6000-unit user radius'
     );
     assert.deepStrictEqual(

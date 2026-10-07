@@ -599,26 +599,15 @@ class ColdSimulationCoordinator {
     // A new worker epoch gets every table in full; later flushes send changes.
     attachTableChannel() {
         if (this.stopping) return;
-        // Production owns the shared channel. Injected channels keep their
-        // ordinary-table behavior and do not silently acquire native authority.
-        const nativeActors = this.tableChannel === TableChannel.shared;
-        if (nativeActors) {
-            const source = require('../../World/MainActorPublicationSource').native();
-            const existing = this.tableChannel.tables.get('actors');
-            if (existing && existing.streamed?.source !== source) {
-                throw new TypeError('foreign_native_actor_table');
-            }
-            if (!existing) this.tableChannel.register('actors', {
-                key: ref => ref.id, eventDriven: true, streamed: { source, recipient: 'cold' }
-            });
-        }
+        // ARCH-NOTE: no cold worker code reads hot actors. Keep its actor
+        // recipient detached until a concrete worker reader needs this stream.
         const worker = this.worker;
         const epoch = this.workerEpoch;
         this.tableChannel.attach(this, epoch, (payload, payloadBytes) => {
             if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return false;
             const bytes = Protocol.envelopeBytes(Protocol.envelope('table_page', epoch, {}), payloadBytes) + 256;
             return !!this.post('table_page', payload, null, bytes);
-        }, nativeActors ? { streamedTables: ['actors'] } : {});
+        });
     }
 
     workerConfig() {

@@ -70,7 +70,8 @@ function currentUserLocationIndex(user) {
 
 function registeredActor(runtime, session, actor, id, membership) {
     return Object.freeze({ id, session, actor, source: actor, phase: 'hot', order: membership.order,
-        token: Symbol('user-registration'), loc: () => projectedActorLoc(actor), rawLoc: () => rawActorLoc(actor),
+        token: Symbol('user-registration'), loc: () => projectedActorLoc(actor),
+        get spotId() { return membership.spotId ?? null; },
         get realPlayer() { return membership.realPlayer === true; },
         get retired() { return runtime.retiredActors.has(actor); } });
 }
@@ -91,15 +92,6 @@ function rawActorLoc(actor) {
     const rawX = actor.fetchLocX(), rawY = actor.fetchLocY();
     const locX = rawCoordinate(rawX), locY = rawCoordinate(rawY);
     return locX !== null && locY !== null ? { locX, locY } : null;
-}
-
-function refreshRawActorLocation(runtime, record) {
-    if (!currentActorRecord(runtime, record)) return false;
-    const point = record.rawLoc();
-    if (!currentActorRecord(runtime, record)) return false;
-    return runtime.index.updateFacet(record.id, 'actor', record, 'raw_xy', {
-        enabled: point !== null, loc: record.rawLoc
-    });
 }
 
 function refreshActorPresence(runtime, record) {
@@ -155,7 +147,8 @@ function attachRegisteredActor(runtime, session, membership, explicit = false) {
         accepted = record;
         if (displaced && displaced !== record) removed.push(displaced);
         membership.registered = record;
-        refreshRawActorLocation(runtime, record);
+        membership.cellX = membership.cellY = undefined;
+        membership.actor = null;
         refreshActorPresence(runtime, record);
         publishPartyMembership(runtime, partyMembershipPacket(runtime, record));
         notifyUserChange(id);
@@ -260,11 +253,10 @@ function visibleUserSessions(user, session, creature, realOnly) {
     const loc = { locX: Number(creature?.fetchLocX?.()), locY: Number(creature?.fetchLocY?.()), locZ: 0 };
     if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY)) return [];
     return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: 'all',
-        accept: (record) => currentActorRecord(runtime, record) && !record.retired
+        accept: (record) => !record.retired
             && record.session !== session && (!realOnly || !isBotSession(record.session))
-            && record.actor.fetchIsOnline?.() === true && usableProjection(record.actor) })
+            && record.actor.fetchIsOnline?.() === true })
         .filter((record) => isVisibleFrom(creature, record.session))
-        .sort((left, right) => left.order - right.order)
         .map((record) => record.session);
 }
 
@@ -415,37 +407,36 @@ const World = {
     },
 
     updateUserLocation(session, actor = session?.actor) {
-        const runtime = currentUserLocationIndex(this.user);
+        const runtime = userLocationIndexes.get(this.user);
         const membership = runtime?.sessions.get(session);
         if (!membership || !actor || session.actor !== actor) return false;
-        const registered = attachRegisteredActor(runtime, session, membership);
-        if (!registered) return false;
-        let accepted = false;
-        try {
-            accepted = refreshRawActorLocation(runtime, registered);
-            refreshActorPresence(runtime, registered);
-            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
-            if (registered.retired) return false;
-            const online = actor.fetchIsOnline?.() !== false;
-            const onlineChanged = membership.online !== online;
-            membership.online = online;
-            const loc = indexedActorLoc(actor);
-            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
-            const usable = usableActorLoc(loc);
-            const usableChanged = membership.usable !== usable;
-            membership.usable = usable;
-            membership.realPlayer = online && usable && PlayerActivitySignal.isRealPlayerSession(session);
-            const indexed = online && usableProjection(actor);
-            if (!currentActorPublicationRuntime(runtime) || !currentActorRecord(runtime, registered)) return false;
-            const updated = runtime.index.updateSource(registered.id, 'actor', actor, { indexed });
-            accepted = updated || accepted;
-            membership.actor = actor;
-            membership.id = registered.id;
-            if (usableChanged || onlineChanged) notifyUserChange(registered.id);
-            return online && usable;
-        } finally {
-            if (accepted) notifyActorPublication(runtime, 'upsert', registered, 'location');
-        }
+        // A session owns one actor registration. Ordinary moves need no token
+        // receipt and no allocation; cells retain a pointer to the live actor.
+        const record = membership.actor === actor ? membership.registered
+            : attachRegisteredActor(runtime, session, membership);
+        if (!record || record.retired) return false;
+        const online = actor.fetchIsOnline?.() !== false;
+        const x = Number(actor.fetchLocX?.()), y = Number(actor.fetchLocY?.()), z = Number(actor.fetchLocZ?.());
+        const usable = Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
+        const indexed = online && typeof actor.fetchLocX === 'function' && typeof actor.fetchLocY === 'function'
+            && Number.isFinite(x) && Number.isFinite(y);
+        const cellX = Math.floor(x / runtime.index.cellSize), cellY = Math.floor(y / runtime.index.cellSize);
+        const spotId = session.currentSpot?.id ?? null;
+        if (membership.cellX === cellX && membership.cellY === cellY && membership.spotId === spotId
+            && membership.online === online && membership.usable === usable && membership.indexed === indexed) return online && usable;
+        const changed = membership.online !== online || membership.usable !== usable;
+        membership.online = online; membership.usable = usable; membership.indexed = indexed;
+        membership.spotId = spotId;
+        membership.realPlayer = online && usable && PlayerActivitySignal.isRealPlayerSession(session);
+        runtime.index.updateSource(record.id, 'actor', actor, { indexed });
+        refreshActorPresence(runtime, record);
+        membership.actor = actor; membership.id = record.id;
+        membership.cellX = cellX; membership.cellY = cellY;
+        if (changed) notifyUserChange(record.id);
+        // ARCH-NOTE: actor location publications had only the cold stream as a
+        // reader. It has no worker consumer, so moves publish nothing. Attach,
+        // retirement and removal continue to publish their ownership changes.
+        return online && usable;
     },
 
     retireUserActor(session, actor) {
@@ -464,12 +455,12 @@ const World = {
             runtime.index.setSource(previous.id, 'actor', retired, { indexed: false });
             accepted = true;
             membership.registered = retired;
-            refreshRawActorLocation(runtime, retired);
             refreshActorPresence(runtime, retired);
             publishPartyMembership(runtime, partyMembershipPacket(runtime, retired));
             notifyUserChange(previous.id);
             membership.actor = null;
             membership.id = null;
+            membership.cellX = membership.cellY = undefined;
             return true;
         } finally {
             if (accepted) notifyActorPublication(runtime, 'upsert', retired, 'retire');
@@ -485,8 +476,8 @@ const World = {
     actorSessionsNear(loc, radius, accept = null) {
         const runtime = currentUserLocationIndex(this.user);
         if (!runtime) return [];
-        return runtime.index.rangeFacet(loc, radius, { accept: record => currentActorRecord(runtime, record)
-            && (!accept || accept(record.session)) })
+        return runtime.index.nearSources({ ...loc, locZ: loc.locZ ?? 0 }, radius, { view: 'actor', kind: 'all',
+            accept: record => !record.retired && (!accept || accept(record.session)) })
             .sort((a, b) => a.order - b.order).map(record => record.session);
     },
 
@@ -504,11 +495,17 @@ const World = {
     nearestRealPlayer(loc) {
         const runtime = currentUserLocationIndex(this.user);
         if (!runtime) return { record: null, session: null, distance: Infinity, count: 0 };
-        const found = runtime.index.nearestFacet(loc, { kind: 'player', accept: record => currentActorRecord(runtime, record)
-            && record.actor.fetchIsOnline?.() === true && !!record.session.accountId
-            && !String(record.session.accountId).startsWith('bot_') });
-        return { record: found?.record ?? null, session: found?.record.session ?? null,
-            distance: found?.distance ?? Infinity, count: runtime.index.presenceSize() };
+        let record = null, distanceSquared = Infinity;
+        const x = Number(loc?.locX), y = Number(loc?.locY);
+        for (const candidate of runtime.index.presenceSources({ kind: 'onlineHuman' })) {
+            if (candidate.retired || candidate.actor.fetchIsOnline?.() !== true) continue;
+            const dx = Number(candidate.actor.fetchLocX?.()) - x, dy = Number(candidate.actor.fetchLocY?.()) - y;
+            const d = dx * dx + dy * dy;
+            if (d < distanceSquared || (d === distanceSquared && candidate.order < record?.order)) {
+                record = candidate; distanceSquared = d;
+            }
+        }
+        return { record, session: record?.session ?? null, distance: Math.sqrt(distanceSquared), count: runtime.index.presenceSize() };
     },
 
     botRealPlayerIndex: true,
@@ -519,10 +516,10 @@ const World = {
         if (!point) return [];
         const runtime = currentUserLocationIndex(this.user);
         if (!runtime) return [];
-        const records = runtime.index.nearFacet(point, CLIENT_VISIBILITY_RADIUS, {
-            view: 'actor', facet: 'raw_xy',
+        const records = runtime.index.nearSources({ ...point, locZ: 0 }, CLIENT_VISIBILITY_RADIUS, {
+            view: 'actor', kind: 'all',
             accept: record => {
-                if (!currentActorRecord(runtime, record) || record.session === session) return false;
+                if (record.retired || record.session === session) return false;
                 const candidate = record.session, actor = record.actor;
                 return !!actor.fetchIsOnline?.() && !!candidate.accountId
                     && !String(candidate.accountId).startsWith('bot_')
@@ -572,6 +569,13 @@ const World = {
         return true;
     },
 
+    updateUserPresence(session, actor = session?.actor) {
+        const runtime = userLocationIndexes.get(this.user);
+        const record = runtime?.sessions.get(session)?.registered;
+        if (!record || record.actor !== actor || session.actor !== actor || record.retired) return false;
+        return refreshActorPresence(runtime, record);
+    },
+
     subscribeUserChanges(listener) {
         if (typeof listener !== 'function') return () => {};
         userChangeListeners.add(listener);
@@ -588,7 +592,7 @@ const World = {
         const runtime = currentUserLocationIndex(this.user);
         if (!runtime) throw new Error('character_location_index_uninitialized');
         return runtime.index.nearSources(loc, radius, { view: 'actor', kind: 'player',
-            accept: (record) => currentActorRecord(runtime, record) && !record.retired
+            accept: (record) => !record.retired
                 && usableActorLoc(indexedActorLoc(record.actor))
                 && PlayerActivitySignal.isRealPlayerSession(record.session) })
             .map((record) => record.session);

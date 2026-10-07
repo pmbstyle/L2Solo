@@ -175,16 +175,16 @@ function makeStore(index, owner, descriptor, binding, readers = index) {
             if (readers.getSource(id, 'actor') !== before) throw new TypeError('changed_actor_store_source');
             let record = before?.source === row ? before : null;
             if (!record) {
+                // ARCH-NOTE: explicit optional actor-copy tests still query
+                // received rows. The one grid reads their original DTO point.
                 record = { id, source: row, phase: 'hot', realPlayer: false,
-                    loc: () => { throw new TypeError('passive_actor_generic_unindexed'); } };
+                    loc: () => ({ ...rowPoint(row), locZ: 0 }) };
                 Object.defineProperty(record, COPY, { value: { owner, copy } });
                 Object.freeze(record);
             }
-            index.setSource(id, 'actor', record, { indexed: false });
+            index.setSource(id, 'actor', record, { indexed: !!point });
             record[COPY].copy = copy;
             // The provider reads ORIGINAL received data, retaining no point facts.
-            index.updateFacet(id, 'actor', record, 'raw_xy', point
-                ? { enabled: true, loc: () => rowPoint(row) } : { enabled: false });
             index.updateActorPresence(id, record, row.presence ?? { online: false, realPlayer: false, targetId: 0 });
             return true;
         },
