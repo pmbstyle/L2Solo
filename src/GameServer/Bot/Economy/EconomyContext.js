@@ -142,8 +142,16 @@ function foundation(state, deps, persona, timestamp, price) {
     const bestSpotId = hunt.spotId || state.spotId;
     const walkBackHours = require('./WalkBack').hours(bestSpotId, state, deps.spots || invoke('GameServer/Bot/AI/SpotService').spots);
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
-    const bestTable = (bestSpotId && Table.value(bestSpotId, tableRole, state.level, true))
-        || Table.best(tableRole, state.level, true);
+    const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
+    const bestTable = spotTable || Table.best(tableRole, state.level, true);
+    let bagHours = 2;
+    if (!(positive(state.stats?.visitEvery?.[1]) > 0) && spotTable?.stacks !== null && spotTable?.stacks !== undefined) {
+        const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
+        const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
+        const free = Math.max(0, Floor.inventoryLimit(race) - Floor.stateInventory(state, Data.items).slots);
+        bagHours = spotTable.stacks > 0 ? free / spotTable.stacks : 24;
+    }
+    const targetHours = require('./TownVisitInterval').targetHours(state.stats, bagHours);
     const stock = kind => {
         const shots = kind === 'shots';
         const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
@@ -154,7 +162,6 @@ function foundation(state, deps, persona, timestamp, price) {
         const shotCostHours = rawUse * price(plan.selfId) / Hunt.huntHour(hunt, state);
         const use = shots && benefit < shotCostHours ? 0 : rawUse;
         const current = positive(state.inventory?.[plan.selfId]?.amount);
-        const targetHours = require('./TownVisitInterval').targetHours(state.stats);
         const target = Math.ceil(use * targetHours);
         const survivalMissing = Math.max(0, Math.ceil(use) - current);
         const missing = Math.max(0, target - Math.max(current, use));

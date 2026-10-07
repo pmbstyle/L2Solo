@@ -30,15 +30,19 @@ assert.equal(Math.round(stock.usePerHour), 1728);
 const use = stock.usePerHour;
 const withShots = Table.value(native.bestSpotId, native.tableRole, 30, true);
 const withoutShots = Table.value(native.bestSpotId, native.tableRole, 30, false);
+const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
+const freeSlots = Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots;
+const noHistoryT = withShots.stacks === null ? 2 : withShots.stacks === 0 ? 24
+    : Math.max(.5, Math.min(24, freeSlots / withShots.stacks));
 const b = 1 - withoutShots.exp / withShots.exp;
 assert(b >= withShots.shots * stock.unitPrice / native.hourAdena);
 for (const commitment of [.1, .9]) {
     const state = { ...warrior, stats: { ...warrior.stats, persona: { traits: { commitment } } } };
     const own = Economy.basics(state, deps).stock('shots');
-    assert.equal(own.target, Math.ceil(use * 2)); assert.equal(own.targetHours, 2);
-    assert.equal(own.benefitHours, b * 2);
+    assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
+    assert.equal(own.benefitHours, b * noHistoryT);
 }
-for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], 2], [[22, 30], 24], [[22, .1], .5]]) {
+for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], 24], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
     assert.equal(own.targetHours, hours); assert.equal(own.target, Math.ceil(use * hours));
 }

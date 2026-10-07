@@ -9,8 +9,8 @@ function arrived(stats = {}) {
     if (interval <= 0) return Array.isArray(prior) ? prior : [hundredth(hours), 0];
     return [hundredth(hours), hundredth(last > 0 ? average > 0 ? .5 * average + .5 * interval : interval : average)];
 }
-function targetHours(stats = {}) {
+function targetHours(stats = {}, fallback = 2) {
     const interval = positive(stats.visitEvery?.[1]);
-    return Math.max(.5, Math.min(24, interval > 0 ? interval : 2));
+    return Math.max(.5, Math.min(24, interval > 0 ? interval : fallback));
 }
 module.exports = { arrived, targetHours };
