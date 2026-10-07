@@ -70,7 +70,10 @@ assert(recipeItem, 'a non-crafter holding a shot recipe should be able to sell i
 assert.strictEqual(recipeItem.rank, 'c', 'C-grade shot recipes belong in Giran');
 assert.strictEqual(MarketListingPolicy.classify(recipeSeller, recipeItem).action, 'market');
 
+const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const index = {
+    // ARCH-NOTE: C2c supplies offer lookup with the immutable market view.
+    offersFor: (id, type, exclude) => Afk.offers(id, type).filter(offer => Number(offer.sourceId) !== Number(exclude)),
     itemTemplates: new Map(DataCache.items.map((item) => [Number(item.selfId), item])),
     npcPrice: new Map([[1785, 550]]),
     gear: new Map([
@@ -100,7 +103,6 @@ assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[
 assert.strictEqual(candidate.requiredCrystals, 1);
 assert.strictEqual(candidate.ore.selfId, 1785);
 assert(candidate.profit > 100);
-const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const originalOffers = Afk.offers;
 try {
     Afk.offers = id => Number(id) === 1458
