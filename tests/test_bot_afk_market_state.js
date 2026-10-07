@@ -1,7 +1,19 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const fixtureDirectory = require('node:os').tmpdir() + '/l2solo-afk-state-' + require('node:crypto').randomUUID();
+fs.mkdirSync(fixtureDirectory);
+const databasePath = path.join(fixtureDirectory, 'world.sqlite');
+const historyPath = path.join(fixtureDirectory, 'history.sqlite');
+const fixtureConfig = path.join(fixtureDirectory, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+assert.strictEqual(options.default.Database.path, databasePath);
+assert.strictEqual(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const BotAfkMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
@@ -17,7 +29,6 @@ const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const Negotiation = invoke('GameServer/Bot/Economy/BotNegotiationService');
 const World = invoke('GameServer/World/World');
-const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-afk-market-state.sqlite');
 const originalEvaluate = ListingPolicy.evaluate;
 const originalShopTown = MarketTownPolicy.shopTown;
 const townChoices = [];
@@ -40,7 +51,6 @@ function amount(rows, selfId) {
 
 async function run() {
     for (const suffix of ['', '-wal', '-shm']) fs.rmSync(databasePath + suffix, { force: true });
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
     Database.init();
     DataCache.init();
     World.user = { sessions: [], revision: 0 };
