@@ -1,12 +1,18 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const rootDir = path.resolve(__dirname, '..');
+const isolated = require('./helpers/isolatedSocialDatabase')('player-managed-clan', rootDir);
+require('./helpers/databaseIsolation');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
 
-const rootDir = path.resolve(__dirname, '..');
-const databasePath = path.join(rootDir, 'tmp', 'test-player-managed-clan.sqlite');
+isolated.assertConfigured(options.default);
+const DataCache = invoke('GameServer/DataCache');
+DataCache.init();
+const PlanningWorker = invoke('GameServer/Clan/ClanPlanningCoordinator');
+const databasePath = isolated.world;
 const Database = invoke('Database');
 const GoalService = invoke('GameServer/Clan/ClanGoalService');
 const ActionService = invoke('GameServer/Clan/ClanActionService');
@@ -44,8 +50,9 @@ function seedDatabase() {
 
 async function main() {
     seedDatabase();
-    options.default.Database.path = path.relative(rootDir, databasePath);
+    isolated.assertConfigured(options.default);
     Database.init();
+    PlanningWorker.start();
 
     try {
         const columns = await Database.execute(['PRAGMA table_info(clan_simulation_clans)', []]);
@@ -163,8 +170,9 @@ async function main() {
 
         console.log('Player-managed clan checks passed');
     } finally {
+        await PlanningWorker.shutdown();
         await Database.close();
-        removeDatabaseFiles();
+        fs.rmSync(isolated.directory, { recursive: true, force: true });
     }
 }
 
