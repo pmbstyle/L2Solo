@@ -1,9 +1,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+require(path.join(gameRoot, 'tests/helpers/databaseIsolation'));
+const isolated = require(path.join(gameRoot, 'tests/helpers/isolatedSocialDatabase'))('command-row-write-admission-profile', gameRoot);
+const { DatabaseSync } = require('node:sqlite');
 require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -21,7 +24,7 @@ async function wait(promise, label) {
     try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('timeout: '+label)), 3000); })]); }
     finally { clearTimeout(timer); }
 }
-let directory, serial = 0, savedStatement;
+let directory = isolated.directory, serial = 0, savedStatement;
 const failures = [];
 function facts(id) {
     // Own generated DB only. An independent readonly connection observes the
@@ -35,6 +38,44 @@ function facts(id) {
         result.cache = clone(Life.cachedState(id)); return result;
     } finally { db.close(); }
 }
+const preparedSkills = new Map();
+async function prepareNativeProfile(id) {
+    const input = Life.snapshot(id);
+    const before = facts(id);
+    assert.equal(before.characters.find(row => row.id === id).level, 7);
+    assert.equal(before.characters.find(row => row.id === id).exp, input.exp);
+    assert.equal(before.characters.find(row => row.id === id).sp, 120);
+    assert.equal(input.sp, 120);
+    const beforeWrite = Database.createColdTrainingGuard(input, () => {
+        assert.equal(Life.cachedState(id), input);
+    });
+    const training = await invoke('GameServer/Bot/BotClassProgression').reconcile({
+        characterId: id, classId: 0, level: 7, seed: id,
+    }, { beforeWrite });
+    // Authored class0 order: Power Strike ranks1/2 cost50 each; remaining20
+    // cannot buy rank3. Lucky/CommonCraft/CreateCommon each cost0 at level7.
+    assert.equal(training.spentSp, 100);
+    assert.equal(training.learnedCount, 5);
+    assert.deepEqual(training.consumedBooks, []);
+    assert.deepEqual(training.transitions, []);
+    const row = await Database.publishColdTraining(id, training, { beforeWrite });
+    const accepted = Life.acceptNewerLifecycleRow(row);
+    assert.equal(accepted, Life.cachedState(id));
+    assert.equal(accepted.level, 7); assert.equal(accepted.exp, input.exp);
+    assert.equal(accepted.sp, 20); assert.equal(accepted.stats.classId, 0);
+    assert.equal(invoke('GameServer/Skills/SkillBookCatalog').needsTraining(accepted), false);
+    const after = facts(id), skills = after.skills.filter(skill => skill.characterId === id);
+    assert.deepEqual(skills.map(skill => [skill.selfId, skill.level]).sort((a, b) => a[0] - b[0]),
+        [[3, 2], [194, 1], [1320, 1], [1322, 1]]);
+    assert.equal(after.characters.find(character => character.id === id).sp, accepted.sp);
+    for (const table of ['items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines'])
+        assert.deepEqual(after[table], before[table], 'native profile preparation never changes physical items/trade');
+    assert(!Protocol.sameCommandCheckpoint(Protocol.commandCheckpoint(input), accepted), 'publishColdTraining legitimately rebases the checkpoint');
+    preparedSkills.set(id, clone(skills));
+    console.log('NATIVE_PRETRAIN', JSON.stringify({ id, allocatedSp: 120, training, physicalSp: accepted.sp,
+        skills, checkpointBefore: Protocol.commandCheckpoint(input), checkpointAfter: Protocol.commandCheckpoint(accepted) }));
+}
+
 async function seed() {
     const account = `bot_postentry_${++serial}`;
     await Database.createAccount(account, 'fixture');
@@ -50,6 +91,7 @@ async function seed() {
         timing:{lastResolvedAt:time-45000,nextResolveAt:time+30000},
         stats:{classId:0,classProgressionLevel:level,
             classProgressionClassId:0,restUntil:time+30000} }, 'postentry_seed'));
+    await prepareNativeProfile(id);
     return id;
 }
 function requestFor(state) {
@@ -102,7 +144,8 @@ async function queued(mode) {
         assert.equal(prepareCalls,1);assert(c.commandInflight.has(id));assert.equal(admission.check(),null);
         const initial=facts(id);
         assert.equal(initial.characters.find(row=>row.id===id).hp,85);assert.equal(initial.bot_life_state.find(row=>row.characterId===id).hp,85);
-        assert.equal(initial.skills.filter(row=>row.characterId===id).length,0,'no earlier skills/class writer in this row-only fixture');
+        assert.deepEqual(initial.skills.filter(row=>row.characterId===id),preparedSkills.get(id),
+            'prepared native skill facts are unchanged before this row-only writer');
         if(mode==='replace'){c.worker=worker('B');c.workerEpoch='row-write:replacement';}
         if(mode==='changed'){
             // Native durable/cache checkpoint change against the SAME own DB;
@@ -223,8 +266,6 @@ async function callbackDomain() {
 }
 async function check(name,work){try{await work();console.log(`PASS ${name}`);}catch(error){failures.push(name);console.error(`FAIL ${name}: ${error.stack}`);}}
 (async()=>{
-    directory=fs.mkdtempSync(path.join(process.cwd(),'tmp','row-write-native-'));
-    options.default.Database.path=path.join(directory,'world.sqlite');options.default.Database.historyPath=path.join(directory,'history.sqlite');
     Database.init();assert(Database.isReady());Data.init();await Life.init();
     console.log('source',gameRoot);
     for(const mode of ['current','replace','stop','fence','changed','callback_replaced','invalid_replaced','ordinary_error','brand_error']) {
