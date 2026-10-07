@@ -1,10 +1,19 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-native-goal-batch');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const Database = invoke('Database');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const Data = invoke('GameServer/DataCache');
+Data.init();
+invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure());
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+const nativeDecision = require('./helpers/workerEconomyDecision');
 
 async function main() {
     const originalExecute = Database.execute;
@@ -36,7 +45,27 @@ async function main() {
             party: {},
             stats: {}
         }));
-        const results = await GoalService.reviewBatch(states, { now: 100000 });
+        // C1: a missing cold decision cannot manufacture a voluntary goal.
+        const deferred = await GoalService.reviewBatch(states, { now: 100000 });
+        assert.strictEqual(deferred.length, 2);
+        assert.strictEqual(batches.length, 0);
+        for (const state of states) {
+            assert.strictEqual(GoalState.snapshot(state.characterId).current.reviewedAt, 1);
+            const before = structuredClone(state);
+            const native = await nativeDecision(state, { timestamp: 100000 });
+            const { compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+            const leaf = compact(native.decision).activity;
+            assert(leaf, 'the real producer must supply a voluntary leaf before this write-batch test');
+            assert.deepStrictEqual(state, before, 'planning cannot spend or equip physical state');
+            state.stats = { ...state.stats, ...native.statsPacket };
+            decisions.accept(state.characterId, native.decision);
+            assert(decisions.decided(state), 'the actual worker publication matches the input state');
+        }
+        const originalForState = Economy.forState;
+        Economy.forState = () => { throw Error('main cold goal batch must not rebuild a wish network'); };
+        let results;
+        try { results = await GoalService.reviewBatch(states, { now: 100000 }); }
+        finally { Economy.forState = originalForState; }
         assert.strictEqual(results.length, 2);
         assert.strictEqual(batches.length, 1, 'a stale-goal slice must use one queued SQLite transaction');
         assert.strictEqual(batches[0].length, 2);
@@ -47,6 +76,8 @@ async function main() {
         Database.execute = originalExecute;
         Database.upsertBotGoalStates = originalBatch;
         GoalState.reset();
+        for (const id of [101, 102]) decisions.forget(id);
+        require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });
     }
 }
 
