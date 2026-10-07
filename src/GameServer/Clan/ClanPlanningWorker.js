@@ -3,6 +3,8 @@ require('../../Global');
 const OfferQuery = require('../Bot/Economy/OfferQuery');
 const TableMirror = require('../Bot/Population/TableMirror');
 const { BoardIndex } = require('../AfkTrade/BoardIndex');
+const { SpotCatalogReader } = require('./ClanSpotCatalog');
+const spotCatalog = new SpotCatalogReader();
 
 // Only immutable catalogs and per-request snapshots enter this process.
 const catalogs = { items: [], npcs: [], npcRewards: [], experience: [], skillTree: [], classTemplates: [], revitalize: {} };
@@ -84,8 +86,11 @@ parentPort.on('message', (message) => {
             if (!Object.hasOwn(catalogs, message.name)) throw new Error('unknown catalog');
             if (message.name === 'revitalize') Object.assign(catalogs.revitalize, message.rows[0]);
             else catalogs[message.name].push(...message.rows);
+        } else if (message.type === 'spot_catalog') {
+            spotCatalog.apply(message.page);
         } else if (message.type === 'plan') {
-            context = message.payload.context;
+            const payload = spotCatalog.restore(message.payload);
+            context = payload.context;
             global.options.default.General = context.general;
             global.options.default.Progression = context.progression;
             if (context.progressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
@@ -98,7 +103,7 @@ parentPort.on('message', (message) => {
                 /[\\/]src[\\/]Database\.js$|[\\/]World[\\/]World\.js$|[\\/]Bot[\\/]BotManager\.js$/.test(filename));
             if (forbidden) throw new Error('clan planning worker loaded a live runtime dependency');
             const startedAt = performance.now();
-            const { member, spots, warehouseRows, options } = message.payload;
+            const { member, spots, warehouseRows, options } = payload;
             const plan = planner.planForMember(member, spots, warehouseRows, { ...options, throwOnError: true });
             parentPort.postMessage({ id: message.id, result: { plan, durationMs: performance.now() - startedAt } });
             return;

@@ -1,6 +1,8 @@
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const TableChannel = require('../Bot/Population/ColdTableChannel');
+const { SpotCatalogWriter } = require('./ClanSpotCatalog');
+const EMPTY_SPOTS = [];
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 class ClanPlanningCoordinator {
@@ -17,6 +19,10 @@ class ClanPlanningCoordinator {
         this.pending = new Map();
         this.sequence = 0;
         this.initializing = null;
+        this.spotInitializing = null;
+        this.spotWriter = null;
+        this.spotPublishedWorker = null;
+        this.spotGeneration = 0;
         this.retryAt = 0;
         this.closed = false;
         this.stats = { completed: 0, failures: 0, timeouts: 0, rejected: 0, restarts: 0, maxRunMs: 0 };
@@ -25,6 +31,8 @@ class ClanPlanningCoordinator {
     fail(worker, error) {
         if (this.worker !== worker) return;
         this.worker = null;
+        this.spotWriter = null;
+        this.spotPublishedWorker = null;
         this.tableChannel.detach(this);
         this.retryAt = Date.now() + this.restartDelayMs;
         this.stats.failures++;
@@ -52,12 +60,10 @@ class ClanPlanningCoordinator {
             this.pending.set(id, { resolve, reject, timer });
             worker.ref();
             try {
-                // ARCH-NOTE: PERF: the native 300s main profile spends 14.0s
-                // of 93.0s busy time here. A member plan repeats 2,045 spot
-                // profiles (3,276,455 serialized B) plus its market context;
-                // the complete native probe payload is 3,677,563 B. Moving
-                // those catalogs to worker pages needs a shared protocol task:
-                // the existing catalog handler accepts items/npcs/npcRewards.
+                // ARCH-NOTE: the native plan repeated 2,045 immutable spot
+                // profiles (3,276,455 serialized B). Publish bounded pages once
+                // per worker/catalog generation; preserve dynamic rows in each
+                // ordered request by original object identity, never by ID alone.
                 worker.postMessage({ id, type, ...payload });
             } catch (error) {
                 this.fail(worker, error);
@@ -121,11 +127,34 @@ class ClanPlanningCoordinator {
         }
     }
 
-    async plan(payload, catalogs) {
+    async ensureSpotCatalog(rows) {
+        // A refresh and startup share one ordered publication. A failed or
+        // incomplete generation cannot become a planning input.
+        while (this.spotInitializing) await this.spotInitializing;
+        if (this.spotWriter?.rows === rows && this.spotPublishedWorker === this.worker) return this.spotWriter;
+        const worker = this.worker;
+        const writer = new SpotCatalogWriter(++this.spotGeneration, rows);
+        const publication = (async () => {
+            for (const page of writer.pages()) {
+                await this.send('spot_catalog', { page });
+                await yieldLoop();
+            }
+            if (this.worker !== worker) throw new Error('clan planning worker unavailable');
+            this.spotWriter = writer;
+            this.spotPublishedWorker = worker;
+            return writer;
+        })();
+        this.spotInitializing = publication;
+        try { return await publication; }
+        finally { if (this.spotInitializing === publication) this.spotInitializing = null; }
+    }
+
+    async plan(payload, catalogs, spotCatalog = catalogs.spots || EMPTY_SPOTS) {
         await this.ready(catalogs);
+        const writer = await this.ensureSpotCatalog(spotCatalog);
         if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
-        const result = await this.send('plan', { payload });
+        const result = await this.send('plan', { payload: writer.pack(payload) });
         this.stats.completed++;
         this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs);
         return result.plan;
@@ -136,6 +165,8 @@ class ClanPlanningCoordinator {
         const worker = this.worker;
         if (worker) {
             this.worker = null;
+            this.spotWriter = null;
+            this.spotPublishedWorker = null;
             this.tableChannel.detach(this);
             for (const entry of this.pending.values()) {
                 clearTimeout(entry.timer);
@@ -196,7 +227,7 @@ module.exports = {
     start() { enabled = true; coordinator ||= new ClanPlanningCoordinator(); },
     enabled: () => enabled,
     context,
-    plan: (payload) => coordinator.plan(payload, invoke('GameServer/DataCache')),
+    plan: (payload) => coordinator.plan(payload, invoke('GameServer/DataCache'), invoke('GameServer/Bot/Population/SpotProfiles').ensure()),
     metrics: () => coordinator?.metrics() || { running: false, pending: 0 },
     shutdown: () => coordinator?.shutdown()
 };
