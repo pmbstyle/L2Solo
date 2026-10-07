@@ -1,6 +1,8 @@
 const assert = require('assert');
 
+const nativeFixture = require('./helpers/isolatedSocialDatabase')('f1-spatial-test_pk_profiles');
 require('../src/Global');
+nativeFixture.assertConfigured(options.default);
 
 const PkProfiles = invoke('GameServer/Bot/AI/PkProfiles');
 const BotPopulation = invoke('GameServer/Bot/BotPopulation');
@@ -18,38 +20,49 @@ assert(PkProfiles.asBotData(PkProfiles.PK_BOTS[0]).pkProfile.anchor, 'a starter 
 
 const originalUsers = World.user;
 const dion = pkBots.find((bot) => bot.encounterId === 'dion_wasteland');
-World.user = {
-    sessions: [
-        {
-            accountId: 'right_level',
-            actor: {
-                fetchIsOnline: () => true,
-                fetchLevel: () => 30,
-                fetchLocX: () => dion.pkProfile.anchor.locX,
-                fetchLocY: () => dion.pkProfile.anchor.locY,
-                state: { fetchDead: () => false }
+try {
+    const fixtureSessions = [
+            {
+                accountId: 'right_level',
+                actor: {
+                    fetchIsOnline: () => true,
+                    fetchLevel: () => 30,
+                    fetchLocX: () => dion.pkProfile.anchor.locX,
+                    fetchLocY: () => dion.pkProfile.anchor.locY,
+                    state: { fetchDead: () => false }
+                }
+            },
+            {
+                accountId: 'wrong_level',
+                actor: {
+                    fetchIsOnline: () => true,
+                    fetchLevel: () => 10,
+                    fetchLocX: () => dion.pkProfile.anchor.locX,
+                    fetchLocY: () => dion.pkProfile.anchor.locY,
+                    state: { fetchDead: () => false }
+                }
             }
-        },
-        {
-            accountId: 'wrong_level',
-            actor: {
-                fetchIsOnline: () => true,
-                fetchLevel: () => 10,
-                fetchLocX: () => dion.pkProfile.anchor.locX,
-                fetchLocY: () => dion.pkProfile.anchor.locY,
-                state: { fetchDead: () => false }
-            }
-        }
-    ]
-};
-assert.strictEqual(BotManager.activePopulationForPk(dion.pkProfile).length, 2, 'a nearby player outside the hunt bracket must still keep the PK encounter active as a threat');
-World.user.sessions[1].accountId = 'bot_local';
-assert.strictEqual(BotManager.activePopulationForPk(dion.pkProfile).length, 2, 'an ordinary local bot should activate the encounter even if its level drifted from the player bracket');
+        ];
+    World.user = { sessions: [], revision: 0 };
+    for (let index = 0; index < fixtureSessions.length; index += 1) {
+        const session = fixtureSessions[index];
+        session.fetchAccountId = () => session.accountId;
+        session.actor.fetchId = () => 8_950_001 + index;
+        session.actor.fetchLocZ = () => dion.pkProfile.anchor.locZ;
+        session.actor.session = session;
+        World.insertUser(session);
+    }
+    assert.strictEqual(BotManager.activePopulationForPk(dion.pkProfile).length, 2, 'a nearby player outside the hunt bracket must still keep the PK encounter active as a threat');
+    World.user.sessions[1].accountId = 'bot_local';
+    World.updateUserLocation(World.user.sessions[1]);
+    assert.strictEqual(BotManager.activePopulationForPk(dion.pkProfile).length, 2, 'an ordinary local bot should activate the encounter even if its level drifted from the player bracket');
 
-const starter = pkBots.find((bot) => bot.dynamicStarter);
-const persistedStarter = { locX: 12345, locY: 23456, locZ: -3456 };
-BotManager.bindPkAnchorToCharacter(starter, persistedStarter);
-assert.deepStrictEqual(starter.pkProfile.anchor, persistedStarter, 'a persisted starter PK must retain its previous encounter anchor across restarts');
-World.user = originalUsers;
-
-console.log('PK profile checks passed');
+    const starter = pkBots.find((bot) => bot.dynamicStarter);
+    const persistedStarter = { locX: 12345, locY: 23456, locZ: -3456 };
+    BotManager.bindPkAnchorToCharacter(starter, persistedStarter);
+    assert.deepStrictEqual(starter.pkProfile.anchor, persistedStarter, 'a persisted starter PK must retain its previous encounter anchor across restarts');
+    console.log('PK profile checks passed');
+} finally {
+    World.user = originalUsers;
+    require('node:fs').rmSync(nativeFixture.directory, { recursive: true, force: true });
+}

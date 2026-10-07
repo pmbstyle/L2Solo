@@ -1,6 +1,8 @@
 const assert = require('assert');
 
+const nativeFixture = require('./helpers/isolatedSocialDatabase')('f1-spatial-test_bot_agent_support_confirmation');
 require('../src/Global');
+nativeFixture.assertConfigured(options.default);
 
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
@@ -41,7 +43,12 @@ try {
     const target = actor(20, 'Slava', 100, 0);
     const targetSession = { actor: target, accountId: 'player_slava' };
     const botSession = { actor: bot, accountId: 'bot_aria', plan: 'following' };
-    World.user = { sessions: [targetSession] };
+    World.user = { sessions: [], revision: 0 };
+    for (const session of [targetSession, botSession]) {
+        session.fetchAccountId = () => session.accountId;
+        session.actor.session = session;
+        World.insertUser(session);
+    }
     Generics.skillExec = () => {};
     BotAI.tell = (_session, _targetSession, text) => {
         messages.push(text);
@@ -98,4 +105,5 @@ try {
     BotAI.tell = originalTell;
     BuffService.quote = originalBuffQuote;
     BotPartyChat.cancelExpectedSkillResult({ pendingPartyChatResult: undefined });
+    require('node:fs').rmSync(nativeFixture.directory, { recursive: true, force: true });
 }
