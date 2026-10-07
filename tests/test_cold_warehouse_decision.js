@@ -103,7 +103,12 @@ const id = 730180;
             const legacy = Warehouse.craftRequests(state, overlapStored);
             const captured = Enchant.warehouseRequests(state, overlapStored);
             assert.deepEqual(captured, legacy, 'both input sources describe the same missing recipe units');
-            const overlap = await Warehouse.releaseCold(state, { inTown: true });
+            // The remaining stock may legitimately be withdrawn for sale by
+            // the native E choice. Pin its decision point and keep its result.
+            const releaseOptions = { inTown: true, now: 1800000000000 };
+            const market = Warehouse.marketRequests(state, overlapStored,
+                new Map(recipe.materials.map(item => [item.selfId, item.amount])), releaseOptions);
+            const overlap = await Warehouse.releaseCold(state, releaseOptions);
             for (const material of recipe.materials) {
                 const moved = overlap.items.filter(item => item.selfId === material.selfId && item.reason === 'craft')
                     .reduce((amount, item) => amount + item.amount, 0);
@@ -111,13 +116,25 @@ const id = 730180;
             }
             const overlapBag = await Database.fetchItems(id), overlapLeft = await Database.fetchWarehouseItems(id);
             for (const material of recipe.materials) {
-                assert.equal(overlapBag.find(row => Number(row.selfId) === material.selfId)?.amount, material.amount);
-                assert.equal(overlapLeft.find(row => Number(row.selfId) === material.selfId)?.amount, material.amount * 3);
+                const expectedMarket = market.filter(item => item.selfId === material.selfId)
+                    .reduce((amount, item) => amount + item.amount, 0);
+                const actualMarket = overlap.items.filter(item => item.selfId === material.selfId && item.reason === 'market')
+                    .reduce((amount, item) => amount + item.amount, 0);
+                assert.equal(actualMarket, expectedMarket, 'extra stock follows the same native E decision');
+                const bagAmount = Number(overlapBag.find(row => Number(row.selfId) === material.selfId)?.amount || 0);
+                const storedAmount = Number(overlapLeft.find(row => Number(row.selfId) === material.selfId)?.amount || 0);
+                assert.equal(bagAmount, material.amount + expectedMarket);
+                assert.equal(storedAmount, material.amount * 3 - expectedMarket);
+                assert.equal(bagAmount + storedAmount, material.amount * 4, 'all physical recipe stock is conserved');
             }
             assert.equal(overlapBag.find(row => Number(row.selfId) === 57).amount, beforeMoney);
+            const savedOverlap = (await Database.execute(['SELECT inventorySummary FROM bot_life_state WHERE characterId=?', [id]]))[0];
+            for (const material of recipe.materials) assert.equal(JSON.parse(savedOverlap.inventorySummary)[material.selfId]?.amount,
+                overlapBag.find(row => Number(row.selfId) === material.selfId)?.amount, 'saved projection matches the physical bag');
             assert.deepEqual(Economy.summary().mainColdForState, {});
             console.log(JSON.stringify({ capturedWire: true, recipeId: recipe.recipeId,
-                withdrawnOnce: overlap.items, wallet: beforeMoney, mainColdForState: 0 }));
+                materials: captured, nativeMarketRequests: market, withdrawnOnce: overlap.items,
+                wallet: beforeMoney, mainColdForState: 0 }));
         } finally { Economy.forState = originalFull; }
     } finally {
         Coordinator.economyDecisions.forget(id);
