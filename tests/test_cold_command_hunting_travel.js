@@ -13,6 +13,10 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
+const originalSelect = Selection.selectAcquisitionPlan;
 
 const originals = {
     ensure: SpotProfiles.ensure,
@@ -69,6 +73,7 @@ async function run() {
     SpotService.arrivalPointForState = (value, spot) => ({ ...spot.center });
     GearPlanner.planFor = () => ({ status: 'complete', strategy: 'none', grade: 'none' });
     LifeState.cachedState = () => null;
+    Selection.selectAcquisitionPlan = () => { throw Error('main command wish build'); };
     const applied = [];
     LifeState.applyResolve = (value, result) => {
         applied.push(value);
@@ -93,6 +98,48 @@ async function run() {
     assert.strictEqual(applied[0].stats.travel, undefined);
     assert.strictEqual(commanded.state.activity, 'hunting');
     assert.strictEqual(commanded.state.stats.travel, undefined, 'no trip object is left on a hunting bot');
+
+    // A worker command sends the full packet and holds its materials while
+    // the town/market tail changes timestamps and other native state fields.
+    const packet = { wishFocus: ['power:391', 1], dormantWishes: [], money: [30000, .00001, 1000, 30000], decisionSeq: 29, activityLeaf: 173 };
+    const commandState = hunter(7405, { equipmentPlan: { status: 'complete', strategy: 'none' } });
+    const commandDecision = Decision.capture({ projection: { values: new Map() }, network: { activity: null,
+        queue: [{ object: { materials: [{ selfId: 1864, amount: 2 }] } }] } }, commandState);
+    let passedPacket, tailReads = 0;
+    LifeState.applyResolve = async (value, result, options) => {
+        passedPacket = options.statsPacket;
+        return { ...value, activity: result.patch.activity, updatedAt: 5000,
+            stats: { ...value.stats, classId: 2 } };
+    };
+    ListingService.resolve = async value => {
+        assert(Coordinator.economyDecisions.decided(value), 'hold remains readable after commit changed its key');
+        assert.deepStrictEqual(invoke('GameServer/Bot/Economy/ColdSafeEnchantService').warehouseRequests(value,
+            [{ selfId: 1864, amount: 9 }]), [{ selfId: 1864, amount: 2, reason: 'wish_material' }]);
+        tailReads++;
+        return { state: value, closed: false };
+    };
+    const request = { precomputedResult: workerFight(), context: { spot: oldSpot, route: null },
+        precomputedPlan: { previousPlan: commandState.stats.equipmentPlan, acquisitionPlan: commandState.stats.equipmentPlan,
+            statsPacket: packet, economyDecision: commandDecision } };
+    assert.strictEqual((await PopulationService.resolveColdState(commandState, request)).ok, true);
+    assert.deepStrictEqual(passedPacket, packet);
+    assert.strictEqual(tailReads, 1);
+    assert.strictEqual(Coordinator.economyDecisions.decided(commandState), null, 'finally releases and keeps stale record');
+    assert.strictEqual(Coordinator.economyDecisions.byId.get(7405).stale, true);
+    ListingService.resolve = async () => { throw Error('command tail failure'); };
+    await assert.rejects(PopulationService.resolveColdState(commandState, request), /command tail failure/);
+    assert.strictEqual(Coordinator.economyDecisions.byId.get(7405).held, false, 'finally releases on a rejected tail');
+    ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
+    LifeState.applyResolve = (value, result) => { applied.push(value); return Promise.resolve({ ...value,
+        activity: result.patch.activity, spotId: result.patch.spotId, loc: result.patch.loc,
+        stats: { ...value.stats, ...result.patch.stats } }); };
+    const prior = { status: 'complete', strategy: 'none', target: { selfId: 391 } };
+    const deferredBefore = Number(PopulationService.planDeferred || 0);
+    const deferred = await PopulationService.resolveColdState(hunter(7406, { equipmentPlan: prior }),
+        { precomputedResult: workerFight(), context: { spot: oldSpot, route: null } });
+    assert.strictEqual(deferred.state.stats.equipmentPlan, prior, 'no worker plan keeps previous plan');
+    assert.strictEqual(PopulationService.planDeferred, deferredBefore + 1);
+    Coordinator.economyDecisions.forget(7405);
 
     // Without a worker result main still starts and resolves the trip itself.
     applied.length = 0;
@@ -133,6 +180,7 @@ run().catch((error) => {
     Object.assign(SpotProfiles, { ensure: originals.ensure, findForState: originals.findForState });
     Object.assign(SpotService, { findCurrentSpot: originals.findCurrentSpot, arrivalPointForState: originals.arrivalPointForState });
     GearPlanner.planFor = originals.planFor;
+    Selection.selectAcquisitionPlan = originalSelect;
     Object.assign(LifeState, { cachedState: originals.cachedState, applyResolve: originals.applyResolve, upsertState: originals.upsertState });
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;

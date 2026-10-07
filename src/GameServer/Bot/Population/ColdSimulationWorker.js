@@ -429,7 +429,7 @@ function startKernel(config = {}) {
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
-            const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds } = GearPlanSelection
+            const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds, economy } = GearPlanSelection
                 .selectAcquisitionPlan(state, previousPlan, {
                     spots, occupancy, timestamp,
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
@@ -459,10 +459,14 @@ function startKernel(config = {}) {
             };
             const routedState = beginHuntingTrip(plannedState, context?.route, timestamp) || plannedState;
             return {
+                statsPacket: economy.statsPacket,
+                activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
+                    spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
+                economyDecision: ColdEconomyDecision.capture(economy, routedState),
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
-                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan.next?.npcId || 0),
+                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan?.next?.npcId || 0),
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,
                 plannedState: routedState
@@ -478,7 +482,7 @@ function startKernel(config = {}) {
     kernel.buyerEvents = buyerWaiters;
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
-        productionStatus: id => kernel.states.get(Number(id))?.context?.productionStatus,
+        buyOrderEscrow: id => kernel.states.get(Number(id))?.context?.buyOrderEscrow || 0,
         spots: () => planningSpots,
         memory: (characterId) => kernel.interactionMemory.snapshot(characterId)
     });

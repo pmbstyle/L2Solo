@@ -1,6 +1,7 @@
 'use strict';
 const Policy = require('./BotImprovementPolicy');
 const pendingCold = new Map(), pendingHot = new WeakMap();
+let improvementDeferred = 0;
 function chosen(state, context) {
     const leaf = context.network.activity;
     return leaf?.activity === 'improving' ? { ...leaf.improvement } : null;
@@ -17,10 +18,12 @@ async function reviewCold(state, options = {}) {
     if (pendingCold.has(state.characterId)) return pendingCold.get(state.characterId);
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const { decide, ...writeOptions } = options;
-    const decision = typeof decide === 'function' ? decide() : null;
+    const decision = typeof decide === 'function' ? decide()
+        : invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state);
+    if (!decision) { improvementDeferred++; return { state, changed: false }; }
     const context = decision
         ? { network: { activity: decision.activity }, riskWeight: decision.riskWeight }
-        : invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+        : null;
     const improvement = chosen(state, context);
     if (!improvement || improvement.kind !== 'enchant' && !inTown(state)) return Promise.resolve({state,changed:false});
     const original = Life.cachedState(state.characterId);
@@ -101,4 +104,5 @@ function stationTarget(actor, improvement) {
     return npc ? { npcId:npc.fetchId(), npcSelfId:npc.fetchSelfId(), name:npc.fetchName(), town:town.name,
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
-module.exports = { reviewCold, reviewHot, chosen, inTown, Policy, stationTarget };
+module.exports = { reviewCold, reviewHot, chosen, inTown, Policy, stationTarget,
+    summary: () => ({ improvementDeferred }) };

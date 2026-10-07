@@ -157,9 +157,10 @@ async function reviewDemand(state, now) {
     }
     const price = basics.price(stock.itemId);
     if (!(price > 0)) return state;
-    const context = Economy.forState(state, { timestamp: now });
+    const context = require('../Population/ColdEconomyDecision').economyFor(state, { timestamp: now });
     const worth = context.worth(stock.itemId);
-    const maxSpend = Math.min(context.purchaseBudget(stock.itemId), missing * (worth ?? price));
+    const maxSpend = Math.min(require('./PurchaseFunding').spendable(state, 0,
+        { itemId: stock.itemId, survivalCost: basics.kitCost(stock.itemId) }), missing * (worth ?? price));
     const wanted = state.stats?.shotDemand;
     if (!wanted || wanted.itemId !== stock.itemId || wanted.amount !== missing || wanted.maxSpend !== maxSpend) {
         state = await persist({ ...state, stats: { ...state.stats,
@@ -549,7 +550,7 @@ async function review(state, now = Date.now(), options = {}) {
     }
 }
 
-module.exports = { review, candidates, marketSnapshot, craftCandidate, recipeTarget,
+module.exports = { review, reviewDemand, candidates, marketSnapshot, craftCandidate, recipeTarget,
     fundedDemand, scrapCraftRoutes, hasShotSurplus, SHOT_RECIPE_IDS, craft,
     _resetForTests() { marketCache = null; catalogCache = null; scanAt.clear(); active.clear(); }
 };

@@ -59,7 +59,7 @@ function formingMembers(members, requested) {
 
 function itemNeed(state, item, projected) {
     const current = { ...state, inventory: projected?.get(Number(state.characterId)) || state.inventory };
-    return positive(invoke('GameServer/Bot/Economy/EconomyContext').forState(current).itemUsefulness(Number(item.selfId)));
+    return positive(require('./ColdEconomyDecision').economyFor(current).itemUsefulness(Number(item.selfId)));
 }
 
 module.exports = { declaration, joint, participation, groupContext, decide, formingMembers, itemNeed };

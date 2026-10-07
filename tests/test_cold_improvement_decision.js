@@ -1,6 +1,6 @@
 // L25: the post-commit improvement review of a cold bot uses the worker's
 // decision made on the committed state and builds no wish network on main;
-// without a decision it builds the network as before.
+// without a decision it waits for the next worker resolve.
 const assert = require('node:assert/strict');
 require('../src/Global');
 const { capture, stateKey } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
@@ -13,8 +13,10 @@ const Service = invoke('GameServer/Bot/Economy/BotImprovementService');
     const improvement = { kind: 'enchant', itemId: 4001, riskHours: 2 };
     const economy = { riskWeight: 1.5, network: { activity: { activity: 'improving', improvement, spotId: null, npcId: null } } };
     const decision = capture(economy, { characterId: 41, updatedAt: 500 });
-    assert.deepEqual(decision, { updatedAt: 500, key: stateKey({ characterId: 41, updatedAt: 500 }), riskWeight: 1.5,
-        activity: { activity: 'improving', spotId: null, npcId: null, improvement } });
+    assert.equal(decision.updatedAt, 500);
+    assert.equal(decision.key, stateKey({ characterId: 41, updatedAt: 500 }));
+    assert.equal(decision.riskWeight, 1.5);
+    assert.deepEqual(decision.activity.improvement, improvement);
     assert.equal(capture({ riskWeight: 1, network: { activity: { activity: 'hunting', improvement } } }, {}).activity.improvement,
         undefined, 'an improvement travels only when the bot is improving');
 
@@ -34,8 +36,8 @@ const Service = invoke('GameServer/Bot/Economy/BotImprovementService');
         assert.equal(writes[0].options.beforeWrite, 'w');
 
         await Service.reviewCold(state, { beforeWrite: 'w' });
-        assert.equal(builds, 1, 'without a decision the network is built');
-        assert.deepEqual(writes[1].plan, writes[0].plan, 'same improvement either way');
+        assert.equal(builds, 0, 'without a decision no network is built');
+        assert.equal(writes.length, 1, 'no improvement without a worker decision');
         console.log('test_cold_improvement_decision: ok');
     } finally {
         Economy.forState = saved.forState; Database.applyBotImprovement = saved.apply;

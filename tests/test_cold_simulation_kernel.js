@@ -1,4 +1,6 @@
 const assert = require('assert');
+require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const {
@@ -300,14 +302,30 @@ function claimAck(kernel, payload) {
     })), 'command');
     assert.strictEqual(lifecycleKind(state(2, { party: { partyId: 'party' } }), { isPartyLeader: true }), 'party');
 
+    // An absent main decision sends target 0; the worker's own hunting pick
+    // remains the target for the native solo resolver.
+    let pickedTarget = 0;
+    const pickKernel = recordingKernel({ now: () => 5000,
+        resolveSolo: input => { pickedTarget = input.targetNpcId; return resolver(input); },
+        planLifecycle: ({ state }) => ({ plannedState: state, targetNpcId: 0,
+            activityPick: { activity: 'hunting', npcId: 20101, spotId: 'worker-ground' } }) });
+    pickKernel.upsert({ state: state(79), context: { targetNpcId: 0, spot: { id: 'worker-ground' } } });
+    pickKernel.tick();
+    claimAck(pickKernel, { grants: [{ ok: true, characterId: 79, ownerId: 'cold_simulation_owner', revision: 4,
+        leaseId: 'pick-lease', leaseUntil: 35000 }] });
+    await pickKernel.resolveChain;
+    assert.strictEqual(pickedTarget, 20101, 'native solo resolve uses worker activityPick when main target is absent');
+
     const commandMessages = [];
     let plannedOnWorker = 0;
     const commandKernel = recordingKernel({
-        resolveSolo: resolver,
+        resolveSolo: input => { assert.strictEqual(input.targetNpcId, 20101, 'command uses worker hunting pick'); return resolver(input); },
         planLifecycle: ({ state: commandState }) => {
             plannedOnWorker += 1;
             return {
                 previousPlan: null,
+                targetNpcId: 0, activityPick: { activity: 'hunting', npcId: 20101 },
+                statsPacket: { money: [30000, .00001, 1000, 0], wishFocus: ['worker', 1], decisionSeq: 5, activityLeaf: 19, dormantWishes: [] },
                 acquisitionPlan: { strategy: 'direct_drop', status: 'active' },
                 plannedState: { ...commandState, stats: { ...commandState.stats, workerPlanned: true } }
             };
@@ -321,6 +339,7 @@ function claimAck(kernel, payload) {
     const commandRequest = commandMessages.find((entry) => entry.type === 'command_request');
     assert.strictEqual(plannedOnWorker, 1, 'lifecycle planning must execute in the cold kernel');
     assert.strictEqual(commandRequest.payload.requests[0].precomputedPlan.plannedState.stats.workerPlanned, true);
+    assert.strictEqual(commandRequest.payload.requests[0].precomputedPlan.statsPacket.activityLeaf, 19, 'kernel forwards whole packet');
     assert(commandRequest.payload.requests[0].precomputedResult, 'main command gateway must receive worker-computed lifecycle output');
     assert.strictEqual(commandRequest.payload.requests[0].computedAt, now);
     assert.strictEqual(commandKernel.scheduleTokens.has(3), false,

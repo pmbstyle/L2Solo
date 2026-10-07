@@ -801,8 +801,7 @@ class ColdSimulationCoordinator {
         const unsafeSoloGround = !partyRoute && currentGround
             && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
         const leaf = partyRoute ? null : index.wishLeaf !== undefined ? index.wishLeaf
-            : this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
-                .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory }));
+            : this.economyDecisions.activity(state);
         const wished = leaf?.activity === 'hunting' && leaf.spotId
             ? index.spots.get(String(leaf.spotId)) : null;
         const wishDestination = wished && wished.raidBoss !== true
@@ -936,12 +935,10 @@ class ColdSimulationCoordinator {
                 return compact ? compactPartyMemberContext(member) : member;
             });
         const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
-        const leaf = !party ? this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
-            .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp: index.timestamp, memory: interactionMemory })) : null;
+        const leaf = !party ? this.economyDecisions.activity(state) : null;
         const context = {
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
-            productionStatus: state.stats?.production ? invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (interactionMemory.relations || []).map(row => row.targetId)) : null,
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
             // The worker cannot see AFK shops: hand it the Adena the bot's own
@@ -1714,10 +1711,11 @@ class ColdSimulationCoordinator {
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;
+        const decision = await this.step('improvement', state.characterId, () => this.economyDecisions.decided(state));
         state = await this.step('training', state.characterId, () => LifeState.reviewTrainingAfterCommit(state, { beforeWrite }))
             || LifeState.cachedState(state.characterId) || state;
         const improved = await this.step('improvement', state.characterId, () => invoke('GameServer/Bot/Economy/BotImprovementService')
-            .reviewCold(state, { beforeWrite, decide: () => this.economyDecisions.decided(state) }));
+            .reviewCold(state, { beforeWrite, decide: () => decision }));
         return improved?.state || LifeState.cachedState(state.characterId) || state;
     }
 

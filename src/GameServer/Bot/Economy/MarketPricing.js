@@ -13,7 +13,7 @@ const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 // npcOffersFor(selfId), findSpot(spotId), timestamp }.
 function traderContext(state, deps = {}) {
     const timestamp = Number(deps.timestamp || Date.now());
-    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { ...deps, timestamp });
+    const economy = require('../Population/ColdEconomyDecision').economyFor(state, { ...deps, timestamp });
     const hour = economy.hourAdena;
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;

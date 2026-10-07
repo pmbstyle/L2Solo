@@ -77,6 +77,16 @@ function inventoryScrolls(state = {}) {
 }
 
 function warehouseRequests(state = {}, warehouseItems = [], options = {}) {
+    if (state.phase === 'cold') {
+        const Decision = require('../Population/ColdEconomyDecision');
+        const economy = Decision.economyFor(state);
+        const materials = economy.materials || Decision.capture(economy, state).materials;
+        return materials.flatMap(([selfId, missing]) => {
+            const row = warehouseItems.find(item => Number(item.selfId) === selfId);
+            const amount = Math.min(missing, Math.max(0, Number(row?.amount || 0)));
+            return amount > 0 ? [{ selfId, amount, reason: 'wish_material' }] : [];
+        });
+    }
     const needs = targetNeeds(state, options);
     const inventory = inventoryScrolls(state);
     const missing = {

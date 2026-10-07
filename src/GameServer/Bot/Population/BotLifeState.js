@@ -3,6 +3,7 @@ const LifeStateCache = require('./LifeStateCache');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const RefreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ShopPlaces = require('../Economy/ShopPlaces');
+const { isMainThread } = require('node:worker_threads');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
@@ -2586,9 +2587,11 @@ const BotLifeState = {
             nextState.stats.decisionSeq = Math.max(0, Math.trunc(Number(state.stats?.decisionSeq) || 0)) + 1;
             nextState.stats.activityLeaf = 0;
         }
-        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
-        Object.assign(nextState.stats, economy.statsPacket);
-        if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
+        if (!isMainThread) {
+            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
+            Object.assign(nextState.stats, economy.statsPacket);
+            if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
+        } else if (options.statsPacket) Object.assign(nextState.stats, options.statsPacket);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);

@@ -109,7 +109,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
         ? { ...previous, status: 'open' } : null;
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan) || sharedTarget;
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
-        const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+        const context = require('./ColdEconomyDecision').economyFor(state);
         const amount = Math.max(1, Math.floor(Number(plan?.next?.amount || 1)));
         // ARCH-NOTE: party value is pending; the help fee buys progress on its requested item.
         const fee = Math.floor(Math.min(require('../Economy/PurchaseFunding').spendable(state, 0, { itemId: objective.itemId }),

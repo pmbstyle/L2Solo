@@ -3515,6 +3515,7 @@ const PopulationService = {
     },
 
     resolveColdState(state, workerRequest = null, options = {}) {
+        if (workerRequest?.precomputedPlan?.statsPacket) options = { ...options, statsPacket: workerRequest.precomputedPlan.statsPacket };
         const startedAt = Date.now();
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
         if (!joinedBackgroundParty(state) && (hallVisit.needed(state, startedAt) || state.stats?.clanHallVisit)) {
@@ -3580,6 +3581,8 @@ const PopulationService = {
                     Metrics.recordSkippedResolve('transition_apply_failed');
                     return { ok: false, reason: 'apply_failed', state };
                 }
+                if (workerRequest?.precomputedPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions
+                    .hold(updatedState.characterId, workerRequest.precomputedPlan.economyDecision);
                 Metrics.recordBackgroundResolve();
                 Metrics.recordCombat(result.debug);
                 const recoveredForMarket = state.activity === 'resting'
@@ -3607,7 +3610,10 @@ const PopulationService = {
                     state: finalState,
                     debug: result.debug
                 })));
-            }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+            }).finally(() => {
+                if (workerRequest?.precomputedPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
+                Metrics.recordResolveDuration(Date.now() - startedAt);
+            });
         }
         const MammonUnseal = invoke('GameServer/Bot/AI/BotMammonUnseal');
         if (state.activity === 'crafting' && state.stats?.mammonReturn) {
@@ -3672,11 +3678,9 @@ const PopulationService = {
             }
         }
         if (!acquisitionPlan) {
-            const selection = GearPlanSelection.selectAcquisitionPlan(state, previousPlan, {
-                spots, occupancy, timestamp: startedAt, planningOptions: { buyOrderEscrow }
-            });
-            acquisitionPlan = selection.acquisitionPlan;
-            replanContext = selection.replanContext;
+            acquisitionPlan = previousPlan;
+            replanContext = {};
+            this.planDeferred = Number(this.planDeferred || 0) + 1;
         }
         const partyRequest = partyRequestForPlan(state, acquisitionPlan, startedAt);
         const plannedStats = { ...(state.stats || {}), equipmentPlan: acquisitionPlan };
@@ -3824,12 +3828,13 @@ const PopulationService = {
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
-        return LifeState.applyResolve(effectiveState, result, options)
+        return LifeState.applyResolve(effectiveState, result, { ...options, ...(workerPlan?.statsPacket ? { statsPacket: workerPlan.statsPacket } : {}) })
             .then((updatedState) => {
             if (!updatedState) {
                 Metrics.recordSkippedResolve('cold_apply_failed');
                 return { ok: false, reason: 'apply_failed', state };
             }
+            if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.hold(updatedState.characterId, workerPlan.economyDecision);
 
             Metrics.recordBackgroundResolve();
             Metrics.recordCombat(result.debug);
@@ -3929,6 +3934,7 @@ const PopulationService = {
             }
             return outcome;
         }).finally(() => {
+            if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
             Metrics.recordResolveDuration(Date.now() - startedAt);
         });
     },

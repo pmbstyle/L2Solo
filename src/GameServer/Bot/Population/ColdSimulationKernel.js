@@ -1058,7 +1058,8 @@ class ColdSimulationKernel {
                 state: resolveState,
                 spot: current.context.spot || null,
                 pressure: current.context.pressure || {},
-                targetNpcId: Number(current.context.targetNpcId || 0),
+                targetNpcId: Number(current.context.targetNpcId || lifecyclePlan?.targetNpcId ||
+                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0),
                 elapsedMs,
                 rng: deterministicRandom(current.state),
                 timestamp
@@ -1708,10 +1709,9 @@ class ColdSimulationKernel {
                 state: resolveState,
                 spot: resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || active.context.spot || null,
                 pressure: active.context.pressure || {},
-                targetNpcId: Number(lifecyclePlan?.targetNpcId
-                    ?? lifecyclePlan?.acquisitionPlan?.next?.npcId
-                    ?? active.context.targetNpcId
-                    ?? 0),
+                targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
+                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) ||
+                    active.context.targetNpcId || 0),
                 elapsedMs,
                 rng: deterministicRandom(active.state),
                 timestamp

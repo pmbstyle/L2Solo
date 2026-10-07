@@ -6,6 +6,7 @@ const Providers = require('./WishProviders');
 const { WishNetwork, remember } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
 const engine = new WishNetwork();
+const mainColdForState = new Map();
 let runtime = {};
 const extensions = new Map();
 function configure(providers = {}) { runtime = providers; reset(); }
@@ -57,6 +58,7 @@ function inputKey(state, deps = {}) {
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
+        positive(deps.buyOrderEscrow),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
@@ -103,6 +105,7 @@ function resolved(state, deps) {
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
+    if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     return deps;
 }
@@ -182,6 +185,10 @@ function basics(state = {}, deps = {}) {
 }
 function stockFor(state, kind, deps = {}) { return basics(state, deps).stock(kind); }
 function forState(state = {}, deps = {}) {
+    if (isMainThread && state.phase === 'cold') {
+        const caller = deps.caller || 'other';
+        mainColdForState.set(caller, (mainColdForState.get(caller) || 0) + 1);
+    }
     deps = resolved(state, deps);
     const timestamp = Number(deps.timestamp || Date.now());
     const key = inputKey(state, { ...deps, timestamp });
@@ -235,7 +242,7 @@ function forState(state = {}, deps = {}) {
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
-        wallet: positive(state.adena), survivalReserve: base.survivalReserve,
+        wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
         hourAdena: context.hourAdena, riskWeight: context.riskWeight });
@@ -280,7 +287,7 @@ function survivalReserve(state = {}) {
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
 function forGroup(group, members, deps = {}) {
-    const contexts = (members || []).slice(0, 9).map(state => forState(state, deps));
+    const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
     if (!first) return null;
     const actorKey = `group:${group.id || group.partyId}`;
@@ -335,4 +342,5 @@ function forget(id) {
 function reset() { cache.clear(); groups.clear(); engine.clear(); }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
+module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider,
+    summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };

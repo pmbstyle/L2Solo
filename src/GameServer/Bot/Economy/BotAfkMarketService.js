@@ -288,7 +288,7 @@ function saleDecision(state, options = {}) {
 
 // The bot's buy ad lines carry the quote, its authored worth and cursors.
 function buyLines(state, goal, { money = Infinity } = {}) {
-    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+    const context = require('../Population/ColdEconomyDecision').economyFor(state);
     const goals = context.watchList.map(row => ({ type: 'buy_craft_material',
         target: { itemId: row.itemId, amount: row.amount },
         plan: { estimatedCost: row.worth, purpose: row.kind } }));
@@ -360,7 +360,7 @@ async function reconcileBuyAds(state, goal, candidates) {
     const ads = buyAds(ownerId);
     let side = desiredSide(goal);
     if (side !== AfkTrade.BUY && state.phase === 'cold') {
-        const wanted = invoke('GameServer/Bot/Economy/EconomyContext').forState(state).watchList[0];
+        const wanted = require('../Population/ColdEconomyDecision').economyFor(state).watchList[0];
         if (wanted) { goal = { type: 'buy_craft_material', target: { itemId: wanted.itemId, amount: wanted.amount },
             plan: { estimatedCost: wanted.worth, purpose: wanted.kind } }; side = AfkTrade.BUY; }
     }
@@ -699,7 +699,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { applyReview, buyOrderEscrow, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,
+module.exports = { applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };

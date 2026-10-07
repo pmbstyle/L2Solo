@@ -36,12 +36,14 @@ function evaluate(state = {}, options = {}) {
         target: { itemId: errand.selfId, amount: errand.amount },
         plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
         blockers: [] }];
-    const context = Economy.forState(state, { ...options, timestamp });
+    const context = require('../Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
     const leaf = context.network.activity;
     if (!leaf) return [];
     const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
-    const wish = context.network.queue.find(row => row.key === leaf.rootKey);
-    const common = { priority: 50, blockers: [], inputHash: require('../Fnv1a').fnv1a32(context.inputKey),
+    const wish = context.wish || context.network.queue?.find(row => row.key === leaf.rootKey);
+    const amount = Math.max(1, Math.ceil(leaf.amount || wish?.object?.amount || 1));
+    if (leaf.activity === 'shopping' && itemId && Number(state.inventory?.[itemId]?.amount || 0) >= amount) return [];
+    const common = { priority: 50, blockers: [], inputHash: context.inputHash ?? require('../Fnv1a').fnv1a32(context.inputKey),
         plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
             recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost: leaf.price,
             targetId: leaf.targetId, economyActivity: leaf.activity } };
@@ -50,11 +52,11 @@ function evaluate(state = {}, options = {}) {
         const slot = Number(gear?.etc?.slot || 0);
         const itemName = state.inventory?.[String(itemId)]?.name
             || gear?.template?.name || `Item ${itemId}`;
-        const offer = context.board?.heads(itemId, 1, { excludeOwner: state.characterId })?.[0];
+        const offer = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex().heads(itemId, 1, { excludeOwner: state.characterId })?.[0];
         const npc = invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(itemId)[0];
         const town = offer?.town || npc?.town || state.currentRegion;
         return [{ ...common, type: slot ? 'upgrade_gear' : 'buy_craft_material',
-            target: { itemId, itemName, itemSlot: slot, amount: Math.max(1, Math.ceil(leaf.amount || wish?.object?.amount || 1)), adena: leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price },
+            target: { itemId, itemName, itemSlot: slot, amount, adena: leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price },
             plan: { ...common.plan, expectedBenefit: slot ? 'market_search_for_gear' : 'market_buy_craft_material',
                 marketTown: town, sourceType: offer ? 'afk' : npc ? 'npc' : null,
                 purpose: wish?.object?.kind, requiredAdena: 0, reserve: Economy.survivalReserve(state) } }];
