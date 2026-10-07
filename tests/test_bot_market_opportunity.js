@@ -1,6 +1,11 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fixtureFs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fixtureFs.rmSync(fixture.directory, { recursive: true, force: true }));
 
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
@@ -16,6 +21,7 @@ const candidates = (selfId, options = {}) => {
 };
 const originalUser = World.user;
 
+async function run() {
 try {
     const playerStore = {
         storeType: 1,
@@ -50,18 +56,30 @@ try {
     playerStore.items[0].count = 1;
     World.user.sessions[0].accountId = 'bot_islandmats';
     World.user.sessions[0].actor.fetchName = () => 'IslandMats';
-    assert.strictEqual(
-        candidates(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
-        'fixed',
-        'configured liquidity merchants must not be counted as peer bots'
-    );
+    // ARCH-NOTE: Group F retires configured non-shot stock; E14 excludes live stores for cold buyers.
+    assert(!candidates(2, { town: 'Giran' }).some(offer => offer.sourceType === 'private_store'),
+        'a configured Long Sword cannot reenter the cold query through its live store');
+    assert(!MarketOpportunity.hotOffers(2, { town: 'Giran' }).some(offer => offer.sourceType === 'private_store'),
+        'configured non-shot supply is also rejected on execution-facing hot discovery');
     World.user.sessions[0].name = 'IslandMats';
     World.user.sessions[0].actor.fetchName = () => undefined;
-    assert.strictEqual(
-        candidates(2, { town: 'Giran' }).find((offer) => offer.sourceType === 'private_store').sellerKind,
-        'fixed',
-        'session identity must keep configured merchants fixed when the actor name is temporarily unavailable'
-    );
+    assert(!candidates(2, { town: 'Giran' }).some(offer => offer.sourceType === 'private_store'),
+        'session identity cannot turn a retired non-shot merchant into a peer offer');
+    const Database = invoke('Database'), Afk = invoke('GameServer/AfkTrade/AfkTradeService');
+    const native = require('./helpers/nativeMarketFixture');
+    Database.init();
+    await native.character(Database, 9001, 'PlayerSeller', 'bot_market_fixture9001');
+    const stockId = Number((await Database.setItem(9001, { selfId: 2, name: 'Long Sword', amount: 1 })).insertId);
+    const shop = await Afk.publishBot(9001, { kind: 'shop', storeType: 1, town: 'Giran', title: 'Long Sword',
+        locX: 83000, locY: 148000, locZ: -3400, appearance: { model: { name: 'PlayerSeller' } },
+        lines: [{ objectId: stockId, selfId: 2, name: 'Long Sword', count: 1, price: 1000, stackable: false }] });
+    const boardOffer = candidates(2, { town: 'Giran' }).find(offer => offer.recordId === shop.id);
+    assert(boardOffer, 'the same Long Sword is a genuine public cold offer');
+    assert.deepStrictEqual([boardOffer.selfId, boardOffer.price, boardOffer.count, boardOffer.sourceId], [2, 1000, 1, 9001]);
+    assert.equal(native.amount(await Database.fetchItems(9001), 2), 0, 'public stock is physically escrowed');
+    await Afk.closeBotRecord(9001, shop.id);
+    assert.equal(native.amount(await Database.fetchItems(9001), 2), 1, 'closing returns the exact physical sword');
+    console.log('Native public counterpart: one Long Sword escrowed and returned, price1000/owner9001');
 
     // The budget-backed buy stores are gone (E24): a bot asks on the board
     // with escrow; a live store's budget is no demand.
@@ -77,4 +95,8 @@ try {
     console.log('Bot market opportunity checks passed');
 } finally {
     World.user = originalUser;
+    invoke('GameServer/AfkTrade/AfkTradeService')._resetForTests();
+    await invoke('Database').close();
 }
+}
+run().catch(error => { console.error(error); process.exitCode = 1; });

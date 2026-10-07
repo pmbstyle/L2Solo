@@ -1,6 +1,11 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fixtureFs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fixtureFs.rmSync(fixture.directory, { recursive: true, force: true }));
 
 const DataCache = invoke('GameServer/DataCache');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -161,9 +166,13 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         LifeState.cachedState = () => null;
         GearAcquisitionPlanner.npcEquipmentBridgePlan = (_state, options) => { soloOptions.push(['bridge', options?.buyOrderEscrow]); return null; };
         GearAcquisitionPlanner.planFor = (_state, options) => { soloOptions.push(['plan', options.buyOrderEscrow]); throw sentinel; };
-        await assert.rejects(async () => PopulationService.resolveColdState({ ...afterPosting, name: 'Solo7' }),
-            (error) => error === sentinel);
-        assert.deepStrictEqual(soloOptions, [['plan', price]], 'the armed solo fixture counts its escrow without a weapon bridge');
+        // ARCH-NOTE: FX-C1 explicitly defers a solo Main read with no worker plan.
+        const beforeDeferred = Number(PopulationService.planDeferred || 0);
+        const deferred = await PopulationService.resolveColdState({ ...afterPosting, name: 'Solo7' });
+        assert.deepStrictEqual(soloOptions, [], 'Main never invokes the retired solo planner fallback');
+        assert.deepStrictEqual(deferred.state.stats.equipmentPlan, afterPosting.stats.equipmentPlan,
+            'a missing worker plan preserves the previous acquisition plan');
+        assert.strictEqual(Number(PopulationService.planDeferred), beforeDeferred + 1);
         soloOptions.length = 0;
         GearAcquisitionPlanner.replanContextFor = () => ({ routeCurrent: true, failure: null });
         GearAcquisitionPlanner.fundedMarketPlanForTarget = (_state, _target, options) => {
@@ -175,9 +184,10 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
         const waiting = { ...afterPosting, name: 'Solo7', stats: { ...afterPosting.stats,
             equipmentPlan: { ...posting, strategy: 'direct_drop', next: { spotId: 'x', npcId: 1 } },
             partyRequest: { status: 'open', reviewAt: Date.now() + 600000 } } };
-        await assert.rejects(async () => PopulationService.resolveColdState(waiting), (error) => error === sentinel);
-        assert.deepStrictEqual(soloOptions, [['funded', price]],
-            'keeping an open party request checks the funded purchase with the escrow');
+        const waitingDeferred = await PopulationService.resolveColdState(waiting);
+        assert.deepStrictEqual(soloOptions, [], 'a waiting solo plan is also deferred without Main funded re-planning');
+        assert.deepStrictEqual(waitingDeferred.state.stats.equipmentPlan, waiting.stats.equipmentPlan);
+        assert.strictEqual(Number(PopulationService.planDeferred), beforeDeferred + 2);
     } finally {
         GearAcquisitionPlanner.planFor = saved.planFor;
         GearAcquisitionPlanner.replacementPlanFor = saved.replacementPlanFor;
