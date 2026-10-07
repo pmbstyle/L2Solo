@@ -155,7 +155,9 @@ function look(state, lines, ctx) {
         if (!(line.count > 0) || !line.pricing) continue;
         if (line.ownerId && Number(line.ownerId) !== Number(ctx.characterId)) continue;
         const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
-        if (counter.deals <= line.pricing.seenCounter) continue;
+        // A town look is a second reason to look at a buy ad (E90): with nobody
+        // selling no deal happens, and the bid would never move.
+        if (counter.deals <= line.pricing.seenCounter && !(ctx.visit && line.storeType === BUY)) continue;
         const belief = beliefFor(line.selfId, ctx, line.enchant || 0);
         if (!belief) continue;
         PriceBelief.learn(belief, PriceBelief.lineObservations(line, belief, ctx));

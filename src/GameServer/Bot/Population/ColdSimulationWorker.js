@@ -286,6 +286,18 @@ eventLoopDelay.enable();
 // A changed board counter makes the bot review its own lines. The review
 // checkpoints observations even when its standing quote remains best.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+// The last town look of a bot this worker has seen (stats.townLook.n, set when
+// its market visit ends). The first state of a bot is only the baseline: a
+// visit made before the worker started is not an event of this worker.
+const townLooks = new Map();
+function noteTownLook(state) {
+    const id = Number(state?.characterId), n = Number(state?.stats?.townLook?.n || 0);
+    if (!id || state.phase !== 'cold') return;
+    const seen = townLooks.get(id);
+    townLooks.set(id, n);
+    if (seen !== undefined && n > seen) marketEvents.visit(id);
+}
+
 function reviewMarket(state, timestamp) {
     const board = boardReady();
     if (!board || state?.phase !== 'cold') return null;
@@ -296,6 +308,9 @@ function reviewMarket(state, timestamp) {
         npcOffersFor: (selfId) => planningNpcCatalog.offersFor(selfId),
         findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId)
     });
+    // One look per visit: the flag is spent by this review, whatever it finds.
+    ctx.visit = marketEvents.visits.has(state.characterId);
+    marketEvents.consumeVisit(state.characterId);
     const looked = MarketPricing.look(state, lines, ctx);
     if (!looked) return null;
     return looked;
@@ -526,6 +541,7 @@ function startKernel(config = {}) {
             }
         });
         kernel.decisionEvents = competitionCandidates;
+        kernel.onState = noteTownLook;
     }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {

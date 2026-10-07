@@ -2,6 +2,7 @@
 // BoardIndex membership; startup/state/ack signals inspect only one owner's
 // lines. Eligibility and command execution belong to the caller.
 const BoardRules = require('../../AfkTrade/BoardRules');
+const { BUY } = require('../../AfkTrade/BoardIndex');
 const MAX_PRICED_LINES = BoardRules.BOT_SHOP_LINES
     + Object.values(BoardRules.BOT_RECORDS).reduce((sum, count) => sum + count, 0);
 class BoardReviewEvents {
@@ -17,6 +18,9 @@ class BoardReviewEvents {
         this.coverageSequence = 0;
         this.coverageFloor = 0;
         this.acceptedEdges = new Map();
+        // Owners whose bot finished a town visit since its last review: the
+        // look at the market is an event of its own, with no deal needed.
+        this.visits = new Set();
     }
 
     clear() {
@@ -27,6 +31,7 @@ class BoardReviewEvents {
         this.changedWhileInFlight.clear();
         this.resetBoardCoverage();
         this.acceptedEdges.clear();
+        this.visits.clear();
     }
 
     // Versions live for the queue epoch. Forget/relist cannot recreate an
@@ -78,6 +83,18 @@ class BoardReviewEvents {
         else this.ready.add(ownerId);
     }
 
+    // The bot looked at the market in a town. Only an owner with a priced buy
+    // line is worth a review: there the look can show that nobody sells.
+    visit(ownerId) {
+        if (!this.board.ownerLines(ownerId).some(line => line.botOwned && line.pricing && line.storeType === BUY)) return;
+        this.visits.add(ownerId);
+        this.enqueue(ownerId);
+    }
+
+    consumeVisit(ownerId) {
+        this.visits.delete(ownerId);
+    }
+
     counterChanged(key, deals) {
         if (!Number.isSafeInteger(deals) || deals <= (this.lastCounters.get(key) || 0)) return;
         this.lastCounters.set(key, deals);
@@ -85,6 +102,7 @@ class BoardReviewEvents {
     }
 
     ownerStatus(ownerId) {
+        if (this.visits.has(ownerId)) return { priced: true, behind: true };
         let priced = false;
         const counts = new Map();
         for (const line of this.board.ownerLines(ownerId)) {
@@ -148,6 +166,7 @@ class BoardReviewEvents {
     }
 
     forget(ownerId) {
+        this.visits.delete(ownerId);
         this.advanceCoverage(ownerId);
         this.ready.delete(ownerId);
         this.pending.delete(ownerId);

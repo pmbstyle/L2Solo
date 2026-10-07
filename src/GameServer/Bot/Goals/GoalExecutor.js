@@ -67,7 +67,17 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     return local && local.name !== town.name ? trip(local) : null;
 }
 
+// A finished visit is the bot's look at the market: the board reviews its
+// buy ads on it (BoardReviewEvents.visit, MarketPricing.look). `n` counts the
+// visits; nothing else reads it.
 function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
+    const next = finishVisit(state, timestamp, options);
+    if (!next) return next;
+    return { ...next, stats: { ...(next.stats || {}),
+        townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
+}
+
+function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
         || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;

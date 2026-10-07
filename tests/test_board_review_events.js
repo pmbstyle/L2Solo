@@ -187,3 +187,29 @@ assert.deepEqual(queue.take(Infinity), []);
 }
 
 console.log('Board review event queue checks passed');
+
+// A finished town visit wakes an owner with a priced buy line even when no deal
+// happened (E90); a seller, a player and an unpriced owner stay asleep, and
+// one review spends the visit.
+{
+    const own = new BoardIndex({ groupOf });
+    own.put(record(3, 20, [line(31, 7, 10)], { storeType: BUY }));
+    own.put(record(4, 30, [line(41, 7, 0)], { botOwned: false }));
+    own.put(record(5, 40, [line(51, 7, 0, { pricing: null })]));
+    own.put(record(6, 50, [line(61, 107, 5)]));
+    const visits = new BoardReviewEvents({ board: own, counter: () => 0 });
+    visits.visit(50);
+    visits.visit(30);
+    visits.visit(40);
+    assert.deepEqual(visits.take(10), [], 'no priced bot buy line, no wake-up');
+    visits.visit(20);
+    assert.deepEqual(visits.take(10), [20], 'a buy line wakes on a visit with no deal');
+    assert(visits.visits.has(20));
+    visits.consumeVisit(20);
+    visits.defer(20);
+    assert.deepEqual(visits.take(10), [], 'the spent visit does not wake the owner again');
+    visits.visit(20);
+    visits.forget(20);
+    assert(!visits.visits.has(20), 'forgetting an owner drops its visit');
+}
+console.log('board review visit events passed');

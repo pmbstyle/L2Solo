@@ -576,6 +576,7 @@ class ColdSimulationKernel {
             this.stats.snapshots += 1;
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
+            this.onState?.(state);
             this.ensureScheduled(characterId);
             return true;
         }
@@ -588,6 +589,7 @@ class ColdSimulationKernel {
         this.stats.snapshots += 1;
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
+        this.onState?.(state);
         this.ensureScheduled(characterId);
         return true;
     }
