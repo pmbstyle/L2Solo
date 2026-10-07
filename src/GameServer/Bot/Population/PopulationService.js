@@ -598,7 +598,8 @@ function inventoryCleanupGoal(state, timestamp = Date.now()) {
         || ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'].includes(state.activity)) return null;
     const floor = SurvivalFloor.forState(state, timestamp);
     const need = floor?.action === 'unload'
-        ? { ...floor, reason: floor.reason === 'no_slot' ? 'inventory_capacity' : 'inventory_overweight' }
+        ? { ...floor, npcOnlySlots: ItemDisposition.npcOnlySlotCount(state),
+            reason: floor.reason === 'no_slot' ? 'inventory_capacity' : 'inventory_overweight' }
         : ItemDisposition.inventoryCleanupNeed(state, { now: timestamp });
     if (!need) return null;
     return { ...invoke('GameServer/Bot/Goals/NeedsEvaluator').cleanupGoal(need), status: 'active' };

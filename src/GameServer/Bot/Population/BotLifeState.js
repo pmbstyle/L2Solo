@@ -290,6 +290,11 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     }
     if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
     const stats = { ...(state.stats || {}) };
+    if (Number(stats.marketWanted?.itemId || 0) === Number(plan?.target?.selfId || 0)) {
+        stats.marketWanted = null;
+        stats.marketRetryAfter = null;
+        stats.marketLead = null;
+    }
     delete stats.equipmentPlan;
     delete stats.partyRequest;
     delete stats.clanPartyObjective;
