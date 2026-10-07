@@ -1,7 +1,11 @@
 const assert = require('node:assert/strict');
-delete process.env.L2NODE_SHARED_CONFIG_FILE;
-process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
-const { createWorld, Database } = require('./helpers/c4QuestHarness');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-saved-warehouse-patch');
+const fs = require('node:fs'), path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+require('../src/Global');
+fixture.assertConfigured(options.default);
+const Database = invoke('Database');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
@@ -9,7 +13,15 @@ const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const id = 719111;
 
 async function run() {
-    const world = await createWorld([{ id, level: 60 }], 'saved-warehouse-patch');
+    invoke('GameServer/DataCache').init();
+    const seed = new DatabaseSync(fixture.world);
+    seed.exec(fs.readFileSync(path.resolve(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
+    seed.exec("INSERT INTO accounts(username,password) VALUES('quests','test')");
+    seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,maxHp,maxMp,hp,mp,
+        sex,face,hair,hairColor,locX,locY,locZ,newbie,newbieShotsReceived)
+        VALUES(?,'quests',?,0,0,60,0,0,187,74,187,74,0,0,0,0,0,0,0,-1,0)`).run(id, `Quest${id}`);
+    seed.close();
+    await Database.init();
     const sale = Market.saleDecision;
     const transfer = Database.transferWarehouseToInventory;
     try {
@@ -32,7 +44,8 @@ async function run() {
         const parse = JSON.parse, parsedBytes = [];
         JSON.parse = (text, ...args) => { parsedBytes.push(typeof text === 'string' ? text.length : 0); return parse(text, ...args); };
         let moved;
-        try { moved = await Warehouse.releaseCold(state); }
+        assert(invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state), 'withdrawal uses a real town location');
+        try { moved = await Warehouse.releaseCold(state, { inTown: true }); }
         finally { JSON.parse = parse; }
         assert(moved.released);
         assert.equal(moved.items.length, 30);
@@ -64,7 +77,8 @@ async function run() {
             assert((await Owner.claim(current, { allowLifecycle: true, leaseMs: 30000 })).ok);
             return result;
         };
-        const partial = await Warehouse.releaseCold(state);
+        assert(invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state));
+        const partial = await Warehouse.releaseCold(state, { inTown: true });
         assert(partial.aborted && partial.released);
         assert.equal(partial.items.length, 1);
         assert.equal(partial.state.simulation.ownerId, Owner.OWNER_ID, 'record patch preserves the newer worker owner');
@@ -72,6 +86,9 @@ async function run() {
         const [stopped] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]);
         assert.deepEqual(JSON.parse(stopped.statsJson).lastWarehouseWithdrawal.items, [[1864, 3, 1]]);
         console.log('Saved withdrawal: 30 rows, one small stats patch, no whole-state parse, numeric capped record and partial-handoff preservation passed');
-    } finally { Market.saleDecision = sale; Database.transferWarehouseToInventory = transfer; await world.close(); }
+    } finally {
+        Market.saleDecision = sale; Database.transferWarehouseToInventory = transfer;
+        await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true });
+    }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });

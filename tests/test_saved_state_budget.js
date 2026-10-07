@@ -1,8 +1,12 @@
 'use strict';
 const assert = require('node:assert/strict');
-delete process.env.L2NODE_SHARED_CONFIG_FILE;
-process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
-const { createWorld, Database } = require('./helpers/c4QuestHarness');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-saved-state-budget');
+const fs = require('node:fs'), path = require('node:path');
+const { DatabaseSync } = require('node:sqlite');
+require('../src/Global');
+fixture.assertConfigured(options.default);
+const Database = invoke('Database');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
@@ -13,7 +17,16 @@ const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy')
 const id = 719112, buyerId = 719113;
 
 async function run() {
-    const world = await createWorld([{ id, level: 60 }, { id: buyerId, level: 60 }], 'saved-state-budget');
+    invoke('GameServer/DataCache').init();
+    const seed = new DatabaseSync(fixture.world);
+    seed.exec(fs.readFileSync(path.resolve(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
+    seed.exec("INSERT INTO accounts(username,password) VALUES('quests','test')");
+    const insert = seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,maxHp,maxMp,hp,mp,
+        sex,face,hair,hairColor,locX,locY,locZ,newbie,newbieShotsReceived)
+        VALUES(?,'quests',?,0,0,60,0,0,187,74,187,74,0,0,0,0,0,0,0,-1,0)`);
+    for (const characterId of [id, buyerId]) insert.run(characterId, `Quest${characterId}`);
+    seed.close();
+    await Database.init();
     const sale = Market.saleDecision;
     try {
         await Database.createAccount('bot_budget_probe', 'test');
@@ -47,7 +60,8 @@ async function run() {
         for (let i = 0; i < 30; i++) await Database.execute([
             'INSERT INTO warehouse_items(characterId,selfId,name,amount,enchant) VALUES(?,1864,\'Stem\',1,0)', [id]]);
         Market.saleDecision = () => ({ listings: [{ selfId: 1864, count: 60 }], npc: [], answers: [] });
-        const withdrawal = await Warehouse.releaseCold(state);
+        assert(invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state), 'withdrawal uses a real town location');
+        const withdrawal = await Warehouse.releaseCold(state, { inTown: true });
         Market.saleDecision = sale;
         assert(withdrawal.released && withdrawal.items.length === 30);
         state = withdrawal.state;
@@ -90,6 +104,9 @@ async function run() {
             assert(!serialized.includes('"' + key + '"'), key + ' must not be saved');
         assert.notEqual(options.default.Database.path, require('node:path').resolve('tmp/nodel2.sqlite'));
         console.log('Saved budget: native gear/goal, 60-item bag, 30 withdrawals, 20 NPC sales and 3 board deals passed');
-    } finally { Market.saleDecision = sale; Goals.reset(); await world.close(); }
+    } finally {
+        Market.saleDecision = sale; Goals.reset(); await Database.close();
+        fs.rmSync(fixture.directory, { recursive: true, force: true });
+    }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
