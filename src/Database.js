@@ -334,16 +334,39 @@ function cleanZeroAmountItems() {
     return run('DELETE FROM items WHERE amount <= 0', [], 'maintenance:zero-items');
 }
 
+// ARCH-NOTE: Failure-only diagnostics retain native rejection identity and existing SQL accounting.
+// The configured timeout is a source value, not a sampled PRAGMA; SQL/parameters are omitted.
+function reportTransactionSqliteFailure(operation, phase, error) {
+    try {
+        if (error?.code !== 'ERR_SQLITE_ERROR') return;
+        const frames = String(error.stack || '').split('\n')
+            .filter(line => /^\s+at /.test(line)).slice(0, 8);
+        console.warn('DB          :: sqlite transaction failure %s', JSON.stringify({
+            operation, phase, code: error.code, sqliteCode: error.errcode ?? null,
+            sqliteReason: error.errstr ?? null, configuredWriterBusyTimeoutMs: 5000,
+            frames
+        }));
+    } catch (_) { /* Logging must preserve the original SQLite rejection. */ }
+}
+
 async function inTransaction(work, operation = 'transaction') {
     return enqueue(() => {
         metrics.transactions += 1;
-        connection.exec('BEGIN IMMEDIATE');
+        try {
+            connection.exec('BEGIN IMMEDIATE');
+        } catch (error) {
+            reportTransactionSqliteFailure(operation, 'begin', error);
+            throw error;
+        }
         pendingSettlementUndo = new Map();
+        let phase = 'work';
         try {
             const result = work();
+            phase = 'commit';
             connection.exec('COMMIT');
             return result;
         } catch (error) {
+            reportTransactionSqliteFailure(operation, phase, error);
             try {
                 connection.exec('ROLLBACK');
             } finally {
