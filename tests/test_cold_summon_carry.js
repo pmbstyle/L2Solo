@@ -63,7 +63,8 @@ assert.strictEqual(emptyOwnedFresh.patch.stats.coldCombat.summon, null, 'an empt
 assert.deepStrictEqual(coldSummoner.inventory, {}, 'refusal does not mint a crystal');
 
 // Historical already-owned unit input, NOT a paid skill/book/SQL grant.
-// Capture the actual native1276/1 model and its authored item1459x1 cost.
+// The authored item1459x1 metadata remains captured; genuine bots are exempt
+// from that crystal cost in both hot and cold combat.
 const Skill = invoke('GameServer/Model/Skill');
 const definition = DataCache.skills.find(row => Number(row.selfId) === 1276);
 const rank = definition.levels.find(row => Number(row.level) === 1);
@@ -79,47 +80,50 @@ const alreadyOwned = { ...coldSummoner,
 const noCrystalState = { ...alreadyOwned, inventory: {} };
 const noCrystal = BackgroundResolver.resolveSolo({ state: noCrystalState,
     spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
-assert.strictEqual(noCrystal.debug.summonUses || 0, 0, 'an owned summon cannot cast without its authored crystal');
-assert.strictEqual(noCrystal.patch.stats.coldCombat.summon, null, 'missing crystal creates no summon');
-assert.deepStrictEqual(noCrystalState.inventory, {}, 'missing-crystal refusal preserves the input inventory');
+assert.strictEqual(noCrystal.debug.summonUses, 1, 'an owned bot summon casts without crystals');
+assert.strictEqual(noCrystal.patch.stats.coldCombat.summon.skillId, 1276, 'the crystal exemption retains the owned native skill');
+assert.deepStrictEqual(noCrystal.patch.inventory, {}, 'the bot exemption does not mint crystals');
+assert.deepStrictEqual(noCrystalState.inventory, {}, 'a crystal-free cast preserves the input inventory');
 const fresh = BackgroundResolver.resolveSolo({ state: alreadyOwned,
     spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(fresh.debug.summonUses > 0, 'without a kept servitor the cold summoner casts one');
-assert.strictEqual(fresh.debug.summonUses, 1, 'one authored crystal admits exactly one cast');
-assert.strictEqual(fresh.patch.inventory[1459].amount, 0, 'the result debits the upfront crystal exactly once');
+assert.strictEqual(fresh.debug.summonUses, 1, 'one owned skill admits exactly one cast');
+assert.strictEqual(fresh.patch.inventory[1459].amount, 1, 'a bot cast preserves its held crystal');
 assert.strictEqual(alreadyOwned.inventory[1459].amount, 1, 'the unit simulation does not mutate its input crystal stack');
 const twoCrystals = { ...alreadyOwned, inventory: { 1459: { ...alreadyOwned.inventory[1459], amount: 2 } } };
-const spentOne = BackgroundResolver.resolveSolo({ state: twoCrystals,
+const heldTwo = BackgroundResolver.resolveSolo({ state: twoCrystals,
     spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
-assert.strictEqual(spentOne.patch.inventory[1459].amount, 1, 'the authored cast does not consume a second crystal');
+assert.strictEqual(heldTwo.patch.inventory[1459].amount, 2, 'a bot cast preserves both held crystals');
 assert.strictEqual(twoCrystals.inventory[1459].amount, 2, 'quantity controls preserve the caller input');
 const carriedOwned = { ...alreadyOwned, ...fresh.patch, stats: fresh.patch.stats, inventory: fresh.patch.inventory };
 const keptAgain = BackgroundResolver.resolveSolo({ state: carriedOwned,
     spot, elapsedMs: 12000, timestamp: timestamp + 1000, rng: () => 0.1 });
-assert.strictEqual(keptAgain.debug.summonUses || 0, 0, 'a carried servitor never charges its upfront crystal twice');
-assert.strictEqual(keptAgain.patch.inventory[1459].amount, 0, 'carry does not mint or re-debit crystals');
+assert.strictEqual(keptAgain.debug.summonUses || 0, 0, 'a carried servitor is not recast');
+assert.strictEqual(keptAgain.patch.inventory[1459].amount, 1, 'carry neither mints nor consumes crystals');
 const raidPreparation = BackgroundResolver.prepareRaidParty([alreadyOwned], timestamp);
 assert.strictEqual(raidPreparation.summonCasts, 1, 'raid preparation casts the same already-owned native skill');
-assert.strictEqual(raidPreparation.memberResults[0].result.patch.inventory[1459].amount, 0,
-    'preparation propagates the existing inventory field before the lifecycle write');
+assert.strictEqual(raidPreparation.memberResults[0].result.patch.inventory[1459].amount, 1,
+    'preparation preserves the held crystal before the lifecycle write');
 assert.strictEqual(alreadyOwned.inventory[1459].amount, 1, 'preparation uses the private combat inventory copy');
 const beforePreparationMp = Math.min(alreadyOwned.vitals.mp,
     ColdCombatProfile.profileFor(alreadyOwned, timestamp).maxMp);
 assert.strictEqual(ownedSnapshot.skills[0].mp, 70, 'native1276/1 costs its authored MP');
 assert.strictEqual(raidPreparation.memberResults[0].result.patch.vitals.mp, beforePreparationMp - 70,
-    'a material-admitted preparation debits exactly the authored MP');
+    'a bot preparation debits exactly the authored MP');
 assert.strictEqual(raidPreparation.memberResults[0].result.patch.stats.coldCombat.cooldowns[1276],
-    timestamp + ownedSnapshot.skills[0].reuse, 'a paid cast installs the authored cooldown');
-const refusedPreparation = BackgroundResolver.prepareRaidParty([noCrystalState], timestamp);
-assert.strictEqual(refusedPreparation.summonCasts, 0);
-assert.strictEqual(refusedPreparation.memberResults[0].result.patch.vitals.mp, beforePreparationMp,
-    'missing crystal refuses before MP debit');
-assert.strictEqual(refusedPreparation.memberResults[0].result.patch.stats.coldCombat.cooldowns[1276], undefined,
-    'missing crystal creates no cooldown');
+    timestamp + ownedSnapshot.skills[0].reuse, 'a bot cast installs the authored cooldown');
+const emptyStockPreparation = BackgroundResolver.prepareRaidParty([noCrystalState], timestamp);
+assert.strictEqual(emptyStockPreparation.summonCasts, 1, 'a bot preparation needs no crystal');
+assert.strictEqual(emptyStockPreparation.memberResults[0].result.patch.vitals.mp, beforePreparationMp - 70,
+    'the crystal exemption still charges the authored MP');
+assert.strictEqual(emptyStockPreparation.memberResults[0].result.patch.stats.coldCombat.cooldowns[1276],
+    timestamp + ownedSnapshot.skills[0].reuse, 'the crystal exemption still installs the authored cooldown');
+assert.deepStrictEqual(emptyStockPreparation.memberResults[0].result.patch.inventory, {},
+    'preparation does not mint crystals');
 const coolingState = { ...alreadyOwned, stats: { ...alreadyOwned.stats,
     coldCombat: { ...ownedSnapshot, cooldowns: { 1276: timestamp + ownedSnapshot.skills[0].reuse } } } };
 const coolingPreparation = BackgroundResolver.prepareRaidParty([coolingState], timestamp);
-assert.strictEqual(coolingPreparation.summonCasts, 0, 'a retained cooldown cannot spend another crystal');
+assert.strictEqual(coolingPreparation.summonCasts, 0, 'a retained cooldown blocks a second cast');
 assert.strictEqual(coolingPreparation.memberResults[0].state.inventory[1459].amount, 1);
 assert.strictEqual(coolingPreparation.memberResults[0].result.patch.vitals.mp, beforePreparationMp);
 const lowMpState = { ...alreadyOwned, vitals: { ...alreadyOwned.vitals, mp: ownedSnapshot.skills[0].mp - 1 } };
@@ -176,22 +180,23 @@ try {
     SummonControl.restoreFromCold = restoreFromCold;
 }
 
-// The resolver's copied debit must survive the native lifecycle projection;
+// The bot crystal exemption survives native lifecycle projection;
 // these remain historical already-owned inputs, not a paid-training claim.
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const projectionInput = { ...alreadyOwned, phase: 'cold', exp: Number(DataCache.experience[39]) + 1, sp: 0,
     stats: { ...alreadyOwned.stats, classProgressionLevel: 40, classProgressionClassId: 14 } };
 const projected = await Life.prepareResolve(projectionInput, fresh,
     { persist: false, projectClassProgression: true, timestamp });
-assert.strictEqual(Number(projected.inventory[1459]?.amount || 0), 0,
-    'the native lifecycle cannot restore a resolver-spent upfront crystal');
+assert.strictEqual(Number(projected.inventory[1459]?.amount || 0), 1,
+    'the native lifecycle preserves the held crystal after a bot cast');
 assert.strictEqual(projectionInput.inventory[1459].amount, 1, 'projection retains the old canonical input');
 const keptProjection = await Life.prepareResolve({ ...projected, stats: projected.stats }, keptAgain,
     { persist: false, projectClassProgression: true, timestamp: timestamp + 1000 });
-assert.strictEqual(Number(keptProjection.inventory[1459]?.amount || 0), 0, 'projecting a carried servitor charges no second crystal');
-const refusedProjection = await Life.prepareResolve({ ...projectionInput, inventory: {} }, noCrystal,
+assert.strictEqual(Number(keptProjection.inventory[1459]?.amount || 0), 1, 'projecting a carried servitor preserves the held crystal');
+const emptyStockProjection = await Life.prepareResolve({ ...projectionInput, inventory: {} }, noCrystal,
     { persist: false, projectClassProgression: true, timestamp });
-assert.strictEqual(Number(refusedProjection.inventory[1459]?.amount || 0), 0, 'a refusal cannot mint a crystal during projection');
+assert.strictEqual(Number(emptyStockProjection.inventory[1459]?.amount || 0), 0, 'projecting a crystal-free cast cannot mint a crystal');
+assert.strictEqual(emptyStockProjection.stats.coldCombat.summon.skillId, 1276, 'the crystal-free owned summon survives projection');
 const Party = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const partyState = { ...projectionInput, activity: 'grouped', party: { partyId: 'carry-material-party', role: 'mage' } };
 const partyResolved = Party.resolve({ party: { partyId: 'carry-material-party', leaderId: partyState.characterId,
@@ -200,17 +205,17 @@ assert.strictEqual(partyResolved.debug.summonUses, 1, 'the genuine party resolve
 const partyMember = partyResolved.memberResults[0];
 const partyProjected = await Life.prepareResolve(partyMember.state, partyMember.result,
     { persist: false, projectClassProgression: true, timestamp });
-assert.strictEqual(Number(partyProjected.inventory[1459]?.amount || 0), 0, 'party projection retains its own spent crystal');
-assert.strictEqual(partyState.inventory[1459].amount, 1, 'party resource consumption stays in copied state');
+assert.strictEqual(Number(partyProjected.inventory[1459]?.amount || 0), 1, 'party projection preserves its held crystal');
+assert.strictEqual(partyState.inventory[1459].amount, 1, 'party combat preserves the caller crystal stack');
 const prepMember = raidPreparation.memberResults[0];
 const prepProjected = await Life.prepareResolve(prepMember.state, prepMember.result,
     { persist: false, projectClassProgression: true, timestamp });
-assert.strictEqual(Number(prepProjected.inventory[1459]?.amount || 0), 0, 'preparation projection preserves the already-debited private input');
-// A native reward granted after this fight is added AFTER its cast debit.
+assert.strictEqual(Number(prepProjected.inventory[1459]?.amount || 0), 1, 'preparation projection preserves the unchanged private input');
+// A separate native reward adds to the unconsumed physical crystal.
 const rewarded = await Life.prepareResolve(projectionInput, { ...fresh, materialize: { ...fresh.materialize,
     items: [{ selfId: 1459, name: crystal.template.name, amount: 1 }] } },
     { persist: false, projectClassProgression: true, timestamp });
-assert.strictEqual(rewarded.inventory[1459].amount, 1, 'a distinct materialized reward does not erase the cast charge');
+assert.strictEqual(rewarded.inventory[1459].amount, 2, 'one held crystal plus one distinct reward conserves both');
 // Physical SQLite persistence is verified independently from training ownership.
 // This is an already-owned historical unit state, not proof of a paid skill grant.
 nativeDatabase = invoke('Database');
@@ -233,20 +238,20 @@ const committed = await Life.prepareResolve(physicalInput, physicalFight,
     { projectClassProgression: true, timestamp });
 assert(committed, 'native lifecycle persistence publishes its actual resource result');
 const physicalItems = await nativeDatabase.fetchItems(physicalId);
-assert.strictEqual(physicalItems.filter(row => Number(row.selfId) === 1459).reduce((sum, row) => sum + Number(row.amount), 0), 0,
-    'the real items table debits the upfront crystal');
+assert.strictEqual(physicalItems.filter(row => Number(row.selfId) === 1459).reduce((sum, row) => sum + Number(row.amount), 0), 1,
+    'the real items table preserves the bot crystal exemption');
 const [physicalLife] = await nativeDatabase.execute(['SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [physicalId]]);
-assert.strictEqual(Number(JSON.parse(physicalLife.inventorySummary)[1459]?.amount || 0), 0,
-    'the actual persisted lifecycle summary contains the same debit');
-assert.strictEqual(Number(committed.inventory[1459]?.amount || 0), 0, 'published native state cannot restore the paid crystal');
+assert.strictEqual(Number(JSON.parse(physicalLife.inventorySummary)[1459]?.amount || 0), 1,
+    'the actual persisted lifecycle summary contains the same held crystal');
+assert.strictEqual(Number(committed.inventory[1459]?.amount || 0), 1, 'published native state preserves the original crystal');
 const noRecast = BackgroundResolver.resolveSolo({ state: committed, spot, elapsedMs: 12000, timestamp: timestamp + 1000, rng: () => 0.1 });
 assert.strictEqual(noRecast.debug.summonUses || 0, 0, 'a physically committed carry retains the live summon');
 const carriedCommit = await Life.prepareResolve(committed, noRecast,
     { projectClassProgression: true, timestamp: timestamp + 1000 });
 assert(carriedCommit);
 assert.strictEqual((await nativeDatabase.fetchItems(physicalId)).filter(row => Number(row.selfId) === 1459)
-    .reduce((sum, row) => sum + Number(row.amount), 0), 0, 'the carry commit neither mints nor double-charges crystals');
-console.log('Native summon crystal projection and SQLite consumption: input 1 -> cast/summary/items 0 -> carry 0');
+    .reduce((sum, row) => sum + Number(row.amount), 0), 1, 'the carry commit neither mints nor consumes crystals');
+console.log('Native bot summon crystal exemption: input 1 -> cast/summary/items 1 -> carry 1');
 
 console.log('test_cold_summon_carry: ok');
 } finally { if (nativeDatabase?.isReady()) await nativeDatabase.close(); fs.rmSync(isolated.directory, { recursive: true, force: true }); }
