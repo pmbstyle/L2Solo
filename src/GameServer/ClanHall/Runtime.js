@@ -121,14 +121,12 @@ async function tick() {
         const deadline = Date.now() + 40;
         const financeStarted = performance.now();
         try {
-            for (const id of [...financeDirty].slice(0, 4)) {
-                if (Date.now() >= deadline) break;
-                financeDirty.delete(id);
-                try {
-                    const result = await db.planClanHallFinance(id);
-                    if (result?.staleFinance) financeDirty.add(id);
-                } catch (error) { financeDirty.add(id); throw error; }
-            }
+            await db.planClanHallFinanceBatch([...financeDirty].slice(0, 4), {
+                deadline,
+                before: id => { financeDirty.delete(id); },
+                settled: (id, result) => { if (result?.staleFinance) financeDirty.add(id); },
+                failed: id => { financeDirty.add(id); }
+            });
         } finally {
             financeSamples.push(performance.now() - financeStarted);
             if (financeSamples.length > 128) financeSamples.shift();

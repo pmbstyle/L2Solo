@@ -69,14 +69,33 @@ async function run() {
             return sync.prepare(sql).all(...parameters);
         };
         const write = (sql, parameters = []) => { assert.equal(inside, true); return sync.prepare(sql).run(...parameters); };
-        const repository = Repository({ one, all, write, withCharacterFlush: (_id, work) => work(),
-            inTransaction: work => Promise.resolve().then(() => {
-                mutate?.(); mutate = null;
-                sync.exec('BEGIN IMMEDIATE'); inside = true;
-                const start = performance.now();
-                try { const value = work(); writeTimes.push(performance.now() - start); sync.exec('COMMIT'); return value; }
-                catch (error) { sync.exec('ROLLBACK'); throw error; } finally { inside = false; }
-            }) });
+        const inTransaction = work => Promise.resolve().then(() => {
+            mutate?.(); mutate = null;
+            sync.exec('BEGIN IMMEDIATE'); inside = true;
+            const start = performance.now();
+            try { const value = work(); writeTimes.push(performance.now() - start); sync.exec('COMMIT'); return value; }
+            catch (error) { sync.exec('ROLLBACK'); throw error; } finally { inside = false; }
+        });
+        const repository = Repository({ one, all, write, withCharacterFlush: (_id, work) => work(), inTransaction,
+            // The factory fixture owns native SQL, not the production queue.
+            // Keep its deliberate mutation AFTER prepare and BEFORE BEGIN.
+            inPreparedTransaction: prepare => Promise.resolve().then(() => {
+                const prepared = prepare();
+                return typeof prepared === 'function' ? inTransaction(prepared) : prepared;
+            }),
+            inPreparedTransactionBatch: async (candidates, prepare, { deadline, before, failed, committed }) => {
+                const admitted = [...candidates], completed = [];
+                for (const id of admitted) {
+                    if (Date.now() >= deadline) break;
+                    before?.(id);
+                    try {
+                        const prepared = prepare(id, Date.now());
+                        const value = typeof prepared === 'function' ? await inTransaction(prepared) : prepared;
+                        completed.push({ id, result: committed ? committed(id, value) : value });
+                    } catch (error) { failed?.(id, error); throw error; }
+                }
+                return completed;
+            } });
         stub(Life, 'cachedState', id => members.find(member => member.characterId === id));
         stub(Context, 'forClan', (projection, { halls }) => {
             assert.equal(inside, false); decisions++;
@@ -123,6 +142,20 @@ async function run() {
         stub(require('../src/GameServer/ClanHall/Doors'), 'start', () => null);
         let retries = 0;
         stub(Database, 'planClanHallFinance', async () => ({ ok: ++retries > 1, staleFinance: retries === 1 }));
+        // Runtime now submits a bounded batch; retain the original single-clan
+        // controlled outcomes and native dirty retry purpose of this facade.
+        stub(Database, 'planClanHallFinanceBatch', async (candidates, { deadline, before, settled, failed }) => {
+            const completed = [];
+            for (const id of candidates) {
+                if (Date.now() >= deadline) break;
+                before?.(id);
+                try {
+                    const result = await Database.planClanHallFinance(id);
+                    settled?.(id, result); completed.push({ id, result });
+                } catch (error) { failed?.(id, error); throw error; }
+            }
+            return completed;
+        });
         await Runtime.start();
         await Runtime.tick(); await Runtime.tick(); await Runtime.tick();
         assert.equal(retries, 2, 'stale finance is retried at next tick and removed after success');

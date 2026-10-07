@@ -369,8 +369,7 @@ function reportBotLifeSaveFailure(phase, error) {
     } catch (_) { /* Diagnostics must preserve the original save rejection. */ }
 }
 
-async function inTransaction(work, operation = 'transaction') {
-    return enqueue(() => {
+function performTransaction(work, operation) {
         metrics.transactions += 1;
         try {
             connection.exec('BEGIN IMMEDIATE');
@@ -401,7 +400,93 @@ async function inTransaction(work, operation = 'transaction') {
         } finally {
             pendingSettlementUndo = null;
         }
+}
+
+async function inTransaction(work, operation = 'transaction') {
+    return enqueue(() => performTransaction(work, operation), { operation, read: false });
+}
+
+// ARCH-NOTE: Hall input reads/planning join the existing write queue before
+// BEGIN, eliminating intervening local queued writes without widening the lock.
+// Native total_changes/data_version CAS still checks all planning-time writes.
+async function inPreparedTransaction(prepare, operation) {
+    return enqueue(() => {
+        const prepared = prepare();
+        if (prepared && typeof prepared.then === 'function')
+            throw new TypeError('prepared_transaction_must_be_synchronous');
+        return typeof prepared === 'function' ? performTransaction(prepared, operation) : prepared;
     }, { operation, read: false });
+}
+
+// ARCH-NOTE: One bounded queue admission; each clan still prepares before its
+// own BEGIN and commits independently. Journal each durable child before the
+// next child so a later rollback cannot discard an earlier committed flow.
+function syncPreparedHook(hook, ...args) {
+    if (!hook) return;
+    const result = hook(...args);
+    if (result && typeof result.then === 'function')
+        throw new TypeError('prepared_transaction_hook_must_be_synchronous');
+    return result;
+}
+
+async function inPreparedTransactionBatch(items, prepare, hooks, operation) {
+    const count = Array.isArray(items) ? items.length : -1;
+    if (count < 0 || count > 4)
+        throw new RangeError('prepared_transaction_batch_bound');
+    // Capture bounded inputs before callbacks or queue wait; later caller
+    // mutation cannot admit extra clans or replace the deadline/hook references.
+    const admitted = new Array(count);
+    for (let index = 0; index < count; index++) admitted[index] = items[index];
+    Object.freeze(admitted);
+    const { deadline, before, failed, committed } = hooks || {};
+    if (!Number.isFinite(deadline))
+        throw new TypeError('prepared_transaction_deadline_required');
+    if (deadline > Date.now() + 40)
+        throw new RangeError('prepared_transaction_deadline_bound');
+    if (!admitted.length || Date.now() >= deadline) return [];
+    // Match the original loop's first call admission/deletion before it waits
+    // on the queue. Later wakeups for this ID must survive that wait.
+    try { syncPreparedHook(before, admitted[0]); }
+    catch (error) { syncPreparedHook(failed, admitted[0], error); throw error; }
+    const firstTimestamp = Date.now();
+    let entered = false;
+    return enqueue(() => {
+        entered = true;
+        const completed = [];
+        for (let index = 0; index < admitted.length; index++) {
+            if (index > 0 && Date.now() >= deadline) break;
+            const id = admitted[index];
+            let value;
+            try {
+                if (index > 0) syncPreparedHook(before, id);
+                EconomyJournal.begin(operation);
+                const prepared = prepare(id, index === 0 ? firstTimestamp : Date.now());
+                if (prepared && typeof prepared.then === 'function')
+                    throw new TypeError('prepared_transaction_must_be_synchronous');
+                value = typeof prepared === 'function' ? performTransaction(prepared, operation) : prepared;
+                EconomyJournal.commit();
+            } catch (error) {
+                EconomyJournal.discard();
+                syncPreparedHook(failed, id, error);
+                throw error;
+            }
+            try {
+                completed.push({ id, result: committed ? syncPreparedHook(committed, id, value) : value });
+            } catch (error) {
+                syncPreparedHook(failed, id, error);
+                // The previous single-clan tx continuation also rejects after
+                // SQL queue success. Keep that native counter/error boundary.
+                return { completed, afterCommitError: error };
+            }
+        }
+        return { completed };
+    }, { operation, read: false }).catch(error => {
+        if (!entered) syncPreparedHook(failed, admitted[0], error);
+        throw error;
+    }).then(result => {
+        if (Object.hasOwn(result, 'afterCommitError')) throw result.afterCommitError;
+        return result.completed;
+    });
 }
 
 function withCharacterFlush(characterId, work) {
@@ -9382,7 +9467,7 @@ const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, wr
 Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp, recordClanGoalEventUnsafe }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
-    one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
+    one, all, write, inTransaction, inPreparedTransaction, inPreparedTransactionBatch, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
     rememberClanContributionUnsafe
 }));
 
