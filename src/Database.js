@@ -3292,6 +3292,15 @@ function commitColdInteractionMemoryUnsafe(request) {
 }
 
 const ClanMembership = require('./GameServer/Clan/ClanMembershipRepository')({ all, write, inTransaction, now });
+function publishClanMembership(result) {
+    const { previousClanId, nextClanId, ...value } = result || {};
+    if (result?.ok || Number(result?.affectedRows) > 0) {
+        const Events = require('./GameServer/Clan/ClanReviewEvents');
+        for (const id of new Set([previousClanId, nextClanId])) if (Number(id) > 0) Events.changed(id, 'membership');
+    }
+    return value;
+}
+
 
 const Database = {
     reconcileBotClanMembership: ClanMembership.reconcile,
@@ -7715,7 +7724,7 @@ const Database = {
             if (!memory.ok) throw Error('expulsion memory rejected');
             return { ok: true, clanId: clan, characterId: id, banUntil, snapshot,
                 row: coldSimulationRow(id), memorySnapshots: memory.snapshots };
-        }, 'clan-social:expel'));
+        }, 'clan-social:expel')).then(result => publishClanMembership({ ...result, previousClanId: clan }));
     },
     migrateAutonomousClanNames({ dryRun = false } = {}) {
         return inTransaction(() => {
@@ -7830,7 +7839,7 @@ const Database = {
                 botMembers: nextBotMembers,
                 maxBotMembers: maxMembers
             };
-        }, 'clan-simulation:create').then(ClanMembership.publish).catch((error) => {
+        }, 'clan-simulation:create').then(result => publishClanMembership({ ...result, nextClanId: result.clanId })).then(ClanMembership.publish).catch((error) => {
             if (/UNIQUE constraint failed: clans\.name/i.test(String(error.message || ''))) {
                 return { ok: false, code: 'name_exists' };
             }
@@ -7903,7 +7912,7 @@ const Database = {
                 botMembers: nextBotMembers,
                 maxBotMembers: maxMembers
             };
-        }, 'clan-simulation:join').then(ClanMembership.publish);
+        }, 'clan-simulation:join').then(result => publishClanMembership({ ...result, nextClanId: result.clanId })).then(ClanMembership.publish);
     },
     fetchClanContributionSummary(clanId, targetLevel = null) {
         const params = [Number(clanId)];
@@ -9014,10 +9023,11 @@ const Database = {
     updateClanLevel(id, level) { return update('clans', { level }, 'id = ?', [id], 'clan:level'); },
     updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) {
         return withCharacterFlush(id, () => inTransaction(() => {
+            const previousClanId = Number(one('SELECT clanId FROM characters WHERE id = ?', [id])?.clanId || 0);
             const result = write(`UPDATE characters SET clanId = ?, clanPrivileges = ?, clanJoinExpiryTime = ?, clanCreateExpiryTime = ? WHERE id = ?`,
                 [clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime, id]);
-            return { ...result, membershipRepair: ClanMembership.repairUnsafe([id]) };
-        }, 'character:clan')).then(ClanMembership.publish);
+            return { ...result, previousClanId, nextClanId: Number(clanId), membershipRepair: ClanMembership.repairUnsafe([id]) };
+        }, 'character:clan')).then(publishClanMembership).then(ClanMembership.publish);
     },
     updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
     updateCharacterTitle(id, title) { return withCharacterFlush(id, () => update('characters', { title: String(title || '') }, 'id = ?', [id], 'character:title')); },
@@ -9071,10 +9081,11 @@ const Database = {
     },
     removeCharacterFromClan(id) {
         return withCharacterFlush(id, () => inTransaction(() => {
+            const previousClanId = Number(one('SELECT clanId FROM characters WHERE id = ?', [id])?.clanId || 0);
             const result = write(`UPDATE characters SET clanId = 0, clanPrivileges = 0,
                 clanJoinExpiryTime = 0, clanCreateExpiryTime = 0, title = '' WHERE id = ?`, [id]);
-            return { ...result, membershipRepair: ClanMembership.repairUnsafe([id]) };
-        }, 'character:clan-remove')).then(ClanMembership.publish);
+            return { ...result, previousClanId, nextClanId: 0, membershipRepair: ClanMembership.repairUnsafe([id]) };
+        }, 'character:clan-remove')).then(publishClanMembership).then(ClanMembership.publish);
     },
     dissolveClan({ clanId, leaderId } = {}) {
         const id = Number(clanId);
@@ -9103,7 +9114,7 @@ const Database = {
                 write('DELETE FROM clans WHERE id = ?', [id]);
                 return { ok: true, clanId: id, memberIds: currentMembers.map((member) => Number(member.id)),
                     membershipRepair: ClanMembership.repairUnsafe(currentMembers.map(member => member.id)) };
-            }, 'clan:dissolve'))).then(ClanMembership.publish);
+            }, 'clan:dissolve'))).then(result => publishClanMembership({ ...result, previousClanId: id })).then(ClanMembership.publish);
     },
     deleteGearItems(characterId) { return withCharacterFlush(characterId, () => remove('items', 'characterId = ? AND selfId != 57', [characterId], 'item:delete-gear')); },
     setShortcut(characterId, shortcut) { return run(`INSERT INTO shortcuts (id, kind, slot, unknown, characterId) VALUES (?, ?, ?, ?, ?)

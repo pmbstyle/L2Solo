@@ -39,7 +39,8 @@ const FISHING_ROD_GRADES = {
 };
 
 function recordEquipmentEvent(session, item, action) {
-    require('../Clan/ClanReviewEvents').changed(session?.actor?.fetchClanId?.(), 'member_gear');
+    const Events = require('../Clan/ClanReviewEvents'), clanId = session?.actor?.fetchClanId?.();
+    if (Events.tracks(clanId, item?.fetchSelfId?.())) Events.changed(clanId, 'member_gear');
     if (!session?.accountId?.startsWith?.('bot_') || !item) return;
     Promise.resolve(BotEventJournal.record({
         botId: session.actor?.fetchId?.(),
@@ -71,7 +72,7 @@ class Backpack extends BackpackModel {
             }));
             this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
             Item.bindInventory(this);
-            this.onInventoryChange?.();
+            this.onInventoryChange?.(selfId);
         });
     }
 
@@ -98,7 +99,7 @@ class Backpack extends BackpackModel {
                 // Update memory state instantly
                 this.items = this.fetchItems().filter((ob) => ob.fetchId() !== id);
                 Item.bindInventory(this);
-                this.onInventoryChange?.();
+                this.onInventoryChange?.(item.fetchSelfId());
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
                 callback(item.fetchSelfId());
 

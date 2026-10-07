@@ -40,7 +40,8 @@ class CompactDecision {
     }
     get activity() {
         const counts = this.counts;
-        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12 + (counts & 4096 ? 17 : 0);
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
+            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
@@ -74,13 +75,21 @@ class CompactDecision {
         const view = new DataView(this.data);
         return [view.getUint8(at), view.getFloat64(at + 1, true), view.getFloat64(at + 9, true)];
     }
+    get clan() {
+        const counts = this.counts;
+        if (!(counts & 8192)) return null;
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12 + (counts & 4096 ? 17 : 0);
+        const view = new DataView(this.data), itemId = view.getFloat64(at + 16, true);
+        return { horizonHours: view.getFloat64(at, true), huntPerHour: view.getFloat64(at + 8, true),
+            plan: itemId ? { itemId, valueHours: view.getFloat64(at + 24, true) } : null };
+    }
 }
 function compact(record) {
     if (record.data instanceof ArrayBuffer) {
         const result = new CompactDecision(record.updatedAt, record.key, record.riskWeight, null, record.data, record.flags);
         if (Object.hasOwn(record, 'stale')) result.stale = record.stale;
         if (Object.hasOwn(record, 'held')) result.held = record.held;
-        for (const key of ['clan', 'workshopToken', 'workshop']) if (Object.hasOwn(record, key)) result[key] = record[key];
+        for (const key of ['workshopToken', 'workshop']) if (Object.hasOwn(record, key)) result[key] = record[key];
         return result;
     }
     const pairs = record.usefulness || [], watch = record.watch || [], materials = record.materials || [], wish = record.wish;
@@ -88,8 +97,9 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement])) : [];
-    const data = new ArrayBuffer(28 + n * 8 + w * 21 + m * 12 + (wish ? 17 : 0) + activity.length), view = new DataView(data);
-    view.setUint32(0, n | (w << 6) | (m << 8) | (wish ? 4096 : 0), true);
+    const clan = record.clan;
+    const data = new ArrayBuffer(28 + n * 8 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0) + activity.length), view = new DataView(data);
+    view.setUint32(0, n | (w << 6) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0), true);
     view.setUint32(4, record.inputHash >>> 0, true);
     new Float32Array(data, 28, n * 2).set(pairs.subarray ? pairs.subarray(0, n * 2) : pairs.slice(0, n * 2));
     let at = 28 + n * 8;
@@ -97,6 +107,8 @@ function compact(record) {
         view.setFloat64(at + 12, row[2], true); view.setUint8(at + 20, row[3]); at += 21; }
     for (const row of materials.slice(0, m)) { view.setUint32(at, row[0], true); view.setFloat64(at + 4, row[1], true); at += 12; }
     if (wish) { view.setUint8(at, wish[0]); view.setFloat64(at + 1, wish[1], true); view.setFloat64(at + 9, wish[2], true); at += 17; }
+    if (clan) { view.setFloat64(at, clan.horizonHours, true); view.setFloat64(at + 8, clan.huntPerHour, true);
+        view.setFloat64(at + 16, clan.plan?.itemId || 0, true); view.setFloat64(at + 24, clan.plan?.valueHours || 0, true); at += 32; }
     new Uint8Array(data, at).set(activity);
     return new CompactDecision(record.updatedAt, record.key, record.riskWeight, record.activity, data);
 }
@@ -144,6 +156,21 @@ function capture(economy, state, seen = state) {
     };
     for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1));
     const activity = leaf ? new CompactActivity(leaf) : null;
+    let clan = null;
+    if (Number(state?.stats?.clanId) > 0) {
+        const horizonHours = economy.horizonHours ?? require('../Economy/EconomicValuation')
+            .stageHours(state, economy.hunt.expPerHour, economy.persona);
+        const itemId = Number(state.stats.equipmentPlan?.target?.selfId || 0);
+        let valueHours = itemId ? Math.max(0, Number(economy.itemUsefulness(itemId)) || 0) : 0;
+        if (itemId && !valueHours) {
+            const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
+            if (item?.etc?.slot) {
+                const gain = require('../Economy/WishProviders').gearGain(state, item);
+                valueHours = Math.max(0, (gain.attack + gain.defence * economy.deathHours) * horizonHours);
+            }
+        }
+        clan = { horizonHours, huntPerHour: economy.hunt.perHour, plan: itemId ? { itemId, valueHours } : null };
+    }
     return compact({
         updatedAt: Number(state?.updatedAt || 0),
         key: stateKey(seen),
@@ -151,7 +178,7 @@ function capture(economy, state, seen = state) {
         activity,
         wish: wish ? [kindCode(wish.object?.kind), Number(wish.object?.amount || 0), Number(wish.price || 0)] : null,
         watch: (economy?.watchList || []).slice(0, 3).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
-        materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || '')
+        materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan
     });
 }
 
@@ -227,6 +254,10 @@ class ColdEconomyDecisions {
     release(id) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale = true; } }
     forget(id) { this.byId.delete(Number(id)); }
     size() { return this.byId.size; }
+    clanNumbers(id) {
+        const entry = this.byId.get(Number(id)), clan = entry?.clan;
+        return clan ? { ...clan, updatedAt: entry.updatedAt } : null;
+    }
     workshopFor(state, build) {
         const id = Number(state.characterId), entry = this.byId.get(id) || { stale: true };
         const token = fnv1a32(JSON.stringify([state.stats?.workshop?.entries, state.stats?.recipes || state.recipes]));

@@ -37,6 +37,7 @@ const ColdTrip = require('./ColdTrip');
 // Private main-thread provenance survives the queue's shallow clone but is
 // excluded from JSON/wire sizing and cannot be supplied by a Worker message.
 const PROPOSAL_SOURCE = Symbol('cold-proposal-source');
+const CLAN_BEFORE = Symbol('cold-clan-before');
 const OWNERSHIP_REBASE_REASONS = new Set([
     'stale_revision',
     'cas_failed',
@@ -1548,6 +1549,7 @@ class ColdSimulationCoordinator {
         }
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
         if (!state) return null;
+        if (Number(state.stats?.clanId) > 0) proposal[CLAN_BEFORE] = { level: state.level, inventory: state.inventory };
         const partyId = String(state.party?.partyId || state.partyId || '');
         if ((partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId))
             || this.visibleToRealPlayer(state)) return null;
@@ -1650,6 +1652,7 @@ class ColdSimulationCoordinator {
         if (sourceCurrent()) {
             state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite)) || state;
         }
+        await this.step('clanEvents', id, () => require('../../Clan/ClanReviewEvents').committedMember(entry.proposal[CLAN_BEFORE], state));
         await this.step('party', id, async () => {
             if (entry.proposal.partyResolution?.party) {
                 const party = entry.proposal.partyResolution.party;

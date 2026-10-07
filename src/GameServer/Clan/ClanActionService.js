@@ -578,7 +578,7 @@ const ClanActionService = {
     config: Config,
     actionTypes: ACTION_TYPES,
     bootstrap,
-    startEvents(onWake) { ReviewEvents.start(invoke('GameServer/Bot/Population/BotLifeState'), invoke('GameServer/AfkTrade/AfkTradeService'), onWake); },
+    startEvents(onWake) { return ReviewEvents.start(invoke('GameServer/Bot/Population/BotLifeState'), invoke('GameServer/AfkTrade/AfkTradeService'), onWake); },
     stopEvents: ReviewEvents.stop,
     hasEvents: () => ReviewEvents.pending() > 0,
     scheduleReviews,

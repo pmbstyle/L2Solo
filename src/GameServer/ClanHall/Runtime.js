@@ -10,6 +10,11 @@ const duesClans = new Set();
 let nextDuesAt = 0;
 // Hourly dues pass per clan: when it is due and how far it got (4 members per tick).
 const duesPasses = new Map();
+const financeSamples = [];
+function financeSummary() {
+    const sorted = [...financeSamples].sort((a, b) => a - b);
+    return { samples: sorted.length, p95Ms: sorted.length ? sorted[Math.ceil(sorted.length * 0.95) - 1] : 0 };
+}
 function applyRows(rows) {
     halls = rows.map((h) => ({ ...Policy.definition(h.id), ...h, functions: JSON.parse(h.functionsJson || '{}') }));
 }
@@ -114,11 +119,19 @@ async function tick() {
         refresh(await db.tickClanHalls());
         if (!invoke('GameServer/Clan/ClanSimulationConfig').enabled) return;
         const deadline = Date.now() + 40;
-        for (const id of [...financeDirty].slice(0, 4)) {
-            if (Date.now() >= deadline) break;
-            financeDirty.delete(id);
-            try { await db.planClanHallFinance(id); }
-            catch (error) { financeDirty.add(id); throw error; }
+        const financeStarted = performance.now();
+        try {
+            for (const id of [...financeDirty].slice(0, 4)) {
+                if (Date.now() >= deadline) break;
+                financeDirty.delete(id);
+                try {
+                    const result = await db.planClanHallFinance(id);
+                    if (result?.staleFinance) financeDirty.add(id);
+                } catch (error) { financeDirty.add(id); throw error; }
+            }
+        } finally {
+            financeSamples.push(performance.now() - financeStarted);
+            if (financeSamples.length > 128) financeSamples.shift();
         }
         // Hourly dues are a real payment deadline, independent of planning.
         if (Date.now() >= nextDuesAt) {
@@ -144,6 +157,7 @@ module.exports = {
     owned,
     forActor,
     tick,
+    financeSummary,
     all: () => halls,
     async start() {
         this.stop();
@@ -167,6 +181,7 @@ module.exports = {
         timer = null;
         unsubscribe?.(); unsubscribe = null;
         financeDirty.clear(); duesClans.clear(); duesPasses.clear(); nextDuesAt = 0;
+        financeSamples.length = 0;
     },
     async refresh() {
         refresh(await invoke('Database').fetchClanHallAuctions());

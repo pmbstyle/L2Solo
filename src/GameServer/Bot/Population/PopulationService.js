@@ -1001,7 +1001,8 @@ const PopulationService = {
         Metrics.startEventLoopMonitor();
         invoke('GameServer/Bot/Economy/CraftWorkshopService').init();
         this.lifeReadyPromise = LifeState.init();
-        ClanActionService.startEvents(() => { this.nextClanActionAt = 0; });
+        Promise.resolve(this.lifeReadyPromise).then(() => ClanActionService.startEvents(() => { this.nextClanActionAt = 0; }))
+            .catch(error => utils.infoWarn('ClanReview', 'startup: %s', error.message));
         LifeEvents.init();
         BackgroundPartyState.init();
         Director.init();
@@ -1015,7 +1016,8 @@ const PopulationService = {
         if (!this.initialized) this.init();
 
         this.started = true;
-        ClanActionService.startEvents(() => { this.nextClanActionAt = 0; });
+        Promise.resolve(this.lifeReadyPromise).then(() => ClanActionService.startEvents(() => { this.nextClanActionAt = 0; }))
+            .catch(error => utils.infoWarn('ClanReview', 'startup: %s', error.message));
         this.initialSummaryTimer = setTimeout(() => {
             this.logSummary('start');
             this.initialSummaryTimer = null;

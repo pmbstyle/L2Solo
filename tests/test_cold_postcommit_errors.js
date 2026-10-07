@@ -65,6 +65,13 @@ async function run() {
     assert.equal(resolves, 3); assert.equal(announcements, 3);
     assert.equal(logs.filter(line => line.includes('postcommit partyPlans failed')).length, 1);
     assert.equal(coordinator.counters.afterCommitStepErrors.partyPlans, 1);
+    const ClanEvents = invoke('GameServer/Clan/ClanReviewEvents');
+    stub(ClanEvents, 'committedMember', () => { throw Error('clan_event_probe'); });
+    logs.length = 0;
+    await coordinator.afterCommit(entry);
+    assert.equal(resolves, 4); assert.equal(announcements, 4);
+    assert.equal(coordinator.counters.afterCommitStepErrors.clanEvents, 1);
+    assert.equal(logs.filter(line => line.includes('postcommit clanEvents failed')).length, 1);
     console.log('Applied commands and independent post-commit steps survive synchronous failures');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
