@@ -47,7 +47,7 @@ function decide(state, economy, options = {}) {
     const sale = Listing.evaluate(saleState, { ...options, economy, slots: Listing.BOARD_SLOTS, kept, stored: new Map() });
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });
-    const townOptions = { tripCost: ctx.tripCost || (() => 0), timestamp: options.now };
+    const townOptions = { tripCost: ctx.tripCost || (() => 0), timestamp: options.now, findSpot: options.findSpot };
     const shopTown = own.find(line => line.kind === 'shop' && line.storeType === SELL)?.town
         || state.stats?.shopTown?.town || Town.shopTown(state, sale.listings.slice(0, 3), townOptions);
     const sell = sale.listings.slice(0, 8).map((row, at) => [Number(row.selfId), Number(row.count), Number(row.price),

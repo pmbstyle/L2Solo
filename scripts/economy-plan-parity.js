@@ -103,7 +103,7 @@ parentPort.on('message', message => {
                 const oldListings = invoke('GameServer/Bot/Economy/MarketListingPolicy').evaluate(row.state, options).listings;
                 const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(row.state, options);
                 const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
-                const townOptions = { tripCost: ctx.tripCost, timestamp: row.timestamp };
+                const townOptions = { tripCost: ctx.tripCost, timestamp: row.timestamp, findSpot: options.findSpot };
                 const shopTown = row.state.stats?.shopTown?.town || Town.shopTown(row.state, oldListings.slice(0, 3), townOptions);
                 const oldSell = oldListings.slice(0, 8).map((item, at) => [item.selfId, item.count, item.price,
                     at < 3 ? shopTown : Town.shopTown(row.state, [item], townOptions)]);

@@ -962,6 +962,7 @@ const tests = [
     'tests/test_cold_economy_plan_execution.js',
     'tests/test_shot_market_index.js',
     'tests/test_cold_worker_shot_plan.js',
+    'tests/test_cold_worker_market_origin.js',
     'tests/test_drop_target_dormancy.js',
     'tests/test_cold_buff_offer.js',
     'tests/test_cold_economy_readers.js',
@@ -1017,6 +1018,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_cold_worker_market_origin.js',
     'tests/test_bot_acquisition_recovery.js',
     'tests/test_cold_economy_decision.js',
     'tests/test_saved_market_counts.js',

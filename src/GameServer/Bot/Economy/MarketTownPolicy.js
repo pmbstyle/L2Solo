@@ -81,7 +81,7 @@ function targetTownForItems(state, items = [], options = {}) {
 // counter with no deals yet takes the author's grade table
 // (targetTownForItems) as its whole share: the seed of a young world. A bot
 // with karma opens in Floran. O(items x towns), at an opening only.
-function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), rollKey = null } = {}) {
+function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), rollKey = null, findSpot = null } = {}) {
     if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
     const towns = ShopPlaces.SHOP_TOWNS;
     const values = new Map(towns.map((town) => [town, 0]));
@@ -92,7 +92,7 @@ function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), 
         let total = 0;
         for (const entry of demand) total += entry.perHour;
         if (!(total > 0)) {
-            const seed = targetTownForItems(state, [item]);
+            const seed = targetTownForItems(state, [item], { findSpot });
             if (values.has(seed)) values.set(seed, values.get(seed) + worth);
             continue;
         }
@@ -105,7 +105,7 @@ function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), 
     const options = towns.map((town) => ({ action: town, value: values.get(town) - trip(town) }));
     const chosen = invoke('GameServer/Bot/Economy/PriceDecision').chooseByWeight(options,
         rollKey || ['shop_town', Number(state?.characterId || 0), timestamp]);
-    return chosen?.action || targetTownForItems(state, items);
+    return chosen?.action || targetTownForItems(state, items, { findSpot });
 }
 
 // The town a bot without a shop opens one in: the decision it already made
