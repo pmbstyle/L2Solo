@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-store-release-'));
-delete process.env.L2NODE_CONFIG_SHARED_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = path.join(directory, 'default.ini');
 fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${directory}/world.sqlite\nhistoryPath=${directory}/history.sqlite\n`);
 require('../src/Global');

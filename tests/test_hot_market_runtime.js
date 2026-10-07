@@ -73,6 +73,11 @@ async function main() {
     replace(Population, 'schedulePersonaBackfill', () => {});
     const clan = originalInvoke('GameServer/Clan/ClanSimulationConfig');
     replace(clan, 'enabled', false);
+    // This readiness fixture isolates hot board attachment from clan startup.
+    // Named clan subscriptions have their own native SQLite regression.
+    const clanEvents = originalInvoke('GameServer/Clan/ClanReviewEvents');
+    replace(clanEvents, 'start', async () => true);
+    replace(clanEvents, 'stop', () => {});
     const flags = ['backgroundResolverEnabled', 'warehouseCleanupEnabled', 'stateRetentionEnabled',
         'backgroundPartyEnabled', 'phasePolicyEnabled'];
     for (const flag of flags) replace(Config, flag, false);
