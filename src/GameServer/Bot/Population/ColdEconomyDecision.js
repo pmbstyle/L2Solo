@@ -168,7 +168,10 @@ function capture(economy, state, seen = state) {
         if (itemId && !valueHours) {
             const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
             if (item?.etc?.slot) {
-                const gain = require('../Economy/WishProviders').gearGain(state, item);
+                // ARCH-PERF: Wall time expired this resolve's buffs and evicted
+                // 159-209 evaluated gains per actor (paired added P95 6.465 ms).
+                // The fallback must share the simulation clock and numeric build.
+                const gain = require('../Economy/WishProviders').gearGain(state, item, economy.timestamp);
                 valueHours = Math.max(0, (gain.attack + gain.defence * economy.deathHours) * horizonHours);
             }
         }
