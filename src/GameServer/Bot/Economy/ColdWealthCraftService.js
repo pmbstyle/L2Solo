@@ -122,7 +122,7 @@ async function execute(state, opportunity) {
         for (const purchase of opportunity.basket.purchases) {
             const bought = await ColdMarket.acquire(current, purchase.selfId, purchase.count,
                 { towns: [purchase.town], npc: false, purpose: 'wealth_craft',
-                    money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }) });
+                    r: opportunity.r, money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }) });
             // The bot went hot: the actor holds the materials; the craft stops here.
             if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
             if (!bought.bought && (bought.traveling || bought.state?.stats?.marketErrand)) {

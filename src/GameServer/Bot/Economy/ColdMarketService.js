@@ -154,6 +154,40 @@ function tripFrom(state, timestamp = Date.now()) {
     return (town) => (town === here ? 0 : trip ? trip(town) : 0);
 }
 
+// Keep the originating valuation through a trip. Zero is a real rate: it
+// must not fall back to an unrelated funded item in the current packet.
+function fundingTerms(options = {}) {
+    const terms = {};
+    for (const name of ['r', 'valueHours']) {
+        if (options[name] !== undefined && options[name] !== null && Number.isFinite(Number(options[name]))) {
+            terms[name] = Number(options[name]);
+        }
+    }
+    return terms;
+}
+
+function purchaseMoney(state, plan, spent = 0) {
+    const wallet = PurchaseFunding.budget(state);
+    const limit = Number.isFinite(plan.money) ? Math.max(0, plan.money - spent) : Infinity;
+    let funded;
+    if (plan.purpose === 'clan') {
+        // The treasury part was already credited by ClanMarketService. It
+        // is excluded from personal free money before adding its remainder.
+        const clanPart = Math.min(wallet, Math.max(0, Number(plan.tag?.clanPart || 0) - spent));
+        funded = clanPart + PurchaseFunding.spendable({ ...state, adena: wallet - clanPart }, 0, { free: true });
+    } else {
+        const terms = fundingTerms(plan);
+        const options = { itemId: plan.selfId, ...terms };
+        // An old errand has no valuation. It may still restore its actual
+        // missing survival kit, never the former general purchasing cap.
+        if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
+            options.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId);
+        }
+        funded = PurchaseFunding.spendable(state, 0, options);
+    }
+    return Math.max(0, Math.floor(Math.min(wallet, limit, funded)));
+}
+
 // The one purchase path of a cold bot (б5, D1, user 2026-10-05): every
 // board purchase is a trip to the seller's town. planPurchase picks the town
 // (OfferQuery.cheapestTown over the board and the NPC shops, the bot's round
@@ -161,15 +195,17 @@ function tripFrom(state, timestamp = Date.now()) {
 // once when the bot stands in it, else leaves it an errand and starts the
 // author's market trip (GoalExecutor.beginMarketTravel); on arrival
 // tryPurchase buys the errand (buyHere). One trip per purchase.
-function planPurchase(state, selfId, amount, { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
-    timestamp = Date.now(), cost = null } = {}) {
+function planPurchase(state, selfId, amount, options = {}) {
+    const { money = Infinity, maxPrice = Infinity, npc = true, towns = null,
+        timestamp = Date.now(), cost = null } = options;
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
         amount, money, maxPrice, towns, excludeOwner: state?.characterId,
         npcOffers: npc ? staticOffers(selfId) : [],
         cost: cost || tripFrom(state, timestamp)
     });
-    return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money } : null;
+    return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money, ...fundingTerms(options),
+        ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.tag ? { tag: options.tag } : {}) } : null;
 }
 
 // Buys a plan in the town the bot stands in: each board line one deal, then
@@ -183,19 +219,22 @@ async function buyHere(state, plan) {
     for (const entry of plan.lines || []) {
         const offer = AfkTrade.offerOf(entry.line, plan.town);
         if (!offer || Number(offer.price) !== Number(entry.price)) continue;
-        const bought = await buyOffer(current, offer, { qty: entry.count, autoEquip: false });
+        const count = Math.max(0, Math.min(entry.count, plan.amount - units,
+            Math.floor(purchaseMoney(current, plan, spent) / Number(offer.price))));
+        if (!(count > 0)) continue;
+        const bought = await buyOffer(current, offer, { qty: count, autoEquip: false });
         if (!bought.purchased) continue;
-        if (LifeState.hotRow(current.characterId)) return { state: current, units: units + entry.count, spent, hot: true };
+        if (LifeState.hotRow(current.characterId)) return { state: current, units: units + count, spent, hot: true };
         current = bought.state;
-        units += entry.count;
-        spent += entry.count * entry.price;
+        units += count;
+        spent += count * entry.price;
     }
     // A saved plan may predate group F or a rate change. Only a current
     // NPC/shot-table quote in this town can supply its remainder.
     const quotedPrice = Number(plan.npcPrice || 0);
     const npcPrice = staticOffers(plan.selfId).some((offer) => offer.town === plan.town
         && Number(offer.price) === quotedPrice) ? quotedPrice : 0;
-    const money = Math.min(Number.isFinite(plan.money) ? plan.money - spent : Infinity, Number(current.adena || 0));
+    const money = npcPrice > 0 ? purchaseMoney(current, plan, spent) : 0;
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (rest > 0) {
         const bought = await buyNpcStack(current, plan.selfId, rest, npcPrice);
@@ -246,6 +285,9 @@ function errandGoal(errand) {
 // the state unsaved (a caller that saves it). A bot in a party keeps the
 // errand: its party's market break takes it there (NeedsEvaluator).
 async function acquire(state, selfId, amount, options = {}) {
+    // ARCH-NOTE: a saved cap outlives the packet that admitted it. Recheck
+    // at planning, arrival and each debit using the originating valuation.
+    options = { ...options, money: purchaseMoney(state, { ...options, selfId: Number(selfId) }) };
     const visitTown = state.stats?.travel?.townName || (state.activity === 'shopping' ? state.currentRegion : null);
     const local = visitTown ? planPurchase(state, selfId, amount, { ...options, towns: [visitTown] }) : null;
     const plan = local || planPurchase(state, selfId, amount, options);
@@ -256,7 +298,7 @@ async function acquire(state, selfId, amount, options = {}) {
     }
     const errand = { selfId: Number(selfId), amount: Number(amount), town: plan.town, money: Number.isFinite(plan.money) ? plan.money : null,
         maxPrice: Number.isFinite(options.maxPrice) ? options.maxPrice : null, purpose: options.purpose || 'supply',
-        tag: options.tag || null, at: Number(options.timestamp || Date.now()) };
+        tag: options.tag || null, at: Number(options.timestamp || Date.now()), ...fundingTerms(options) };
     const withErrand = CombinedErrands.enqueue(state, errand);
     const from = state.activity === 'shopping' ? { ...withErrand, activity: 'hunting' } : withErrand;
     const travel = state.party?.partyId || state.partyId || (state.activity === 'shopping' && state.stats?.townVisit?.completed !== true)
@@ -276,8 +318,10 @@ async function acquire(state, selfId, amount, options = {}) {
 async function buyErrand(state) {
     const errand = pendingErrand(state);
     if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
-    const plan = planPurchase(state, errand.selfId, errand.amount, { towns: [errand.town],
-        money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity });
+    const options = { towns: [errand.town], purpose: errand.purpose, tag: errand.tag, ...fundingTerms(errand),
+        money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity };
+    const plan = planPurchase(state, errand.selfId, errand.amount,
+        { ...options, money: purchaseMoney(state, { ...options, selfId: errand.selfId }) });
     const bought = plan ? await buyHere(state, plan) : { state, units: 0, hot: false };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
     const remaining = CombinedErrands.complete(bought.state, errand);
@@ -297,7 +341,8 @@ const ColdMarketService = {
         if (goal?.type === 'market_errand' && errand) {
             // The errand's town is another one: the bot goes on there.
             return acquire(state, errand.selfId, errand.amount, { money: errand.money ?? Infinity,
-                maxPrice: errand.maxPrice ?? Infinity, purpose: errand.purpose, tag: errand.tag, towns: [errand.town] })
+                maxPrice: errand.maxPrice ?? Infinity, purpose: errand.purpose, tag: errand.tag, towns: [errand.town],
+                ...fundingTerms(errand) })
                 .then((result) => ({ state: result.state, purchased: result.bought, reason: 'market_errand_town' }));
         }
         const expectedBenefit = goal?.plan?.expectedBenefit;
@@ -394,7 +439,7 @@ const ColdMarketService = {
         const restock = ShotStock.restockPlan(current, { plan, unitPrice });
         if (restock.needed && restock.amount > 0) {
             const purchase = planPurchase(current, plan.selfId, restock.targetAmount - restock.currentAmount, {
-                towns: [current.currentRegion], money: restock.cost
+                towns: [current.currentRegion], money: restock.cost, purpose: 'shots'
             });
             if (purchase) {
                 const bought = await buyHere(current, purchase);

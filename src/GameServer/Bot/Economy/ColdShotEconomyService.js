@@ -99,7 +99,8 @@ async function obtainRecipe(state, selected, now) {
     const hourAdena = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, now).perHour;
     if (!(route?.profit > 0)) return state;
     const itemId = Number(recipe.recipeItemId);
-    const maxSpend = PurchaseFunding.spendable(state, 0, { valueHours: route.profit / hourAdena });
+    const valueHours = route.profit / hourAdena;
+    const maxSpend = PurchaseFunding.spendable(state, 0, { valueHours });
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) !== itemId
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25
@@ -125,8 +126,8 @@ async function obtainRecipe(state, selected, now) {
     if (!offer) return state;
     try {
         // The recipe is bought in its seller's town: a trip, or here (one purchase path).
-        const bought = await ColdMarket().acquire(state, itemId, 1, { maxPrice: maxSpend, npc: false, purpose: 'recipe',
-            timestamp: now });
+        const bought = await ColdMarket().acquire(state, itemId, 1, { money: maxSpend, maxPrice: maxSpend,
+            valueHours, npc: false, purpose: 'recipe', timestamp: now });
         if (!bought.bought || bought.hot) return bought.state;
         const learned = await LifeState.learnCraftableRecipes(bought.state) || bought.state;
         if (!(learned.stats?.lastRecipeBookLearning?.learned || [])
@@ -170,7 +171,7 @@ async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = tru
     const missing = amount - availableMaterial(state, selfId);
     if (missing <= 0) return { state, ready: true };
     const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input',
-        money: PurchaseFunding.spendable(state, 0, { r }) });
+        r, money: PurchaseFunding.spendable(state, 0, { r }) });
     return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
 }
 
@@ -203,7 +204,7 @@ async function obtainCrystals(state, candidate, batches) {
             vitals: { ...state.vitals, mp } }, 'shot_scrap_crafted');
     } else if (gear.source === 'afk' || gear.source === 'npc') {
         const bought = await ColdMarket().acquire(state, gear.selfId, 1, { maxPrice: gear.price, npc: gear.source === 'npc',
-            purpose: 'craft_input', money: PurchaseFunding.spendable(state, 0, { r: candidate.r }) });
+            purpose: 'craft_input', r: candidate.r, money: PurchaseFunding.spendable(state, 0, { r: candidate.r }) });
         if (!bought.bought || bought.hot) return { state: bought.state, ready: false };
         state = bought.state;
     }

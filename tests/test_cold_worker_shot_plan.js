@@ -1,11 +1,14 @@
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
-delete process.env.L2NODE_SHARED_CONFIG_FILE;
-process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
+const fixture = require('./helpers/isolatedSocialDatabase')('worker-shot-plan');
 const path = require('node:path');
+const fs = require('node:fs');
+require('../src/Global');
+fixture.assertConfigured(options.default);
+const { DatabaseSync } = require('node:sqlite');
 const { Worker } = require('node:worker_threads');
 process.env.BOT_STATIC_SHOTS_DISABLED = 'true';
-const { createWorld, Database, DataCache } = require('./helpers/c4QuestHarness');
+const Database = invoke('Database'), DataCache = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Shots = require('../src/GameServer/Bot/Economy/ColdShotEconomyService');
@@ -13,6 +16,26 @@ const Policy = require('../src/GameServer/Bot/Economy/ShotCraftPolicy');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { npcPlanningCatalogRows } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const root = path.resolve(__dirname, '..');
+// Keep the original native fixture and assertions, with both literal UUID
+// database paths configured and asserted before the first connection.
+async function createWorld(characters) {
+    process.env.L2NODE_PROGRESSION_RATE = 'x1';
+    Object.assign(options.default.General, { questExpRate: 1, questSpRate: 1, questAdenaRate: 1 });
+    DataCache.init();
+    fixture.assertConfigured(options.default);
+    const seed = new DatabaseSync(fixture.world);
+    seed.exec(fs.readFileSync(path.join(root, 'database/sql/sqlite.sql'), 'utf8'));
+    seed.exec("INSERT INTO accounts(username,password) VALUES('quests','test')");
+    const insert = seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,maxHp,maxMp,hp,mp,
+        sex,face,hair,hairColor,locX,locY,locZ,newbie,newbieShotsReceived)
+        VALUES(?,'quests',?,?,?, ?,?,0,187,74,187,74,0,0,0,0,0,0,0,-1,0)`);
+    for (const character of characters) insert.run(character.id, character.name || `Quest${character.id}`,
+        Number(character.classId || 0), Number(character.race || 0), Number(character.level || 20), Number(character.exp || 0));
+    seed.close();
+    fixture.assertConfigured(options.default);
+    await Database.init();
+    return { async close() { await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true }); } };
+}
 const observer = String.raw`
 module.exports.shotProbe = async () => {
     const entry = kernel.states.get(710021), state = entry.state, timestamp = Date.now();
