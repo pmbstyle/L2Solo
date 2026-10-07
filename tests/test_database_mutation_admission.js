@@ -43,7 +43,7 @@ async function seed(index) {
     const id = Number((await Database.createCharacter(account, { name: `Mutation${index}`, race: 0, classId: 10,
         maxHp: 100, maxMp: 100, sex: 0, face: 0, hair: 0, hairColor: 0, locX: 0, locY: 0, locZ: 0 })).insertId);
     await Database.updateCharacterExperience(id, 14, Number(Data.experience[13]) + 1, 10000);
-    await Database.setItem(id, { selfId: 1152, name: 'Spellbook: Heal', amount: 2 });
+    await Database.setItem(id, { selfId: 1049, name: 'Spellbook: Ice Bolt', amount: 2 });
     return { id, account };
 }
 async function snapshot(character) {
@@ -91,19 +91,19 @@ async function main() {
     try {
         Data.init(); Database.init(); assert(Database.isReady());
         if (process.argv.includes('--returning')) { await returningMode(); return; }
-        const training = Catalog.nextTraining(10, 14, 1011);
-        assert.equal(training.bookId, 1152); assert.equal(training.sp, 160);
+        const training = Catalog.nextTraining(10, 14, 1184);
+        assert.equal(training.bookId, 1049); assert.equal(training.sp, 240);
         const healthy = await seed(1);
         const expected = generation;
         let checks = 0;
         const learned = await Database.withMutationAdmission(guardFor(expected, Error('healthy_retired'), () => checks++), async () => {
             await Promise.resolve();
-            return Database.learnBotSkill(healthy.id, 1011, training.level);
+            return Database.learnBotSkill(healthy.id, 1184, training.level);
         });
-        assert.equal(learned.learned, true); assert.equal(learned.spentSp, 160);
+        assert.equal(learned.learned, true); assert.equal(learned.spentSp, 240);
         assert.equal(checks, 3, 'each actual SP/book/rank write checks the captured scope');
         const paid = await snapshot(healthy);
-        assert.equal(paid.characters[0].sp, 9840); assert.equal(paid.items[0].amount, 1);
+        assert.equal(paid.characters[0].sp, 9760); assert.equal(paid.items[0].amount, 1);
         assert.equal(paid.skills[0].level, training.level);
         console.log('PASS healthy awaited native SP/book/rank writes');
 
@@ -112,7 +112,7 @@ async function main() {
         const stale = Error('old_generation_retired');
         const old = Database.withMutationAdmission(guardFor(oldGeneration, stale), async () => {
             entered.resolve(); await resume.promise;
-            return Database.learnBotSkill(awaited.id, 1011, training.level);
+            return Database.learnBotSkill(awaited.id, 1184, training.level);
         });
         await entered.promise;
         restart();
@@ -150,7 +150,7 @@ async function main() {
             return Database.applyBufferedCharacterState(id, { character: { locX: 321 } });
         });
         const flushing = Database.withMutationAdmission(guardFor(flushGeneration, flushFault), () =>
-            Database.learnBotSkill(flushed.id, 1011, training.level));
+            Database.learnBotSkill(flushed.id, 1184, training.level));
         await flushEntered.promise;
         restart(); flushResume.resolve();
         await rejectedIdentity(flushing, flushFault);
@@ -164,16 +164,16 @@ async function main() {
         let mutationChecks = 0;
         await rejectedIdentity(Database.withMutationAdmission(guardFor(transactionGeneration, rollbackFault, () => {
             if (++mutationChecks === 3) restart();
-        }), () => Database.learnBotSkill(transaction.id, 1011, training.level)), rollbackFault);
+        }), () => Database.learnBotSkill(transaction.id, 1184, training.level)), rollbackFault);
         assert.equal(mutationChecks, 3, 'refusal occurs after actual SP and book writes, before rank SQL');
         assert.deepEqual(await snapshot(transaction), beforeTransaction, 'native transaction rolls back both earlier writes');
         const recoveredGeneration = generation;
         const recovered = await Database.withMutationAdmission(guardFor(recoveredGeneration, Error('recovery_retired')),
-            () => Database.learnBotSkill(transaction.id, 1011, training.level));
+            () => Database.learnBotSkill(transaction.id, 1184, training.level));
         assert.equal(recovered.learned, true);
         await Database.setCharacterRecipe(transaction.id, 1, 'common');
         const after = await snapshot(transaction);
-        assert.equal(after.characters[0].sp, 9840); assert.equal(after.items[0].amount, 1);
+        assert.equal(after.characters[0].sp, 9760); assert.equal(after.items[0].amount, 1);
         assert.equal(after.skills.length, 1); assert.equal(after.recipes.length, 1);
         console.log('PASS mid-multiwrite rollback and fresh/unwrapped recovery');
         await returningMode();

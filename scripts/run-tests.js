@@ -1017,6 +1017,8 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_bot_acquisition_recovery.js',
+    'tests/test_cold_economy_decision.js',
     'tests/test_saved_market_counts.js',
     'tests/test_saved_warehouse_patch.js',
     'tests/test_spot_money_value.js',

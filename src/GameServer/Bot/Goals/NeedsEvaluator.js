@@ -42,11 +42,20 @@ function evaluate(state = {}, options = {}) {
     if (!leaf) return [];
     const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
     const wish = context.wish || context.network.queue?.find(row => row.key === leaf.rootKey);
-    const amount = Math.max(1, Math.ceil(leaf.amount || wish?.object?.amount || 1));
-    if (leaf.activity === 'shopping' && itemId && Number(state.inventory?.[itemId]?.amount || 0) >= amount) return [];
+    let amount = Math.max(1, Math.ceil(leaf.amount || wish?.object?.amount || 1));
+    let estimatedCost = leaf.price;
+    if (leaf.activity === 'shopping' && itemId) {
+        // The leaf carries a missing quantity, not a total bag target. Only
+        // copies acquired since that decision can fill its request.
+        const baseline = Number(leaf.heldAtDecision ?? context.state?.inventory?.[itemId]?.amount ?? state.inventory?.[itemId]?.amount ?? 0);
+        const acquired = Math.max(0, Number(state.inventory?.[itemId]?.amount || 0) - baseline);
+        amount = Math.max(0, amount - acquired);
+        if (!amount) return [];
+        if (acquired && leaf.amount > 0) estimatedCost = leaf.price / leaf.amount * amount;
+    }
     const common = { priority: 50, blockers: [], inputHash: context.inputHash ?? require('../Fnv1a').fnv1a32(context.inputKey),
         plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
-            recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost: leaf.price,
+            recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost,
             targetId: leaf.targetId, economyActivity: leaf.activity } };
     if (leaf.activity === 'shopping' && itemId) {
         const gear = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);

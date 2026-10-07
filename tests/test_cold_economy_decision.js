@@ -15,6 +15,15 @@ const economy = { inputKey: 'fixture', riskWeight: 1.5,
 const decision = capture(economy, state);
 assert.equal(decision.key, stateKey(state)); assert.equal(decision.activity.itemId, 391);
 assert.deepEqual(decision.wish, [2, 1, 30000]); assert.equal(decision.usefulness.length, 80);
+assert.equal(decision.activity.heldAtDecision, 0);
+const partial = capture(economy, { ...state, inventory: { 391: { selfId: 391, amount: 2 } } });
+assert.equal(partial.activity.heldAtDecision, 2);
+assert.equal(compact(structuredClone(partial)).activity.heldAtDecision, 2, 'the physical bag baseline survives IPC');
+assert(v8.serialize(partial).byteLength - v8.serialize(decision).byteLength <= 32);
+const largestBaseline = capture(economy, { ...state, inventory: { 391: { selfId: 391, amount: Number.MAX_SAFE_INTEGER } } });
+assert.equal(compact(structuredClone(largestBaseline)).activity.heldAtDecision, Number.MAX_SAFE_INTEGER);
+assert(v8.serialize(largestBaseline).byteLength - v8.serialize(decision).byteLength <= 32,
+    'an exact native inventory baseline adds at most 32 wire bytes');
 assert.deepEqual([...decision.usefulness.slice(0, 2)], [2000, 41], 'demands override projected values');
 assert.equal(decision.watch.length, 3); assert.equal(decision.materials.length, 8);
 const transported = compact(structuredClone(decision));

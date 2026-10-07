@@ -218,7 +218,11 @@ async function run() {
     }
     console.log('PASS actual book gain/provider/paid delta and skill/SP event key');
 
-    const requests = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(base);
+    const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const decisions = new Decisions.ColdEconomyDecisions();
+    const decidedBase = { ...base, stats: { ...base.stats, ...context.statsPacket } };
+    decisions.accept(base.characterId, Decisions.capture(context, decidedBase, base));
+    const requests = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(decidedBase, { decisions, errand: null });
     assert.equal(requests.length, 1);
     assert.equal(requests[0].inputHash, require('../src/GameServer/Bot/Fnv1a').fnv1a32(context.inputKey));
     const dead = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate({ ...base, activity: 'dead' });

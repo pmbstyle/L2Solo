@@ -17,6 +17,7 @@ class CompactActivity {
         this.activity = leaf.activity || null; this.spotId = leaf.spotId ?? null; this.npcId = leaf.npcId ?? null;
         this.itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
         this.amount = Number(leaf.amount || 0); this.price = Number(leaf.price || 0);
+        if (leaf.heldAtDecision !== undefined && leaf.heldAtDecision !== null) this.heldAtDecision = Number(leaf.heldAtDecision);
         if (leaf.rootKey) this.rootKey = leaf.rootKey;
         if (leaf.kind) this.kind = leaf.kind;
         if (leaf.recipeId) this.recipeId = leaf.recipeId;
@@ -45,7 +46,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -96,7 +97,8 @@ function compact(record) {
     const n = Math.min(40, pairs.length / 2), w = Math.min(3, watch.length), m = Math.min(8, materials.length);
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
-        leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement])) : [];
+        leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
+        ...(leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
     const data = new ArrayBuffer(28 + n * 8 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0) + activity.length), view = new DataView(data);
     view.setUint32(0, n | (w << 6) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0), true);
@@ -156,6 +158,7 @@ function capture(economy, state, seen = state) {
     };
     for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1));
     const activity = leaf ? new CompactActivity(leaf) : null;
+    if (activity?.activity === 'shopping') activity.heldAtDecision = Math.max(0, Number(seen?.inventory?.[activity.itemId]?.amount || 0));
     let clan = null;
     if (Number(state?.stats?.clanId) > 0) {
         const horizonHours = economy.horizonHours ?? require('../Economy/EconomicValuation')
