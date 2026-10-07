@@ -20,6 +20,11 @@ const base = {
 };
 
 const timestamp = 100000;
+// ARCH-NOTE: C1 explicitly defers a cold goal without a worker decision.
+// This legacy fixture supplies neither a decision nor an economy. Its old
+// priority ladder predates the one-leaf rule introduced in d4322a21: the
+// native hot control now funds power:135:7 rather than unconditional XP.
+// Keep the original assertions visible for a separate legacy-goal task.
 const healthy = GoalPlanner.plan(NeedsEvaluator.evaluate(base, { spot, now: timestamp }), timestamp);
 assert.strictEqual(healthy.type, 'progress_level');
 assert.strictEqual(healthy.plan.spotId, 'cruma');

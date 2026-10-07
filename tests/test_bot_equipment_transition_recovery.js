@@ -86,6 +86,11 @@ const Membership = invoke('GameServer/Clan/ClanMembershipPolicy');
 assert.strictEqual(Membership.reconcileState({ ...bought, stats: { ...bought.stats, equipmentPlan: ready } }, 7).stats.equipmentPlan, ready,
     'membership reconciliation must preserve a personal NPC exchange');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+// ARCH-NOTE: the native one-leaf economy introduced in d4322a21 selects
+// missing D shots (item1463, priority50) here, ahead of the synthetic forced
+// blade plan. The funded bridge/combination assertions above still pass.
+// Keep the original goal assertions visible; restoring the old weapon
+// priority ladder would bypass the common wish decision and E3 funding.
 const goals = Needs.evaluate({ ...dual, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
     stats: { ...dual.stats, equipmentPlan: forced, equipment: [{ selfId: 127, slot: 7, rank: 'd' }] } }, { now: at });
 assert(goals.some(goal => goal.type === 'upgrade_gear' && goal.target.itemId === 127),
