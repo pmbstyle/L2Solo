@@ -7,6 +7,12 @@ function compact(stats = {}) {
         delete next.equipmentPlan.economyInputKey; delete next.equipmentPlan.inputKey;
     }
     delete next.marketTrades; delete next.priceBeliefs;
+    // ARCH-NOTE: existing worlds retain old operation lists (91 withdrawals,
+    // 57 NPC sales in the saved-current fixture). Bound them on an ordinary
+    // save too, so bots need no new withdrawal/liquidation or startup pass.
+    const Operations = require('./LastOperations');
+    if (next.lastWarehouseWithdrawal) next.lastWarehouseWithdrawal = Operations.normalize(next.lastWarehouseWithdrawal);
+    if (next.lastNpcLiquidation) next.lastNpcLiquidation = Operations.normalize(next.lastNpcLiquidation, { field: 'sold' });
     if (Array.isArray(next.huntEfficiency)) next.huntEfficiency = next.huntEfficiency.map(row => {
         const rounded = { ...row };
         for (const key of ['exp', 'kills']) if (typeof rounded[key] === 'number') rounded[key] = significant(rounded[key]);
