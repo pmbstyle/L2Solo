@@ -713,6 +713,9 @@ function prepareRaidParty(members, timestamp = Date.now()) {
         estimateRestMs(fighter.state, fighter.vitals, { party: true, requireMana: true })
     )));
     const casts = buffCasts + musicCasts + summonCasts + chargeCasts;
+    // ARCH-NOTE: Native checkpoints require integer milliseconds. Keep the exact
+    // cast duration; ceil only the persisted deadline so preparation never ends early.
+    const nextResolveAt = restUntil || Math.ceil(timestamp + Math.max(3000, durationMs));
     const memberResults = fighters.map((fighter) => ({
         state: fighter.state,
         result: {
@@ -738,7 +741,7 @@ function prepareRaidParty(members, timestamp = Date.now()) {
             events: [],
             memoryEvents: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-            nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs),
+            nextResolveAt,
             debug: { reason: ready ? 'raid_prepared' : 'raid_preparing', buffCasts, musicCasts, summonCasts, chargeCasts }
         }
     }));
@@ -755,7 +758,7 @@ function prepareRaidParty(members, timestamp = Date.now()) {
         durationMs,
         restUntil,
         memberResults,
-        nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs)
+        nextResolveAt
     };
 }
 

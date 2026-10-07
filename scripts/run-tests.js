@@ -415,6 +415,7 @@ const tests = [
     'tests/test_cold_raid_encounter.js',
     'tests/test_raid_completion.js',
     'tests/test_cold_raid_commit.js',
+    'tests/test_cold_raid_preparation_checkpoint.js',
     'tests/test_cold_visibility_handoff.js',
     'tests/test_clan_raid_policy.js',
     'tests/test_clan_raid_failure_policy.js',
@@ -1041,6 +1042,7 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_cold_raid_preparation_checkpoint.js',
     'tests/test_cold_worker_market_origin.js',
     'tests/test_bot_acquisition_recovery.js',
     'tests/test_cold_economy_decision.js',
