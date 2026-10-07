@@ -613,7 +613,21 @@ class ColdSimulationKernel {
         // Standalone kernels cannot have game economy entries before Global loads.
         if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
         const current = this.states.get(id);
-        this.partyRequirementProgress.delete(String(current?.context?.party?.partyId || current?.state?.party?.partyId || ''));
+        const partyId = String(this.inFlight.get(id)?.partyId || this.claimAttempts.get(id)?.partyId
+            || current?.context?.party?.partyId || current?.state?.party?.partyId || '');
+        if (partyId && typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(partyId);
+        this.partyRequirementProgress.delete(partyId);
+        const run = this.partyRuns.get(partyId);
+        if (run?.purpose.memberIds.includes(id)) {
+            // Retire the captured party before any pending resolver continues.
+            // Its remaining native leases use the existing release/ACK path.
+            this.partyRuns.delete(partyId);
+            for (const memberId of run.purpose.memberIds) this.cancelClaimAttempt(memberId);
+            this.requestRelease([...run.grants.values()].filter(token => token.characterId !== id)
+                .map(token => ({ token, reason: 'party_member_removed' })));
+        }
+        this.inFlight.delete(id);
+        this.dirty.delete(id);
         const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
@@ -623,6 +637,7 @@ class ColdSimulationKernel {
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
+        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         this.scheduleTokens.delete(id);
         this.cancelClaimAttempt(id);
         this.claiming.delete(id);
@@ -633,11 +648,28 @@ class ColdSimulationKernel {
 
     schedule(characterId, version, dueAt) {
         const id = Number(characterId);
+        // Replacing a token also removes its actual indexed node; otherwise a
+        // long future deadline keeps every superseded token until it is due.
+        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         const token = this.nextScheduleToken++;
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Number(dueAt || this.now()), scheduleToken: token };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
+    }
+
+    storeSizes() {
+        return {
+            states: this.states.size, contexts: this.states.size,
+            locationStates: this.states.locationIndex.sourceSize('state'),
+            occupancy: this.occupancy.size().owners,
+            scheduleTokens: this.scheduleTokens.size, ownerHeapNodes: this.heap.size - this.alarms.size,
+            claiming: this.claiming.size, claimStartedAt: this.claimStartedAt.size, claimAttempts: this.claimAttempts.size,
+            inFlight: this.inFlight.size, dirty: this.dirty.size, pendingReleases: this.pendingReleases.size,
+            commanding: this.commanding.size, commandStartedAt: this.commandStartedAt.size,
+            partyRuns: this.partyRuns.size, partyRequirementProgress: this.partyRequirementProgress.size,
+            buyerWakeups: this.buyerWakeups.size, lookSeen: this.lookSeen.size
+        };
     }
 
     armAlarm(kind, key, dueAt, options = {}) {
@@ -2019,12 +2051,8 @@ class ColdSimulationKernel {
 
     fence(characterId) {
         const id = Number(characterId);
-        this.claiming.delete(id);
-        this.commanding.delete(id);
         const proposal = this.dirty.get(id) || null;
-        if (proposal) this.dirty.delete(id);
         const active = this.inFlight.get(id) || null;
-        this.inFlight.delete(id);
         this.remove(id);
         return { characterId: id, proposal, token: active?.grant || proposal?.token || null };
     }

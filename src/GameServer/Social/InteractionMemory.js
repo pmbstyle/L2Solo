@@ -146,6 +146,11 @@ class InteractionMemory {
         this.views.delete(ownerId);
         this.fastLayers.delete(ownerId);
     }
+
+    size() {
+        return { snapshots: this.snapshots.size, views: this.views.size,
+            fastLayers: this.fastLayers.size, loading: this.loading.size };
+    }
 }
 
 module.exports = InteractionMemory;

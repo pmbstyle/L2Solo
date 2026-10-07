@@ -168,6 +168,9 @@ class SpotOccupancyIndex {
         }
     }
 
+    size() { return { owners: this.places.size, physical: this.physical.size, reserved: this.reserved.size,
+        backedOff: this.backedOff.size }; }
+
     clear() {
         for (const spotId of [...this.physical.keys(), ...this.reserved.keys()]) this.dirty.add(spotId);
         this.places.clear();

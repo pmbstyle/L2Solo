@@ -55,6 +55,7 @@ class MarketBuyerWaiters {
         this.stats = { inspected: 0, woken: 0 };
     }
     clear() { this.items.clear(); this.owners.clear(); }
+    size() { return { owners: this.owners.size, items: this.items.size }; }
     remove(ownerId) {
         for (const node of this.owners.get(ownerId) || []) {
             const heap = this.items.get(node.itemId);
