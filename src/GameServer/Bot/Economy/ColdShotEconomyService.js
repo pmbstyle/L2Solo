@@ -12,6 +12,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketDemandIndex = require('./MarketDemandIndex');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
+const RecipeWorth = require('./RecipeWorth');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 // The one purchase path (a trip to the seller's town), loaded on use.
 const ColdMarket = () => invoke('GameServer/Bot/Economy/ColdMarketService');
@@ -198,9 +199,22 @@ function recipeTarget(state, index = null, knownRecipeIds = []) {
     return viable[0]?.recipe || null;
 }
 
+// A scroll is bought for what it adds to the bot's hour over its horizon (E92,
+// RecipeWorth), within what the bot can spend; ARCH-NOTE: the known recipes
+// are read from the database, not from the wish network, so the worth stands
+// here and not as a wish of the queue.
+async function recipeWorth(state, recipe, now) {
+    const index = { ...await marketSnapshot(now) };
+    const economy = invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { timestamp: now });
+    const route = craftCandidate(state, recipe, index);
+    return RecipeWorth.of(state, recipe, route, { economy, now,
+        offers: AfkTrade.offers(Number(recipe.productId), AfkTrade.SELL, { characterId: state.characterId }) }).worth;
+}
+
 async function obtainRecipe(state, recipe, now) {
     const itemId = Number(recipe.recipeItemId);
-    const maxSpend = PurchaseFunding.spendable(state);
+    const maxSpend = Math.min(PurchaseFunding.spendable(state), await recipeWorth(state, recipe, now));
+    if (!(maxSpend > 0)) return state;
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) !== itemId
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25
@@ -543,7 +557,7 @@ async function review(state, now = Date.now(), options = {}) {
     }
 }
 
-module.exports = { review, candidates, marketSnapshot, craftCandidate, recipeTarget,
+module.exports = { review, candidates, marketSnapshot, craftCandidate, recipeTarget, recipeWorth,
     fundedDemand, scrapCraftRoutes, hasShotSurplus, SHOT_RECIPE_IDS, craft,
     _resetForTests() { marketCache = null; catalogCache = null; scanAt.clear(); active.clear(); }
 };
