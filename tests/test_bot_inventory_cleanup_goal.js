@@ -1,6 +1,12 @@
 const assert = require('assert');
+const fs = require('node:fs');
+const path = require('node:path');
+const isolated = require('./helpers/isolatedSocialDatabase')('inventory_cleanup_goal', path.resolve(__dirname, '..'));
+require('./helpers/databaseIsolation');
 
 require('../src/Global');
+isolated.assertConfigured(options.default);
+async function runInventoryCleanup() {
 
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -184,9 +190,12 @@ assert.strictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan(stagedArmor, {
 }), null, 'the NPC bridge must not buy an already staged armor piece again');
 
 const goal = NeedsEvaluator.evaluate(state, { now, spot: { id: 'cruma', name: 'Cruma Tower' } })
-    .find((candidate) => candidate.type === 'sell_inventory' && candidate.target.cleanupReason === 'inventory_capacity');
+    .find((candidate) => candidate.type === 'sell_inventory' && candidate.target.cleanupReason === 'no_slot');
 assert(goal, 'inventory pressure must create a sell_inventory goal');
-assert.strictEqual(goal.priority, 96);
+// The exact 81 occupied native C4 slots reach the mandatory unload floor.
+assert.strictEqual(goal.priority, 100);
+assert.strictEqual(goal.target.itemCount, 81);
+assert.strictEqual(invoke('GameServer/Bot/Population/SurvivalFloor').inventoryLimit(0), 80);
 
 const travel = GoalExecutor.beginMarketTravel(state, {
     type: goal.type,
@@ -215,10 +224,10 @@ assert.deepStrictEqual(proposalTravel.simulation, {
 assert.strictEqual(proposalTravel.stats.forcedMarketCleanup.cleanupReason, 'inventory_capacity',
     'worker cleanup travel must carry durable intent through arrival');
 assert.deepStrictEqual(proposalTravel.cleanup, {
-    itemCount: goal.target.itemCount,
-    npcOnlySlots: goal.target.npcOnlySlots,
+    itemCount: need.slots,
+    npcOnlySlots: need.npcOnlySlots,
     cleanupReason: 'inventory_capacity'
-}, 'the forced cleanup records the same target as the planner goal');
+}, 'forced cleanup keeps the independently evaluated physical bag intent');
 
 const staleRecoverIntent = PopulationService.marketListingIntent({
     ...proposalTravel,
@@ -254,20 +263,39 @@ assert(ItemDisposition.saleCandidates(scrollState).some((item) => Number(item.se
     'valuable scroll surplus must enter the sale/disposition lifecycle');
 assert.strictEqual(ItemDisposition.isWarehouseCandidate(scrollState.inventory[dEnchantScroll.selfId]), true,
     'valuable scrolls without demand must be removable from the backpack into the warehouse');
-// The sale decision is the expected value (group E): keeping is worth nothing
-// while nobody buys the item's kind, so with no deals at all the NPC buys it;
-// with buyers but no free board slot the bot keeps it in the warehouse.
+// Enchant scrolls are valuable market goods, not NPC-only junk. The
+// unchanged cold input has native own worth above today's NPC sale utility,
+// even before this kind has buyers. Its fixed decision point keeps the stock.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
+const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 MarketCounters.reset();
-assert.strictEqual(MarketListingPolicy.evaluate(scrollState, { now }).npc[0]?.selfId, dEnchantScroll.selfId,
-    'with no buyers of its kind the scroll goes to the NPC buy-back');
+const scrollBefore = structuredClone(scrollState);
+const scrollContext = MarketListingPolicy.traderContext(scrollState, { now });
+const scrollPrior = PriceBelief.prior(dEnchantScroll.selfId, scrollContext);
+assert(scrollPrior, 'the authored public first price supplies a real belief');
+const npcPrice = NpcSellRules.npcBuyPrice(Number(dEnchantScroll.template.price));
+const npcUtility = PriceDecision.saleUtility(npcPrice, Math.exp(scrollPrior.mu), scrollContext.trader.caution);
+assert(scrollContext.economy.worth(dEnchantScroll.selfId) > npcUtility,
+    'the native own value is stronger than immediately selling this valuable stock');
+const originalScrollDisposition = MarketListingPolicy.evaluate(scrollState, { now });
+assert.deepStrictEqual(MarketListingPolicy.classify(scrollState, originalScrollDisposition.candidates[0]),
+    { action: 'market', reason: 'market' }, 'an enchant scroll never inherits the NPC-only hard rule');
+assert.strictEqual(originalScrollDisposition.decisions[0].reason, 'expected_value');
+assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.buyersPerHour, 0);
+assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.buyback, npcPrice);
+assert.strictEqual(originalScrollDisposition.warehouse[0]?.selfId, dEnchantScroll.selfId,
+    'the original native choice retains the valuable enchant scroll');
+assert.strictEqual(originalScrollDisposition.warehouse[0].count, 81, 'all original scrolls are retained');
+assert.deepStrictEqual(originalScrollDisposition.npc, [], 'no forced NPC liquidation is invented');
+assert.deepStrictEqual(scrollState, scrollBefore, 'a disposition quote never mutates the bag');
 for (let deal = 0; deal < 12; deal++) MarketCounters.deal(dEnchantScroll.selfId, 6000, 1, now - (12 - deal) * 300000, 999999);
 assert.strictEqual(MarketListingPolicy.evaluate(scrollState, { now, slots: 0 }).warehouse[0]?.selfId, dEnchantScroll.selfId,
     'scroll cleanup must choose warehouse retention when the board has buyers but no slot');
 MarketCounters.reset();
-// No bot spends these scrolls: the town escape and the party revival are casts
-// without an item (BotTownTravel.beginEscape, PartyRevivalService). They are NPC
-// junk for a bot (user, 2026-10-03: sold until bots use consumables, H13).
+// Native town travel reserves two Scrolls of Escape (H13); only its surplus
+// is NPC junk. A party resurrection remains a cast without an item.
 for (const consumable of [escapeScroll, resurrectionScroll]) {
     const consumableItem = {
         selfId: consumable.selfId,
@@ -278,7 +306,11 @@ for (const consumable of [escapeScroll, resurrectionScroll]) {
     };
     const consumableState = { ...state, inventory: { [consumable.selfId]: consumableItem } };
     assert.deepStrictEqual(MarketListingPolicy.evaluate(consumableState, { states: [] }).npc.map((item) => item.selfId),
-        [consumable.selfId], `${consumable.template.name} is sold to the NPC: no bot spends it`);
+        [consumable.selfId], `${consumable.template.name} surplus is sold to the NPC`);
+    const sale = MarketListingPolicy.evaluate(consumableState, { states: [] }).npc[0];
+    const expectedKept = consumable.selfId === escapeScroll.selfId ? 2 : 0;
+    assert.strictEqual(invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT, 2);
+    assert.strictEqual(sale.count, 10 - expectedKept, 'the actual travel stock is protected from liquidation');
     assert.strictEqual(ItemDisposition.isWarehouseCandidate(consumableItem), false,
         `${consumable.template.name} must not be parked in the warehouse`);
 }
@@ -324,12 +356,20 @@ const skillBooks = DataCache.items.filter((item) => {
         && (kind.startsWith('Other.Spellbook') || name.includes('spellbook') || /^amulet\b/.test(name));
 });
 assert(skillBooks.length > 100, 'the datapack must expose the full C4 skill-book catalog');
-assert(skillBooks.every((item) => ItemDisposition.isNpcOnlyItem({
-    selfId: item.selfId,
-    name: item.template.name,
-    kind: item.template.kind,
-    amount: 1
-})), 'every spellbook and Orc amulet must be NPC-only for every class');
+// FX-E6 preserves books present in the authored C4 skill catalogue for
+// market/training. Unmapped books remain NPC junk; the original full item
+// list and quantities are unchanged. Expected ids come from the catalogue,
+// independently of ItemDisposition's classification helper.
+const mappedBookIds = new Set(require('../data/Skills/c4-skill-books.json').skills.map(row => Number(row[1])));
+let mappedBooks = 0, unmappedBooks = 0;
+for (const item of skillBooks) {
+    const mapped = mappedBookIds.has(Number(item.selfId));
+    if (mapped) mappedBooks++; else unmappedBooks++;
+    assert.strictEqual(ItemDisposition.isNpcOnlyItem({
+        selfId: item.selfId, name: item.template.name, kind: item.template.kind, amount: 1
+    }), !mapped, `original book ${item.selfId} follows the authored C4 training catalogue`);
+}
+assert(mappedBooks > 0 && unmappedBooks > 0, 'the unchanged catalogue must exercise both preserved and NPC-only books');
 const orcAmulets = DataCache.items.filter((item) => /^amulet\b/i.test(item?.template?.name || ''));
 assert(orcAmulets.length > 40, 'the datapack must expose the C4 Orc amulet catalog');
 assert(orcAmulets.every((item) => ItemDisposition.isSkillBookItem({
@@ -353,16 +393,19 @@ const chantState = {
         }
     }
 };
+assert(mappedBookIds.has(Number(chantOfRevenge.selfId)), 'the unchanged Chant of Revenge is a mapped C4 book');
+const chantBefore = structuredClone(chantState);
 const chantDisposition = MarketListingPolicy.evaluate(chantState);
-assert.strictEqual(chantDisposition.npc[0]?.selfId, chantOfRevenge.selfId,
-    'Amulet: Chant of Revenge must route to NPC liquidation');
-assert.deepStrictEqual(chantDisposition.warehouse, [], 'skill books must never be warehoused');
-assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), {
-    reason: 'npc_only_inventory',
-    slots: 1,
-    npcOnlySlots: 1,
-    limit: ItemDisposition.INVENTORY_SLOT_LIMIT
-}, 'one skill book must immediately schedule an NPC cleanup trip');
+assert.strictEqual(chantDisposition.candidates.length, 1);
+assert.strictEqual(chantDisposition.candidates[0].count, 1, 'the original single book reaches disposition unchanged');
+assert.deepStrictEqual(MarketListingPolicy.classify(chantState, chantDisposition.candidates[0]),
+    { action: 'market', reason: 'market' }, 'the original mapped amulet remains available to the native market decision');
+assert(chantDisposition.decisions.every(row => ['expected_value', 'no_board_slot'].includes(row.reason)),
+    'market value and the native roll choose disposition; mapped books never inherit the NPC-only hard rule');
+assert.strictEqual(ItemDisposition.npcOnlySlotCount(chantState), 0);
+assert.strictEqual(ItemDisposition.inventoryCleanupNeed(chantState, { now }), null,
+    'one preserved training book does not mandate an NPC cleanup trip');
+assert.deepStrictEqual(chantState, chantBefore, 'classification and listing cannot alter the original book');
 const npcState = {
     ...state,
     inventory: Object.fromEntries(npcFixtures.map((item, index) => [String(item.selfId), {
@@ -402,8 +445,26 @@ assert.strictEqual(
     3,
     'forced pre-trade cleanup must still expose NPC-only candidates'
 );
+const expectedNpcBookFixtures = npcFixtures.filter(item => !mappedBookIds.has(Number(item.selfId)));
+assert(expectedNpcBookFixtures.length > 0 && expectedNpcBookFixtures.length < npcFixtures.length,
+    'the unchanged 21-item mixed bag contains both NPC junk and mapped training books');
+// This quotation helper also exposes cheap goods, including mapped books,
+// while the actual listing policy applies their native expected-value choice.
+assert(npcFixtures.every(item => Number(item.template.price) <= ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE),
+    'all original 21 items satisfy the independent authored cheap-price bound');
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(npcState).length, npcFixtures.length);
-assert.strictEqual(MarketListingPolicy.evaluate(npcState).npc.length, npcFixtures.length);
+const mixedBookDisposition = MarketListingPolicy.evaluate(npcState);
+for (const item of expectedNpcBookFixtures) {
+    assert(mixedBookDisposition.npc.some(row => Number(row.selfId) === Number(item.selfId)),
+        `original NPC junk ${item.selfId} retains its liquidation route`);
+}
+for (const item of npcFixtures.filter(item => mappedBookIds.has(Number(item.selfId)))) {
+    const candidate = mixedBookDisposition.candidates.find(row => Number(row.selfId) === Number(item.selfId));
+    assert(candidate, 'an original mapped book remains a market candidate');
+    assert.deepStrictEqual(MarketListingPolicy.classify(npcState, candidate), { action: 'market', reason: 'market' });
+    assert(mixedBookDisposition.decisions.filter(row => Number(row.item.selfId) === Number(item.selfId))
+        .every(row => row.reason !== 'npc_only_item'), 'native expected value decides the mapped book disposition');
+}
 const protectedNpcState = {
     ...npcState,
     inventory: {
@@ -421,7 +482,7 @@ assert(ItemDisposition.inventoryCleanupNeed({
 
 const originalUpsertState = LifeState.upsertState;
 LifeState.upsertState = async () => null;
-PopulationService.resolveColdState(state).then((rejected) => {
+await PopulationService.resolveColdState(state).then((rejected) => {
     assert.strictEqual(rejected.ok, false, 'a fenced cleanup write must not be reported as a successful resolve');
     assert.strictEqual(rejected.reason, 'state_write_rejected');
     assert.strictEqual(rejected.state, state, 'the rejected result must retain the authoritative pre-write state');
@@ -457,3 +518,9 @@ assert.strictEqual(ItemDisposition.npcLiquidationCandidates(spareBook).find(item
     'a spare low-grade weapon remains ordinary sellable equipment');
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Spellbook: Missing Kind' }), true);
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Amulet: Missing Kind' }), true);
+
+}
+runInventoryCleanup().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
+    await invoke('Database').close();
+    fs.rmSync(isolated.directory, { recursive: true, force: true });
+});
