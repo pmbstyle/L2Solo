@@ -9,14 +9,17 @@ const { DatabaseSync } = require('node:sqlite');
 
 assert.equal(process.env.L2NODE_CONFIG_FILE, 'config/default.ini');
 assert(!process.env.L2NODE_SHARED_CONFIG_FILE, 'a shared configuration must not enter these fixtures');
+const isolated = require('./helpers/isolatedSocialDatabase')('history-recovery');
 require('../src/Global');
+isolated.assertConfigured(options.default);
+invoke('GameServer/DataCache').init();
 const Database = invoke('Database');
 const History = invoke('HistoryDatabase');
 const Store = invoke('HistoryStore');
 const SavedGames = require('../scripts/saved-games');
 utils.infoFail = (_prefix, message, detail) => { throw new Error(`${message}: ${detail}`); };
 
-const root = path.resolve(__dirname, '../tmp/database-audit/fixtures');
+const root = path.join(isolated.directory, 'fixtures');
 fs.mkdirSync(root, { recursive: true });
 const schema = fs.readFileSync(path.resolve(__dirname, '../database/sql/history.sql'), 'utf8');
 const valueTables = ['characters', 'items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines',
