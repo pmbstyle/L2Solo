@@ -513,13 +513,16 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                 const amount = Math.min(remaining, Number(row.amount));
                 const template = templateFor(row.selfId);
                 const withdrawal = { selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason };
+                const inTown = options.inTown === true
+                    && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state);
+                if (!inTown) return stopped();
                 const transfer = await Database.transferWarehouseToInventory(state.characterId, {
                     id: Number(row.id),
                     selfId: Number(row.selfId),
                     name: row.name || template?.template?.name || `Item ${row.selfId}`,
                     amount,
                     stackable: !!template?.etc?.stackable
-                }, { coldState: state });
+                }, { coldState: state, inTown });
                 row.amount = Number(row.amount) - amount;
                 remainingByRequest.set(key, remaining - amount);
                 released.push(withdrawal);

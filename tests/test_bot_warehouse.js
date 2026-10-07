@@ -327,6 +327,8 @@ async function run() {
         name: 'CraftOwner',
         phase: 'cold',
         activity: 'hunting',
+        currentRegion: 'Giran',
+        loc: { locX: 83396, locY: 147904, locZ: -3400 },
         inventory: {},
         timing: { nextResolveAt: 999999 },
         stats: {
@@ -353,6 +355,8 @@ async function run() {
         name: 'WarehouseSeller',
         phase: 'cold',
         activity: 'hunting',
+        currentRegion: 'Giran',
+        loc: { locX: 83396, locY: 147904, locZ: -3400 },
         inventory: {},
         timing: {},
         stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }

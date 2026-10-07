@@ -5984,17 +5984,26 @@ const Database = {
         }, 'warehouse:deposit'));
     },
 
-    transferWarehouseToInventory(characterId, item, { coldState = null } = {}) {
+    transferWarehouseToInventory(characterId, item, { coldState = null, inTown = false } = {}) {
+        if (coldState && inTown !== true) return Promise.reject(new Error('economy_state_changed'));
+        // ARCH-NOTE: a legacy movement save need not advance simulationRevision.
+        // Capture the town intent before the character flush/queue, then compare
+        // its scalar location and activity inside the native transaction.
+        const townIntent = coldState && { activity: coldState.activity, currentRegion: coldState.currentRegion,
+            locX: Number(coldState.loc?.locX || 0), locY: Number(coldState.loc?.locY || 0), locZ: Number(coldState.loc?.locZ || 0) };
         return withCharacterFlush(characterId, () => inTransaction(() => {
             let life = null;
             if (coldState) {
-                life = one(`SELECT phase, activity, simulationOwner, simulationRevision, partyId, inventorySummary,
+                life = one(`SELECT phase, activity, currentRegion, locX, locY, locZ,
+                    simulationOwner, simulationRevision, partyId, inventorySummary,
                     json_extract(statsJson,'$.equipmentPlan') AS equipmentPlan FROM bot_life_state WHERE characterId=?`, [characterId]);
                 // A queued flush can hand the bot to a worker or add a craft
                 // reservation after the caller planned the withdrawal.
                 if (!life || Number(coldState.characterId) !== Number(characterId)
                     || life.phase !== 'cold' || life.simulationOwner !== LEGACY_SIMULATION_OWNER
-                    || life.partyId || !['hunting', 'resting'].includes(life.activity)
+                    || life.partyId || !['hunting', 'resting', 'shopping', 'merchant'].includes(life.activity)
+                    || life.activity !== townIntent.activity || life.currentRegion !== townIntent.currentRegion
+                    || Number(life.locX) !== townIntent.locX || Number(life.locY) !== townIntent.locY || Number(life.locZ) !== townIntent.locZ
                     || (coldState.simulation && Number(life.simulationRevision) !== Number(coldState.simulation.revision))
                     || JSON.stringify(life.equipmentPlan ? JSON.parse(life.equipmentPlan) : null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
                     throw new Error('economy_state_changed');

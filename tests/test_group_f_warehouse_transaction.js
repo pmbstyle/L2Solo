@@ -18,7 +18,7 @@ async function run() {
             [id, 1864, 'Stem']]);
         const item = { id: Number(stock.insertId), selfId: 1864, name: 'Stem', amount: 20, stackable: true };
         const withdrawal = { items: [[1864, 20, 1]], at: 1791200000000 };
-        const withdraw = () => Database.transferWarehouseToInventory(id, item, { coldState: state });
+        const withdraw = () => Database.transferWarehouseToInventory(id, item, { coldState: state, inTown: true });
         const untouched = async () => {
             assert.equal((await Database.fetchWarehouseItems(id))[0].amount, 20);
             assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === 1864).length, 0);
