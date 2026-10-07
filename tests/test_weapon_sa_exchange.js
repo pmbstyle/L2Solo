@@ -2,8 +2,11 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-physical-sa');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
@@ -13,9 +16,8 @@ const Catalog = invoke('GameServer/Items/C4WeaponSAExchange');
 const WriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
 const Talk = invoke('GameServer/World/Generics/NpcTalk');
 const Bypass = invoke('GameServer/World/Generics/NpcBypasses/WeaponSa');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-sa-exchange-'));
-const file = path.join(directory, 'exchange.sqlite');
-options.default.Database.path = file;
+const directory = isolated.directory;
+const file = isolated.world;
 const template = id => Data.items.find(i => i.selfId === id);
 const html = session => session.packets.filter(p => p[0] === 0x0f).at(-1)?.subarray(5).toString('utf16le') || '';
 const npcFor = id => ({ fetchId: () => 100000 + id, fetchSelfId: () => id, fetchName: () => 'Smith', fetchTitle: () => '',
@@ -89,6 +91,11 @@ async function questToWeapon(session) {
     }
     assert.equal(mp, 120, 'each successful crystal cast consumes MP');
     const recipe = Catalog.recipes.find(r => r.productId === 4682);
+    // The grown crystal is real. C4 smiths also need their authored C/B gems;
+    // the quest-to-SA control buys/provides these physically before installation.
+    for (const cost of recipe.costs.filter(row => [2131, 2132].includes(row.selfId))) {
+        await add(session, cost.selfId, cost.amount);
+    }
     const weapon = await add(session, recipe.sourceId, 1, 7);
     const weaponId = weapon.fetchId();
     talkTo(session, smith);
@@ -133,8 +140,15 @@ async function run() {
         assert(template(recipe.sourceId) && template(recipe.productId));
         for (const cost of recipe.costs) assert(template(cost.selfId) && Number.isSafeInteger(cost.amount) && cost.amount > 0);
         if (recipe.operation === 'install') {
-            assert.equal(Catalog.costs(recipe).length, 1, 'every grade requires only its Soul Crystal');
-            assert(invoke('GameServer/Items/SoulCrystalProgression').crystalIds.includes(Catalog.costs(recipe)[0].selfId));
+            const crystalIds = invoke('GameServer/Items/SoulCrystalProgression').crystalIds;
+            const crystal = recipe.costs.filter(cost => crystalIds.includes(cost.selfId));
+            const gems = recipe.station === 'blacksmith'
+                ? recipe.costs.filter(cost => [2131, 2132].includes(cost.selfId)) : [];
+            assert.equal(crystal.length, 1, 'each authored install has one exact staged crystal');
+            assert.deepEqual(Catalog.costs(recipe), recipe.costs.filter(cost => crystal.includes(cost) || gems.includes(cost)),
+                'C/B smiths consume sourced gems; Mammon A/S and zero castle tax remain separate');
+            if (recipe.station === 'blacksmith') assert(gems.length === 1 && gems[0].amount > 0);
+            else assert.equal(Catalog.costs(recipe).length, 1, 'A/S Mammon pricing is outside this C/B rule');
         } else {
             assert.deepEqual(Catalog.costs(recipe), recipe.costs, 'removal keeps its sourced costs');
         }
@@ -166,15 +180,23 @@ async function run() {
         assert.equal(item.fetchEnchantLevel(), enchant);
         assert.equal(a.actor.backpack.fetchItems().length, 1, 'removal never refunds a crystal or gemstones');
     }
-    // Waived ingredients must be absent from the preview and remain untouched
-    // even if the player already owns them. The crystal is still mandatory.
+    // Effective C4 costs appear in the preview and consume exact physical
+    // amounts. Uncharged currencies/gems remain untouched; no free input grant.
     for (const grade of ['c', 'b', 'a', 's']) {
         const highRecipe = installs.find(r => template(r.sourceId).etc.rank === grade);
         const weapon = await setup(a, highRecipe, 16);
         const crystal = a.actor.backpack.fetchItemFromSelfId(Catalog.costs(highRecipe)[0].selfId);
         for (const selfId of [57, 2131, 2132, 2133, 2134, 5575]) await add(a, selfId, 123);
+        const beforeRows = await Database.fetchItems(1);
+        for (const cost of Catalog.costs(highRecipe)) {
+            assert.equal(beforeRows.filter(row => row.selfId === cost.selfId).reduce((sum, row) => sum + row.amount, 0),
+                cost.amount + ([57, 2131, 2132, 2133, 2134, 5575].includes(cost.selfId) ? 123 : 0));
+        }
         const token = Service.preview(a, weapon.fetchId(), highRecipe.id);
-        assert.doesNotMatch(html(a), /Gemstone|Adena/);
+        const gemCosts = Catalog.costs(highRecipe).filter(cost => [2131, 2132].includes(cost.selfId));
+        if (gemCosts.length) assert.match(html(a), /Gemstone/);
+        else assert.doesNotMatch(html(a), /Gemstone/);
+        assert.doesNotMatch(html(a), /Adena/);
         assert.match(html(a), /Soul Crystal/);
         await Service.exchange(a, token);
         assert.equal(weapon.fetchEnchantLevel(), 16);
@@ -196,7 +218,8 @@ async function run() {
     Service.menu(a);
     assert.match(html(a), /\+16 Stormbringer/);
     const token = Service.preview(a, item.fetchId(), recipe.id);
-    assert.doesNotMatch(html(a), /Gemstone|Adena/);
+    assert.match(html(a), /97 × Gemstone C/);
+    assert.doesNotMatch(html(a), /Adena/);
     assert.match(html(a), /1 × Red Soul Crystal - Stage 5/);
     assert.match(html(a), /Enchantment \+16 is preserved/);
     const results = await Promise.allSettled([Service.exchange(a, token), Service.exchange(a, token)]);
@@ -219,6 +242,25 @@ async function run() {
         const before = await Database.fetchItems(1);
         await assert.rejects(apply(a, item, recipe), /missing_materials/);
         assert.deepEqual(await Database.fetchItems(1), before);
+    }
+    // Exact authored C-grade payment: 97 gems are required, neither a
+    // missing stack nor 96 gems can consume the weapon or its staged crystal.
+    for (const owned of [0, 96]) {
+        item = await setup(a, recipe);
+        const gems = a.actor.backpack.fetchItemFromSelfId(2131);
+        if (owned === 0) {
+            await Database.deleteItem(1, gems.fetchId());
+            a.actor.backpack.items = a.actor.backpack.items.filter(row => row !== gems);
+        } else {
+            await Database.updateItemAmount(1, gems.fetchId(), owned);
+            gems.setAmount(owned);
+        }
+        const before = await Database.fetchItems(1);
+        await assert.rejects(apply(a, item, recipe), /missing_materials/);
+        assert.deepEqual(await Database.fetchItems(1), before, 'an incomplete real gem payment changes no SQL items');
+        assert.equal(item.fetchSelfId(), 72);
+        assert.equal(item.fetchEnchantLevel(), 7);
+        assert.equal(a.actor.backpack.fetchItemFromSelfId(4634).fetchAmount(), 1);
     }
     // A failure after ingredient writes rolls back both payment and weapon.
     item = await setup(a, recipe);
