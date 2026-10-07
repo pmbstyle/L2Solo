@@ -52,6 +52,12 @@ class ClanPlanningCoordinator {
             this.pending.set(id, { resolve, reject, timer });
             worker.ref();
             try {
+                // ARCH-NOTE: PERF: the native 300s main profile spends 14.0s
+                // of 93.0s busy time here. A member plan repeats 2,045 spot
+                // profiles (3,276,455 serialized B) plus its market context;
+                // the complete native probe payload is 3,677,563 B. Moving
+                // those catalogs to worker pages needs a shared protocol task:
+                // the existing catalog handler accepts items/npcs/npcRewards.
                 worker.postMessage({ id, type, ...payload });
             } catch (error) {
                 this.fail(worker, error);
