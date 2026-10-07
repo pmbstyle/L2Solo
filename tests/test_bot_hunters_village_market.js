@@ -1,5 +1,8 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-market-hunters_village');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
@@ -38,3 +41,5 @@ try {
 }
 
 console.log("Hunter's Village boundary, edge clearance, ground height and occupancy checks passed");
+
+require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });

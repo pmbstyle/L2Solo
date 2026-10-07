@@ -1,5 +1,8 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-market-aden');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const checkCapturedSquare = require('./helpers/capturedSquareChecks');
@@ -22,3 +25,5 @@ checkCapturedSquare('Aden', {
 });
 
 console.log('Aden captured market boundary, lower ground level and occupancy checks passed');
+
+require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });

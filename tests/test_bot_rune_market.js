@@ -1,5 +1,8 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-market-rune');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const checkCapturedSquare = require('./helpers/capturedSquareChecks');
@@ -23,3 +26,5 @@ checkCapturedSquare('Rune', {
 });
 
 console.log('Rune captured market boundary, edge clearance and occupancy checks passed');
+
+require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });
