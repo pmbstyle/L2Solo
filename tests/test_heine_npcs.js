@@ -1,6 +1,9 @@
 const assert = require('assert');
 const fs = require('fs');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-c4-heine');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 const DataCache = invoke('GameServer/DataCache');
 const SpawnNpcs = invoke('GameServer/World/Generics/SpawnNpcs');
 const NpcTalk = invoke('GameServer/World/Generics/NpcTalk');
@@ -25,14 +28,19 @@ for (const npc of world.npc.spawns) {
 }
 for (const [id, count] of [[7890, 70], [7891, 77], [7892, 115], [7893, 157]]) {
     const entries = Shops.fetchForNpc(id);
-    assert.strictEqual(entries.length, count);
+    const ngShots = new Set([1835, 2509, 3947]);
+    assert.strictEqual(entries.filter(row => !ngShots.has(row.selfId)).length, count, 'all authored non-shot merchant rows remain');
+    const added = id === 7893 ? 3 : 0;
+    assert.deepStrictEqual(entries.filter(row => ngShots.has(row.selfId)).map(row => row.selfId),
+        added ? [1835, 2509, 3947] : [], 'only the C4 grocer gains the three no-grade shots');
+    assert.strictEqual(entries.length, count + added);
     assert(entries.every(row => row.price > 0 && DataCache.items.some(item => item.selfId === row.selfId)));
     assert(fs.readFileSync(`data/Html/${id}.html`, 'utf8').includes('buy-shop npc'));
     const packets = [];
     const session = { activeNpcTalk: { selfId: id }, actor: { backpack: { fetchTotalAdena: () => 100000 } }, dataSendToMe: packet => packets.push(packet) };
     BuyShop(session, ['buy-shop', 'npc']);
     assert.strictEqual(packets[0][0], 0x11);
-    assert.strictEqual(packets[0].readInt16LE(9), count);
+    assert.strictEqual(packets[0].readInt16LE(9), count + added);
     assert.strictEqual(packets[1][0], 0x25);
     assert.strictEqual(session.activeNpcShop.npcSelfId, id);
 }
@@ -90,3 +98,5 @@ for (const [id, locX, locY, locZ, price] of routes) {
 assert.strictEqual(Gatekeeper.destination(7899, 1), null);
 assert.strictEqual(teleportPackets[1][0], 0x25);
 console.log('Heine: 31 spawns, shops, warehouses, guard PK rules and six Flauen routes passed');
+
+require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });
