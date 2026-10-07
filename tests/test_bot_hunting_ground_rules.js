@@ -1,6 +1,8 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const DataCache = invoke('GameServer/DataCache');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -47,8 +49,14 @@ try {
     });
     assert.strictEqual(selected.id, 'mid_level_field',
         'a level-16 bot must replan away from a physical level-1-3 starter field');
-    assert.strictEqual(SpotProfiles.findForState({ level: 80, stats: {} }), null,
-        'a bot without a level-aware candidate must report no spot instead of falling back to a starter field');
+    // B4 permits safe lower camps. Missing near-level ground alone cannot
+    // mean no destination: exclude every supplied candidate for that control.
+    assert.strictEqual(SpotProfiles.findForState({ level: 78, stats: {} }, {
+        excludedSpotIds: [starter.id, mid.id]
+    }), null, 'a valid C4 hunter with no eligible candidate must report no spot');
+    assert.throws(() => SpotProfiles.findForState({ level: 80, stats: {} }),
+        /Experience interval unavailable for level 80/,
+        'out-of-cap fixture input must not invent an experience interval');
     assert.doesNotThrow(() => SpotService.isSuitable(mid, Infinity),
         'non-finite target levels must not create an unbounded eligibility scan');
     assert.strictEqual(SpotService.isSuitable(starter, 16), false,
