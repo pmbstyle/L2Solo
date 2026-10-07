@@ -616,6 +616,7 @@ function clanMapName(clanId) {
 
 function resetClanMapFilters() {
     state.phase = 'all';
+    state.showMapRaids = false;
     state.search = '';
     state.minLevel = null;
     state.maxLevel = null;
@@ -1986,7 +1987,8 @@ function isVisible(actor) {
     if (!['all', 'players', 'cold'].includes(state.phase) && actor.phase !== state.phase) return false;
     if (state.phase === 'players' && actor.kind !== 'player') return false;
     if (state.search && !actorSearchText(actor).includes(state.search)) return false;
-    return ActorFilters.matches(actor, state);
+    return ActorFilters.matches(actor, state.phase === 'players' && actor.kind === 'player'
+        ? { ...state, minLevel: null, maxLevel: null } : state);
 }
 
 function filteredActors() {
@@ -2276,7 +2278,7 @@ function renderRaidBossMapPoints() {
     if (!state.showMapRaids && state.phase !== 'raidbosses' && !state.selectedRaidBossId) return;
     const viewportWidth = state.viewport?.width || 99999;
     const bosses = raidBossItems()
-        .filter((boss) => boss.status === 'alive' && boss.loc && (
+        .filter((boss) => ActorFilters.matches(boss, { minLevel: state.minLevel, maxLevel: state.maxLevel }) && boss.status === 'alive' && boss.loc && (
             state.showMapRaids || state.phase === 'raidbosses' || String(boss.id) === String(state.selectedRaidBossId)
         ));
     const clusters = state.showMapRaids || state.phase === 'raidbosses'
@@ -2348,7 +2350,7 @@ function renderKnowledgeNpcMapPoints() {
     renderKnowledgeNpcScope();
     const focus = state.knowledgeNpcFocus;
     const locations = knowledgeNpcMapPoints();
-    if (!focus || !locations.length) return;
+    if (!focus || !locations.length || !ActorFilters.matches(focus, { minLevel: state.minLevel, maxLevel: state.maxLevel })) return;
     const projected = locations.map((location) => ({ location, point: project(location) }));
     const clusters = MapClusters.clusterProjected(projected, {
         cellSize: screenUnits(42),
@@ -2500,7 +2502,11 @@ function renderFilterCounts() {
     renderMapScope();
     const items = clanScopedActors().filter((actor) => (
         (!state.search || actorSearchText(actor).includes(state.search))
-        && ActorFilters.matches(actor, state)
+        && ActorFilters.matches(actor, state.phase === 'players' && actor.kind === 'player'
+        ? { ...state, minLevel: null, maxLevel: null } : state)
+    ));
+    const raidBosses = state.clanMapScope ? [] : raidBossItems().filter((boss) => (
+        ActorFilters.matches(boss, { minLevel: state.minLevel, maxLevel: state.maxLevel })
     ));
     const counts = {
         all: items.length,
@@ -2508,7 +2514,7 @@ function renderFilterCounts() {
         warm: items.filter((actor) => actor.phase === 'warm').length,
         cold: items.filter((actor) => ['cold', 'warm'].includes(actor.phase)).length,
         players: items.filter((actor) => actor.kind === 'player').length,
-        raidbosses: state.clanMapScope ? 0 : Number(state.snapshot?.raidBosses?.counts?.alive || 0)
+        raidbosses: `${raidBosses.filter((boss) => boss.status === 'alive').length.toLocaleString()}/${raidBosses.length.toLocaleString()}`
     };
     Object.entries(counts).forEach(([key, value]) => {
         const count = els.filterStrip.querySelector(`[data-count-for="${key}"]`);
@@ -3464,7 +3470,7 @@ async function loadWorldStatus(force = false) {
         renderMarket();
         renderRaidBosses();
         playerPages?.render();
-        if (state.phase === 'raidbosses' || state.selectedRaidBossId) {
+        if (state.showMapRaids || state.phase === 'raidbosses' || state.selectedRaidBossId) {
             renderRaidBossPoints();
             renderRoster();
             renderSelected();
@@ -3937,21 +3943,22 @@ els.filterStrip.addEventListener('click', (event) => {
     const button = event.target.closest('[data-phase]');
     if (!button) return;
     let selectionCleared = false;
-    state.phase = button.dataset.phase;
-    if (state.phase === 'raidbosses') {
-        selectionCleared = Boolean(state.selectedId);
-        state.selectedId = null;
-        state.detail = null;
-        state.detailError = null;
-        state.detailLoading = false;
-        state.clusterScope = null;
-        state.detailRequest += 1;
-    } else if (state.phase !== 'all') {
-        selectionCleared = Boolean(state.selectedRaidBossId);
-        state.selectedRaidBossId = null;
+    if (button.dataset.phase === 'raidbosses') {
+        state.showMapRaids = !state.showMapRaids;
+        if (!state.showMapRaids) {
+            selectionCleared = Boolean(state.selectedRaidBossId);
+            state.selectedRaidBossId = null;
+        }
+    } else {
+        state.phase = button.dataset.phase;
+        if (state.phase !== 'all' && !state.showMapRaids) {
+            selectionCleared = Boolean(state.selectedRaidBossId);
+            state.selectedRaidBossId = null;
+        }
     }
     if (selectionCleared) commitRoute({ name: 'world' });
-    els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active', item === button));
+    els.filterStrip.querySelectorAll('.filter').forEach((item) => item.classList.toggle('is-active',
+        item.dataset.phase === 'raidbosses' ? state.showMapRaids : item.dataset.phase === state.phase));
     renderFilteredActorViews({ counts: false });
     renderSelected();
 });
