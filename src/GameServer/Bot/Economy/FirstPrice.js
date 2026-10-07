@@ -90,11 +90,19 @@ function dropPrice(id, item, spots, timestamp) {
         spotId: best.spotId, npcId: best.npcId, kind: best.kind, level: best.level, hourSource: hour.source, source: 'drop' };
 }
 
-function withinWalls(item, price) {
+// `made`: the price comes from making the item (a crafted one, a crystal), not
+// from hunting it. The floor is the NPC buy-back for every item. The ceiling
+// is the NPC shop price, and a made item has it only where an NPC sells it: the
+// NPC is then the buyer's other source. A D+ shot or a crystal that no NPC
+// sells has no ceiling (E91, user 2026-10-07: the market balances it); with
+// the ceiling at the NPC price scaled by the rate, a D shot was clamped to 20
+// while its cost is 58. A hunted item keeps the ceiling.
+function withinWalls(item, price, { made = false } = {}) {
     const base = Number(item.template?.price || 0);
     if (base > 0) {
         const floor = NpcSellRules.npcBuyPrice(base);
-        const ceiling = NpcShopPriceScale.price(base, ProgressionRates.profile().multiplier);
+        const open = made && !Number.isFinite(invoke('GameServer/Bot/Economy/BotMarketPricing').npcPrice({ selfId: item.selfId }));
+        const ceiling = open ? Infinity : NpcShopPriceScale.price(base, ProgressionRates.profile().multiplier);
         price = Math.min(ceiling, Math.max(floor, price));
     }
     return Math.max(1, Math.round(price));
@@ -155,7 +163,7 @@ function craftPrice(id, item, options, depth) {
     const hour = HuntEfficiency.huntIncome({ level, stats: {} }, options.timestamp);
     const labour = seconds / 3600 * hour.perHour;
     const count = Math.max(1, Number(recipe.productCount || 1));
-    return { price: withinWalls(item, (materials + labour) / count), materials: materials / count, labour: labour / count,
+    return { price: withinWalls(item, (materials + labour) / count, { made: true }), materials: materials / count, labour: labour / count,
         crafterLevel: level, source: 'craft' };
 }
 
@@ -186,7 +194,7 @@ function crystalPrice(id, item, options) {
         const unit = drop.price / crystals;
         if (!best || unit < best.unit) best = { unit, gearId: Number(gear.selfId) };
     }
-    return best ? { price: withinWalls(item, best.unit), gearId: best.gearId, source: 'crystal' } : null;
+    return best ? { price: withinWalls(item, best.unit, { made: true }), gearId: best.gearId, source: 'crystal' } : null;
 }
 
 // A shot of no grade, by the one item classifier (MarketCounters.counterOf).
