@@ -264,6 +264,198 @@ async function unregisteredPromise() {
     assert.equal(result.ok, false); assert.equal(result.reason, 'stale_command');
     assert.deepEqual(await facts(id), before, 'undefined command ownership is never an authority capability');
 }
+// Native version-family training writes must respect ROW floors.
+async function versionedTraining(key, mode, worker = false) {
+    const id = await seed();
+    if (mode !== 'stale') {
+        const initial = Life.snapshot(id);
+        assert(await Life.upsertState({ ...initial, stats: { ...initial.stats, [key]: 1 } }, 'versioned_training_fixture'));
+    }
+    const state = Life.snapshot(id), request = command(state);
+    const durableVersion = mode === 'stale' || mode === 'current' ? 1 : 0;
+    await Database.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson, '$.${key}', ?) WHERE characterId=?`,
+        [durableVersion, id]]);
+    const before = await facts(id), failuresBefore = Database.stats().failures;
+    assert(Protocol.sameCommandCheckpoint(request.commandCheckpoint, Life.cachedState(id)),
+        'the original real checkpoint/source remains admitted at this version-only mutation');
+    let result;
+    if (worker) {
+        const c = new ColdSimulationCoordinator(), sent = [];
+        c.ready = true; c.workerEpoch = `versioned-training:${id}`;
+        c.worker = { postMessage(message) { sent.push(clone(message)); }, terminate: async () => {} };
+        c.contextIndex = () => ({}); c.contextFor = () => ({}); c.population = Population;
+        await c.onMessage(Protocol.envelope('command_request', c.workerEpoch, { requests: [request] }, `versioned-message:${id}`),
+            c.worker, c.workerEpoch);
+        await c.commandTail;
+        assert.equal(c.commandInflight.size, 0);
+        const acknowledgements = sent.filter(message => message.type === 'command_ack');
+        assert.equal(acknowledgements.length, 1);
+        result = acknowledgements[0].payload.results[0];
+    } else result = await Population.executeWorkerLifecycleCommand(state, request);
+    const after = await facts(id);
+    console.log('VERSION_TRAINING', JSON.stringify({ key, mode, worker, result: { ok: result.ok, reason: result.reason },
+        spBefore: before.characters.find(row => row.id === id).sp,
+        spAfter: after.characters.find(row => row.id === id).sp,
+        skillsBefore: before.skills.filter(row => row.characterId === id).length,
+        skillsAfter: after.skills.filter(row => row.characterId === id).length,
+        failuresDelta: Database.stats().failures - failuresBefore }));
+    if (mode === 'stale') {
+        assert.equal(result.ok, false);
+        assert.equal(result.reason, 'apply_failed');
+        assert.deepEqual(after, before, `${key} stale ROW floor refuses before any physical SP/skills/items/cache write`);
+        assert.equal(Database.stats().failures, failuresBefore + 1, 'one native training rejection remains accounted');
+    } else {
+        assert.equal(result.ok, true, `${key} ${mode} must accept the same original ROW <= comparison`);
+        const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
+        const paid = Catalog.nextTraining(0, 7, 3, 0).sp + Catalog.nextTraining(0, 7, 3, 1).sp;
+        assert(paid > 0 && paid <= state.sp);
+        assert.equal(after.characters.find(row => row.id === id).sp, state.sp - paid);
+        assert(after.skills.filter(row => row.characterId === id).length > 0, 'current/lower training really writes native skills');
+        assert.equal(after.characters.find(row => row.id === id).hp, 90);
+        assert.equal(after.bot_life_state.find(row => row.characterId === id).sp, state.sp - paid);
+        assert.equal(Database.stats().failures, failuresBefore, 'accepted control introduces no failure');
+    }
+}
+async function versionedBookTraining(key, mode) {
+    const id = await seed(), Catalog = invoke('GameServer/Skills/SkillBookCatalog');
+    const training = Catalog.nextTraining(10, 20, 1184, 0);
+    assert(training && training.bookId && training.sp > 0, 'authored first Ice Bolt rank consumes its actual SP/book');
+    await Database.updateCharacterClassId(id, 10);
+    await Database.setItem(id, { selfId: training.bookId, name: 'Spellbook: Ice Bolt', amount: 1,
+        equipped: false, enchant: 0, slot: 0 });
+    const initial = Life.snapshot(id);
+    assert(await Life.upsertState({ ...initial, level: 20, exp: Number(Data.experience[19]) + 1, sp: training.sp,
+        inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
+        stats: { ...initial.stats, classId: 10, [key]: mode === 'stale' ? 0 : 1 } }, 'authored_book_training_fixture'));
+    const state = Life.snapshot(id), beforeWrite = Database.createColdTrainingGuard(state, () => {});
+    await Database.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson, '$.${key}', ?) WHERE characterId=?`,
+        [mode === 'lower' ? 0 : 1, id]]);
+    const before = await facts(id), failuresBefore = Database.stats().failures;
+    if (mode === 'stale') {
+        await assert.rejects(Database.learnBotSkill(id, training.skillId, training.level, { beforeWrite }),
+            error => Database.isColdTrainingSourceRetired(error));
+        assert.deepEqual(await facts(id), before, `${key} rejects before real spellbook/SP/skill transaction`);
+        assert.equal(Database.stats().failures, failuresBefore + 1);
+    } else {
+        const result = await Database.learnBotSkill(id, training.skillId, training.level, { beforeWrite });
+        assert.equal(result.learned, true);
+        assert.equal(result.spentSp, training.sp);
+        assert.equal(result.consumedBooks.length, 1);
+        assert.equal(result.consumedBooks[0].selfId, training.bookId);
+        const after = await facts(id);
+        assert.equal(after.characters.find(row => row.id === id).sp, 0);
+        assert.equal(after.items.filter(row => row.characterId === id && row.selfId === training.bookId).length, 0);
+        assert.equal(after.skills.find(row => row.characterId === id && row.selfId === training.skillId).level, training.level);
+        assert.equal(Database.stats().failures, failuresBefore);
+    }
+}
+async function versionedClassWriter(key, mode) {
+    const id = await seed(), initial = Life.snapshot(id);
+    assert(await Life.upsertState({ ...initial, level: 20, exp: Number(Data.experience[19]) + 1,
+        stats: { ...initial.stats, [key]: mode === 'stale' ? 0 : 1 } }, 'authored_class_training_fixture'));
+    const state = Life.snapshot(id), beforeWrite = Database.createColdTrainingGuard(state, () => {});
+    const target = invoke('GameServer/Bot/BotClassProgression').plan({ classId: 0, level: 20, seed: id }).classId;
+    assert.notEqual(target, 0, 'the real first-profession writer has an authored target');
+    await Database.execute([`UPDATE bot_life_state SET statsJson=json_set(statsJson, '$.${key}', ?) WHERE characterId=?`,
+        [mode === 'lower' ? 0 : 1, id]]);
+    const before = await facts(id), failuresBefore = Database.stats().failures;
+    if (mode === 'stale') {
+        await assert.rejects(Database.updateCharacterClassId(id, target, { beforeWrite }),
+            error => Database.isColdTrainingSourceRetired(error));
+        assert.deepEqual(await facts(id), before, `${key} rejects before real first-profession class SQL`);
+        assert.equal(Database.stats().failures, failuresBefore + 1);
+    } else {
+        assert.equal((await Database.updateCharacterClassId(id, target, { beforeWrite })).affectedRows, 1);
+        const after = await facts(id);
+        assert.equal(after.characters.find(row => row.id === id).classId, target);
+        assert.equal(after.characters.find(row => row.id === id).sp, state.sp);
+        assert.deepEqual(after.skills, before.skills);
+        assert.equal(Database.stats().failures, failuresBefore);
+    }
+}
+
+async function hiddenVersionTraining(kind, worker) {
+    const id = await seed(), state = Life.snapshot(id);
+    if (kind === 'non_enumerable') {
+        Object.defineProperty(state.stats, 'clanInventoryRevision', { value: 1, enumerable: false });
+    } else state.stats = Object.assign(Object.create({ clanInventoryRevision: 1 }), state.stats);
+    assert.equal(state.stats.clanInventoryRevision, 1);
+    assert.equal(JSON.parse(JSON.stringify(state.stats)).clanInventoryRevision, undefined,
+        'the actual ROW JSON omits inherited/non-enumerable counters');
+    const request = command(state);
+    await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.clanInventoryRevision',1) WHERE characterId=?", [id]]);
+    const before = await facts(id), failuresBefore = Database.stats().failures;
+    let result;
+    if (worker) {
+        const c = new ColdSimulationCoordinator(), sent = [];
+        c.ready = true; c.workerEpoch = `hidden-training:${id}`;
+        c.worker = { postMessage(message) { sent.push(clone(message)); }, terminate: async () => {} };
+        c.contextIndex = () => ({}); c.contextFor = () => ({}); c.population = Population;
+        await c.onMessage(Protocol.envelope('command_request', c.workerEpoch, { requests: [request] }, `hidden-message:${id}`),
+            c.worker, c.workerEpoch);
+        await c.commandTail;
+        assert.equal(c.commandInflight.size, 0);
+        const acknowledgements = sent.filter(message => message.type === 'command_ack');
+        assert.equal(acknowledgements.length, 1);
+        result = acknowledgements[0].payload.results[0];
+    } else result = await Population.executeWorkerLifecycleCommand(state, request);
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, 'apply_failed');
+    assert.deepEqual(await facts(id), before, `${kind} floor must match omitted ROW value0 before physical SP/skill debit`);
+    assert.equal(Database.stats().failures, failuresBefore + 1);
+}
+
+async function versionScalarValidation() {
+    const id = await seed(), state = Life.snapshot(id), before = await facts(id);
+    let toJsonCalls = 0, getterCalls = 0;
+    const object = { toJSON() { toJsonCalls++; throw Error('must_not_serialize_counter_object'); } };
+    for (const value of [{}, object, 1n, () => {}, Symbol('version')]) {
+        assert.throws(() => Database.createColdTrainingGuard({ ...state,
+            stats: { ...state.stats, clanInventoryRevision: value } }, () => {}),
+        error => error instanceof TypeError && error.message === 'invalid_cold_training_version');
+    }
+    const stats = { ...state.stats };
+    Object.defineProperty(stats, 'clanInventoryRevision', { enumerable: true,
+        get() { getterCalls++; throw Error('must_not_read_counter_accessor'); } });
+    assert.throws(() => Database.createColdTrainingGuard({ ...state, stats }, () => {}),
+        error => error instanceof TypeError && error.message === 'invalid_cold_training_version');
+    const hidden = { ...state.stats };
+    Object.defineProperty(hidden, 'clanInventoryRevision', { enumerable: false,
+        get() { getterCalls++; throw Error('must_not_read_omitted_accessor'); } });
+    assert.equal(typeof Database.createColdTrainingGuard({ ...state, stats: hidden }, () => {}), 'function');
+    const inherited = Object.assign(Object.create({ clanInventoryRevision: object }), state.stats);
+    assert.equal(typeof Database.createColdTrainingGuard({ ...state, stats: inherited }, () => {}), 'function');
+    assert.equal(toJsonCalls, 0);
+    assert.equal(getterCalls, 0);
+    assert.deepEqual(await facts(id), before, 'invalid scalar metadata cannot create native work or persist facts');
+    const mutable = { ...state, stats: { ...state.stats } };
+    const beforeWrite = Database.createColdTrainingGuard(mutable, () => {});
+    mutable.stats.clanInventoryRevision = 1;
+    await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.clanInventoryRevision',1) WHERE characterId=?", [id]]);
+    const barrier = await facts(id);
+    await assert.rejects(Database.learnBotSkill(id, 3, 1, { beforeWrite }),
+        error => Database.isColdTrainingSourceRetired(error));
+    assert.deepEqual(await facts(id), barrier, 'a later input mutation never replaces captured original version floors');
+}
+
+async function versionScalarSemantics() {
+    const { DatabaseSync } = require('node:sqlite');
+    const sql = new DatabaseSync(':memory:');
+    try {
+        const values = [undefined, null, 0, 1, 2, -1, 0.5, '1', '0', true, false];
+        for (const incoming of values) for (const durable of values) {
+            const stored = JSON.stringify({ clanInventoryRevision: durable });
+            const rowInput = JSON.stringify({ clanInventoryRevision: incoming });
+            const captured = JSON.stringify(incoming ?? null);
+            const row = sql.prepare(`SELECT COALESCE(json_extract(?, '$.clanInventoryRevision'),0)
+                <= COALESCE(json_extract(?, '$.clanInventoryRevision'),0) AS admitted`).get(stored, rowInput).admitted;
+            const guard = sql.prepare(`SELECT COALESCE(json_extract(?, '$.clanInventoryRevision'),0)
+                <= COALESCE(json_extract(?, '$'),0) AS admitted`).get(stored, captured).admitted;
+            assert.equal(guard, row, 'captured JSON scalar preserves native SQLite type ordering and null coalescing');
+        }
+    } finally { sql.close(); }
+}
+
 async function check(name, work) {
     try { await work(); console.log(`PASS ${name}`); }
     catch (error) { failures.push(name); console.error(`FAIL ${name}: ${error.stack}`); }
@@ -275,6 +467,22 @@ async function check(name, work) {
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init();
     for (const mode of ['current', 'replace', 'stop', 'changed', 'fence', 'claimed', 'deadline_metadata', 'owned_replaced', 'request_changed']) {
         await check(`native inner ${mode}`, () => inner(mode));
+    }
+    for (const key of ['clanInventoryRevision', 'clanLevelSpVersion', 'clanMembershipVersion']) {
+        for (const mode of ['stale', 'current', 'lower']) await check(`manual versioned ${key}:${mode}`,
+            () => versionedTraining(key, mode));
+        for (const mode of ['stale', 'current', 'lower']) {
+            await check(`worker versioned ${key}:${mode}`, () => versionedTraining(key, mode, true));
+        }
+        for (const mode of ['stale', 'current', 'lower']) {
+            await check(`real book transaction ${key}:${mode}`, () => versionedBookTraining(key, mode));
+            await check(`real class writer ${key}:${mode}`, () => versionedClassWriter(key, mode));
+        }
+    }
+    await check('native ROW JSON scalar <= semantics', versionScalarSemantics);
+    await check('own scalar validation and immutable original floor', versionScalarValidation);
+    for (const kind of ['non_enumerable', 'inherited']) for (const worker of [false, true]) {
+        await check(`hidden version ${kind}:${worker ? 'worker' : 'manual'}`, () => hiddenVersionTraining(kind, worker));
     }
     await check('optional-absent current manual native transition', manualCurrent);
     await check('optional-absent claimed manual keeps genuine native SQL owner guard', manualOwnerCas);

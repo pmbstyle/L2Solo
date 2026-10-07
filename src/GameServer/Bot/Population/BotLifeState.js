@@ -2611,11 +2611,13 @@ const BotLifeState = {
         const nativeWriteOptions = options.persist !== false && workerOptions ? {
             beforeWrite: NativeWriteCheckpoint.create(characterId, workerOptions)
         } : undefined;
-        // ARCH-NOTE: Manual legacy training needs its original native SQL checkpoint before SP/book/class writes.
-        // This proof is for training only: the existing ROW ownership CAS remains authoritative.
-        const trainingWriteOptions = nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
-            && state.phase === 'cold' && state.simulation?.ownerId === 'legacy_main'
-            ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
+        // ARCH-NOTE: Paid manual/worker training keeps private ROW version floors before SP/book/class writes.
+        // Training wraps the original native capability only; ROW/after-writers keep their advancing original proof.
+        const trainingWriteOptions = nativeWriteOptions && needsClassProgression && options.projectClassProgression !== true
+            ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}, nativeWriteOptions.beforeWrite) }
+            : nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
+                && state.phase === 'cold' && state.simulation?.ownerId === 'legacy_main'
+                ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
@@ -2723,7 +2725,7 @@ const BotLifeState = {
                     });
             });
         });
-        // No extra promise/handler on worker projections or captured worker commands.
+        // Projections and commands without paid training keep their existing promise/handler path.
         if (trainingWriteOptions === nativeWriteOptions) return prepared;
         return prepared.catch(error => {
             if (Database.isColdTrainingSourceRetired(error)) return null;

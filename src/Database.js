@@ -1519,8 +1519,9 @@ function captureWriteAdmission(options, errorCode, characterId, rowStatement = n
                 throw new TypeError(errorCode);
             }
             beforeWrite = descriptor.value;
-            nativeProof = rowStatement ? NativeWriteCheckpoint.captureRow(beforeWrite, rowStatement)
-                : NativeWriteCheckpoint.capture(beforeWrite, characterId);
+            const nativeBeforeWrite = coldTrainingGuards.get(beforeWrite)?.nativeBeforeWrite || beforeWrite;
+            nativeProof = rowStatement ? NativeWriteCheckpoint.captureRow(nativeBeforeWrite, rowStatement)
+                : NativeWriteCheckpoint.capture(nativeBeforeWrite, characterId);
         } else if ('beforeWrite' in options) throw new TypeError(errorCode);
     } catch (error) {
         captureFailed = true;
@@ -1539,17 +1540,24 @@ function checkCapturedWriteAdmission(admission, characterId) {
             throw new TypeError(admission.errorCode);
         }
     }
+    let trainingRow;
     if (admission.coldTraining) {
         const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
-        const row = one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')} FROM bot_life_state WHERE characterId = ?`, [characterId]);
+        const row = trainingRow = one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')},
+            COALESCE(json_extract(statsJson, '$.clanInventoryRevision'), 0) <= COALESCE(json_extract(?, '$'), 0)
+            AND COALESCE(json_extract(statsJson, '$.clanLevelSpVersion'), 0) <= COALESCE(json_extract(?, '$'), 0)
+            AND COALESCE(json_extract(statsJson, '$.clanMembershipVersion'), 0) <= COALESCE(json_extract(?, '$'), 0)
+                AS trainingVersionsCurrent
+            FROM bot_life_state WHERE characterId = ?`, [...admission.coldTraining.versions, characterId]);
         const current = Protocol.commandCheckpoint(row && { ...row, activityStartedAt: row.activityStartedAt || 0,
             nextResolveAt: row.nextResolveAt || 0, lastResolvedAt: row.lastResolvedAt || 0, lastHotAt: row.lastHotAt || 0 });
         if (current?.phase !== 'cold' || current.simulationOwner !== LEGACY_SIMULATION_OWNER
-            || !Protocol.sameCommandCheckpoint(admission.coldTraining, current)) throw new ColdTrainingSourceRetired();
+            || row.trainingVersionsCurrent !== 1
+            || (!admission.nativeProof && !Protocol.sameCommandCheckpoint(admission.coldTraining, current))) throw new ColdTrainingSourceRetired();
     }
     if (admission.nativeProof) {
         NativeWriteCheckpoint.checkTarget(admission.nativeProof, characterId);
-        NativeWriteCheckpoint.check(admission.nativeProof, one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')}
+        NativeWriteCheckpoint.check(admission.nativeProof, trainingRow || one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')}
             FROM bot_life_state WHERE characterId = ?`, [characterId]));
     }
 }
@@ -5729,16 +5737,33 @@ const Database = {
     isColdTrainingSourceRetired(error) {
         return error instanceof ColdTrainingSourceRetired;
     },
-    createColdTrainingGuard(state, validate) {
+    createColdTrainingGuard(state, validate, nativeBeforeWrite) {
         const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
         const expected = Protocol.commandCheckpoint({ characterId: state.characterId, phase: state.phase, activity: state.activity,
             simulationOwner: state.simulation?.ownerId, simulationRevision: state.simulation?.revision,
             simulationLeaseId: state.simulation?.leaseId || null,
             activityStartedAt: state.timing?.activityStartedAt || 0, nextResolveAt: state.timing?.nextResolveAt || 0,
             lastResolvedAt: state.timing?.lastResolvedAt || 0, lastHotAt: state.timing?.lastHotAt || 0, updatedAt: state.updatedAt });
-        if (!expected || expected.phase !== 'cold' || expected.simulationOwner !== LEGACY_SIMULATION_OWNER || typeof validate !== 'function') throw Error('invalid_cold_training_source');
-        const beforeWrite = () => { validate(); };
-        coldTrainingGuards.set(beforeWrite, Object.freeze({ ...expected }));
+        if (!expected || expected.phase !== 'cold' || expected.simulationOwner !== LEGACY_SIMULATION_OWNER
+            || typeof validate !== 'function' || (nativeBeforeWrite !== undefined && typeof nativeBeforeWrite !== 'function')) {
+            throw Error('invalid_cold_training_source');
+        }
+        // Training alone carries immutable ROW version floors. Its optional
+        // native callback still supplies the original target/checkpoint proof.
+        const beforeWrite = () => { validate(); nativeBeforeWrite?.(); };
+        // ARCH-NOTE: These three short-lived SQL scalars preserve ROW JSON <= semantics without protocol/cache fields.
+        const versions = Object.freeze(['clanInventoryRevision', 'clanLevelSpVersion', 'clanMembershipVersion'].map(key => {
+            const descriptor = Object.getOwnPropertyDescriptor(state.stats || {}, key);
+            if (descriptor?.enumerable && !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+                throw new TypeError('invalid_cold_training_version');
+            }
+            const value = descriptor?.enumerable ? descriptor.value : undefined;
+            if (value !== null && value !== undefined && !['number', 'string', 'boolean'].includes(typeof value)) {
+                throw new TypeError('invalid_cold_training_version');
+            }
+            return JSON.stringify(value ?? null);
+        }));
+        coldTrainingGuards.set(beforeWrite, Object.freeze({ ...expected, versions, nativeBeforeWrite }));
         return beforeWrite;
     },
     publishColdTraining(characterId, resolved, options = {}) {
