@@ -153,6 +153,34 @@ check('a caller without spots gets no sources and keeps the index built for the 
     assert.equal(Planner.sourceIndexFor(spots), index);
 });
 
+check('a large native drop result stays complete without being retained across decisions', () => {
+    const spots = Array.from({ length: 2050 }, (_, at) => ({ id: `golem-source:${at}`, avgLevel: 19,
+        npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 3 }] }));
+    const state = base({ level: 20 });
+    const first = Planner.sourceForItem(1869, spots, state);
+    assert.equal(first.length, spots.length, 'every native Iron Ore drop source is returned');
+    assert.equal(new Set(first.map(row => row.spotId)).size, spots.length);
+    const second = Planner.sourceForItem(1869, spots, state);
+    assert.notEqual(second, first, 'an oversized list is not retained globally');
+    assert.deepEqual(second, first, 'eviction does not truncate or change yields, fields or order');
+    const sourceCache = new Map();
+    const owned = Planner.sourceForItem(1869, spots, state, { sourceCache });
+    assert.equal(Planner.sourceForItem(1869, spots, state, { sourceCache }), owned,
+        'one active decision still shares its complete result');
+    const small = spots.slice(0, 64);
+    const remembered = Planner.sourceForItem(1869, small, state);
+    assert.deepEqual(Planner.sourceForItem(1869, small, state), remembered, 'a bounded result keeps its fields and order');
+    for (let level = 1; level <= 80; level++) if (level !== 20) Planner.sourceForItem(1869, small, base({ level }));
+    const rebuilt = Planner.sourceForItem(1869, small, state);
+    assert.notEqual(rebuilt, remembered, 'plain result objects are not retained between decisions');
+    assert.deepEqual(rebuilt, remembered, 'a later rebuild keeps the entire native result');
+    const size = Planner.sourceCacheSize();
+    assert(size.resolved > 0 && size.resolved <= 128, 'shared input keys have a fixed bound');
+    assert(size.packedBytes > 0 && size.packedBytes <= 128 * small.length * 2,
+        'the retained results contain only numeric source positions');
+    assert(size.yields <= 16384, 'recomputable yield pairs also have a fixed bound');
+});
+
 check('per-actor wish results are bounded, least recently used out, a reused actor kept', () => {
     const { WishNetwork, remember, ACTOR_LIMIT } = invoke('GameServer/Bot/Economy/WishNetwork');
     const map = new Map();
