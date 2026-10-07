@@ -7,7 +7,7 @@ const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdS
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 
 // Actual main producer and envelope pagination; no DB initialization/worker
-// listener. Missing authoritative rows and an economy fence are real refusals.
+// listener. Missing authoritative rows are real refusals; economy is worker-owned.
 (async () => {
     const now = 1000000, ids = [61, 62, 63], emitted = [], replies = [];
     const kernel = new ColdSimulationKernel({ now: () => now, maxInFlight: 4,
@@ -25,7 +25,7 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
     coordinator.workerEpoch = 'n53-claim-transport';
     coordinator.worker = { postMessage: message => replies.push(message) };
     coordinator.contextIndex = () => ({});
-    coordinator.economyBots.add(61);
+    assert.equal(coordinator.economyBots, undefined, 'worker-owned economy does not fence main claims');
     assert.strictEqual(Database.isReady(), false);
     assert(ids.every(id => LifeState.cachedState(id) === undefined || LifeState.cachedState(id) === null));
     await coordinator.handleClaimRequest(Protocol.envelope('claim_request', coordinator.workerEpoch, request.payload, request.msgId));
@@ -33,7 +33,7 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
     assert(replies.every(reply => reply.type === 'claim_ack' && reply.msgId === request.msgId));
     const rejected = replies.flatMap(reply => reply.payload.rejected || []);
     assert.strictEqual(rejected.length, 3);
-    assert.strictEqual(rejected.find(row => row.characterId === 61).reason, 'economy_in_progress');
+    assert.strictEqual(rejected.find(row => row.characterId === 61).reason, 'missing_state');
     assert.strictEqual(rejected.find(row => row.characterId === 62).reason, 'missing_state');
     assert(rejected.every(row => row.purpose?.kind === 'party' && row.purpose.partyId === party.partyId),
         'early refusals preserve the exact party purpose on the matching request');

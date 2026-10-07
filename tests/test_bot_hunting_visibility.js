@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Visibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');

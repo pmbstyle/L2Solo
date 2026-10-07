@@ -171,7 +171,7 @@ async function until(predicate, label, turns = 200) {
         assert.equal(coordinator.projectedEntryFor(lostId).entry, prepared);
         const lostCheckpoint = Protocol.safetyCheckpoint(lostState);
         assert.equal(coordinator.canRepairSafety(lostCheckpoint), true);
-        for (const name of ['fencedBots', 'economyBots', 'commandInflight']) {
+        for (const name of ['fencedBots', 'commandInflight']) {
             const collection = coordinator[name];
             if (collection instanceof Map) collection.set(lostId, {}); else collection.add(lostId);
             assert.equal(coordinator.safetyExcluded(lostId), true, `${name} cheap exclusion`);

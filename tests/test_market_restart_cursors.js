@@ -3,7 +3,19 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const fixtureDirectory = require('node:os').tmpdir() + '/l2solo-market-cursors-' + require('node:crypto').randomUUID();
+fs.mkdirSync(fixtureDirectory);
+const databasePath = path.join(fixtureDirectory, 'world.sqlite');
+const historyPath = path.join(fixtureDirectory, 'history.sqlite');
+const fixtureConfig = path.join(fixtureDirectory, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+assert.strictEqual(options.default.Database.path, databasePath);
+assert.strictEqual(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -12,8 +24,6 @@ const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { shared: channel } = require('../src/GameServer/Bot/Population/ColdTableChannel');
 const TableMirror = require('../src/GameServer/Bot/Population/TableMirror');
-const databasePath = path.join(process.cwd(), 'tmp', 'test-market-restart-cursors.sqlite');
-const historyPath = databasePath.replace(/\.sqlite$/, '.history.sqlite');
 const old = Date.now() - 48 * 3600000;
 const PRICING_COLUMNS = ['fills', 'pricingPrice', 'pricingSeenCounter', 'pricingSeenItem', 'pricingRival',
     'pricingWorth', 'pricingSeenFills'];
@@ -59,7 +69,6 @@ async function restart() {
 }
 async function run() {
     clean();
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
     options.default.Database.historyPath = historyPath;
     Database.init();
     assert(Database.isReady());
@@ -122,7 +131,8 @@ async function run() {
     }
     const migrated = await storedShop(owner.id);
     assert.strictEqual(migrated.id, sell.shop.id);
-    const checkpoint = { price: 100, seenCounter: 101, seenItem: 100, rival: 0, worth: 0, seenFills: 0 };
+    const checkpoint = { price: 100, seenCounter: 101, seenItem: 100, rival: 0, worth: 0, seenFills: 0, seenAt: migrated.lines[0].pricing.seenAt };
+    assert(Number.isSafeInteger(checkpoint.seenAt) && checkpoint.seenAt > 0, 'migration initializes durable observation time');
     assert.deepStrictEqual(migrated.lines[0].pricing, checkpoint);
     assert.strictEqual(migrated.revision, 1);
     assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900);

@@ -2,7 +2,19 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const dir = path.join(os.tmpdir(), 'l2-hot-party-' + require('node:crypto').randomUUID());
+fs.mkdirSync(dir);
+const databasePath = path.join(dir, 'test.sqlite');
+const historyPath = path.join(dir, 'history.sqlite');
+const fixtureConfig = path.join(dir, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+assert.strictEqual(options.default.Database.path, databasePath);
+assert.strictEqual(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 const Database = invoke('Database');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -20,9 +32,6 @@ const RaidIndex = invoke('GameServer/World/RaidEntityIndex');
 const RaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const RaidMinions = invoke('GameServer/World/RaidBossMinionManager');
 const ClanEquipment = invoke('GameServer/Clan/ClanEquipmentService');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-hot-party-'));
-options.default.Database.path = path.join(dir, 'test.sqlite');
-options.default.Database.historyPath = path.join(dir, 'history.sqlite');
 const at = Date.now();
 const saved = [];
 function replace(object, key, value) { saved.push(() => { object[key] = value; }); object[key] = value; }
@@ -281,7 +290,13 @@ async function run() {
     deadSession.actor.state.fetchDead = () => false;
     const failedCooldown = await Lifecycle.cooldown(party.partyId, 'raid_failed', { ignoreVisibility: true });
     assert(failedCooldown.ok, JSON.stringify(failedCooldown));
-    assert.strictEqual(Parties.find(party.partyId).status, 'dissolved');
+    assert.strictEqual(Parties.find(party.partyId), null,
+        'a dissolved party leaves the active cache');
+    const [dissolvedHistory] = await Database.execute([
+        'SELECT status,statsJson FROM bot_background_parties WHERE partyId=?', [party.partyId]
+    ]);
+    assert.strictEqual(dissolvedHistory.status, 'dissolved', 'durable party history records dissolution');
+    assert.strictEqual(JSON.parse(dissolvedHistory.statsJson).partyBreakReason, 'raid_failed');
     assert.strictEqual(recordedFailure, party.partyId);
     assert([18, 19, 20].every(id => !Life.cachedState(id).party.partyId),
         'failed raid dissolution releases the complete roster');
@@ -341,8 +356,8 @@ async function run() {
     await Database.close();
     require('child_process').execFileSync(process.execPath, ['-e', `
         require('./src/Global');
-        options.default.Database.path = process.argv[1];
-        options.default.Database.historyPath = process.argv[2];
+        require('assert').strictEqual(options.default.Database.path, process.argv[1]);
+        require('assert').strictEqual(options.default.Database.historyPath, process.argv[2]);
         const D = invoke('Database'), L = invoke('GameServer/Bot/Population/BotLifeState'), P = invoke('GameServer/Bot/Population/BackgroundPartyState');
         D.init();
         Promise.all([L.init(), P.init()]).then(() => {

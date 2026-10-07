@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Policy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const Planner = require('../src/GameServer/Clan/ClanEquipmentPlanner');

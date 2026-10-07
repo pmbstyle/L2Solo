@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const DataCache = invoke('GameServer/DataCache');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -28,6 +29,8 @@ async function main() {
     const originalPlanningForClan = EquipmentService.planningForClan;
     const originalPlanFor = GearPlanner.planFor;
     const originalBestSourceForPlan = GearPlanner.bestSourceForPlan;
+    const Simulation = invoke('GameServer/Clan/ClanSimulationService');
+    const originalProjection = Simulation.autonomousClanProjection;
     const originalRate = process.env.L2NODE_PROGRESSION_RATE;
     try {
         DataCache.items = [{
@@ -162,7 +165,8 @@ async function main() {
         const events = require('../src/GameServer/Clan/ClanReviewEvents');
         events.stop();
         let boardChanged;
-        events.start({ subscribePublications: () => () => {} }, {
+        Simulation.autonomousClanProjection = async () => [];
+        await events.start({ subscribePublications: () => () => {} }, {
             subscribeBoardChanges(listener) { boardChanged = listener; return () => {}; }
         });
         events.track({ ...clan, members: [{ ...clan.members[0], stats: { equipmentPlan: {
@@ -184,6 +188,7 @@ async function main() {
         EquipmentService.planningForClan = originalPlanningForClan;
         GearPlanner.planFor = originalPlanFor;
         GearPlanner.bestSourceForPlan = originalBestSourceForPlan;
+        Simulation.autonomousClanProjection = originalProjection;
         CandidateService.reset();
         if (originalRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
         else process.env.L2NODE_PROGRESSION_RATE = originalRate;

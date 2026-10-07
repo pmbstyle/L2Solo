@@ -16,7 +16,13 @@ for (const town of Object.values(Towns.towns)) {
     const arrival = Resolver.resolveSolo({ state: travel, timestamp: 26000 });
     assert.strictEqual(arrival.patch.activity, 'shopping');
     assert.strictEqual(arrival.patch.currentRegion, town.name);
-    assert.deepStrictEqual(arrival.patch.loc, travel.stats.travel.to);
+    // Durable cold positions use whole map units; the selected purchase
+    // destination may be fractional (for example a position beside a stall).
+    for (const axis of ['locX', 'locY', 'locZ']) {
+        assert(Number.isInteger(arrival.patch.loc[axis]), `${town.name} arrival ${axis} is a native map unit`);
+        assert(Math.abs(arrival.patch.loc[axis] - travel.stats.travel.to[axis]) <= 0.5,
+            `${town.name} arrival ${axis} preserves its selected destination within one rounding step`);
+    }
     assert.deepStrictEqual(travel.stats.marketReturn.loc, state.loc);
 }
 assert.strictEqual(Executor.beginMarketTravel(state, goal('Unknown town'), 1000), null);

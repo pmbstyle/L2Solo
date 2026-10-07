@@ -4,7 +4,19 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const fixtureDirectory = require('node:os').tmpdir() + '/l2solo-board-audit-' + require('node:crypto').randomUUID();
+fs.mkdirSync(fixtureDirectory);
+const databasePath = path.join(fixtureDirectory, 'world.sqlite');
+const historyPath = path.join(fixtureDirectory, 'history.sqlite');
+const fixtureConfig = path.join(fixtureDirectory, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+assert.strictEqual(options.default.Database.path, databasePath);
+assert.strictEqual(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -18,12 +30,11 @@ const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 const { BoardIndex, rowOf, recordOf } = require('../src/GameServer/AfkTrade/BoardIndex');
-const databasePath = path.join(process.cwd(), 'tmp', 'test-board-market-audit.sqlite');
 let sequence = 0;
 let rolledBackOwner = null;
 
 function clean() {
-    for (const file of [databasePath, databasePath.replace(/\.sqlite$/, '.history.sqlite')]) {
+    for (const file of [databasePath, historyPath]) {
         for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
     }
 }
@@ -68,7 +79,6 @@ async function check(name, work) {
 
 async function run() {
     clean();
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
     Database.init();
     DataCache.init();
     invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
@@ -391,7 +401,7 @@ async function run() {
         const evaluate = ListingPolicy.evaluate;
         try {
             ListingPolicy.evaluate = (_state, options) => {
-                assert.strictEqual(options.kept.get(1864), 100);
+                assert.strictEqual(options.kept.get('1864:0'), 100);
                 const listings = [
                     { selfId: 1864, name: 'Stem', count: 999, price: 100, pricing: freshStem },
                     { selfId: 1865, name: 'Varnish', count: 500, price: 100, pricing: freshVarnish }
@@ -443,15 +453,12 @@ async function run() {
             PriceDecision.chooseAsk = (_belief, _market, _trader, _key, current) => ({ price: current, npc: false });
             proposal = MarketPricing.look({ stats: {}, activity: 'resting' }, lines, ctx);
         } finally { PriceDecision.chooseAsk = choose; }
-        assert.strictEqual(proposal.updates.length, 1, 'retained price checkpoints its new evidence');
-        assert.strictEqual(proposal.reprices.length, 0);
-        const result = await BotMarket.applyReview(owner, proposal);
-        assert.strictEqual(result.updated, 1);
+        assert.strictEqual(proposal, null, 'C2b retained price creates no metadata-only native write');
         const after = (await Database.fetchAfkTradeShops(owner))[0];
-        assert.strictEqual(after.lines[0].pricing.seenFills, 1);
+        assert.strictEqual(after.lines[0].pricing.seenFills, 0, 'unconsumed evidence remains durable when the price did not change');
+        assert.deepStrictEqual(after.lines[0].pricing, lines[0].pricing, 'retained price does not rewrite its quote metadata');
         assert.strictEqual(after.lines[0].price, 100);
         assert.strictEqual(after.lines[0].count, 499);
-        assert.strictEqual((await BotMarket.applyReview(owner, proposal)).updated, 0, 'same observation patch applies once');
         const savedStats = JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [owner]]))[0].statsJson);
         assert(!Object.hasOwn(savedStats, 'priceBeliefs'));
         AfkTrade._resetForTests();
@@ -462,8 +469,14 @@ async function run() {
         const restored = AfkTrade.boardIndex().ownerLines(owner);
         assert.strictEqual(restored[0].fills, 1);
         assert.deepStrictEqual(restored[0].pricing, after.lines[0].pricing);
-        assert.strictEqual(MarketPricing.look({ stats: {}, activity: 'resting' }, restored,
-            { ...ctx, board: AfkTrade.boardIndex(), timestamp: Date.now() }), null, 'restart does not learn consumed evidence again');
+        const restoredContext = { ...ctx, board: AfkTrade.boardIndex(), timestamp: Date.now() };
+        assert.strictEqual(PriceBelief.lineObservations(restored[0], PriceBelief.prior(1864, restoredContext), restoredContext)[0][1], 1,
+            'restart preserves the exact unconsumed fill even though its price did not change');
+        try {
+            PriceDecision.chooseAsk = (_belief, _market, _trader, _key, current) => ({ price: current, npc: false });
+            assert.strictEqual(MarketPricing.look({ stats: {}, activity: 'resting' }, restored, restoredContext), null,
+                'reconsidering an unchanged price after restart still creates no metadata-only write');
+        } finally { PriceDecision.chooseAsk = choose; }
         assert.strictEqual(await bag(buyer, 1864), 1);
         console.log(JSON.stringify({ case: 'line restart evidence', fills: restored[0].fills,
             seenFills: restored[0].pricing.seenFills, linePrice: restored[0].price, remaining: restored[0].count }));

@@ -1,14 +1,19 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { DatabaseSync } = require('node:sqlite');
 
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
 require('../src/Global');
 
 const rootDir = path.resolve(__dirname, '..');
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
-const databasePath = path.join(rootDir, 'tmp', 'test-clan-simulation-slice5.sqlite');
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'clan-slice5-'));
+const databasePath = path.join(scratch, 'world.sqlite');
 const Database = invoke('Database');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
@@ -51,7 +56,8 @@ function seedDatabase() {
 
 async function main() {
     seedDatabase();
-    options.default.Database.path = path.relative(rootDir, databasePath);
+    options.default.Database.path = databasePath;
+    assert(path.isAbsolute(options.default.Database.path));
     Database.init();
     await LifeState.init();
     await BackgroundPartyState.init();
@@ -145,7 +151,13 @@ async function main() {
         const started = await ClanPartyService.resolveBatch(4, { budgetMs: 1000, rng: () => 0 });
         assert.strictEqual(started.started, 1,
             'a required support must be reclaimed and a refreshed roster started in the same pass');
-        assert.strictEqual(BackgroundPartyState.find('busy-party').status, 'dissolved');
+        assert.strictEqual(BackgroundPartyState.find('busy-party'), null,
+            'a reclaimed party must leave the active party cache');
+        const [busyHistory] = await Database.execute([
+            'SELECT status FROM bot_background_parties WHERE partyId = ?', ['busy-party']
+        ]);
+        assert.strictEqual(busyHistory.status, 'dissolved',
+            'reclaiming a party preserves its durable history');
         const lingeringBusyMembers = await Database.execute([
             'SELECT characterId FROM bot_life_state WHERE partyId = ?',
             ['busy-party']
@@ -268,6 +280,7 @@ async function main() {
         console.log('Clan simulation Slice 5 checks passed');
     } finally {
         await Database.close();
+        fs.rmSync(scratch, { recursive: true, force: true });
     }
 }
 
