@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('competition-owner-storage');
 require('../src/Global');
@@ -113,4 +114,4 @@ try {
         }
     }
     console.log('PASS native SQLite 700 owners/MAX_SAFE ids: persisted revisions, exact inverse/queue order, reinsert/release, no population scans');
-} finally { db.close(); }
+} finally { db.close(); fs.rmSync(isolated.directory, { recursive: true, force: true }); }
