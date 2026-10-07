@@ -5610,14 +5610,19 @@ const Database = {
     checkpoint(options = {}) {
         if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
         if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
-        return CheckpointCoordinator.request({
+        const requestOptions = {
             force: true,
             mode: options.mode === 'truncate'
                 ? 'truncate'
                 : options.mode === 'restart' ? 'restart' : 'passive',
             minWalBytes: 0,
             busyTimeoutMs: options.busyTimeoutMs
-        });
+        };
+        const request = () => CheckpointCoordinator.request(requestOptions);
+        if (requestOptions.mode === 'passive') return request();
+        const result = queryTail.then(request, request);
+        queryTail = result.catch(() => null);
+        return result;
     },
 
     applyBufferedCharacterState(characterId, state = {}) {
