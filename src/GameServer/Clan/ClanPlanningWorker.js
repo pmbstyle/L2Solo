@@ -5,7 +5,11 @@ const TableMirror = require('../Bot/Population/TableMirror');
 const { BoardIndex } = require('../AfkTrade/BoardIndex');
 
 // Only immutable catalogs and per-request snapshots enter this process.
-const catalogs = { items: [], npcs: [], npcRewards: [] };
+const catalogs = { items: [], npcs: [], npcRewards: [], experience: [] };
+// ARCH-NOTE: ProgressionCap captured native DataCache before the facade.
+// Alias the authored arrays for cap/death reads;80 experience numbers enter
+// once per epoch through the existing bounded catalogue page handler.
+Object.assign(invoke('GameServer/DataCache'), catalogs);
 let context = {};
 let planner;
 let fixedOffers = new Map();
@@ -80,6 +84,7 @@ parentPort.on('message', (message) => {
         } else if (message.type === 'plan') {
             context = message.payload.context;
             global.options.default.General = context.general;
+            global.options.default.Progression = context.progression;
             if (context.progressionRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
             else process.env.L2NODE_PROGRESSION_RATE = context.progressionRate;
             fixedOffers = indexOffers(context.fixedOffers);

@@ -95,7 +95,7 @@ class ClanPlanningCoordinator {
         });
         this.initializing = (async () => {
             // Bound serialization work on the game thread, including initial startup.
-            for (const name of ['items', 'npcs', 'npcRewards']) {
+            for (const name of ['items', 'npcs', 'npcRewards', 'experience']) {
                 const rows = catalogs[name] || [];
                 for (let offset = 0; offset < rows.length; offset += 128) {
                     await this.send('catalog', { name, rows: rows.slice(offset, offset + 128) });
@@ -184,10 +184,11 @@ async function context() {
     const fixedOffers = market.fixedStoreOffers().map(offerRow);
     const recipes = [...craft.publishedStationRecipes().recipes];
     const general = {};
-    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate']) {
+    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate', 'maxLevel']) {
         general[key] = global.options.default.General?.[key];
     }
-    return { ...staticMarkets.get(rate), fixedOffers, recipes, general, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
+    const progression = { contentCap: global.options.default.Progression?.contentCap };
+    return { ...staticMarkets.get(rate), fixedOffers, recipes, general, progression, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
 }
 
 module.exports = {

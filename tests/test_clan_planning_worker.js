@@ -3,13 +3,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
+const isolated = require('./helpers/isolatedSocialDatabase')('test_clan_planning_worker');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Equipment = invoke('GameServer/Clan/ClanEquipmentService');
 const Goals = invoke('GameServer/Clan/ClanGoalService');
 const Database = invoke('Database');
+Database.init();
 const Runtime = require('../src/GameServer/Clan/ClanPlanningCoordinator');
 const { ClanPlanningCoordinator } = Runtime;
 const { planForMember } = require('../src/GameServer/Clan/ClanEquipmentPlanner');
@@ -259,4 +262,4 @@ parentPort.on('message', (m) => {
     await parityAndIntegration();
     await workerLifecycle();
     console.log('Clan planning worker parity, stale snapshots, isolation and recovery checks passed');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => { Database.close(); require('node:fs').rmSync(isolated.directory, { recursive: true, force: true }); });
