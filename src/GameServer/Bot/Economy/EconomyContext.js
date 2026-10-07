@@ -58,7 +58,7 @@ function inputKey(state, deps = {}) {
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
-        positive(deps.buyOrderEscrow),
+        deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, positive(deps.buyOrderEscrow),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
@@ -105,6 +105,7 @@ function resolved(state, deps) {
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
+    if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
     if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     return deps;
@@ -225,19 +226,13 @@ function forState(state = {}, deps = {}) {
     context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
-    // ARCH-NOTE: worker crafter hour = I_hunt until FX-C1.
-    if (isMainThread && state.stats?.workshop?.entries?.length) {
-        const Profit = require('./CraftProfitPolicy');
-        const opportunities = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state, {
-            hourAdena: base.hourAdena, worth: price, timestamp, insideContext: true });
-        for (const row of opportunities) if (row.recipe?.productId) watch(row.recipe.productId);
-        for (const row of opportunities.slice(0, 1)) {
-            const incomePerHour = Profit.craftIncomePerHour(row.margin);
-            if (!(incomePerHour > 0) || !Number.isFinite(incomePerHour)) continue;
-            context.hourAdena = Math.max(context.hourAdena, incomePerHour);
-            projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: row.recipe?.recipeId,
-                object: row.recipe?.productId, incomePerHour });
-        }
+    const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : isMainThread
+        ? craftIncome(state, { hourAdena: base.hourAdena, worth: price, timestamp }) : null;
+    if (workshop?.incomePerHour > 0) {
+        watch(workshop.productId);
+        context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour);
+        projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
+            object: workshop.productId, incomePerHour: workshop.incomePerHour });
     }
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
@@ -286,6 +281,14 @@ function survivalReserve(state = {}) {
     return Array.isArray(state.stats?.money) ? positive(state.stats.money[2]) : basics(state).survivalReserve;
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
+function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
+    if (!state.stats?.workshop?.entries?.length) return null;
+    const row = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state,
+        { hourAdena, worth, timestamp, insideContext: true })[0];
+    const incomePerHour = require('./CraftProfitPolicy').craftIncomePerHour(row?.margin);
+    return incomePerHour > 0 && Number.isFinite(incomePerHour) ? { recipeId: row.recipe.recipeId,
+        productId: row.recipe.productId, incomePerHour, marginHours: row.margin.hours } : null;
+}
 function forGroup(group, members, deps = {}) {
     const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
@@ -343,4 +346,4 @@ function reset() { cache.clear(); groups.clear(); engine.clear(); }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider,
-    summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };
+    craftIncome, summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };

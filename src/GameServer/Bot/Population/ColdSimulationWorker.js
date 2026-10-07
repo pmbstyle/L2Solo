@@ -482,6 +482,7 @@ function startKernel(config = {}) {
     kernel.buyerEvents = buyerWaiters;
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
+        workshop: id => kernel.states.get(Number(id))?.context?.workshop ?? null,
         buyOrderEscrow: id => kernel.states.get(Number(id))?.context?.buyOrderEscrow || 0,
         spots: () => planningSpots,
         memory: (characterId) => kernel.interactionMemory.snapshot(characterId)

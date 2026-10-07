@@ -936,7 +936,13 @@ class ColdSimulationCoordinator {
             });
         const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
         const leaf = !party ? this.economyDecisions.activity(state) : null;
+        const workshop = state.stats?.workshop?.entries?.length ? this.economyDecisions.workshopFor(state, () => {
+            const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+            const basics = Economy.basics(state, { timestamp: index.timestamp });
+            return Economy.craftIncome(state, { hourAdena: basics.hunt.perHour, worth: basics.price, timestamp: index.timestamp });
+        }) : null;
         const context = {
+            ...(state.stats?.workshop?.entries?.length ? { workshop } : {}),
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
