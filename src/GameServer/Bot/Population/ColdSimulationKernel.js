@@ -347,9 +347,20 @@ function compactProposal(proposal = {}, includeInventory = true) {
 // Stable membership of the same authoritative states, not another state
 // snapshot or due queue. Producer writes keep traversal O(1) under churn.
 class RetainedStateMap extends Map {
+    // ARCH-NOTE: ALT: Authorized M6 sharing keeps only frozen exact primitive
+    // skill DTOs after native canonical publication. Per-owner mutable arrays
+    // and protocol fields remain unchanged; 4096 records bound the Worker pool.
+    // Delete/fence/clear synchronously retire captured acquired-slot ledgers.
+    // Scoped native 400/1000 saved-wire proof saves 6.432/7.647 KiB per owner,
+    // including pool/owner headers and backing; whole default 256 fit is separate.
+    #skillDtos;
+    #sharingFailures = 0;
+
     constructor(sources, shotIndex = null) {
         super();
         this.shotIndex = shotIndex;
+        this.#skillDtos = require('worker_threads').isMainThread ? null
+            : new (require('./SkillDtoInterner').SkillDtoInterner)();
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
         this.sources = sources;
     }
@@ -367,13 +378,46 @@ class RetainedStateMap extends Map {
     }
 
     set(id, entry) {
-        if (this.get(id)?.state !== entry.state && typeof invoke === 'function') {
+        const current = this.get(id);
+        if (current?.state !== entry.state && typeof invoke === 'function') {
             invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
         }
         this.shotIndex?.update(entry.state);
-        this.sources.publish(id, entry); return this;
+        try { this.sources.publish(id, entry); }
+        catch (error) {
+            // Preserve native publication/error semantics, including a publisher
+            // that throws after setting its input. Such an input is never interned.
+            if (this.#skillDtos) {
+                try { if (this.get(id)?.state !== current?.state) this.#skillDtos.remove(id); }
+                catch (sharingError) {
+                    this.#sharingFailures++;
+                    try { global.utils?.infoWarn?.('ColdWorker', 'skill sharing release failed for %s: %s', id,
+                        sharingError?.message || sharingError); } catch (_) { /* preserve native publication error */ }
+                }
+            }
+            throw error;
+        }
+        if (this.#skillDtos) {
+            let staged;
+            try {
+                const state = this.get(id)?.state;
+                staged = this.#skillDtos.prepare(id, state?.phase === 'cold' ? state.stats?.coldCombat?.skills : null);
+                this.#skillDtos.commit(staged);
+            } catch (error) {
+                this.#sharingFailures++;
+                let rollbackFailure;
+                try { if (staged) this.#skillDtos.rollback(staged); } catch (failure) { rollbackFailure = failure; }
+                try { if (this.get(id)?.state !== current?.state) this.#skillDtos.remove(id); }
+                catch (failure) { rollbackFailure ||= failure; }
+                try { global.utils?.infoWarn?.('ColdWorker', 'skill sharing skipped for %s: %s; rollback: %s', id,
+                    error?.message || error, rollbackFailure?.message || rollbackFailure || 'ok'); }
+                catch (_) { /* sharing does not change native publication success */ }
+            }
+        }
+        return this;
     }
     delete(id) {
+        this.#skillDtos?.remove(id);
         const current = this.get(id);
         if (!current) return false;
         if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
@@ -381,12 +425,16 @@ class RetainedStateMap extends Map {
         return this.sources.remove(id, current.state);
     }
     clear() {
+        this.#skillDtos?.clear();
         for (const id of this.keys()) {
             if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
             this.shotIndex?.remove(id);
         }
         this.sources.clear();
     }
+
+    skillDtoSize() { return { ...(this.#skillDtos?.size() || { owners: 0, unique: 0, buckets: 0, acquiredSlots: 0 }),
+        sharingFailures: this.#sharingFailures }; }
 
 }
 
@@ -616,7 +664,10 @@ class ColdSimulationKernel {
     }
 
     storeSizes() {
+        const skillDtos = this.states.skillDtoSize();
         return {
+            skillDtoOwners: skillDtos.owners, skillDtoRows: skillDtos.unique,
+            skillDtoAcquisitions: skillDtos.acquiredSlots, skillDtoSharingFailures: skillDtos.sharingFailures,
             states: this.states.size, contexts: this.states.size,
             locationStates: this.states.locationIndex.sourceSize('state'),
             occupancy: this.occupancy.size().owners,
