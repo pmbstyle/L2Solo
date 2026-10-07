@@ -1,6 +1,9 @@
 const assert = require('assert');
-
+const fs = require('node:fs');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('summon-runtime');
 require('../src/Global');
+fixture.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
@@ -860,7 +863,16 @@ async function checkPhantomActions(session, summon, summonSkillId) {
         boxerSession.actor.session = boxerSession;
         soulless.fetchOwnerId = () => boxerSession.actor.fetchId();
         boxerSession.actor.setDestId(victim.actor.fetchId());
-        World.user = { sessions: [boxerSession, victim, ally] };
+        const previousPvpWorld = World.user;
+        World.user = { sessions: [], revision: 0 };
+        // Canonical registration is the native owner/party source. Assigning
+        // an array alone intentionally cannot resurrect an actor membership.
+        for (const member of [boxerSession, victim, ally]) {
+            member.fetchAccountId = () => member.accountId ?? `summon_fixture_${member.actor.fetchId()}`;
+            World.insertUser(member);
+            assert.strictEqual(World.registeredActorById(member.actor.fetchId()).actor, member.actor);
+            assert.strictEqual(World.registeredActorById(member.actor.fetchId()).session, member);
+        }
         const wakes = [], flags = [], landings = [];
         try {
             utils.isInPeaceZone = () => false;
@@ -898,6 +910,7 @@ async function checkPhantomActions(session, summon, summonSkillId) {
             SkillEffects.execute = saved.execute; Life.rememberEnemies = saved.remember;
             BotAI.promoteForPlayerInteraction = saved.promote; Flag.mark = saved.mark;
             utils.isInPeaceZone = saved.peace;
+            World.user = previousPvpWorld;
         }
     }
     soulless.destructor(boxerSession);
@@ -920,7 +933,10 @@ async function checkPhantomActions(session, summon, summonSkillId) {
     reflectedAttacker.destructor(boxerSession);
 
     console.log('Summon runtime checks passed');
-})().catch((err) => {
+})().then(() => {
+    fs.rmSync(fixture.directory, { recursive: true, force: true });
+}).catch((err) => {
+    fs.rmSync(fixture.directory, { recursive: true, force: true });
     console.error(err);
     process.exit(1);
 });
