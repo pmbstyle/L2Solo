@@ -1,5 +1,8 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
-const Database = invoke('Database');
+// ARCH-NOTE: Pure stock plans also run in guarded workers; load SQL only
+// when an existing persistence branch is reached, before actor mutations.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
@@ -243,13 +246,13 @@ function ensureActorStock(actor, options = {}) {
 
     if (current) {
         const delta = targetAmount - currentAmount;
-        return Database.updateItemAmount(actor.fetchId(), current.fetchId(), targetAmount).then(() => {
+        return persistenceDatabase().updateItemAmount(actor.fetchId(), current.fetchId(), targetAmount).then(() => {
             current.setAmount(targetAmount);
             return { changed: true, plan, amount: targetAmount, delta };
         });
     }
 
-    return Database.setItem(actor.fetchId(), {
+    return persistenceDatabase().setItem(actor.fetchId(), {
         selfId: plan.selfId,
         name: plan.name,
         amount: targetAmount,
@@ -266,7 +269,7 @@ function ensureCharacterStock(characterId, options = {}) {
     if (!id) return Promise.resolve({ changed: false, reason: 'missing_character' });
 
     const targetAmount = Number(options.targetAmount || DEFAULT_TARGET_AMOUNT);
-    return Database.fetchItems(id).then((rows) => {
+    return persistenceDatabase().fetchItems(id).then((rows) => {
         const plan = options.plan || planForRows(rows || [], options.classId ?? characterId?.classId);
         const current = existingRow(rows, plan.selfId);
         const currentAmount = Number(current?.amount || 0);
@@ -277,7 +280,7 @@ function ensureCharacterStock(characterId, options = {}) {
 
         if (current) {
             const delta = targetAmount - currentAmount;
-            return Database.updateItemAmount(id, current.id, targetAmount).then(() => ({
+            return persistenceDatabase().updateItemAmount(id, current.id, targetAmount).then(() => ({
                 changed: true,
                 plan,
                 amount: targetAmount,
@@ -285,7 +288,7 @@ function ensureCharacterStock(characterId, options = {}) {
             }));
         }
 
-        return Database.setItem(id, {
+        return persistenceDatabase().setItem(id, {
             selfId: plan.selfId,
             name: plan.name,
             amount: targetAmount,
@@ -423,7 +426,7 @@ async function purchaseActorRestock(actor, options = {}) {
 
     const nextAdena = adena - npcCost;
     const nextAmount = shotAmount(actor, plan) + npcAmount;
-    await Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
+    await persistenceDatabase().updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
     adenaItem.setAmount(nextAdena);
     const result = await ensureActorStock(actor, { targetAmount: nextAmount, plan });
     return { ok: true, ...result, delta: delta + npcAmount, cost: cost + npcCost, adena: nextAdena };

@@ -2,7 +2,10 @@
 // (healing potions, Scrolls of Escape): a line { selfId, name, currentAmount,
 // amount, unitPrice, cost, adena } is written into a cold state (inventory
 // summary and Adena) or into a hot actor's backpack (item row and Adena row).
-const Database = invoke('Database');
+// ARCH-NOTE: The shared cold patch has no SQL dependency. Resolve Database
+// only for the existing paid actor write, retaining its refusal ordering.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
 
 function coldPatch(state, line) {
     const inventory = { ...(state.inventory || {}) };
@@ -37,12 +40,12 @@ function ensureActorStock(actor, line) {
     const current = actor.backpack.fetchItemFromSelfId(line.selfId);
     const nextAmount = line.currentAmount + line.amount;
     if (current) {
-        return Database.updateItemAmount(actor.fetchId(), current.fetchId(), nextAmount).then(() => {
+        return persistenceDatabase().updateItemAmount(actor.fetchId(), current.fetchId(), nextAmount).then(() => {
             current.setAmount(nextAmount);
             return nextAmount;
         });
     }
-    return Database.setItem(actor.fetchId(), {
+    return persistenceDatabase().setItem(actor.fetchId(), {
         selfId: line.selfId,
         name: line.name,
         amount: nextAmount,
@@ -60,7 +63,7 @@ function buyForActor(actor, line) {
     const adenaItem = actor.backpack.fetchItemFromSelfId(57);
     if (!adenaItem) return Promise.resolve({ ok: false, reason: 'missing_adena' });
     const nextAdena = line.adena - line.cost;
-    return Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
+    return persistenceDatabase().updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
         .then(() => {
             adenaItem.setAmount(nextAdena);
             return ensureActorStock(actor, line);
