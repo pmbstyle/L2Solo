@@ -1220,7 +1220,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         };
     }
 
-    ColdSoulCrystal.outcome(soloFighter, mob, rng(), { at: timestamp + time });
+    ColdSoulCrystal.outcome(soloFighter, mob, rng, { at: timestamp + time });
     const rewards = ColdKillRewards.roll({
         spot,
         kills: [{ npcSelfId: mob.selfId, overhitContext }],
