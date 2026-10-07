@@ -1,5 +1,6 @@
 const assert = require('assert');
 const { format } = require('util');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Chat = invoke('GameServer/Bot/AI/BotClanChat');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
@@ -8,6 +9,43 @@ const Invite = invoke('GameServer/Clan/ClanInviteService');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Manager = invoke('GameServer/Bot/BotManager');
 const World = invoke('GameServer/World/World');
+
+// Native ActorModel/World publication follows test_n62_visibility_index.
+// This isolated fixture creates no database rows, cold claims or World timers.
+const ActorModel = invoke('GameServer/Model/Actor');
+const publishedSessions = new Set();
+let fixtureWorld;
+function clearPublishedSessions() {
+    // Disconnect the whole old scene before removing its registrations: no
+    // still-connected peer should receive an unrelated clan UI update here.
+    for (const session of publishedSessions) session.actor.setIsOnline(false);
+    for (const session of publishedSessions) World.removeUser(session);
+    publishedSessions.clear();
+}
+function publishSessions(sessions) {
+    clearPublishedSessions();
+    if (!fixtureWorld) {
+        fixtureWorld = { sessions: [], revision: 0 };
+        World.user = fixtureWorld;
+    }
+    for (const session of sessions) {
+        session.actor.session = session;
+        World.insertUser(session);
+        session.actor.setIsOnline(true);
+        publishedSessions.add(session);
+    }
+}
+function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) {
+    const session = { accountId, fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe: receive,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    session.actor = new ActorModel({ id: characterId, name: accountId, username: accountId,
+        title: '', level: 20, classId: 0, clanId, clanPrivileges: 0,
+        locX, locY: 0, locZ: 0, hp: 100, maxHp: 100, isOnline: false });
+    session.actor.session = session;
+    return session;
+}
+
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const saved = { user: World.user, find: Clan.findById, cached: Life.cachedState, session: Manager.findSessionById,
@@ -16,9 +54,7 @@ const packets = [], leaked = [], logs = [], cold = new Map(), hot = new Map();
 let now = 1000000;
 let clan;
 function player(characterId, clanId, sink) {
-    return { accountId: `player_${characterId}`, socket: { write() {} },
-        actor: { fetchId: () => characterId, fetchClanId: () => clanId, fetchIsOnline: () => true },
-        dataSendToMe: packet => sink.push(packet) };
+    return presenceSession(characterId, `player_${characterId}`, packet => sink.push(packet), clanId);
 }
 function reset() {
     Chat.reset(); Voice.reset(); packets.length = 0; leaked.length = 0; logs.length = 0; cold.clear(); hot.clear(); now += 1000000;
@@ -29,7 +65,7 @@ function reset() {
         clan.members.push({ id, name: bot.name }); cold.set(id, bot);
     }
     cold.get(109).staticService = true;
-    World.user = { sessions: [player(1, 11, packets), player(2, 12, leaked)] };
+    publishSessions([player(1, 11, packets), player(2, 12, leaked)]);
 }
 function drain() { for (let i = 0; i < 8; i++) { now += 8000; Chat.flush(now); } }
 async function main() {
@@ -61,12 +97,12 @@ async function main() {
         reset(); clan.members = clan.members.filter(member => [1,101,102].includes(member.id));
         Chat.onJoined(cold.get(101), 11, now); drain();
         assert.strictEqual(packets.length, 2, 'small clans use the available bot without inventing members');
-        reset(); World.user.sessions = [player(2, 12, leaked)];
+        reset(); publishSessions([player(2, 12, leaked)]);
         assert(!Chat.onJoined(cold.get(101), 11, now));
         assert(!Chat.onDeath(cold.get(101), 'dead', now));
         assert.strictEqual(Chat.snapshot().pending, 0, 'pure bot clans do not accumulate chat scenes');
         assert.strictEqual(logs.length, 0);
-        reset(); World.user.sessions[0].actor.fetchIsOnline = () => false;
+        reset(); World.user.sessions[0].actor.setIsOnline(false);
         assert(!Chat.onJoined(cold.get(101), 11, now));
         assert.strictEqual(Chat.snapshot().pending, 0, 'an offline real member is not a listener');
         reset();
@@ -82,7 +118,7 @@ async function main() {
         clan.members = clan.members.filter(member => ![102,103].includes(member.id)); drain();
         assert.strictEqual(packets.length, 1, 'members who left cannot send queued welcomes');
         reset(); Chat.onJoined(cold.get(101), 11, now);
-        World.user.sessions = []; drain();
+        clearPublishedSessions(); drain();
         assert.strictEqual(packets.length, 1, 'stop the scene when its last real listener disconnects');
         assert.strictEqual(Chat.snapshot().pending, 0);
         reset(); World.user.sessions[0].dataSendToMe = () => { throw new Error('socket closed'); };
@@ -117,6 +153,7 @@ async function main() {
             Clan.refreshOnlineMembers = originals.refresh; Manager.botTell = originals.tell;
         }
     } finally {
+        clearPublishedSessions();
         World.user = saved.user; Clan.findById = saved.find; Life.cachedState = saved.cached;
         Manager.findSessionById = saved.session; Response.speak = saved.speak;
         Math.random = saved.random; Date.now = saved.now; console.info = saved.info; utils.infoWarn = saved.warn;

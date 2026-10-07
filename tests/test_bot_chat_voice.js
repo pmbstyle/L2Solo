@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Persona = invoke('GameServer/Bot/AI/BotPersona');
@@ -7,6 +8,43 @@ const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
 const Chat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const Conversation = invoke('GameServer/Bot/AI/BotConversation');
 const World = invoke('GameServer/World/World');
+
+// Native ActorModel/World publication follows test_n62_visibility_index.
+// This isolated fixture creates no database rows, cold claims or World timers.
+const ActorModel = invoke('GameServer/Model/Actor');
+const publishedSessions = new Set();
+let fixtureWorld;
+function clearPublishedSessions() {
+    // Disconnect the whole old scene before removing its registrations: no
+    // still-connected peer should receive an unrelated clan UI update here.
+    for (const session of publishedSessions) session.actor.setIsOnline(false);
+    for (const session of publishedSessions) World.removeUser(session);
+    publishedSessions.clear();
+}
+function publishSessions(sessions) {
+    clearPublishedSessions();
+    if (!fixtureWorld) {
+        fixtureWorld = { sessions: [], revision: 0 };
+        World.user = fixtureWorld;
+    }
+    for (const session of sessions) {
+        session.actor.session = session;
+        World.insertUser(session);
+        session.actor.setIsOnline(true);
+        publishedSessions.add(session);
+    }
+}
+function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) {
+    const session = { accountId, fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe: receive,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    session.actor = new ActorModel({ id: characterId, name: accountId, username: accountId,
+        title: '', level: 20, classId: 0, clanId, clanPrivileges: 0,
+        locX, locY: 0, locZ: 0, hp: 100, maxHp: 100, isOnline: false });
+    session.actor.session = session;
+    return session;
+}
+
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Database = invoke('Database');
@@ -92,7 +130,8 @@ try {
     Config.chatReactionsEnabled = true; Config.chatReactionChance = 1; Config.globalChatEnabled = true;
     Config.globalChatChance = 1;
     const packets = [];
-    World.user = { sessions: [{ accountId: 'player', socket: { write() {} }, dataSendToMe(packet) { packets.push(packet); } }] };
+    // Isolated native listener identity; the tested authors retain IDs 1/2/123.
+    publishSessions([presenceSession(8000002, 'player', packet => packets.push(packet))]);
     Response.speak = (actor, packet) => ({ id: actor.fetchId(), ...packet });
     const used = [];
     Voice.line = (key, source, ...args) => { used.push({ key, persona: Voice.profile(source) }); return original.line(key, source, ...args); };
@@ -121,6 +160,7 @@ try {
     Voice.line = original.line;
     process.stdout.write(`Chat voice checks passed: identity, weighted wording, stable participation (${counts.join('/')}) and speaker ownership.\n`);
 } finally {
+    clearPublishedSessions();
     Database.execute = original.execute; Persona.reset(); Math.random = original.random;
     Voice.line = original.line; World.user = original.user; Response.speak = original.speak;
     console.info = original.info; Object.assign(Config, original.config); Chat.reset(); Voice.reset();

@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Chat = invoke('GameServer/Bot/AI/BotClanChat');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -11,6 +12,43 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const World = invoke('GameServer/World/World');
+
+// Native ActorModel/World publication follows test_n62_visibility_index.
+// This isolated fixture creates no database rows, cold claims or World timers.
+const ActorModel = invoke('GameServer/Model/Actor');
+const publishedSessions = new Set();
+let fixtureWorld;
+function clearPublishedSessions() {
+    // Disconnect the whole old scene before removing its registrations: no
+    // still-connected peer should receive an unrelated clan UI update here.
+    for (const session of publishedSessions) session.actor.setIsOnline(false);
+    for (const session of publishedSessions) World.removeUser(session);
+    publishedSessions.clear();
+}
+function publishSessions(sessions) {
+    clearPublishedSessions();
+    if (!fixtureWorld) {
+        fixtureWorld = { sessions: [], revision: 0 };
+        World.user = fixtureWorld;
+    }
+    for (const session of sessions) {
+        session.actor.session = session;
+        World.insertUser(session);
+        session.actor.setIsOnline(true);
+        publishedSessions.add(session);
+    }
+}
+function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) {
+    const session = { accountId, fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe: receive,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    session.actor = new ActorModel({ id: characterId, name: accountId, username: accountId,
+        title: '', level: 20, classId: 0, clanId, clanPrivileges: 0,
+        locX, locY: 0, locZ: 0, hp: 100, maxHp: 100, isOnline: false });
+    session.actor.session = session;
+    return session;
+}
+
 const Response = invoke('GameServer/Network/Response');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Speak = invoke('GameServer/Network/Request/Speak');
@@ -25,14 +63,24 @@ const delivered = [], leaked = [];
 const source = { characterId: 101, name: 'Aria', level: 20, phase: 'cold', stats: { clanId: 999 } };
 const goal = (type = 'upgrade_gear', itemId = 1) => ({ type, status: 'active', target: { itemId, itemName: `Item ${itemId}`, level: 21 },
     plan: {}, blockers: [], priority: 70, nextReviewAt: 1 });
-function player(clanId, sink, accountId = 'player') {
-    return { accountId, socket: { write() {} }, actor: { fetchClanId: () => clanId, fetchIsOnline: () => true }, dataSendToMe: packet => sink.push(packet) };
+// Separate account identities are required: insertUser retires reconnects of
+// the same account. The original three 'player' labels meant different humans.
+const listenerIds = new Map([
+    ['player_member', 8000003], ['player_other_clan', 8000004],
+    ['player_clanless', 8000005], ['bot_test', 8000006],
+    ['player_sender', 901], ['player_near_outsider', 8000007],
+    ['player_distant_member', 8000008]
+]);
+function player(clanId, sink, accountId = 'player_member', locX = 0) {
+    return presenceSession(listenerIds.get(accountId), accountId,
+        packet => sink.push(packet), clanId, locX);
 }
 function reset() {
     Chat.reset(); GoalState.reset(); Voice.reset(); delivered.length = 0; leaked.length = 0;
     members = [101,102,103]; now += 1000000;
     Config.clanChatEnabled = true; Config.globalChatEnabled = false;
-    World.user = { sessions: [player(11, delivered), player(12, leaked), player(0, leaked), player(11, leaked, 'bot_test')] };
+    publishSessions([player(11, delivered), player(12, leaked, 'player_other_clan'),
+        player(0, leaked, 'player_clanless'), player(11, leaked, 'bot_test')]);
 }
 async function main() {
     try {
@@ -162,20 +210,20 @@ async function main() {
         assert.strictEqual(Chat.snapshot().pending, 0, 'stale bursts are discarded');
         Config.clanChatEnabled = false;
         assert(!Chat.onWarehouse(source, receipt, 11, now));
-        Config.clanChatEnabled = true; World.user.sessions = [];
+        Config.clanChatEnabled = true; clearPublishedSessions();
         assert(!Chat.onWarehouse(source, receipt, 11, now), 'no backlog for offline clan members');
         assert.strictEqual(leaked.length, 0);
 
         reset();
         Config.devLogPlayerChat = false;
         // Exercise the native packet ingress, not just the bot broadcaster.
-        const sender = player(11, delivered);
+        const sender = player(11, delivered, 'player_sender');
         sender.actor.fetchId = () => 901;
         sender.actor.fetchName = () => 'Player';
         sender.dataSendToMeAndOthers = () => { throw new Error('Clan text reached local broadcast'); };
-        const nearbyOutsider = player(12, leaked);
-        const distantMember = player(11, delivered);
-        World.user.sessions = [sender, nearbyOutsider, distantMember];
+        const nearbyOutsider = player(12, leaked, 'player_near_outsider', 100);
+        const distantMember = player(11, delivered, 'player_distant_member', 100000);
+        publishSessions([sender, nearbyOutsider, distantMember]);
         Speak(sender, new SendPacket(0x38).writeS('Anyone need Iron Ore?').writeD(4).fetchBuffer());
         assert.strictEqual(delivered.length, 2, 'clan members receive player speech regardless of proximity');
         assert.strictEqual(leaked.length, 0);
@@ -184,6 +232,7 @@ async function main() {
         assert.strictEqual(delivered.length, 2, 'clanless speakers cannot broadcast to other clanless players');
         console.log('Bot clan chat checks passed: committed goals, death windows, warehouse receipts, clan isolation and bounded queues.');
     } finally {
+        clearPublishedSessions();
         Object.assign(Config, saved.config); World.user = saved.user; ClanService.findById = saved.find;
         Response.speak = saved.speak; DataCache.items = saved.items; Date.now = saved.now; Math.random = saved.random;
         Database.execute = saved.execute; Database.upsertBotGoalStates = saved.batch; Needs.evaluate = saved.evaluate;
