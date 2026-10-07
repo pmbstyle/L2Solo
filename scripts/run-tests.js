@@ -1,5 +1,6 @@
 const { spawnSync } = require('child_process');
 const fs = require('fs');
+const path = require('node:path');
 
 const tests = [
     'tests/test_c4_import_integration.js',
@@ -1161,7 +1162,7 @@ for (const testFile of selectedTests) {
         env.L2NODE_CONFIG_FILE = 'config/default.ini';
         delete env.L2NODE_SHARED_CONFIG_FILE;
     }
-    const result = spawnSync(process.execPath, [testFile], {
+    const result = spawnSync(process.execPath, ['--require', path.resolve(__dirname, '../tests/helpers/databaseIsolation.js'), testFile], {
         cwd: process.cwd(),
         env,
         stdio: 'inherit'
