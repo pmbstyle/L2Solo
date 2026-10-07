@@ -349,6 +349,26 @@ function reportTransactionSqliteFailure(operation, phase, error) {
     } catch (_) { /* Logging must preserve the original SQLite rejection. */ }
 }
 
+// ARCH-NOTE: A queued lifecycle save can reject a stale native command before
+// SQL. Failure-only diagnostics distinguish that admission from a SQLite fault
+// without changing either rejection identity or the existing failure counters.
+function reportBotLifeSaveFailure(phase, error) {
+    try {
+        const { WorkerCommandAdmissionRefusal } = require('./GameServer/Bot/Population/WorkerCommandAdmission');
+        const reasons = ['stale_worker_source', 'coordinator_stopping', 'missing_state',
+            'hot_handoff_fenced', 'stale_command', 'invalid_worker_admission'];
+        const frames = String(error?.stack || '').split('\n')
+            .filter(line => /^\s+at /.test(line)).slice(0, 8);
+        console.warn('DB          :: bot life save failure %s', JSON.stringify({
+            operation: 'bot-life:save', phase, errorName: error?.name ?? null, code: error?.code ?? null,
+            sqliteCode: error?.errcode ?? null, sqliteReason: error?.errstr ?? null,
+            admissionRefusalReason: error instanceof WorkerCommandAdmissionRefusal
+                && reasons.includes(error.message) ? error.message : null,
+            configuredWriterBusyTimeoutMs: 5000, frames
+        }));
+    } catch (_) { /* Diagnostics must preserve the original save rejection. */ }
+}
+
 async function inTransaction(work, operation = 'transaction') {
     return enqueue(() => {
         metrics.transactions += 1;
@@ -3408,12 +3428,21 @@ const Database = {
     saveBotLifeState(statement, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_bot_life_before_write', null, statement);
         return enqueue(() => {
-            if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
-            checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
-            const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson` : 'statsJson';
-            const row = one(`${statement[0]} RETURNING ${returning}`, statement[1] || []);
-            if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
-            return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
+            let phase = 'row_admission';
+            try {
+                if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
+                phase = 'write_admission';
+                checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
+                const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson` : 'statsJson';
+                phase = 'write';
+                const row = one(`${statement[0]} RETURNING ${returning}`, statement[1] || []);
+                phase = 'advance';
+                if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
+                return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
+            } catch (error) {
+                reportBotLifeSaveFailure(phase, error);
+                throw error;
+            }
         }, { operation: 'bot-life:save', read: false });
     },
 
