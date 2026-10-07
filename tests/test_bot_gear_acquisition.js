@@ -706,6 +706,13 @@ const affordableArmorPlan = GearAcquisitionPlanner.planFor(affordableArmorState)
 assert.strictEqual(affordableArmorPlan.target.selfId, 347,
     'Palus Knight must buy affordable Ring Mail instead of saving exclusively for an unfunded Saber');
 assert(affordableArmorPlan.market.price + affordableArmorPlan.market.reserve <= affordableArmorState.adena);
+// ARCH-NOTE: this legacy goal oracle also fails on 10083113. The native
+// one-leaf economy chooses funding power:88:7 for this physical starter kit
+// (700,000 Adena), rather than obeying the isolated planner's Ring Mail
+// recommendation. E3 must not restore the old gear priority 87 to force a
+// purchase absent from the bot's queue; native funded-item/escrow delivery is
+// exercised by test_cold_worker_buy_order_escrow and test_saved_state_budget.
+// Keep this assertion visible as an outstanding legacy goal expectation.
 const armorGoal = NeedsEvaluator.evaluate({
     ...affordableArmorState,
     stats: { ...affordableArmorState.stats, equipmentPlan: affordableArmorPlan }
