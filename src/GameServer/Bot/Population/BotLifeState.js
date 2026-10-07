@@ -2463,6 +2463,24 @@ const BotLifeState = {
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
+        // ARCH-NOTE: the resolver already consumed authored summon materials
+        // from its private combat inventory. Lifecycle normally rebuilds from
+        // the input (shots/potions have separate counters), so carry only these
+        // native cast-cost decreases before adding this round's loot.
+        const summonClass = Number(state.stats?.classId || 0);
+        if (result.patch?.inventory && (BotRoles.isSummoner(summonClass) || BotRoles.isNecromancer(summonClass))) {
+            const summonProfile = { ...(result.patch.stats?.coldCombat || state.stats?.coldCombat || {}), classId: summonClass };
+            const materialIds = new Set([...ColdCombatProfile.summonSkills(summonProfile),
+                ...ColdCombatProfile.corpseSummonSkills(summonProfile)]
+                .filter(skill => Number(skill.itemId) > 0 && Number(skill.itemCount) > 0)
+                .map(skill => String(skill.itemId)));
+            for (const id of materialIds) {
+                const stock = inventory[id], remaining = Number(result.patch.inventory[id]?.amount);
+                if (stock && Number.isFinite(remaining) && remaining >= 0 && remaining < Number(stock.amount)) {
+                    inventory[id] = { ...stock, amount: remaining };
+                }
+            }
+        }
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
             const amount = Number(item.amount || 0);

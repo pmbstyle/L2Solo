@@ -718,6 +718,7 @@ function prepareRaidParty(members, timestamp = Date.now()) {
         result: {
             patch: {
                 activity: ready ? 'grouped' : 'resting',
+                ...(fighter.summonUses > 0 ? { inventory: fighter.state.inventory } : {}),
                 vitals: { ...fighter.vitals },
                 stats: {
                     ...(fighter.state.stats || {}),
@@ -849,6 +850,8 @@ function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfi
     const skill = skills.find((candidate) => (
         Number(cooldowns[candidate.selfId] || 0) <= timestamp
         && Number(candidate.mp || 0) <= fighter.vitals.mp
+        && (!(Number(candidate.itemId) > 0 && Number(candidate.itemCount) > 0)
+            || Number(fighter.state.inventory?.[String(candidate.itemId)]?.amount || 0) >= Number(candidate.itemCount))
     ));
     if (!skill) return false;
 
@@ -861,6 +864,12 @@ function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfi
         skillId: Number(skill.selfId),
         expiresAt: timestamp + totalLifeTime
     };
+    // The fighter owns mutableCombatState's private item copies. Consume
+    // the authored upfront cast cost once; a kept servitor never enters here.
+    if (Number(skill.itemId) > 0 && Number(skill.itemCount) > 0) {
+        const item = fighter.state.inventory[String(skill.itemId)];
+        item.amount = Number(item.amount) - Number(skill.itemCount);
+    }
     setPersistedSummon(fighter, summon);
     fighter.summon = summon;
     fighter.summonUses = Number(fighter.summonUses || 0) + 1;
