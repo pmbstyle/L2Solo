@@ -37,7 +37,7 @@ async function run() {
         const clan = { id: 77, level: 0, leaderId: ids[0], state: {}, members };
         const inputs = { warehouse: [{ selfId: 57, amount: 300000, reservedAmount: 0 }], halls: [] };
         const result = Context.forClan(clan, inputs);
-        assert.equal(basicsCalls, 3, 'one network-free basics call per member');
+        assert.equal(basicsCalls, 1, 'only the member without worker numbers needs one network-free fallback');
         const equipmentWish = result.network.queue.find(row => row.key === `clan-item:${ids[0]}:391`);
         assert.ok(equipmentWish.valueHours > 0);
         assert.equal(result.incomePerHour, 105000 * invoke('GameServer/Clan/ClanContributionPolicy').duesRate(members.map(() => persona.traits)));
@@ -47,6 +47,55 @@ async function run() {
                 clanItemUsefulness: id => index === 0 && id === 391 ? 6 : 0 })) });
         assert.deepEqual(result.network.queue, oracle.network.queue);
         assert.deepEqual(result.network.focus, oracle.network.focus);
+        // Complete cold inputs, including zero income/value/horizon, must
+        // remain authoritative without constructing the fallback at all.
+        stub(Economy, 'basics', () => { throw Error('complete cold numbers need no basics'); });
+        stub(Valuation, 'stageHours', () => { throw Error('zero cold horizon is already a horizon'); });
+        stub(Decisions, 'clanNumbers', id => id === ids[0]
+            ? { horizonHours: 0, huntPerHour: 0, plan: { itemId: 391, valueHours: 0 }, updatedAt: 100 }
+            : { horizonHours: 20, huntPerHour: 0, plan: null, updatedAt: 101 });
+        const zeroClan = { ...clan, id: 78, members: members.slice(0, 2) };
+        const zeroResult = Context.forClan(zeroClan, inputs);
+        const zeroOracle = Context.build(zeroClan, { ...inputs,
+            equipment: [{ memberId: ids[0], plan: members[0].stats.equipmentPlan }],
+            memberContexts: zeroClan.members.map((member, index) => ({ persona,
+                clanHorizon: [0, 20][index], hunt: { perHour: 0 },
+                inputKey: `${member.characterId}:${100 + index}`, clanItemUsefulness: () => 0 })) });
+        assert.equal(zeroResult.incomePerHour, 0, 'zero worker income is not replaced with fallback income');
+        assert.ok(!zeroResult.network.queue.some(row => row.object.kind === 'equipment'),
+            'zero worker plan usefulness is not replaced with a gear estimate');
+        assert.deepEqual(zeroResult.network.queue, zeroOracle.network.queue);
+        assert.deepEqual(zeroResult.network.focus, zeroOracle.network.focus);
+
+        // Several missing fields and two distinct native equipment estimates
+        // share one ephemeral fallback, while preserving the aggregate oracle.
+        basicsCalls = 0;
+        let horizonCalls = 0;
+        stub(Economy, 'basics', member => { basicsCalls++; return { persona,
+            hunt: { perHour: 45000, expPerHour: 1000 }, deathHours: 1 }; });
+        stub(Valuation, 'stageHours', () => { horizonCalls++; return 35; });
+        stub(Decisions, 'clanNumbers', () => null);
+        const fallbackMember = { ...members[0], persona: null };
+        const fallbackClan = { ...clan, id: 79, members: [fallbackMember] };
+        const equipment = [391, 392].map(selfId => ({ memberId: fallbackMember.characterId,
+            plan: { status: 'active', strategy: 'market', target: { selfId }, market: { price: 10000 } } }));
+        const fallbackResult = Context.forClan(fallbackClan, { ...inputs, equipment });
+        const nativeItems = invoke('GameServer/DataCache').items;
+        const fallbackOracle = Context.build(fallbackClan, { ...inputs, equipment,
+            memberContexts: [{ persona, clanHorizon: 35, hunt: { perHour: 45000 },
+                inputKey: `${fallbackMember.characterId}:${fallbackMember.updatedAt}`,
+                clanItemUsefulness: id => {
+                    const item = require('../src/GameServer/Item/ItemTemplateIndex').find(nativeItems, id);
+                    assert.ok(item?.etc?.slot, 'the extra estimates use real equipable catalogue items');
+                    const gain = require('../src/GameServer/Bot/Economy/WishProviders').gearGain(fallbackMember, item);
+                    return Math.max(0, (gain.attack + gain.defence) * 35);
+                } }] });
+        assert.equal(basicsCalls, 1, 'one member reuses its fallback across missing fields and equipment wishes');
+        assert.equal(horizonCalls, 1, 'the missing horizon is computed once');
+        assert.deepEqual(fallbackResult.network.queue, fallbackOracle.network.queue);
+        assert.deepEqual(fallbackResult.network.focus, fallbackOracle.network.focus);
+        assert.equal(fallbackResult.incomePerHour,
+            45000 * invoke('GameServer/Clan/ClanContributionPolicy').duesRate([persona.traits]));
         Economy.basics = originalBasics; Valuation.stageHours = originalHorizon;
 
         await Database.initClanHalls(timestamp);

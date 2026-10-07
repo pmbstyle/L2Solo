@@ -133,18 +133,22 @@ function forClan(clan, inputs = {}) {
     const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
     const Decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
     const memberContexts = (clan.members || []).map(member => {
-        const basics = Economy.basics(member, { persona: member.persona });
         const numbers = Decisions.clanNumbers(member.characterId ?? member.id);
-        const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics.hunt.expPerHour, basics.persona);
+        // ARCH-NOTE: a complete cold decision already supplies the member's
+        // hour and horizon. Compute its network-free fallback only on demand,
+        // at most once in this clan review; retain no additional member cache.
+        let fallback;
+        const basics = () => fallback ??= Economy.basics(member, { persona: member.persona });
+        const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics().hunt.expPerHour, basics().persona);
         const clanItemUsefulness = id => {
             if (Number(id) === Number(numbers?.plan?.itemId)) return positive(numbers.plan.valueHours);
             const item = require('../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
             if (!item?.etc?.slot) return 0;
             const gain = require('../Bot/Economy/WishProviders').gearGain(member, item);
-            return Math.max(0, (gain.attack + gain.defence * basics.deathHours) * clanHorizon);
+            return Math.max(0, (gain.attack + gain.defence * basics().deathHours) * clanHorizon);
         };
-        return { persona: member.persona || basics.persona, clanHorizon,
-            hunt: { perHour: numbers?.huntPerHour ?? basics.hunt.perHour },
+        return { persona: member.persona || basics().persona, clanHorizon,
+            hunt: { perHour: numbers?.huntPerHour ?? basics().hunt.perHour },
             // ARCH-NOTE: Address the member decision, without retaining its
             // multi-KB network key. The clan's unchanged event-key lottery
             // gets a new seed; values and funding stay identical.
