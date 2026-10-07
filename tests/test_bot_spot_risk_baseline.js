@@ -1,6 +1,10 @@
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('bot-spot-risk-native');
 const assert = require('assert');
 
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.once('exit', () => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
 
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -20,6 +24,18 @@ const originals = {
 };
 
 async function run() {
+    Database.init();
+    assert(Database.isReady());
+    await Database.createAccount('bot_risk_baseline_fixture', 'fixture');
+    // Match the risk contract's character992/level20/XP0/SP0 and empty bag.
+    // Its real schema row permits the native lifecycle save; learning is not added.
+    await Database.execute([
+        `INSERT INTO characters(id, username, name, classId, race, level, hp, maxHp, mp, maxMp,
+            exp, sp, sex, face, hair, hairColor, locX, locY, locZ)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [992, 'bot_risk_baseline_fixture', 'RiskBaselineProbe', 0, 0, 20, 100, 100, 50, 50,
+            0, 0, 0, 0, 0, 0, 0, 0, 0]
+    ], 'fixture:physical-risk-character');
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.execute = () => Promise.resolve([]);
@@ -173,7 +189,8 @@ async function run() {
 run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
-}).finally(() => {
+}).finally(async () => {
     Object.assign(Database, originals);
     LifeState.reset?.();
+    await Database.close();
 });
