@@ -2582,16 +2582,24 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: timestamp
         };
+        // ARCH-NOTE: C1 lifecycle packets precede their fight; accept the
+        // worker's focus event before E4 raises the completed-round event.
+        // Direct projections receive an already projected packet as before.
+        const beforeResolvePacket = isMainThread && options.statsPacketBeforeResolve === true && options.statsPacket;
+        if (beforeResolvePacket) Object.assign(nextState.stats, beforeResolvePacket);
         if (state.activity === 'hunting') {
             // Derive from the input so retrying this projection cannot raise twice.
-            nextState.stats.decisionSeq = Math.max(0, Math.trunc(Number(state.stats?.decisionSeq) || 0)) + 1;
+            const inputDecisionSeq = Math.max(0, Math.trunc(Number(state.stats?.decisionSeq) || 0));
+            const plannedDecisionSeq = beforeResolvePacket
+                ? Math.max(0, Math.trunc(Number(beforeResolvePacket.decisionSeq) || 0)) : inputDecisionSeq;
+            nextState.stats.decisionSeq = Math.max(inputDecisionSeq, plannedDecisionSeq) + 1;
             nextState.stats.activityLeaf = 0;
         }
         if (!isMainThread) {
             const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
             Object.assign(nextState.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
-        } else if (options.statsPacket) Object.assign(nextState.stats, options.statsPacket);
+        } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
@@ -2718,6 +2726,12 @@ const BotLifeState = {
             const preparedOptions = { persist: true };
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
+            }
+            // ARCH-NOTE: C1/E3 lifecycle commands carry the worker's money queue;
+            // main preparation must retain that packet without rebuilding it.
+            if (Object.prototype.hasOwnProperty.call(options, 'statsPacket')) {
+                preparedOptions.statsPacket = options.statsPacket;
+                preparedOptions.statsPacketBeforeResolve = true;
             }
             return this.prepareResolve(state, result, preparedOptions);
         });

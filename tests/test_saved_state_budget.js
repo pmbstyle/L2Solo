@@ -16,6 +16,147 @@ const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
 const id = 719112, buyerId = 719113;
 
+async function workerPacketSurvivesMainPreparation(source, { huntSpot = null, heldPacket = null } = {}) {
+    const { Worker } = require('node:worker_threads');
+    const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const timestamp = Date.now();
+    const activity = huntSpot ? 'hunting' : 'shopping';
+    const { money, ...statsWithoutMoney } = { ...source.stats, ...(heldPacket || {}) };
+    let huntingState = {};
+    if (huntSpot) {
+        const combat = invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(source, timestamp);
+        const vitals = { hp: combat.maxHp, maxHp: combat.maxHp, mp: combat.maxMp, maxMp: combat.maxMp };
+        await Database.updateCharacterVitals(source.characterId, vitals.hp, vitals.maxHp, vitals.mp, vitals.maxMp);
+        // This existing errand routes a real hunting state through the kernel's lifecycle command.
+        statsWithoutMoney.warehouseWorkflow = { kind: 'release' };
+        huntingState = { spotId: huntSpot.id, loc: huntSpot.center, vitals };
+    }
+    const state = await Life.upsertState({ ...source, ...huntingState, activity, stats: statsWithoutMoney,
+        timing: { ...source.timing, nextResolveAt: timestamp - 1 } }, 'worker_packet_source');
+    assert(state && !state.stats.money, 'the native saved input has no old money packet');
+    const epoch = 'saved-budget-money-packet', messages = [];
+    let workerError, joined = false;
+    const worker = new Worker(path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js'), {
+        workerData: { workerEpoch: epoch }, resourceLimits: { maxOldGenerationSizeMb: 256 }
+    });
+    worker.on('message', message => messages.push(message));
+    worker.on('error', error => { workerError = error; });
+    const exit = new Promise(resolve => worker.once('exit', code => { joined = true; resolve(code); }));
+    async function reply(predicate) {
+        const deadline = Date.now() + 15000;
+        while (!messages.some(predicate)) {
+            if (workerError) throw workerError;
+            const fault = messages.find(message => message.type === 'fault');
+            if (fault) throw Error('native packet producer fault: ' + JSON.stringify(fault.payload));
+            if (Date.now() >= deadline || joined) throw Error('native packet producer did not return a command');
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+        return messages.find(predicate);
+    }
+    function send(type, payload, msgId) {
+        const message = Protocol.envelope(type, epoch, payload, msgId);
+        assert.equal(Protocol.validateEnvelope(message, 'main', { workerEpoch: epoch }).ok, true);
+        worker.postMessage(message);
+    }
+    try {
+        const loaded = await reply(message => message.type === 'ready' && message.payload.phase === 'loaded');
+        assert.equal(loaded.payload.forbiddenDependencies, 0);
+        const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+        for (let offset = 0; offset < spots.length; offset += Protocol.MAX_BATCH) {
+            send('catalog_page', { catalog: 'spots', rows: spots.slice(offset, offset + Protocol.MAX_BATCH) });
+        }
+        send('init', { config: { loopIntervalMs: 20, maxInFlight: 1, maxBatch: 1 } }, 'packet-init');
+        await reply(message => message.type === 'ready' && message.msgId === 'packet-init');
+        send('snapshot_page', { rows: [{ state, context: huntSpot ? { spot: huntSpot } : {} }], initial: true, done: true }, 'packet-state');
+        const message = await reply(value => value.type === 'command_request'
+            && value.payload.requests.some(request => request.characterId === state.characterId));
+        const request = message.payload.requests.find(value => value.characterId === state.characterId);
+        const packet = request.precomputedPlan.statsPacket;
+        assert(Array.isArray(packet.money) && packet.money.length >= 4 && packet.money[1] > 0,
+            'the actual worker economy produces a positive money floor');
+        assert(request.precomputedPlan.economyDecision, 'the packet comes with the native worker economy decision');
+        assert(!request.precomputedPlan.plannedState.stats.money, 'money travels in the packet, not in the old planned state');
+        if (huntSpot) {
+            assert.equal(request.state.activity, 'hunting');
+            assert.equal(request.precomputedPlan.plannedState.activity, 'hunting');
+            assert.equal(request.precomputedResult.debug.spotId, huntSpot.id);
+            assert(request.precomputedResult.debug.fights > 0 && request.precomputedResult.debug.combatActions > 0,
+                'the actual command fights at the authored spot, without a clan-hall shortcut');
+            assert.equal(request.precomputedResult.patch.activity, 'hunting');
+            assert(request.precomputedResult.patch.stats.coldCombat && request.precomputedResult.patch.vitals,
+                'the native result carries the actual combat patch');
+            assert(Number.isFinite(request.precomputedResult.materialize.adena)
+                && Array.isArray(request.precomputedResult.materialize.items), 'the native result has a materialization');
+            if (heldPacket) {
+                assert.equal(packet.wishFocus[0], heldPacket.wishFocus[0], 'the native held-focus case stays on its wish');
+                assert.equal(packet.decisionSeq, request.state.stats.decisionSeq, 'held focus adds no event');
+            } else {
+                assert.notEqual(packet.wishFocus[0], request.state.stats.wishFocus[0], 'the native producer really changes focus');
+                assert.equal(packet.decisionSeq, Number(request.state.stats.decisionSeq || 0) + 1, 'changed focus adds its event');
+            }
+        } else assert.equal(request.precomputedResult.debug.activity, 'shopping');
+        assert(Protocol.sameCommandCheckpoint(state, request.commandCheckpoint));
+        const applyInput = request.precomputedPlan.plannedState;
+        const originalInput = JSON.stringify(applyInput), originalForState = Economy.forState;
+        let preparations = 0, admissionChecks = 0, capturedOptions;
+        const admission = { characterId: state.characterId, commandId: request.commandId,
+            commandCheckpoint: request.commandCheckpoint, check: () => { admissionChecks++; return null; } };
+        const receiver = {
+            serializeClanLevelUp(characterId, operation) { assert.equal(characterId, state.characterId); return operation(); },
+            prepareResolve(input, result, options) {
+                preparations++; capturedOptions = options;
+                // Exercise native main projection while keeping this observer away from all SQL writers.
+                return Life.prepareResolve(input, result, { ...options, persist: false,
+                    projectClassProgression: true, timestamp });
+            }
+        };
+        Economy.forState = () => { throw Error('main must consume the worker packet without rebuilding wishes'); };
+        try {
+            const prepared = await Life.applyResolve.call(receiver, applyInput, request.precomputedResult,
+                { statsPacket: packet, workerAdmission: admission });
+            assert(prepared, 'native main prepare returns the functional projected state');
+            assert.deepEqual(prepared.stats.money, packet.money, 'the real money queue survives main preparation');
+            for (const [key, value] of Object.entries(packet)) {
+                if (!huntSpot || !['decisionSeq', 'activityLeaf'].includes(key)) assert.deepEqual(prepared.stats[key], value);
+            }
+            const materializedMoney = Number(request.precomputedResult.materialize.adena)
+                + request.precomputedResult.materialize.items.filter(row => row.selfId === 57)
+                    .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+            assert.equal(prepared.adena, request.state.adena + materializedMoney, 'preparation retains exactly the native wallet award');
+            assert.equal(prepared.inventory[57]?.amount, prepared.adena);
+            assert.equal(capturedOptions.workerAdmission, admission);
+            assert.equal(admissionChecks, 1);
+            if (huntSpot) {
+                assert.equal(prepared.stats.decisionSeq,
+                    Math.max(Number(request.state.stats.decisionSeq) || 0, Number(packet.decisionSeq) || 0) + 1,
+                    'main retains the focus event and adds exactly one completed-round event');
+                assert.equal(prepared.stats.activityLeaf, 0, 'a completed hunting round reopens activity selection');
+                const retried = await Life.applyResolve.call(receiver, applyInput, request.precomputedResult,
+                    { statsPacket: packet, workerAdmission: admission });
+                assert.equal(retried.stats.decisionSeq, prepared.stats.decisionSeq, 'retrying one input cannot raise another event');
+                assert.equal(retried.stats.activityLeaf, 0);
+                assert.deepEqual(retried.stats.money, packet.money);
+            }
+            const beforeMissing = Funding.summary().moneyPacketMissing;
+            assert.equal(Funding.spendable(prepared, 0, { r: 0 }), 0,
+                'a value rate below the real worker floor cannot spend the wallet');
+            assert.equal(Funding.summary().moneyPacketMissing, beforeMissing, 'postprepare funding consumes the real packet');
+            await assert.rejects(async () => Life.applyResolve.call(receiver, applyInput, request.precomputedResult,
+                { statsPacket: packet, workerAdmission: { ...admission, check: () => ({ reason: 'stale_worker_source' }) } }),
+            error => error.code === 'BOT_WORKER_COMMAND_ADMISSION_REFUSED' && error.message === 'stale_worker_source');
+            assert.equal(preparations, huntSpot ? 2 : 1, 'a stale worker cannot prepare, merge or write its packet');
+            assert.equal(JSON.stringify(applyInput), originalInput, 'the old canonical input stays unchanged');
+            console.log(`Native ${activity}/${heldPacket ? 'held_focus' : 'changed_focus'} packet survives main projection/admission; unfunded spend and stale source refused`);
+        } finally { Economy.forState = originalForState; }
+        send('shutdown', {}, 'packet-shutdown');
+        await reply(value => value.type === 'drained' && value.msgId === 'packet-shutdown');
+        assert.equal(await exit, 0);
+        return packet;
+    } finally { if (!joined) await worker.terminate(); }
+}
+
 async function run() {
     invoke('GameServer/DataCache').init();
     const seed = new DatabaseSync(fixture.world);
@@ -103,6 +244,21 @@ async function run() {
         for (const key of ['economyInputKey', 'inputKey', 'marketTrades', 'inputHash', 'priceBeliefs'])
             assert(!serialized.includes('"' + key + '"'), key + ' must not be saved');
         assert.notEqual(options.default.Database.path, require('node:path').resolve('tmp/nodel2.sqlite'));
+        await workerPacketSurvivesMainPreparation(Life.cachedState(id));
+        const world = { user: { sessions: [] }, npc: { spawns: [], grid: {}, nextId: 1000000,
+            periodMode: 'day', periodRevision: 0, periodDefinitions: [], raidBossRespawnTimers: new Map(),
+            raidBossState: new Map(), gridKeys: new WeakMap() }, items: { spawns: [], nextId: 5000000 },
+            addNpcToGrid() {}, indexSpawnsInGrid() {} };
+        // Native authored actors provide a real hunt without starting World or a server.
+        invoke('GameServer/World/Generics/SpawnNpcs').call(world);
+        const World = invoke('GameServer/World/World'); World.npc = world.npc; World.user = world.user;
+        invoke('GameServer/Bot/AI/SpotService').reset();
+        const Profiles = invoke('GameServer/Bot/Population/SpotProfiles'); Profiles.reset();
+        const huntSpot = Profiles.ensure().find(spot => !spot.raidBoss && spot.npcSelfIds?.length && spot.minLevel <= 5
+            && invoke('GameServer/Bot/AI/BotHuntingGroundPolicy').evaluate(spot, Life.cachedState(id)).allowed);
+        assert(huntSpot, 'the native catalogue includes an ordinary hunt spot');
+        const heldPacket = await workerPacketSurvivesMainPreparation(Life.cachedState(id), { huntSpot });
+        await workerPacketSurvivesMainPreparation(Life.cachedState(id), { huntSpot, heldPacket });
         console.log('Saved budget: native gear/goal, 60-item bag, 30 withdrawals, 20 NPC sales and 3 board deals passed');
     } finally {
         Market.saleDecision = sale; Goals.reset(); await Database.close();
