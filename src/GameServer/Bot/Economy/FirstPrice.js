@@ -124,7 +124,7 @@ function crafterClass(level) {
 const mpPerSecond = new Map();
 function seatedMpPerSecond(level) {
     if (!mpPerSecond.has(level)) {
-        const ms = invoke('GameServer/Bot/Population/BackgroundResolver').estimateRestMs(
+        const ms = invoke('GameServer/Bot/Population/ColdRest').estimateRestMs(
             { level, stats: { classId: crafterClass(level) } },
             { hp: 1000, maxHp: 1000, mp: 0, maxMp: 10000 }, { requireMana: true });
         mpPerSecond.set(level, 10000 / Math.max(1, ms / 1000));

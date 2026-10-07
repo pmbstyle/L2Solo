@@ -5,10 +5,11 @@ const TableMirror = require('../Bot/Population/TableMirror');
 const { BoardIndex } = require('../AfkTrade/BoardIndex');
 
 // Only immutable catalogs and per-request snapshots enter this process.
-const catalogs = { items: [], npcs: [], npcRewards: [], experience: [] };
-// ARCH-NOTE: ProgressionCap captured native DataCache before the facade.
-// Alias the authored arrays for cap/death reads;80 experience numbers enter
-// once per epoch through the existing bounded catalogue page handler.
+const catalogs = { items: [], npcs: [], npcRewards: [], experience: [], skillTree: [], classTemplates: [], revitalize: {} };
+// ARCH-NOTE: native cap, tree and seated recovery readers capture DataCache.
+// Keep the same authored arrays/objects behind the facade and populate them
+// once per epoch; full native planning previously failed at missing craftLevelFor
+// and then FirstPrice's eager BackgroundResolver/ChargeLifecycle import.
 Object.assign(invoke('GameServer/DataCache'), catalogs);
 let context = {};
 let planner;
@@ -50,6 +51,7 @@ const stubs = new Map([
     ['GameServer/DataCache', catalogs],
     ['GameServer/Bot/Economy/MarketOpportunity', market],
     ['GameServer/Bot/Economy/CraftShopService', {
+        ...require('../Bot/Economy/CraftEligibility'),
         CraftStations: [{}],
         availableRecipes: () => context.recipes || [],
         stationRecipes: (_station, recipes) => recipes,
@@ -80,7 +82,8 @@ parentPort.on('message', (message) => {
             return;
         } else if (message.type === 'catalog') {
             if (!Object.hasOwn(catalogs, message.name)) throw new Error('unknown catalog');
-            catalogs[message.name].push(...message.rows);
+            if (message.name === 'revitalize') Object.assign(catalogs.revitalize, message.rows[0]);
+            else catalogs[message.name].push(...message.rows);
         } else if (message.type === 'plan') {
             context = message.payload.context;
             global.options.default.General = context.general;
