@@ -31,12 +31,13 @@ function evaluate(state = {}, options = {}) {
         target: { hpPct: floor.hpRatio, mpPct: floor.mpRatio },
         plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }];
     if (floor?.action === 'unload') return [{ ...cleanupGoal(floor), priority: 100 }];
-    const errand = invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
+    const errand = Object.hasOwn(options, 'errand') ? options.errand
+        : invoke('GameServer/Bot/Economy/ColdMarketService').pendingErrand(state, timestamp);
     if (errand?.town && errand.selfId > 0) return [{ type: 'market_errand', priority: 80,
         target: { itemId: errand.selfId, amount: errand.amount },
         plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
         blockers: [] }];
-    const context = require('../Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
+    const context = options.economy || require('../Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
     const leaf = context.network.activity;
     if (!leaf) return [];
     const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
@@ -52,8 +53,9 @@ function evaluate(state = {}, options = {}) {
         const slot = Number(gear?.etc?.slot || 0);
         const itemName = state.inventory?.[String(itemId)]?.name
             || gear?.template?.name || `Item ${itemId}`;
-        const offer = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex().heads(itemId, 1, { excludeOwner: state.characterId })?.[0];
-        const npc = invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(itemId)[0];
+        const board = Object.hasOwn(options, 'board') ? options.board : invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
+        const offer = board?.heads(itemId, 1, { excludeOwner: state.characterId })?.[0];
+        const npc = (options.npcOffersFor || invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll)(itemId)[0];
         const town = offer?.town || npc?.town || state.currentRegion;
         return [{ ...common, type: slot ? 'upgrade_gear' : 'buy_craft_material',
             target: { itemId, itemName, itemSlot: slot, amount, adena: leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price },
@@ -63,7 +65,8 @@ function evaluate(state = {}, options = {}) {
     }
     if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',
         target: { itemIds: leaf.items || [], itemCount: leaf.items?.length || 0 },
-        plan: { ...common.plan, kind: 'market_sell', expectedBenefit: 'market_sale_inventory' } }];
+        plan: { ...common.plan, kind: 'market_sell', expectedBenefit: 'market_sale_inventory',
+            marketTown: options.saleTown || invoke('GameServer/Bot/Economy/MarketTownPolicy').saleTown(state, timestamp).town } }];
     if (leaf.activity === 'improving') return [{ ...common, type: 'improving', target: { improvement: leaf.improvement },
         plan: { ...common.plan, marketTown: 'Giran', expectedBenefit: 'improvement' } }];
     if (leaf.activity === 'hunting') return [{ ...common, type: leaf.funding ? 'earn_adena' : 'progress_level',

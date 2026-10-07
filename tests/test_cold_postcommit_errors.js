@@ -18,6 +18,7 @@ stub(Life, 'cachedState', () => state);
 stub(Life, 'settleWrites', async () => {});
 stub(Life, 'reviewTrainingAfterCommit', async value => value);
 stub(Life, 'enqueueEquipmentGoalAdvanceForState', async () => {});
+stub(invoke('GameServer/Bot/Economy/BotAfkMarketService'), 'executePlan', async value => ({ state: value }));
 stub(Events, 'recordMany', async () => {});
 stub(Parties, 'createOrUpdate', async () => { partyWrites++; });
 stub(Metrics, 'recordBackgroundResolve', () => { resolves++; });
@@ -45,7 +46,7 @@ async function run() {
     assert.equal(ack.reason, 'command_applied');
     assert.equal(ack.retryAfterMs, undefined);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
-    const entry = { nextState: state, proposal: { result: { events: [] },
+    const entry = { nextState: state, proposal: { result: { events: [] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
         partyResolution: { party: { partyId: 2, status: 'active', memberIds: [1] } } } };
     logs.length = 0;
     await coordinator.afterCommit(entry);

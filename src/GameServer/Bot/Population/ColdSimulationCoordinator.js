@@ -2,6 +2,7 @@ const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
+const { performance } = require('perf_hooks');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -279,6 +280,8 @@ class ColdSimulationCoordinator {
                 journal: 0, board: 0, equipment: 0, training: 0, improvement: 0, party: 0, metrics: 0, announce: 0,
                 economyPlan: 0, clanEvents: 0, partyPlans: 0, buff: 0 }
         };
+        this.economyPlanCount = 0;
+        this.economyPlanTimes = [];
         this.queue = new ColdCommitQueue({
             targetMs: Config.coldWorkerOrdinaryFlushMs || 2000,
             hardMs: Config.coldWorkerOrdinaryHardMaxMs || 5000,
@@ -948,6 +951,7 @@ class ColdSimulationCoordinator {
             interactionMemory,
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
+            goalReviewAt: Number(invoke('GameServer/Bot/Goals/GoalService').snapshot(state.characterId)?.current?.nextReviewAt || 0),
             // The worker cannot see AFK shops: hand it the Adena the bot's own
             // buy order holds, which still counts as purchase budget.
             buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
@@ -1649,8 +1653,24 @@ class ColdSimulationCoordinator {
         const beforeWrite = () => {
             if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
         };
-        if (sourceCurrent()) {
-            state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite)) || state;
+        if (sourceCurrent() && entry.proposal.economyPlan) {
+            const started = performance.now();
+            const decision = await this.step('improvement', id, () => this.economyDecisions.decided(state));
+            // Native moves publish a new timestamp. Hold the worker's one
+            // decision across this plan exactly as the town command does.
+            this.economyDecisions.hold(id, decision);
+            try {
+                state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite, decision || null)) || state;
+                const applied = await this.step('economyPlan', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService')
+                    .executePlan(state, entry.proposal.economyPlan,
+                        { beforeWrite, step: work => this.step('economyPlan', id, work) }));
+                state = LifeState.cachedState(id) || applied?.state || state;
+            } finally {
+                this.economyDecisions.release(id);
+                this.economyPlanCount++;
+                this.economyPlanTimes.push(performance.now() - started);
+                if (this.economyPlanTimes.length > 256) this.economyPlanTimes.shift();
+            }
         }
         await this.step('clanEvents', id, () => require('../../Clan/ClanReviewEvents').committedMember(entry.proposal[CLAN_BEFORE], state));
         await this.step('party', id, async () => {
@@ -1716,11 +1736,12 @@ class ColdSimulationCoordinator {
         return state;
     }
 
-    async reviewCommittedEconomy(state, beforeWrite) {
+    async reviewCommittedEconomy(state, beforeWrite, decisionOverride) {
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;
-        const decision = await this.step('improvement', state.characterId, () => this.economyDecisions.decided(state));
+        const decision = decisionOverride === undefined
+            ? await this.step('improvement', state.characterId, () => this.economyDecisions.decided(state)) : decisionOverride;
         state = await this.step('training', state.characterId, () => LifeState.reviewTrainingAfterCommit(state, { beforeWrite }))
             || LifeState.cachedState(state.characterId) || state;
         const improved = await this.step('improvement', state.characterId, () => invoke('GameServer/Bot/Economy/BotImprovementService')
@@ -2207,6 +2228,7 @@ class ColdSimulationCoordinator {
             competitionActions: this.competitionActions.snapshot(),
             economyDecisions: { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size },
             partyReviews: this.partyReviews,
+            economyPlans: { count: this.economyPlanCount, perCommit: this.economyPlanCount / Math.max(1, this.queue.snapshot().committed || 0), p95Ms: [...this.economyPlanTimes].sort((a, b) => a - b)[Math.max(0, Math.ceil(this.economyPlanTimes.length * .95) - 1)] || 0 },
             queue: this.queue.snapshot(),
             snapshots: {
                 ...this.snapshotQueue.snapshot(),

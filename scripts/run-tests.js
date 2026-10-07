@@ -957,6 +957,8 @@ const tests = [
     'tests/test_clan_finance_decided.js',
     'tests/test_worker_heap_gc.js',
     'tests/test_cold_store_release.js',
+    'tests/test_cold_economy_edges.js',
+    'tests/test_cold_economy_plan_execution.js',
     'tests/test_drop_target_dormancy.js',
     'tests/test_cold_buff_offer.js',
     'tests/test_cold_economy_readers.js',
@@ -969,7 +971,6 @@ const tests = [
     'tests/test_minimum_relations_pk.js',
     'tests/test_bot_improvements.js',
     'tests/test_database_mutation_admission.js',
-    'tests/test_lifecycle_economy_events.js',
     'tests/test_party_assembly_events.js'
 
 ];
@@ -1140,6 +1141,8 @@ const defaultConfigTests = new Set([
     'tests/test_clan_finance_decided.js',
     'tests/test_worker_heap_gc.js',
     'tests/test_cold_store_release.js',
+    'tests/test_cold_economy_edges.js',
+    'tests/test_cold_economy_plan_execution.js',
     'tests/test_drop_target_dormancy.js',
     'tests/test_cold_buff_offer.js',
     'tests/test_cold_economy_readers.js',
@@ -1156,7 +1159,6 @@ const defaultConfigTests = new Set([
     'tests/test_population_intake.js',
     'tests/test_bot_improvements.js',
     'tests/test_database_mutation_admission.js',
-    'tests/test_lifecycle_economy_events.js',
     'tests/test_party_assembly_events.js'
 
 ]);

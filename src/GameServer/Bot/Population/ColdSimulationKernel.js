@@ -1667,6 +1667,9 @@ class ColdSimulationKernel {
                     // made on its party state, so main decides on the solo one.
                     ...(projection?.economyDecision && resolvedParty.status !== 'dissolved'
                         ? { economyDecision: projection.economyDecision } : {}),
+                    economyEdges: resolvedParty.status === 'dissolved' ? 0 : Number(projection?.economyEdges || 0),
+                    ...(projection?.economyPlan && resolvedParty.status !== 'dissolved'
+                        ? { economyPlan: projection.economyPlan } : {}),
                     result: {
                         ...result,
                         events: [
@@ -1770,6 +1773,8 @@ class ColdSimulationKernel {
                 durable: projection?.durable || null,
                 ...(projection?.market ? { market: projection.market } : {}),
                 ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
+                economyEdges: Number(projection?.economyEdges || 0),
+                ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 // The projected state precedes claim; main commits one revision
                 // after this grant before consuming the offer.
                 ...(projection?.buffOffer ? { buffOffer: { ...projection.buffOffer,

@@ -1,10 +1,8 @@
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
-const DynamicBuyerService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
-const TownRespawn = invoke('GameServer/World/TownRespawn');
+const TownRespawn = require('../../World/TownRespawn');
 const OfferOrder = require('./OfferOrder');
 const Karma = require('../../Karma');
 
@@ -52,7 +50,7 @@ function dGradeMarketFor(state = {}) {
     return bucket < GLUDIO_D_GRADE_SHARE_PERCENT ? 'Gludio' : 'Dion';
 }
 
-function targetTownForItems(state, items = []) {
+function targetTownForItems(state, items = [], options = {}) {
     // A bot with karma trades in Floran (design 5.8, E48).
     if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
     const ranks = items.map(rankOf);
@@ -67,7 +65,7 @@ function targetTownForItems(state, items = []) {
     // position wanders across village areas while it hunts, and following it
     // moved a listed shop between villages on nearly every review.
     if (onlyNoGrade) {
-        const origin = OfferOrder.farmingOrigin(state, (spotId) => SpotService.findById(spotId));
+        const origin = OfferOrder.farmingOrigin(state, options.findSpot || ((spotId) => SpotService.findById(spotId)));
         return nearestNoGradeMarket(origin)?.name || 'Giran';
     }
     if (!hasHigherGrade && hasDGrade) return dGradeMarketFor(state);
@@ -125,7 +123,8 @@ function openingTown(state, items, timestamp = Date.now()) {
 // never moves (N51, E46); else the town its shop will open in (openingTown).
 function saleTown(state, timestamp = Date.now()) {
     if (Karma.closesTowns(state?.stats?.karma)) return { town: Karma.TOWN_NAME, shopTown: null };
-    const buyerTown = DynamicBuyerService.bestTownFor(state)?.town || StaticBuyerService.bestTownFor(state)?.town;
+    const buyerTown = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService').bestTownFor(state)?.town
+        || invoke('GameServer/Bot/Economy/StaticBuyerService').bestTownFor(state)?.town;
     if (buyerTown) return { town: buyerTown, shopTown: null };
     const shop = invoke('GameServer/AfkTrade/AfkTradeService').findOwnerProjection(state?.characterId)?.shop;
     if (shop?.town) return { town: shop.town, shopTown: null };

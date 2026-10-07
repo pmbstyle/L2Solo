@@ -1055,7 +1055,6 @@ const PopulationService = {
         this.startHotBoardReviews();
         this.startLifecycleSafetySweep();
         this.startPartyAssemblyEvents();
-        this.startLifecycleEconomyEvents();
 
         Promise.resolve(this.lifeReadyPromise).then(() => {
             if (!this.started) return;
@@ -1107,7 +1106,6 @@ const PopulationService = {
 
     stop() {
         ClanActionService.stopEvents();
-        this.stopLifecycleEconomyEvents();
         this.stopPartyAssemblyEvents();
         this.stopLifecycleSafetySweep();
         this.stopHotBoardReviews();
@@ -1430,105 +1428,6 @@ const PopulationService = {
         this.backgroundJobRegistry = registry;
         registry.start();
         return registry;
-    },
-
-    lifecycleEconomyInput(state, timestamp = Date.now()) {
-        if (state.phase !== 'cold') return null;
-        const stats = state.stats || {};
-        const bag = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount,
-            row.equippedCount || row.equipped, row.enchant, row.slot,
-            (row.instances || []).map(item => `${item.id}:${item.enchant}:${item.equipped}`).join(',')].join(':')).sort();
-        const plan = stats.equipmentPlan;
-        const goal = GoalService.snapshot(state.characterId)?.current;
-        const deadlines = [stats.marketSellRetryAfter, goal?.nextReviewAt].map(Number)
-            .filter(value => Number.isFinite(value) && value > timestamp);
-        return {
-            key: JSON.stringify([state.level, state.sp, state.adena, stats.classId, bag, stats.karma,
-                stats.deathCount, plan?.status, plan?.strategy, plan?.target?.selfId, stats.lastWarehouseDeposit?.at,
-                stats.lastWarehouseWithdrawal?.at, state.marketTrades, stats.hennas]),
-            eligible: state.simulation?.ownerId === 'legacy_main' && !state.party?.partyId
-                && state.activity === 'hunting' && !stats.pveEncounter && !stats.pvpEncounter,
-            items: [...new Set([...Object.keys(state.inventory || {}).map(Number),
-                ...(stats.lastWarehouseDeposit?.items || []).map(row => Number(row.selfId)),
-                ...[stats.shotCraft?.productId].filter(Boolean).map(Number),
-                ...(stats.workshop?.entries || []).flatMap(row => {
-                    const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(row.recipeId);
-                    return recipe ? [recipe.productId, ...recipe.materials.map(item => item.selfId)] : [];
-                })])],
-            dueAt: deadlines.length ? Math.min(...deadlines) : 0
-        };
-    },
-
-    startLifecycleEconomyEvents() {
-        if (this.lifecycleEconomyEvents || Config.backgroundResolverEnabled === false || !this.backgroundJobRegistry) return;
-        const { LifecycleEconomyEvents } = require('./LifecycleEconomyEvents');
-        this.lifecycleEconomyEvents = new LifecycleEconomyEvents({
-            registry: this.backgroundJobRegistry, life: LifeState, board: AfkTrade,
-            input: state => this.lifecycleEconomyInput(state),
-            // Supply is delivered by the Worker's five-funded-buyer index.
-            // This owner index reacts only to demand for stock/output.
-            boardKey: id => {
-                const line = AfkTrade.boardIndex().first(id, AfkTrade.BUY);
-                return JSON.stringify(line ? [line.ownerId, line.price, line.count, line.town] : null);
-            },
-            work: state => this.runLifecycleEconomyEvent(state),
-            onRepair: () => Metrics.recordEconomySafetyRepair(),
-            onError: error => utils.infoWarn('BotEconomy', 'input event failed: %s', error?.message || error)
-        });
-        this.lifecycleEconomyEvents.start();
-    },
-
-    stopLifecycleEconomyEvents() {
-        this.lifecycleEconomyEvents?.stop(); this.lifecycleEconomyEvents = null;
-    },
-
-    async runLifecycleEconomyEvent(state) {
-        if (!this.started || Config.enabled === false) return null;
-        const driver = this.lifecycleEconomyEvents, generation = driver?.generation, boardEpoch = driver?.boardEpoch;
-        const currentSource = () => this.started && driver?.active && driver.boardReady
-            && driver.generation === generation && driver.boardEpoch === boardEpoch
-            && this.lifecycleEconomyEvents === driver;
-        const activity = this.playerActivityProfile();
-        const admission = BackgroundWorkGovernor.admit({ job: 'economy_input', resource: 'sqlite-heavy',
-            requestedBudgetMs: activity.protected ? 75 : 500, minimumBudgetMs: 25,
-            playerProtected: activity.protected, realPlayers: activity.realPlayers,
-            lagMs: Metrics.currentEventLoopLag() });
-        if (!admission.ok) return { deferred: true, retryAt: Date.now() + this.goalMetadataContinuationMs() };
-        const startedAt = Date.now();
-        try {
-            const result = await Database.withMutationAdmission(() => {
-                if (!currentSource()) throw Error('economy_event_source_retired');
-            }, () => ColdSimulationCoordinator.withEconomyState(state, async current => {
-                if (!currentSource() || !this.lifecycleEconomyInput(current)?.eligible) return { state: current };
-                const [stored, known] = await Promise.all([
-                    Database.fetchWarehouseItems(current.characterId), Database.fetchCharacterRecipes(current.characterId)
-                ]);
-                const Recipe = invoke('GameServer/Items/C4RecipeItems');
-                const watched = [...stored.map(row => Number(row.selfId)), ...known.flatMap(row => {
-                    const recipe = Recipe.resolveByRecipeId(row.recipeId);
-                    return recipe ? [Number(recipe.productId), ...(recipe.materials || []).map(item => Number(item.selfId))] : [];
-                })];
-                if (currentSource()) driver.setWatchItems(current.characterId, watched);
-                const released = await BotWarehouse.releaseCold(current);
-                current = LifeState.cachedState(current.characterId) || released.state || current;
-                if (current.activity !== 'hunting' || !currentSource()) return { state: current };
-                const shots = await ColdShotEconomyService.review(current, Date.now(), { edge: true });
-                const wealth = await ColdWealthCraftService.tryCraft(shots.state || current);
-                current = LifeState.cachedState(current.characterId) || wealth.state || shots.state || current;
-                if (current.activity !== 'hunting' || !currentSource()) return { state: current };
-                const snapshot = await GoalService.review(current, { spot: SpotProfiles.findById(current.spotId) });
-                if (!currentSource() || LifeState.cachedState(current.characterId) !== current) return { state: current };
-                const remote = await BotAfkMarketService.reconcile(current, snapshot?.current, snapshot?.candidates);
-                current = LifeState.cachedState(current.characterId) || remote.state || current;
-                if (!currentSource()) return { state: current };
-                const travel = current.activity === 'hunting' && GoalExecutor.beginMarketTravel(current, snapshot?.current);
-                const saved = travel ? await LifeState.upsertState(travel, 'economy_input_market_travel') : current;
-                return { state: saved || current };
-            }));
-            return result?.reason ? { deferred: true, retryAt: Date.now() + 1000 } : result;
-        } finally {
-            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
-        }
     },
 
     startPartyAssemblyEvents() {
@@ -1944,7 +1843,7 @@ const PopulationService = {
                 const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
                 const releaseStartedAt = Date.now();
                 return invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveBatch(deadlineAt)
-                    .then(() => this.releaseWarehouseMaterials(deadlineAt)).then((results) => ({
+                    .then((results = []) => ({
                     results,
                     continuation: results.continuation || results.length >= limit || Date.now() >= deadlineAt
                 })).finally(() => {
@@ -3175,35 +3074,6 @@ const PopulationService = {
         });
     },
 
-    releaseWarehouseMaterials(deadlineAt = Infinity) {
-        if (Date.now() >= deadlineAt) return Promise.resolve([]);
-        return BotWarehouse.releaseColdBatch(Config.maxWarehouseReleasesPerTick, deadlineAt, {
-            onProgress: (progress) => BackgroundWorkGovernor.recordProgress('goal_warehouse_release', progress),
-            onStage: (stage, durationMs) => BackgroundWorkGovernor.recordStage(
-                'goal_warehouse_release',
-                stage,
-                durationMs
-            )
-        })
-            .then((released) => {
-                if (released.length) {
-                    const resumedMarkets = released.filter((result) => result.resumed).length;
-                    const craftItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'craft')
-                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-                    const marketItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'market')
-                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-                    const enchantItems = released.flatMap((result) => result.items).filter((item) => item.reason === 'enchant')
-                        .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-                    console.info('BotPopulation :: warehouse materials released bots=%d resumedMarkets=%d craftItems=%d enchantItems=%d marketItems=%d', released.length, resumedMarkets, craftItems, enchantItems, marketItems);
-                }
-                return released;
-            })
-            .catch((err) => {
-                utils.infoWarn('BotPopulation', 'warehouse material release failed: %s', err.message);
-                return [];
-            });
-    },
-
     goalProjectionTelemetry(job) {
         return {
             onTiming: ({ waitMs, runMs }) => {
@@ -3847,7 +3717,12 @@ const PopulationService = {
             return invoke('GameServer/Bot/Economy/CraftWorkshopService').review(updatedState)
                 .then(workshopState => ColdShotEconomyService.review(workshopState, Date.now(), { edge: tripEdge }))
                 .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
-                .then((wealthCraft) => ColdMarketListingService.resolve(wealthCraft.state || updatedState))
+                .then(async (wealthCraft) => {
+                    const current = wealthCraft.state || updatedState;
+                    const released = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current)
+                        ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
+                    return ColdMarketListingService.resolve(LifeState.cachedState(current.characterId) || released.state || current);
+                })
                 .then((marketLifecycle) => GoalService.current(marketLifecycle.state.characterId)
                     .then((goalSnapshot) => {
                         if (goalSnapshot?.current?.status === 'active') return goalSnapshot;

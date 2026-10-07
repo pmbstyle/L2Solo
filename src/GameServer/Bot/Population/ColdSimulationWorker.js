@@ -347,9 +347,19 @@ function startKernel(config = {}) {
                 ...(progressionChanged ? { classId: afterClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
+            const context = kernel.states.get(Number(state.characterId))?.context || {};
+            const planner = require('./ColdEconomyPlan');
+            const economyEdges = planner.edges(state, projected, context, timestamp);
+            const economyPlan = economyEdges && economy ? planner.decide(projected, economy, {
+                now: timestamp, board: boardReady(), persona: BotPersona.of(projected),
+                npcOffersFor: planningNpcCatalog.offersFor,
+                findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)), buyOrderEscrow: context.buyOrderEscrow
+            }) : null;
             const market = reviewMarket(projected, timestamp, economy);
             return {
                 state: projected,
+                economyEdges,
+                ...(economyPlan ? { economyPlan } : {}),
                 ...(market ? { market } : {}),
                 durable: Object.keys(durable).length ? durable : null,
                 buffOffer: require('../Economy/ColdBuffOffer').project(projected,

@@ -22,6 +22,7 @@ function isMarketGoal(goal) {
 
 function reviewDecision(state, existing, options, timestamp) {
     const candidates = NeedsEvaluator.evaluate(state, {
+        ...options,
         spot: reviewSpot(state, options.spot, existing?.current),
         now: timestamp
     });

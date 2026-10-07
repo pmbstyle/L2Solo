@@ -9,6 +9,8 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const GearPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const originalWarehouseRelease = Warehouse.releaseCold;
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -141,6 +143,25 @@ async function run() {
     assert.strictEqual(PopulationService.planDeferred, deferredBefore + 1);
     Coordinator.economyDecisions.forget(7405);
 
+    const visitOrder = [];
+    Warehouse.releaseCold = async (value, options) => {
+        assert.strictEqual(options.inTown, true);
+        visitOrder.push('warehouse'); return { state: value, released: false };
+    };
+    ListingService.resolve = async value => { visitOrder.push('listings'); return { state: value, closed: false }; };
+    const town = { ...hunter(7420), activity: 'shopping', currentRegion: 'Giran',
+        loc: { locX: 83396, locY: 147904, locZ: -3400 } };
+    const townResult = { ...workerFight(), patch: { activity: 'shopping', loc: town.loc, stats: {} } };
+    assert.strictEqual((await PopulationService.resolveColdState(town,
+        { precomputedResult: townResult, context: { spot: oldSpot, route: null } })).ok, true);
+    assert.deepStrictEqual(visitOrder, ['warehouse', 'listings'], 'one town release precedes listing');
+    visitOrder.length = 0;
+    await PopulationService.resolveColdState(hunter(7421),
+        { precomputedResult: workerFight(), context: { spot: oldSpot, route: null } });
+    assert.deepStrictEqual(visitOrder, ['listings'], 'field command never releases the warehouse');
+    Warehouse.releaseCold = originalWarehouseRelease;
+    ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
+
     // Without a worker result main still starts and resolves the trip itself.
     applied.length = 0;
     const unworked = await PopulationService.resolveColdState(hunter(7402));
@@ -182,6 +203,7 @@ run().catch((error) => {
     GearPlanner.planFor = originals.planFor;
     Selection.selectAcquisitionPlan = originalSelect;
     Object.assign(LifeState, { cachedState: originals.cachedState, applyResolve: originals.applyResolve, upsertState: originals.upsertState });
+    Warehouse.releaseCold = originalWarehouseRelease;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
     Object.assign(GoalService, { current: originals.current, review: originals.review });
