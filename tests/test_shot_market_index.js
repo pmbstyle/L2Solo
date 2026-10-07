@@ -142,6 +142,12 @@ record(9000, product, 3, 8, 12, buyerId);
 const buyer = { characterId: buyerId, phase: 'cold', activity: 'hunting', level: 20, adena: 100,
     inventory: {}, stats: { shotDemand: { itemId: product, amount: 2, maxSpend: 16, at: now } } };
 index.update(buyer,now); states.set(buyerId,buyer); equal(now,'board-shadow');
+const capturedShotSignal = index.marketSnapshot(now).shotDemand.get(product).find(row => row.characterId === buyerId);
+assert.equal(index.marketSnapshot(now + 3600000).shotDemand.get(product).find(row => row.characterId === buyerId).budget,
+    capturedShotSignal.budget, 'a snapshot clock does not change demand membership or the captured native budget');
+index.update(buyer,now + 3600000); states.set(buyerId,buyer);
+assert.equal(index.marketSnapshot(now + 3600000).shotDemand.get(product).find(row => row.characterId === buyerId).maxPrice, 8,
+    'an expired funded signal is dropped at the owner update and the original buy ad is restored');
 index.remove(buyerId); states.delete(buyerId); equal(now,'board-restore');
 index.marketSnapshot(now);
 listReads = 0;
@@ -215,11 +221,12 @@ assert.equal(packed.marketSnapshot(now).recipeHolders.get(recipeIds[0]), nativeR
 assert(Array.isArray(nativeRecipeView), 'the native array reader contract remains available');
 assert.equal(nativeRecipeView.length, 200);
 assert(nativeRecipeView.find(row => row.characterId === 2000123));
-assert.equal([...packed.recipeOwners.values()].reduce((sum, ids) => sum + ids.bytes.byteLength, 0), 9000,
-    'all fifteen native books use exactly 45 bytes of packed owner IDs per crafter');
+assert.equal(Object.values(nativeRecipeView).length, 200, 'ordinary array enumeration sees the same lazy rows');
+assert.equal([...packed.recipeOwners.values()].reduce((sum, ids) => sum + ids.bytes.byteLength, 0), 3000,
+    'all fifteen books share each vector base and store exact one-byte deltas for this dense native population');
 assert.throws(() => nativeRecipeView.push({ characterId: 1, price: 1 }), TypeError,
     'a market consumer cannot modify the shared recipe view');
-for (const characterId of [0x1000000 + 7, 0x100000000 + 9]) {
+for (const characterId of [0x1000000 + 7, 0x100000000 + 9, Number.MAX_SAFE_INTEGER - 99]) {
     const state = { characterId, phase: 'cold', activity: 'hunting', level: 30, stats: {},
         inventory: { [recipeIds[0]]: { selfId: recipeIds[0], amount: 1 } } };
     packed.update(state, now); packedCanonical.set(characterId, state);

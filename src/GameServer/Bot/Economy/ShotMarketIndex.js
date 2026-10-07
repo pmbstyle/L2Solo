@@ -6,20 +6,24 @@ const CRYSTALS = Object.freeze({ d: 1458, c: 1459, b: 1460, a: 1461, s: 1462 });
 const SLOT = Symbol('shot-demand-slot');
 const positive = value => Math.max(0, Number(value) || 0);
 
-// IDs are the only variable recipe-holder storage. Native character IDs fit
-// exactly in three bytes; unusually large IDs widen without changing identity.
+// IDs are the only variable holder storage. A vector stores exact deltas from
+// its smallest ID; the native population's dense IDs need one or two bytes.
 class RecipeIds {
-    constructor() { this.bytes = new Uint8Array(0); this.width = 3; }
+    constructor() { this.bytes = new Uint8Array(0); this.width = 1; this.base = 0; }
     get length() { return this.bytes.length / this.width; }
     get(at) {
         const offset = at * this.width;
-        if (this.width === 3) return this.bytes[offset] + this.bytes[offset + 1] * 256 + this.bytes[offset + 2] * 65536;
+        if (this.width === 1) return this.base + this.bytes[offset];
+        if (this.width === 2) return this.base + this.bytes[offset] + this.bytes[offset + 1] * 256;
+        if (this.width === 3) return this.base + this.bytes[offset] + this.bytes[offset + 1] * 256 + this.bytes[offset + 2] * 65536;
         const view = new DataView(this.bytes.buffer);
-        return this.width === 4 ? view.getUint32(offset, true) : view.getFloat64(offset, true);
+        return this.base + (this.width === 4 ? view.getUint32(offset, true) : view.getFloat64(offset, true));
     }
     write(bytes, at, value, width = this.width) {
         const offset = at * width;
-        if (width === 3) {
+        if (width === 1) bytes[offset] = value;
+        else if (width === 2) { bytes[offset] = value % 256; bytes[offset + 1] = Math.floor(value / 256); }
+        else if (width === 3) {
             bytes[offset] = value % 256; bytes[offset + 1] = Math.floor(value / 256) % 256;
             bytes[offset + 2] = Math.floor(value / 65536);
         } else {
@@ -31,39 +35,49 @@ class RecipeIds {
         for (let at = 0; at < this.length; at++) if (this.get(at) === ownerId) {
             const offset = at * this.width, bytes = new Uint8Array(this.bytes.length - this.width);
             bytes.set(this.bytes.subarray(0, offset)); bytes.set(this.bytes.subarray(offset + this.width), offset);
-            this.bytes = bytes; return true;
+            this.bytes = bytes;
+            if (!bytes.length) { this.width = 1; this.base = 0; }
+            return true;
         }
         return false;
     }
     insert(at, ownerId) {
-        const width = Math.max(this.width, ownerId <= 0xffffff ? 3 : ownerId <= 0xffffffff ? 4 : 8);
+        let base = ownerId, maximum = ownerId;
+        for (let old = 0; old < this.length; old++) { const id = this.get(old); base = Math.min(base, id); maximum = Math.max(maximum, id); }
+        const delta = maximum - base;
+        const width = delta <= 0xff ? 1 : delta <= 0xffff ? 2 : delta <= 0xffffff ? 3 : delta <= 0xffffffff ? 4 : 8;
         const bytes = new Uint8Array((this.length + 1) * width);
-        for (let old = 0; old < this.length; old++) this.write(bytes, old < at ? old : old + 1, this.get(old), width);
-        this.write(bytes, at, ownerId, width); this.width = width; this.bytes = bytes;
+        for (let old = 0; old < this.length; old++) this.write(bytes, old < at ? old : old + 1, this.get(old) - base, width);
+        this.write(bytes, at, ownerId - base, width); this.width = width; this.base = base; this.bytes = bytes;
     }
 }
 
-function recipeView(index, itemId, ids) {
+function holderView(rowFor, size) {
     // ARCH-NOTE: preserve the native sorted-array reader contract without a
     // second owner map or cached {characterId,price} rows. A read creates only
     // its requested row from the canonical lifecycle object already retained
-    // elsewhere; taking a snapshot never walks holders. Native packed IDs cost
-    // 45 B for all fifteen books/crafter, plus the one weak keep ledger. Exact
-    // four/eight-byte fallback IDs outside the native range cost more.
+    // elsewhere; taking a snapshot never walks holders.
+    // Dense IDs retain exact deltas; wider four/eight-byte fallbacks retain
+    // correctness for populations outside the native ID range.
     return new Proxy([], {
         get(target, key, receiver) {
-            if (key === 'length') return ids.length;
+            if (key === 'length') return size();
             if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) {
                 const at = Number(key);
-                if (at >= ids.length) return undefined;
-                const characterId = ids.get(at);
-                return { characterId, price: index.recipePrice(itemId, characterId) };
+                return at < size() ? rowFor(at) : undefined;
             }
             return Reflect.get(target, key, receiver);
         },
         has(target, key) {
-            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) return Number(key) < ids.length;
+            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) return Number(key) < size();
             return Reflect.has(target, key);
+        },
+        ownKeys() { return [...Array.from({ length: size() }, (_, at) => String(at)), 'length']; },
+        getOwnPropertyDescriptor(target, key) {
+            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key) && Number(key) < size()) {
+                return { configurable: true, enumerable: true, writable: false, value: rowFor(Number(key)) };
+            }
+            return Reflect.getOwnPropertyDescriptor(target, key);
         },
         set() { return false; },
         deleteProperty() { return false; }
@@ -84,10 +98,19 @@ class ShotMarketIndex {
         this.priceFor = options.priceFor || ((_state, _item, template) => positive(template?.template?.price));
         this.keeps = new WeakMap();
         this.keepers = 0;
-        this.demand = new Map();
+        this.demand = new Map(this.shotIds.map(id => [id, new RecipeIds()]));
         this.recipeOwners = new Map(this.recipeIds.map(id => [id, new RecipeIds()]));
-        this.shotDemand = new Map(this.shotIds.map(id => [id, []]));
-        this.recipeHolders = new Map(this.recipeIds.map(id => [id, recipeView(this, id, this.recipeOwners.get(id))]));
+        this.boardDemand = new Map(this.shotIds.map(id => [id, []]));
+        this.shotDemand = new Map(this.shotIds.map(id => {
+            const ids = this.demand.get(id);
+            return [id, holderView(at => at < ids.length ? this.signalFor(id, ids.get(at))
+                : this.boardDemand.get(id)[at - ids.length], () => ids.length + this.boardDemand.get(id).length)];
+        }));
+        this.recipeHolders = new Map(this.recipeIds.map(id => {
+            const ids = this.recipeOwners.get(id);
+            return [id, holderView(at => { const characterId = ids.get(at);
+                return { characterId, price: this.recipePrice(id, characterId) }; }, () => ids.length)];
+        }));
         this.unlistedSupply = new Map(this.shotIds.map(id => [id, 0]));
         this.recipeTotals = new Map(this.recipeIds.map(id => [id, 0]));
         this.shotSupply = new Map();
@@ -137,13 +160,13 @@ class ShotMarketIndex {
     }
 
     addSignal(id, signal) {
-        const rows = this.shotDemand.get(id);
+        const rows = this.boardDemand.get(id);
         Object.defineProperty(signal, SLOT, { value: rows.length, writable: true });
         rows.push(signal);
     }
 
     dropSignal(id, signal) {
-        const rows = this.shotDemand.get(id), slot = signal[SLOT];
+        const rows = this.boardDemand.get(id), slot = signal[SLOT];
         if (slot === undefined || rows[slot] !== signal) return;
         const last = rows.pop();
         if (slot < rows.length) { rows[slot] = last; last[SLOT] = slot; }
@@ -151,19 +174,23 @@ class ShotMarketIndex {
     }
 
     setDemand(id, ownerId, signal) {
-        let owners = this.demand.get(id);
-        const previous = owners?.get(ownerId);
-        if (previous) this.dropSignal(id, previous);
+        const owners = this.demand.get(id);
+        const previous = owners.remove(ownerId);
         if (signal) {
-            if (!owners) this.demand.set(id, owners = new Map());
-            owners.set(ownerId, signal);
+            owners.insert(owners.length, ownerId);
             for (const boardSignal of this.boardBuyOwners.get(id)?.get(ownerId) || []) this.dropSignal(id, boardSignal);
-            this.addSignal(id, signal);
         } else if (previous) {
-            owners.delete(ownerId);
-            if (!owners.size) this.demand.delete(id);
             for (const boardSignal of this.boardBuyOwners.get(id)?.get(ownerId) || []) this.addSignal(id, boardSignal);
         }
+    }
+
+    signalFor(id, ownerId) {
+        const state = this.stateFor(ownerId);
+        // ARCH-NOTE: funded membership and expiry are decided on update. The
+        // native shots signal's scalar fields stay on the immutable canonical
+        // state; reading its captured membership must not expire it a second
+        // time at a different snapshot clock, or shadow a board ad differently.
+        return state ? this.demandSignal(state, id, Number(state.stats?.shotDemand?.at || 0)) : null;
     }
 
     recipePrice(id, ownerId) {
@@ -242,7 +269,7 @@ class ShotMarketIndex {
     }
 
     size() {
-        const sum = map => [...map.values()].reduce((total, rows) => total + rows.size, 0);
+        const sum = map => [...map.values()].reduce((total, rows) => total + rows.length, 0);
         return { spare: this.keepers, demand: sum(this.demand), recipeStock: 0,
             recipeHolders: [...this.recipeOwners.values()].reduce((total, rows) => total + rows.length, 0) };
     }
@@ -289,7 +316,10 @@ class ShotMarketIndex {
                     budget: Number(offer.count) * Number(offer.price), maxPrice: Number(offer.price) };
                 rows.push(signal);
                 const own = owners.get(ownerId) || []; own.push(signal); owners.set(ownerId, own);
-                if (!this.demand.get(id)?.has(ownerId)) this.addSignal(id, signal);
+                const demandIds = this.demand.get(id);
+                let shadowed = false;
+                for (let at = 0; at < demandIds.length; at++) if (demandIds.get(at) === ownerId) { shadowed = true; break; }
+                if (!shadowed) this.addSignal(id, signal);
             }
             this.boardBuys.set(id, rows); this.boardBuyOwners.set(id, owners);
         }

@@ -37,7 +37,7 @@ module.exports.shotProbe = async () => {
     const duplicate = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
     kernel.remove(state.characterId);
     const removed = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
-    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: market.shotDemand.get(1463), orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: result.economyPlan, edges: result.economyEdges, state: result.state,
+    return { indexHooks: { before, overlay, held, committed, duplicate, removed }, candidate, hour: economy.hourAdena, regen, demand: [...market.shotDemand.get(1463)], orePrice: market.npcPrice.get(1785), fixed: require('../Economy/StaticMerchantPricing').botPurchasePrice(1463), recipe, plan: result.economyPlan, edges: result.economyEdges, state: result.state,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/World\/World\.js$/.test(key)),
         known: entry.context.knownShotRecipes };
 };`;
