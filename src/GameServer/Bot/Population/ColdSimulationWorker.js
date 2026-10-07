@@ -4,6 +4,7 @@ const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime')
 const workerProjectorRole = CharacterLocationRuntime.beginWorkerProjectorRole(epoch);
 const path = require('path');
 const { performance, monitorEventLoopDelay } = require('perf_hooks');
+const heapTelemetry = require('./WorkerHeapTelemetry').observe();
 
 const srcRoot = path.resolve(__dirname, '../../..');
 require(path.join(srcRoot, 'Global'));
@@ -546,6 +547,7 @@ function startKernel(config = {}) {
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
             tables: tables.summary(),
+            ...heapTelemetry.snapshot(),
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
