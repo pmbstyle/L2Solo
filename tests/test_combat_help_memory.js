@@ -1,6 +1,8 @@
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-combat-help');
 require('../src/Global');
+fixture.assertConfigured(options.default);
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
@@ -11,8 +13,7 @@ const P = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Help = invoke('GameServer/Social/CombatHelpMemory');
 const Policy = require('../src/GameServer/Social/CombatHelpPolicy');
 const Cold = require('../src/GameServer/Social/ColdCombatHelpMemory');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-combat-help-'));
-options.default.Database.path = path.join(dir, 'test.sqlite');
+const dir = fixture.directory;
 const saved = [];
 function patch(o, key, value) { const old = o[key]; saved.push(() => o[key] = old); o[key] = value; }
 function actor(id, hp = 100) {

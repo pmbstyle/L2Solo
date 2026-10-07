@@ -215,16 +215,17 @@ function apply(snapshot, input, now) {
     return { status: 'applied', snapshot: { ...snapshot, revision: snapshot.revision + 1, replayFloor, relations, recent } };
 }
 
-function view(snapshot, playingHours = () => undefined, fastLayers = null) {
-    const rows = new Map((snapshot?.relations || []).map(row => [`${row.kind}:${row.targetId}`, row]));
+function view(snapshot, playingHours = () => undefined, fastLayers = null, rowSource = null) {
+    const rows = rowSource ? null : new Map((snapshot?.relations || []).map(row => [`${row.kind}:${row.targetId}`, row]));
     return Object.freeze({
         ownerId: snapshot?.ownerId || null,
         revision: snapshot?.revision || 0,
         ready: !!snapshot,
-        characterIds: Object.freeze((snapshot?.relations || []).filter(row => row.kind === 'character').map(row => row.targetId)),
+        characterIds: Object.freeze(rowSource ? rowSource.characterIds
+            : (snapshot?.relations || []).filter(row => row.kind === 'character').map(row => row.targetId)),
         relation(kind, targetId, at) {
             time(at);
-            const row = rows.get(`${kind}:${targetId}`);
+            const row = rowSource ? rowSource.row(kind, targetId) : rows.get(`${kind}:${targetId}`);
             const gameAt = playingHours();
             return row ? { ...decayed(row, at, gameAt),
                 ...Layers.persistent(row, gameAt ?? row.gameAt ?? 0),

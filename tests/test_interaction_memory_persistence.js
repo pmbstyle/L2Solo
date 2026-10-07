@@ -3,15 +3,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-interaction-memory', gameRoot);
 require(gameRoot + '/src/Global');
+fixture.assertConfigured(options.default);
 invoke('GameServer/DataCache').init();
 const Database = invoke('Database');
 const Policy = require(gameRoot + '/src/GameServer/Social/InteractionMemoryPolicy');
 const Memory = require(gameRoot + '/src/GameServer/Social/InteractionMemory');
 const Repository = invoke('GameServer/Social/InteractionMemoryRepository');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-interaction-memory-'));
-const file = path.join(dir, 'test.sqlite');
-options.default.Database.path = file;
+const dir = fixture.directory, file = fixture.world;
 const event = (key, sourceId = 1, targetId = 2, at = Date.now()) => ({ key, sourceId, targetId, type: 'attacked', at });
 
 async function run() {

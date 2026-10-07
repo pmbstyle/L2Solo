@@ -2,15 +2,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-relations-pk-'));
 const previousConfig = process.env.L2NODE_CONFIG_FILE, previousShared = process.env.L2NODE_SHARED_CONFIG_FILE;
 const previousLearning = process.env.BOT_KNOWLEDGE_ERRORS_ENABLED;
-const ini = path.join(directory, 'test.ini');
-fs.writeFileSync(ini, fs.readFileSync(path.join(root, 'config/default.ini'), 'utf8').replace(
-    /^\[Database\]\r?\npath\s*=\s*[^\r\n]+/m,
-    `[Database]\npath = ${path.join(directory, 'world.sqlite')}\nhistoryPath = ${path.join(directory, 'history.sqlite')}`));
-process.env.L2NODE_CONFIG_FILE = ini; delete process.env.L2NODE_SHARED_CONFIG_FILE;
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-relations-pk', root);
+const directory = fixture.directory;
 require('../src/Global');
+fixture.assertConfigured(options.default);
 const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Layers = require('../src/GameServer/Social/RelationshipLayers');
