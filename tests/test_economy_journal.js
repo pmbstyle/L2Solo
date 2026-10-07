@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+// Load native item data before the first counted market trade.
+invoke('GameServer/DataCache').init();
 
 const Database = invoke('Database');
 const EconomyJournal = invoke('EconomyJournal');
