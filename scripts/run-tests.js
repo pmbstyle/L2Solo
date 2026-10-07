@@ -999,7 +999,11 @@ const tests = [
     'tests/test_minimum_relations_pk.js',
     'tests/test_bot_improvements.js',
     'tests/test_database_mutation_admission.js',
-    'tests/test_party_assembly_events.js'
+    'tests/test_party_assembly_events.js',
+    'tests/test_bot_wtb_cached_survival_floor.js',
+    'tests/test_bot_wtb_recovery_floor.js',
+    'tests/test_cold_pvp_checkpoint_deadline.js',
+    'tests/test_market_fulfilled_wanted.js'
 
 ];
 
@@ -1042,6 +1046,10 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_bot_wtb_cached_survival_floor.js',
+    'tests/test_bot_wtb_recovery_floor.js',
+    'tests/test_cold_pvp_checkpoint_deadline.js',
+    'tests/test_market_fulfilled_wanted.js',
     'tests/test_cold_raid_preparation_checkpoint.js',
     'tests/test_cold_worker_market_origin.js',
     'tests/test_bot_acquisition_recovery.js',
