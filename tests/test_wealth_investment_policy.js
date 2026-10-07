@@ -1,10 +1,19 @@
 const assert = require('assert');
-
+const fs = require('node:fs');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('wealth-investment-policy');
 require('../src/Global');
-
+isolated.assertConfigured(options.default);
 const Policy = invoke('GameServer/Bot/Economy/WealthInvestmentPolicy');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const DataCache = invoke('GameServer/DataCache');
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const { captureAndRead, expectedSpendable } = require('./helpers/nativeEconomyPolicyAssertions');
+const NOW = 1791343645000;
 
+(async () => {
+try {
 const state = {
     persona: { primaryDrive: 'wealth', traits: {} },
     adena: 12000,
@@ -52,42 +61,53 @@ const relocated = {
 assert.strictEqual(SpotRiskPolicy.excludedSpotIdsForStates([relocated], backoff.until + 1).has('dion_ruins'), false,
     'the spot must become eligible again after the bounded cooldown');
 
-// The goal review passes the plan's reserve and the bot's own buy-order
-// escrow to the policy.
-const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
-const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-const DataCache = invoke('GameServer/DataCache');
+// ARCH-NOTE: the direct legacy compatibility policy above keeps its own
+// cushion. C1/E3 main goals instead read a real accepted worker decision and
+// its funded queue; the removed 81/72 ladder and flat plan reserve are not inputs.
 DataCache.init();
-const originalProjection = AfkTrade.ownerRecords;
-const gearGoal = (level, adena, escrow, equipmentPlan) => {
-    AfkTrade.ownerRecords = () => (escrow ? [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: escrow, lines: [] }] : []);
-    return NeedsEvaluator.evaluate({
-        characterId: 7, phase: 'cold', level, adena, spotId: 'starter', persona: { primaryDrive: 'wealth', traits: {} },
-        vitals: { hp: 900, maxHp: 1000, mp: 400, maxMp: 500 }, party: {},
-        stats: { classId: 0, deaths: 3, fightsResolved: 10, spotRisk: { spotId: 'starter', deathsAtEntry: 1, fightsAtEntry: 2 },
-            build: { grade: level >= 40 ? 'c' : 'd', classId: 0, level },
-            equipment: [{ selfId: 1, slot: 7, rank: 'none', name: 'Short Sword' }], equipmentPlan }
-    }, { spot: { id: 'starter', risk: 1, route: { id: 'starter_route' } }, now: 100000 })
-        .find((candidate) => candidate.type === 'upgrade_gear');
-};
-try {
-    // A reference-priced need: the cost in the bot's own buy order, the cushion in the wallet.
-    const rich = gearGoal(40, 100000000, 0);
-    assert.strictEqual(rich.priority, 81, 'fixture: a funded wealth investment');
-    const cost = Number(rich.plan.estimatedCost);
-    const cushion = Math.ceil(cost * Policy.RESERVE_RATE);
-    assert.strictEqual(gearGoal(40, cushion, cost).priority, 81, 'the goal review counts the buy-order escrow for the investment');
-    assert.strictEqual(gearGoal(40, cushion, 0).priority, 72, 'without the order the same wallet only saves');
-    // An NPC plan whose stored reserve is above the cushion: cost + cushion is not enough.
-    const chest = DataCache.items.find((entry) => String(entry.etc?.rank || '').toLowerCase() === 'd'
-        && String(entry.template?.kind || '').startsWith('Armor.') && entry.template?.kind !== 'Armor.Jewel'
-        && Number(entry.etc?.slot) === 10 && Number(entry.template?.price || 0) > 0);
-    const plan = { status: 'active', strategy: 'market', target: { selfId: chest.selfId, slot: 10 },
-        market: { town: 'Gludio', price: 100000, reserve: 30000, sourceType: 'npc' } };
-    assert.strictEqual(gearGoal(20, 125000, 0, plan).priority, 72,
-        'a wallet above the cushion but under the plan\'s reserve is no affordable investment');
-} finally {
-    AfkTrade.ownerRecords = originalProjection;
-}
+const gearState = (level, adena, equipmentPlan) => ({
+    characterId: 7, name: 'NativeInvestment', phase: 'cold', activity: 'hunting', level,
+    exp: Number(DataCache.experience[level - 1]), adena, updatedAt: NOW, spotId: 'starter',
+    currentRegion: 'Gludio', loc: { locX: -14464, locY: 128288, locZ: -3250 }, timing: {}, inventory: {},
+    persona: { primaryDrive: 'wealth', traits: {} },
+    vitals: { hp: 900, maxHp: 1000, mp: 400, maxMp: 500 }, party: {},
+    stats: { classId: 0, deaths: 3, fightsResolved: 10, spotRisk: { spotId: 'starter', deathsAtEntry: 1, fightsAtEntry: 2 },
+        build: { grade: level >= 40 ? 'c' : 'd', classId: 0, level },
+        equipment: [{ selfId: 1, slot: 7, rank: 'none', name: 'Short Sword' }], equipmentPlan }
+});
+const needsOptions = { spot: { id: 'starter', risk: 1, route: { id: 'starter_route' } } };
+const rich = await captureAndRead(gearState(40, 100000000), { timestamp: NOW, needsOptions });
+assert.strictEqual(rich.state.adena, 100000000, 'capturing wishes does not spend the rich wallet');
 
+// Declared own escrow enters the existing native snapshot context; compare
+// E3 on its actual returned packet. No physical buy order is created here.
+const escrow = 9000;
+const held = await captureAndRead(gearState(40, 3000), { timestamp: NOW,
+    context: { buyOrderEscrow: escrow }, needsOptions });
+assert.strictEqual(Funding.spendable(held.state, escrow, { r: held.state.stats.money[1] }),
+    expectedSpendable(held.state, { escrow, r: held.state.stats.money[1] }));
+const unheld = await captureAndRead(gearState(40, 3000), { timestamp: NOW, needsOptions });
+assert.strictEqual(Funding.spendable(unheld.state, 0, { r: unheld.state.stats.money[1] }),
+    expectedSpendable(unheld.state, { r: unheld.state.stats.money[1] }));
+
+const chest = DataCache.items.find((entry) => String(entry.etc?.rank || '').toLowerCase() === 'd'
+    && String(entry.template?.kind || '').startsWith('Armor.') && entry.template?.kind !== 'Armor.Jewel'
+    && Number(entry.etc?.slot) === 10 && Number(entry.template?.price || 0) > 0);
+assert(chest, 'the original market-plan fixture uses an authored D chest');
+const plan = { status: 'active', strategy: 'market', target: { selfId: chest.selfId, slot: 10 },
+    market: { town: 'Gludio', price: 100000, reserve: 30000, sourceType: 'npc' } };
+const planned = await captureAndRead(gearState(20, 125000, plan), { timestamp: NOW, needsOptions });
+const allowance = Funding.spendable(planned.state, 0, { itemId: chest.selfId });
+let itemRatio = 0;
+for (let at = 4; at + 2 < planned.state.stats.money.length; at += 3) {
+    if (planned.state.stats.money[at + 2] === chest.selfId) { itemRatio = planned.state.stats.money[at]; break; }
+}
+assert.strictEqual(allowance, expectedSpendable(planned.state, { r: itemRatio }),
+    'the actual queue funds the plan target; the old stored reserve cannot authorize a spend');
+assert.deepStrictEqual(planned.state.stats.equipmentPlan, plan, 'reading an accepted decision preserves the original plan');
 console.log('Wealth investment policy checks passed');
+} finally {
+    Economy.reset();
+    fs.rmSync(isolated.directory, { recursive: true, force: true });
+}
+})().catch(error => { console.error(error.stack); process.exitCode = 1; });
