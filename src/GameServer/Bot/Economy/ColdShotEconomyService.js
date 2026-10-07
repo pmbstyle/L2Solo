@@ -315,7 +315,13 @@ async function review(state, now = Date.now(), options = {}) {
 
 async function execute(state, step, now = Date.now()) {
     if (!Policy.eligible(state, now)) return state;
+    if ([...SHOT_RECIPE_ITEM_IDS].some(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0)) {
+        state = await LifeState.learnCraftableRecipes(state) || state;
+    }
     const known = await Database.fetchCharacterRecipes(state.characterId);
+    if (known.some(row => Number(Recipes.resolveByRecipeId(row.recipeId)?.recipeItemId) === Number(state.stats?.shotRecipeDemand?.itemId))) {
+        state = await persist({ ...state, stats: { ...(state.stats || {}), shotRecipeDemand: null } }, 'shot_recipe_demand_filled') || state;
+    }
     const index = { ...marketSnapshot(now) };
     index.scrapCraftRoutes = scrapCraftRoutes(state, known, index);
     if (step?.recipeTarget) {

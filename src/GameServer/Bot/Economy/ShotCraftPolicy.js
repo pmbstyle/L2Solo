@@ -187,6 +187,9 @@ function decide(state, index, knownRecipeIds = []) {
     // Existing published workshop entries also carry learned gear recipes
     // for the unchanged scrap-craft rule; shot DB ids arrive in context.
     const ids = new Set([...knownRecipeIds.map(Number), ...(state.stats?.workshop?.entries || []).map(row => Number(row.recipeId))]);
+    const owned = SHOT_RECIPE_IDS.map(id => Recipes.resolveByRecipeId(id)).find(recipe => recipe && !ids.has(Number(recipe.recipeId))
+        && Number(state.inventory?.[recipe.recipeItemId]?.amount || 0) > 0 && CraftShopService.canCraft(state, recipe));
+    if (owned) return { recipeTarget: Number(owned.recipeId) };
     const known = [...ids].map(recipeId => ({ recipeId }));
     const shotRecipes = known.map(row => Recipes.resolveByRecipeId(row.recipeId))
         .filter(recipe => recipe && SHOT_RECIPE_IDS.includes(Number(recipe.recipeId))

@@ -161,6 +161,21 @@ parentPort.on('message', message => {
             assert.equal(coordinator.counters.fences, 0);
             assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
         } finally { Goals.review = originalReview; }
-        console.log('Native worker recipe decision, physical guarded purchase/learning, zero economy fences and margin rejection passed');
+        // An owned natural drop is learned even when no current D-shot buyer
+        // exists; it is not a second recipe purchase or invented knowledge.
+        await Database.setItem(id, { selfId: 1804, name: 'Recipe: Soulshot D', amount: 1 });
+        state = await Life.syncExternalInventory(id, 'natural_recipe_fixture', Life.cachedState(id));
+        state = await Life.upsertState({ ...state, stats: { ...state.stats,
+            shotRecipeDemand: { itemId: 1804, amount: 1, maxSpend: 1, at: Date.now() } } }, 'owned_recipe_demand_fixture');
+        const noDemand = { ...await Shots.marketSnapshot(), shotDemand: new Map(), offersFor: () => [] };
+        const ownedStep = Policy.decide(state, noDemand, [317]);
+        assert.deepEqual(ownedStep, { recipeTarget: 20 }, 'a craftable owned book schedules native learning without requiring a purchase margin');
+        const beforeLearn = state.adena;
+        const learned = await Shots.execute(state, ownedStep);
+        assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === 20));
+        assert.equal(learned.adena, beforeLearn, 'learning an owned scroll spends no Adena');
+        assert.equal(learned.stats.shotRecipeDemand, null, 'learning fills the matching recipe demand');
+        assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === 1804).reduce((sum, row) => sum + row.amount, 0), 0);
+        console.log('Native worker recipe decision, physical purchase/owned-book learning, zero economy fences and margin rejection passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });
