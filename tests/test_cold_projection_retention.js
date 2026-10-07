@@ -186,7 +186,10 @@ async function publish() {
         assert.equal(coordinator.projectedEntryFor(row.characterId).ok, true);
 
         delivered = receive();
-        await coordinator.handleCommitResults([{ ok: true, characterId: row.characterId, revision: 5 }]);
+        const inputToken = { characterId: row.characterId, ownerId: 'cold_simulation_owner', revision: 4,
+            leaseId: 'projection_commit_fixture', leaseUntil: Date.now() + 30000 };
+        await coordinator.handleCommitResults([{ ok: true, characterId: row.characterId, revision: 5,
+            proposal: { token: inputToken, proposalId: 'projection_commit_fixture' } }]);
         message = await delivered;
         assert.equal(message.type, 'commit_ack');
         assert.equal(coordinator.projectedEntryFor(row.characterId).entry.context.targetNpcId,

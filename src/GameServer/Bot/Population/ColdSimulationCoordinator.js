@@ -152,6 +152,7 @@ class ColdSimulationCoordinator {
                 const memory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshots.get(Number(state.characterId));
                 const pressure = Director.pressureForState(state);
                 const party = context.party ? BackgroundPartyState.find(context.party.partyId) : null;
+                const leaf = !party ? this.economyDecisions.activity(state) : null;
                 return {
                     catalog: SpotProfiles.cache, physicalCatalog: SpotService.spots,
                     partyGeneration: BackgroundPartyState.generation(), party,
@@ -160,7 +161,7 @@ class ColdSimulationCoordinator {
                     clanId: invoke('GameServer/Clan/ClanSocialRuntime').view.memberships.get(Number(state.characterId)) || 0,
                     escrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
                     targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
-                        : directDropTargetNpcId(state.stats?.equipmentPlan)
+                        : leaf?.activity === 'hunting' ? (leaf.npcId || null) : null
                 };
             }
         });
