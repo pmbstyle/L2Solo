@@ -101,7 +101,13 @@ function standingBuyNeed(state, lines, candidates) {
     const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
     if (!items.size) return false;
     const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
-    if (needs.length === 1 && needs[0].target?.condition === 'alive_and_recovered') return true;
+    // ARCH-NOTE: NeedsEvaluator's native survival floor carries rest/revive
+    // in plan.kind; it no longer sets the retired target.condition field.
+    // Recovery defers wish judgement, while an NPC plan still holds no WTB.
+    if (needs.length === 1 && (needs[0].target?.condition === 'alive_and_recovered'
+        || needs[0].type === 'recover' && ['rest', 'revive'].includes(needs[0].plan?.kind))) {
+        return state.stats?.equipmentPlan?.market?.sourceType !== 'npc';
+    }
     // A purchase planned at an NPC shop never holds a WTB, rest or not.
     return needs.some((need) => desiredSide(need) === AfkTrade.BUY && need.plan?.sourceType !== 'npc'
         && items.has(Number(need.target?.itemId)));
