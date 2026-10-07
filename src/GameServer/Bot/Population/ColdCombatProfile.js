@@ -817,14 +817,18 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 }
 
 // ARCH-NOTE: Float32 changed queue/focus for 15 of 300 saved builds.
-// Float64 gains preserve exact decisions; 128 packed candidates keep heap plus buffers below 4 KB per bot.
+// Float64 preserves every nonzero and signed-zero result; exact +0/+0 uses
+// one slot marker. 256 Uint16 IDs share a buffer with 128 Float64 pairs.
+// Native 1,000-owner strong dominators: max entry 3,560 B including buffers,
+// plus amortized build/owner tables, key boxes and night markers 148.32 B.
+// The resulting 3,708.32 B remains below the 4 KB per-owner budget.
 // Shared candidate names are interned once; a build keeps only numeric hashes,
 // power numbers and packed gains. Owners release both variants and night markers.
 const buildGains = new Map();
 const ownerBuilds = new Map();
 const candidateIndex = new Map();
 const POWER_FIELDS = ['pAtk', 'mAtk', 'atkSpd', 'castSpd', 'pDef', 'mDef', 'maxHp'];
-const CANDIDATE_LIMIT = 65536, ENTRY_LIMIT = 128;
+const CANDIDATE_LIMIT = 65536, ENTRY_LIMIT = 256, NONZERO_LIMIT = 128;
 function ownerLimit() {
     return Math.ceil(1.25 * Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0));
 }
@@ -865,9 +869,17 @@ function powerNumbers(entry) {
 function buildOptions(entry, timestamp) {
     return { night: entry.night === 0 ? false : GameTime.isNight(timestamp) };
 }
+function resizeGains(entry, idCapacity, gainCapacity) {
+    const buffer = new ArrayBuffer(idCapacity * 3 + gainCapacity * 16);
+    const ids = new Uint16Array(buffer, 0, idCapacity), slots = new Uint8Array(buffer, idCapacity * 2, idCapacity);
+    const gains = new Float64Array(buffer, idCapacity * 3, gainCapacity * 2);
+    if (entry.ids) { ids.set(entry.ids); slots.set(entry.slots); gains.set(entry.gains); }
+    entry.ids = ids; entry.slots = slots; entry.gains = gains;
+    return entry;
+}
 function newEntry(power, night, baseKey) {
-    return { power: Float64Array.from(POWER_FIELDS.map(field => power[field])), ids: new Int32Array(32),
-        gains: new Float64Array(64), size: 0, owners: 0, night, baseKey };
+    return resizeGains({ power: Float64Array.from(POWER_FIELDS.map(field => power[field])),
+        size: 0, gainSize: 0, owners: 0, night, baseKey }, 32, 32);
 }
 function buildGainsFor(state = {}, timestamp = Date.now()) {
     const text = powerKey(state, timestamp), baseKey = buildHash(text);
@@ -920,19 +932,26 @@ function gainFor(entry, key, compute) {
         candidateIndex.set(key, id);
     }
     for (let index = 0; id !== undefined && index < entry.size; index++) {
-        if (entry.ids[index] === id) return { attack: entry.gains[index * 2], defence: entry.gains[index * 2 + 1] };
+        if (entry.ids[index] !== id) continue;
+        const slot = entry.slots[index];
+        return slot === 0 ? { attack: 0, defence: 0 }
+            : { attack: entry.gains[(slot - 1) * 2], defence: entry.gains[(slot - 1) * 2 + 1] };
     }
     const effect = compute();
-    if (id === undefined || entry.size >= ENTRY_LIMIT) return effect;
-    if (entry.size === entry.ids.length) {
-        const ids = new Int32Array(Math.min(ENTRY_LIMIT, entry.ids.length * 2)), gains = new Float64Array(ids.length * 2);
-        ids.set(entry.ids); gains.set(entry.gains); entry.ids = ids; entry.gains = gains;
-    }
+    const zero = Object.is(effect.attack, 0) && Object.is(effect.defence, 0);
+    if (id === undefined || entry.size >= ENTRY_LIMIT || (!zero && entry.gainSize >= NONZERO_LIMIT)) return effect;
+    const idCapacity = entry.size === entry.ids.length ? Math.min(ENTRY_LIMIT, entry.ids.length * 2) : entry.ids.length;
+    const gainCapacity = !zero && entry.gainSize * 2 === entry.gains.length
+        ? Math.min(NONZERO_LIMIT, entry.gains.length) : entry.gains.length / 2;
+    if (idCapacity !== entry.ids.length || gainCapacity * 2 !== entry.gains.length) resizeGains(entry, idCapacity, gainCapacity);
     const index = entry.size++;
     entry.ids[index] = id;
-    entry.gains[index * 2] = effect.attack;
-    entry.gains[index * 2 + 1] = effect.defence;
-    return { attack: entry.gains[index * 2], defence: entry.gains[index * 2 + 1] };
+    if (zero) { entry.slots[index] = 0; return { attack: 0, defence: 0 }; }
+    const slot = entry.gainSize++;
+    entry.slots[index] = slot + 1;
+    entry.gains[slot * 2] = effect.attack;
+    entry.gains[slot * 2 + 1] = effect.defence;
+    return { attack: entry.gains[slot * 2], defence: entry.gains[slot * 2 + 1] };
 }
 function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds.size, candidateIndex: candidateIndex.size }; }
 

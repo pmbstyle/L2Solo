@@ -300,7 +300,7 @@ check('a party composition keeps no proposed groups; a real group is kept until 
 check('93 packed candidates fit under 4 KB, candidate and entry caps do not grow', () => {
     const entry = Profile.buildGainsFor(base({ characterId: 801, level: 40 }), 0);
     assert.ok(entry.power instanceof Float64Array);
-    assert.ok(entry.ids instanceof Int32Array);
+    assert.ok(entry.ids instanceof Uint16Array);
     assert.ok(entry.gains instanceof Float64Array);
     for (let i = 0; i < 93; i++) Profile.gainFor(entry, `p:packed:${i}`, () => ({ attack: i / 100, defence: .2 }));
     assert.equal(entry.size, 93);
