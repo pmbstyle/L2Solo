@@ -349,7 +349,10 @@ async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const ads = buyAds(ownerId);
     let side = desiredSide(goal);
-    if (side !== AfkTrade.BUY && state.phase === 'cold') {
+    // ARCH-NOTE: a cached voluntary watch may still match a newly dead/resting
+    // state. The native survival floor judges before that watch can change its side.
+    if (side !== AfkTrade.BUY && state.phase === 'cold'
+        && !invoke('GameServer/Bot/Population/SurvivalFloor').forState(state, Date.now())) {
         const wanted = require('../Population/ColdEconomyDecision').economyFor(state).watchList[0];
         if (wanted) { goal = { type: 'buy_craft_material', target: { itemId: wanted.itemId, amount: wanted.amount },
             plan: { estimatedCost: wanted.worth, purpose: wanted.kind } }; side = AfkTrade.BUY; }
