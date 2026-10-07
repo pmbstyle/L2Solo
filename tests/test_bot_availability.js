@@ -1,8 +1,11 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
 require('../src/Global');
 
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
+const PartyDecision = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
+const Roll = invoke('GameServer/Bot/AI/TendencyRoll');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const InteractionMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const originalAssess = InteractionMemory.assess;
@@ -135,7 +138,12 @@ try {
         persona: { primaryDrive: 'social', traits: { sociability: 0.80, empathy: 0.80, commitment: 0.70 } }
     };
     result = BotAvailability.evaluateState(lowPlayer, farColdBot);
-    assert.strictEqual(result.available, true, 'distance should not block a cold bot that can activate near the player');
+    const farColdDecision = PartyDecision.evaluate(farColdBot, memory, { peer: lowPlayer });
+    assert.strictEqual(result.available, farColdDecision.accept, 'distance must preserve the native persona decision');
+    assert.strictEqual(result.reason, farColdDecision.reason);
+    const nearColdResult = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, loc: { locX: 0, locY: 0, locZ: 0 } });
+    assert.strictEqual(nearColdResult.available, result.available, 'moving this exact actor into invite range must not change admission');
+    assert.deepStrictEqual(nearColdResult.partyDecision, result.partyDecision, 'distance is a diagnostic, never part of the tendency seed');
     assert.strictEqual(Math.round(result.distance), 100000, 'availability should still expose distance for diagnostics');
 
     result = BotAvailability.evaluateState(lowPlayer, { ...farColdBot, activity: 'traveling' });
@@ -159,8 +167,11 @@ try {
         persona: { primaryDrive: 'wealth', traits: { sociability: 0.30, empathy: 0.35, commitment: 0.45 } }
     });
     result = BotAvailability.evaluate(lowPlayer, soloBot);
-    assert.strictEqual(result.available, false, 'a reserved persona may decline after all hard checks pass');
-    assert.strictEqual(result.reason, 'prefers_solo');
+    const soloDecision = PartyDecision.evaluate(soloBot, memory, { peer: lowPlayer });
+    assert.strictEqual(result.available, soloDecision.accept, 'a reserved persona retains its seeded right to accept or decline');
+    assert.strictEqual(result.reason, soloDecision.reason);
+    assert(soloDecision.probability < PartyDecision.evaluate(socialBot, memory, { peer: lowPlayer }).probability,
+        'the original reserved traits must still produce a lower party tendency than the original social traits');
     result = BotAvailability.evaluate(lowPlayer, soloBot, { forceFriend: true });
     assert.strictEqual(result.available, true, 'a const friend invite must override persona solo preference');
 
@@ -176,15 +187,44 @@ try {
     const lowTrust = [['relationship_hostile', 'we still have a conflict to settle'],
         ['relationship_hostile', 'we still have a conflict to settle']];
     const abandoned = [['recently_abandoned', 'recently abandoned'], ['recently_abandoned', 'recently abandoned']];
-    const open = [['available', 'available'], ['available', 'available']];
+    // The social hard gate is open. The final answer still belongs to the
+    // authored party tendency, rather than the retired score >= 45 shortcut.
+    const open = [socialBot, farColdBot].map(subject => {
+        const decision = PartyDecision.evaluate(subject, { trust: 0, familiarity: 0, recentlyAbandonedAt: null }, { peer: lowPlayer });
+        return [decision.reason, decision.reasonText];
+    });
     assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: null }), lowTrust);
     assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at - 1000 }), lowTrust,
         'distrust is named before an abandonment');
     assert.deepStrictEqual(refusal({ trust: -5, familiarity: 0, recentlyAbandonedAt: null }), open);
     assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 + 1 }), abandoned);
     assert.deepStrictEqual(refusal({ trust: 0, familiarity: 0, recentlyAbandonedAt: at - 5 * 60 * 1000 }), open);
-    assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at }, { forceFriend: true }), open,
+    assert.deepStrictEqual(refusal({ trust: -6, familiarity: 0, recentlyAbandonedAt: at }, { forceFriend: true }),
+        [['available', 'available'], ['available', 'available']],
         'a const friend summon ignores social refusals');
+    memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
+
+    // Keep the original actor ID and bounded distinct invitation events. The
+    // hot/cold adapter must propagate both positive and negative native rolls.
+    let admits = 0, declines = 0;
+    const hotColdTwin = session(actor(farColdBot.characterId, farColdBot.level, 0, { locX: 100000 }), { persona: farColdBot.persona });
+    for (let inviteAttempts = 0; inviteAttempts < 64; inviteAttempts++) {
+        memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null, inviteAttempts };
+        const hot = BotAvailability.evaluate(lowPlayer, hotColdTwin);
+        const cold = BotAvailability.evaluateState(lowPlayer, farColdBot);
+        const roll = Roll.roll('party_invite', farColdBot.characterId, lowPlayer.actor.fetchId(), inviteAttempts);
+        const social = 0.80 - 0.5 + 0.80 * 0.25 + 0.70 * 0.15;
+        const probability = Math.max(0.02, Math.min(0.98, 0.5 + social / (2 * (1 + Math.abs(social)))));
+        assert.strictEqual(hot.partyDecision.roll, roll);
+        assert.strictEqual(cold.partyDecision.roll, roll);
+        assert.strictEqual(hot.partyDecision.probability, probability);
+        assert.strictEqual(cold.partyDecision.probability, probability);
+        assert.strictEqual(hot.available, roll < probability);
+        assert.strictEqual(cold.available, hot.available, 'hot/cold answer parity for the same actor and invitation event');
+        assert.strictEqual(cold.reason, hot.reason);
+        if (cold.available) admits++; else declines++;
+    }
+    assert(admits > 0 && declines > 0, 'both authored tendency outcomes must remain reachable after hard gates pass');
     memory = { trust: 0, familiarity: 0, recentlyAbandonedAt: null };
 
     const farLowFriend = session(actor(2000015, 55, 0, { locX: 100000 }), {
