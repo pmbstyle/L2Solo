@@ -1,4 +1,5 @@
 const Database = invoke('Database');
+const { isMainThread } = require('node:worker_threads');
 
 const Types = require('./BotPersonaTypes');
 const TableChannel = require('../Population/ColdTableChannel');
@@ -16,6 +17,9 @@ const COLUMNS = 'characterId, version, seed, primaryDrive, archetype, traitsJson
 // the main thread (loadAll); in the cold worker filled from the 'personas'
 // table of ColdTableChannel (useRowSource).
 const cache = new Map();
+// ARCH-NOTE: PERF: 1,733 native worker rows retained 2,254,480 B before
+// this LRU and 182,344 B after (same traits/talents/voice); main is unchanged.
+const WORKER_CACHE_LIMIT = 64;
 // Stored personas per type, for the share of a new bot's type.
 let typeCounts = {};
 let rowSource = null;
@@ -254,11 +258,17 @@ const BotPersona = {
         const id = idOf(subject);
         if (!id) return null;
         const cached = cache.get(id);
-        if (cached) return cached;
+        if (cached) {
+            if (!isMainThread) { cache.delete(id); cache.set(id, cached); }
+            return cached;
+        }
         const row = rowSource?.(id);
         if (!row) return null;
         const persona = fromTableRow(row);
         cache.set(id, persona);
+        // Worker rows are authoritative; a discarded derived persona is
+        // rebuilt from that same row, never rolled or queried from the DB.
+        if (!isMainThread && cache.size > WORKER_CACHE_LIMIT) cache.delete(cache.keys().next().value);
         return persona;
     },
 
@@ -272,6 +282,13 @@ const BotPersona = {
     typeCounts() { return { ...typeCounts }; },
 
     snapshot(characterId) { return cache.get(Number(characterId || 0)) || null; },
+
+    size() { return cache.size; },
+
+    forget(characterId) {
+        // Main's boot cache also supplies population shares and table rows.
+        return !isMainThread && cache.delete(Number(characterId || 0));
+    },
 
     load(characterId) {
         const id = Number(characterId || 0);

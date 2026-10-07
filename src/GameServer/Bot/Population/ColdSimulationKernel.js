@@ -1,4 +1,5 @@
 const CharacterStateSources = require('../../World/CharacterStateSources');
+const { isMainThread } = require('node:worker_threads');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
@@ -562,6 +563,7 @@ class ColdSimulationKernel {
         this.pendingReleases.delete(id);
         // Standalone kernels cannot have game economy entries before Global loads.
         if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
+        if (!isMainThread && typeof invoke === 'function') invoke('GameServer/Bot/AI/BotPersona').forget(id);
         const current = this.states.get(id);
         const partyId = String(this.inFlight.get(id)?.partyId || this.claimAttempts.get(id)?.partyId
             || current?.context?.party?.partyId || current?.state?.party?.partyId || '');
