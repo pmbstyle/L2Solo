@@ -1,8 +1,46 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
 require('../src/Global');
 
 const World = invoke('GameServer/World/World');
+
+// Native ActorModel/World publication follows test_n62_visibility_index.
+// This isolated fixture creates no database rows, cold claims or World timers.
+const ActorModel = invoke('GameServer/Model/Actor');
+const publishedSessions = new Set();
+let fixtureWorld;
+function clearPublishedSessions() {
+    // Disconnect the whole old scene before removing its registrations: no
+    // still-connected peer should receive an unrelated clan UI update here.
+    for (const session of publishedSessions) session.actor.setIsOnline(false);
+    for (const session of publishedSessions) World.removeUser(session);
+    publishedSessions.clear();
+}
+function publishSessions(sessions) {
+    clearPublishedSessions();
+    if (!fixtureWorld) {
+        fixtureWorld = { sessions: [], revision: 0 };
+        World.user = fixtureWorld;
+    }
+    for (const session of sessions) {
+        session.actor.session = session;
+        World.insertUser(session);
+        session.actor.setIsOnline(true);
+        publishedSessions.add(session);
+    }
+}
+function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) {
+    const session = { accountId, fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe: receive,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    session.actor = new ActorModel({ id: characterId, name: accountId, username: accountId,
+        title: '', level: 20, classId: 0, clanId, clanPrivileges: 0,
+        locX, locY: 0, locZ: 0, hp: 100, maxHp: 100, isOnline: false });
+    session.actor.session = session;
+    return session;
+}
+
 const BotManager = invoke('GameServer/Bot/BotManager');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const previousMaxPlayingPopulation = process.env.BOT_POPULATION_MAX_PLAYING;
@@ -16,20 +54,18 @@ const PopulationStatus = invoke('GameServer/Bot/Population/PopulationStatus');
 assert.strictEqual(Config.maxPlayingPopulation, 1700, 'population cap must be normalized to a whole character count');
 
 function actor(id, x, level = 10, karma = 0) {
-    return {
-        fetchId: () => id,
-        fetchLocX: () => x,
-        fetchLocY: () => 0,
-        fetchLocZ: () => 0,
-        fetchLevel: () => level,
-        fetchKarma: () => karma,
-        fetchIsOnline: () => true
-    };
+    // Preserve the original IDs/coordinates/levels/karma and online hot
+    // facades, including BotManager-only service rows outside this World scene.
+    return new ActorModel({ id, name: `Actor${id}`, username: `Actor${id}`, title: '',
+        locX: x, locY: 0, locZ: 0, level, karma, classId: 0, clanId: 0,
+        hp: 100, maxHp: 100, isOnline: true });
 }
 
 function session(accountId, value, options = {}) {
     return {
         accountId,
+        fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe() {}, dataSendToOthers() {},
         actor: value,
         plan: options.plan || 'hunting',
         populationHotAt: options.populationHotAt,
@@ -79,7 +115,7 @@ async function run() {
     Config.cooldownGraceMs = 120000;
     Config.cooldownRadius = 11000;
     Config.cooldownBatchSize = 20;
-    World.user = { sessions: [playerSession, nearBotA, nearBotB, farBot, youngFarBot] };
+    publishSessions([playerSession, nearBotA, nearBotB, farBot, youngFarBot]);
     BotManager.sessions = [nearBotA, nearBotB, farBot, farCraftBot, farPk, ordinaryPk, youngFarBot];
     const populationCounts = PopulationStatus.counts();
     assert.strictEqual(populationCounts.hot, 7, 'raw hot telemetry must retain every materialized bot session');
@@ -145,7 +181,7 @@ async function run() {
     const highLevelPlayer = session('player_high_level', actor(9, 0, 78));
     const highBotA = session('bot_high_a', actor(10, 1000, 45), { populationHotAt: Date.now() - 300000 });
     const highBotB = session('bot_high_b', actor(11, 2000, 45), { populationHotAt: Date.now() - 300000 });
-    World.user = { sessions: [highLevelPlayer, highBotA, highBotB] };
+    publishSessions([highLevelPlayer, highBotA, highBotB]);
     BotManager.sessions = [highBotA, highBotB];
     LifeState.coldNear = () => Promise.resolve([
         { characterId: 108, name: 'ColdLevel45', level: 45 }
@@ -189,6 +225,7 @@ run()
         process.exitCode = 1;
     })
     .finally(() => {
+        clearPublishedSessions();
         World.user = originalUsers;
         BotManager.sessions = originalSessions;
         LifeState.coldNear = originalColdNear;
