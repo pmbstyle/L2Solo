@@ -1,14 +1,17 @@
 const assert = require('assert');
 const fs = require('fs');
 const vm = require('vm');
+const { createRequire } = require('node:module');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 Data.init();
 const Cap = invoke('GameServer/Progression/ProgressionCap');
 function load(file, dependencies, extra = '', globals = {}) {
     const box = { exports: {} };
-    vm.runInNewContext(fs.readFileSync(require.resolve('../src/' + file), 'utf8') + extra, {
-        module: box, invoke: name => dependencies[name] || {}, require,
+    const filename = require.resolve('../src/' + file);
+    vm.runInNewContext(fs.readFileSync(filename, 'utf8') + extra, {
+        module: box, invoke: name => dependencies[name] || {}, require: createRequire(filename),
         path: { actor: 'generics' }, options, utils: { infoWarn() {} }, ...globals
     });
     return box.exports;

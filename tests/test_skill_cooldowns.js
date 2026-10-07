@@ -1,8 +1,9 @@
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-skill-reuse');
 require('../src/Global');
+fixture.assertConfigured(options.default);
 const Actor = invoke('GameServer/Actor/Actor');
 const Skill = invoke('GameServer/Model/Skill');
 const Reuse = invoke('GameServer/Skills/SkillReuse');
@@ -55,8 +56,7 @@ Reuse.restore(restored, [{ id: 127, until: now - 1 }], now);
 assert.equal(restored.skillReuseUntil.size, 0);
 
 // Exercise the actual DB migration and status write against a disposable database.
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-skill-reuse-'));
-options.default.Database.path = path.join(dir, 'test.sqlite');
+const dir = fixture.directory;
 (async () => {
     try {
         // Neither logout nor character selection may acknowledge before the save completes.
@@ -73,6 +73,10 @@ options.default.Database.path = path.join(dir, 'test.sqlite');
                     events.push('reset-ui');
                 } },
                 'GameServer/World/ArenaDuelService': { release() {} },
+                'GameServer/World/World': { retireUserActor(session, currentActor) {
+                    assert.strictEqual(currentActor, session.actor);
+                    events.push('retire');
+                } },
                 'GameServer/Effects/EffectTicker': { clearAll() {} }
             };
             const context = { module: { exports: {} }, invoke: key => dependencies[key] };
@@ -82,9 +86,9 @@ options.default.Database.path = path.join(dir, 'test.sqlite');
             assert.deepStrictEqual(events, ['reset-ui']);
             finishSave();
             await pending;
-            assert.deepStrictEqual(events, ['reset-ui', 'destroy', 'reply']);
+            assert.deepStrictEqual(events, ['reset-ui', 'retire', 'destroy', 'reply']);
         }
-        Database.init();
+        await Database.init();
         await Database.createAccount('reuse_test', 'test');
         await Database.createCharacter('reuse_test', { name: 'ReuseProbe', race: 0, classId: 0,
             maxHp: 50, maxMp: 25, sex: 0, face: 0, hair: 0, hairColor: 0, locX: 0, locY: 0, locZ: 0 });
@@ -93,7 +97,7 @@ options.default.Database.path = path.join(dir, 'test.sqlite');
         actor.skillReuseDetails.set(127, { duration: 600000, level: 14 });
         await Database.updateCharacterStatus(character.id, Status.persistenceRecord(actor));
         await Database.close();
-        Database.init();
+        await Database.init();
         const saved = (await Database.fetchCharacters('reuse_test'))[0];
         Reuse.restore(restored, saved.skillCooldowns, now + 10000);
         assert.equal(restored.skillReuseUntil.get(127), now + 600000);
