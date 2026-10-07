@@ -42,7 +42,8 @@ async function check(name, work) {
     await check('empty and future metadata have exact scalar and age parity without detailed classification', () => {
         const h = kernel();
         const initial = light(h);
-        assert.deepEqual(initial.queueHead, { kind: 'alarm', dueAt: at + 1800000, overdue: false, ageMs: 0, current: true });
+        // ARCH-NOTE: M7 removes the worker's autonomous safety alarm.
+        assert.deepEqual(initial.queueHead, { kind: 'empty', dueAt: null, overdue: false, ageMs: 0, current: false });
         for (const entry of [...h.alarms.values()]) h.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
         assert.deepEqual(light(h).queueHead, { kind: 'empty', dueAt: null, overdue: false, ageMs: 0, current: false });
         h.upsert(state(1)); h.upsert(state(2, at + 80000));
@@ -56,7 +57,12 @@ async function check(name, work) {
         assert.deepEqual(light(h), expected); noLegacy(light(h)); assert.deepEqual(image(h), before);
     });
     await check('stale physical head is reported without popping, seeking or fabricating normal work', () => {
-        const h = kernel(); h.upsert(state(1, at - 100)); h.requeue(1, at + 500);
+        const h = kernel(); h.upsert(state(1, at - 100));
+        const retired = h.heap.peek(); h.requeue(1, at + 500);
+        // ARCH-NOTE: M6 removes replaced nodes immediately. Inject a lost
+        // unowned node to retain the read-only stale-head contract check.
+        assert(!h.heap.values.includes(retired), 'rescheduling releases the old node');
+        h.heap.push(retired);
         const before = image(h), original = h.heap.peek;
         let peeks = 0; h.heap.peek = function () { peeks++; return original.call(this); };
         h.heap.pop = () => { throw Error('heartbeat cannot clean stale head'); };
@@ -77,7 +83,7 @@ async function check(name, work) {
         const before = image(h), entry = h.heap.peek();
         h.drainOperationalAlarms = () => { throw Error('no alarm dispatch'); };
         assert.equal(token, entry.alarmToken);
-        assert.deepEqual(light(h).queueHead, { kind: 'alarm', dueAt: at - 100, overdue: true, ageMs: 100, current: true });
+        assert.deepEqual(light(h).queueHead, { kind: 'alarm', alarmKind: 'claim_ack', dueAt: at - 100, overdue: true, ageMs: 100, current: true });
         assert.deepEqual(image(h), before);
         h.alarms.set(entry.alarmKey, { ...entry });
         assert.equal(light(h).queueHead.current, false, 'an equal-looking replacement alarm is not the peeked entry');
