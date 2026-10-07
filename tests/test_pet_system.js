@@ -1,8 +1,11 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const isolated = require('./helpers/isolatedSocialDatabase')('pet_system', path.resolve(__dirname, '..'));
+require('./helpers/databaseIsolation');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 const Rules = invoke('GameServer/Pets/PetRules');
 const Runtime = invoke('GameServer/Pets/PetRuntime');
 const Inventory = invoke('GameServer/Pets/PetInventory');
@@ -12,8 +15,8 @@ const World = invoke('GameServer/World/World');
 const Database = invoke('Database');
 const Control = invoke('GameServer/Npc/SummonControl');
 const Response = invoke('GameServer/Network/Response');
-const temp = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'pet-system-'));
-const dbPath = path.join(temp, 'world.sqlite');
+const temp = isolated.directory;
+const dbPath = isolated.world;
 function owner(backpack) {
     const packets = [];
     const actor = { backpack, pet: null, mounted: false, fetchId: () => 2000001, fetchName: () => 'PetOwner', fetchLevel: () => 40,
@@ -96,6 +99,20 @@ async function main() {
     Runtime.recordDamage(mob, pet, 60);
     assert.strictEqual(Runtime.rewardDamage(mob, 1000, 100), 0.4);
     assert.strictEqual(pet.fetchExp() - beforeXp, Math.round(600 * invoke('GameServer/ProgressionRates').profile().exp));
+    // Direct pet allocation above receives an already-valued pool. The kill
+    // entry point first applies the owner's level gap to the mob reward.
+    // These controls derive the oracle from the unchanged fixture levels,
+    // not from the reward produced by NpcDied or the MobExperience helper.
+    const MobExperience = invoke('GameServer/Progression/MobExperience');
+    const equalLevelRewards = MobExperience.rewards(1000, 100, 15, 15);
+    assert.deepStrictEqual(equalLevelRewards, { exp: 1000, sp: 100 },
+        'equal-level mob rewards retain the complete authored pool');
+    const ownerGapFactor = (5 / 6) ** (40 - 15 - 5);
+    const gapRewards = MobExperience.rewards(1000, 100, 40, 15);
+    assert.deepStrictEqual(gapRewards, { exp: 1000 * ownerGapFactor, sp: 100 * ownerGapFactor },
+        'the owner-level gap scales EXP and SP before pet allocation');
+    assert(gapRewards.exp < equalLevelRewards.exp,
+        'the over-level owner cannot receive the equal-level reward pool');
     // Exercise the actual kill reward entry point with the pet as the killer.
     const Generics = invoke('GameServer/Actor/Generics');
     const Quests = invoke('GameServer/Quest/QuestService');
@@ -111,9 +128,9 @@ async function main() {
         Runtime.recordDamage(target, pet, 60);
         const beforeKill = pet.fetchExp();
         invoke('GameServer/Actor/Generics/NpcDied')(session, pet, target);
-        assert.strictEqual(pet.fetchExp() - beforeKill, Math.round(600 * invoke('GameServer/ProgressionRates').profile().exp));
+        assert.strictEqual(pet.fetchExp() - beforeKill, Math.round(600 * ownerGapFactor * invoke('GameServer/ProgressionRates').profile().exp));
         assert.strictEqual(ownerReward.recipient, session);
-        assert.strictEqual(ownerReward.exp, 400, 'pet contribution is removed from the owner reward pool');
+        assert.strictEqual(ownerReward.exp, Math.round(400 * ownerGapFactor), 'pet contribution is removed from the owner reward pool');
         assert.strictEqual(questKiller, session, 'pet kills are attributed to the owner quest');
     } finally {
         [World.removeNpc, Generics.abortCombatState, Generics.experienceReward, Quests.onKill] = previous;
@@ -214,4 +231,4 @@ async function main() {
     fs.rmSync(temp, { recursive: true, force: true });
     console.log('Pet system persistence, inventory, XP and death checks passed');
 }
-main().catch(async error => { console.error(error); if (World.user?.sessions?.[0]?.actor?.pet) World.user.sessions[0].actor.pet.destructor(World.user.sessions[0]); await Database.close().catch(() => {}); process.exitCode = 1; });
+main().catch(async error => { console.error(error); if (World.user?.sessions?.[0]?.actor?.pet) World.user.sessions[0].actor.pet.destructor(World.user.sessions[0]); await Database.close().catch(() => {}); process.exitCode = 1;  }).finally(() => { fs.rmSync(temp, { recursive: true, force: true }); });
