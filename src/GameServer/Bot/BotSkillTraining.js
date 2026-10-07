@@ -14,14 +14,19 @@ function stateFor(actor) {
             selfId: skill.fetchSelfId(), level: skill.fetchLevel() })) } } };
 }
 
-function review(session) {
+function review(session, { onSpAward = false } = {}) {
     const actor = session?.actor;
     if (!actor || !String(session.accountId || '').startsWith('bot_')) return Promise.resolve(null);
+    const gate = session.skillTrainingGate;
+    if (onSpAward && gate && gate.level === actor.fetchLevel() && gate.classId === actor.fetchClassId()
+        && actor.fetchSp() < gate.nextSp) return Promise.resolve(null);
     if (pending.has(actor)) return pending.get(actor);
     const Progression = invoke('GameServer/Bot/BotClassProgression');
     const state = stateFor(actor);
+    const setGate = current => { session.skillTrainingGate = { level: current.level, classId: current.stats.classId,
+        nextSp: Catalog.nextTrainingSp(current) }; };
     if (!Catalog.needsTraining(state) && !Progression.plan({ classId: actor.fetchClassId(), level: actor.fetchLevel(),
-        seed: actor.fetchId() }).transitions.length) return Promise.resolve(null);
+        seed: actor.fetchId() }).transitions.length) { setGate(state); return Promise.resolve(null); }
     const work = Progression.reconcile({ characterId: actor.fetchId(), classId: actor.fetchClassId(),
         level: actor.fetchLevel(), seed: actor.fetchId() }, { beforeWrite() {
         if (session.actor !== actor || session.populationStaging) throw new Error('bot_training_actor_retired');
@@ -38,6 +43,7 @@ function review(session) {
             await actor.skillset.populate(actor.fetchId());
             invoke(path.actor).calculateStats(session, actor);
         }
+        setGate(stateFor(actor));
         return result;
     }).finally(() => pending.delete(actor));
     pending.set(actor, work);

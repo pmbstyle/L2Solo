@@ -3,6 +3,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const directory = path.join(require('node:os').tmpdir(), `l2solo-skill-gate-${require('node:crypto').randomUUID()}`);
+fs.mkdirSync(directory);
+const config = path.join(directory, 'fixture.ini'), source = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const sections = source.indexOf('[AuthServer]'); assert(sections > 0);
+fs.writeFileSync(config, `[Database]\npath = ${path.join(directory,'world.sqlite')}\nhistoryPath = ${path.join(directory,'history.sqlite')}\n\n${source.slice(sections)}`);
+process.env.L2NODE_CONFIG_FILE = config; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
@@ -12,10 +18,11 @@ const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 
 async function main() {
-    const directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'test-skill-books-'));
-    options.default.Database.path = path.join(directory, 'world.sqlite');
-    options.default.Database.historyPath = path.join(directory, 'history.sqlite');
     try {
+        assert.equal(options.default.Database.path,path.join(directory,'world.sqlite'));
+        assert.equal(options.default.Database.historyPath,path.join(directory,'history.sqlite'));
+        assert(path.isAbsolute(options.default.Database.path) && path.isAbsolute(options.default.Database.historyPath));
+        console.log('Isolated native skill paths:',options.default.Database.path,options.default.Database.historyPath);
         Data.init(); Database.init(); assert(Database.isReady());
         assert.equal(Catalog.nextTraining(16, 45, 1011).bookId, null, 'Heal no longer requires an attack book');
         assert.equal(Catalog.nextTraining(16, 45, 1027).bookId, null, 'Group Heal no longer requires an attack book');

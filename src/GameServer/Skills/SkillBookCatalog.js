@@ -82,6 +82,18 @@ function needsTraining(state = {}) {
     });
 }
 
+function nextTrainingSp(state = {}) {
+    const known = learned(state), classId = Number(state.stats?.classId ?? state.classId);
+    let next = Infinity;
+    for (const entry of entries(classId)) {
+        const training = nextTraining(classId, state.level, entry.selfId, known.get(Number(entry.selfId)) || 0);
+        if (training && (training.bookId === null || Number(state.inventory?.[training.bookId]?.amount || 0) > 0)) {
+            next = Math.min(next, training.sp);
+        }
+    }
+    return next;
+}
+
 // Native training pays from the committed balance. Apply its exact delta to
 // an incoming cold resolve, which can also contain newly earned SP or books.
 function applyTraining(state, result = {}) {
@@ -110,5 +122,5 @@ function applyActor(session, result = {}) {
     invoke('GameServer/Item/Item').bindInventory(actor.backpack);
 }
 
-module.exports = { entries, nextTraining, requiredBooks, missingBooks, needsTraining, applyTraining, applyActor,
+module.exports = { entries, nextTraining, requiredBooks, missingBooks, needsTraining, nextTrainingSp, applyTraining, applyActor,
     bookFor: (skillId) => books.get(Number(skillId)) || null, isBook: (itemId) => bookIds.has(Number(itemId)) };
