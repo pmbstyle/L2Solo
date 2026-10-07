@@ -422,6 +422,11 @@ class ColdSimulationKernel {
             this.partyMinSize,
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
+        // ARCH-NOTE: M6: the matched 20m native snapshot attributes 78.590
+        // KiB/bot to canonical states (d05b2f66: 78.308; task estimate: 66).
+        // These are the original shared state objects. Shrinking their shape
+        // or the coldCombat packet requires a shared-state task, not another
+        // detached copy or an unmeasured fixed-memory subtraction.
         this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()), options.shotIndex);
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
