@@ -433,8 +433,20 @@ function canRelease(state, options = {}) {
         && !(state.party?.partyId || state.partyId) && ['hunting', 'resting', 'shopping', 'merchant'].includes(state.activity);
 }
 
+function materialRequests(state, warehouseItems) {
+    // ARCH-NOTE: the legacy plan and captured worker materials can describe
+    // the same recipe gap. Reserve/withdraw that gap once across both readers.
+    const merged = new Map();
+    for (const request of [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)]) {
+        const key = `${request.selfId}:${request.reason}`;
+        const previous = merged.get(key);
+        merged.set(key, previous ? { ...previous, amount: Math.max(previous.amount, request.amount) } : request);
+    }
+    return [...merged.values()];
+}
+
 function reservedWithdrawalAmounts(state, warehouseItems) {
-    const requests = [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)];
+    const requests = materialRequests(state, warehouseItems);
     return requests.reduce((amounts, item) => amounts.set(item.selfId,
         (amounts.get(item.selfId) || 0) + item.amount), new Map());
 }
@@ -459,16 +471,14 @@ async function releaseColdUnlocked(state, options = {}) {
     if (!warehouseItems.length) return { state, released: false, items: [] };
 
     const planStartedAt = Date.now();
-    const crafting = craftRequests(state, warehouseItems);
-    const reserved = crafting.reduce((amounts, item) => amounts.set(
+    const materials = materialRequests(state, warehouseItems);
+    const reserved = materials.reduce((amounts, item) => amounts.set(
         item.selfId,
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
-    const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
-    for (const item of enchanting) reserved.set(item.selfId, (reserved.get(item.selfId) || 0) + item.amount);
     const selling = marketRequests(state, warehouseItems, reserved, options);
     recordStage('item_plan', planStartedAt);
-    return releaseRequests(state, warehouseItems, [...crafting, ...enchanting, ...selling], options);
+    return releaseRequests(state, warehouseItems, [...materials, ...selling], options);
 }
 
 async function releaseRequests(state, warehouseItems, requested, options = {}) {

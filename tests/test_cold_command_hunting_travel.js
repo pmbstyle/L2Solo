@@ -116,7 +116,7 @@ async function run() {
     ListingService.resolve = async value => {
         assert(Coordinator.economyDecisions.decided(value), 'hold remains readable after commit changed its key');
         assert.deepStrictEqual(invoke('GameServer/Bot/Economy/ColdSafeEnchantService').warehouseRequests(value,
-            [{ selfId: 1864, amount: 9 }]), [{ selfId: 1864, amount: 2, reason: 'wish_material' }]);
+            [{ selfId: 1864, amount: 9 }]), [{ selfId: 1864, amount: 2, reason: 'craft' }]);
         tailReads++;
         return { state: value, closed: false };
     };

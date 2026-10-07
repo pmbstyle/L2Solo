@@ -41,7 +41,7 @@ const decisions = Coordinator.economyDecisions;
             invoke('GameServer/Inventory/ShotStock').restockPlan(state, { unitPrice: 0 });
             await invoke('GameServer/Bot/Economy/ColdShotEconomyService').reviewDemand(state, state.updatedAt);
             const withdrawal = SafeEnchant.warehouseRequests(state, [{ selfId: 1864, amount: 10 }]);
-            assert.deepEqual(withdrawal, present ? [{ selfId: 1864, amount: 2, reason: 'wish_material' }] : []);
+            assert.deepEqual(withdrawal, present ? [{ selfId: 1864, amount: 2, reason: 'craft' }] : []);
             invoke('GameServer/Bot/Economy/MarketPricing').traderContext(state);
             invoke('GameServer/Bot/Economy/CraftProfitPolicy').contextFor(state);
             invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan(state, { status: 'active', strategy: 'drop',
@@ -61,6 +61,16 @@ const decisions = Coordinator.economyDecisions;
         assert(Math.abs(held.worth(391) - Math.fround(.39) / state.stats.money[1]) < .001);
         assert.equal(held.worth(2000), held.price(2000), 'unknown item falls back to native belief');
         assert.deepEqual(Needs.evaluate({ ...state, inventory: { 391: { selfId: 391, amount: 1 } } }), [], 'bag guard suppresses bought gear');
+        // Captured-wire classification control; native graph selection and
+        // physical scroll consumption are tested separately in the town fixture.
+        decisions.accept(state.characterId, Decision.capture({ ...fixture, network: { ...fixture.network,
+            queue: [{ object: { materials: [{ selfId: 955, amount: 2 }, { selfId: 957, amount: 3 },
+                { selfId: 1864, amount: 7 }] } }] } }, state));
+        assert.deepEqual(SafeEnchant.warehouseRequests(state, [
+            { selfId: 955, amount: 1 }, { selfId: 957, amount: 5 }, { selfId: 1864, amount: 9 },
+            { selfId: 1869, amount: 20 }
+        ]), [{ selfId: 955, amount: 1, reason: 'enchant' }, { selfId: 957, amount: 3, reason: 'enchant' },
+            { selfId: 1864, amount: 7, reason: 'craft' }]);
         assert.deepEqual(Economy.summary().mainColdForState, {}, 'all main cold readers avoid full model');
         console.log('test_cold_economy_readers: ok');
     } finally {

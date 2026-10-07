@@ -84,7 +84,10 @@ function warehouseRequests(state = {}, warehouseItems = [], options = {}) {
         return materials.flatMap(([selfId, missing]) => {
             const row = warehouseItems.find(item => Number(item.selfId) === selfId);
             const amount = Math.min(missing, Math.max(0, Number(row?.amount || 0)));
-            return amount > 0 ? [{ selfId, amount, reason: 'wish_material' }] : [];
+            // ARCH-NOTE: the captured worker materials use the existing town
+            // withdrawal reasons; enchant also triggers the physical safe batch.
+            const reason = EnchantRules.resolveScroll(selfId) ? 'enchant' : 'craft';
+            return amount > 0 ? [{ selfId, amount, reason }] : [];
         });
     }
     const needs = targetNeeds(state, options);
