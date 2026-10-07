@@ -1,15 +1,22 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { DatabaseSync } = require('node:sqlite');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+require(path.join(gameRoot, 'tests/helpers/databaseIsolation'));
+const isolated = require(path.join(gameRoot, 'tests/helpers/isolatedSocialDatabase'))('class-write-native-paid-profile', gameRoot);
+// Admission-only authoring explicitly uses native Knowledge OFF, before Global.
+fs.writeFileSync(isolated.ini, fs.readFileSync(isolated.ini, 'utf8')
+    .replace(/^knowledgeErrorsEnabled\s*=\s*true$/m, 'knowledgeErrorsEnabled = false'));
+const { DatabaseSync } = require('node:sqlite');
 require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Progression = invoke('GameServer/Bot/BotClassProgression');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const { ColdSimulationCoordinator } = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const { WorkerCommandAdmissionRefusal } = require(path.join(gameRoot, 'src/GameServer/Bot/Population/WorkerCommandAdmission'));
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -21,7 +28,7 @@ async function wait(promise, label) {
     try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('timeout: ' + label)), 3000); })]); }
     finally { clearTimeout(timer); }
 }
-let directory, serial = 0;
+let directory = isolated.directory, serial = 0;
 const failures = [];
 function facts(id) {
     const db = new DatabaseSync(options.default.Database.path, { readOnly: true });
@@ -33,6 +40,45 @@ function facts(id) {
         result.cache = clone(Life.cachedState(id)); return result;
     } finally { db.close(); }
 }
+
+// ARCH-NOTE: FX-E6 retains native SP costs. With the declared 120 SP the
+// class0 prefix is two 50-SP ranks plus three free skills, not nine grants.
+const ancestorRanks = [[3, 2], [194, 1], [1320, 1], [1322, 1]];
+const firstProfessionRanks = [[3, 2], [194, 1], [239, 1], [1320, 2], [1322, 1]];
+const skillRows = (image, id) => image.skills.filter(skill => skill.characterId === id);
+const skillRanks = (image, id) => skillRows(image, id)
+    .map(skill => [skill.selfId, skill.level]).sort((a, b) => a[0] - b[0]);
+function assertAuthoredPaidPlan(targetClass = 0) {
+    const authoredRank = (classId, skillId, level) => Data.skillTree
+        .find(tree => Number(tree.classId) === classId)?.skills
+        .find(skill => Number(skill.selfId) === skillId)?.levels
+        .find(rank => Number(rank.level) === level);
+    for (const [skillId, levels, cost] of [[3, [1, 2, 3], 50], [194, [1], 0],
+        [1320, [1], 0], [1322, [1], 0]]) {
+        for (const level of levels) {
+            const rank = authoredRank(0, skillId, level);
+            assert(rank, 'the independently declared class0 rank must be authored');
+            assert.equal(Number(rank.sp), cost);
+            assert(Number(rank.pLevel) <= 7);
+            assert(Data.skills.find(skill => Number(skill.selfId) === skillId)?.levels
+                .some(defined => Number(defined.level) === level), 'native skill definition must exist');
+        }
+        assert.equal(invoke('GameServer/Skills/SkillBookCatalog').bookFor(skillId), null,
+            'these declared class0 skills have no authored book prerequisite');
+    }
+    if (targetClass !== 0) {
+        assert([1, 4, 7].includes(targetClass));
+        for (const [skillId, level] of [[239, 1], [1320, 2]]) {
+            const rank = authoredRank(targetClass, skillId, level);
+            assert(rank, 'the selected authored first-profession free rank must exist');
+            assert.equal(Number(rank.sp), 0);
+            assert.equal(Number(rank.pLevel), 20);
+            assert(Data.skills.find(skill => Number(skill.selfId) === skillId)?.levels
+                .some(defined => Number(defined.level) === level));
+        }
+    }
+}
+
 async function seed() {
     const account = `bot_class_admission_${++serial}`;
     await Database.createAccount(account, 'fixture');
@@ -44,6 +90,15 @@ async function seed() {
         loc: { locX: 83000, locY: 148000, locZ: -3400 }, vitals: { hp: 85, maxHp: 100, mp: 70, maxMp: 100 },
         timing: { lastResolvedAt: time - 45000, nextResolveAt: time + 30000 },
         stats: { classId: 0, classProgressionLevel: 0, classProgressionClassId: 0, restUntil: time + 30000 } }, 'class_admission_seed'));
+    const initial = facts(id), character = initial.characters.find(row => row.id === id);
+    assert.equal(character.level, level);
+    assert.equal(character.exp, Number(Data.experience[level - 1]) + 1);
+    assert.equal(character.sp, 120);
+    assert.equal(character.classId, 0);
+    assert.deepEqual(skillRows(initial, id), []);
+    assert.deepEqual(initial.items.filter(item => item.characterId === id), []);
+    assert.equal(initial.cache.sp, 120);
+    assert.equal(initial.cache.adena, 0);
     return id;
 }
 function holdQueue(entered, gate, label) {
@@ -73,14 +128,27 @@ async function workerBoundary(stage, mode) {
             { ok: true }, message.msgId), c.worker, c.workerEpoch));
     }, terminate: async () => {} });
     c.worker = worker('A'); const originalWorker = c.worker, originalEpoch = c.workerEpoch;
-    let admission, control, stop, flushes = 0, flushCompleted = false;
+    let admission, control, stop, flushes = 0, flushCompleted = false, targetEntered = false;
+    const trainingReceipts = [];
     c.population = { executeWorkerLifecycleCommand(...args) { admission = args[2]?.workerAdmission;
         return Population.executeWorkerLifecycleCommand(...args); } };
     c.contextIndex = () => ({}); c.contextFor = () => ({});
     const updateClass = Database.updateCharacterClassId;
-    Database.updateCharacterClassId = function (...args) { if (args[0] === id) called.resolve(); return updateClass.apply(this, args); };
+    Database.updateCharacterClassId = function (...args) {
+        if (args[0] === id) { targetEntered = true; called.resolve(); }
+        return updateClass.apply(this, args);
+    };
+    const learnSkill = Database.learnBotSkill;
+    Database.learnBotSkill = function (...args) {
+        return learnSkill.apply(this, args).then(result => {
+            if (args[0] === id) trainingReceipts.push({ skillId: args[1], level: args[2], result: clone(result) });
+            return result;
+        });
+    };
+    // Earlier native skill reads/payments remain real and finish before the
+    // intended FIRST class DAO; the generic first flush used to trap those.
     Database.registerCharacterWriteFlush(async currentId => {
-        if (currentId !== id || ++flushes !== 1) return;
+        if (currentId !== id || !targetEntered || ++flushes !== 1) return;
         if (stage === 'flush') { entered.resolve(); await gate.promise; }
         else { control = holdQueue(entered, gate, 'class:worker-control-read'); flushCompleted = true; }
     });
@@ -92,7 +160,16 @@ async function workerBoundary(stage, mode) {
         const before = facts(id), oldCharacter = before.characters.find(row => row.id === id);
         assert.equal(oldCharacter.classId, 0); assert.equal(oldCharacter.hp, 85);
         assert.equal(before.bot_life_state.find(row => row.characterId === id).hp, 85);
-        assert.equal(before.skills.filter(row => row.characterId === id).length, 9, 'ancestor skills are already durable, not a rollback target');
+        assertAuthoredPaidPlan(Progression.plan({ classId: 0, level: 20, seed: id }).classId);
+        assert.deepEqual(skillRanks(before, id), ancestorRanks, 'the genuinely paid ancestor prefix is durable');
+        assert.equal(oldCharacter.sp, 20, 'only the authored 100 SP has been spent before FIRST class SQL');
+        assert.equal(oldCharacter.exp, state.exp);
+        assert.equal(before.cache.sp, 120, 'the original cache is unpublished at the held class writer');
+        const prefixReceipts = trainingReceipts.filter(receipt => receipt.result.learned);
+        assert.equal(prefixReceipts.length, 5);
+        assert.equal(prefixReceipts.reduce((total, receipt) => total + receipt.result.spentSp, 0), 100);
+        assert.deepEqual(prefixReceipts.flatMap(receipt => receipt.result.consumedBooks), []);
+        assert.deepEqual(before.items.filter(item => item.characterId === id), []);
         if (mode === 'replace') { c.worker = worker('B'); c.workerEpoch = 'class:replacement'; }
         if (mode === 'stop') { c.started = true; c.competitionActions.stop = async () => { stopEntered.resolve(); await stopGate.promise; };
             stop = c.stop(); await wait(stopEntered.promise, 'actual stop wait'); assert(c.stopping); }
@@ -112,7 +189,16 @@ async function workerBoundary(stage, mode) {
         assert.equal(c.commandInflight.size, 0);
         if (mode === 'current') {
             assert.equal(character.classId, Progression.plan({ classId: 0, level: 20, seed: id }).classId);
-            assert.notEqual(character.classId, 0); assert(after.skills.filter(row => row.characterId === id).length > 9);
+            assert.notEqual(character.classId, 0); assert.deepEqual(skillRanks(after, id), firstProfessionRanks, 'free 239/1 and 1320/2 add one distinct row');
+            assert.equal(character.sp, 20);
+            assert.equal(character.exp, state.exp);
+            assert.equal(after.cache.sp, 20);
+            assert.equal(after.cache.adena, 0);
+            const paid = trainingReceipts.filter(receipt => receipt.result.learned);
+            assert.equal(paid.length, 7);
+            assert.equal(paid.reduce((total, receipt) => total + receipt.result.spentSp, 0), 100);
+            assert.deepEqual(paid.flatMap(receipt => receipt.result.consumedBooks), []);
+            assert.deepEqual(after.items.filter(item => item.characterId === id), []);
             assert.equal(character.hp, 90); assert.equal(after.bot_life_state.find(row => row.characterId === id).hp, 90);
             assert.equal(acks.length, 1); assert.equal(acks[0].label, 'A'); assert.equal(acks[0].message.payload.results[0].ok, true);
             assert.deepEqual(acks[0].message.payload.results[0].commandCheckpoint, request.commandCheckpoint);
@@ -126,7 +212,8 @@ async function workerBoundary(stage, mode) {
         }
     } finally {
         gate.resolve(); await control?.catch(() => null); await c.commandTail.catch(() => null);
-        global.setImmediate = realImmediate; Database.updateCharacterClassId = updateClass; Database.registerCharacterWriteFlush(null);
+        global.setImmediate = realImmediate; Database.updateCharacterClassId = updateClass;
+        Database.learnBotSkill = learnSkill; Database.registerCharacterWriteFlush(null);
         stopGate.resolve(); if (stop) await stop;
     }
 }
@@ -209,8 +296,8 @@ async function ordinaryFailures() {
 async function check(name, work) { try { await work(); console.log('PASS', name); }
     catch (error) { failures.push(name); console.error('FAIL', name, error.stack); } }
 (async () => {
-    directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'class-write-native-'));
-    options.default.Database.path = path.join(directory, 'world.sqlite'); options.default.Database.historyPath = path.join(directory, 'history.sqlite');
+    assert.equal(Config.knowledgeErrorsEnabled, false);
+    isolated.assertConfigured(options.default);
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init(); console.log('source', gameRoot);
     // Both real integrated healthy admissions come before any feature RED.
     for (const stage of ['flush', 'queue']) await check(`actual native class ${stage}:current`, () => workerBoundary(stage, 'current'));
