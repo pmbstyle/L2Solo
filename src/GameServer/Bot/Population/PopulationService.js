@@ -3358,7 +3358,8 @@ const PopulationService = {
         const startedAt = Date.now();
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
         if (!joinedBackgroundParty(state) && (hallVisit.needed(state, startedAt) || state.stats?.clanHallVisit)) {
-            return hallVisit.resolve(state, startedAt);
+            // ARCH-NOTE: Hall dispatch bypasses the ordinary resolve branch; keep Main's captured admission through its inner writer.
+            return hallVisit.resolve(state, startedAt, options);
         }
         if (PartyMarketBreak.ready(state)) return resumePartyMarketBreak(state, startedAt);
         const karmaPolicy = invoke('GameServer/Bot/Population/ColdKarmaPolicy');

@@ -123,7 +123,7 @@ function finish(state, timestamp, reason) {
         reason
     );
 }
-async function resolve(state, timestamp = Date.now()) {
+async function resolve(state, timestamp = Date.now(), options = {}) {
     if (!needed(state, timestamp) && !state.stats?.clanHallVisit) return null;
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
@@ -262,7 +262,8 @@ async function resolve(state, timestamp = Date.now()) {
                 );
         }
     }
-    const saved = await Life.applyResolve(state, next);
+    // ARCH-NOTE: The native lifecycle queue rechecks the original worker/checkpoint before any hall transition writes.
+    const saved = await Life.applyResolve(state, next, options);
     if (saved) await invoke('GameServer/Bot/Population/BotLifeEvents').recordMany(state.characterId, next.events);
     return { ok: !!saved, state: saved || state, debug: next.debug };
 }
