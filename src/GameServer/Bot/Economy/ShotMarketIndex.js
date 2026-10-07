@@ -6,6 +6,70 @@ const CRYSTALS = Object.freeze({ d: 1458, c: 1459, b: 1460, a: 1461, s: 1462 });
 const SLOT = Symbol('shot-demand-slot');
 const positive = value => Math.max(0, Number(value) || 0);
 
+// IDs are the only variable recipe-holder storage. Native character IDs fit
+// exactly in three bytes; unusually large IDs widen without changing identity.
+class RecipeIds {
+    constructor() { this.bytes = new Uint8Array(0); this.width = 3; }
+    get length() { return this.bytes.length / this.width; }
+    get(at) {
+        const offset = at * this.width;
+        if (this.width === 3) return this.bytes[offset] + this.bytes[offset + 1] * 256 + this.bytes[offset + 2] * 65536;
+        const view = new DataView(this.bytes.buffer);
+        return this.width === 4 ? view.getUint32(offset, true) : view.getFloat64(offset, true);
+    }
+    write(bytes, at, value, width = this.width) {
+        const offset = at * width;
+        if (width === 3) {
+            bytes[offset] = value % 256; bytes[offset + 1] = Math.floor(value / 256) % 256;
+            bytes[offset + 2] = Math.floor(value / 65536);
+        } else {
+            const view = new DataView(bytes.buffer);
+            width === 4 ? view.setUint32(offset, value, true) : view.setFloat64(offset, value, true);
+        }
+    }
+    remove(ownerId) {
+        for (let at = 0; at < this.length; at++) if (this.get(at) === ownerId) {
+            const offset = at * this.width, bytes = new Uint8Array(this.bytes.length - this.width);
+            bytes.set(this.bytes.subarray(0, offset)); bytes.set(this.bytes.subarray(offset + this.width), offset);
+            this.bytes = bytes; return true;
+        }
+        return false;
+    }
+    insert(at, ownerId) {
+        const width = Math.max(this.width, ownerId <= 0xffffff ? 3 : ownerId <= 0xffffffff ? 4 : 8);
+        const bytes = new Uint8Array((this.length + 1) * width);
+        for (let old = 0; old < this.length; old++) this.write(bytes, old < at ? old : old + 1, this.get(old), width);
+        this.write(bytes, at, ownerId, width); this.width = width; this.bytes = bytes;
+    }
+}
+
+function recipeView(index, itemId, ids) {
+    // ARCH-NOTE: preserve the native sorted-array reader contract without a
+    // second owner map or cached {characterId,price} rows. A read creates only
+    // its requested row from the canonical lifecycle object already retained
+    // elsewhere; taking a snapshot never walks holders. Native packed IDs cost
+    // 45 B for all fifteen books/crafter, plus the one weak keep ledger. Exact
+    // four/eight-byte fallback IDs outside the native range cost more.
+    return new Proxy([], {
+        get(target, key, receiver) {
+            if (key === 'length') return ids.length;
+            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) {
+                const at = Number(key);
+                if (at >= ids.length) return undefined;
+                const characterId = ids.get(at);
+                return { characterId, price: index.recipePrice(itemId, characterId) };
+            }
+            return Reflect.get(target, key, receiver);
+        },
+        has(target, key) {
+            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) return Number(key) < ids.length;
+            return Reflect.has(target, key);
+        },
+        set() { return false; },
+        deleteProperty() { return false; }
+    });
+}
+
 class ShotMarketIndex {
     constructor(options = {}) {
         this.itemTemplates = options.itemTemplates instanceof Map ? options.itemTemplates
@@ -21,9 +85,9 @@ class ShotMarketIndex {
         this.keeps = new WeakMap();
         this.keepers = 0;
         this.demand = new Map();
-        this.recipeOwners = new Map();
+        this.recipeOwners = new Map(this.recipeIds.map(id => [id, new RecipeIds()]));
         this.shotDemand = new Map(this.shotIds.map(id => [id, []]));
-        this.recipeHolders = new Map(this.recipeIds.map(id => [id, []]));
+        this.recipeHolders = new Map(this.recipeIds.map(id => [id, recipeView(this, id, this.recipeOwners.get(id))]));
         this.unlistedSupply = new Map(this.shotIds.map(id => [id, 0]));
         this.recipeTotals = new Map(this.recipeIds.map(id => [id, 0]));
         this.shotSupply = new Map();
@@ -102,24 +166,23 @@ class ShotMarketIndex {
         }
     }
 
+    recipePrice(id, ownerId) {
+        const state = this.stateFor(ownerId);
+        return state ? this.priceFor(state, state.inventory?.[id], this.itemTemplates.get(id)) : 0;
+    }
+
     setRecipe(id, ownerId, price) {
-        let owners = this.recipeOwners.get(id);
-        const previous = owners?.get(ownerId), rows = this.recipeHolders.get(id);
-        if (previous && previous.price === price) return;
-        // ARCH-NOTE: the public snapshot keeps the native ascending-price array.
-        // Its splice moves the affected recipe's rows on holder changes only;
-        // snapshots never enumerate holders or recompute a holder's price/keep.
-        if (previous) rows.splice(rows.indexOf(previous), 1);
-        if (price !== null) {
-            if (!owners) this.recipeOwners.set(id, owners = new Map());
-            const row = { characterId: ownerId, price };
-            let low = 0, high = rows.length;
-            while (low < high) { const mid = (low + high) >>> 1; if (rows[mid].price <= price) low = mid + 1; else high = mid; }
-            rows.splice(low, 0, row); owners.set(ownerId, row);
-        } else if (owners) {
-            owners.delete(ownerId);
-            if (!owners.size) this.recipeOwners.delete(id);
+        const owners = this.recipeOwners.get(id);
+        // As with the previous array splice, only the changed recipe's sorted
+        // vector moves on update. Readers retain one stable readonly array view.
+        owners.remove(ownerId);
+        if (price === null) return;
+        let low = 0, high = owners.length;
+        while (low < high) {
+            const mid = (low + high) >>> 1;
+            if (this.recipePrice(id, owners.get(mid)) <= price) low = mid + 1; else high = mid;
         }
+        owners.insert(low, ownerId);
     }
 
     update(state, now = Date.now()) {
@@ -180,7 +243,8 @@ class ShotMarketIndex {
 
     size() {
         const sum = map => [...map.values()].reduce((total, rows) => total + rows.size, 0);
-        return { spare: this.keepers, demand: sum(this.demand), recipeStock: 0, recipeHolders: sum(this.recipeOwners) };
+        return { spare: this.keepers, demand: sum(this.demand), recipeStock: 0,
+            recipeHolders: [...this.recipeOwners.values()].reduce((total, rows) => total + rows.length, 0) };
     }
 
     refreshNpc() {

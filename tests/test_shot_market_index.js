@@ -198,6 +198,36 @@ assert.equal(delta.marketSnapshot(now+3600000).unlistedSupply.get(shotIds[0]),15
 delta.remove(1);delta.remove(1);
 assert.equal(delta.marketSnapshot(now).unlistedSupply.get(shotIds[0]),0,'remove is idempotent before canonical retirement');
 assert.equal(delta.size().spare,0);
+
+const packedCanonical = new Map();
+const packed = new ShotMarketIndex({ itemTemplates: templates, shotProductIds: shotIds,
+    shotRecipeItemIds: recipeIds, stateFor: id => packedCanonical.get(id), stockFor, priceFor });
+const nativeRecipeView = packed.marketSnapshot(now).recipeHolders.get(recipeIds[0]);
+for (let at = 0; at < 200; at++) {
+    const characterId = 2000000 + at, state = { characterId, phase: 'cold', activity: 'hunting', level: 30,
+        keepId: shotIds[0], keepAmount: 300, stats: { shotCraft: {} },
+        inventory: Object.fromEntries([...recipeIds.map(id => [id, { selfId: id, amount: 1 }]),
+            [shotIds[0], { selfId: shotIds[0], amount: 1000 }]]) };
+    packed.update(state, now); packedCanonical.set(characterId, state);
+}
+assert.equal(packed.marketSnapshot(now).recipeHolders.get(recipeIds[0]), nativeRecipeView,
+    'snapshots reuse one readonly recipe view without materializing a holder array');
+assert(Array.isArray(nativeRecipeView), 'the native array reader contract remains available');
+assert.equal(nativeRecipeView.length, 200);
+assert(nativeRecipeView.find(row => row.characterId === 2000123));
+assert.equal([...packed.recipeOwners.values()].reduce((sum, ids) => sum + ids.bytes.byteLength, 0), 9000,
+    'all fifteen native books use exactly 45 bytes of packed owner IDs per crafter');
+assert.throws(() => nativeRecipeView.push({ characterId: 1, price: 1 }), TypeError,
+    'a market consumer cannot modify the shared recipe view');
+for (const characterId of [0x1000000 + 7, 0x100000000 + 9]) {
+    const state = { characterId, phase: 'cold', activity: 'hunting', level: 30, stats: {},
+        inventory: { [recipeIds[0]]: { selfId: recipeIds[0], amount: 1 } } };
+    packed.update(state, now); packedCanonical.set(characterId, state);
+    assert(nativeRecipeView.find(row => row.characterId === characterId),
+        'wide fallback preserves the exact owner ID without truncation');
+}
+for (const id of packedCanonical.keys()) { packed.remove(id); packedCanonical.delete(id); }
+assert.deepEqual(packed.size(), { spare: 0, demand: 0, recipeStock: 0, recipeHolders: 0 });
 console.log(`PASS 1700 states/200 crafters, 1000 random updates/removals and board changes: exact supply/demand/recipe values; warm snapshot median=${median.toFixed(4)}ms P95=${p95.toFixed(4)}ms; all holder stores empty after release`);
 
 if (global.gc) {
