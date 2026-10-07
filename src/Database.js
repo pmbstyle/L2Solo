@@ -1481,6 +1481,10 @@ function write(sql, params = []) {
 // Capture before a native flush can await; skill writers capture at their call.
 // Each admitted writer keeps its original SQL queue.
 const coldTrainingGuards = new WeakMap();
+// ARCH-NOTE: Only a native training checkpoint refusal belongs to this domain; same-message SQL/user errors stay distinct.
+class ColdTrainingSourceRetired extends Error {
+    constructor() { super('cold_training_source_retired'); }
+}
 function captureWriteAdmission(options, errorCode, characterId, rowStatement = null) {
     let beforeWrite, nativeProof, present = false, captureFailed = false, captureError;
     try {
@@ -1518,7 +1522,7 @@ function checkCapturedWriteAdmission(admission, characterId) {
         const current = Protocol.commandCheckpoint(row && { ...row, activityStartedAt: row.activityStartedAt || 0,
             nextResolveAt: row.nextResolveAt || 0, lastResolvedAt: row.lastResolvedAt || 0, lastHotAt: row.lastHotAt || 0 });
         if (current?.phase !== 'cold' || current.simulationOwner !== LEGACY_SIMULATION_OWNER
-            || !Protocol.sameCommandCheckpoint(admission.coldTraining, current)) throw Error('cold_training_source_retired');
+            || !Protocol.sameCommandCheckpoint(admission.coldTraining, current)) throw new ColdTrainingSourceRetired();
     }
     if (admission.nativeProof) {
         NativeWriteCheckpoint.checkTarget(admission.nativeProof, characterId);
@@ -5698,6 +5702,9 @@ const Database = {
     },
     fetchSkill(characterId, skillSelfId) {
         return selectOne('skills', ['*'], 'characterId = ? AND selfId = ?', [characterId, skillSelfId], 'skill:one');
+    },
+    isColdTrainingSourceRetired(error) {
+        return error instanceof ColdTrainingSourceRetired;
     },
     createColdTrainingGuard(state, validate) {
         const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');

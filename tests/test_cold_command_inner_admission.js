@@ -2,7 +2,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+const isolated = require('./helpers/isolatedSocialDatabase')('inner-command-native', gameRoot);
 require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -16,7 +18,7 @@ const failures = [];
 let serial = 0, directory;
 async function facts(id) {
     const found = {};
-    for (const table of ['bot_life_state', 'characters', 'items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines']) {
+    for (const table of ['bot_life_state', 'characters', 'skills', 'items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines']) {
         found[table] = await Database.execute([`SELECT * FROM ${table} ORDER BY rowid`]);
     }
     found.cache = clone(Life.cachedState(id));
@@ -184,10 +186,14 @@ async function manualOwnerCas() {
     try {
         const grant = await Owner.claimBatch([Life.snapshot(id)], { allowLifecycle: true, leaseMs: 120000 });
         assert.equal(grant.grants.length, 1, JSON.stringify(grant.rejected));
-        const before = await facts(id); gate.resolve(); await blocker;
+        const before = await facts(id), failuresBefore = Database.stats().failures;
+        gate.resolve(); await blocker;
         const result = await pending;
         assert.equal(result.ok, false); assert.equal(result.reason, 'apply_failed', 'manual path reaches the retained native ownership write guard');
         assert.deepEqual(await facts(id), before);
+        assert.equal(Database.stats().failures, failuresBefore + 1, 'native refusal remains visible in failure accounting');
+        assert.equal(Database.isColdTrainingSourceRetired(Error('cold_training_source_retired')), false,
+            'an unrelated same-message error cannot enter the native refusal domain');
     } finally { gate.resolve(); await blocker; await pending; }
 }
 async function malformedOptions() {
@@ -263,7 +269,7 @@ async function check(name, work) {
     catch (error) { failures.push(name); console.error(`FAIL ${name}: ${error.stack}`); }
 }
 (async () => {
-    directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'inner-command-native-'));
+    directory = isolated.directory;
     options.default.Database.path = path.join(directory, 'world.sqlite');
     options.default.Database.historyPath = path.join(directory, 'history.sqlite');
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init();

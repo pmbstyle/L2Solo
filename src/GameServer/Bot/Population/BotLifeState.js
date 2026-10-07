@@ -2611,6 +2611,11 @@ const BotLifeState = {
         const nativeWriteOptions = options.persist !== false && workerOptions ? {
             beforeWrite: NativeWriteCheckpoint.create(characterId, workerOptions)
         } : undefined;
+        // ARCH-NOTE: Manual legacy training needs its original native SQL checkpoint before SP/book/class writes.
+        // This proof is for training only: the existing ROW ownership CAS remains authoritative.
+        const trainingWriteOptions = nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
+            && state.phase === 'cold' && state.simulation?.ownerId === 'legacy_main'
+            ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
@@ -2621,10 +2626,10 @@ const BotLifeState = {
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            }, nativeWriteOptions))
+            }, trainingWriteOptions))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 
-        return progression.then((resolved) => {
+        const prepared = progression.then((resolved) => {
             const classId = Number(resolved.classId || currentClassId);
             const role = BotRoles.inferRole(classId);
             const progressedState = {
@@ -2717,6 +2722,12 @@ const BotLifeState = {
                         return null;
                     });
             });
+        });
+        // No extra promise/handler on worker projections or captured worker commands.
+        if (trainingWriteOptions === nativeWriteOptions) return prepared;
+        return prepared.catch(error => {
+            if (Database.isColdTrainingSourceRetired(error)) return null;
+            throw error;
         });
     },
 
