@@ -1,5 +1,6 @@
 const { seeded, INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const PartyTarget = require('./PartyHuntingTarget');
+const { StableOwnerMap } = require('./StableOwnerSet');
 const metaKey = Symbol('coldCompetitionCandidate');
 const partyOf = state => state?.party?.partyId || state?.partyId || null;
 const unitOf = state => partyOf(state) || `solo:${state?.characterId}`;
@@ -31,7 +32,7 @@ class ColdCompetitionCandidates {
         }
         Object.assign(this, { records, packets, memory, monitor, deadlines, sequence, fitsFrame, frameSizing });
         this.spots = new Map(); this.parties = new Map(); this.partyHunters = new Map();
-        this.memberParties = new Map(); this.relationOwners = new Map(); this.clans = new Map(); this.units = new Map();
+        this.memberParties = new Map(); this.relationOwners = new StableOwnerMap(); this.clans = new Map(); this.units = new Map();
         this.pendingSpots = new Map(); this.pendingActors = new Map(); this.policyDeadlines = new Map();
         this.nextSequence = 0; this.nextInput = 0; this.nextFrame = 0; this.activeHunters = 0;
         this.frame = null; this.stopped = false;
