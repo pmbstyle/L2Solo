@@ -31,7 +31,9 @@ function state() {
         assert.equal(fired.at(-1), item.i);
     }
     assert.equal(kernel.heap.peekDecision(), null);
-    assert.equal(kernel.decisionAlarms.size, 0); assert.equal(kernel.alarms.size, 1, 'existing worker safety alarm remains');
+    assert.equal(kernel.decisionAlarms.size, 0);
+    assert.equal(kernel.alarms.size, 0, 'the retired periodic worker safety alarm has no kernel owner');
+    assert.equal(kernel.heap.size, 0, 'cancelled and fired decision nodes leave no heap residue');
 }
 console.log('PASS same-heap decision minimum/cancel/sift ordering and separate operational ownership');
 

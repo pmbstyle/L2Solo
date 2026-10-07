@@ -256,6 +256,7 @@ function visibleUserSessions(user, session, creature, realOnly) {
         accept: (record) => !record.retired
             && record.session !== session && (!realOnly || !isBotSession(record.session))
             && record.actor.fetchIsOnline?.() === true })
+        .sort((left, right) => left.order - right.order)
         .filter((record) => isVisibleFrom(creature, record.session))
         .map((record) => record.session);
 }
@@ -414,10 +415,13 @@ const World = {
         // receipt and no allocation; cells retain a pointer to the live actor.
         const record = membership.actor === actor ? membership.registered
             : attachRegisteredActor(runtime, session, membership);
-        if (!record || record.retired) return false;
+        if (!record || record.retired || runtime.index.getSource(record.id, 'actor') !== record) return false;
         const online = actor.fetchIsOnline?.() !== false;
-        const x = Number(actor.fetchLocX?.()), y = Number(actor.fetchLocY?.()), z = Number(actor.fetchLocZ?.());
-        const usable = Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z);
+        const rawX = actor.fetchLocX?.(), rawY = actor.fetchLocY?.(), z = Number(actor.fetchLocZ?.());
+        const usable = Number.isFinite(Number(rawX)) && Number.isFinite(Number(rawY)) && Number.isFinite(z);
+        // Client visibility retains nullish XY as zero; real-player proximity
+        // above still requires the actor's actual finite XYZ coordinates.
+        const x = Number(rawX ?? 0), y = Number(rawY ?? 0);
         const indexed = online && typeof actor.fetchLocX === 'function' && typeof actor.fetchLocY === 'function'
             && Number.isFinite(x) && Number.isFinite(y);
         const cellX = Math.floor(x / runtime.index.cellSize), cellY = Math.floor(y / runtime.index.cellSize);
@@ -523,7 +527,7 @@ const World = {
                 const candidate = record.session, actor = record.actor;
                 return !!actor.fetchIsOnline?.() && !!candidate.accountId
                     && !String(candidate.accountId).startsWith('bot_')
-                    && typeof actor.fetchLocX === 'function' && typeof actor.fetchLocY === 'function';
+                    && !!rawActorLoc(actor);
             }
         });
         records.sort((left, right) => left.order - right.order);
