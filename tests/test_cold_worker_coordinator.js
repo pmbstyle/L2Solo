@@ -93,22 +93,9 @@ function wait(ms) {
     assert.notStrictEqual(equipmentPlan?.market?.town, 'Talking Island',
         'the worker must send a Talking Island D-grade bot to a city that sells its planned item');
 
-    let economyEntered = false;
-    await coordinator.withEconomyState(LifeState.snapshot(characterId), async current => {
-        economyEntered = true;
-        assert.strictEqual(current.simulation.ownerId, Owner.LEGACY_OWNER_ID);
-        assert.strictEqual((await coordinator.fenceBot(characterId)).reason, 'economy_in_progress');
-        assert.strictEqual(coordinator.notifyState(current).reason, 'economy_in_progress');
-        const duplicate = await coordinator.withEconomyState(current, () => {
-            throw new Error('duplicate_economic_operation');
-        });
-        assert.strictEqual(duplicate.reason, 'economy_busy');
-        await wait(100);
-        assert.strictEqual(LifeState.snapshot(characterId).simulation.revision, current.simulation.revision,
-            'worker must not advance a state while its economy operation owns it');
-    });
-    assert(economyEntered, 'a live worker must hand the cold state over for an economy operation');
-    assert(!coordinator.economyBots.has(characterId));
+    assert.strictEqual(coordinator.withEconomyState, undefined);
+    assert.strictEqual(coordinator.economyBots, undefined,
+        'cold economy executes after an accepted worker plan without a handoff gate');
     assert(!coordinator.fencedBots.has(characterId));
 
     const stopped = await coordinator.stop();

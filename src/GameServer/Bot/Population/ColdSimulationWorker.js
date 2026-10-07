@@ -316,6 +316,7 @@ function startKernel(config = {}) {
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
     kernel = new ColdSimulationKernel({
         stateSources: LifeStateProjector.passiveWorkerStateSources(workerProjectorRole),
+        shotIndex: require('../Economy/ShotMarketIndex').native(),
         resolveSolo: (options) => BackgroundResolver.resolveSolo(options),
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
         partySession: {
@@ -356,7 +357,7 @@ function startKernel(config = {}) {
             const economyPlan = economyEdges && economy ? planner.decide(projected, economy, {
                 now: timestamp, board: boardReady(), persona: BotPersona.of(projected),
                 npcOffersFor: planningNpcCatalog.offersFor,
-                findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)), buyOrderEscrow: context.buyOrderEscrow
+                findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)), buyOrderEscrow: context.buyOrderEscrow, knownShotRecipes: context.knownShotRecipes
             }) : null;
             const market = reviewMarket(projected, timestamp, economy);
             return {
@@ -432,6 +433,17 @@ function startKernel(config = {}) {
         flushHardMs: config.flushHardMs
     });
     kernel.buyerEvents = buyerWaiters;
+    // Craft input shops are authored data, separate from gear planning rows.
+    // This pure catalogue needs neither World actors nor a new IPC table.
+    let craftNpcRows = null, craftNpcRate = null;
+    require('../Economy/ShotMarketIndex').configure({ board: boardReady, stateFor: id => kernel.states.get(Number(id))?.state, npcOffers: () => {
+        const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+        if (rate !== craftNpcRate) {
+            craftNpcRate = rate;
+            craftNpcRows = require('../../World/Generics/NpcShopBuyLists').allOffers();
+        }
+        return craftNpcRows;
+    } });
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
         workshop: id => kernel.states.get(Number(id))?.context?.workshop ?? null,

@@ -24,6 +24,7 @@ let unsubscribe = null;
 let unsubscribeOwnership = null;
 
 function remove(id, { recipes: dropRecipes = true } = {}) {
+    require('./ShotMarketIndex').native().remove(id);
     if (dropRecipes) recipesChanged(id);
     for (const recipeId of owners.get(Number(id)) || []) {
         const records = byRecipe.get(recipeId);
@@ -43,6 +44,7 @@ function register(state) {
     const id = Number(state?.characterId);
     remove(id, { recipes: state?.phase !== 'cold' });
     if (!state || state.phase !== 'cold') return;
+    require('./ShotMarketIndex').native().update(state);
     const items = new Set([...watchedInputs()].filter(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0));
     if (state.stats?.shotDemand?.itemId) items.add(Number(state.stats.shotDemand.itemId));
     if (state.stats?.shotRecipeDemand?.itemId) items.add(Number(state.stats.shotRecipeDemand.itemId));
@@ -141,6 +143,16 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null } = {
     if (result.customerState) life().acceptLifecycleRow(result.customerState);
     return result;
 }
+async function knownFor(id) {
+    id = Number(id);
+    let known = knownRecipes.get(id);
+    if (!known) {
+        known = (await invoke('Database').fetchCharacterRecipes(id)).map(row => Number(row.recipeId));
+        knownRecipes.set(id, known);
+    }
+    return known;
+}
+function cachedRecipes(id) { return knownRecipes.get(Number(id)) || []; }
 async function review(state) {
     init();
     const rules = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -149,11 +161,7 @@ async function review(state) {
         return state;
     }
     const id = Number(state.characterId);
-    let known = knownRecipes.get(id);
-    if (!known) {
-        known = (await invoke('Database').fetchCharacterRecipes(id)).map(row => Number(row.recipeId));
-        knownRecipes.set(id, known);
-    }
+    const known = await knownFor(id);
     const current = life().cachedState(state.characterId);
     if (current && current !== state) return current;
     const prior = new Map((state.stats?.workshop?.entries || []).map(entry => [Number(entry.recipeId), entry]));
@@ -175,6 +183,13 @@ async function review(state) {
 }
 function inputSources(itemId) {
     return [...(inputOwners.get(Number(itemId))?.values() || [])].filter(state => life().cachedState(state.characterId) === state);
+}
+function inputStateFor(ownerId) {
+    ownerId = Number(ownerId);
+    const crafter = crafters.get(ownerId);
+    if (crafter) return crafter;
+    const itemId = ownerInputs.get(ownerId)?.values().next().value;
+    return itemId === undefined ? null : inputOwners.get(itemId)?.get(ownerId) || null;
 }
 function crafterCandidates(limit = 16) {
     const result = [], count = Math.min(crafters.size, limit);
@@ -228,4 +243,4 @@ async function publishDemand(state, recipe, productPrice, context) {
     }
     return state;
 }
-module.exports = { init, register, remove, recipesChanged, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand };
+module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, review, find, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };

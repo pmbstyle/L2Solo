@@ -346,8 +346,9 @@ function compactProposal(proposal = {}, includeInventory = true) {
 // Stable membership of the same authoritative states, not another state
 // snapshot or due queue. Producer writes keep traversal O(1) under churn.
 class RetainedStateMap extends Map {
-    constructor(sources) {
+    constructor(sources, shotIndex = null) {
         super();
+        this.shotIndex = shotIndex;
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
         this.sources = sources;
     }
@@ -364,9 +365,21 @@ class RetainedStateMap extends Map {
         for (const [id, packet] of this.entries()) Reflect.apply(callback, thisArg, [packet, id, this]);
     }
 
-    set(id, entry) { this.sources.publish(id, entry); return this; }
-    delete(id) { const current = this.get(id); return !!current && this.sources.remove(id, current.state); }
-    clear() { this.sources.clear(); }
+    set(id, entry) {
+        this.shotIndex?.update(entry.state);
+        this.sources.publish(id, entry); return this;
+    }
+    delete(id) {
+        const current = this.get(id);
+        if (!current) return false;
+        this.shotIndex?.remove(id);
+        return this.sources.remove(id, current.state);
+    }
+    clear() {
+        if (this.shotIndex) for (const id of this.keys()) this.shotIndex.remove(id);
+        this.sources.clear();
+    }
+
 }
 
 class ColdSimulationKernel {
@@ -401,7 +414,7 @@ class ColdSimulationKernel {
             this.partyMinSize,
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
-        this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()));
+        this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()), options.shotIndex);
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.playingHours = id => this.states.get(id)?.state?.stats?.playedHours;

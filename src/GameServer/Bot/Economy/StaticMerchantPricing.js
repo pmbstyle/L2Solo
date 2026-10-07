@@ -1,7 +1,8 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
-const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+// Authored shop rows are pure data and are shared with cold craft decisions.
+const NpcShopBuyLists = require('../../World/Generics/NpcShopBuyLists');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const OfferQuery = require('./OfferQuery');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');

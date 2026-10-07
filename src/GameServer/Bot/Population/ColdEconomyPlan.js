@@ -1,6 +1,7 @@
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Funding = require('../Economy/PurchaseFunding');
 const MAX_BYTES = 614;
+const MAX_SHOT_BYTES = 32;
 
 // A resolve observes only the six native edges; ordinary counts/XP/wallet
 // changes do not schedule main-thread economic work.
@@ -63,9 +64,11 @@ function decide(state, economy, options = {}) {
             goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate }) });
     const plan = { sell, withdraw, buyAds: lines.slice(0, 3).map(row => [row.selfId, row.count, row.price]),
         travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null };
+    const shot = decideShot(state, economy, { ...options, ownLines: own });
+    if (shot) plan.shot = shot;
     // ARCH-NOTE: town names/large counts have variable JSON widths. Trim only
     // lowest-priority optional lines to keep the fixed 0.6 KB wire budget.
-    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_BYTES) {
+    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_BYTES + (plan.shot ? MAX_SHOT_BYTES : 0)) {
         if (plan.sell.length) plan.sell.pop();
         else if (plan.buyAds.length) plan.buyAds.pop();
         else if (plan.withdraw.length) plan.withdraw.pop();
@@ -73,4 +76,21 @@ function decide(state, economy, options = {}) {
     }
     return plan;
 }
-module.exports = { edges, decide, MAX_BYTES };
+function decideShot(state, economy, options = {}) {
+    const Shots = require('../Economy/ShotCraftPolicy');
+    if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return null;
+    const index = require('../Economy/ShotMarketIndex').native();
+    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
+    const context = { ...economy, mpPerHour: Number(regen.mp) * 1200 };
+    const market = { ...index.marketSnapshot(options.now, state), context, offersFor: (...args) => index.offersFor(...args) };
+    const known = Shots.unpackKnown(options.knownShotRecipes);
+    const shot = Shots.decide(state, market, known);
+    if (shot) return Shots.packStep(shot);
+    const Wealth = require('../Economy/WealthCraftDecision');
+    if (!Wealth.eligible(state, options)) return null;
+    const opportunity = Wealth.chooseOpportunity(state, (state.stats?.workshop?.entries || []).map(row => ({ recipeId: row.recipeId })),
+        context, { offersFor: market.offersFor, planPurchase: (buyer, id, amount, query) =>
+            require('../Economy/OfferQuery').cheapestTown(options.board, id, { ...query, amount, excludeOwner: buyer.characterId }) });
+    return opportunity ? Shots.packStep({ wealth: { recipeId: Number(opportunity.recipe.recipeId) } }) : null;
+}
+module.exports = { edges, decide, decideShot, MAX_BYTES, MAX_SHOT_BYTES };

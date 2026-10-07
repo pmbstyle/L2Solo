@@ -617,6 +617,17 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
         state = LifeState.cachedState(ownerId) || result?.state || state;
         return result;
     };
+    if (plan.shot) await run(async () => {
+        const shot = require('./ShotCraftPolicy').unpackStep(plan.shot);
+        if (shot.wealth) {
+            const Wealth = require('./ColdWealthCraftService');
+            if (!Wealth.eligible(state)) return { state };
+            const known = await Database.fetchCharacterRecipes(ownerId);
+            const opportunity = Wealth.chooseOpportunity(state, known.filter(row => Number(row.recipeId) === Number(shot.wealth.recipeId)));
+            return opportunity ? Wealth.execute(state, opportunity) : { state };
+        }
+        return { state: await require('./ColdShotEconomyService').execute(state, shot) };
+    });
     for (const lineId of (plan.withdraw || []).slice(0, 8)) await run(async () => {
         const line = AfkTrade.boardIndex().ownerLines(ownerId).find(row => row.lineId === Number(lineId));
         if (!line || line.storeType !== AfkTrade.SELL) throw Error('economy_plan_line_changed');

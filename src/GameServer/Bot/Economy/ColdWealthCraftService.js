@@ -64,60 +64,10 @@ function exitsFor(state, recipe, template, trip) {
 }
 
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
-    let best = null;
-    // An active market gear plan keeps what its purchase needs (price and
-    // reserve): inputs are bought only with the rest of the wallet. A bot
-    // with its own buy order does not craft at all (eligible), so no escrow.
-    const budgetState = { ...state, adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) };
-    // Each input is one purchase in the town where it costs the least with
-    // the trip (the one purchase path): its landed price is the input's cost.
-    const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
-    const trip = Profit.tripFor(state, context);
-    const planCache = new Map();
-    const stock = context.insideContext ? Object.values(state.inventory || {}).map(item => {
-        const reserve = Math.max(Number(state.stats?.clanMaterialDemand?.[item.selfId] || 0),
-            state.stats?.equipmentPlan?.status === 'active' && Number(state.stats.equipmentPlan.target?.selfId) === Number(item.selfId) ? 1 : 0);
-        return { ...item, count: Math.max(0, Number(item.amount || 0) - Number(item.equippedCount || (item.equipped ? 1 : 0)) - reserve),
-            price: Number(context.worth?.(Number(item.selfId)) || 0) };
-    }) : ItemDisposition.saleCandidates(state, { unlimited: true });
-    const ownStock = new Map(stock.map(item => [Number(item.selfId), item]));
-    const ownValueCache = new Map();
-    const planFor = (selfId, missing) => {
-        const key = `${selfId}:${missing}`;
-        if (!planCache.has(key)) planCache.set(key, ColdMarket.planPurchase(state, selfId, missing, { npc: false, cost: trip }));
-        return planCache.get(key);
-    };
-    const ownedFor = (selfId) => {
-        const stock = ownStock.get(Number(selfId));
-        if (!stock || Number(stock.count || 0) <= 0) return null;
-        if (!ownValueCache.has(selfId)) {
-            const fixedBids = staticExits({ productId: selfId, productCount: 1 },
-                ItemTemplateIndex.find(DataCache.items, selfId));
-            // A buy ad is worth its price less the trip to answer it.
-            const dynamicBids = AfkTrade.offers(selfId, AfkTrade.BUY, { characterId: state.characterId });
-            ownValueCache.set(selfId, Math.max(Number(stock.price || 0),
-                ...fixedBids.map((bid) => Number(bid.price || 0)),
-                ...dynamicBids.map((bid) => Number(bid.price || 0)
-                    - trip(bid.town) / Math.max(1, Math.min(Number(stock.count), Number(bid.count) || 1)))));
-        }
-        return { count: Number(stock.count), unitValue: ownValueCache.get(selfId) };
-    };
-    for (const known of knownRecipes || []) {
-        const recipe = Recipes.resolveByRecipeId(known.recipeId);
-        if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
-        const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
-        if (!template || !recipe.materials?.length) continue;
-        const exits = exitsFor(state, recipe, template, trip);
-        if (!exits.length) continue;
-        const candidate = Policy.opportunityFor(budgetState, recipe, planFor, exits, ownedFor, context);
-        const cash = candidate?.basket?.cashCost || 0;
-        const r = cash > 0 ? candidate.expectedProfit / context.hourAdena / cash : Infinity;
-        if (candidate && cash <= PurchaseFunding.spendable(state, 0, { r })
-            && (!best || candidate.expectedProfit > best.expectedProfit)) {
-            best = { ...candidate, template, r };
-        }
-    }
-    return best;
+    return require('./WealthCraftDecision').chooseOpportunity(state, knownRecipes, context, {
+        planPurchase: (...args) => invoke('GameServer/Bot/Economy/ColdMarketService').planPurchase(...args),
+        offersFor: (id, side, characterId) => AfkTrade.offers(id, side, { characterId }), staticExits
+    });
 }
 
 async function refreshCraftedInventory(state, recipe) {
@@ -347,4 +297,4 @@ function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {})
     return opportunity ? [{ ...opportunity, value: opportunity.expectedProfit, activity: 'crafting' }] : [];
 }
 
-module.exports = { eligible, chooseOpportunity, opportunities, tryCraft };
+module.exports = { eligible, chooseOpportunity, opportunities, tryCraft, execute };

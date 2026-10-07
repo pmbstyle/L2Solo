@@ -1869,39 +1869,6 @@ const PopulationService = {
         });
     },
 
-    reconcileShotEconomyBatch() {
-        return this.runGovernedGoalBackgroundJob({
-            job: 'shot_economy',
-            runningKey: 'shotEconomyRunning',
-            nextAtKey: 'nextShotEconomyAt',
-            run: async ({ batchSize, deadlineAt }) => {
-                const selected = await ColdShotEconomyService.candidates(batchSize + 1);
-                const results = [];
-                let reviewed = 0;
-                for (const candidate of selected.slice(0, batchSize)) {
-                    if (Date.now() >= deadlineAt) break;
-                    const state = LifeState.snapshot(candidate.characterId);
-                    if (!state || state.phase !== 'cold') continue;
-                    const result = await ColdSimulationCoordinator.withEconomyState(state, async current => {
-                        const shots = await ColdShotEconomyService.review(current);
-                        const wealth = await ColdWealthCraftService.tryCraft(shots.state || current);
-                        return { ...shots, state: wealth.state || shots.state, wealthCrafted: wealth.crafted,
-                            reviewedEconomy: true };
-                    });
-                    reviewed++;
-                    if (result.crafted || (result.reviewedEconomy && ColdShotEconomyService.hasShotSurplus(result.state))) {
-                        const goal = { type: 'sell_inventory', status: 'active',
-                            plan: { expectedBenefit: 'market_sale_inventory' } };
-                        await BotAfkMarketService.reconcile(result.state, goal);
-                    }
-                    results.push(result);
-                    await new Promise((resolve) => setImmediate(resolve));
-                }
-                return { results, continuation: selected.length > reviewed || Date.now() >= deadlineAt };
-            }
-        });
-    },
-
     // Compatibility entrypoint for targeted tooling written before the three
     // independently admitted jobs were split. Production scheduling uses the
     // explicit stage methods above.

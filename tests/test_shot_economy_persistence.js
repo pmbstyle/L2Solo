@@ -9,7 +9,6 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Shots = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const BotMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const dbPath = path.join(process.cwd(), 'tmp', 'test-shot-economy-persistence.sqlite');
 const originalCraft = DB.craftInventoryItems;
@@ -60,7 +59,7 @@ async function run() {
     DB.init(); Cache.init(); invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
     await Life.init();
     const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 100000 });
-    const fallback = await Coordinator.withEconomyState(empty, state => Shots.review(state));
+    const fallback = await Shots.review(empty);
     assert(fallback.state.adena < empty.adena, 'paid static fallback must debit virtual Adena');
     assert(fallback.state.inventory[1463].amount > 0);
     assert.strictEqual((await balances(empty.characterId)).life.adena, fallback.state.adena);
@@ -77,14 +76,14 @@ async function run() {
     const tired = await bot({ mp: 0, town: 'Giran' });
     const before = JSON.stringify(await DB.fetchItems(tired.characterId));
     Shots._resetForTests();
-    const noMp = await Coordinator.withEconomyState(tired, state => Shots.review(state));
+    const noMp = await Shots.review(tired);
     assert(!noMp.crafted);
     assert.strictEqual(JSON.stringify(await DB.fetchItems(tired.characterId)), before, 'zero MP cannot trigger a scrap purchase');
 
     const crafter = await bot({ town: 'Giran' });
     Shots._resetForTests();
     DB.craftInventoryItems = async () => { throw new Error('injected craft failure'); };
-    const failed = await Coordinator.withEconomyState(crafter, state => Shots.review(state));
+    const failed = await Shots.review(crafter);
     DB.craftInventoryItems = originalCraft;
     assert.strictEqual(failed.reason, 'error');
     const partial = await balances(crafter.characterId);
@@ -94,7 +93,7 @@ async function run() {
 
     // The next review uses the already acquired inputs, with no invented recipe.
     Shots._resetForTests();
-    const success = await Coordinator.withEconomyState(Life.snapshot(crafter.characterId), state => Shots.review(state));
+    const success = await Shots.review(Life.snapshot(crafter.characterId));
     assert(success.crafted, JSON.stringify(success));
     assert(success.state.stats.shotCraft.amount > 0);
     await balances(crafter.characterId);
@@ -110,14 +109,14 @@ async function run() {
     assert(shop?.lines.some(line => Number(line.selfId) === 1463), 'crafted shots must be listed for real funded demand');
     const buyer = await demand();
     Shots._resetForTests();
-    const purchase = await Coordinator.withEconomyState(buyer, state => Shots.review(state));
+    const purchase = await Shots.review(buyer);
     assert(purchase.state.inventory[1463]?.amount > 0);
     await balances(buyer.characterId);
     await balances(crafter.characterId);
 
     const missingRecipe = await bot({ recipe: false, town: 'Giran' });
     await demand(); Shots._resetForTests();
-    const waiting = await Coordinator.withEconomyState(missingRecipe, state => Shots.review(state));
+    const waiting = await Shots.review(missingRecipe);
     assert(waiting.state.stats.shotRecipeDemand, 'missing scroll creates market demand');
     assert.strictEqual((await DB.fetchCharacterRecipes(missingRecipe.characterId)).length, 0);
     assert(!(await DB.fetchItems(missingRecipe.characterId)).some(row => [1804, 3032, 3953].includes(row.selfId)),
@@ -135,7 +134,7 @@ async function run() {
             enchant: 0, slot: 0, stackable: false }] }]);
     const recipeBuyer = await bot({ recipe: false });
     await demand(); Shots._resetForTests();
-    const learned = await Coordinator.withEconomyState(recipeBuyer, state => Shots.review(state));
+    const learned = await Shots.review(recipeBuyer);
     assert((await DB.fetchCharacterRecipes(recipeBuyer.characterId)).some(row => row.recipeId === 20), JSON.stringify(learned));
     const sellerCopies = (await DB.fetchItems(seller.characterId)).filter(row => row.selfId === 1804).reduce((n, row) => n + row.amount, 0);
     assert.strictEqual(sellerCopies, 0);

@@ -232,7 +232,6 @@ class ColdSimulationCoordinator {
         });
         this.commandInflight = new Map();
         this.fencedBots = new Set();
-        this.economyBots = new Set();
         this.pauseReasons = new Set();
         this.snapshotQueue = new ColdSnapshotQueue({
             pageSize: Config.coldWorkerSnapshotPageSize || 48,
@@ -906,6 +905,12 @@ class ColdSimulationCoordinator {
         };
     }
 
+    async ensureCraftRecipes(state) {
+        if (invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) {
+            await require('../Economy/CraftWorkshopService').knownFor(state.characterId);
+        }
+    }
+
     contextFor(state, index = this.contextIndex()) {
         let physical = null;
         try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
@@ -936,6 +941,11 @@ class ColdSimulationCoordinator {
             return Economy.craftIncome(state, { hourAdena: basics.hunt.perHour, worth: basics.price, timestamp: index.timestamp });
         }) : null;
         const context = {
+            // ARCH-NOTE: recipe DB rows are hydrated on main; the worker gets
+            // <=8 numbers, never saved state or an extra recipe store.
+            ...(invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)
+                ? { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(
+                    require('../Economy/CraftWorkshopService').cachedRecipes(state.characterId)) } : {}),
             ...(state.stats?.workshop?.entries?.length ? { workshop } : {}),
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
@@ -983,7 +993,7 @@ class ColdSimulationCoordinator {
 
     safetyExcluded(characterId) {
         return !this.worker || !this.ready || !this.snapshotsLoaded || this.stopping || this.snapshotInFlightInitial
-            || this.fencedBots.has(characterId) || this.economyBots.has(characterId) || this.commandInflight.has(characterId)
+            || this.fencedBots.has(characterId) || this.commandInflight.has(characterId)
             || this.snapshotQueue.dirty.has(characterId);
     }
 
@@ -1018,7 +1028,7 @@ class ColdSimulationCoordinator {
         if (!this.worker || !this.ready || this.stopping || !this.snapshotsLoaded) {
             return { ok: false, reason: 'worker_not_ready' };
         }
-        if (this.fencedBots.has(characterId) || this.economyBots.has(characterId) || this.commandInflight.has(characterId)) {
+        if (this.fencedBots.has(characterId) || this.commandInflight.has(characterId)) {
             return { ok: false, reason: 'projection_owner_busy' };
         }
         return this.projectionRetention.get(characterId);
@@ -1037,7 +1047,6 @@ class ColdSimulationCoordinator {
 
     markDirty(state, options = {}) {
         this.projectionRetention.invalidate(state);
-        if (this.economyBots.has(Number(state?.characterId))) return { ok: false, reason: 'economy_in_progress' };
         if (!state?.characterId || !this.worker || !this.ready) {
             return { ok: false, reason: 'worker_not_ready' };
         }
@@ -1092,6 +1101,7 @@ class ColdSimulationCoordinator {
 
         for (const entry of entries) {
             if (rowsSent + page.length > 0 && Date.now() >= deadlineAt) break;
+            await this.ensureCraftRecipes(entry.state || entry);
             const row = this.snapshotEntry(entry.state || entry, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -1148,6 +1158,7 @@ class ColdSimulationCoordinator {
                     states.slice(stateIndex, stateIndex + pageSize).map(state => Number(state.characterId)));
             }
             const state = states[stateIndex];
+            await this.ensureCraftRecipes(state);
             const row = this.snapshotEntry(state, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -1353,7 +1364,6 @@ class ColdSimulationCoordinator {
 
     notifyState(state, options = {}) {
         if (!state) return { ok: false, reason: 'missing_state' };
-        if (this.economyBots.has(Number(state.characterId))) return { ok: false, reason: 'economy_in_progress' };
         this.fencedBots.delete(Number(state.characterId));
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
@@ -1361,6 +1371,7 @@ class ColdSimulationCoordinator {
     async acceptColdState(state, timeoutMs = 500) {
         if (!state || !this.worker || !this.ready) return { ok: false, reason: 'worker_not_ready' };
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
+        await this.ensureCraftRecipes(state);
         this.fencedBots.delete(Number(state.characterId));
         const msgId = this.post('snapshot_page', {
             rows: [this.snapshotEntry(state)],
@@ -1391,10 +1402,6 @@ class ColdSimulationCoordinator {
         for (const candidate of message.payload.candidates || []) {
             const purpose = candidate.purpose || null;
             purposes.set(Number(candidate.characterId), purpose);
-            if (this.economyBots.has(Number(candidate.characterId))) {
-                missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'economy_in_progress', retryAfterMs: 1000 });
-                continue;
-            }
             const state = LifeState.cachedState(candidate.characterId);
             if (!state) {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'missing_state' });
@@ -1756,6 +1763,14 @@ class ColdSimulationCoordinator {
             return;
         }
         const index = this.contextIndex({ compactPartyMembers: true });
+        for (const result of results) {
+            const state = LifeState.cachedState(result.characterId) || result.nextState;
+            if (state) await this.step('economyPlan', result.characterId, () => this.ensureCraftRecipes(state));
+        }
+        if (this.worker !== worker || this.workerEpoch !== epoch) {
+            this.tableChannel.flush();
+            return;
+        }
         const acknowledgements = results.flatMap((result) => {
             const inputToken = Protocol.leaseRenewalToken(result.proposal?.token);
             const proposalId = result.proposal?.proposalId;
@@ -1902,33 +1917,10 @@ class ColdSimulationCoordinator {
         return result;
     }
 
-    async withEconomyState(state, work) {
-        const id = Number(state.characterId);
-        if (this.economyBots.has(id) || this.commandInflight.has(id) || this.fencedBots.has(id)) {
-            return { state, reason: 'economy_busy' };
-        }
-        this.economyBots.add(id);
-        try {
-            const fence = await this.fenceBot(id, 1000, true);
-            if (!fence.ok) return { state, reason: fence.reason };
-            const latest = LifeState.snapshot(id) || state;
-            if (latest.phase !== 'cold') return { state: latest, reason: 'not_cold' };
-            const handoff = await ColdSimulationOwner.handoffToMain(latest, { allowParty: true, allowLifecycle: true });
-            if (!handoff.ok) return { state: latest, reason: handoff.reason };
-            return await work(LifeState.snapshot(id) || latest);
-        } finally {
-            this.economyBots.delete(id);
-            const latest = LifeState.snapshot(id);
-            if (latest) this.notifyState(latest, { critical: true, reason: 'economy_finished' });
-            else this.fencedBots.delete(id);
-        }
-    }
-
-    async fenceBot(characterId, timeoutMs = 500, economy = false) {
+    async fenceBot(characterId, timeoutMs = 500) {
         const id = Number(characterId);
         this.economyDecisions.forget(id);
         invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
-        if (!economy && this.economyBots.has(Number(characterId))) return { ok: false, reason: 'economy_in_progress' };
         if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
         this.fencedBots.add(id);
         this.counters.fences += 1;
@@ -2026,7 +2018,7 @@ class ColdSimulationCoordinator {
 
     canRenewLease(round, token) {
         if (!this.currentLeaseRenewalRound(round) || this.fencedBots.has(token.characterId)
-            || this.economyBots.has(token.characterId) || this.commandInflight.has(token.characterId)) return false;
+            || this.commandInflight.has(token.characterId)) return false;
         const cached = LifeState.cachedState(token.characterId), current = cached?.simulation;
         return cached?.phase === 'cold' && current?.ownerId === token.ownerId
             && current.revision === token.revision && current.leaseId === token.leaseId;
