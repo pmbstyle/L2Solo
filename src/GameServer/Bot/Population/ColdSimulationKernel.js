@@ -366,17 +366,24 @@ class RetainedStateMap extends Map {
     }
 
     set(id, entry) {
+        if (this.get(id)?.state !== entry.state && typeof invoke === 'function') {
+            invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
+        }
         this.shotIndex?.update(entry.state);
         this.sources.publish(id, entry); return this;
     }
     delete(id) {
         const current = this.get(id);
         if (!current) return false;
+        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
         this.shotIndex?.remove(id);
         return this.sources.remove(id, current.state);
     }
     clear() {
-        if (this.shotIndex) for (const id of this.keys()) this.shotIndex.remove(id);
+        for (const id of this.keys()) {
+            if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
+            this.shotIndex?.remove(id);
+        }
         this.sources.clear();
     }
 

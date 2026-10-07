@@ -203,7 +203,8 @@ function forState(state = {}, deps = {}) {
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
     const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
     const held = cache.get(actorKey);
-    if (held?.key === key && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
+    if (held?.key === key && (isMainThread || held.context.state === state)
+        && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
     const reads = new Map();
     let building = true;
     const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
@@ -345,12 +346,19 @@ function forGroup(group, members, deps = {}) {
     return context;
 }
 function forgetGroup(partyId) { groups.delete(`group:${partyId}`); }
-function forget(id) {
+function forgetContext(id) {
+    id = Number(id);
     const key = `character:${id}`; cache.delete(key); engine.forget(key);
+    for (const [groupKey, held] of groups) {
+        if (held.members.some(member => Number(member.state.characterId) === id)) groups.delete(groupKey);
+    }
+}
+function forget(id) {
+    forgetContext(id);
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
 function reset() { cache.clear(); groups.clear(); engine.clear(); }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider,
+module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome, summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };
