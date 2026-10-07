@@ -13,7 +13,18 @@ module.exports.nativeEconomyDecision = (id, timestamp) => {
     const state = kernel.states.get(Number(id)).state;
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp });
     const decision = require('./ColdEconomyDecision').capture(economy, state);
-    return { decision: { ...decision }, materials: decision.materials, statsPacket: economy.statsPacket,
+    // Inputs from this worker's own native catalogue and price counters. A
+    // test can sum E1 independently; no supplied packet or altered context.
+    const reserveInputs = {
+        stocks: ['shots', 'potions'].map(kind => {
+            const stock = economy.stock(kind);
+            return { selfId: stock.itemId, perHour: stock.usePerHour,
+                held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.unitPrice };
+        }),
+        escape: { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: economy.price(736),
+            usable: !invoke('GameServer/Karma').closesTowns(state.stats?.karma) }
+    };
+    return { decision: { ...decision }, materials: decision.materials, statsPacket: economy.statsPacket, reserveInputs,
         queue: economy.network.queue.map(row => ({ key: row.key, materials: row.object?.materials || [] })),
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
 };`;
