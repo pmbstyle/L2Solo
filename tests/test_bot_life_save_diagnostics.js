@@ -76,13 +76,64 @@ async function rejection(work, expected) {
     const beforeWrite = Checkpoint.create(id, { workerAdmission: {
         characterId: id, commandId: 'save-diagnostic', commandCheckpoint: Protocol.commandCheckpoint(state), check: () => null
     } });
-    const statement = ['UPDATE bot_life_state SET statsJson=?2 WHERE characterId=?1', [id, '{"secret":"SECRET_SAVE_PARAMETER"}']];
+    // ARCH-NOTE: Checkpoint-bound saves use the authored native 29-column lifecycle ROW.
+    // Keep the original seeded SQL values, including its zero clocks and ownership.
+    const fields = ['characterId', 'accountName', 'characterName', 'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion',
+        'spotId', 'activity', 'phase', 'activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt',
+        'locX', 'locY', 'locZ', 'hp', 'maxHp', 'mp', 'maxMp', 'targetLevelBand', 'deathCount', 'partyId',
+        'inventorySummary', 'statsJson', 'updatedAt'];
+    const parameters = fields.map(key => state[key]);
+    parameters[27] = '{"secret":"SECRET_SAVE_PARAMETER"}';
+    const statement = [`INSERT INTO bot_life_state (
+            characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
+            spotId, activity, phase, activityStartedAt, nextResolveAt,
+            lastResolvedAt, lastHotAt, locX, locY, locZ, hp, maxHp, mp, maxMp,
+            targetLevelBand, deathCount, partyId, inventorySummary, statsJson, updatedAt
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(characterId) DO UPDATE SET
+            accountName = excluded.accountName,
+            characterName = excluded.characterName,
+            level = excluded.level,
+            exp = excluded.exp,
+            sp = excluded.sp,
+            adena = excluded.adena,
+            homeRegion = excluded.homeRegion,
+            currentRegion = excluded.currentRegion,
+            spotId = excluded.spotId,
+            activity = excluded.activity,
+            phase = excluded.phase,
+            activityStartedAt = excluded.activityStartedAt,
+            nextResolveAt = excluded.nextResolveAt,
+            lastResolvedAt = excluded.lastResolvedAt,
+            lastHotAt = excluded.lastHotAt,
+            locX = excluded.locX,
+            locY = excluded.locY,
+            locZ = excluded.locZ,
+            hp = excluded.hp,
+            maxHp = excluded.maxHp,
+            mp = excluded.mp,
+            maxMp = excluded.maxMp,
+            targetLevelBand = excluded.targetLevelBand,
+            deathCount = excluded.deathCount,
+            partyId = excluded.partyId,
+            inventorySummary = excluded.inventorySummary,
+            statsJson = json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
+            updatedAt = excluded.updatedAt
+        WHERE bot_life_state.simulationOwner = 'legacy_main'
+          AND COALESCE(json_extract(bot_life_state.statsJson, '$.clanInventoryRevision'), 0)
+              <= COALESCE(json_extract(excluded.statsJson, '$.clanInventoryRevision'), 0)
+          AND COALESCE(json_extract(bot_life_state.statsJson, '$.clanLevelSpVersion'), 0)
+              <= COALESCE(json_extract(excluded.statsJson, '$.clanLevelSpVersion'), 0)
+          AND COALESCE(json_extract(bot_life_state.statsJson, '$.clanMembershipVersion'), 0)
+              <= COALESCE(json_extract(excluded.statsJson, '$.clanMembershipVersion'), 0)`, parameters];
     Checkpoint.bindRow(beforeWrite, statement, id);
     const baseFailures = Database.stats().failures;
     assert.equal((await Database.saveBotLifeState(statement, { beforeWrite })).affectedRows, 1);
     assert.equal(logs.length, 0, 'successful native saves do not log');
     const facts = () => Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]);
     const saved = await facts();
+    assert.deepEqual(saved, [{ ...state, statsJson: parameters[27] }],
+        'the admitted native ROW changes only the original declared secret stats');
     await Database.execute([`CREATE TRIGGER save_diagnostic_fault BEFORE UPDATE ON bot_life_state
         BEGIN SELECT json_extract('SECRET_SAVE_SQL', '$.value'); END`]);
     await rejection(() => Database.saveBotLifeState(statement, { beforeWrite }), () => nativeFailures.at(-1));
