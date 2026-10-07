@@ -41,7 +41,6 @@ function fixture({ held = false, error = null, kind = 'lifecycle', advance = fal
         return { ok: true, state: currentRows.get(state.characterId) };
     };
     coordinator.population = { executeWorkerLifecycleCommand: operation };
-    coordinator.executeMarketReviewCommand = request => operation(currentRows.get(request.characterId), request);
     let messages = 0;
     const submit = async requests => {
         const worker = coordinator.worker, epoch = coordinator.workerEpoch;
@@ -52,7 +51,7 @@ function fixture({ held = false, error = null, kind = 'lifecycle', advance = fal
 }
 const acknowledgements = h => h.sent.filter(value => value.message.type === 'command_ack');
 async function run() {
-    for (const kind of ['lifecycle', 'market_review']) {
+    for (const kind of ['lifecycle']) {
         await check(`current ${kind} actual handler and original A Protocol reply`, async () => {
             const h = fixture({ kind }), input = command(currentRows.get(1), kind);
             await h.submit([input]); await h.coordinator.commandTail;
@@ -137,15 +136,12 @@ async function run() {
             assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
         } finally { LifeState.settleWrites = oldSettle; }
     });
-    await check('market error after cache retirement cannot restore the original input snapshot', async () => {
-        const h = fixture({ held: true, kind: 'market_review' }), input = command(currentRows.get(1), 'market_review');
-        await h.submit([input]); await h.entered.promise;
-        currentRows.delete(1); h.gate.reject(Error('current_market_error')); await h.coordinator.commandTail;
-        const result = acknowledgements(h)[0].message.payload.results[0];
-        assert.equal(result.ok, false); assert.equal(result.reason, 'current_market_error');
-        assert.equal(result.retryAfterMs, 5000); assert.equal(result.marketDeferred, true);
-        assert.equal(result.state, undefined); assert.deepEqual(result.context, input.context);
-        assert.equal(result.commandId, input.commandId); assert.deepEqual(result.commandCheckpoint, input.commandCheckpoint);
+    await check('retired market command is rejected before work or acknowledgement', async () => {
+        const h = fixture(), input = command(currentRows.get(1), 'market_review');
+        assert.strictEqual(Protocol.commandIdentity(input), null);
+        await h.submit([input]); await h.coordinator.commandTail;
+        assert.strictEqual(h.calls.length, 0);
+        assert(acknowledgements(h).every(row => row.message.payload.results.length === 0));
     });
     if (failures.length) throw Error(`${failures.length} command handler contracts failed`);
 }

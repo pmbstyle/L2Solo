@@ -50,12 +50,6 @@ function createLifecycleSafetyRuntime(population, coordinator) {
             request: (kind, rows, worker) => coordinator.requestSafety(kind, rows, worker),
             poll: timestamp => coordinator.pollSafety(timestamp),
             cancel: () => coordinator.cancelSafety()
-        },
-        hot: {
-            probe: checkpoint => population.hotBoardReviewService?.probeSafety?.(checkpoint)
-                || { status: 'deferred', reason: 'hot_service_not_ready' },
-            repair: receipt => population.hotBoardReviewService?.repairSafety?.(receipt)
-                || { status: 'deferred', reason: 'hot_service_not_ready' }
         }
     });
     return runtime;

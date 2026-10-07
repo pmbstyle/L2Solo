@@ -53,9 +53,8 @@ function emptyCounters() {
         missedEventsRecovered: 0,
         economySafetyRepairs: 0,
         coldSafetyStateRepairs: 0,
-        coldSafetyBoardRepairs: 0,
+        boardReviewWakeups: 0,
         coldSafetyQueueRepairs: 0,
-        hotSafetyBoardRepairs: 0,
         partySafetyRepairs: 0,
         legacyOwnershipConflicts: 0,
         warehouseCleanupRuns: 0,
@@ -147,7 +146,6 @@ const PopulationMetrics = {
     },
     timer: null,
     coldSafetySource: null,
-    hotSafetyHighWater: 0,
     delayHistogram: null,
     delayWindowStartedAt: 0,
 
@@ -160,7 +158,7 @@ const PopulationMetrics = {
     beginColdSafetyEpoch(epoch) {
         if (typeof epoch !== 'string' || !epoch || epoch.length > 160) return false;
         if (this.coldSafetySource?.epoch !== epoch) {
-            this.coldSafetySource = { epoch, stateRepairs: 0, boardRepairs: 0, coverageRepairs: 0 };
+            this.coldSafetySource = { epoch, stateRepairs: 0, coverageRepairs: 0 };
         }
         return true;
     },
@@ -171,28 +169,16 @@ const PopulationMetrics = {
         return true;
     },
 
-    // The hot producer is a process singleton; stop/start preserves its total.
-    recordHotSafetyTotal(total) {
-        if (!Number.isSafeInteger(total) || total < 0) return 0;
-        const delta = Math.max(0, total - this.hotSafetyHighWater);
-        if (!Number.isSafeInteger(this.counters.missedEventsRecovered + delta)
-            || !Number.isSafeInteger(this.counters.hotSafetyBoardRepairs + delta)) return 0;
-        this.hotSafetyHighWater += delta;
-        this.counters.missedEventsRecovered += delta;
-        this.counters.hotSafetyBoardRepairs += delta;
-        return delta;
-    },
-
     // Worker-owned cumulative accepted transitions survive a lost direct ACK.
     // The caller establishes an epoch on creation, never from an incoming report.
     recordColdSafetyTotals(epoch, totals) {
         const source = this.coldSafetySource;
         if (!source || source.epoch !== epoch || !totals || typeof totals !== 'object' || Array.isArray(totals)) return 0;
-        const fields = ['stateRepairs', 'boardRepairs', 'coverageRepairs'];
+        const fields = ['stateRepairs', 'coverageRepairs'];
         if (fields.some(key => !Number.isSafeInteger(totals[key]) || totals[key] < 0)) return 0;
         const deltas = fields.map(key => Math.max(0, totals[key] - source[key]));
         const recovered = deltas.reduce((sum, delta) => sum + delta, 0);
-        const counters = ['coldSafetyStateRepairs', 'coldSafetyBoardRepairs', 'coldSafetyQueueRepairs'];
+        const counters = ['coldSafetyStateRepairs', 'coldSafetyQueueRepairs'];
         if (!Number.isSafeInteger(this.counters.missedEventsRecovered + recovered)
             || counters.some((key, index) => !Number.isSafeInteger(this.counters[key] + deltas[index]))) return 0;
         fields.forEach((key, index) => { source[key] += deltas[index]; });

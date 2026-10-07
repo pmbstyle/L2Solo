@@ -1,6 +1,13 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const directory = path.join(require('os').tmpdir(), `l2solo-board-price-${require('crypto').randomUUID()}`);
+fs.mkdirSync(directory);
+const databasePath = path.join(directory, 'world.sqlite');
+const historyPath = path.join(directory, 'history.sqlite');
+process.env.L2NODE_CONFIG_FILE = path.join(directory, 'fixture.ini');
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${databasePath}\nhistoryPath=${historyPath}\n`);
 require('../src/Global');
 
 const Database = invoke('Database');
@@ -10,13 +17,12 @@ const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const { BoardIndex, rowOf, recordOf } = require('../src/GameServer/AfkTrade/BoardIndex');
-const databasePath = path.join(process.cwd(), 'tmp', 'test-n79-board-price-state.sqlite');
 const STEM = 1864;
 let sequence = 0;
 const failures = [];
 
 function clean() {
-    for (const file of [databasePath, databasePath.replace(/\.sqlite$/, '.history.sqlite')]) {
+    for (const file of [databasePath, historyPath]) {
         for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
     }
 }
@@ -76,7 +82,8 @@ const move = (shop, line = shop.lines[0]) => ({ recordId: shop.id, lineId: line.
 
 async function run() {
     clean();
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
+    assert.strictEqual(path.resolve(options.default.Database.path), databasePath);
+    assert.strictEqual(path.resolve(options.default.Database.historyPath), historyPath);
     Database.init();
     assert(Database.isReady());
     DataCache.init();
@@ -165,9 +172,10 @@ async function run() {
         AfkTrade.refreshRecord(before);
         await AfkTrade.repriceBot(owner, shop.lines[0].id, 110, before.revision);
         const agreed = await getShop(owner);
+        assert(agreed.lines[0].pricing.seenAt > 0);
         assert.deepStrictEqual(agreed.lines[0].pricing, { ...shop.lines[0].pricing, price: 110,
             seenCounter: totals.get(`boardCounterDealCount:${key}`), seenItem: totals.get(`boardDealCount:${STEM}`),
-            rival: 95, seenFills: 1 }, 'external agreed quote kept evidence attributed to its old price');
+            rival: 95, seenFills: 1, seenAt: agreed.lines[0].pricing.seenAt }, 'external agreed quote kept evidence attributed to its old price');
         await buy(buyer, { shopId: agreed.id, ownerId: owner,
             lineId: agreed.lines[0].id, amount: 1, expectedPrice: 110, expectedRevision: agreed.revision });
         const filled = await getShop(owner);
@@ -411,4 +419,5 @@ run().catch(error => { console.error(error); process.exitCode = 1; }).finally(as
     MarketCounters.reset();
     await Database.close();
     clean();
+    fs.rmSync(directory, { recursive: true, force: true });
 });

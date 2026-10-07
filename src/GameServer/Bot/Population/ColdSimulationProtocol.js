@@ -193,12 +193,10 @@ function validateEnvelope(message, direction, options = {}) {
             const repair = message.type === 'worker_repair_request';
             const checkpoint = safetyCheckpoint(repair ? row?.checkpoint : row);
             if (!checkpoint || ids.has(checkpoint.characterId)
-                || (repair && (!['state', 'board'].includes(row.kind)
+                || (repair && (row.kind !== 'state'
                     || typeof row.edgeId !== 'string' || !row.edgeId || row.edgeId.length > 200
                     || edges.has(row.edgeId) || !Number.isSafeInteger(row.expectedWorkerVersion)
-                    || row.expectedWorkerVersion < 0
-                    || (row.kind === 'board' && (!Number.isSafeInteger(row.expectedBoardCoverageVersion)
-                        || row.expectedBoardCoverageVersion < 0))))) {
+                    || row.expectedWorkerVersion < 0))) {
                 return { ok: false, reason: 'invalid_safety_row' };
             }
             ids.add(checkpoint.characterId);
@@ -211,7 +209,7 @@ function validateEnvelope(message, direction, options = {}) {
         const reason = value => typeof value === 'string' && value.length > 0;
         const status = value => value && ['covered', 'deferred', 'ineligible', 'uncovered'].includes(value.status)
             && reason(value.reason);
-        if (!safety || !['stateRepairs', 'boardRepairs', 'coverageRepairs'].every(key => version(safety[key]))) {
+        if (!safety || !['stateRepairs', 'coverageRepairs'].every(key => version(safety[key]))) {
             return { ok: false, reason: 'invalid_safety_totals' };
         }
         for (const result of batch) {
@@ -222,11 +220,11 @@ function validateEnvelope(message, direction, options = {}) {
             if (!checkpoint || checkpoint.characterId !== result.characterId || ids.has(result.characterId)
                 || !version(result.workerVersion) || (observed !== null
                     && (!observedCheckpoint || observedCheckpoint.characterId !== result.characterId))
-                || (repair ? !['state', 'board'].includes(result.kind)
+                || (repair ? result.kind !== 'state'
                     || typeof result.edgeId !== 'string' || !result.edgeId || result.edgeId.length > 200
                     || !['accepted', 'covered', 'deferred', 'stale', 'ineligible'].includes(result.status)
-                    || !reason(result.reason) || !version(result.boardCoverageVersion)
-                    : !status(result.normal) || !status(result.board) || !version(result.board.coverageVersion))) {
+                    || !reason(result.reason)
+                    : !status(result.normal))) {
                 return { ok: false, reason: 'invalid_safety_receipt' };
             }
             ids.add(result.characterId);
@@ -316,7 +314,7 @@ function commandIdentity(value) {
     if (!checkpoint || checkpoint.characterId !== value.characterId || checkpoint.phase !== 'cold'
         || (value.state !== undefined && (!value.state || typeof value.state !== 'object'
             || Array.isArray(value.state) || value.state.characterId !== value.characterId))) return null;
-    if (value.kind !== undefined && (!['lifecycle', 'market_review'].includes(value.kind)
+    if (value.kind !== undefined && (value.kind !== 'lifecycle'
         || !value.state || !sameCommandCheckpoint(value.state, checkpoint))) return null;
     return { characterId: value.characterId, commandId: value.commandId, checkpoint };
 }

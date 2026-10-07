@@ -214,12 +214,6 @@ async function publish() {
         await coordinator.commandTail;
         message = await delivered;
         assert.equal(message.type, 'command_ack');
-        const currentEntry = coordinator.projectedEntryFor(row.characterId).entry;
-        delivered = receive();
-        coordinator.postCollections('command_ack', { results: [{ state, context: {}, marketCommandId: 'borrowed_worker_context' }] });
-        await delivered;
-        assert.equal(coordinator.projectedEntryFor(row.characterId).entry, currentEntry, 'market ACK cannot bless borrowed Worker context');
-
         const partyRow = { partyId: 'projection-party', leaderId: row.characterId,
             memberIdsJson: JSON.stringify([row.characterId, row.characterId + 1]), status: 'active',
             statsJson: '{}', startedAt: 0, updatedAt: 1 };

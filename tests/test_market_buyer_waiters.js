@@ -3,6 +3,9 @@ const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { MarketBuyerWaiters } = require('../src/GameServer/Bot/Economy/MarketBuyerWaiters');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
+const reserve = Funding.operatingReserve;
+Funding.operatingReserve = () => 500; // This index fixture supplies a fixed, already decided reserve.
 
 async function main() {
     let now = 100000, reads = 0;
@@ -70,6 +73,7 @@ async function main() {
         assert.deepEqual(publish(record(6, 100, 10, [{ lineId: 5, selfId: 1103, count: 5, price: 100 }])), []);
         console.log('market buyer waiters: PASS (bounded new-stock delivery, native command, affordability, busy and retirement)');
     } finally {
+        Funding.operatingReserve = reserve;
         await kernel.shutdown();
         assert.equal(waiters.items.size, 0);
         assert.equal(kernel.buyerWakeups.size, 0);

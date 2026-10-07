@@ -22,7 +22,7 @@ class LifecycleSafetySweep {
         this.inFlight = null;
         this.cycle = null;
         this.metrics = { completedCycles: 0, pages: 0, inspected: 0, deferred: 0,
-            stateRepairAttempts: 0, boardRepairAttempts: 0, hotRepairAttempts: 0, errors: 0 };
+            stateRepairAttempts: 0, errors: 0 };
     }
 
     start(registry) {
@@ -119,35 +119,16 @@ class LifecycleSafetySweep {
         }
         if (cycle.phase === 'probe') {
             const rows = [];
-            cycle.hotReceipts = [];
             for (const native of cycle.page.rows) {
                 const checkpoint = this.eligible(native);
                 if (!checkpoint) { this.metrics.deferred++; continue; }
-                if (checkpoint.phase === 'hot') {
-                    const receipt = this.hot?.probe(checkpoint);
-                    if (receipt?.status === 'uncovered'
-                        && Protocol.sameSafetyCheckpoint(checkpoint, receipt.checkpoint)) cycle.hotReceipts.push(receipt);
-                } else rows.push(checkpoint);
+                if (checkpoint.phase === 'cold') rows.push(checkpoint);
             }
             cycle.coldRows = rows;
-            cycle.hotIndex = 0;
-            cycle.phase = 'hot';
+            cycle.phase = 'presence';
             return;
         }
-        if (cycle.phase === 'hot') {
-            const receipt = cycle.hotReceipts[cycle.hotIndex];
-            if (receipt) {
-                if (!this.eligible(receipt.checkpoint)) { cycle.hotIndex++; return; }
-                const native = await this.readCurrent(receipt.checkpoint);
-                if (!this.current(cycle)) return;
-                if (Protocol.sameSafetyCheckpoint(receipt.checkpoint, Protocol.safetyCheckpoint(native))
-                    && this.eligible(receipt.checkpoint)) {
-                    this.metrics.hotRepairAttempts++;
-                    this.hot.repair(receipt);
-                } else this.metrics.deferred++;
-                cycle.hotIndex++;
-                return;
-            }
+        if (cycle.phase === 'presence') {
             const rows = cycle.coldRows;
             const worker = this.cold.current();
             if (!rows.length || worker?.ready !== true) { this.finishPage(cycle); return; }
@@ -176,12 +157,6 @@ class LifecycleSafetySweep {
                     if (!projected?.entry) { this.metrics.deferred++; continue; }
                     this.appendEdge(cycle, { edgeId: this.edgeIdentity(cycle, 'state', checkpoint, receipt), kind: 'state', checkpoint,
                         expectedWorkerVersion: receipt.workerVersion, entry: projected.entry });
-                } else if (receipt.normal?.status === 'covered' && receipt.board?.status === 'uncovered'
-                    && Number.isSafeInteger(receipt.board.coverageVersion) && receipt.board.coverageVersion >= 0) {
-                    if (!this.cold.canRepair(checkpoint)) { this.metrics.deferred++; continue; }
-                    this.appendEdge(cycle, { edgeId: this.edgeIdentity(cycle, 'board', checkpoint, receipt), kind: 'board', checkpoint,
-                        expectedWorkerVersion: receipt.workerVersion,
-                        expectedBoardCoverageVersion: receipt.board.coverageVersion });
                 }
             }
             if (cycle.reviewIndex === cycle.page.rows.length) cycle.phase = 'repair';
@@ -204,7 +179,7 @@ class LifecycleSafetySweep {
                 cycle.repairIndex++;
                 return;
             }
-            this.metrics[edge.kind === 'state' ? 'stateRepairAttempts' : 'boardRepairAttempts']++;
+            this.metrics.stateRepairAttempts++;
             this.request(cycle, 'repair', [edge], cycle.worker, () => { cycle.repairIndex++; });
         }
     }
@@ -216,12 +191,11 @@ class LifecycleSafetySweep {
 
     edgeIdentity(cycle, kind, checkpoint, receipt) {
         const previous = cycle.edgeIdentities.get(checkpoint.characterId);
-        const boardVersion = kind === 'board' ? receipt.board.coverageVersion : null;
         if (previous?.kind === kind && previous.epoch === cycle.worker.epoch
-            && previous.workerVersion === receipt.workerVersion && previous.boardVersion === boardVersion
+            && previous.workerVersion === receipt.workerVersion
             && Protocol.sameSafetyCheckpoint(previous.checkpoint, checkpoint)) return previous.id;
         const identity = { id: randomUUID(), kind, checkpoint, epoch: cycle.worker.epoch,
-            workerVersion: receipt.workerVersion, boardVersion };
+            workerVersion: receipt.workerVersion };
         cycle.edgeIdentities.set(checkpoint.characterId, identity);
         return identity.id;
     }

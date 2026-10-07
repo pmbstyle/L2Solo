@@ -1438,6 +1438,10 @@ function applySchemaMigrations() {
             WHERE json_type(statsJson, '$.marketTrades') IS NOT NULL;
         INSERT OR IGNORE INTO world_meta(key,value) VALUES('botMarketCountsMoved','1');
     `)]);
+    // Own-line price attention checkpoints time only with publication/reprice.
+    migrations.push([60, () => connection.exec(`
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenAt INTEGER NOT NULL DEFAULT 0;
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -2585,9 +2589,9 @@ function recordClanGoalEventUnsafe({ clanId, eventType, goalType = '', plan = ''
 const BOARD_TRADE_SOURCES = new Set(['afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store']);
 const BOARD_DEAL_COUNT_PREFIX = 'boardDealCount:';
 const BOARD_COUNTER_COUNT_PREFIX = 'boardCounterDealCount:';
-const PRICING_FIELDS = Object.freeze(['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills']);
+const PRICING_FIELDS = Object.freeze(['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills', 'seenAt']);
 const PRICING_COLUMNS = Object.freeze(['pricingPrice', 'pricingSeenCounter', 'pricingSeenItem',
-    'pricingRival', 'pricingWorth', 'pricingSeenFills']);
+    'pricingRival', 'pricingWorth', 'pricingSeenFills', 'pricingSeenAt']);
 
 function boardTradeEligible(trade) {
     return Number(trade.selfId) > 0 && Number(trade.selfId) !== 57
@@ -2596,11 +2600,15 @@ function boardTradeEligible(trade) {
 
 function linePricing(line) {
     if (line.pricingPrice === null || line.pricingPrice === undefined) return undefined;
-    return Object.fromEntries(PRICING_FIELDS.map((field, index) => [field, Number(line[PRICING_COLUMNS[index]])]));
+    const pricing = Object.fromEntries(PRICING_FIELDS.map((field, index) => [field, Number(line[PRICING_COLUMNS[index]])]));
+    // A legacy cursor with no timestamp retains the one-hour default and its
+    // old external shape until an actual reprice checkpoints the time.
+    if (!pricing.seenAt) delete pricing.seenAt;
+    return pricing;
 }
 
 function pricingValues(pricing) {
-    const values = PRICING_FIELDS.map(field => pricing?.[field]);
+    const values = PRICING_FIELDS.map(field => field === 'seenAt' ? pricing?.seenAt ?? 0 : pricing?.[field]);
     if (values.some((value, index) => !(PRICING_FIELDS[index] === 'worth' ? Number.isFinite(value) : Number.isSafeInteger(value))
         || value < 0)) throw new Error('invalid_board_pricing');
     return values;
@@ -2608,7 +2616,8 @@ function pricingValues(pricing) {
 
 function checkLinePricingUnsafe(line, previousPricing) {
     const current = linePricing(line);
-    if (!current || !previousPricing || PRICING_FIELDS.some(field => current[field] !== previousPricing[field])) {
+    if (!current || !previousPricing || PRICING_FIELDS.some(field => field === 'seenAt'
+        ? (current[field] ?? 0) !== (previousPricing[field] ?? 0) : current[field] !== previousPricing[field])) {
         throw new Error('afk_trade_pricing_changed');
     }
 }
@@ -2669,7 +2678,7 @@ function initialLinePricingUnsafe(selfId, price, storeType) {
     return { price,
         seenCounter: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_COUNTER_COUNT_PREFIX}${key}`])?.value || 0),
         seenItem: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_DEAL_COUNT_PREFIX}${selfId}`])?.value || 0),
-        rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0 };
+        rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0, seenAt: now() };
 }
 
 function learnBoardTradeUnsafe(trade, participants) {
@@ -3116,7 +3125,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         const fills = botOwned ? (line.fills ?? 0) : 0;
         if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
         const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
-        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(() => null);
+        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => field === 'seenAt' ? 0 : null);
         if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
 
         let source = null;
@@ -3142,7 +3151,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
             shopId, sourceObjectId, selfId, name, count, initialCount, price,
             enchant, slot, stackable, petData, createdAt, updatedAt, fills,
             ${PRICING_COLUMNS.join(', ')}
-        ) VALUES (${Array(20).fill('?').join(', ')})`, [
+        ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
             shopId,
             source ? Number(source.id) : null,
             selfId,

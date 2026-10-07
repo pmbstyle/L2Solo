@@ -1342,8 +1342,8 @@ function claimAck(kernel, payload) {
     const marketKernel = recordingKernel({
         resolveSolo: resolver,
         projectResolve: async (current) => ({ state: current,
-            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }], withdrawals: [],
-                updates: [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }] } }),
+            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990,
+                pricing: { seenCounter: 3, seenAt: now } }], withdrawals: [] } }),
         emit: (type, payload) => marketMessages.push({ type, payload }),
         now: () => now
     });
@@ -1355,10 +1355,20 @@ function claimAck(kernel, payload) {
     await marketKernel.resolveChain;
     marketKernel.flush(null, true);
     const marketProposal = marketMessages.find((entry) => entry.type === 'proposal_batch').payload.proposals[0];
-    assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }]);
-    assert.deepStrictEqual(marketProposal.market.updates, [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }],
-        'unchanged quotes carry their observation checkpoint');
+    assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990,
+        pricing: { seenCounter: 3, seenAt: now } }]);
+    assert.strictEqual(marketProposal.market.updates, undefined, 'unchanged quotes send no metadata update');
     assert.strictEqual(marketProposal.nextState.stats.priceBeliefs, undefined, 'line knowledge does not ride in bot stats');
+    assert.strictEqual(marketKernel.beginCommand(40, 'market_review'), null, 'board review command kind is retired');
+    marketKernel.lookSeen.set(40, new Map([[6, { deals: 3, at: now }]]));
+    marketKernel.fence(40);
+    assert.strictEqual(marketKernel.lookSeen.has(40), false, 'hot handoff deletes worker line observations');
+    marketKernel.upsert({ state: state(41), context: {} });
+    marketKernel.lookSeen.set(41, new Map([[7, { deals: 3, at: now }]]));
+    marketKernel.remove(41);
+    assert.strictEqual(marketKernel.lookSeen.has(41), false);
+    await marketKernel.shutdown();
+    assert.strictEqual(marketKernel.lookSeen.size, 0);
 
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {

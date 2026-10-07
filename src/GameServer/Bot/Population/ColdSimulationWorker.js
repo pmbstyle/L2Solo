@@ -92,7 +92,6 @@ const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
 const { BoardIndex, recordOf } = require('../../AfkTrade/BoardIndex');
-const BoardReviewEvents = require('../Economy/BoardReviewEvents');
 const { MarketBuyerWaiters } = require('../Economy/MarketBuyerWaiters');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
@@ -114,7 +113,6 @@ let competitionReady = false;
 let safetyStateReady = false;
 let leaseProbe = null;
 let safetyStateRepairs = 0;
-let safetyBoardRepairs = 0;
 let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
@@ -127,9 +125,6 @@ const actorTables = new ColdActorTableReceiver({ mirror: tables, owner: actorOwn
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
-const marketEvents = new BoardReviewEvents({ board: boardIndex,
-    counter: (key) => MarketCounters.counter(key).deals });
-const marketCommands = new Map();
 const buyerWaiters = new MarketBuyerWaiters({
     stateFor: id => kernel?.states.get(id)?.state,
     demandsFor: (state, timestamp) => invoke('GameServer/Bot/Economy/MarketDemandIndex').signalsOfState(state, timestamp),
@@ -138,23 +133,18 @@ const buyerWaiters = new MarketBuyerWaiters({
 const boardFollower = boardIndex.follower();
 let boardReplacing = false;
 tables.watch('board', {
-    reset: () => { boardReplacing = true; boardFollower.reset(); marketEvents.resetBoardCoverage(); },
+    reset: () => { boardReplacing = true; boardFollower.reset(); kernel?.lookSeen.clear(); },
     put: (key, row) => {
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
-        marketEvents.ownerChanged(recordOf(row).ownerId, { current: false });
+        pruneLookSeen(recordOf(row).ownerId);
+        if (previous[0]?.ownerId !== recordOf(row).ownerId) pruneLookSeen(previous[0]?.ownerId);
         if (!boardReplacing && tables.ready('board')) buyerWaiters.recordChanged(recordOf(row), previous);
     },
     remove: (key) => {
         const ownerId = boardIndex.records.get(Number(key))?.[0]?.ownerId;
         boardFollower.remove(key);
-        if (ownerId) marketEvents.ownerChanged(ownerId, { current: tables.ready('board') && tables.ready('market') });
-    }
-});
-tables.watch('market', {
-    reset: () => marketEvents.resetCounterHistory(),
-    put: (key, row) => {
-        if (String(key).startsWith('c:')) marketEvents.counterChanged(String(key).slice(2), Number(row[1]));
+        if (ownerId) pruneLookSeen(ownerId);
     }
 });
 // The market counters come from the main thread's 'market' table.
@@ -165,7 +155,7 @@ function boardReady() {
 }
 
 function safetyTotals() {
-    return { stateRepairs: safetyStateRepairs, boardRepairs: safetyBoardRepairs,
+    return { stateRepairs: safetyStateRepairs,
         coverageRepairs: kernel?.stats.orphanRecoveries || 0 };
 }
 
@@ -190,11 +180,9 @@ function safetyPresence(checkpoint) {
     const id = checkpoint.characterId, entry = kernel?.states.get(id);
     const result = { characterId: id, checkpoint, observedCheckpoint: Protocol.safetyCheckpoint(entry?.state),
         workerVersion: kernel?.versions.get(id) || 0,
-        normal: { status: 'deferred', reason: 'state_catalog_loading' },
-        board: { status: 'deferred', reason: 'state_catalog_loading', coverageVersion: marketEvents.coverageVersion(id) } };
+        normal: { status: 'deferred', reason: 'state_catalog_loading' } };
     const gate = (status, reason) => {
         result.normal = { status, reason };
-        result.board = { status, reason, coverageVersion: marketEvents.coverageVersion(id) };
         return result;
     };
     if (!kernel || !safetyStateReady) return result;
@@ -203,7 +191,7 @@ function safetyPresence(checkpoint) {
     if (checkpoint.simulationOwner !== 'legacy_main' || checkpoint.simulationLeaseId !== null
         || checkpoint.simulationLeaseUntil > 0) return gate('deferred', 'native_ownership_active');
     // Native ownership can be ahead of the cached row during ACK processing.
-    if (kernel.busy(id) || marketCommands.has(id)) return gate('deferred', 'worker_busy');
+    if (kernel.busy(id)) return gate('deferred', 'worker_busy');
     const normalCovered = kernel.hasNormalCoverage(id);
     if (!normalCovered && kernel.hasAcceptedPartyGrant(id)) return gate('deferred', 'partial_party_accepted');
     if (entry && !Protocol.sameSafetyCheckpoint(checkpoint, entry.state)) return gate('deferred', 'checkpoint_changed');
@@ -212,29 +200,7 @@ function safetyPresence(checkpoint) {
             : !entry ? { status: 'uncovered', reason: 'missing_state' }
                 : kernel.needsNormalSchedule(id) ? { status: 'deferred', reason: 'local_coverage_missing' }
                     : { status: 'ineligible', reason: 'no_normal_schedule' };
-    if (!tables.ready('board') || !tables.ready('market')) {
-        result.board = { status: 'deferred', reason: 'table_not_ready', coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (!entry) {
-        result.board = { status: 'deferred', reason: 'state_projection_required', coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (marketEvents.pending.has(id) || marketEvents.inFlight.has(id)) {
-        const deferred = !marketEvents.ready.has(id) && !marketEvents.inFlight.has(id);
-        result.board = { status: deferred ? 'deferred' : 'covered', reason: deferred ? 'intentional_pending' : 'board_event',
-            coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (kernel.paused) {
-        result.board = { status: 'deferred', reason: 'worker_paused', coverageVersion: marketEvents.coverageVersion(id) };
-    } else {
-        const status = marketEvents.ownerStatus(id), edge = status.behind ? marketEvents.edgeOf(id) : null;
-        if (status.behind && edge && marketEvents.lastAcceptedEdge(id) !== edge && kernel.hasAcceptedPartyGrant(id)) {
-            result.board = { status: 'deferred', reason: 'partial_party_accepted',
-                coverageVersion: marketEvents.coverageVersion(id) };
-            return result;
-        }
-        result.board = { status: !status.priced || !status.behind ? 'ineligible'
-            : !edge || marketEvents.lastAcceptedEdge(id) === edge ? 'deferred' : 'uncovered',
-        reason: !status.priced ? 'no_priced_lines' : !status.behind ? 'checkpoint_current'
-            : !edge ? 'board_edge_unavailable' : marketEvents.lastAcceptedEdge(id) === edge ? 'edge_already_accepted' : 'board_event_absent',
-        coverageVersion: marketEvents.coverageVersion(id) };
-    }
+
     return result;
 }
 
@@ -242,13 +208,10 @@ function safetyRepair(row) {
     const checkpoint = Protocol.safetyCheckpoint(row.checkpoint), id = checkpoint.characterId;
     let presence = safetyPresence(checkpoint);
     const receipt = (status, reason) => ({ edgeId: row.edgeId, characterId: id, kind: row.kind, status, reason,
-        checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion,
-        boardCoverageVersion: presence.board.coverageVersion });
+        checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion });
     if (presence.workerVersion !== row.expectedWorkerVersion) return receipt('stale', 'worker_version_changed');
-    if (row.kind === 'board' && presence.board.coverageVersion !== row.expectedBoardCoverageVersion) {
-        return receipt('stale', 'board_coverage_changed');
-    }
-    const coverage = row.kind === 'state' ? presence.normal : presence.board;
+    if (row.kind !== 'state') return receipt('ineligible', 'unsupported_repair');
+    const coverage = presence.normal;
     if (coverage.status !== 'uncovered') return receipt(coverage.status, coverage.reason);
     if (row.kind === 'state') {
         if (coverage.reason !== 'missing_state') return receipt('deferred', 'local_safety_owns_schedule');
@@ -260,20 +223,12 @@ function safetyRepair(row) {
         }
         if (!Protocol.sameSafetyCheckpoint(checkpoint, state)) return receipt('stale', 'projection_checkpoint_changed');
         if (!kernel.upsert(entry)) return receipt('stale', 'projection_not_accepted');
-        marketEvents.rearm(id);
-        marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
         presence = safetyPresence(checkpoint);
         if (!Protocol.sameSafetyCheckpoint(presence.observedCheckpoint, checkpoint)) return receipt('stale', 'checkpoint_changed');
         safetyStateRepairs++;
         return receipt('accepted', 'state_delivery_restored');
     }
-    if (kernel.hasAcceptedPartyGrant(id)) return receipt('deferred', 'partial_party_accepted');
-    const edge = marketEvents.edgeOf(id);
-    if (!edge || marketEvents.lastAcceptedEdge(id) === edge) return receipt('deferred', 'edge_already_accepted');
-    marketEvents.acceptSafetyEdge(id, edge);
-    presence = safetyPresence(checkpoint);
-    safetyBoardRepairs++;
-    return receipt('accepted', 'board_event_restored');
+
 }
 let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 let planningOccupancyCache = null;
@@ -284,50 +239,32 @@ BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId
 const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
 eventLoopDelay.enable();
 
-// A changed board counter makes the bot review its own lines. The review
-// checkpoints observations even when its standing quote remains best.
+// The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
-function reviewMarket(state, timestamp) {
+function reviewMarket(state, timestamp, economy) {
     const board = boardReady();
     if (!board || state?.phase !== 'cold') return null;
     const lines = board.ownerLines(state.characterId);
-    if (!lines.length) return null;
+    if (!lines.length) { kernel.lookSeen.delete(Number(state.characterId)); return null; }
     const ctx = MarketPricing.traderContext(state, {
-        timestamp, board, persona: BotPersona.of(state),
+        timestamp, board, economy, persona: BotPersona.of(state),
         npcOffersFor: (selfId) => planningNpcCatalog.offersFor(selfId),
         findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId)
     });
-    const looked = MarketPricing.look(state, lines, ctx);
+    const id = Number(state.characterId);
+    let seen = kernel.lookSeen.get(id);
+    if (!seen) kernel.lookSeen.set(id, seen = new (require('../Economy/BoardLook').SeenLines)());
+    const looked = MarketPricing.lookOwn(state, lines, ctx, seen);
     if (!looked) return null;
     return looked;
 }
 
-function drainMarketEvents() {
-    if (!kernel || kernel.paused || shuttingDown || !tables.ready('board') || !tables.ready('market')) return;
-    const capacity = Math.max(0, kernel.maxInFlight
-        - kernel.claiming.size - kernel.inFlight.size - kernel.commanding.size);
-    for (const id of marketEvents.take(Math.min(8, kernel.maxBatch, capacity))) {
-        const entry = kernel.states.get(id);
-        if (!entry) { marketEvents.defer(id); continue; }
-        if (entry.state.phase !== 'cold') { marketEvents.forget(id); continue; }
-        if (kernel.busy(id)) { marketEvents.defer(id); continue; }
-        const market = reviewMarket(entry.state, Date.now());
-        if (!market || !(market.updates?.length || market.reprices?.length || market.withdrawals?.length)) {
-            marketEvents.defer(id);
-            continue;
-        }
-        const attempt = kernel.beginCommand(id, 'market_review');
-        if (!attempt) { marketEvents.defer(id); continue; }
-        const commandId = attempt.commandId;
-        marketCommands.set(id, commandId);
-        attempt.sent = true;
-        if (!send('command_request', { requests: [{ kind: 'market_review', characterId: id,
-            commandId, commandCheckpoint: attempt.checkpoint, state: entry.state, context: entry.context, market }] })) {
-            marketCommands.delete(id);
-            kernel.cancelCommand(id, attempt);
-            marketEvents.defer(id);
-        }
-    }
+function pruneLookSeen(ownerId) {
+    const seen = kernel?.lookSeen.get(Number(ownerId));
+    if (!seen) return;
+    const ids = new Set(boardIndex.ownerLines(ownerId).map(line => line.lineId));
+    for (const id of [...seen.keys()]) if (!ids.has(id)) seen.delete(id);
+    if (!seen.size) kernel.lookSeen.delete(Number(ownerId));
 }
 
 function currentPlanningOccupancy(timestamp = Date.now()) {
@@ -399,7 +336,6 @@ function startKernel(config = {}) {
                 economyDeps: { occupancy: currentPlanningOccupancy(timestamp) },
                 onEconomy: (built, seen) => { economy = built; seenKey = ColdEconomyDecision.stateKey(seen); }
             });
-            // Board events submit price observations through market commands.
             const projected = resolved;
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
@@ -411,8 +347,10 @@ function startKernel(config = {}) {
                 ...(progressionChanged ? { classId: afterClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
+            const market = reviewMarket(projected, timestamp, economy);
             return {
                 state: projected,
+                ...(market ? { market } : {}),
                 durable: Object.keys(durable).length ? durable : null,
                 buffOffer: require('../Economy/ColdBuffOffer').project(projected,
                     kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
@@ -490,7 +428,6 @@ function startKernel(config = {}) {
     });
     loopTimer = setInterval(() => {
         if (leaseProbe && (shuttingDown || Date.now() >= leaseProbe.replyBy)) leaseProbe = null;
-        drainMarketEvents();
         kernel.tick();
     }, Math.max(5, Number(config.loopIntervalMs) || 20));
     if (Config.coldCompetitionObserveEnabled) {
@@ -626,14 +563,6 @@ async function handle(message) {
     case 'snapshot_page':
         if (!kernel) throw new Error('kernel_not_initialized');
         kernel.upsertMany(payload.rows || []);
-        for (const row of payload.rows || []) {
-            const id = Number(row.state?.characterId);
-            if (marketCommands.has(id) && kernel.commandStartedAt.get(id)?.commandId !== marketCommands.get(id)) {
-                marketCommands.delete(id);
-            }
-            if (!marketCommands.has(id)) marketEvents.rearm(id);
-            marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
-        }
         if (payload.initial === true && payload.done === true) safetyStateReady = true;
         if (payload.ack) {
             send('ready', {
@@ -674,32 +603,13 @@ async function handle(message) {
         else sendLeasePage();
         break;
     case 'commit_ack':
-        for (const result of kernel?.onCommitAck(payload) || []) {
-            const id = Number(result.characterId);
-            if (marketCommands.has(id)) marketEvents.ownerChanged(id);
-            else marketEvents.rearm(id);
-        }
+        kernel?.onCommitAck(payload);
         break;
     case 'release_ack':
-        for (const result of kernel?.onReleaseAck(payload) || []) {
-            const id = Number(result.characterId);
-            if (marketCommands.has(id)) marketEvents.ownerChanged(id);
-            else marketEvents.rearm(id);
-        }
+        kernel?.onReleaseAck(payload);
         break;
     case 'command_ack':
-        (payload.results || []).forEach((result) => {
-            const identity = Protocol.commandIdentity(result);
-            if (!identity || typeof result.ok !== 'boolean') return;
-            const id = identity.characterId;
-            const market = kernel?.commandStartedAt.get(id)?.kind === 'market_review';
-            if (market ? marketCommands.get(id) !== result.commandId || result.marketCommandId !== result.commandId
-                : result.marketCommandId !== undefined || marketCommands.has(id)) return;
-            if (!kernel?.completeCommand(result)) return;
-            if (market) marketCommands.delete(id);
-            if (result.marketDeferred && result.reason !== 'stale_market_review') marketEvents.deferAfterCommand(id);
-            else marketEvents.rearm(id);
-        });
+        (payload.results || []).forEach(result => kernel?.completeCommand(result));
         break;
     case 'party_formation_request': {
         const states = kernel
@@ -709,8 +619,6 @@ async function handle(message) {
         break;
     }
     case 'fence': {
-        marketCommands.delete(Number(payload.characterId));
-        marketEvents.defer(Number(payload.characterId));
         const result = kernel?.fence(payload.characterId) || { characterId: Number(payload.characterId), proposal: null, token: null };
         send('fence_ack', result, message.msgId);
         break;
@@ -730,8 +638,6 @@ async function handle(message) {
         break;
     case 'shutdown':
         leaseProbe = null;
-        marketCommands.clear();
-        marketEvents.clear();
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;

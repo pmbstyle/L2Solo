@@ -483,6 +483,9 @@ class ColdSimulationKernel {
         this.decisionEvents = null;
         this.buyerEvents = null;
         this.buyerWakeups = new Set();
+        // Own line observations: <=8 numeric {deals, at} rows per claimed bot.
+        // Release, hot handoff/remove and shutdown discard them; never saved.
+        this.lookSeen = new Map();
         this.nextAlarmToken = 1;
         this.inFlight = new Map();
         this.pendingReleases = new Map();
@@ -616,6 +619,7 @@ class ColdSimulationKernel {
         this.states.delete(id);
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id);
+        this.lookSeen.delete(id);
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
@@ -997,7 +1001,7 @@ class ColdSimulationKernel {
 
     beginCommand(characterId, kind = 'lifecycle') {
         const id = Number(characterId), current = this.states.get(id);
-        if (!Number.isSafeInteger(id) || id <= 0 || !['lifecycle', 'market_review'].includes(kind)
+        if (!Number.isSafeInteger(id) || id <= 0 || kind !== 'lifecycle'
             || this.stopping || !current || current.state.phase !== 'cold' || this.busy(id)
             || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return null;
         const checkpoint = Protocol.commandCheckpoint(current.state);
@@ -1957,6 +1961,7 @@ class ColdSimulationKernel {
                 || Number(active?.grant.leaseUntil || pending.token.leaseUntil) <= this.now()) return;
             this.pendingReleases.delete(id);
             this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || this.states.get(id)?.context?.party?.partyId || ''));
+            this.lookSeen.delete(id);
             this.inFlight.delete(id);
             if (result.state) this.upsert(result);
             else this.requeue(id, this.now() + 1000);
@@ -1971,8 +1976,6 @@ class ColdSimulationKernel {
         const id = identity.characterId, attempt = this.commandStartedAt.get(id), current = this.states.get(id);
         if (!attempt?.sent || !this.commanding.has(id) || current?.state.phase !== 'cold'
             || attempt.commandId !== identity.commandId
-            || (attempt.kind === 'market_review' ? payload.marketCommandId !== attempt.commandId
-                : payload.marketCommandId !== undefined)
             || !Protocol.sameCommandCheckpoint(attempt.checkpoint, identity.checkpoint)) return false;
         this.cancelCommand(id, attempt);
         let output = payload.state;
@@ -2044,6 +2047,7 @@ class ColdSimulationKernel {
         this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
         this.buyerWakeups.clear();
+        this.lookSeen.clear();
         this.pendingReleases.clear();
         this.commanding.clear();
         this.commandStartedAt.clear();

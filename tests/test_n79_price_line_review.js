@@ -76,33 +76,22 @@ try {
         assert.strictEqual(MarketPricing.look(state, lines, ctx), null);
         assert.strictEqual(seenBeliefs.length, 0);
     });
-    contract('unchanged price advances cursor once and replay is inert', () => {
+    contract('unchanged price writes no cursor or line metadata', () => {
         const { state, lines, ctx } = fixture();
         counterDeals += 4;
         const reviewed = MarketPricing.look(state, lines, ctx);
-        assert.deepStrictEqual(reviewed.reprices, []);
-        assert.deepStrictEqual(reviewed.withdrawals, []);
-        assert.strictEqual(reviewed.updates.length, 1);
-        assert.deepStrictEqual(reviewed.updates[0].previousPricing, lines[0].pricing);
-        assert.strictEqual(reviewed.updates[0].pricing.seenCounter, 104);
-        assert.strictEqual(reviewed.updates[0].pricing.seenItem, 104);
-        assert.strictEqual(reviewed.updates[0].expectedRevision, 7);
+        assert.strictEqual(reviewed, null);
         assert(seenBeliefs[0].mu < Math.log(1000), 'passed buyers lower this review centre');
-        lines[0].pricing = reviewed.updates[0].pricing;
-        seenBeliefs = [];
-        assert.strictEqual(MarketPricing.look(state, lines, ctx), null);
-        assert.strictEqual(seenBeliefs.length, 0);
+        assert.strictEqual(lines[0].pricing.seenCounter, 100, 'choice never mutates the durable line');
     });
     contract('more than 21 own fills belong to their exact same-item line', () => {
         const { state, lines, ctx } = fixture(SELL, [{ fills: 41 }, { fills: 0 }]);
         counterDeals += 42;
         const reviewed = MarketPricing.look(state, lines, ctx);
-        assert.strictEqual(reviewed.updates.length, 2);
+        assert.strictEqual(reviewed, null);
         assert(seenBeliefs[0].mu > Math.log(1000), 'the filled line sees sales not below its price');
         assert(seenBeliefs[1].mu < Math.log(1000), 'the other own same-item line sees only passed buyers');
         assert(Math.abs(seenBeliefs[0].K - 42.8) < 1e-9, 'all 41 own fills and one other trade counted beyond the public tail');
-        assert.strictEqual(reviewed.updates[0].pricing.seenFills, 41);
-        assert.strictEqual(reviewed.updates[1].pricing.seenFills, 0);
         assert.deepStrictEqual(lines[0].pricing.seenFills, 0, 'evaluator never mutates caller line state');
     });
     contract('all other counter deals are passed evidence despite many open lines', () => {
@@ -113,7 +102,7 @@ try {
             assert.strictEqual(ctx.board.list(ITEM, side).length, 10, 'ten competing lines');
             counterDeals += 10;
             const reviewed = MarketPricing.look(state, lines, ctx);
-            assert.strictEqual(reviewed.updates.length, 1);
+            assert.strictEqual(reviewed, null);
             assert(Math.abs(seenBeliefs[0].K - 11.8) < 1e-9,
                 `side ${side}: weight must include nine passed trades plus one own fill, got ${seenBeliefs[0].K}`);
             assert(side === BUY ? seenBeliefs[0].mu > Math.log(1000) : seenBeliefs[0].mu < Math.log(1000),
@@ -134,11 +123,11 @@ try {
         const { state, lines, ctx } = fixture(BUY, [{ fills: 4 }, { fills: 0 }]);
         counterDeals += 8;
         const reviewed = MarketPricing.look(state, lines, ctx);
-        assert.strictEqual(reviewed.updates.length, 2);
+        assert.strictEqual(reviewed, null);
         assert(seenBeliefs[0].mu < Math.log(1000), 'fills tell this buyer sellers accept no more than its bid');
         assert(seenBeliefs[1].mu > Math.log(1000), 'sellers passing the other buyer raise its estimate');
         assert(seenBeliefs.every((belief) => belief.worth === 5000.375));
-        assert(reviewed.updates.every((move) => move.pricing.worth === 5000.375));
+        assert(lines.every(line => line.pricing.worth === 5000.375));
     });
     contract('passed buyers lower a standing quote through the actual decision', () => {
         const stubAsk = PriceDecision.chooseAsk;

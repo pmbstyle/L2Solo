@@ -286,6 +286,7 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
+        invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 2);
         if (session.partyCompanion === true && session.followPlayerSession && !session.companionShopping) {
             session.plan = 'following';
             session.shoppingTarget = undefined;

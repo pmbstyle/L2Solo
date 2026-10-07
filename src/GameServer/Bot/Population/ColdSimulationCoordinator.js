@@ -421,7 +421,7 @@ class ColdSimulationCoordinator {
             : type === 'claim_ack' ? payload.rejected
                 : ['commit_ack', 'release_ack', 'command_ack'].includes(type) ? payload.results : [];
         for (const entry of entries || []) {
-            if (type !== 'command_ack' || entry.marketCommandId === undefined) this.projectionRetention.remember(entry);
+            this.projectionRetention.remember(entry);
         }
         const message = Protocol.envelope(type, this.workerEpoch, payload, msgId);
         const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch, bytes });
@@ -1797,7 +1797,7 @@ class ColdSimulationCoordinator {
             const parsed = Protocol.commandIdentity(request);
             const identity = parsed && { characterId: parsed.characterId, commandId: parsed.commandId,
                 commandCheckpoint: parsed.checkpoint };
-            if (!identity || !['lifecycle', 'market_review'].includes(request.kind)
+            if (!identity || request.kind !== 'lifecycle'
                 || !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state)) return [];
             return [{ request, identity }];
         });
@@ -1806,7 +1806,6 @@ class ColdSimulationCoordinator {
             const results = [];
             for (const { request, identity } of requests) {
                 if (!sourceCurrent()) return;
-                const marketReview = request.kind === 'market_review';
                 this.counters.commands += 1;
                 try {
                     const state = LifeState.cachedState(request.characterId);
@@ -1814,20 +1813,16 @@ class ColdSimulationCoordinator {
                     Metrics.recordColdOwnerLegacyDeferred(`command_${String(state?.activity || 'unknown')}`);
                     if (this.fencedBots.has(id) || state?.phase !== 'cold') {
                         results.push({ ...identity, ok: false, reason: 'hot_handoff_fenced',
-                            ...(marketReview ? { marketDeferred: true, marketCommandId: identity.commandId,
-                                context: request.context || {},
-                                ...(state ? { state } : {}) } : (state ? { state } : {})) });
+                            ...(state ? { state } : {}) });
                         continue;
                     }
-                    if (!marketReview && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
+                    if (!Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
                         results.push({ ...identity, ok: false, reason: 'stale_command', retryAfterMs: 1000,
                             state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) });
                         continue;
                     }
                     let result;
-                    const operation = marketReview
-                        ? this.executeMarketReviewCommand(request, sourceCurrent)
-                        : this.executeLifecycleCommand(request, identity, sourceCurrent);
+                    const operation = this.executeLifecycleCommand(request, identity, sourceCurrent);
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally {
                         if (this.commandInflight.get(id) === operation) this.commandInflight.delete(id);
@@ -1841,26 +1836,18 @@ class ColdSimulationCoordinator {
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
                             Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
                         ...(nextState ? { state: nextState } : {}),
-                        ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: identity.commandId } : {}),
-                        context: marketReview ? request.context || {}
-                            : nextState ? this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true })) : {}
+                        context: nextState ? this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true })) : {}
                     });
                 } catch (error) {
                     if (!sourceCurrent()) return;
                     this.counters.commandErrors += 1;
                     const state = LifeState.cachedState(request.characterId);
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
-                        ...(marketReview ? { ...(state ? { state } : {}),
-                            context: request.context || {}, marketDeferred: true, marketCommandId: identity.commandId } : {}) });
+                        ...(state ? { state } : {}) });
                 }
                 await new Promise((resolve) => setImmediate(resolve));
             }
             if (!sourceCurrent()) return;
-            for (const result of results) {
-                if (result.marketCommandId === undefined) continue;
-                if (this.fencedBots.has(Number(result.characterId))) delete result.state;
-                else result.state = LifeState.cachedState(result.characterId) || result.state;
-            }
             this.postCollections('command_ack', { results }, message.msgId);
         }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
     }
@@ -1902,48 +1889,6 @@ class ColdSimulationCoordinator {
             })) || current;
         }
         return result;
-    }
-
-    async executeMarketReviewCommand(request, sourceCurrent = () => true) {
-        const id = Number(request.characterId);
-        const state = LifeState.cachedState(id);
-        if (!state || state.phase !== 'cold' || this.fencedBots.has(id) || this.visibleToRealPlayer(state)) {
-            return { ok: false, state, reason: 'hot_handoff_fenced', marketDeferred: true };
-        }
-        const current = state.simulation || {};
-        const proposed = request.state?.simulation || {};
-        if (Number(request.state?.characterId) !== id || current.ownerId !== proposed.ownerId
-            || Number(current.revision || 0) !== Number(proposed.revision || 0)
-            || (current.leaseId || null) !== (proposed.leaseId || null)) {
-            return { ok: false, state, reason: 'stale_market_review', marketDeferred: true };
-        }
-        const market = request.market;
-        if (typeof request.commandId !== 'string' || !request.commandId || request.commandId.length > 160
-            || !market || !['updates', 'reprices', 'withdrawals'].every((key) =>
-            Array.isArray(market[key]) && market[key].length <= Protocol.MAX_BATCH)) {
-            return { ok: false, state, reason: 'invalid_market_review', marketDeferred: true };
-        }
-        const coldAuthority = { ownerId: current.ownerId, revision: Number(current.revision || 0),
-            leaseId: current.leaseId || null };
-        const canCommitReview = () => {
-            if (!sourceCurrent()) return false;
-            const latest = LifeState.cachedState(id);
-            const simulation = latest?.simulation || {};
-            return latest?.phase === 'cold' && !this.fencedBots.has(id) && !this.visibleToRealPlayer(latest)
-                && simulation.ownerId === coldAuthority.ownerId
-                && Number(simulation.revision || 0) === coldAuthority.revision
-                && (simulation.leaseId || null) === coldAuthority.leaseId;
-        };
-        let applied;
-        try {
-            applied = await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(id, market,
-                { coldAuthority, canCommitReview });
-        } catch (error) {
-            if (!['stale_market_review', 'hot_handoff_fenced'].includes(error.message)) throw error;
-            return { ok: false, state: LifeState.cachedState(id) || state, reason: error.message, marketDeferred: true };
-        }
-        return { ok: true, state: LifeState.cachedState(id) || state, reason: 'market_reviewed',
-            marketDeferred: !(applied.updated || applied.changed) };
     }
 
     async withEconomyState(state, work) {

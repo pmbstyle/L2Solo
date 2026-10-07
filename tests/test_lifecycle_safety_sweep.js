@@ -81,7 +81,7 @@ console.log('Actual Registry clock positive control: pass');
         for (let pulse = 0; pulse < 20; pulse++) await tick();
         assert.deepStrictEqual(pages.map(page => page.length), [64, 64, 12]);
         assert.deepStrictEqual(contexts, [130, 130, 130], 'only proven missing owner projection plus pre/post native-read checks');
-        assert.deepStrictEqual(metrics, { state: 1, board: 1 });
+        assert.deepStrictEqual(metrics, { state: 1, board: 0 }, 'counter coverage creates no board repair');
         assert(requests.every(request => request.selected.length <= 64));
         assert.strictEqual(sweep.snapshot().completedCycles, 1);
         assert.strictEqual(clocks.size, 1);
@@ -113,8 +113,7 @@ console.log('Actual Registry clock positive control: pass');
         assert.strictEqual(missing.has(3), true);
         console.log('final authoritative read boundary phase/authority guard: pass');
 
-        // Hot uncovered input pays one targeted final native read. A durable
-        // phase change, still absent from cache, prevents queue acceptance.
+        // Hot board coverage no longer belongs to the safety sweep.
         sweep.stop();
         const hotState = Object.defineProperties({}, Object.getOwnPropertyDescriptors(states.get(1)));
         hotState.phase = 'hot';
@@ -136,8 +135,8 @@ console.log('Actual Registry clock positive control: pass');
         await tick(1800000);
         for (let pulse = 0; pulse < 24; pulse++) await tick();
         assert.strictEqual(hotRepairs, 0);
-        assert.strictEqual(hotReads, 1);
-        console.log('hot uncovered final native read rejects durable-before-cache change: pass');
+        assert.strictEqual(hotReads, 0, 'hot board coverage pays no native read');
+        console.log('hot board safety never probes or repairs: pass');
 
         sweep.stop();
         const subscribe = registry.subscribeTicks;

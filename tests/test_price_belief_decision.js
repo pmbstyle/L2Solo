@@ -103,7 +103,7 @@ const marketContext = ctx({ trader: needy, adena: 100000, npcOffersFor: () => []
 const firstChoice = MarketPricing.priceForSale(STEM, marketContext, { town: 'Giran', units: 1, rollKey: ['public', 1] });
 assert(firstChoice && firstChoice.ask.price > 0);
 const line = MarketPricing.lineState(STEM, marketContext, { price: firstChoice.ask.price });
-assert.deepStrictEqual(Object.keys(line), ['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills']);
+assert.deepStrictEqual(Object.keys(line), ['price', 'seenCounter', 'seenAt', 'seenItem', 'rival', 'worth', 'seenFills']);
 assert.strictEqual(line.rival, 950);
 assert.strictEqual(line.worth, 0);
 assert.strictEqual(line.seenFills, 0);

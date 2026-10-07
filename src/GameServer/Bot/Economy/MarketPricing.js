@@ -13,7 +13,7 @@ const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 // npcOffersFor(selfId), findSpot(spotId), timestamp }.
 function traderContext(state, deps = {}) {
     const timestamp = Number(deps.timestamp || Date.now());
-    const economy = require('../Population/ColdEconomyDecision').economyFor(state, { ...deps, timestamp });
+    const economy = deps.economy || require('../Population/ColdEconomyDecision').economyFor(state, { ...deps, timestamp });
     const hour = economy.hourAdena;
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
@@ -90,6 +90,7 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
     return {
         price: Math.round(price),
         seenCounter: counter.deals,
+        seenAt: ctx.timestamp,
         seenItem: MarketCounters.itemDeals(selfId).deals,
         rival: ctx.board?.first(selfId, storeType, { excludeOwner: ctx.characterId, enchant })?.price || 0,
         worth: storeType === BUY ? Number(worth) || 0 : 0,
@@ -143,12 +144,10 @@ function bid(selfId, ctx, { units = 1, worth, cap, rollKey }) {
     return chosen ? { ...chosen, pricing: lineState(selfId, ctx, { price: chosen.price, storeType: BUY, worth }) } : null;
 }
 
-// A counter event is the attention trigger. No event means no estimate,
-// market construction or roll. The caller supplies only its indexed lines.
-// The database applies each move using revision + the full previousPricing
-// fence; metadata-only updates checkpoint no-change choices too.
+// Only lines selected by the owner's shared attention roll reach this choice.
+// Native writes retain revision + previousPricing fences; an unchanged price
+// returns no update. Its observation stays in the worker's numeric lookSeen.
 function look(state, lines, ctx) {
-    const updates = [];
     const reprices = [];
     const withdrawals = [];
     for (const line of lines) {
@@ -178,9 +177,12 @@ function look(state, lines, ctx) {
         const pricing = lineState(line.selfId, ctx, { price: chosen.price, storeType: line.storeType,
             worth: line.pricing.worth, fills: line.fills, enchant: line.enchant || 0 });
         if (chosen.price !== line.price) reprices.push({ ...move, price: chosen.price, pricing });
-        else updates.push({ ...move, pricing });
     }
-    return updates.length || reprices.length || withdrawals.length ? { updates, reprices, withdrawals } : null;
+    return reprices.length || withdrawals.length ? { reprices, withdrawals } : null;
 }
 
-module.exports = { beliefFor, traderContext, priceForSale, lineState, bestAnswer, disposition, bid, look };
+function lookOwn(state, lines, ctx, lookSeen) {
+    return require('./BoardLook').review(state, lines, ctx, lookSeen);
+}
+
+module.exports = { beliefFor, traderContext, priceForSale, lineState, bestAnswer, disposition, bid, look, lookOwn };
