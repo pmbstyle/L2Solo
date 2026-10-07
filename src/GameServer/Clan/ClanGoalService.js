@@ -181,7 +181,8 @@ async function contextFor(clan) {
         itemId: Config.bloodMarkItemId, itemName: 'Proof of Blood', members,
         marketOffer: true, marketOfferPrice: Number(offer.price), partyReady: false,
         economy, offer };
-    const latestDemand = null;
+    const demands = await Database.fetchClanMarketDemands({ clanId: clan.id, itemId: Config.bloodMarkItemId, status: 'open', limit: 4 });
+    const latestDemand = demands.sort((left, right) => number(right.updatedAt) - number(left.updatedAt))[0] || null;
     const sourceLevel = bloodMarkSourceLevel();
     const targetLevel = GoalPolicy.operationLevelThreshold(sourceLevel);
     const readyMembers = GoalPolicy.levelReadyMembers(members, sourceLevel);
