@@ -235,6 +235,12 @@ class ColdOccupationPlanner {
         this.removeDependencies(entry); this.slots.delete(id); this.ready.delete(id);
         this.onSlots(this.slots.size);
     }
+    cancelState(id, state) {
+        const entry = this.slots.get(Number(id)) || this.waiting.get(Number(id));
+        if (!entry || entry.input.state !== state) return false;
+        this.cancel(id);
+        return true;
+    }
     cancel(id) {
         const entry = this.slots.get(Number(id)) || this.waiting.get(Number(id));
         if (!entry) return;

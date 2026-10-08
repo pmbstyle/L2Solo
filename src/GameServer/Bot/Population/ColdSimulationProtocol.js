@@ -176,6 +176,12 @@ function validateEnvelope(message, direction, options = {}) {
                 || payload.pageIndex > 0 && payload.party !== undefined)
             || !Array.isArray(payload.escrows) || payload.escrows.length !== payload.members.length
             || payload.escrows.some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+            || payload.recipeKnowledge !== undefined && (!Array.isArray(payload.recipeKnowledge)
+                || payload.recipeKnowledge.length !== payload.members.length
+                || payload.recipeKnowledge.some(row => !row || typeof row !== 'object'
+                    || row.recipeBook != null && (typeof row.recipeBook !== 'string' || row.recipeBook.length > 512)
+                    || row.knownShotRecipes !== undefined && (!Array.isArray(row.knownShotRecipes)
+                        || row.knownShotRecipes.length > 8 || row.knownShotRecipes.some(id => !Number.isSafeInteger(id)))))
             || !Number.isSafeInteger(payload.timestamp) || payload.timestamp <= 0
             || !Number.isSafeInteger(payload.replyBy) || payload.replyBy < payload.timestamp)
             return { ok: false, reason: 'invalid_party_goal_request' };

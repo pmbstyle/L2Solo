@@ -313,7 +313,7 @@ function forState(state = {}, deps = {}) {
     const timestamp = Number(deps.timestamp || Date.now());
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
     const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
-    const held = cache.get(actorKey);
+    const held = deps.rememberContext === false ? null : cache.get(actorKey);
     // A valid completed card survives planner-slot reuse or card eviction;
     // the same route is repriced with the current hour value, never a wallet.
     if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
@@ -373,6 +373,7 @@ function forState(state = {}, deps = {}) {
         cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
+        remembered: deps.rememberContext !== false,
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
         wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
@@ -417,7 +418,7 @@ function forState(state = {}, deps = {}) {
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         revision: state.simulation?.revision, wallet: positive(state.adena), escrow: positive(deps.buyOrderEscrow),
         available: network.available, reserve: base.survivalReserve, wishKey: network.focus?.[0] });
-    if (planningContexts < 64) {
+    if (deps.rememberContext !== false && planningContexts < 64) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
             Diagnostics.count('context', 'eviction', 'capacity');
         remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);

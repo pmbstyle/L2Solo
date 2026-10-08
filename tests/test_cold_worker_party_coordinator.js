@@ -171,6 +171,31 @@ let coordinator = null;
     assert.deepStrictEqual(goalResult.sources,
         require('../src/GameServer/Bot/Population/PartyGoalCalculation').sources(goalMembers));
     assert.equal(coordinator.partyGoalRequests, 0, 'native response releases the admission slot');
+    const CraftShop = invoke('GameServer/Bot/Economy/CraftShopService');
+    const Workshop = require('../src/GameServer/Bot/Economy/CraftWorkshopService');
+    const Codec = require('../src/GameServer/Bot/Economy/RecipeBookCodec');
+    const recipe = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems()).find(row => row.type === 'dwarven');
+    const originalService = CraftShop.isServiceCrafter, originalBook = Workshop.bookFor;
+    const originalPost = coordinator.post;
+    let book = Codec.pack([]), sentKnowledge;
+    CraftShop.isServiceCrafter = () => true;
+    Workshop.bookFor = () => book;
+    coordinator.post = function(type, payload, ...args) {
+        const sent = originalPost.call(this, type, payload, ...args);
+        if (type === 'party_goal_request') {
+            sentKnowledge = payload.recipeKnowledge;
+            book = Codec.pack([recipe.recipeId]);
+        }
+        return sent;
+    };
+    try {
+        const changedKnowledge = await coordinator.requestPartyGoals(goalParty, goalMembers);
+        assert.equal(sentKnowledge[0].recipeBook, Codec.pack([]), 'query carries current main recipe authority');
+        assert.equal(changedKnowledge.reason, 'party_goal_source_changed', 'knowledge learned while awaiting reply rejects stale goals');
+        assert.equal(coordinator.partyGoalRequests, 0);
+    } finally {
+        CraftShop.isServiceCrafter = originalService; Workshop.bookFor = originalBook; coordinator.post = originalPost;
+    }
     const largeMembers = await LifeState.statesForParty('worker-party');
     assert(require('../src/GameServer/Bot/Population/ColdSimulationProtocol').byteLength({ members: largeMembers }) > 256 * 1024,
         'fixture requires multiple complete-input pages');

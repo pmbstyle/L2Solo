@@ -38,6 +38,28 @@ assert.equal(posted.filter(row => row[0] === 65).length, 1, 'FIFO waiter eventua
 assert(planner.slots.size <= 64);
 planner.stop(); assert.equal(planner.slots.size, 0); assert.equal(planner.dependencies.size, 0);
 
+// Query snapshots are temporary owners, unlike the kernel's native state.
+// Cleanup must remove both completed and pending inputs without touching a
+// replacement installed for the same actor while the query was awaiting work.
+const transient = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
+    sourceToken: () => 0, capture: (id, input, read) => { read(99); return input; },
+    create: input => ({ input }), step: () => true, result: () => ({ known: true }) });
+const privateState = { inventory: [{ itemId: 1 }] }, canonicalState = { inventory: [] };
+transient.request(1, { state: privateState }, { awaitResult: false });
+assert.equal(transient.cancelState(1, canonicalState), false);
+assert.equal(transient.cancelState(1, privateState), true);
+assert.equal(transient.waiting.size, 0, 'pending private input is released');
+transient.request(1, { state: privateState }, { awaitResult: false });
+while (transient.waiting.size || transient.ready.size) transient.portion();
+assert.equal(transient.slots.get(1).input.state, privateState);
+assert.equal(transient.cancelState(1, privateState), true);
+assert.equal(transient.slots.size, 0, 'completed private input is released');
+assert.equal(transient.dependencies.size, 0, 'private dependency owners are released');
+transient.request(1, { state: canonicalState }, { awaitResult: false });
+assert.equal(transient.cancelState(1, privateState), false);
+assert.equal(transient.waiting.get(1).input.state, canonicalState, 'newer canonical input survives cleanup');
+transient.stop();
+
 const scopeCallbacks = [], scopeTokens = new Map(), scopePosted = [];
 let builds = 0;
 const scoped = new ColdOccupationPlanner({ schedule: callback => scopeCallbacks.push(callback), now: () => 0,

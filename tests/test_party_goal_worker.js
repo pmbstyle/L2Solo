@@ -13,8 +13,22 @@ const members = [701, 702].map(characterId => ({ characterId, phase: 'cold', upd
     vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }));
 const party = { partyId: 'goal-worker', memberIds: [701, 702], leaderId: 701,
     stats: { objective: { clanGoalKey: 'clan-native', spotId: 'protected' } } };
-const worker = new Worker(path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js'),
-    { workerData: { workerEpoch: epoch }, resourceLimits: { maxOldGenerationSizeMb: 256 } });
+const observer = String.raw`
+parentPort.on('message',message=>{
+    if(!message.queryProbe)return;
+    parentPort.postMessage({probe:message.queryProbe,slots:[...occupationPlanner.slots.values()].map(entry=>({
+        id:entry.id,recipeBook:entry.input.recipeBook,knownShotRecipes:entry.input.knownShotRecipes,
+        canonical:entry.input.state===kernel.states.get(entry.id)?.state}))});
+});`;
+const wrapper = String.raw`
+const fs=require('node:fs'),path=require('node:path'),Module=require('node:module');
+const {parentPort,workerData}=require('node:worker_threads');
+const loaded=new Module(workerData.workerPath,module);loaded.filename=workerData.workerPath;
+loaded.paths=Module._nodeModulePaths(path.dirname(workerData.workerPath));
+loaded._compile(fs.readFileSync(workerData.workerPath,'utf8')+workerData.observer,workerData.workerPath);`;
+const worker = new Worker(wrapper, { eval: true,
+    workerData: { workerEpoch: epoch, observer, workerPath: path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js') },
+    resourceLimits: { maxOldGenerationSizeMb: 256 } });
 const messages = []; let fault;
 worker.on('message', message => messages.push(message)); worker.on('error', error => { fault = error; });
 async function wait(predicate) {
@@ -32,10 +46,11 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     post('init', { config: { pvpAggression: 0 } }, 'init');
     await wait(message => message.type === 'ready' && message.payload.phase === 'running');
     post('pause', {}, 'pause');
-    post('snapshot_page', { rows: members.map(state => ({ state, context: {} })),
+    post('snapshot_page', { rows: members.map(state => ({ state, context: { recipeBook: null, knownShotRecipes: [999] } })),
         initial: true, done: true, ack: true }, 'snapshot');
     await wait(message => message.msgId === 'snapshot');
-    const request = { party, members, escrows: [0, 0], timestamp, replyBy: Date.now() + 5000 };
+    const request = { party, members, escrows: [0, 0], recipeKnowledge: members.map(() => ({ recipeBook: null, knownShotRecipes: [] })),
+        timestamp, replyBy: Date.now() + 5000 };
     post('party_goal_request', request, 'goals');
     const response = await wait(message => message.type === 'party_goal_result' && message.msgId === 'goals');
     assert.equal(response.payload.ok, true, response.payload.reason);
@@ -43,12 +58,20 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(response.payload.joint.memberGoals.length, 2);
     assert.deepEqual(response.payload.sources, Calculation.sources(members));
     assert(!messages.some(message => message.type === 'fault'), 'native worker loads no forbidden dependency');
+    worker.postMessage({ queryProbe: 'canonical' });
+    const prepared = await wait(message => message.probe === 'canonical');
+    assert.equal(prepared.slots.filter(row => row.id > 0).length, 2);
+    assert(prepared.slots.filter(row => row.id > 0).every(row => row.knownShotRecipes.length === 0),
+        'current query knowledge replaces the old worker recipe context');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };
     post('party_goal_request', { ...request, members: changed, replyBy: Date.now() + 5000 }, 'changed');
     const fresh = await wait(message => message.type === 'party_goal_result' && message.msgId === 'changed');
     assert.equal(fresh.payload.ok, true, fresh.payload.reason);
     assert.equal(fresh.payload.joint.memberGoals[0].spotId, 'fresh-request', 'complete new input supersedes old mirror');
     assert.deepEqual(fresh.payload.sources, Calculation.sources(changed));
+    worker.postMessage({ queryProbe: 'private-release' });
+    const released = await wait(message => message.probe === 'private-release');
+    assert(released.slots.every(row => row.id <= 0 || row.canonical), 'no completed planner slot retains a private query snapshot');
     const page = (pageIndex, id, replyBy = Date.now() + 5000) => post('party_goal_request', {
         ...(pageIndex === 0 ? { party } : { partyId: party.partyId }), members: [members[pageIndex]], escrows: [0],
         timestamp, replyBy, pageIndex, pageCount: 2 }, id);

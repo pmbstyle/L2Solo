@@ -516,7 +516,7 @@ function admitPartyGoalPages(payload, msgId) {
         partyGoalJobs++;
         while (partyGoalSeen.size >= 16) partyGoalSeen.delete(partyGoalSeen.keys().next().value);
         partyGoalSeen.set(msgId, payload.replyBy);
-        entry = { party: payload.party, members: [], escrows: [],
+        entry = { party: payload.party, members: [], escrows: [], recipeKnowledge: [],
             timestamp: payload.timestamp, replyBy: payload.replyBy, pageCount: payload.pageCount, nextPage: 0 };
         partyGoalPages.set(msgId, entry);
         entry.timer = setTimeout(() => fail('party_goal_expired'), Math.max(1, entry.replyBy - Date.now()));
@@ -525,6 +525,7 @@ function admitPartyGoalPages(payload, msgId) {
         || entry.timestamp !== payload.timestamp || entry.replyBy !== payload.replyBy
         || payload.pageIndex > 0 && entry.party.partyId !== payload.partyId) return fail('party_goal_page_changed');
     entry.members.push(payload.members[0]); entry.escrows.push(payload.escrows[0]); entry.nextPage++;
+    entry.recipeKnowledge.push(payload.recipeKnowledge?.[0] || {});
     if (entry.nextPage !== entry.pageCount) return;
     clearTimeout(entry.timer); partyGoalPages.delete(msgId);
     if (!require('./PartyGoalCalculation').validMembers(entry.party, entry.members)) {
@@ -567,12 +568,17 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         const joint = await Calculation.calculate(payload.party, members, async (member, timestamp) => {
             const context = { ...(kernel.states.get(member.characterId)?.context || {}),
                 buyOrderEscrow: payload.escrows[members.indexOf(member)] };
+            // Recipe authority belongs to this main query, not the older
+            // worker mirror. Public workshop entries remain the fallback.
+            delete context.recipeBook; delete context.knownShotRecipes;
+            Object.assign(context, payload.recipeKnowledge?.[members.indexOf(member)] || {});
             const routeRows = await occupationFor(member, timestamp, context, 'wish');
             const workshop = await occupationFor(member, timestamp,
                 { ...context, routeRows, routeKey: EconomicTrip.key(member) });
             return invoke('GameServer/Bot/Economy/EconomyContext').forState(member, {
                 timestamp, spots: planningSpots, board: boardReady(),
                 occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows,
+                rememberContext: kernel.states.get(member.characterId)?.state === member,
                 buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal' });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy);
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
@@ -583,8 +589,10 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         // Advice on a not-yet-published main snapshot must not retain a second
         // complete actor state in the worker's per-actor context cache.
         const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-        for (const member of preparedMembers) if (kernel?.states.get(member.characterId)?.state !== member)
+        for (const member of preparedMembers) if (kernel?.states.get(member.characterId)?.state !== member) {
+            occupationPlanner.cancelState(member.characterId, member);
             Economy.forgetContext(member.characterId, 'party_query_release', member);
+        }
         partyGoalJobs--;
     });
 }

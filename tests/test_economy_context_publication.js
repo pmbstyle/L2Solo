@@ -83,6 +83,16 @@ module.exports.publicationProbe = async stage => {
         assert.strictEqual(Economy.forState(clone,options),fresh,'old query cleanup cannot evict a newer state');
         Economy.forgetContext(clone.characterId,'party_query_release',clone);
         assert.equal(Economy.size().context,0,'a private query snapshot releases its context and graph');
+        Economy.setPlanningContexts(64);
+        const retained = Economy.size();
+        const privateContext = Economy.forState(clone,{...options,rememberContext:false});
+        assert.strictEqual(privateContext.state,clone);
+        assert.deepEqual(privateContext.statsPacket,first.statsPacket);
+        assert.deepEqual(Economy.size(),retained,'private preparation retains neither context nor engine result at full planner capacity');
+        Economy.setPlanningContexts(0);
+        const canonical = Economy.forState(current,options);
+        Economy.forState(clone,{...options,rememberContext:false});
+        assert.strictEqual(Economy.forState(current,options),canonical,'private preparation preserves the canonical card');
         const group = Economy.forGroup({id:'worker-publication',adena:200},members,options);
         assert.equal(Economy.size().groups,1);
         module.exports.previous = group.state;

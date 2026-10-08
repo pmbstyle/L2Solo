@@ -57,6 +57,13 @@ function wait(ms) {
 // Longest stretch the initial full snapshot builds rows without yielding.
 const SNAPSHOT_SLICE_MS = 50;
 
+function recipeKnowledgeFor(state) {
+    if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return {};
+    const Workshop = require('../Economy/CraftWorkshopService');
+    return { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(Workshop.cachedRecipes(state.characterId)),
+        recipeBook: Workshop.bookFor(state.characterId) };
+}
+
 function yieldToLoop() {
     return new Promise((resolve) => setImmediate(resolve));
 }
@@ -737,6 +744,7 @@ class ColdSimulationCoordinator {
         const expected = Calculation.sources(members);
         const escrowFor = member => invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(member.characterId);
         const escrows = members.map(escrowFor);
+        const recipeKnowledge = members.map(recipeKnowledgeFor);
         const msgId = randomUUID();
         let timer, waitStarted;
         this.partyGoalRequests++;
@@ -744,12 +752,12 @@ class ColdSimulationCoordinator {
             const result = await new Promise((resolve, reject) => {
                 this.waiters.set(msgId, { resolve, reject, expectedType: 'party_goal_result' });
                 timer = setTimeout(() => reject(new Error('party_goal_timeout')), Math.max(1, replyBy - Date.now()));
-                const payload = { party, members, escrows, timestamp, replyBy };
+                const payload = { party, members, escrows, recipeKnowledge, timestamp, replyBy };
                 const bytes = Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, payload, msgId));
                 const pages = bytes <= Protocol.MAX_MESSAGE_BYTES ? [{ payload, bytes }]
                     : members.map((member, pageIndex) => {
                         const page = { ...(pageIndex === 0 ? { party } : { partyId: party.partyId }),
-                            members: [member], escrows: [escrows[pageIndex]], timestamp, replyBy,
+                            members: [member], escrows: [escrows[pageIndex]], recipeKnowledge: [recipeKnowledge[pageIndex]], timestamp, replyBy,
                             pageIndex, pageCount: members.length };
                         return { payload: page, bytes: Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, page, msgId)) };
                     });
@@ -763,7 +771,8 @@ class ColdSimulationCoordinator {
                 return { ok: false, reason: 'party_goal_stale_worker' };
             if (!result.ok) return result;
             if (JSON.stringify(result.sources) !== JSON.stringify(expected)
-                || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
+                || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows)
+                || JSON.stringify(members.map(recipeKnowledgeFor)) !== JSON.stringify(recipeKnowledge))
                 return { ok: false, reason: 'party_goal_source_changed' };
             return result;
         } catch (error) {
@@ -1055,10 +1064,7 @@ class ColdSimulationCoordinator {
         const context = {
             // The public workshop is capped at 16 entries, not the recipe
             // book. Hydrated knowledge travels as one catalogue bitset.
-            ...(invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)
-                ? { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(
-                    require('../Economy/CraftWorkshopService').cachedRecipes(state.characterId)),
-                    recipeBook: require('../Economy/CraftWorkshopService').bookFor(state.characterId) } : {}),
+            ...recipeKnowledgeFor(state),
             ...(state.stats?.workshop?.entries?.length ? { workshop } : {}),
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
