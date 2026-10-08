@@ -217,6 +217,9 @@ async function requestMeeting(session, bot, meeting, side) {
         if (!valid()) { session.meetingTravel = undefined; return; }
         const native = Routes.between(position(), point), step = native.route?.steps?.[0];
         if (!step) { finish(); return; }
+        const latest = await Database.fetchTradeMeeting(meeting.id);
+        const held = JSON.parse(latest?.[`leg${suffix}`] || 'null');
+        if (step.fee > Number(latest?.[`routeReserve${suffix}`]) && !held?.legId?.startsWith('gk:')) { finish(); return; }
         const gatekeeper = invoke('GameServer/World/World').fetchNpcsInRadius(native.start.locX, native.start.locY, 1200)
             .find(npc => Number(npc.fetchSelfId()) === step.npcId);
         if (!gatekeeper) throw Error('trade_meeting_gatekeeper_unavailable');
@@ -244,7 +247,9 @@ async function requestMeeting(session, bot, meeting, side) {
         const route = JSON.parse(meeting[`route${suffix}`]), saved = JSON.parse(meeting[`leg${suffix}`] || 'null');
         // An interrupted recall spent its scroll. Continue on foot; never
         // cast again using an old receipt as another physical scroll.
-        if (saved?.legId === 'soe') await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
+        if (saved?.legId?.split(':')[0] === 'soe') await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
+        if (saved?.legId?.startsWith('walk:') || saved?.legId === 'outbound')
+            await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
         if (saved?.legId?.startsWith('gk:')) {
             const coords = saved.legId.slice(3).split(':').map(Number);
             if (coords.length === 3 && coords.every(Number.isFinite)

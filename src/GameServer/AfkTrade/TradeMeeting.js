@@ -162,7 +162,8 @@ function create(io) {
         const original = JSON.parse(row[`leg${suffix}`] || 'null');
         if (original?.sequence === sequence) {
             if (original.legId !== legId || original.fee !== fee || original.scroll !== scroll) throw Error('trade_meeting_consent_changed');
-            return result(row);
+            const resumed = io.startTrip?.(ids(row)[side], row, side, original);
+            return result(row, resumed ? fence(row, []) : {});
         }
         if (original || sequence !== row[`nextLeg${suffix}`]) throw Error('trade_meeting_leg_changed');
         requireSafe(sequence + 1, true);

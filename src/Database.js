@@ -10184,14 +10184,30 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     },
     startTrip: (id, meeting, side, receipt) => {
         const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
-        if (!row || row.phase !== 'cold') return;
-        const route = jsonObject(side ? meeting.routeB : meeting.routeA), at = now();
+        if (!row || row.phase !== 'cold' || Number(row.hp) <= 0
+            || ['dead', 'fighting', 'resting'].includes(row.activity)) return false;
+        const held = jsonObject(row.statsJson).travel;
+        if (held?.meetingId === meeting.id) return false;
+        const at = now();
+        const Trip = require('./GameServer/Bot/Population/ColdTrip');
+        const leg = receipt.legId.split(':');
+        const coords = leg.slice(1).map(Number);
+        const target = ['walk', 'gk', 'soe'].includes(leg[0]) && coords.length === 3 && coords.every(Number.isFinite)
+            ? { locX: coords[0], locY: coords[1], locZ: coords[2] }
+            : { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
+        // Legacy outbound receipts paid the complete route already. Recovery
+        // walks from the committed position; it never buys that route again.
+        const method = leg[0] === 'gk' || leg[0] === 'soe' ? 'soe_gatekeeper' : 'walk';
+        const durationMs = leg[0] === 'gk' ? Trip.HOP_MS : leg[0] === 'soe'
+            ? require('./GameServer/Bot/Travel/TripPayment').SCROLL_CAST_MS
+            : Trip.runMs(row, target);
         const travel = { from: { locX: row.locX, locY: row.locY, locZ: row.locZ },
-            to: { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ },
+            to: target,
             townName: meeting.town, regionName: meeting.town, arrivalActivity: 'shopping', arrivalEvent: 'trade_meeting_arrival',
-            method: route.method, reason: 'trade_meeting', meetingId: meeting.id, meetingRevision: meeting.revision,
-            startedAt: at, arrivalAt: at + Math.max(1000, route.durationMs), paid: { fee: receipt.fee, ...(receipt.scroll ? { scroll: 736 } : {}) } };
+            method, reason: 'trade_meeting', meetingId: meeting.id, meetingRevision: meeting.revision,
+            startedAt: at, arrivalAt: at + Math.max(1000, durationMs), paid: { fee: receipt.fee, ...(receipt.scroll ? { scroll: 736 } : {}) } };
         write("UPDATE bot_life_state SET activity='traveling',activityStartedAt=?,nextResolveAt=?,statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)) WHERE characterId=?", [at, travel.arrivalAt, JSON.stringify({ travel }), id]);
+        return true;
     },
     snapshot: (id, changed, patch) => {
         const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);

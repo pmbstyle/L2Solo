@@ -160,15 +160,55 @@ async function processOwner(id) {
         wake(id); return; }
     const side = row.actorA === id ? 0 : 1;
     if (arrived.meeting.arrivalMask & 1 << side) return;
-    const suffix = side ? 'B' : 'A';
     if (state?.phase === 'cold' && !state.stats?.travel && !['fighting', 'resting'].includes(state.activity)) {
-        if (row[`nextLeg${suffix}`] === 1) {
-            const route = JSON.parse(row[`route${suffix}`]);
-            const paid = await db().payTradeMeetingLeg(row.id, side, 1, 'outbound', route.fee, route.scroll); acceptRows(paid);
-        }
+        await continueColdTravel(row, side, state);
     } else if (session && state?.phase === 'hot') {
         await require('../Bot/AI/BotTownTravel').requestMeeting(session, session.actor, row, side);
     }
+}
+// One physical leg uses the same native destinations as the visible adapter.
+// Only the existing participant event queue calls this; no travel polling.
+async function continueColdTravel(row, side, state) {
+    const suffix = side ? 'B' : 'A', point = { locX: row.locX, locY: row.locY, locZ: row.locZ };
+    const saved = JSON.parse(row[`leg${suffix}`] || 'null');
+    if (saved) {
+        const [kind, ...values] = saved.legId.split(':'), coords = values.map(Number);
+        const destination = coords.length === 3 && coords.every(Number.isFinite)
+            ? { locX: coords[0], locY: coords[1], locZ: coords[2] } : point;
+        const reached = Math.hypot(state.loc.locX - destination.locX,
+            state.loc.locY - destination.locY, state.loc.locZ - destination.locZ) <= 200;
+        // Interrupted recall has consumed its scroll. Like hot travel, resume
+        // on foot, never restart the cast with a consumed physical item.
+        if (reached || kind === 'soe') {
+            await db().acknowledgeTradeMeetingLeg(row.id, side, saved.sequence);
+            row = await db().fetchTradeMeeting(row.id);
+        } else {
+            const resumed = await db().payTradeMeetingLeg(row.id, side, saved.sequence,
+                saved.legId, saved.fee, saved.scroll);
+            acceptRows(resumed); return;
+        }
+    }
+    const Routes = require('../Bot/Travel/TravelRoutes');
+    const route = JSON.parse(row[`route${suffix}`]), native = Routes.between(state.loc, point);
+    if (!native.route) { acceptRows(await db().cancelTradeMeeting(row.id, 'route_unavailable')); wake(state.characterId); return; }
+    let kind = 'walk', destination = point, fee = 0, scroll = false;
+    if (route.scroll && row[`nextLeg${suffix}`] === 1) {
+        kind = 'soe'; destination = native.start; scroll = true;
+    } else if (native.route.steps?.length) {
+        const step = native.route.steps[0];
+        const keeper = world().fetchNpcsInRadius(native.start.locX, native.start.locY, 1200)
+            .find(npc => Number(npc.fetchSelfId()) === step.npcId);
+        if (!keeper) { acceptRows(await db().cancelTradeMeeting(row.id, 'gatekeeper_unavailable')); wake(state.characterId); return; }
+        const gate = { locX: keeper.fetchLocX(), locY: keeper.fetchLocY(), locZ: keeper.fetchLocZ() };
+        if (Math.hypot(state.loc.locX - gate.locX, state.loc.locY - gate.locY) <= 200) {
+            kind = 'gk'; destination = step; fee = step.fee;
+        } else destination = gate;
+    }
+    // A changed physical route may cost more than the held future fare. Walk
+    // to the agreed point instead; spent legs remain spent, custody is intact.
+    if (fee > row[`routeReserve${suffix}`]) { kind = 'walk'; destination = point; fee = 0; }
+    const legId = `${kind}:${destination.locX}:${destination.locY}:${destination.locZ}`;
+    acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, fee, scroll));
 }
 async function drain() {
     const started = performance.now(); let count = 0;

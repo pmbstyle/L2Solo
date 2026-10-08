@@ -86,6 +86,24 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal((await bag(ids[1]))[1867], 14);
         await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
         await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
+        const heldAfterLeg = await held();
+        const started = await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
+        const originalTravel = JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [ids[0]]]))[0].statsJson).travel;
+        assert(started.meeting);
+        await Life.upsertState({ ...Life.cachedState(ids[0]), activity: 'fighting',
+            stats: { ...Life.cachedState(ids[0]).stats, travel: null } }, 'meeting_combat_pause');
+        const paused = await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
+        assert.equal(Object.keys(paused.coldLifeRows).length, 0, 'survival pauses a paid trip');
+        await Life.upsertState({ ...Life.cachedState(ids[0]), activity: 'shopping' }, 'meeting_recovery');
+        const resumed = await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
+        assert(resumed.coldLifeRows[ids[0]], 'lost travel state resumes at the native fence');
+        Life.acceptLifecycleRow(resumed.coldLifeRows[ids[0]]);
+        assert.equal(Life.cachedState(ids[0]).stats.travel.meetingId, id);
+        assert.deepEqual(Life.cachedState(ids[0]).stats.travel.to, originalTravel.to);
+        assert.deepEqual(await held(), heldAfterLeg, 'resuming moves no goods, money or scrolls');
+        const repeated = await Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true);
+        assert.equal(Object.keys(repeated.coldLifeRows).length, 0, 'an active travel replay does not reset arrival');
+
         await assert.rejects(Database.payTradeMeetingLeg(id, 0, 2, 'next', 0, false), /leg_changed/);
         await Database.acknowledgeTradeMeetingLeg(id, 0, 1);
         await assert.rejects(Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true), /leg_changed/);
