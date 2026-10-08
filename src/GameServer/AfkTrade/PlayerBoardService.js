@@ -99,6 +99,16 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 return { ok: true, action: 'crafted', product: result.product || null };
             } catch (error) { return { ok: false, reason: 'craft_unavailable' }; }
         }
+        const consent = session.playerBoardPreparation;
+        if (request.confirmed === true && consent && consent.id === request.id && consent.lineId === request.lineId
+            && consent.amount === Number(request.amount ?? 1) && consent.price === Number(request.price)
+            && consent.revision === request.revision) {
+            const saved = await meetings().receipt?.(consent.preparationId, playerId);
+            if (saved) {
+                session.playerBoardPreparation = undefined;
+                return { ok: true, action: 'agreed', pending: saved.pending };
+            }
+        }
         const service = afk();
         if (!service.isBoardReady()) return { ok: false, reason: 'board_unavailable' };
         const line = service.boardIndex().records.get(Number(request.id))
@@ -118,8 +128,8 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 const prepared = session.playerBoardPreparation;
                 if (!prepared || prepared.id !== line.recordId || prepared.lineId !== line.lineId || prepared.amount !== amount
                     || prepared.price !== line.price || prepared.revision !== line.revision) return { ok: false, reason: 'record_changed' };
-                session.playerBoardPreparation = undefined;
                 try { const result = await meetings().accept(prepared.preparationId);
+                    session.playerBoardPreparation = undefined;
                     return { ok: true, action: 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
                 catch (_) { return { ok: false, reason: 'record_changed' }; }
             }

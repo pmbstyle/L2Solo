@@ -51,6 +51,14 @@ function request(n) {
         boardListener({ reset: true });
         assert.equal(Service.counters().pages, 0);
         assert.equal(Service.counters().preparations, 0);
+        const original = request(0);
+        native.fetchTradeMeetingByToken = async token => token === original.token
+            ? { id: 7, actorA: original.actorA, actorB: original.actorB, revision: 1, state: 'accepted' } : null;
+        native.acceptTradeMeeting = async () => { throw Error('duplicate_reservation'); };
+        const replay = await Service.accept(original.token);
+        assert.equal(replay.meetingId, 7, 'lost acknowledgement replays the durable token after staging was removed');
+        assert.equal(Service.counters().preparations, 0);
+        assert.equal(await Service.receipt(original.token, 99), null, 'another owner cannot adopt the saved receipt');
         console.log('Meeting preparation: stale caller, one per actor, source invalidation, disconnect and bounded release passed');
     } finally { Service.reset(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

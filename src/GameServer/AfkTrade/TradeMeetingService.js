@@ -33,7 +33,7 @@ function stage(request) {
     const count = Math.ceil(Buffer.byteLength(encoded) / 768);
     if (count > 4 || pages + count > 64) throw Error('trade_meeting_backpressure');
     for (const entry of staged.values()) if ([request.actorA, request.actorB].some(id => entry.actors.includes(id))) throw Error('trade_meeting_preparation_busy');
-    const id = randomUUID();
+    const id = request.token;
     staged.set(id, { request: codec.decode(wire), bytes: Buffer.byteLength(encoded), pages: count, actors: [request.actorA, request.actorB] });
     pages += count;
     return id;
@@ -41,19 +41,31 @@ function stage(request) {
 function discard(id) { const entry = staged.get(id); if (entry) { pages -= entry.pages; staged.delete(id); } }
 async function accept(id) {
     const entry = staged.get(id);
-    if (!entry) throw Error('trade_meeting_preparation_missing');
+    if (!entry) {
+        const row = await db().fetchTradeMeetingByToken?.(id);
+        if (!row) throw Error('trade_meeting_preparation_missing');
+        return accepted({ meeting: row, pending: row.state === 'accepted' });
+    }
     try {
         // DB persists the original token/sequences, so retry never invents
         // fresh consent after an acknowledgement or ordinary bot commit.
         const result = await db().acceptTradeMeeting(entry.request);
-        acceptRows(result);
-        const row = result.meeting;
-        enrolled.set(row.actorA, row.id); enrolled.set(row.actorB, row.id);
-        await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
-        wake(row.actorA); wake(row.actorB);
-        return { pending: result.pending, meetingId: row.id, revision: row.revision,
-            purchased: false, sold: false, state: life().cachedState(row.actorA) };
+        return accepted(result);
     } finally { discard(id); }
+}
+async function accepted(result) {
+    acceptRows(result);
+    const row = result.meeting;
+    enrolled.set(row.actorA, row.id); enrolled.set(row.actorB, row.id);
+    await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
+    wake(row.actorA); wake(row.actorB);
+    return { pending: result.pending, meetingId: row.id, revision: row.revision,
+        purchased: false, sold: false, state: life().cachedState(row.actorA) };
+}
+async function receipt(token, characterId) {
+    const row = await db().fetchTradeMeetingByToken(token);
+    if (!row || ![row.actorA, row.actorB].includes(Number(characterId))) return null;
+    return accepted({ meeting: row, pending: row.state === 'accepted' });
 }
 async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     const record = await db().fetchAfkTradeShop(store.shopId);
@@ -260,5 +272,5 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, accept, cancel, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { stage, discard, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
     counters: () => ({ preparations: staged.size, pages, bytes: [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

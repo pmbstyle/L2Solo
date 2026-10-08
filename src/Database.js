@@ -10278,6 +10278,9 @@ Object.assign(Database, {
     acceptTradeMeeting(request) {
         return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request), 'board:meeting-accept'));
     },
+    fetchTradeMeetingByToken(token) {
+        return inTransaction(() => one('SELECT * FROM board_trade_meetings WHERE token=?', [String(token)]), 'board:meeting-replay');
+    },
     fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
     fetchTradeMeetingForOwner(id) {
         return inTransaction(() => { const slot = one('SELECT meetingId FROM board_trade_participants WHERE characterId=?', [id]);

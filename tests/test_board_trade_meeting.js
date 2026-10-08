@@ -133,6 +133,7 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal((await bag(ids[0]))[57], 119980, 'invalid native identity rolls back the debit');
         const fulfilled = await prepare('completed-meeting', sellSkin);
         const active = await Database.acceptTradeMeeting(fulfilled), completedId = active.meeting.id;
+        assert.equal((await Database.fetchTradeMeetingByToken(fulfilled.token)).id, completedId, 'native consent remains available after a lost reply');
         const recovered = await Database.recoverTradeMeetings();
         assert.equal(recovered.length, 1); assert.equal(recovered[0].id, completedId);
         // Presence is authoritative: a paid traveling participant has not
