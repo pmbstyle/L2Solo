@@ -427,7 +427,7 @@ async function run() {
         characterId: 79,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
-    }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material' } });
+    }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1 } });
     assert.strictEqual(noOffer.purchased, false);
     assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
     assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
@@ -439,7 +439,7 @@ async function run() {
         ...state,
         characterId: 82,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
-    }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material' } });
+    }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1 } });
     assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a rejected WTB open must enter the normal market retry path');
     assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
     BuyStoreService.open = originals.openBuyStore;
@@ -451,7 +451,7 @@ async function run() {
         characterId: 80,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
-    }, 'changed_offer'), { type: 'buy_craft_material', target: { itemId: 2, itemName: 'Changed Offer' } });
+    }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer' } });
     assert.strictEqual(changedOffer.reason, 'offer_changed');
     assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
     assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');

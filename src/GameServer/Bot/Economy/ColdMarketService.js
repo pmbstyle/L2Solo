@@ -75,7 +75,7 @@ function finishBlockedPurchase(state, goal, reason) {
     const completedState = { ...state, stats, timing: { ...(state.timing || {}), nextResolveAt: Date.now() } };
     const returning = GoalExecutor.finishMarketVisit(completedState) || completedState;
     return LifeState.upsertState(returning, `market_purchase_${reason}`).then((saved) => (
-        GoalState.clear(state.characterId, 'completed').then(() => ({
+        GoalState.applyPurchase(state.characterId, goal, 1).then(() => ({
             state: saved || returning,
             purchased: false,
             reason,
@@ -455,6 +455,13 @@ const ColdMarketService = {
         if ((goal?.status && goal.status !== 'active') || (!activeGearPurchase && !activeMaterialPurchase) || !goal.target?.itemId) {
             return Promise.resolve({ state, purchased: false, reason: 'no_purchase_goal' });
         }
+        if (activeMaterialPurchase && (!Number.isSafeInteger(Number(goal.target.amount)) || Number(goal.target.amount) <= 0)) {
+            return Promise.resolve({ state, purchased: false, reason: 'purchase_quantity_unknown' });
+        }
+        const acceptedGoal = GoalState.snapshot(state.characterId)?.current;
+        if (acceptedGoal && JSON.stringify(acceptedGoal) !== JSON.stringify(goal)) {
+            return Promise.resolve({ state, purchased: false, reason: 'stale_purchase_goal' });
+        }
         if (goal.plan?.marketTown && String(goal.plan.marketTown) !== String(state.currentRegion)) {
             if (state.stats?.townVisit && state.stats.townVisit.completed !== true) {
                 return Promise.resolve({ state, purchased: false, reason: 'other_town_deferred' });
@@ -513,13 +520,29 @@ const ColdMarketService = {
                 };
             });
         }
+        if (activeMaterialPurchase) {
+            // NeedsEvaluator has already converted captured stock into the
+            // remaining need. Reuse errand execution and its native funding;
+            // subtract committed units, never the current bag a second time.
+            const terms = { ...fundingTerms(goal.plan), purpose: goal.plan?.purpose || 'supply',
+                selfId: Number(goal.target.itemId) };
+            const plan = planPurchase(state, terms.selfId, Number(goal.target.amount), {
+                ...terms, money: purchaseMoney(state, terms), towns: [state.currentRegion]
+            });
+            if (!plan) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
+            return buyHere(state, plan).then(async bought => {
+                if (bought.units > 0) await GoalState.applyPurchase(state.characterId, goal, bought.units);
+                return { ...bought, purchased: bought.units > 0,
+                    reason: bought.units > 0 ? 'market_material_bought' : 'market_material_no_fill' };
+            });
+        }
         offer.buyerCharacterId = Number(state.characterId);
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
         return buyOffer(state, offer).then((bought) => {
             if (!bought.purchased) {
                 return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
-            return GoalState.clear(state.characterId, 'completed').then(() => bought);
+            return GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0)).then(() => bought);
         });
     },
     async finishTownErrands(state) {

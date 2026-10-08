@@ -174,6 +174,31 @@ const GoalState = {
         });
     },
 
+    // Advance only the goal accepted before the asynchronous native purchase.
+    // Matching its persisted value also makes a repeated receipt a no-op.
+    applyPurchase(characterId, expectedGoal, units) {
+        const id = Number(characterId), existing = this.snapshot(id);
+        const amount = expectedGoal?.type === 'upgrade_gear' ? 1 : Number(expectedGoal?.target?.amount);
+        if (!existing?.current || safeJson(existing.current) !== safeJson(expectedGoal)
+            || !Number.isSafeInteger(amount) || amount <= 0
+            || !Number.isSafeInteger(units) || units <= 0) return Promise.resolve(null);
+        const remaining = Math.max(0, amount - units), timestamp = now();
+        const current = normalizeGoal({ ...existing.current,
+            target: { ...existing.current.target, amount: remaining },
+            status: remaining ? 'active' : 'completed',
+            reviewedAt: timestamp, nextReviewAt: timestamp });
+        const snapshot = { ...existing, current, updatedAt: timestamp, inputHash: undefined };
+        return Database.execute([
+            `UPDATE ${TABLE} SET goalJson = ?, updatedAt = ?
+             WHERE characterId = ? AND updatedAt = ? AND goalJson = ?`,
+            [safeJson(current), timestamp, id, existing.updatedAt, safeJson(existing.current)]
+        ], 'bot-goals:purchase-progress').then(result => {
+            if (Number(result?.affectedRows) !== 1) return null;
+            if (cache.get(id) === existing) cache.set(id, snapshot);
+            return snapshot;
+        });
+    },
+
     reset() {
         cache.clear();
         initialized = false;
