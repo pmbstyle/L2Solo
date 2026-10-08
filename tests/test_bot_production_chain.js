@@ -38,7 +38,7 @@ async function seed(items, { crafter = false, nativePlayer = false, activity = '
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         adena: Number(items.find(item => item.selfId === 57)?.amount || 0),
         vitals: { hp: 1000, maxHp: 1000, mp: 3000, maxMp: 3000 },
-        stats: { classId: crafter ? 57 : 0, generatedCold: true }, timing: {} }, 'production_seed');
+        stats: { classId: crafter ? 57 : 0, generatedCold: true, money: [36000, 0, 0, 0] }, timing: {} }, 'production_seed');
 }
 const cash = amount => ({ selfId: 57, name: 'Adena', amount });
 const ore = (selfId, amount) => ({ selfId, name: `Material ${selfId}`, amount });

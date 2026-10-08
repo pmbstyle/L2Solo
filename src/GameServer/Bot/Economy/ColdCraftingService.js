@@ -72,6 +72,9 @@ function hasMaterials(state, recipe) {
 // then available to the parent recipe on the next cold-life tick.
 function readyRecipeFor(state, recipe, visited = new Set()) {
     if (!recipe || visited.has(Number(recipe.recipeId))) return null;
+    const plan = state?.stats?.equipmentPlan;
+    if (!visited.size && !plan?.clanGoal && Number(plan?.recipeId) === Number(recipe.recipeId)
+        && requiredCraftCount(recipe, recipe, state) === 0) return null;
     const nextVisited = new Set(visited).add(Number(recipe.recipeId));
     if (hasMaterials(state, recipe)) return recipe;
 
@@ -154,10 +157,13 @@ function craftableBatchCount(items, recipe, requested = 1) {
 
 function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, visited = new Set()) {
     if (!finalRecipe || !recipe || visited.has(Number(finalRecipe.recipeId))) return 1;
-    const desired = requestedOutput === null ? Math.max(1, Number(state?.stats?.equipmentPlan?.outputAmount || finalRecipe.productCount || 1)) : Math.max(0, Number(requestedOutput || 0));
+    const desired = requestedOutput === null
+        ? Math.max(0, Math.max(1, Number(state?.stats?.equipmentPlan?.outputAmount || finalRecipe.productCount || 1))
+            - (state?.stats?.equipmentPlan?.clanGoal ? 0 : Number(state?.inventory?.[finalRecipe.productId]?.amount || 0)))
+        : Math.max(0, Number(requestedOutput || 0));
     const crafts = Profit.batchesFor(finalRecipe, desired);
     if (crafts === null) return 0;
-    if (Number(finalRecipe.recipeId) === Number(recipe.recipeId)) return Math.max(1, crafts);
+    if (Number(finalRecipe.recipeId) === Number(recipe.recipeId)) return crafts;
     const nextVisited = new Set(visited).add(Number(finalRecipe.recipeId));
     for (const [id, amount] of Profit.requirements(finalRecipe) || []) {
         const component = componentFor(state, id);
@@ -294,7 +300,7 @@ async function craft(state, random = Math.random) {
     const supplemental = await supplementMaterials(state.characterId, customerItems, recipe, batchCount);
     const materials = materialRows(supplemental.items, recipe, batchCount);
     if (!materials) return { state, crafted: false, reason: 'materials_changed' };
-    const success = Profit.succeeds(recipe, random);
+    let success = station.workshop ? null : Profit.succeeds(recipe, random);
     const price = Number(entry.price || 0) * batchCount;
     const adena = Number(customerItems.find((item) => Number(item.selfId) === 57)?.amount || 0);
     if (adena < price) {
@@ -308,7 +314,9 @@ async function craft(state, random = Math.random) {
     }
     let result;
     try {
-        result = await Database.craftForCustomer(crafter.id, state.characterId, {
+        result = station.workshop ? await Workshops.craft(crafter.id, recipe.recipeId, state.characterId, {
+            batches: batchCount, expectedPrice: entry.price, expectedRevision: station.revision, random
+        }) : await Database.craftForCustomer(crafter.id, state.characterId, {
             materials,
             product: success ? {
                 selfId: Number(recipe.productId),
@@ -323,9 +331,6 @@ async function craft(state, random = Math.random) {
             crafterMp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0) * batchCount,
             price,
             adena: { name: 'Adena' },
-            ...(station.workshop ? { workshop: { recipeId: recipe.recipeId, entryPrice: entry.entryPrice,
-                crafterRevision: crafterState.simulation?.revision || 0, customerRevision: state.simulation?.revision || 0,
-                batches: batchCount, fee: price } } : {}),
             ...(plan.clanGoal?.orderId ? { clanOrder: { orderId: plan.clanGoal.orderId,
                 settings: plan.clanGoal.orderSettings, final: !componentCraft } } : {}),
             ...(station.clan ? { clanCraft: { clanId: Number(plan.clanGoal.clanId), recipeId: recipe.recipeId,
@@ -334,15 +339,22 @@ async function craft(state, random = Math.random) {
                 mpCost: Number(recipe.mpCost) * batchCount } } : {})
         });
     } catch (error) {
-        // A concurrent market/craft transaction may invalidate a material or
-        // Adena row. Keep this bot's retry local; never reject the scheduler.
-        return {
-            state: await refreshPhysicalInventory(state),
-            crafted: false,
-            reason: 'craft_rejected',
-            error: String(error?.message || error)
-        };
+        let failure = error;
+        if (station.workshop && error.economyCommand) {
+            try {
+                result = await Workshops.craft(crafter.id, recipe.recipeId, state.characterId,
+                    { original: error.economyCommand });
+            } catch (recoveryError) { failure = recoveryError; }
+        }
+        if (!result) {
+            // A refusal spends nothing. Keep the original header if delivery
+            // is uncertain; an ordinary replan never invents a second attempt.
+            return { state: await refreshPhysicalInventory(state), crafted: false, reason: 'craft_rejected',
+                error: String(failure?.message || failure),
+                ...(error.economyCommand ? { economyCommand: error.economyCommand } : {}) };
+        }
     }
+    if (station.workshop) success = result.success !== false;
     // ARCH-NOTE: E3 physical craft fees must reach the returned wallet.
     // Validate the existing exchange receipt before subsequent writers. Missing
     // receipts retain the existing zero-fee and unit-facade behavior.

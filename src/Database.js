@@ -7732,8 +7732,14 @@ const Database = {
         }, 'item:cold-safe-enchant'));
     },
 
-    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null, workshop = null }) {
+    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null, workshop = null,
+        economyCommand = null, funding = {}, random = Math.random }) {
         return withCharacterFlushes([crafterId, customerId], () => inTransaction(() => {
+            const step = economyStepUnsafe(customerId, economyCommand, EconomyCommit.KINDS.craft);
+            if (step?.replay) return { ...step.replay, customerState: step.replay.coldLifeRow,
+                crafterState: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [crafterId])) };
+            if (step && (!workshop || clanCraft || clanOrder)) throw Error('craft_executor_changed');
+            let success = !!product;
             let clanCrafter = null;
             let workshopCrafter = null;
             if (workshop) {
@@ -7754,11 +7760,13 @@ const Database = {
                         if (!row || Number(row.physicalHp) <= 0) throw new Error('customer unavailable');
                         continue;
                     }
-                    if (!row || row.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER
-                        || row.simulationLeaseId || row.partyId || Number(row.hp) <= 0
+                    if (!row || (row === customer && step ? row.phase !== step.row.phase : row.phase !== 'cold')
+                        || row.simulationOwner !== LEGACY_SIMULATION_OWNER
+                        || row.simulationLeaseId || row.partyId || Number(row.phase === 'hot' ? row.physicalHp : row.hp) <= 0
                         || ['dead', 'respawning', 'traveling'].includes(row.activity)
                         || Number(row.simulationRevision) !== Number(revision)) throw new Error('workshop ownership changed');
                 }
+                if (customer.phase && !step) throw Error('workshop_command_missing');
                 const stats = jsonObject(workshopCrafter.statsJson);
                 const entry = stats.workshop?.entries?.find(row => Number(row.recipeId) === Number(recipe.recipeId));
                 if (!entry || Number(entry.price) !== Number(workshop.entryPrice)
@@ -7789,6 +7797,13 @@ const Database = {
                 if (required.size !== supplied.size || [...required].some(([id, amount]) => supplied.get(id) !== amount)
                     || product && (Number(product.selfId) !== Number(recipe.productId)
                         || Number(product.amount) !== Number(recipe.productCount) * batches)) throw new Error('workshop recipe changed');
+                if (step) {
+                    for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
+                    checkEconomyFundingUnsafe(customerId, step, Number(price), { ...funding, itemId: Number(recipe.productId) });
+                    const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(recipe.productId));
+                    if (!product || !template || !!product.stackable !== !!template.etc?.stackable
+                        || Number(product.slot || 0) !== Number(template.etc?.slot || 0)) throw Error('craft_product_template_changed');
+                }
                 crafterMp = Number(workshopCrafter.mp) - Number(recipe.mpCost) * batches;
             }
             let manualOrder = null;
@@ -7842,8 +7857,8 @@ const Database = {
             }
             const sources = [];
             for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
-                const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
-                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
+                const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
+                if (!source || workshop && source.equipped || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
                 if (Diagnostics.active()) stageNativeDiagnostic(customerId, null, 'craft_material', 'validated',
                     { item: Number(material.selfId), nativeId: Number(source.id), recipeId: Number(clanCraft?.recipeId || 0), owned: Number(source.amount), requested: Number(material.amount) });
@@ -7852,12 +7867,20 @@ const Database = {
             const customerAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [customerId]) : null;
             if (fee > 0 && (!customerAdena || Number(customerAdena.amount) < fee)) throw new Error('customer adena changed');
             let crafterAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [crafterId]) : null;
+            // One native roll after validated physical inputs and fees;
+            // the saved completion returns before every mutable quote check.
+            if (step) {
+                const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(workshop.recipeId);
+                success = recipe.successRate >= 100 || Number(random()) * 100 < recipe.successRate;
+                if (!success) product = null;
+            }
             const warehouseOutput = !!manualOrder && clanOrder.final === true;
             const target = product?.stackable ? warehouseOutput
                 ? one('SELECT id, amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ? AND enchant = 0 ORDER BY id LIMIT 1', [manualOrder.clanId, product.selfId])
                 : one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [customerId, product.selfId]) : null;
             let productId = Number(target?.id || 0);
             const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
+            if (!Number.isSafeInteger(productAmount) || productAmount < 0) throw Error('craft_product_overflow');
             sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]));
             if (warehouseOutput && product) {
                 if (target) write('UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?', [productAmount, now(), productId, manualOrder.clanId]);
@@ -7870,7 +7893,13 @@ const Database = {
                 state.updatedAt = now();
                 write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(state), state.updatedAt, manualOrder.clanId]);
             } else if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
-            else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, customerId]).insertId;
+            else if (product) {
+                for (let index = 0; index < (product.stackable ? 1 : Number(product.amount)); index++) {
+                    const id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
+                        [product.selfId, product.name || '', product.stackable ? product.amount : 1, product.slot || 0, customerId]).insertId;
+                    if (!productId) productId = id;
+                }
+            }
             if (manualOrder) {
                 const eventId = recordClanGoalEventUnsafe({ clanId: manualOrder.clanId,
                     eventType: product ? 'player_order_crafted' : 'player_order_craft_failed', plan: 'craft',
@@ -7899,6 +7928,7 @@ const Database = {
                 write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(customerAdena.amount) - fee, customerAdena.id, customerId]);
                 if (crafterAdena) {
                     nextCrafterAdena = Number(crafterAdena.amount) + fee;
+                    if (!Number.isSafeInteger(nextCrafterAdena)) throw Error('craft_fee_overflow');
                     write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [nextCrafterAdena, crafterAdena.id, crafterId]);
                 } else {
                     const id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (57, ?, ?, 0, 0, ?)', [adena?.name || 'Adena', fee, crafterId]).insertId;
@@ -7938,7 +7968,17 @@ const Database = {
                     customerState: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [customerId]))
                 };
             }
-            return { ...clanStates, sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
+            const receipt = step ? { committed: true, success, units: Number(product?.amount || 0), spent: fee,
+                nativeId: Number(workshop.recipeId), mp: crafterMp } : {};
+            if (step) {
+                // Earlier workshop accounting also fences the customer. Complete
+                // against that current row, without restoring its older bag.
+                step.row = one('SELECT * FROM bot_life_state WHERE characterId=?', [customerId]);
+                clanStates.customerState = completeEconomyStepUnsafe(customerId, step, receipt,
+                    [...materials.map(row => Number(row.selfId)), ...(product ? [Number(product.selfId)] : [])]);
+                receipt.economyCommit = jsonObject(clanStates.customerState.statsJson).economyCommit;
+            }
+            return { ...clanStates, ...receipt, sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
         }, 'craft:customer'));
     },
 
