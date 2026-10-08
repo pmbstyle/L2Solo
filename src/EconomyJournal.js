@@ -28,6 +28,8 @@ const STORES = [
     },
     { store: 'clan_hall_bid', table: 'clan_hall_bids', column: 'amount', adena: true },
     // What a deal or a closed record owes a cold bot until its next save.
+    { store: 'meeting_goods', table: 'board_trade_meeting_lines', column: 'heldCount', item: 'selfId' },
+    ...['escrowA', 'escrowB', 'routeReserveA', 'routeReserveB'].map(column => ({ store: `meeting_${column}`, table: 'board_trade_meetings', column, adena: true })),
     { store: 'board_settlement', table: 'board_settlements', column: 'amount', item: 'selfId' }
 ];
 
@@ -106,10 +108,10 @@ function changeCall(store, item, delta) {
 }
 
 function triggerSql({ store, table, column, item, adena, sellLinesOnly }) {
-    const name = `economy_journal_${table}`;
+    const name = `economy_journal_${table}_${column}`;
     const itemOf = (row) => (adena ? '57' : `${row}.${item}`);
     const sellOnly = (row) => (sellLinesOnly
-        ? ` AND (SELECT storeType FROM main.afk_trade_shops WHERE id = ${row}.shopId) = 1`
+        ? ` AND (SELECT storeType FROM main.afk_trade_shops WHERE id = ${row}.shopId AND custodyPolicy != 1) = 1`
         : '');
     const sql = [
         `CREATE TEMP TRIGGER IF NOT EXISTS ${name}_insert AFTER INSERT ON main.${table}
@@ -155,11 +157,11 @@ function attach(connection) {
 // once the table exists. Returns true when every store is watched.
 function attachMissing(connection) {
     STORES.forEach((store) => {
-        if (attachedTables.has(store.table)) return;
+        if (attachedTables.has(store.store)) return;
         const exists = connection.prepare("SELECT 1 FROM main.sqlite_master WHERE type = 'table' AND name = ?").get(store.table);
         if (!exists) return;
         triggerSql(store).forEach((sql) => connection.exec(sql));
-        attachedTables.add(store.table);
+        attachedTables.add(store.store);
     });
     return attachedTables.size === STORES.length;
 }

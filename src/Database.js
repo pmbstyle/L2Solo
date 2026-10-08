@@ -1656,6 +1656,7 @@ function applySchemaMigrations() {
         ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenCount INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE afk_trade_lines ADD COLUMN pricingSigma REAL NOT NULL DEFAULT 0;
     `)]);
+    migrations.push([62, () => require('./GameServer/AfkTrade/TradeMeetingSchema').install(connection)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -3122,14 +3123,14 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
         throw new Error('invalid_afk_trade_quantity');
     }
     const returned = Number(line.count) - count;
-    const difference = Number(shop.storeType) === 3
+    const difference = shop.custodyPolicy !== 1 && Number(shop.storeType) === 3
         ? unitPrice * count - Number(line.price) * Number(line.count) : 0;
     const reserved = Number(shop.escrowAdena || 0) + difference;
     if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
     if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
     if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
     const changedIds = [];
-    if (returned > 0 && Number(shop.storeType) === 1) {
+    if (returned > 0 && shop.custodyPolicy !== 1 && Number(shop.storeType) === 1) {
         afkTradeCreditItemUnsafe(characterId, line, returned);
         changedIds.push(Number(line.selfId));
     }
@@ -3340,7 +3341,7 @@ function closeBoardRecordUnsafe(shop, { ownMove = true, at = now() } = {}) {
         else afkTradeCreditItemUnsafe(ownerId, item, amount);
         return 'bag';
     };
-    if (Number(shop.storeType) === BoardRules.SELL) {
+    if (shop.custodyPolicy !== 1 && Number(shop.storeType) === BoardRules.SELL) {
         lines.forEach((line) => {
             if (give(line, line.count) === 'bag') changed.push(Number(line.selfId));
         });
@@ -3433,8 +3434,9 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = 
     }
     checkBotCapsUnsafe(characterId, kind, rows.length);
 
+    const conditional = ['buy_ad', 'sell_ad'].includes(kind) && isBotOwnerUnsafe(characterId);
     let escrowAdena = 0;
-    if (storeType === BoardRules.BUY) {
+    if (!conditional && storeType === BoardRules.BUY) {
         escrowAdena = rows.reduce((sum, line) => {
             const count = Math.floor(Number(line.count));
             const price = Math.floor(Number(line.price));
@@ -3468,6 +3470,8 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = 
         timestamp,
         kind
     ]).insertId);
+
+    if (conditional) write('UPDATE afk_trade_shops SET custodyPolicy=1 WHERE id=?', [shopId]);
 
     // A replaced shop or an ad may name a stack the bag has merged since: the
     // same item from another stack serves. A player's new shop names its own.
@@ -3506,8 +3510,9 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = 
             }
             if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
             sourceIds.add(sourceId);
-            source = afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
-            changedIds.push(selfId);
+            source = conditional ? one('SELECT * FROM items WHERE id=? AND characterId=?', [sourceId, characterId])
+                : afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+            if (!conditional) changedIds.push(selfId);
         }
         write(`INSERT INTO afk_trade_lines(
             shopId, sourceObjectId, selfId, name, count, initialCount, price,
@@ -3531,6 +3536,14 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = 
             ...observations
         ]);
     });
+    if (conditional && storeType === BoardRules.BUY) {
+        checkConditionalBidUnsafe(characterId, rows[0]);
+        const revision = Number(one('SELECT simulationRevision FROM bot_life_state WHERE characterId=?', [characterId])?.simulationRevision || 0);
+        if (rows[0].intent) {
+            const intent = require('./GameServer/Bot/Economy/TradeIntent').encode(rows[0].intent);
+            write('UPDATE afk_trade_lines SET intentJson=?,intentRevision=? WHERE shopId=?', [JSON.stringify(intent), revision, shopId]);
+        }
+    }
     return { shop: afkTradeShopUnsafe(shopId), changedIds };
 }
 
@@ -3538,6 +3551,16 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = 
 // identities and pricing cursors; money moves once by the net remaining
 // reserve, including additions/removals. The caller already checked the
 // complete expected set inside this same transaction.
+function checkConditionalBidUnsafe(characterId, line, price = Number(line.price)) {
+    const total = Number(line.count) * price;
+    if (!Number.isSafeInteger(total) || total < 1) throw Error('invalid_afk_trade_budget');
+    const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
+    if (total > wallet) throw Error('not_enough_adena');
+    const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
+    if (row) checkEconomyFundingUnsafe(characterId, { row }, total,
+        line.intent ? { r: line.intent.valueRate } : { itemId: Number(line.selfId) });
+}
+
 function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {
     if (configs.length > BoardRules.BOT_RECORDS.buy_ad) throw Error('board_cap_reached');
     const key = (town, line) => `${town || ''}:${Number(line.selfId)}:${Number(line.enchant || 0)}`;
@@ -3559,6 +3582,35 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {
         if (!previous && line.pricing) pricingValues(line.pricing);
         return { config, line, previous, count, price, reserve };
     });
+    if (isBotOwnerUnsafe(characterId)) {
+        for (const row of wanted) if (!row.previous || row.count > Number(row.previous.lines[0].count)) checkConditionalBidUnsafe(characterId, row.line, row.price);
+        const revision = Number(one('SELECT simulationRevision FROM bot_life_state WHERE characterId=?', [characterId])?.simulationRevision || 0);
+        const keep = new Set(wanted.filter(row => row.previous).map(row => row.previous.id));
+        const removed = held.filter(shop => !keep.has(shop.id));
+        const changedIds = [];
+        for (const shop of removed) changedIds.push(...closeBoardRecordUnsafe(shop));
+        const retained = [], opened = [], changed = [];
+        for (const row of wanted) {
+            const intent = row.line.intent ? require('./GameServer/Bot/Economy/TradeIntent').encode(row.line.intent) : null;
+            if (!row.previous) {
+                const record = openBoardRecordUnsafe(characterId, { ...row.config, kind: 'buy_ad' }, row.config.lines).shop;
+                opened.push(record); changed.push(record); continue;
+            }
+            const previous = row.previous, line = previous.lines[0];
+            if (previous.custodyPolicy !== 1) throw Error('trade_intent_migration_pending');
+            if (intent) intent[2] = row.price;
+            const encoded = intent ? JSON.stringify(intent) : null;
+            if (line.count !== row.count || line.intentJson !== encoded || line.intentRevision !== (intent ? revision : -1) || previous.title !== String(row.config.title || '').slice(0,52)) {
+                write('UPDATE afk_trade_lines SET count=?,price=?,intentJson=?,intentRevision=?,updatedAt=? WHERE id=?',
+                    [row.count, row.price, encoded, intent ? revision : -1, timestamp, line.id]);
+                write('UPDATE afk_trade_shops SET title=?,revision=revision+1,updatedAt=? WHERE id=?', [String(row.config.title || '').slice(0,52), timestamp, previous.id]);
+                const record = afkTradeShopUnsafe(previous.id); retained.push(record); changed.push(record);
+            } else retained.push(previous);
+        }
+        return { closed: removed.map(shop => closedRecord(shop, 'closed')), opened, retained, changed,
+            ownerInventory: changedIds.length ? afkTradeInventoryUnsafe(characterId) : null,
+            coldLifeRows: changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {} };
+    }
     const oldReserve = held.reduce((sum, shop) => sum + Number(shop.escrowAdena), 0);
     const newReserve = wanted.reduce((sum, row) => sum + row.reserve, 0);
     if (!Number.isSafeInteger(oldReserve) || !Number.isSafeInteger(newReserve)) throw Error('invalid_afk_trade_budget');
@@ -4596,6 +4648,7 @@ const Database = {
                 coldLifeRows: { [buyerId]: step.replay.coldLifeRow } };
             details.validate?.();
             const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 1", [shopId]);
+            if (shop?.custodyPolicy === 1) throw Error('trade_meeting_required');
             if (!shop || Number(shop.ownerId) === buyerId) throw new Error('afk_trade_shop_unavailable');
             const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
             if (!line || Number(line.count) < quantity) throw new Error('afk_trade_stock_changed');
@@ -4668,6 +4721,7 @@ const Database = {
                 coldLifeRows: { [sellerId]: step.replay.coldLifeRow } };
             details.validate?.();
             const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 3", [shopId]);
+            if (shop?.custodyPolicy === 1) throw Error('trade_meeting_required');
             if (!shop || Number(shop.ownerId) === sellerId) throw new Error('afk_trade_shop_unavailable');
             const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
             if (!line || Number(line.count) < quantity) throw new Error('afk_trade_demand_changed');
@@ -6203,7 +6257,21 @@ const Database = {
             });
     },
     deleteCharacter(username, name) {
-        return remove('characters', 'username = ? COLLATE NOCASE AND name = ? COLLATE NOCASE', [username, name], 'character:delete');
+        return inTransaction(() => {
+            const character = one('SELECT id FROM characters WHERE username=? COLLATE NOCASE AND name=? COLLATE NOCASE', [username, name]);
+            if (!character) return { affectedRows: 0 };
+            const slot = one('SELECT meetingId FROM board_trade_participants WHERE characterId=?', [character.id]);
+            if (slot?.meetingId) {
+                const result = TradeMeetings.terminal(slot.meetingId, false, 'character_deleted');
+                const row = result.meeting;
+                // Final credit is already durable. Remove the deleted actor's
+                // claim without erasing the surviving actor's acknowledgement.
+                TradeMeetings.acknowledge(row.id, row.actorA);
+                TradeMeetings.acknowledge(row.id, row.actorB);
+            }
+            write('DELETE FROM board_trade_participants WHERE characterId=?', [character.id]);
+            return write('DELETE FROM characters WHERE id=?', [character.id]);
+        }, 'character:delete');
     },
     fetchSkills(characterId) {
         return select('skills', ['*'], 'characterId = ?', [characterId], 'skill:list');
@@ -10077,5 +10145,140 @@ Object.assign(Database, require('./GameServer/ClanHall/Repository')({
     one, all, write, inTransaction, inPreparedTransaction, inPreparedTransactionBatch, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
     rememberClanContributionUnsafe
 }));
+
+const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
+    one, all, write, now, take: afkTradeTakeItemUnsafe, debit: afkTradeDebitAdenaUnsafe,
+    credit: (owner, item, count, at) => {
+        const bag = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [owner, item.selfId]).amount);
+        const pending = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM board_settlements WHERE ownerId=? AND selfId=?', [owner, item.selfId]).amount);
+        if (!Number.isSafeInteger(bag + pending + count)) throw Error('trade_meeting_integer');
+        return creditRecordOwnerUnsafe(owner, item, count, at);
+    }, funding: checkEconomyFundingUnsafe, protection: checkEconomyMaterialProtectionUnsafe,
+    position: tradeMeetingPositionUnsafe,
+    stopTrip: meeting => {
+        for (const actor of [meeting.actorA, meeting.actorB]) write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
+    },
+    completed: (meeting, line) => {
+        const at = now(), buyerId = line.payer ? meeting.actorB : meeting.actorA;
+        const sellerId = line.payer ? meeting.actorA : meeting.actorB;
+        const ad = line.sourceAdId && one('SELECT * FROM afk_trade_shops WHERE id=?', [line.sourceAdId]);
+        if (ad?.custodyPolicy === 1) {
+            write('UPDATE afk_trade_lines SET count=max(0,count-?),fills=fills+1,updatedAt=? WHERE shopId=? AND selfId=? AND enchant=?',
+                [line.count, at, ad.id, line.selfId, line.enchant]);
+            write('UPDATE afk_trade_shops SET revision=revision+1,updatedAt=? WHERE id=?', [at, ad.id]);
+        }
+        const buyer = one('SELECT name,username FROM characters WHERE id=?', [buyerId]);
+        const seller = one('SELECT name,username FROM characters WHERE id=?', [sellerId]);
+        recordAfkTradeEventUnsafe({ shopId: line.sourceAdId, ownerId: ad?.ownerId || sellerId,
+            counterpartyId: ad?.ownerId === buyerId ? sellerId : buyerId, kind: ad?.storeType === 3 ? 'purchase' : 'sale',
+            selfId: line.selfId, itemName: line.name, amount: line.count, unitPrice: line.price,
+            totalPrice: line.count * line.price, createdAt: at });
+        recordMarketTradeUnsafe({ eventKey: `meeting:${meeting.id}:${line.ordinal}`, occurredAt: at,
+            channel: BoardRules.isBotAccount(seller?.username) ? 'bot_wts' : 'player_wts',
+            sourceType: BoardRules.isBotAccount(seller?.username) ? 'afk_bot_store' : 'afk_player_store',
+            selfId: line.selfId, itemName: line.name, quantity: line.count, unitPrice: line.price,
+            totalPrice: line.count * line.price, town: meeting.town, sellerCharacterId: sellerId,
+            sellerName: seller?.name || null, buyerCharacterId: buyerId, buyerName: buyer?.name || null }, { unique: true });
+        learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity: line.count,
+            sellerCharacterId: sellerId, buyerCharacterId: buyerId }, [[sellerId, seller], [buyerId, buyer]]);
+    },
+    startTrip: (id, meeting, side, receipt) => {
+        const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+        if (!row || row.phase !== 'cold') return;
+        const route = jsonObject(side ? meeting.routeB : meeting.routeA), at = now();
+        const travel = { from: { locX: row.locX, locY: row.locY, locZ: row.locZ },
+            to: { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ },
+            townName: meeting.town, regionName: meeting.town, arrivalActivity: 'shopping', arrivalEvent: 'trade_meeting_arrival',
+            method: route.method, reason: 'trade_meeting', meetingId: meeting.id, meetingRevision: meeting.revision,
+            startedAt: at, arrivalAt: at + Math.max(1000, route.durationMs), paid: { fee: receipt.fee, ...(receipt.scroll ? { scroll: 736 } : {}) } };
+        write("UPDATE bot_life_state SET activity='traveling',activityStartedAt=?,nextResolveAt=?,statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)) WHERE characterId=?", [at, travel.arrivalAt, JSON.stringify({ travel }), id]);
+    },
+    snapshot: (id, changed, patch) => {
+        const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+        if (!row) return null;
+        if (row.phase === 'cold') return writeColdInventorySnapshotUnsafe(id, row, changed, null, patch);
+        write("UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)),simulationRevision=simulationRevision+1 WHERE characterId=?", [JSON.stringify(patch), id]);
+        return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [id]));
+    }
+});
+function tradeMeetingPositionUnsafe(id) {
+    const session = (invoke('GameServer/World/World').user?.sessions || []).find(s => Number(s.actor?.fetchId?.()) === id);
+    if (session) {
+        const actor = session.actor;
+        return { characterId: id, locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ(),
+            alive: !actor.isDead(), available: !session.pendingActorTeleport && !actor.state?.fetchAttacks?.() && !actor.state?.fetchCasts?.() };
+    }
+    const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+    // A player's persisted position is never proof of a current session.
+    if (!row || row.phase !== 'cold') return null;
+    return { characterId: id, locX: row.locX, locY: row.locY, locZ: row.locZ,
+        alive: Number(row.hp) > 0 && row.activity !== 'dead',
+        available: !['traveling', 'fighting', 'dead'].includes(row.activity) };
+}
+Object.assign(Database, {
+    migrateConditionalTradeAds(ownerId) {
+        return withCharacterFlush(ownerId, () => inTransaction(() => {
+            const rows = all("SELECT * FROM afk_trade_shops WHERE ownerId=? AND custodyPolicy=0 AND kind IN ('buy_ad','sell_ad') ORDER BY id", [ownerId]);
+            if (!isBotOwnerUnsafe(ownerId)) return { migrated: 0 };
+            for (const row of rows) {
+                const lines = all('SELECT * FROM afk_trade_lines WHERE shopId=? ORDER BY id', [row.id]);
+                if (row.storeType === BoardRules.SELL) for (const line of lines) {
+                    creditRecordOwnerUnsafe(ownerId, line, line.count);
+                    // Journal observes release under the old custody policy.
+                    write('UPDATE afk_trade_lines SET count=0 WHERE id=?', [line.id]);
+                }
+                creditRecordOwnerUnsafe(ownerId, { selfId: 57 }, row.escrowAdena);
+                write('UPDATE afk_trade_shops SET custodyPolicy=1,escrowAdena=0,revision=revision+1 WHERE id=?', [row.id]);
+                for (const line of lines) write('UPDATE afk_trade_lines SET count=?,intentJson=NULL,intentRevision=-1 WHERE id=?', [line.count, line.id]);
+            }
+            const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [ownerId]);
+            const fenced = rows.length && life ? writeColdInventorySnapshotUnsafe(ownerId, life, [], null, { tradeIntentDirty: true }) : null;
+            return { migrated: rows.length, row: fenced };
+        }, 'board:intent-migration'));
+    },
+    fetchConditionalMigrationOwners() {
+        return inTransaction(() => all(`SELECT DISTINCT shops.ownerId FROM afk_trade_shops shops JOIN characters c ON c.id=shops.ownerId
+            WHERE shops.custodyPolicy=0 AND shops.kind IN ('buy_ad','sell_ad') AND substr(c.username,1,4)='bot_'
+            ORDER BY shops.ownerId LIMIT 32`).map(row => row.ownerId), 'board:intent-migration-page');
+    },
+    fetchAfkTradeShop(id) { return inTransaction(() => afkTradeShopUnsafe(Number(id)), 'board:record-read'); },
+    prepareTradeParticipant(id) {
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const slot = TradeMeetings.participant(Number(id)), row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+            return { sequence: slot.nextSequence, meetingId: slot.meetingId, revision: Number(row?.simulationRevision || 0),
+                phase: row?.phase || 'player', needRevision: Number(row?.simulationRevision || 0),
+                inventory: afkTradeInventoryUnsafe(id), position: tradeMeetingPositionUnsafe(Number(id)) };
+        }, 'board:meeting-prepare'));
+    },
+    acceptTradeMeeting(request) {
+        return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request), 'board:meeting-accept'));
+    },
+    fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
+    fetchTradeMeetingForOwner(id) {
+        return inTransaction(() => { const slot = one('SELECT meetingId FROM board_trade_participants WHERE characterId=?', [id]);
+            return slot?.meetingId ? TradeMeetings.meeting(slot.meetingId) : null; }, 'board:meeting-owner');
+    },
+    payTradeMeetingLeg(id, side, sequence, legId, fee, scroll) {
+        return inTransaction(() => TradeMeetings.leg(Number(id), side, sequence, legId, fee, scroll), 'board:meeting-leg');
+    },
+    acknowledgeTradeMeetingLeg(id, side, sequence) {
+        return inTransaction(() => {
+            const row = TradeMeetings.meeting(Number(id)), suffix = side === 0 ? 'A' : side === 1 ? 'B' : null;
+            if (!row || !suffix) return null;
+            const receipt = jsonObject(row[`leg${suffix}`]);
+            if (receipt.sequence !== sequence) throw Error('trade_meeting_leg_changed');
+            write(`UPDATE board_trade_meetings SET leg${suffix}=NULL WHERE id=?`, [id]);
+            return { acknowledged: true };
+        }, 'board:meeting-leg-ack');
+    },
+    arriveTradeMeeting(id) {
+        return inTransaction(() => { const row = TradeMeetings.meeting(Number(id));
+            return row ? TradeMeetings.present(row.id, [tradeMeetingPositionUnsafe(row.actorA), tradeMeetingPositionUnsafe(row.actorB)]) : null;
+        }, 'board:meeting-arrival');
+    },
+    cancelTradeMeeting(id, reason) { return inTransaction(() => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
+    acknowledgeTradeMeeting(id, actor) { return withCharacterFlush(actor, () => inTransaction(() => TradeMeetings.acknowledge(Number(id), Number(actor)), 'board:meeting-ack')); },
+    recoverTradeMeetings(afterId = 0) { return inTransaction(() => all('SELECT id,actorA,actorB,state FROM board_trade_meetings WHERE id>? ORDER BY id LIMIT 32', [afterId]), 'board:meeting-recover'); }
+});
 
 module.exports = Database;
