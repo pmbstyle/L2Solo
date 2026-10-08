@@ -51,7 +51,7 @@ async function run() {
     assert.equal(ack.retryAfterMs, undefined);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
     Consumption.publish = (...args) => consumptionRows.push(args);
-    const entry = { nextState: state, proposal: { proposalId: 'consume-proposal', token: { revision: 4 }, commandId: 'consume-command', proposalId: 'consume-proposal', sequence: 9, result: { events: [], consumptionDiagnostics: [[1539, 5, 3, 1]] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
+    const entry = { nextState: state, proposal: { proposalId: 'consume-proposal', token: { revision: 4 }, commandId: 'consume-command', sequence: 9, result: { events: [], consumptionDiagnostics: [[1539, 5, 3, 1]] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
         partyResolution: { party: { partyId: 2, status: 'active', memberIds: [1] } } } };
     logs.length = 0;
     await coordinator.afterCommit(entry, { revision: 5 });
