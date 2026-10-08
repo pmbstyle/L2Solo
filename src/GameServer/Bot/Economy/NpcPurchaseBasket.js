@@ -23,6 +23,9 @@ function refusalReason(error) {
         default: return 'native_error';
     }
 }
+function sellerFacts(seller) {
+    return Object.freeze({ sourceId: Number(seller?.sourceId), town: seller?.town });
+}
 function resultFields(result, seller) {
     return result.replayed ? { actual: 0, spent: 0, receiptUnits: Number(result.units), receiptSpent: Number(result.spent),
         nativeId: Number(result.nativeId) } : { actual: Number(result.units || 0), spent: Number(result.spent || 0),
@@ -52,15 +55,16 @@ async function purchase(state, options = {}) {
     const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Goals = invoke('GameServer/Bot/Goals/GoalState'), previousGoal = Goals.snapshot(state.characterId);
     const started = Diagnostics.active() ? performance.now() : 0;
-    let admitted, result;
+    let admitted, result, requestSeller;
     try {
         admitted = await Commit.admit(state, Commit.KINDS.npcBuy, options.original || null);
         if (Diagnostics.active()) {
+            requestSeller = sellerFacts(options.seller);
             let fields;
             if (!options.original) {
                 let units = 0;
                 for (const line of options.lines) units += Number(line.amount);
-                fields = { requested: units, planned: units, npcId: Number(options.seller.sourceId), town: options.seller.town,
+                fields = { requested: units, planned: units, npcId: requestSeller.sourceId, town: requestSeller.town,
                     wallet: Number(admitted.state.adena) };
             }
             diagnostic(admitted.state, admitted.command, 'npc_admission', options.original ? 'original_command' : 'admitted', fields);
@@ -68,7 +72,7 @@ async function purchase(state, options = {}) {
         result = await Database.purchaseNpcInventoryBasket(state.characterId,
             { ...options, coldState: admitted.state, economyCommand: admitted.command });
         if (Diagnostics.active()) diagnostic(admitted.state, admitted.command, 'npc_result',
-            result.replayed ? 'saved_receipt' : result.ok ? 'completed' : 'insufficient_adena', resultFields(result, options.seller));
+            result.replayed ? 'saved_receipt' : result.ok ? 'completed' : 'insufficient_adena', resultFields(result, requestSeller));
     } catch (error) {
         if (Diagnostics.active()) diagnostic(admitted?.state || state, admitted?.command || options.original,
             'npc_refusal', refusalReason(error), { actual: 0, spent: 0 });
@@ -85,14 +89,14 @@ async function purchase(state, options = {}) {
         if (result.coldLifeRow) current = Commit.acceptRow(result.coldLifeRow);
         if (result.goalRow && Goals.snapshot(state.characterId) === previousGoal) Goals.prime(state.characterId,
             result.goalRow.goalJson, result.goalRow.updatedAt);
-        if (Diagnostics.active()) diagnostic(current, admitted.command, 'npc_delivery', 'state_accepted', resultFields(result, options.seller));
+        if (Diagnostics.active()) diagnostic(current, admitted.command, 'npc_delivery', 'state_accepted', resultFields(result, requestSeller));
     } catch (error) {
         const row = result.coldLifeRow;
         if (row) current = { ...current, phase: row.phase, adena: Number(row.adena),
             inventory: JSON.parse(row.inventorySummary || '{}'), stats: JSON.parse(row.statsJson || '{}'),
             simulation: { ...current.simulation, revision: Number(row.simulationRevision),
                 ownerId: row.simulationOwner, leaseId: row.simulationLeaseId || null }, updatedAt: Number(row.updatedAt) };
-        if (Diagnostics.active()) diagnostic(current, admitted.command, 'npc_delivery', 'state_deferred', resultFields(result, options.seller));
+        if (Diagnostics.active()) diagnostic(current, admitted.command, 'npc_delivery', 'state_deferred', resultFields(result, requestSeller));
         utils.infoWarn('BotMarket', 'committed NPC state delivery deferred: %s', error.message);
     }
     const lines = result.lines || [];
@@ -111,12 +115,13 @@ async function purchaseForActor(actor, options = {}) {
         state = await Life.markHot(session, 'npc_purchase_review');
     }
     if (!state || state.phase !== 'hot' || session.actor !== actor) throw Error('npc_actor_changed');
+    const requestSeller = Diagnostics.active() ? sellerFacts(options.seller) : null;
     const result = await purchase(state, options);
     if (!result.ok) return result;
     try {
         const rows = await invoke('Database').fetchItems(actor.fetchId());
         if (session.actor !== actor || !Life.hotRow(actor.fetchId())) {
-            if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_changed', resultFields(result, options.seller));
+            if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_changed', resultFields(result, requestSeller));
             return result;
         }
         actor.backpack.items = [];
@@ -125,9 +130,9 @@ async function purchaseForActor(actor, options = {}) {
             .reduce((sum, row) => sum + Number(row.amount), 0)), inventory: Life.inventorySummaryFromItems(rows) };
         result.state = session.coldLifeState;
         invoke('GameServer/World/PartyMembershipPublication')([session], invoke);
-        if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_accepted', resultFields(result, options.seller));
+        if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_accepted', resultFields(result, requestSeller));
     } catch (error) {
-        if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_deferred', resultFields(result, options.seller));
+        if (Diagnostics.active()) diagnostic(result.state, result.economyCommand, 'npc_delivery', 'actor_deferred', resultFields(result, requestSeller));
         utils.infoWarn('BotMarket', 'committed NPC actor delivery deferred: %s', error.message);
     }
     return result;

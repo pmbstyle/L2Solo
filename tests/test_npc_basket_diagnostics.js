@@ -129,7 +129,20 @@ async function scenarios() {
     actor.backpack = new Backpack({ paperdoll: {}, items: [] });
     for (const item of await DB.fetchItems(9605)) actor.backpack.insertItem(item.id, item.selfId, { ...item });
     actor.session = { actor, coldLifeState: hotState, plan: 'shopping', botSession: true };
-    const delivered = await Basket.purchaseForActor(actor, { seller, lines });
+    const nativePurchase = DB.purchaseNpcInventoryBasket;
+    const requestSeller = { ...seller };
+    DB.purchaseNpcInventoryBasket = async (...args) => {
+        const committed = await nativePurchase.apply(DB, args);
+        // Simulate reuse of the caller's mutable argument after SQL captured it.
+        args[1].seller.sourceId = 1; args[1].seller.town = 'Wrong';
+        return committed;
+    };
+    let delivered;
+    try { delivered = await Basket.purchaseForActor(actor, { seller: requestSeller, lines }); }
+    finally { DB.purchaseNpcInventoryBasket = nativePurchase; }
+    assert(rows.some(row => row.owner === 9605 && row.phase === 'npc_result' && row.npcId === seller.sourceId && row.town === seller.town),
+        'post-await traces retain the known request seller');
+    assert(rows.some(row => row.owner === 9605 && row.phase === 'npc_delivery' && row.reason === 'actor_accepted' && row.npcId === seller.sourceId));
     assert(delivered.ok);
     assert.equal(actor.backpack.fetchItemFromSelfId(2509).fetchAmount(), 100);
     assert(rows.some(row => row.owner === 9605 && row.phase === 'npc_delivery' && row.reason === 'actor_accepted' && row.actual === 102));
@@ -143,6 +156,7 @@ async function scenarios() {
     assert(rows.some(row => row.owner === 9605 && row.phase === 'npc_delivery' && row.reason === 'actor_deferred'
         && row.actual === 0 && row.receiptUnits === 102 && row.npcId === undefined));
     assert.equal(await amount(9605, 57), 2984);
+    await assert.rejects(Basket.purchaseForActor(actor, { lines }), /invalid npc basket/);
     assert(Diagnostics.metrics().durations.npc_basket.count >= 5);
     const poor = await seed(9606, 180);
     const poorPlans = Restock.collect(poor, { shots: false, potions: false, scrolls: false,
