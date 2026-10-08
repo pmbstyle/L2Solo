@@ -226,7 +226,8 @@ function capture(economy, state, seen = state) {
         if (plan.kind === 'craft') for (const row of plan.requirements || []) {
             if (row.key?.startsWith('item:') && row.amount > 0) {
                 const id = Number(row.key.slice(5));
-                const gap = Math.max(0, row.amount * amount - Number(state?.inventory?.[id]?.amount || 0));
+                // Provider requirements are already net of owned stock.
+                const gap = Math.max(0, row.amount * amount);
                 if (gap > 0) missing.set(id, Math.max(missing.get(id) || 0, gap));
             }
         }

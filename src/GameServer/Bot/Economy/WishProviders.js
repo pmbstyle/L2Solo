@@ -229,7 +229,8 @@ function buildProjection(state, ctx, deps) {
                 const owned = Math.min(amount, freeAmount(state, state.inventory?.[selfId] || {}));
                 ownInputOpportunityValue += owned * positive(price(selfId));
                 const missing = amount - owned;
-                if (missing > 0) requirements.push({ key: itemNode(selfId, depth + 1), amount: missing });
+                const materialKey = itemNode(selfId, depth + 1);
+                if (missing > 0) requirements.push({ key: materialKey, amount: missing });
             }
             const learned = recipe.kind === 'dual_sword_combine' || knownRecipes.has(Number(recipe.recipeId));
             const ownedScroll = freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
@@ -252,10 +253,11 @@ function buildProjection(state, ctx, deps) {
             if (scrollAvailable && Number.isFinite(cycleHours) && cycleHours > 0 && requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
                 itemId: Number(id), recipeId: recipe.recipeId,
                 requiresRecipeLearning: !learned, successProbability: Number(recipe.successRate ?? 100) / 100,
-                ownInputOpportunityValue, costHours: cycleHours,
+                ownInputOpportunityValue, costHours: cycleHours, productCount: Number(recipe.productCount || 1),
+                grossRequirements: [...combined].map(([selfId, amount]) => ({ key: `item:${selfId}`, amount })),
                 requirements });
         }
-        add({ key, object: Number(id), price: price(id), paths: paths.slice(0, 3) });
+        add({ key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] });
         preparingItems.delete(key);
         return key;
     };
@@ -362,7 +364,8 @@ function buildProjection(state, ctx, deps) {
         if (!key) continue;
         root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount: stock.missing, kind },
             valueHours: stock.benefitHours * powerWeight, price: stock.missing * stock.unitPrice,
-            paths: [{ requirements: [{ key, amount: stock.missing }] }] });
+            paths: [{ requirements: [{ key, amount: stock.missing }],
+                grossRequirements: [{ key, amount: Number(stock.target || stock.missing + (stock.current || 0)) }] }] });
         values.set(stock.itemId, stock.benefitHours / stock.missing);
     }
     // Concrete remembered people, not persona-labelled lifelong goals.

@@ -83,7 +83,11 @@ async function run() {
     const kitDeps = { knowledgeEnabled: true };
     const warriorContext = Economy.forState(warrior, kitDeps);
     const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
-    assert(reserve >= 15000 && reserve <= 17000, `one hunting hour kit reserve: ${reserve}`);
+    assert.equal(reserve, warriorContext.kitCost(warriorStock.itemId)
+        + warriorContext.kitCost(warriorContext.stock('potions').itemId) + warriorContext.kitCost(736));
+    const escapeBag = amount => ({ ...warrior, inventory: { ...warrior.inventory, 736: { selfId: 736, amount } } });
+    assert.equal(Economy.basics(escapeBag(1), kitDeps).survivalReserve, reserve - warriorContext.kitCost(736));
+    assert.equal(Economy.basics(escapeBag(2), kitDeps).survivalReserve, Economy.basics(escapeBag(1), kitDeps).survivalReserve);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) >= 1728 * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
