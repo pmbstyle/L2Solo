@@ -7,6 +7,7 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const SkillRequirements = invoke('GameServer/Skills/SkillRequirements');
 const GameTime = invoke('GameServer/World/GameTime');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const C4ArmorSets = invoke('GameServer/Items/C4ArmorSets');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -460,6 +461,15 @@ function needsDatabaseBackfill(snapshot = {}) {
         && (snapshot?.skillSource !== 'database' || number(snapshot?.version) < PROFILE_VERSION);
 }
 
+function hasInventory(state) {
+    return !!state.inventory && typeof state.inventory === 'object';
+}
+
+function capturedEquipmentEffect(effect, state) {
+    return effect.category === 'equipment_item_skill'
+        || (effect.category === C4ArmorSets.CATEGORY && hasInventory(state));
+}
+
 function profileFor(state = {}, timestamp = Date.now(), options = {}) {
     const saved = state.stats?.coldCombat;
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
@@ -480,7 +490,10 @@ function profileFor(state = {}, timestamp = Date.now(), options = {}) {
         equipment: equipped.length
             ? { ...(saved?.equipment || {}), ...legacyEquipment }
             : { ...legacyEquipment, ...(saved?.equipment || {}) },
-        effects: [...(saved?.effects || []).filter(effect => effect.category !== 'equipment_item_skill'),
+        // Set bonuses follow the current worn parts, including hypothetical swaps.
+        // Only legacy states without inventory still depend on captured bonuses.
+        effects: [...(saved?.effects || []).filter(effect => !capturedEquipmentEffect(effect, state)),
+            ...C4ArmorSets.effectsForEquippedIds(new Set(equipped.map(item => Number(item.selfId)))),
             ...equipped.map(item => item.equipmentEffect).filter(Boolean)],
         skills: Array.isArray(saved?.skills) && (saved.skills.length || ['database', 'hot'].includes(saved.skillSource))
             ? saved.skills : skillsFromTree(classId, level)
@@ -785,7 +798,7 @@ function powerKey(state = {}, timestamp = Date.now()) {
             row.enchant, (row.equippedSlots || []).join('.'), (row.instances || []).filter((item) => item.equipped)
                 .map((item) => `${item.slot}.${item.enchant}`).join('/')].join(':')).sort().join(',')
         : 'no-inventory';
-    const effects = activeEffects((saved.effects || []).filter((effect) => effect.category !== 'equipment_item_skill'), timestamp)
+    const effects = activeEffects((saved.effects || []).filter((effect) => !capturedEquipmentEffect(effect, state)), timestamp)
         .map((effect) => `${effect.id}/${effect.key}/${JSON.stringify(effectStats(effect))}`).sort().join(',');
     return [saved.classId, state.stats?.classId, state.classId, state.level, worn, (state.stats?.hennas || []).join(','),
         Array.isArray(saved.skills) ? `${saved.skillSource}:${saved.skills.map((skill) => `${skill.selfId}:${skill.level}`).join(',')}` : '',

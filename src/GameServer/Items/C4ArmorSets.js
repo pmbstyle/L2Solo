@@ -108,6 +108,14 @@ const SET_SKILLS = {
     3556: { name: 'Major Arcana Robe Set', stats: { mAtkMul: 1.17, runSpdAdd: 7, cancelAdd: -50, maxLoad: 5759, WIT: 1, INT: 1, MEN: -2, stunVuln: 0.5 } }
 };
 
+// Static game data: only sets matching a worn chest can be active.
+const setsByChest = new Map();
+for (const set of ARMOR_SETS) {
+    const matches = setsByChest.get(set.chest) || [];
+    matches.push(set);
+    setsByChest.set(set.chest, matches);
+}
+
 function equippedSelfIds(items = []) {
     return new Set(items
         .filter((item) => !!item?.fetchEquipped?.())
@@ -121,8 +129,17 @@ function hasRequiredParts(set, equipped) {
 }
 
 function activeSets(items = []) {
-    const equipped = equippedSelfIds(items);
-    return ARMOR_SETS.filter((set) => hasRequiredParts(set, equipped));
+    return activeSetsForEquippedIds(equippedSelfIds(items));
+}
+
+function activeSetsForEquippedIds(equipped) {
+    const active = [];
+    for (const selfId of equipped) {
+        for (const set of setsByChest.get(selfId) || []) {
+            if (hasRequiredParts(set, equipped)) active.push(set);
+        }
+    }
+    return active;
 }
 
 function resolveSkill(skillId) {
@@ -144,27 +161,25 @@ function effectForSkill(set, skillId, suffix) {
     };
 }
 
-function sync(actor, items = []) {
-    if (!actor) return [];
-    EffectStore.removeByCategory(actor, CATEGORY);
-    const equipped = equippedSelfIds(items);
-    const applied = [];
-
-    activeSets(items).forEach((set) => {
+function effectsForEquippedIds(equipped) {
+    const effects = [];
+    activeSetsForEquippedIds(equipped).forEach((set) => {
         const setEffect = effectForSkill(set, set.skillId, 'set');
-        if (setEffect) {
-            applied.push(EffectStore.apply(actor, setEffect));
-        }
+        if (setEffect) effects.push(setEffect);
 
         if (set.shield && set.shieldSkillId && equipped.has(set.shield)) {
             const shieldEffect = effectForSkill(set, set.shieldSkillId, 'shield');
-            if (shieldEffect) {
-                applied.push(EffectStore.apply(actor, shieldEffect));
-            }
+            if (shieldEffect) effects.push(shieldEffect);
         }
     });
+    return effects;
+}
 
-    return applied.filter(Boolean);
+function sync(actor, items = []) {
+    if (!actor) return [];
+    EffectStore.removeByCategory(actor, CATEGORY);
+    return effectsForEquippedIds(equippedSelfIds(items))
+        .map(effect => EffectStore.apply(actor, effect)).filter(Boolean);
 }
 
 module.exports = {
@@ -172,6 +187,7 @@ module.exports = {
     ARMOR_SETS,
     SET_SKILLS,
     activeSets,
+    effectsForEquippedIds,
     resolveSkill,
     sync
 };
