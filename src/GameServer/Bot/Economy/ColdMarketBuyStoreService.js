@@ -3,6 +3,7 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const { BUY } = require('../../AfkTrade/BoardIndex');
 
@@ -55,6 +56,7 @@ async function settleLine(sellerState, line, town, options = {}) {
             qty,
             { objectId: line.objectId || line.id, lineId: offer.lineId, expectedPrice: offer.price, coldState: sellerState }
         );
+        if (trade.pending) return { state: LifeState.cachedState(sellerState.characterId) || sellerState, sold: false, pending: true, meetingId: trade.meetingId };
         done = AfkTrade.committedTrade(trade, sellerState.characterId);
         if (!done.committed) return { state: sellerState, sold: false, reason: 'cold_state_sync_failed' };
     } catch (error) {
@@ -98,6 +100,8 @@ async function sellToBestBuyer(state, town = state?.currentRegion, options = {})
         if (!offer) continue;
         const result = await settleLine(seller, answer.item, town, { offer, maxQty: answer.count });
         seller = result.state || seller;
+        if (result.pending) return { ...result, state: seller, sold: sales.length > 0, sales,
+            itemCount: sales.reduce((sum, sale) => sum + sale.qty, 0), adena: sales.reduce((sum, sale) => sum + sale.adena, 0) };
         if (result.sold) sales.push(result);
         // The bot went hot: its bag is the actor's now.
         if (result.hot) break;

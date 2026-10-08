@@ -122,7 +122,14 @@ function create({ service = () => require('./PlayerBoardService'),
         const result = await service().answer(session, request);
         const query = session.playerBoardView || normalize(session);
         if (result.action === 'store_opened') return result;
-        if (result.ok && result.action === 'confirm') {
+        if (result.ok && result.action === 'confirm_trade') {
+            const owner = text(result.ownerName, 'Merchant', 100);
+            const verb = result.side === BUY ? 'Sell' : 'Buy';
+            const body = `${verb} ${amount(result.amount)} ${Html.esc(itemName(result.selfId))} for ${amount(result.total)} a with ${Html.esc(owner)}?<br>`
+                + 'Your goods or payment will be held while you wait here.<br>'
+                + Html.link('Agree and wait', 'board agree') + ' / ' + Html.link('Back', command(query, query.cursor));
+            send(session, Html.page(body, { title: 'Confirm meeting' }));
+        } else if (result.ok && result.action === 'confirm') {
             const name = itemName(result.productId), owner = text(result.ownerName, 'Merchant', 100);
             const body = `Craft ${Html.esc(name)} for ${amount(result.price)} a from ${Html.esc(owner)}?<br>`
                 + Html.link('Craft', `board craft ${result.ownerId} ${result.recipeId} ${result.price} ${result.revision}`)
@@ -133,6 +140,7 @@ function create({ service = () => require('./PlayerBoardService'),
             const message = !result.ok ? result.reason === 'record_changed' ? 'This offer has changed.'
                 : result.reason === 'own_record' ? 'You cannot answer your own offer.' : 'This offer is unavailable.'
                 : result.action === 'crafted' ? 'Craft completed.'
+                    : result.action === 'agreed' ? 'Agreed. Wait here for the merchant. Leaving cancels the trade.'
                     : request.kind === 'workshop' ? `${owner} crafts ${itemName(result.productId)} in ${town}. Meet there.`
                         : `${owner} ${result.side === BUY ? 'buys ' + itemName(request.selfId) + ' in ' + town + '. Meet there.' : 'sells in ' + town + '.'}`;
             show(session, query, message);
@@ -146,6 +154,10 @@ function create({ service = () => require('./PlayerBoardService'),
                 const side = sideOf(parts[2]), town = parts[3] === '-' ? null : decodeURIComponent(parts[3]);
                 if (town && town.length > 64) return;
                 return show(session, { side, town, selfId: Number(parts[4]), cursor: decodeCursor(parts[5], side) });
+            }
+            if (parts[1] === 'agree' && parts.length === 2) {
+                const prepared = session.playerBoardPreparation;
+                return prepared ? answer(session, { ...prepared, confirmed: true }) : show(session, session.playerBoardView || {}, 'This offer is unavailable.');
             }
             let request;
             const revision = value => value === '-' ? null : integer(value);

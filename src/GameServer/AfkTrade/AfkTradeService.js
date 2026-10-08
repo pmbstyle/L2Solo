@@ -231,7 +231,8 @@ function projectionStore(shop) {
         afkTrade: true,
         nativePlayerStore: true,
         botOwned: String(shop.ownerAccount || '').startsWith('bot_'),
-        budgetBacked: Number(shop.storeType) === BUY,
+        custodyPolicy: Number(shop.custodyPolicy || 0), conditional: shop.custodyPolicy === 1,
+        budgetBacked: shop.custodyPolicy !== 1 && Number(shop.storeType) === BUY,
         shopId: Number(shop.id),
         kind: kindOf(shop),
         ownerId: Number(shop.ownerId),
@@ -608,6 +609,7 @@ async function syncColdCharacter(characterId, previousState, reason, rows = [], 
 // counts the trade, keeps its own state and writes nothing more for the bot
 // (LifeState.save rejects a cold row over a hot one).
 function committedTrade(trade, characterId) {
+    if (trade?.pending) return { committed: false, pending: true, hot: false, state: invoke('GameServer/Bot/Population/BotLifeState').cachedState(characterId) };
     // Hot first: a bot activated after the sync's own check gets a made-up
     // pending state whose write is rejected; the job must stop all the same.
     if (invoke('GameServer/Bot/Population/BotLifeState').hotRow(characterId)) return { committed: true, hot: true, state: null };
@@ -740,7 +742,7 @@ async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     const characterId = Number(ownerId);
     const diagnostics = require('../Bot/Economy/EconomyDiagnostics');
     const observed = kind === 'buy_ad' && diagnostics.enabled(characterId);
-    const reserve = observed ? () => board.ownerLines(characterId).filter(line => line.kind === 'buy_ad')
+    const reserve = observed ? () => board.ownerLines(characterId).filter(line => line.kind === 'buy_ad' && line.custodyPolicy !== 1)
         .reduce((sum, line) => sum + line.count * line.price, 0) : null;
     const oldReserve = observed ? reserve() : 0;
     let result;
@@ -942,6 +944,7 @@ async function buyFromShop(characterId, store, selfId, amount, options = {}) {
         && (!options.lineId || Number(entry.afkTradeLineId) === Number(options.lineId))
     ));
     if (!store?.afkTrade || Number(store.storeType) !== SELL || (!line && !options.economyCommand)) throw new Error('afk_trade_stock_changed');
+    if (store.conditional) return require('./TradeMeetingService').trade(characterId, store, selfId, amount, options);
     const admission = await admitBotTrade(characterId, require('../Bot/Economy/EconomyCommit').KINDS.afkBuy, options);
     let result;
     try { result = await Database.buyFromAfkTradeShop(characterId, {
@@ -966,6 +969,7 @@ async function sellToShop(characterId, store, selfId, amount, options = {}) {
         && (!options.lineId || Number(entry.afkTradeLineId) === Number(options.lineId))
     ));
     if (!store?.afkTrade || Number(store.storeType) !== BUY || (!line && !options.economyCommand)) throw new Error('afk_trade_demand_changed');
+    if (store.conditional) return require('./TradeMeetingService').trade(characterId, store, selfId, amount, options);
     const admission = await admitBotTrade(characterId, require('../Bot/Economy/EconomyCommit').KINDS.afkSell, options);
     let result;
     try { result = await Database.sellToAfkTradeShop(characterId, {
@@ -1104,6 +1108,15 @@ async function init() {
     invoke('GameServer/Bot/AI/KnowledgeLearning').stages();
     const experience = await Database.initializeBotMarketTrades('history');
     (experience.rows || []).forEach(row => LifeState.acceptMarketTrades(row.characterId, row.marketTrades));
+    for (;;) {
+        const owners = await Database.fetchConditionalMigrationOwners();
+        if (!owners.length) break;
+        for (const owner of owners) {
+            const migrated = await Database.migrateConditionalTradeAds(owner);
+            if (migrated.row) LifeState.acceptLifecycleRow(migrated.row);
+        }
+        await new Promise(resolve => setImmediate(resolve));
+    }
     await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
@@ -1113,6 +1126,7 @@ async function init() {
     MarketCounters.reset();
     MarketCounters.load(await Database.fetchRecentBoardDeals({ perItem: MarketCounters.REPLAY_DEALS }));
     boardReady = true;
+    await require('./TradeMeetingService').init();
     notifyBoardChange({ ready: true });
     startTimers();
     return shops.length;
@@ -1176,9 +1190,11 @@ module.exports = {
     renameOwner,
     sellToShop,
     settleOwners,
+    syncOnlineInventory,
     settlePending,
     stop,
     _resetForTests() {
+        require('./TradeMeetingService').reset();
         [...projectionsByOwner.keys()].forEach(removeProjection);
         clearBoard();
     }

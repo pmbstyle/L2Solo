@@ -621,6 +621,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
 async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
+    if (state.stats?.tradeMeeting) return { state, pending: true };
     const ownerId = Number(state.characterId);
     const run = async (work) => {
         const result = await step(() => Database.withMutationAdmission(beforeWrite, work));
@@ -670,18 +671,20 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
     });
     // An empty desired list closes the old ads; it does not run another bid
     // decision on main. The plan's quote remains the quote the worker made.
-    await run(async () => {
+    if (Object.hasOwn(plan, 'buyAds')) await run(async () => {
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
-        const wanted = (plan.buyAds || []).slice(0, 3).map(([selfId, count, price]) => {
-            if (!(selfId > 0 && count > 0 && price > 0) || count * price > money
-                || count * price > PurchaseFunding.spendable(state, buyOrderEscrow(ownerId), { itemId: selfId })) {
+        const wanted = (plan.buyAds || []).slice(0, 3).map(row => {
+            const [selfId, count, price] = row;
+            const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
+            if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
+                || count * price > PurchaseFunding.spendable(state, buyOrderEscrow(ownerId), intent ? { r: intent.valueRate } : { itemId: selfId })) {
                 throw Error('economy_plan_bid_unfunded');
             }
-            money -= count * price;
+            if (!intent) money -= count * price;
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
-            return { selfId, count, price, enchant: 0, name: item?.template?.name || `Item ${selfId}`,
+            return { selfId, count, price, intent, enchant: 0, name: item?.template?.name || `Item ${selfId}`,
                 slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
                     { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };

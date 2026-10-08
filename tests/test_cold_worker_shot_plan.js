@@ -79,8 +79,8 @@ parentPort.on('message', message => {
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
 });`;
 (async () => {
-    const id = 710021, sellerId = 710022;
-    const world = await createWorld([{ id, classId: 56, level: 20 }, { id: sellerId, classId: 0, level: 30 }], 'worker-shot-plan');
+    const id = 710021, sellerId = 710022, buyerId = 710023;
+    const world = await createWorld([{ id, classId: 56, level: 20 }, { id: sellerId, classId: 0, level: 30 }, { id: buyerId, classId: 0, level: 30 }], 'worker-shot-plan');
     let worker;
     try {
         await Life.init();
@@ -95,11 +95,13 @@ parentPort.on('message', message => {
         await Database.setItem(sellerId, { selfId: 57, name: 'Adena', amount: 10000000 });
         await Database.setItem(sellerId, { selfId: offeredRecipe.recipeItemId, name: 'Genuine shot recipe', amount: 1 });
         await Database.setItem(sellerId, { selfId: 1458, name: 'Crystal D', amount: 10000 });
-        await Afk.openBotRecords(sellerId, 'buy_ad', [1463, 2510].map(selfId => ({ storeType: 3, town: 'Giran',
-            lines: [{ selfId, count: 10000, price: selfId === 1463 ? 100 : 300, stackable: true }] })));
-        await Afk.openBotRecords(sellerId, 'sell_ad', [{ storeType: 1, town: 'Giran',
-            lines: [{ selfId: offeredRecipe.recipeItemId, count: 1, price: 1, stackable: false }] },
-        { storeType: 1, town: 'Giran', lines: [{ selfId: 1458, count: 10000, price: 100, stackable: true }] }]);
+        await Database.setItem(buyerId, { selfId: 57, name: 'Adena', amount: 10000000 });
+        await Afk.publishBot(buyerId, { kind: 'shop',  storeType: 3, town: 'Giran',
+            lines: [1463, 2510].map(selfId => ({ selfId, count: 10000, price: selfId === 1463 ? 100 : 300, stackable: true })) });
+        const supplierBag = await Database.fetchItems(sellerId);
+        await Afk.publishBot(sellerId, { kind: 'shop',  storeType: 1, town: 'Giran', lines: [
+            { objectId: supplierBag.find(item => item.selfId === offeredRecipe.recipeItemId).id, selfId: offeredRecipe.recipeItemId, count: 1, price: 1, stackable: false },
+            { objectId: supplierBag.find(item => item.selfId === 1458).id, selfId: 1458, count: 10000, price: 100, stackable: true }] });
         const now = Date.now();
         let state = await Life.upsertState({ characterId: id, name: 'WorkerCrafter', accountName: 'bot_worker_shots',
             level: 20, exp: Number(DataCache.experience[19]), phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
@@ -137,7 +139,7 @@ parentPort.on('message', message => {
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
         // Finite funded demand and explicit finite inputs/scroll. E2 correctly
         // refuses to invent a missing recipe or ingredient source from a bid.
-        const boardRows = (await Database.fetchAfkTradeShops(sellerId)).map(shop => [shop.id,
+        const boardRows = [...(await Database.fetchAfkTradeShops(sellerId)), ...(await Database.fetchAfkTradeShops(buyerId))].map(shop => [shop.id,
             require('../src/GameServer/AfkTrade/BoardIndex').rowOf(Afk.recordStore(shop.id))]);
         send('table_page', { tables: [{ name: 'board', from: null, to: 0, full: true, rows: boardRows,
             removed: [], last: true }, { name: 'market', from: null, to: 0, full: true, rows: [], removed: [], last: true }] });

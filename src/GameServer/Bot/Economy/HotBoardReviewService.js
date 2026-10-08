@@ -83,6 +83,7 @@ class HotBoardReviewService {
         if (!kind) { delete session.boardBreakKind; return false; }
         if (session.boardBreakKind === kind) return false;
         session.boardBreakKind = kind;
+        if (session.tradeMeetingPresence) require('../../AfkTrade/TradeMeetingService').wake(session.actor.fetchId());
         if (!this.running) return false;
         const id = Number(session.actor?.fetchId?.());
         invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyLook(id);

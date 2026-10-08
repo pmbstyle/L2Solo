@@ -46,9 +46,9 @@ const store = { shopId: 12, kind: 'sell_ad', storeType: SELL, ownerId: 5, town: 
     items: [{ afkTradeLineId: 40, selfId: 1864, enchant: 0, count: 3, price: 9, name: 'Stem' },
         { afkTradeLineId: 41, selfId: 1865, enchant: 0, count: 0, price: 9 }] };
 const row = rowOf(store);
-assert.deepStrictEqual(row, [12, 'sell_ad', SELL, 5, 'Oren', 1, [[40, 1864, 0, 3, 9, null, 0]], 4]);
+assert.deepStrictEqual(row, [12, 'sell_ad', SELL, 5, 'Oren', 1, [[40, 1864, 0, 3, 9, null, 0]], 4, 0]);
 assert.deepStrictEqual(recordOf(row), { id: 12, kind: 'sell_ad', storeType: SELL, ownerId: 5, town: 'Oren', botOwned: true,
-    revision: 4, lines: [{ lineId: 40, selfId: 1864, enchant: 0, count: 3, price: 9, fills: 0 }] });
+    revision: 4, custodyPolicy: 0, lines: [{ lineId: 40, selfId: 1864, enchant: 0, count: 3, price: 9, fills: 0 }] });
 assert.strictEqual(recordOf(row.slice(0, 7)).revision, null, 'old worker rows stay readable without a revision fence');
 const state = { price: 9, seenCounter: 4, seenItem: 2, rival: 10, worth: 0, seenFills: 1 };
 const pricedRow = rowOf({ ...store, items: [{ ...store.items[0], pricing: state, fills: 2 }] });
@@ -139,3 +139,10 @@ if (process.env.L2NODE_SKIP_BOARD_INDEX_BENCHMARK !== '1') {
 }
 
 console.log('Board index checks passed');
+
+const conditional = recordOf(rowOf({ ...store, custodyPolicy: 1 }));
+index.put(conditional);
+assert.equal(index.ownerLines(5)[0].custodyPolicy,1);
+assert.equal(require('../src/GameServer/AfkTrade/BoardIndex').offerFields(index.ownerLines(5)[0]).conditional,true);
+assert.equal(require('../src/GameServer/AfkTrade/BoardIndex').offerFields(index.ownerLines(5)[0]).backed,false);
+assert.equal(recordOf(row.slice(0,8)).custodyPolicy,0);

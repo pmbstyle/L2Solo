@@ -113,6 +113,12 @@ function teleportTo(session, actor, coords, options = {}) {
             invoke('GameServer/World/World').notifyUserStateChanged(session);
         }
 
+        if (typeof options.onArrival === 'function') {
+            Promise.resolve().then(() => options.onArrival(coords)).catch(error => {
+                utils.infoWarn('TeleportTo', 'arrival delivery failed for %d: %s', actor.fetchId(), error.message);
+            });
+        }
+
         // Wake up bot AI after teleportation is complete and position updated
         if (session.aiActive) {
             const BotAI = invoke('GameServer/Bot/BotAI');

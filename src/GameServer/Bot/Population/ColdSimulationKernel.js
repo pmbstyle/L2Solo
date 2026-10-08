@@ -247,6 +247,7 @@ let C4Unseal, PartyMarketBreak, ClanPartyDuty;
 
 function lifecycleKind(state = {}, context = {}) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
+    if (state.stats?.tradeMeeting) return ['traveling', 'dead', 'resting', 'fighting'].includes(state.activity) ? 'resolver' : 'event_driven';
     // A solo bot washing karma (ColdKarmaPolicy.active) is planned by the
     // resolver. The test is repeated here: ColdKarmaPolicy loads spot modules.
     if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';

@@ -144,11 +144,11 @@ function normalizeStoreItems(items = [], itemsById = cachedItemsById(), priceFor
     }).filter(Boolean);
 }
 
-function storeRow({ id, source, ownerId = null, ownerName, storeType, title = '', town = null, loc = null, items = [] }) {
+function storeRow({ id, source, ownerId = null, ownerName, storeType, title = '', town = null, loc = null, items = [], conditional = false }) {
     const type = Number(storeType) === 3 ? 3 : 1;
     return {
         id: String(id),
-        source: String(source),
+        source: String(source), conditional: !!conditional,
         ownerId: Number(ownerId) || null,
         ownerName: ownerName || 'Unknown trader',
         storeType: type,
@@ -218,6 +218,7 @@ function afkStores(shops, itemsById) {
         if (!items.length) return [];
         return [storeRow({
             id: `afk:${Number(shop.id)}`,
+            conditional: shop.custodyPolicy === 1,
             source: String(shop.ownerAccount || '').startsWith('bot_') ? 'afk_bot' : 'afk_player',
             ownerId: shop.ownerId,
             ownerName: shop.ownerName,

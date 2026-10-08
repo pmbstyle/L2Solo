@@ -81,14 +81,14 @@ function rowOf(record) {
     }
     return [Number(record.shopId ?? record.id), String(record.kind || 'shop'), Number(record.storeType),
         Number(record.ownerId), record.town || null, record.botOwned === true ? 1 : 0, lines,
-        Number(record.revision ?? record.afkTradeRevision) || null];
+        Number(record.revision ?? record.afkTradeRevision) || null, Number(record.custodyPolicy || 0)];
 }
 
 function recordOf(row) {
     return {
         id: Number(row[0]), kind: row[1], storeType: Number(row[2]), ownerId: Number(row[3]), town: row[4] || null,
         botOwned: row[5] === 1 || row[5] === true,
-        revision: row[7] ?? null,
+        revision: row[7] ?? null, custodyPolicy: Number(row[8] || 0),
         lines: (row[6] || []).map(([lineId, selfId, enchant, count, price, pricing, fills]) => ({ lineId, selfId, enchant,
             count, price, ...(pricing ? { pricing } : {}), fills: Number(fills || 0) }))
     };
@@ -106,7 +106,7 @@ function offerFields(line, town = null) {
         sellerKind: line.botOwned ? 'bot' : 'player',
         playerPriority: !line.botOwned,
         town: line.town || town,
-        recordKind: line.kind,
+        recordKind: line.kind, conditional: line.custodyPolicy === 1, backed: line.custodyPolicy !== 1,
         recordId: line.recordId,
         expectedRevision: line.revision,
         lineId: line.lineId,
@@ -214,7 +214,7 @@ class BoardIndex {
             if (!(count > 0)) continue;
             const line = {
                 recordId: id,
-                revision: record.revision ?? null,
+                revision: record.revision ?? null, custodyPolicy: Number(record.custodyPolicy || 0),
                 lineId: Number(source.lineId),
                 kind: String(record.kind || 'shop'),
                 storeType,

@@ -49,10 +49,18 @@ async function nativeEconomy(state, now) {
         'native_stock_money');
 }
 async function sell(state, id, price) {
+    // These production cases require executable backed supply, not future WTS interest.
+    const previous = Afk.ownerRecords(state.characterId).find(row => row.kind === 'shop');
+    const lines = new Map((previous?.lines || []).map(line => [line.selfId, { ...line }]));
+    if (previous) await Afk.closeBotRecord(state.characterId, previous.id);
     const item = (await Database.fetchItems(state.characterId)).find(row => Number(row.selfId) === id);
-    await Afk.openBotRecords(state.characterId, 'sell_ad', [{ storeType: Afk.SELL, town: 'Giran', title: 'One physical item',
-        lines: [{ objectId: item.id, selfId: id, name: item.name, count: 1, price, enchant: 0, stackable: !!item.stackable, slot: Number(item.slot || 0) }] }]);
+    lines.set(id, { objectId: item.id, selfId: id, name: item.name, count: 1, price,
+        enchant: 0, stackable: !!item.stackable, slot: Number(item.slot || 0) });
+    const bag = await Database.fetchItems(state.characterId);
+    await Afk.publishBot(state.characterId, { kind: 'shop', storeType: Afk.SELL, town: 'Giran',
+        title: 'Physical craft inputs', lines: [...lines.values()].map(line => ({ ...line, objectId: bag.find(item => item.selfId === line.selfId && !item.equipped).id })) });
 }
+
 async function images(ids) {
     return Promise.all(ids.map(async id => ({ items: await Database.fetchItems(id),
         character: (await Database.execute(['SELECT * FROM characters WHERE id=?', [id]]))[0],
@@ -76,11 +84,11 @@ async function images(ids) {
                 { itemId: 1463, survivalCost: buyerContext.kitCost(1463) }), at: now } } }, 'native_funded_shots');
         const hiddenSignal = Shots.marketSnapshot(now).shotDemand.get(1463).find(row => row.characterId === buyer.characterId);
         assert.equal(hiddenSignal, undefined, 'private wishes and wallet are unavailable to the seller');
-        // The actual paid buy ad provides a concrete quote of 100 per shot.
+        // The backed buy shop provides a concrete quote of 100 per shot.
         // Its owner clears the transient signal so the indexed ad is the source.
         buyer = await Life.upsertState({ ...buyer, stats: { ...buyer.stats, shotDemand: null } }, 'native_ad_demand');
-        await Afk.openBotRecords(buyer.characterId, 'buy_ad', [{ storeType: Afk.BUY, town: 'Giran', title: 'Funded D shots',
-            lines: [{ selfId: 1463, name: 'Soulshot: D-grade', count: 1000, price: 100, enchant: 0, stackable: true, slot: 0 }] }]);
+        await Afk.publishBot(buyer.characterId, { kind: 'shop',  storeType: Afk.BUY, town: 'Giran', title: 'Funded D shots',
+            lines: [{ selfId: 1463, name: 'Soulshot: D-grade', count: 1000, price: 100, enchant: 0, stackable: true, slot: 0 }] });
         const signal = Shots.marketSnapshot(now).shotDemand.get(1463).find(row => row.characterId === buyer.characterId);
         assert.equal(signal.amount, 1000); assert.equal(signal.origin, 'public_bid');
         assert.equal(held(await Database.fetchItems(buyer.characterId), 57), 900000, 'the demand is paid into escrow');
@@ -107,6 +115,20 @@ async function images(ids) {
         assert.equal(step.craft.recipeId, 20); assert.equal(step.craft.batches, 7);
         assert.equal(step.craft.gear[0], 45, 'the selected physical crystal source crosses the compact seam');
         assert.equal(step.craft.exit[0], index.offersFor(1463, Afk.BUY).find(row => row.sourceId === buyer.characterId).recordId);
+        const walletBeforeInterest = held(await Database.fetchItems(buyer.characterId), 57);
+        const interest = await Afk.publishBot(buyer.characterId, { kind: 'buy_ad', storeType: Afk.BUY,
+            town: 'Giran', title: 'Conditional shot interest', lines: [{ selfId: 1463, name: 'Soulshot: D-grade',
+                count: 1000, price: 100, enchant: 0, stackable: true, slot: 0 }] });
+        assert.equal(interest.escrowAdena, 0);
+        assert.equal(held(await Database.fetchItems(buyer.characterId), 57), walletBeforeInterest);
+        const conditional = Afk.offers(1463, Afk.BUY).find(offer => offer.recordId === interest.id);
+        assert(conditional?.conditional);
+        const interestOnly = { ...index, offersFor: (id, type, excluded) => Number(id) === 1463 && type === Afk.BUY
+            ? [conditional] : index.offersFor(id, type, excluded) };
+        assert.equal(Shots.craftCandidate(crafter, recipe, interestOnly), null,
+            'conditional interest cannot finance production that a backed shop can finance');
+        await Afk.closeBotRecord(buyer.characterId, interest.id);
+        assert.equal(held(await Database.fetchItems(buyer.characterId), 57), walletBeforeInterest);
         const nativeStep = Policy.unpackStep(Policy.packStep(step));
         assert(Buffer.byteLength(JSON.stringify(Policy.packStep(step))) <= 69);
         assert.equal(Shots.recheck(crafter, { ...nativeStep.craft,
@@ -142,8 +164,8 @@ async function images(ids) {
         await sell(supplier, 45, 1000); await sell(supplier, 1804, 480000);
         const buying = Afk.offers(1463, Afk.BUY).find(row => Number(row.sourceId) === buyer.characterId);
         await Afk.closeBotRecord(buyer.characterId, buying.recordId);
-        await Afk.openBotRecords(buyer.characterId, 'buy_ad', [{ storeType: Afk.BUY, town: 'Giran', title: 'Funded new recipe route',
-            lines: [{ selfId: 1463, name: 'Soulshot: D-grade', count: 3000, price: 100, enchant: 0, stackable: true, slot: 0 }] }]);
+        await Afk.publishBot(buyer.characterId, { kind: 'shop',  storeType: Afk.BUY, town: 'Giran', title: 'Funded new recipe route',
+            lines: [{ selfId: 1463, name: 'Soulshot: D-grade', count: 3000, price: 100, enchant: 0, stackable: true, slot: 0 }] });
         assert.equal(held(await Database.fetchItems(buyer.characterId), 57), 700000,
             'the added recipe-route demand is physically funded above existing crafted supply');
         let recipeBuyer = await seed([cash(1000000), { selfId: 1463, name: 'Soulshot: D-grade', amount: 1000 },
@@ -177,8 +199,8 @@ async function images(ids) {
         await Database.setItem(supplier.characterId, { selfId: 1463, name: 'Soulshot: D-grade', amount: 300 });
         await Life.syncExternalInventory(supplier.characterId, 'native_shot_lot', Life.cachedState(supplier.characterId));
         const lot = (await Database.fetchItems(supplier.characterId)).find(row => Number(row.selfId) === 1463);
-        await Afk.openBotRecords(supplier.characterId, 'sell_ad', [{ storeType: Afk.SELL, town: 'Gludio', title: 'Cheaper shots',
-            lines: [{ objectId: lot.id, selfId: 1463, name: lot.name, count: 300, price: 60, enchant: 0, stackable: true, slot: 0 }] }]);
+        await Afk.publishBot(supplier.characterId, { kind: 'shop',  storeType: Afk.SELL, town: 'Gludio', title: 'Cheaper shots',
+            lines: [{ objectId: lot.id, selfId: 1463, name: lot.name, count: 300, price: 60, enchant: 0, stackable: true, slot: 0 }] });
         const fighterItems = [cash(51000), { selfId: 1463, name: 'Soulshot: D-grade', amount: 200 },
             { selfId: 129, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }];
         const fighter = await nativeEconomy(await seed(fighterItems, { classId: 1, name: 'Fighter', town: 'Gludio', loc: GLUDIO }), now);
@@ -202,8 +224,8 @@ async function images(ids) {
         await Database.setItem(supplier.characterId, { selfId: 1463, name: 'Soulshot: D-grade', amount: 300 });
         await Life.syncExternalInventory(supplier.characterId, 'native_restock_lot', Life.cachedState(supplier.characterId));
         const replacement = (await Database.fetchItems(supplier.characterId)).find(row => Number(row.selfId) === 1463);
-        await Afk.openBotRecords(supplier.characterId, 'sell_ad', [{ storeType: Afk.SELL, town: 'Gludio', title: 'Changed shots',
-            lines: [{ objectId: replacement.id, selfId: 1463, name: replacement.name, count: 300, price: 60, enchant: 0, stackable: true, slot: 0 }] }]);
+        await Afk.publishBot(supplier.characterId, { kind: 'shop',  storeType: Afk.SELL, town: 'Gludio', title: 'Changed shots',
+            lines: [{ objectId: replacement.id, selfId: 1463, name: replacement.name, count: 300, price: 60, enchant: 0, stackable: true, slot: 0 }] });
         const failedBuyer = await nativeEconomy(await seed(fighterItems, { classId: 1, name: 'ChangedShop', town: 'Gludio', loc: GLUDIO }), now);
         purchases.length = 0;
         Afk.buyFromShop = async() => {throw Error('afk_trade_stock_changed');};

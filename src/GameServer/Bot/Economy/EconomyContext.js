@@ -393,16 +393,9 @@ function forState(state = {}, deps = {}) {
         * (knowledgeEnabled ? 1 + (1 - Number(persona.understanding ?? 0.3))
             * (2 * Tendency.roll('usefulness', state.characterId, id) - 1) : 1);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    const gap = network.gap ? network.queue.indexOf(network.gap) : -1;
-    const wanted = gap < 0 ? network.queue : network.queue.slice(0, gap + 1);
-    const watched = new Set();
-    context.watchList = wanted.flatMap(wish => {
-        const id = Number(wish.object?.itemId || 0);
-        if (!id || watched.has(id) || positive(state.inventory?.[id]?.amount) >= positive(wish.object?.amount || 1)) return [];
-        watched.add(id);
-        return [{ itemId: id, amount: Math.max(1, Math.floor(wish.object?.amount || 1)),
-            worth: context.worth(id) ?? price(id), kind: wish.object?.kind, key: wish.key }];
-    }).slice(0, 3);
+    context.watchList = require('./TradeIntent').project(state, network, projection, id => context.worth(id) ?? price(id));
+    context.intentPending = context.watchList === null;
+    context.watchList ||= [];
     const Funding = require('./PurchaseFunding');
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,

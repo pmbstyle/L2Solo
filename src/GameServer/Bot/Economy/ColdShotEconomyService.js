@@ -64,14 +64,14 @@ function recheck(state, selected) {
                 .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
             if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price
                 || line.selfId !== Number(recipe.productId) || line.ownerId === Number(state.characterId)) return null;
-            exit = { type: 'afk', price: Number(line.price), count: Number(line.count), town: line.town, offer: Fields.offerFields(line) };
+            exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: Number(line.count), town: line.town, offer: Fields.offerFields(line) };
         } else if (recordId === -1 && Number.isSafeInteger(lineId) && lineId > 0 && price > 0 && revision >= 0) {
             exit = { type: 'use', price: 0, count: 0, ownUseUnits: lineId, ownUseUnitHours: price, residualUnitValue: 0 };
         }
     } else {
         const rows = board.list(recipe.productId, AfkTrade.BUY);
         for (let at = 0; at < Math.min(5, rows.length); at++) if (rows[at].ownerId !== Number(state.characterId)) {
-            const line = rows[at]; exit = { type: 'afk', price: line.price, count: line.count, town: line.town, offer: Fields.offerFields(line) }; break;
+            const line = rows[at]; exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town, offer: Fields.offerFields(line) }; break;
         }
     }
     if (!exit) return null;

@@ -38,7 +38,7 @@ function staticExits(recipe, template) {
 function exitsFor(state, recipe, template, trip, options) {
     const result = [];
     for (const offer of options.offersFor?.(recipe.productId, 3, state.characterId) || []) {
-        result.push({ type: 'afk', price: Number(offer.price), count: Number(offer.count), offer,
+        result.push({ type: 'afk', conditional: !!offer.conditional, price: Number(offer.price), count: Number(offer.count), offer,
             town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false });
     }
     for (const exit of (options.staticExits || staticExits)(recipe, template)) result.push({ ...exit,
@@ -94,6 +94,7 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         const boardRow = source === options.ownLines;
         const id = Number(item.selfId), key = item.physicalId || item.authorityId
             || (boardRow && item.recordId && item.lineId ? `board:${item.recordId}:${item.lineId}` : null);
+        if (boardRow && item.custodyPolicy === 1) { yield 'stock'; continue; }
         if (boardRow && Number(item.storeType ?? item.side ?? 1) !== 1) { yield 'stock'; continue; }
         if (!key || seenPhysical.has(key) || item.protected || item.acceptedCustomer || item.assignedClan) { yield 'stock'; continue; }
         seenPhysical.add(key);

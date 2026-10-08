@@ -53,3 +53,11 @@ assert.strictEqual(TravelRoutes.teleportPoints(), points, 'the table is built on
 
 console.log('travel route table checks passed');
 process.exit(0);
+
+for (const [from,to] of [['dion_town','giran_town'],['ti_village','giran_town']]) {
+    const selected = route(from,to);
+    assert.equal(selected.steps.length, selected.hops);
+    assert.equal(selected.steps.reduce((sum,step) => sum+step.fee,0),selected.fee);
+    for (const step of selected.steps) assert.deepEqual(LateTownGatekeepers && invoke('GameServer/World/C4GatekeeperTeleports').destination(step.npcId,step.destinationId),
+        {locX:step.locX,locY:step.locY,locZ:step.locZ,price:step.fee});
+}

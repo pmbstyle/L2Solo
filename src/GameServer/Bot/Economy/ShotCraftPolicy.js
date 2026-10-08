@@ -216,7 +216,7 @@ function nativeShotOptions(state, index, context) {
                 }
                 yield 'quote';
             }
-            exits.push({ type: 'afk', price: Number(quote.price), count: Number(quote.count), cheaperUnits,
+            exits.push({ type: 'afk', conditional: !!quote.conditional, price: Number(quote.price), count: Number(quote.count), cheaperUnits,
                 town: quote.town, trip: trip(quote.town), tripDetails: trip.details?.(quote.town), offer: quote });
             yield 'quote';
         }

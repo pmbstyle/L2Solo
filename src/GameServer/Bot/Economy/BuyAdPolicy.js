@@ -35,7 +35,9 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
     const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
     const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, options);
-    let worth = ctx.economy.worth(selfId) ?? requestedPrice;
+    let worth = goal.intent?.key && ctx.economy.moneyPrice > 0
+        ? goal.intent.valueHours / Math.max(1, goal.intent.amount) / ctx.economy.moneyPrice
+        : ctx.economy.worth(selfId) ?? requestedPrice;
     if (!(worth > 0)) {
         const belief = PriceBelief.prior(selfId, ctx);
         if (!belief) return null;
@@ -62,18 +64,18 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
 function linesFor(state, goal, { money = Infinity, watchList, ...options } = {}) {
     const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList).map(row => ({ type: 'buy_craft_material',
         target: { itemId: row.itemId, amount: row.amount },
-        plan: { estimatedCost: row.worth, purpose: row.kind } }));
-    if (goal?.target?.itemId && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
-    let wallet = Number(state.adena || 0);
+        intent: row, plan: { estimatedCost: row.worth, purpose: row.kind, valueRate: row.valueRate } }));
+    if (!watchList?.some(row => row.key) && goal?.target?.itemId && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
+    const wallet = Number(state.adena || 0);
     const lines = [];
     for (const candidate of goals.slice(0, 3)) {
-        const bid = bidFor({ ...state, adena: wallet }, candidate, { money, ...options });
+        const bid = bidFor({ ...state, adena: wallet }, candidate, { money: candidate.intent?.key ? Infinity : money, ...options });
         if (!bid) continue;
         const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
         lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
-            enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing });
-        wallet -= bid.count * bid.price;
-        money -= bid.count * bid.price;
+            enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing,
+            ...(candidate.intent?.key ? { intent: { ...candidate.intent, price: bid.price, amount: bid.count } } : {}) });
+        // Conditional alternatives hold no cash until a native agreement.
     }
     return lines;
 }

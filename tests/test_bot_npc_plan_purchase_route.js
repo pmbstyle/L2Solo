@@ -68,23 +68,23 @@ await Database.setItem(7, { selfId: 57, name: 'Adena', amount: 300000, enchant: 
 await LifeState.init();
 await AfkTrade.init();
 const inventory = LifeState.inventorySummaryFromItems(await Database.fetchItems(7));
-await LifeState.upsertState({ ...state, inventory, timing: {} }, 'fixture_npc_route');
+await LifeState.upsertState({ ...state, inventory, stats: { ...state.stats, money: [300000, 0, 0, 0] }, timing: {} }, 'fixture_npc_route');
 const price = Math.floor(plan.market.price * 0.85);
 const posted = await AfkTrade.publishBot(7, { kind: 'buy_ad', storeType: AfkTrade.BUY,
     title: 'WTB NPC target', town: plan.market.town, locX: 0, locY: 0, locZ: 0,
     lines: [{ selfId: Number(plan.target.selfId), name: plan.target.name, count: 1, price, enchant: 0 }] });
-assert.strictEqual(Number(posted.escrowAdena), price);
-assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000 - price);
-assert.strictEqual(BotAfkMarket.buyOrderEscrow(7), price);
+assert.strictEqual(Number(posted.escrowAdena), 0);
+assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000);
+assert.strictEqual(BotAfkMarket.buyOrderEscrow(7), 0);
 const result = await BotAfkMarket.reconcile(LifeState.snapshot(7), activeGoal);
-assert.strictEqual(result.withdrawn, true, 'the native old WTB is physically withdrawn before the NPC trip');
+assert.strictEqual(result.withdrawn, true, 'the conditional WTB is removed before the NPC trip');
 assert.strictEqual(AfkTrade.ownerRecords(7).length, 0);
 assert.strictEqual(BotAfkMarket.buyOrderEscrow(7), 0);
-assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000, 'every escrow Adena returns to the original wallet');
+assert.strictEqual(amount(await Database.fetchItems(7), 57), 300000, 'an unaccepted WTB never moves the original wallet');
 assert.strictEqual(amount(await Database.fetchItems(7), plan.target.selfId), 0, 'withdrawal is not an NPC purchase');
 assert.strictEqual(LifeState.snapshot(7).adena, 300000);
 console.log(JSON.stringify({ sourcePlanTarget: plan.target.selfId, npcTown: plan.market.town,
-    escrow: price, walletAfterRefund: amount(await Database.fetchItems(7), 57), purchased: 0 }));
+    escrow: 0, walletAfterRemoval: amount(await Database.fetchItems(7), 57), purchased: 0 }));
 console.log('Bot NPC plan purchase route checks passed');
 } finally {
     await AfkTrade._resetForTests();

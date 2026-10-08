@@ -32,6 +32,7 @@ const WALKED_FROM = Object.freeze({ floran_village: 'dion_town' });
 const TOWN_LANDING_RADIUS = 3000;
 
 let table = null;
+const path = (fee, hops, steps) => Object.defineProperty({ fee, hops }, 'steps', { value: steps });
 
 function townKeyAt(loc) {
     const town = TownRespawn.getClosestTown(loc.locX, loc.locY, loc.locZ);
@@ -46,7 +47,7 @@ function build() {
     const routes = {};
     for (const from of towns) {
         routes[from] = {};
-        for (const to of towns) routes[from][to] = from === to ? { fee: 0, hops: 0 } : null;
+        for (const to of towns) routes[from][to] = from === to ? path(0, 0, []) : null;
     }
     const points = new Map();
     for (const [npcId, rows] of Object.entries(GatekeeperTeleports.lists)) {
@@ -58,7 +59,7 @@ function build() {
             const to = townKeyAt(destination);
             if (to && to !== from) {
                 const current = routes[from][to];
-                if (!current || destination.price < current.fee) routes[from][to] = { fee: destination.price, hops: 1 };
+                if (!current || destination.price < current.fee) routes[from][to] = path(destination.price, 1, [{ locX: destination.locX, locY: destination.locY, locZ: destination.locZ, fee: destination.price, npcId: Number(npcId), destinationId }]);
             }
             const key = `${destination.locX}:${destination.locY}:${destination.locZ}`;
             if (!points.has(key)) points.set(key, { locX: destination.locX, locY: destination.locY, locZ: destination.locZ, towns: new Set() });
@@ -76,7 +77,7 @@ function build() {
                 const hops = first.hops + second.hops;
                 const current = routes[from][to];
                 if (!current || fee < current.fee || (fee === current.fee && hops < current.hops)) {
-                    routes[from][to] = { fee, hops };
+                    routes[from][to] = path(fee, hops, [...first.steps, ...second.steps]);
                 }
             }
         }
@@ -110,7 +111,7 @@ function ensure() {
 }
 
 // The cheapest gatekeeper route between two towns (TownRespawn keys):
-// { fee, hops }, { fee: 0, hops: 0 } for the same town, null without one.
+// { fee, hops }, path(0, 0, []) for the same town, null without one.
 function route(fromKey, toKey) {
     return ensure().routes[fromKey]?.[toKey] || null;
 }

@@ -21,7 +21,7 @@ function human(session) {
 function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
     workshops = () => invoke('GameServer/Bot/Economy/CraftWorkshopService'),
     life = () => invoke('GameServer/Bot/Population/BotLifeState'),
-    database = () => invoke('Database'), response = () => invoke('GameServer/Network/Response') } = {}) {
+    database = () => invoke('Database'), meetings = () => require('./TradeMeetingService'), response = () => invoke('GameServer/Network/Response') } = {}) {
     function entries(session, options = {}) {
         if (!human(session)) return { available: false, entries: [], next: null };
         const limit = Math.min(24, Math.max(1, Math.floor(Number(options.limit) || 20)));
@@ -66,7 +66,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                     if (!push({ id: line.recordId, kind: line.kind, side: line.storeType, ownerId: line.ownerId,
                         ownerName: offer.sourceName, town: line.town, lineId: line.lineId, selfId: line.selfId,
                         itemName: offer.itemName, enchant: line.enchant, count: line.count, price: line.price,
-                        revision: line.revision }, { ...row.cursor, side })) break outer;
+                        revision: line.revision, conditional: line.custodyPolicy === 1 }, { ...row.cursor, side })) break outer;
                 }
             }
         }
@@ -108,6 +108,32 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (line.ownerId === playerId) return { ok: false, reason: 'own_record' };
         const offer = service.offerOf(line);
         if (!offer) return { ok: false, reason: 'record_changed' };
+        if (line.custodyPolicy === 1) {
+            const loc = { locX: Number(offer.store.locX), locY: Number(offer.store.locY), locZ: Number(offer.store.locZ) };
+            if (distance(session.actor, loc) > SHOP_RANGE) return { ok: true, action: 'meet', ownerId: line.ownerId,
+                ownerName: offer.sourceName, side: line.storeType, town: line.town, loc };
+            const amount = Number(request.amount || 1);
+            if (!Number.isSafeInteger(amount) || amount <= 0 || amount > line.count) return { ok: false, reason: 'record_changed' };
+            if (request.confirmed === true) {
+                const prepared = session.playerBoardPreparation;
+                if (!prepared || prepared.id !== line.recordId || prepared.lineId !== line.lineId || prepared.amount !== amount
+                    || prepared.price !== line.price || prepared.revision !== line.revision) return { ok: false, reason: 'record_changed' };
+                session.playerBoardPreparation = undefined;
+                try { const result = await meetings().accept(prepared.preparationId);
+                    return { ok: true, action: 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
+                catch (_) { return { ok: false, reason: 'record_changed' }; }
+            }
+            if (session.playerBoardPreparation) meetings().discard(session.playerBoardPreparation.preparationId);
+            session.playerBoardPreparation = undefined;
+            try {
+                const prepared = await meetings().prepareTrade(playerId, offer.store, line.selfId, amount,
+                    { lineId: line.lineId, expectedPrice: line.price, expectedRevision: line.revision });
+                session.playerBoardPreparation = { ...request, amount, id: line.recordId, lineId: line.lineId,
+                    price: line.price, revision: line.revision, preparationId: prepared.preparationId };
+                return { ok: true, action: 'confirm_trade', ownerName: offer.sourceName, side: line.storeType,
+                    amount, price: line.price, total: prepared.total, selfId: line.selfId, town: line.town };
+            } catch (_) { return { ok: false, reason: 'record_changed' }; }
+        }
         const merchant = offer.projection?.actor;
         if (!merchant) {
             const owner = life().cachedState(line.ownerId);

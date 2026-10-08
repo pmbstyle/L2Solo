@@ -34,6 +34,7 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
             await Database.execute(['UPDATE afk_trade_shops SET revision=revision+1 WHERE id=?', [line.recordId]]);
             return originalReprice.apply(Database, args);
         });
+        stub(invoke('GameServer/Bot/Population/PopulationConfig'), 'developerDiagnostics', true);
         const coordinator = new ColdSimulationCoordinator();
         coordinator.worker = { postMessage: message => messages.push(message) }; coordinator.workerEpoch = 'plan:test';
         coordinator.tableChannel.flush = () => {}; coordinator.contextIndex = () => ({}); coordinator.contextFor = () => ({});

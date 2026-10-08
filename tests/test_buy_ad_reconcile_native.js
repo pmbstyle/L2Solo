@@ -9,7 +9,7 @@ const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Native = require('./helpers/nativeMarketFixture');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9201';
+Config.developerDiagnostics = true; Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9201';
 const config = (selfId, count, price = 10, town = 'Dion') => ({ storeType: 3, town, title: 'Inputs',
     lines: [{ selfId, count, price, name: `Input ${selfId}`, enchant: 0, stackable: true }] });
 const records = () => Database.fetchAfkTradeShops(9201);
@@ -26,8 +26,9 @@ async function run() {
     assert.equal(current.id, old.id, 'compatible record retains its native identity');
     assert.equal(current.lines[0].id, old.lines[0].id);
     assert.equal(current.createdAt, old.createdAt);
-    assert.equal(current.escrowAdena, 1200);
-    assert.equal(await wallet(), 8800);
+    assert.equal(current.escrowAdena, 0);
+    assert.equal(current.custodyPolicy, 1);
+    assert.equal(await wallet(), 10000);
     assert.equal(grown.closed.length, 0);
     assert.equal(grown.retained[0].id, old.id);
     const boardRevision = Afk.boardIndex().itemRevision(1864);
@@ -47,9 +48,9 @@ async function run() {
         for (const table of ['items', 'afk_trade_lines', 'afk_trade_shops']) await Database.execute([`DROP TRIGGER forbid_${table}`]);
     }
     await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 150)], { expected: expected([old]) }), /shop_changed/);
-    assert.equal(await wallet(), 8800);
+    assert.equal(await wallet(), 10000);
     const replaced = await Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 80), config(1865, 20)], { expected: expected(await records()) });
-    assert.equal(await wallet(), 9000, 'one net refund replaces released and added reservations');
+    assert.equal(await wallet(), 10000, 'alternative intentions hold no money');
     assert.equal(replaced.retained[0].id, old.id);
     const two = await records();
     await Afk.replaceBotRecords(9201, 'buy_ad', [config(1865, 20), config(1864, 80)], { expected: expected(two) });
@@ -58,16 +59,16 @@ async function run() {
     await Native.character(Database, 9202, 'RetainedSeller', 'player_retained_seller');
     const stock = await Database.setItem(9202, { selfId: 1864, name: 'Stem', amount: 30, stackable: true });
     const ad = (await records()).find(row => row.lines[0].selfId === 1864);
-    await Database.sellToAfkTradeShop(9202, { shopId: ad.id, ownerId: 9201, lineId: ad.lines[0].id,
-        objectId: Number(stock.insertId), selfId: 1864, amount: 30, expectedPrice: 10, expectedRevision: ad.revision });
+    await assert.rejects(Database.sellToAfkTradeShop(9202, { shopId: ad.id, ownerId: 9201, lineId: ad.lines[0].id,
+        objectId: Number(stock.insertId), selfId: 1864, amount: 30, expectedPrice: 10, expectedRevision: ad.revision }), /trade_meeting_required/);
     const filled = (await records()).find(row => row.id === ad.id);
-    assert.equal(filled.lines[0].count, 50);
+    assert.equal(filled.lines[0].count, 80, 'an unaccepted response cannot fill an intention');
     await Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 40)], { expected: expected(await records()) });
     const [rest] = await records();
     assert.equal(rest.id, old.id);
     assert.equal(rest.lines[0].fills, filled.lines[0].fills, 'native fill cursor survives reconciliation');
-    assert.equal(rest.escrowAdena, 400);
-    assert.equal(await wallet(), 9300, 'only unfilled reserve is refunded');
+    assert.equal(rest.escrowAdena, 0);
+    assert.equal(await wallet(), 10000, 'resizing an intention neither debits nor refunds');
     const before = await records();
     await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 100000)], { expected: expected(before) }), /not_enough_adena/);
     assert.deepEqual(await records(), before, 'failed funding is atomic');
@@ -84,19 +85,19 @@ async function run() {
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(9201)),
         loc: { locX: 19000, locY: 145000, locZ: -3100 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {},
         stats: { money: [36000, 0.001, 9000, 0, 0.001, 400, 1864] } }, 'native_funding_fixture');
-    await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 80)], { expected: expected(before) }), /economy_funding_changed/);
+    await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 120)], { expected: expected(before) }), /economy_funding_changed/);
     assert.deepEqual(await records(), before);
     const metadata = { ...config(1864, 40, 999), title: 'Updated title' };
     const meta = await Afk.replaceBotRecords(9201, 'buy_ad', [metadata], { expected: expected(before) });
     assert.equal(meta.ownerInventory, null, 'metadata does not fence the physical inventory');
     assert.equal(meta.retained[0].lines[0].price, 10, 'opening prices do not overwrite the retained repricing authority');
-    assert.equal(await wallet(), 9300);
-    console.log('Native retained buy ads: delta, no-op, stale replay, reorder, add/remove, partial fill and atomic funding passed');
+    assert.equal(await wallet(), 10000);
+    console.log('Native retained buy ads: delta, no-op, stale replay, reorder, add/remove, direct-fill refusal and individual funding passed');
 }
 run().then(async () => {
     await Database.close();
     const rows = fs.readFileSync(require('node:path').join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
     const growth = rows.find(row => row.phase === 'buy_ad_reconcile' && row.reason === 'changed');
-    assert.equal(growth.reserveDelta, 200); assert(growth.recordId > 0); assert(growth.revision > 0);
-    console.log('Native escrow telemetry records only the actual remaining reserve difference');
+    assert.equal(growth.reserveDelta, 0); assert(growth.recordId > 0); assert(growth.revision > 0);
+    console.log('Conditional ad telemetry records zero custody movement');
 }).catch(async error => { console.error(error); process.exitCode = 1; await Database.close(); });

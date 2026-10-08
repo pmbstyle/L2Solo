@@ -56,7 +56,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
                 .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
             if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price || line.count <= 0
                 || line.ownerId === Number(state.characterId) || line.selfId !== Number(recipe.productId)) return null;
-            exit = { type: 'afk', price: Number(line.price), count: line.count, town: line.town, offer: require('../../AfkTrade/BoardIndex').offerFields(line) };
+            exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: line.count, town: line.town, offer: require('../../AfkTrade/BoardIndex').offerFields(line) };
         } else {
             const fixed = staticExits(recipe, template)[lineId - 1];
             if (!fixed || Number(fixed.price) !== price) return null;
@@ -69,7 +69,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         for (let at = 0; at < Math.min(5, lines.length); at++) {
             const line = lines[at];
             if (line.ownerId !== Number(state.characterId) && line.count > 0) {
-                exit = { type: 'afk', price: line.price, count: line.count, town: line.town,
+                exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town,
                     offer: require('../../AfkTrade/BoardIndex').offerFields(line) }; break;
             }
         }
@@ -166,6 +166,7 @@ function eligible(state) {
 function staticExits(recipe, template) {
     return require('./WealthCraftDecision').staticExits(recipe, template);
 }
+
 
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
     return require('./WealthCraftDecision').chooseOpportunity(state, knownRecipes, context, {
@@ -356,6 +357,7 @@ async function execute(state, opportunity) {
                 const trade = await AfkTrade.sellToShop(current.characterId, offer.store, recipe.productId,
                     saleCount, { objectId: Number(productRow.id), lineId: offer.lineId,
                         expectedPrice: Number(offer.price), expectedRevision: offer.expectedRevision, coldState: current });
+                if (trade.pending) return { state: LifeState.cachedState(current.characterId) || current, crafted: true, sold: false, pending: true, spent, revenue: 0 };
                 const done = AfkTrade.committedTrade(trade, current.characterId);
                 if (done.committed) {
                     const actualUnits = Number(trade.amount ?? trade.units ?? 0);

@@ -77,6 +77,7 @@ function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
 function interruptEscape(session, bot) {
     if (!session.townEscape) return false;
     session.townEscape = undefined;
+    session.meetingTravel = undefined;
     session.pendingTownTrip = session.pendingTownTrip || { reason: 'Finishing the fight before going to town.', requestedAt: Date.now() };
     session.plan = 'hunting';
     bot.state.setCasts(false);
@@ -103,6 +104,7 @@ function beginEscape(session, bot, town, options = {}) {
         if (bot.isDead() || hasCombatThreat(session, bot) || !bot.state.fetchCasts()) {
             bot.state.setCasts(false);
             session.townEscape = undefined;
+            session.meetingTravel = undefined;
             session.plan = 'hunting';
             restoreSupplyHot(session, bot, 'supply_errand_interrupted');
             return;
@@ -118,7 +120,7 @@ function beginEscape(session, bot, town, options = {}) {
             bot.setLocXYZ?.(destination);
         } else {
             const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-            TeleportTo(session, bot, destination);
+            TeleportTo(session, bot, destination, { onArrival: options.onPhysicalArrival });
         }
         if (typeof options.onArrival === 'function') {
             Promise.resolve(options.onArrival(destination)).catch((error) => {
@@ -188,6 +190,84 @@ function request(session, bot, BotAI, reason, options = {}) {
     return 'walk';
 }
 
+async function requestMeeting(session, bot, meeting, side) {
+    if (hasCombatThreat(session, bot) || bot.isDead() || session.meetingTravel || session.pendingActorTeleport) return;
+    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const Routes = require('../Travel/TravelRoutes'), suffix = side ? 'B' : 'A';
+    const token = session.meetingTravel = { id: meeting.id };
+    const point = { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
+    const position = () => ({ locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() });
+    const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot);
+    const pay = async (legId, fee, scroll) => {
+        const latest = await Database.fetchTradeMeeting(meeting.id);
+        if (!valid() || latest?.state !== 'accepted') return null;
+        const saved = JSON.parse(latest[`leg${suffix}`] || 'null');
+        const sequence = saved?.legId === legId ? saved.sequence : latest[`nextLeg${suffix}`];
+        const paid = await Database.payTradeMeetingLeg(meeting.id, side, sequence, legId, fee, scroll);
+        const row = paid.coldLifeRows?.[bot.fetchId()]; if (row) Life.acceptLifecycleRow(row);
+        await invoke('GameServer/AfkTrade/AfkTradeService').syncOnlineInventory(bot.fetchId(), await Database.fetchItems(bot.fetchId()));
+        return sequence;
+    };
+    const finish = () => {
+        if (!valid()) { session.meetingTravel = undefined; return; }
+        session.meetingTravel = undefined;
+        bot.moveTo({ from: position(), to: point });
+    };
+    const hop = async () => {
+        if (!valid()) { session.meetingTravel = undefined; return; }
+        const native = Routes.between(position(), point), step = native.route?.steps?.[0];
+        if (!step) { finish(); return; }
+        const gatekeeper = invoke('GameServer/World/World').fetchNpcsInRadius(native.start.locX, native.start.locY, 1200)
+            .find(npc => Number(npc.fetchSelfId()) === step.npcId);
+        if (!gatekeeper) throw Error('trade_meeting_gatekeeper_unavailable');
+        const gate = { locX: gatekeeper.fetchLocX(), locY: gatekeeper.fetchLocY(), locZ: gatekeeper.fetchLocZ() };
+        if (Math.hypot(bot.fetchLocX() - gate.locX, bot.fetchLocY() - gate.locY) > 200) {
+            session.meetingTravel = undefined;
+            if (session.tradeMeetingPresence) { session.tradeMeetingPresence.waypoint = gate; session.tradeMeetingPresence.atWaypoint = false; }
+            bot.moveTo({ from: position(), to: gate });
+            return;
+        }
+        if (session.tradeMeetingPresence) delete session.tradeMeetingPresence.waypoint;
+        const legId = `gk:${step.locX}:${step.locY}:${step.locZ}`;
+        const sequence = await pay(legId, step.fee, false);
+        if (sequence === null || !valid()) { session.meetingTravel = undefined; return; }
+        if (!invoke('GameServer/Actor/Generics/TeleportTo')(session, bot, step, {
+            onArrival: async () => {
+                try {
+                    await Database.acknowledgeTradeMeetingLeg(meeting.id, side, sequence);
+                    await hop();
+                } catch (error) { session.meetingTravel = undefined; utils.infoWarn('AfkTrade', 'meeting hop: %s', error.message); }
+            }
+        })) session.meetingTravel = undefined;
+    };
+    try {
+        const route = JSON.parse(meeting[`route${suffix}`]), saved = JSON.parse(meeting[`leg${suffix}`] || 'null');
+        // An interrupted recall spent its scroll. Continue on foot; never
+        // cast again using an old receipt as another physical scroll.
+        if (saved?.legId === 'soe') await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
+        if (saved?.legId?.startsWith('gk:')) {
+            const coords = saved.legId.slice(3).split(':').map(Number);
+            if (coords.length === 3 && coords.every(Number.isFinite)
+                && Math.hypot(bot.fetchLocX() - coords[0], bot.fetchLocY() - coords[1], bot.fetchLocZ() - coords[2]) <= 200)
+                await Database.acknowledgeTradeMeetingLeg(meeting.id, side, saved.sequence);
+        }
+        if (route.scroll && meeting[`nextLeg${suffix}`] === 1) {
+            const sequence = await pay('soe', 0, true), native = Routes.between(position(), point);
+            if (sequence === null || !valid()) { session.meetingTravel = undefined; return; }
+            beginEscape(session, bot, { name: native.start.name, x: native.start.locX, y: native.start.locY, z: native.start.locZ },
+                { onPhysicalArrival: async destination => {
+                    if (!valid() || Math.hypot(bot.fetchLocX() - destination.locX,
+                        bot.fetchLocY() - destination.locY, bot.fetchLocZ() - destination.locZ) > 200) {
+                        session.meetingTravel = undefined;
+                        return;
+                    }
+                    await Database.acknowledgeTradeMeetingLeg(meeting.id, side, sequence);
+                    await hop();
+                } });
+        } else await hop();
+    } catch (error) { session.meetingTravel = undefined; throw error; }
+}
+
 module.exports = {
     SOE_CAST_MS,
     SOE_DISTANCE,
@@ -196,6 +276,7 @@ module.exports = {
     inCombat,
     interruptEscape,
     request,
+    requestMeeting,
     revealSupplyErrand,
     restoreSupplyHot
 };

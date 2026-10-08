@@ -124,6 +124,7 @@ function buyOffer(state, offer, options = {}) {
                 coldState: state, autoEquip: options.autoEquip, economyCommand: options.economyCommand,
                 funding: PurchaseFunding.nativeTerms(options, offer.selfId) }
         ).then((trade) => {
+            if (trade.pending) return { state: LifeState.cachedState(state.characterId) || state, pending: true, meetingId: trade.meetingId, purchased: false, units: 0, spent: 0 };
             const done = AfkTrade.committedTrade(trade, state.characterId);
             if (!done.committed) throw new Error('cold_state_sync_failed');
             // Native commit includes the buyer's experience exactly once.
@@ -391,6 +392,7 @@ async function buyHere(state, plan, options = {}) {
         if (!(count > 0)) continue;
         const bought = await buyOffer(current, offer, { qty: count, autoEquip: false, ...purchaseTerms(current, plan, spent) });
         current = bought.state || current;
+        if (bought.pending) return { state: current, units, spent, pending: true, meetingId: bought.meetingId };
         if (!bought.purchased) continue;
         units += Number(bought.units || 0);
         spent += Number(bought.spent || 0);
@@ -550,7 +552,7 @@ async function acquire(state, selfId, amount, options = {}) {
         traveling: false, plan, reason: 'purchase_trip_not_worthwhile' };
     if (state.activity === 'shopping' && plan.town === state.currentRegion) {
         const bought = await buyHere(state, plan);
-        return { state: bought.state, bought: bought.units > 0, units: bought.units, spent: bought.spent, traveling: false, plan, hot: bought.hot };
+        return { state: bought.state, bought: bought.units > 0, units: bought.units, spent: bought.spent, traveling: false, plan, hot: bought.hot, pending: !!bought.pending };
     }
     const errand = { selfId: Number(selfId), amount: Number(amount), town: plan.town, money: Number.isFinite(plan.money) ? plan.money : null,
         maxPrice: Number.isFinite(options.maxPrice) ? options.maxPrice : null, purpose: options.purpose || 'supply',
