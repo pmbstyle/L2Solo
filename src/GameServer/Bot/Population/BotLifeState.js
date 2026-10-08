@@ -2750,7 +2750,7 @@ const BotLifeState = {
                                     || Number(result.materialize?.adena || 0) > 0
                                     || (result.events || []).length > 0
                             });
-                            if (consumeFacts) Consumption.publish(snapshot.characterId, consumeFacts, { source: 'cold_commit', commandId: options.workerAdmission?.commandId, revision: state.simulation?.revision });
+                            if (consumeFacts) Consumption.publish(snapshot.characterId, consumeFacts, { source: 'cold_commit', commandId: options.workerAdmission?.commandId, revision: snapshot.simulation?.revision });
                             return snapshot;
                         };
                         return nativeWriteOptions ? Database.publishBotResolvedState(characterId, nativeWriteOptions, publish) : publish();
