@@ -31,5 +31,8 @@ try {
     assert.equal(EconomicTrip.read({ ...state, loc: { locX: 0, locY: 0 }, stats: {} }, 'Giran').known, false);
     assert.equal(EconomicTrip.read({ ...state, stats: { karma: 700 } }, 'Giran').known, false);
     assert.equal(EconomicTrip.read(state, 'Unknown town').known, false);
+    assert.strictEqual(Profit.tripFor(state, { hourAdena: 1000 }), reader, 'same owner inputs reuse one bounded route reader');
+    state.loc = giran;
+    assert.notStrictEqual(Profit.tripFor(state, { hourAdena: 1000 }), reader, 'changing current position invalidates the captured route');
     console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity and unknown/karma routes passed');
 } finally { Config.coldHonestTravel = saved; }
