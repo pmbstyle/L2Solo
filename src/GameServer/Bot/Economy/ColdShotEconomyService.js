@@ -316,12 +316,24 @@ async function obtainCrystals(state, candidate, batches) {
     const ownedRows = await Database.fetchItems(state.characterId);
     const ownedRowIds = new Set(ownedRows.map(item => Number(item.id)));
     if (gear.source === 'craft') {
-        for (const input of gear.inputs) {
-            const next = await buyMaterial(state, input.selfId, input.amount, input.maxPrice, true, candidate.r,
-                gear.purchases?.find(row => row.selfId === Number(input.selfId)));
-            if (!next.ready) return next;
-            state = next.state;
-        }
+        const requirements = gear.inputs.map(input => {
+            const sourcePlan = gear.purchases?.find(row => row.selfId === Number(input.selfId));
+            return { selfId: input.selfId, amount: input.amount, options: { maxPrice: input.maxPrice,
+                npc: true, purpose: 'craft_input', r: candidate.r,
+                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
+                ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) } };
+        });
+        const oreId = Number(candidate.ore.selfId);
+        const oreSource = candidate.basket.purchases.find(row => row.selfId === oreId);
+        const existing = requirements.find(row => Number(row.selfId) === oreId);
+        if (existing) existing.amount += Number(candidate.ore.amount) * batches;
+        else requirements.push({ selfId: oreId, amount: Number(candidate.ore.amount) * batches,
+            options: { maxPrice: candidate.orePrice, npc: true, purpose: 'craft_input', r: candidate.r,
+                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
+                ...(oreSource ? { sourcePlan: oreSource, towns: [oreSource.town] } : {}) } });
+        const next = await ColdMarket().acquireMaterials(state, requirements);
+        if (!next.ready) return next;
+        state = next.state;
         const materials = materialRows(await Database.fetchItems(state.characterId), gear.recipe);
         if (!materials || Number(state.vitals?.mp || 0) < Number(gear.recipe.mpCost)) return { state, ready: false };
         const template = require('../../Item/ItemTemplateIndex').find(DataCache.items, gear.selfId);

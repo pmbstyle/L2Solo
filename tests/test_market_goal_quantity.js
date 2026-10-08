@@ -23,13 +23,14 @@ Data.init();
 async function buyer(id, wallet, held = 0, itemId = 2509) {
     await Native.character(Database, id, `Quantity${id}`, `bot_quantity_${id}`);
     await Database.setItem(id, { selfId: 57, name: 'Adena', amount: wallet, stackable: true });
+    await Database.setItem(id, { selfId: 736, name: 'Scroll of Escape', amount: 2, stackable: true });
     if (held) await Database.setItem(id, { selfId: 2509, name: 'Spiritshot', amount: held, stackable: true });
     return Life.upsertState({ characterId: id, name: `Quantity${id}`, accountName: `bot_quantity_${id}`,
         phase: 'cold', activity: 'shopping', level: 42, adena: wallet,
         currentRegion: 'Dion', homeRegion: 'Dion', loc: { locX: 19000, locY: 145000, locZ: -3100 },
         stats: { classId: 12, money: [36000, 0.001, 0, 0, 0.001, wallet, itemId] },
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {},
-        inventory: { 57: { selfId: 57, amount: wallet }, ...(held ? { 2509: { selfId: 2509, amount: held } } : {}) },
+        inventory: { 57: { selfId: 57, amount: wallet }, 736: { selfId: 736, amount: 2 }, ...(held ? { 2509: { selfId: 2509, amount: held } } : {}) },
         simulation: { ownerId: 'legacy_main', revision: 0 }, updatedAt: Date.now() }, 'quantity_fixture');
 }
 async function goal(id, amount, itemId = 2509) {
@@ -60,16 +61,16 @@ async function run() {
     assert.equal(Goals.snapshot(9102).current.target.amount, 800);
     await buyer(9103, price * 2000);
     const accepted = await goal(9103, 1000);
-    const purchase = Database.purchaseNpcInventoryItem;
+    const purchase = Database.purchaseNpcInventoryBasket;
     try {
-        Database.purchaseNpcInventoryItem = async (...args) => {
+        Database.purchaseNpcInventoryBasket = async (...args) => {
             const result = await purchase.apply(Database, args);
             await Goals.set(9103, { type: 'progress_level', status: 'active', target: { level: 50 } });
             return result;
         };
         assert.equal((await Market.tryPurchase(Life.cachedState(9103), accepted)).units, 1000);
         assert.equal(Goals.snapshot(9103).current.type, 'progress_level', 'a newer goal survives the old purchase reply');
-    } finally { Database.purchaseNpcInventoryItem = purchase; }
+    } finally { Database.purchaseNpcInventoryBasket = purchase; }
     await buyer(9104, price * 2000);
     const replayGoal = await goal(9104, 1000);
     await Goals.applyPurchase(9104, replayGoal, 600);
@@ -80,11 +81,11 @@ async function run() {
     assert.equal(Goals.snapshot(9104).current.status, 'completed', 'legacy individual gear still means one');
     const refusedState = await buyer(9105, price * 2000), refusedGoal = await goal(9105, 1000);
     try {
-        Database.purchaseNpcInventoryItem = async () => ({ ok: false });
+        Database.purchaseNpcInventoryBasket = async () => ({ ok: false, lines: [] });
         assert.equal((await Market.tryPurchase(refusedState, refusedGoal)).units, 0);
         assert.equal(Native.amount(await Database.fetchItems(9105), 57), price * 2000);
         assert.equal(Goals.snapshot(9105).current.target.amount, 1000);
-    } finally { Database.purchaseNpcInventoryItem = purchase; }
+    } finally { Database.purchaseNpcInventoryBasket = purchase; }
     const unknown = await Market.tryPurchase(refusedState, { ...refusedGoal, target: { itemId: 2509 } });
     assert.equal(unknown.reason, 'purchase_quantity_unknown');
     await Native.character(Database, 9106, 'QuantitySeller', 'bot_quantity_seller');

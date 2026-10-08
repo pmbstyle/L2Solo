@@ -10,7 +10,6 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
@@ -198,7 +197,7 @@ function purchaseMoney(state, plan, spent = 0) {
         // An old errand has no valuation. It may still restore its actual
         // missing survival kit, never the former general purchasing cap.
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
-            options.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId);
+            options.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId, Number(plan.npcPrice) || null);
         }
         funded = PurchaseFunding.spendable(state, 0, options);
     }
@@ -210,7 +209,7 @@ function purchaseTerms(state, plan, spent = 0) {
     if (plan.purpose === 'clan') return { ...terms, free: true,
         clanPart: Math.min(PurchaseFunding.budget(state), Math.max(0, Number(plan.tag?.clanPart || 0) - spent)) };
     if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
-        terms.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId);
+        terms.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId, Number(plan.npcPrice) || null);
     }
     return terms;
 }
@@ -279,7 +278,7 @@ function planPurchase(state, selfId, amount, options = {}) {
 // Buys a plan in the town the bot stands in: each board line one deal, then
 // the NPC for the rest (also the units of a line that changed meanwhile),
 // within the plan's money. Returns { state, units, spent, hot }.
-async function buyHere(state, plan) {
+async function buyHere(state, plan, options = {}) {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     let current = state;
     let units = 0;
@@ -297,9 +296,15 @@ async function buyHere(state, plan) {
         if (!bought.purchased) continue;
         units += Number(bought.units || 0);
         spent += Number(bought.spent || 0);
+        if (options.goal && bought.units > 0) {
+            await GoalState.applyPurchase(current.characterId, options.goal.expectedGoal, bought.units);
+            const snapshot = GoalState.snapshot(current.characterId);
+            options.goal = { expectedGoal: snapshot.current, updatedAt: snapshot.updatedAt };
+        }
         if (bought.hot || LifeState.hotRow(current.characterId)) return { state: current, units, spent, hot: true };
     }
     if (current.phase !== 'cold' || LifeState.hotRow(current.characterId)) return { state: current, units, spent, hot: true };
+    if (options.skipNpc) return { state: current, units, spent, hot: false };
     // A saved plan may predate group F or a rate change. Only a current
     // NPC/shot-table quote in this town can supply its remainder.
     const quotedPrice = Number(plan.npcPrice || 0);
@@ -308,14 +313,33 @@ async function buyHere(state, plan) {
     const money = npcPrice > 0 ? purchaseMoney(current, plan, spent) : 0;
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (rest > 0) {
-        const bought = await buyNpcStack(current, plan.selfId, rest, npcPrice, purchaseTerms(current, plan, spent), null, false);
+        let bought;
+        if (options.goal || options.errand) {
+            const NpcRestock = require('./NpcRestockPlan');
+            const offer = NpcRestock.quoteFor(plan.selfId, plan.town, npcPrice);
+            const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(current);
+            const baskets = NpcRestock.collect(current, { town: plan.town, seller: offer,
+                shots: basics.stock('shots').itemId !== Number(plan.selfId),
+                potions: basics.stock('potions').itemId !== Number(plan.selfId), scrolls: Number(plan.selfId) !== 736,
+                extras: [{ selfId: plan.selfId, amount: rest, offer, funding: purchaseTerms(current, plan, spent),
+                    goal: options.goal, errand: options.errand, autoEquip: options.autoEquip === true }] });
+            if (baskets[0]) {
+                const receipt = await require('./NpcPurchaseBasket').purchase(current, baskets[0]);
+                const line = receipt.lines.find(row => Number(row.selfId) === Number(plan.selfId));
+                bought = receipt.ok ? { ...receipt, units: Number(line?.amount || 0),
+                    spent: Number(line?.amount || 0) * npcPrice } : null;
+            }
+        } else bought = await buyNpcStack(current, plan.selfId, rest, npcPrice, purchaseTerms(current, plan, spent), null, false);
         if (bought) {
             current = bought.state;
             units += bought.units;
             spent += bought.spent;
+            if (bought.hot || LifeState.hotRow(current.characterId)) return {
+                state: LifeState.hotRow(current.characterId) || current, units, spent, hot: true,
+                progressApplied: !!options.goal && units > 0 };
         }
     }
-    return { state: current, units, spent, hot: false };
+    return { state: current, units, spent, hot: false, progressApplied: !!options.goal && units > 0 };
 }
 
 // The NPC part of a stack purchase, the author's fenced cold write
@@ -323,37 +347,42 @@ async function buyHere(state, plan) {
 // bag and the wallet in one transaction, the cold state following. null when
 // refused.
 async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, original = null, autoEquip = true) {
-    const Database = invoke('Database');
-    const template = ItemTemplateIndex.find(invoke('GameServer/DataCache').items, Number(selfId));
-    const name = template?.template?.name || `Item ${selfId}`;
-    const Commit = require('./EconomyCommit');
-    const admitted = await Commit.admit(state, Commit.KINDS.npcBuy, original);
-    state = admitted.state;
-    let purchase;
-    try { purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
-        selfId, name, amount, unitPrice, stackable: !!template?.etc?.stackable,
-        autoEquip,
-        slot: Number(template?.etc?.slot || 0), coldState: state, economyCommand: admitted.command,
-        funding: { ...funding, itemId: selfId }, validate: () => {
-            if (!staticOffers(selfId).some(offer => offer.town === state.currentRegion && Number(offer.price) === unitPrice)) throw Error('npc_quote_changed');
-        }
-    }); } finally { Commit.finish(state.characterId, admitted.command); }
+    const Basket = require('./NpcPurchaseBasket');
+    const seller = Basket.sellerFor(selfId, state.currentRegion, unitPrice);
+    if (!seller) {
+        // Configured town merchants retain their native singleton owner;
+        // they cannot be attributed to a physical NPC's shop list.
+        const configured = () => MarketOpportunity.fixedStoreOffers(selfId).some(offer =>
+            offer.town === state.currentRegion && Number(offer.price) === unitPrice);
+        if (!configured()) return null;
+        const Commit = require('./EconomyCommit');
+        const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
+        const admitted = await Commit.admit(state, Commit.KINDS.npcBuy, original);
+        let result;
+        try { result = await invoke('Database').purchaseNpcInventoryItem(state.characterId, {
+            selfId, amount, unitPrice, autoEquip, name: template?.template?.name || `Item ${selfId}`,
+            stackable: !!template?.etc?.stackable, slot: Number(template?.etc?.slot || 0),
+            coldState: admitted.state, economyCommand: admitted.command,
+            funding: { ...funding, itemId: selfId }, validate: () => {
+                if (!configured()) throw Error('configured_quote_changed');
+            }
+        }); } finally { Commit.finish(state.characterId, admitted.command); }
+        if (!result?.ok) return null;
+        const current = result.coldLifeRow ? Commit.acceptRow(result.coldLifeRow) : admitted.state;
+        if (!result.replayed) observePurchase({ sourceType: 'configured_store', selfId, price: unitPrice }, result.amount, current);
+        return { ...result, state: current, units: Number(result.amount),
+            economyCommand: admitted.command, hot: !!LifeState.hotRow(state.characterId) };
+    }
+    const purchase = await Basket.purchase(state, { seller, original,
+        lines: [{ selfId, amount, unitPrice, autoEquip, funding: { ...funding, itemId: selfId } }] });
     if (!purchase?.ok) return null;
     const diagnostics = require('./EconomyDiagnostics');
     if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
         phase: 'native_purchase', trigger: 'npc_quote', reason: purchase.replayed ? 'replayed' : 'committed',
         source: 'npc', item: Number(selfId), actual: Number(purchase.amount), spent: Number(purchase.spent),
         quote: Number(unitPrice), town: state.currentRegion, nativeId: Number(selfId),
-        commandId: admitted.command[0], sequence: admitted.command[2] });
-    if (!purchase.replayed) observePurchase({ sourceType: 'npc', selfId, price: unitPrice }, purchase.amount, state);
-    if (purchase.coldLifeRow) return { state: Commit.acceptRow(purchase.coldLifeRow),
-        units: Number(purchase.amount), spent: Number(purchase.spent), economyCommand: admitted.command };
-    const balance = Math.max(0, Number(state.adena || 0) - Number(purchase.spent ?? amount * unitPrice));
-    const paid = { ...state, adena: balance, inventory: { ...(state.inventory || {}),
-        57: { ...(state.inventory?.['57'] || {}), selfId: 57, amount: balance } } };
-    const refreshed = await LifeState.refreshInventory(paid) || paid;
-    return { state: await LifeState.upsertState(refreshed, 'market_npc_stack') || refreshed,
-        units: Number(purchase.amount), spent: Number(purchase.spent) };
+        commandId: purchase.economyCommand?.[0], sequence: purchase.economyCommand?.[2] });
+    return purchase;
 }
 
 // The bot's errand while it still stands (ERRAND_MS), else null.
@@ -365,6 +394,15 @@ function pendingErrand(state, timestamp = Date.now()) {
 function errandGoal(errand) {
     return { type: 'market_errand', status: 'active', target: { itemId: errand.selfId, amount: errand.amount },
         plan: { expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose } };
+}
+
+function goalForErrand(state, errand) {
+    const snapshot = GoalState.snapshot(state.characterId), goal = snapshot?.current;
+    return goal?.type === 'market_errand' && goal.status === 'active'
+        && Number(goal.target?.itemId) === Number(errand.selfId)
+        && Number(goal.target?.amount) === Number(errand.amount)
+        && goal.plan?.purpose === errand.purpose && goal.plan?.marketTown === errand.town
+        ? { expectedGoal: goal, updatedAt: snapshot.updatedAt } : null;
 }
 
 // Reuse the nullable native tag for the two bounded source flags. A one-
@@ -415,19 +453,72 @@ async function acquire(state, selfId, amount, options = {}) {
     return { state: saved || next, bought: false, units: 0, traveling: !!travel && !!saved, plan };
 }
 
+// A selected craft's total inputs, rather than independent blind requests.
+// Board inputs keep their deals; local NPC remainders settle by real seller.
+// Re-entry checks the current bag, so already acquired inputs are not bought
+// again before the craft has actually consumed them.
+async function acquireMaterials(state, requirements) {
+    if (requirements.length > 12) {
+        let current = state, spent = 0, units = 0;
+        for (let at = 0; at < requirements.length; at += 12) {
+            const part = await acquireMaterials(current, requirements.slice(at, at + 12));
+            current = part.state; spent += part.spent; units += part.units;
+            if (!part.ready || part.hot) return { ...part, state: current, spent, units };
+        }
+        return { state: current, ready: true, spent, units };
+    }
+    let current = state, spent = 0, units = 0;
+    const extras = [];
+    const held = (value, id) => {
+        const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(value);
+        return require('./WealthCraftDecision').freeAmount(value,
+            value.inventory?.[id] || { selfId: Number(id), amount: 0 }, reserved);
+    };
+    for (const requirement of requirements) {
+        const missing = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
+        if (!missing) continue;
+        const options = requirement.options || {};
+        const terms = { ...options, selfId: Number(requirement.selfId),
+            money: purchaseMoney(current, { ...options, selfId: Number(requirement.selfId) }) };
+        const plan = planPurchase(current, requirement.selfId, missing, terms);
+        if (!plan || current.activity !== 'shopping' || plan.town !== current.currentRegion) {
+            const bought = await acquire(current, requirement.selfId, missing, options);
+            current = bought.state || current; spent += Number(bought.spent || 0); units += Number(bought.units || 0);
+            if (bought.hot || bought.traveling || current.stats?.marketErrand) return { ...bought, state: current, ready: false, spent, units };
+            continue;
+        }
+        const board = await buyHere(current, plan, { skipNpc: true });
+        current = board.state; spent += board.spent; units += board.units;
+        if (board.hot) return { state: current, ready: false, hot: true, spent, units };
+        const left = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
+        const offer = options.npc === false ? null
+            : require('./NpcRestockPlan').quoteFor(requirement.selfId, current.currentRegion, Number(plan.npcPrice) || null);
+        if (offer && left > 0 && offer.price <= Number(options.maxPrice ?? Infinity)) extras.push({
+            selfId: requirement.selfId, amount: left, offer, money: Math.max(0, terms.money - board.spent),
+            funding: purchaseTerms(current, { ...terms, npcPrice: offer.price }) });
+    }
+    const result = await require('./NpcRestockPlan').purchase(current, {
+        town: current.currentRegion, extras, potions: false, scrolls: false, shots: false });
+    current = result.state;
+    for (const receipt of result.receipts) { spent += Number(receipt.spent || 0); units += Number(receipt.units || 0); }
+    return { state: current, spent, units, hot: !!LifeState.hotRow(current.characterId),
+        ready: requirements.every(row => held(current, row.selfId) >= Number(row.amount)) };
+}
+
 // On arrival: the errand of the town the bot stands in, bought there (the
 // plan made again for this town, as the board stands now); what it bought
 // stays as stats.lastErrand for the job that sent it (a clan's order).
 // Returns null without one, or when it lapsed (ERRAND_MS: the job that sent
 // it plans again).
-async function buyErrand(state) {
+async function buyErrand(state, options = {}) {
     const errand = pendingErrand(state);
     if (!errand || state.activity !== 'shopping' || errand.town !== state.currentRegion) return null;
-    const options = { towns: [errand.town], purpose: errand.purpose, ...savedRoute(errand), ...fundingTerms(errand),
+    const terms = { towns: [errand.town], purpose: errand.purpose, ...savedRoute(errand), ...fundingTerms(errand),
         money: errand.money ?? Infinity, maxPrice: errand.maxPrice ?? Infinity };
     const plan = planPurchase(state, errand.selfId, errand.amount,
-        { ...options, money: purchaseMoney(state, { ...options, selfId: errand.selfId }) });
-    const bought = plan ? await buyHere(state, plan) : { state, units: 0, hot: false };
+        { ...terms, money: purchaseMoney(state, { ...terms, selfId: errand.selfId }) });
+    const bought = plan ? await buyHere(state, plan, { ...options, goal: goalForErrand(state, errand),
+        ...(!options.skipNpc && !plan.lines?.length ? { errand } : {}) }) : { state, units: 0, hot: false };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
     const rest = Math.max(0, Number(errand.amount) - Number(bought.units || 0));
     const active = CombinedErrands.pending(bought.state).find(other => CombinedErrands.key(other) === CombinedErrands.key(errand));
@@ -546,8 +637,9 @@ const ColdMarketService = {
                 ...terms, money: purchaseMoney(state, terms), towns: [state.currentRegion]
             });
             if (!plan) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
-            return buyHere(state, plan).then(async bought => {
-                const progress = bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null;
+            const snapshot = GoalState.snapshot(state.characterId);
+            return buyHere(state, plan, { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt } }).then(async bought => {
+                const progress = bought.progressApplied || (bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null);
                 if (diagnosticGoalRevision !== null) diagnostics.push({ owner: state.characterId,
                     revision: Number(bought.state?.simulation?.revision), goalRevision: diagnosticGoalRevision,
                     trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units > 0 ? 'filled' : 'no_fill',
@@ -560,11 +652,16 @@ const ColdMarketService = {
         }
         offer.buyerCharacterId = Number(state.characterId);
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
-        return buyOffer(state, offer).then((bought) => {
+        const snapshot = GoalState.snapshot(state.characterId);
+        const execution = offer.sourceType === 'npc' ? buyHere(state, { selfId: goal.target.itemId, amount: 1,
+            town: state.currentRegion, npcPrice: Number(offer.price), lines: [], ...fundingTerms(goal.plan) },
+        { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt }, autoEquip: true })
+            .then(bought => ({ ...bought, purchased: bought.units > 0 })) : buyOffer(state, offer);
+        return execution.then((bought) => {
             if (!bought.purchased) {
                 return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
-            return GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0)).then(() => {
+            return (bought.progressApplied ? Promise.resolve() : GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0))).then(() => {
                 if (diagnosticGoalRevision !== null) diagnostics.push({ owner: state.characterId,
                     goalRevision: diagnosticGoalRevision, trigger: 'purchase_goal', phase: 'purchase_commit', reason: 'filled',
                     item: Number(goal.target.itemId), need: 1, actual: Number(bought.units || 0), remaining: 0,
@@ -583,7 +680,7 @@ const ColdMarketService = {
             if (!CombinedErrands.pending(current).some(other => CombinedErrands.key(other) === CombinedErrands.key(errand)
                 && Number(other.at) === Number(errand.at) && Number(other.amount) === Number(errand.amount))) continue;
             const next = await buyErrand(CombinedErrands.withPending(current, [errand,
-                ...CombinedErrands.pending(current).filter(other => CombinedErrands.key(other) !== CombinedErrands.key(errand))]));
+                ...CombinedErrands.pending(current).filter(other => CombinedErrands.key(other) !== CombinedErrands.key(errand))]), { skipNpc: true });
             current = next?.state || current;
             if (next?.reason === 'bot_went_hot') return current;
         }
@@ -596,11 +693,26 @@ const ColdMarketService = {
                 towns: [current.currentRegion], money: restock.cost, purpose: 'shots'
             });
             if (purchase) {
-                const bought = await buyHere(current, purchase);
+                const bought = await buyHere(current, purchase, { skipNpc: true });
                 current = bought.state;
                 if (bought.hot) return current;
             }
         }
+        // Board deals remain at their own owner. Their current NPC remainders,
+        // healing kit and escape scrolls share the exact real seller basket.
+        const extras = [];
+        for (const errand of CombinedErrands.pending(current, Date.now(), current.currentRegion)) {
+            const route = savedRoute(errand);
+            if (route.npc === false) continue;
+            const offer = require('./NpcRestockPlan').quoteFor(errand.selfId, current.currentRegion);
+            if (!offer || errand.maxPrice !== null && errand.maxPrice !== undefined && offer.price > errand.maxPrice) continue;
+            extras.push({ selfId: errand.selfId, amount: errand.amount, offer, errand,
+                goal: goalForErrand(current, errand), money: errand.money,
+                funding: purchaseTerms(current, { ...errand, npcPrice: offer.price }) });
+        }
+        const bought = await require('./NpcRestockPlan').purchase(current, { town: current.currentRegion, extras });
+        current = bought.state;
+        if (LifeState.hotRow(current.characterId)) return current;
         return { ...current, stats: { ...current.stats,
             // ARCH-NOTE: the completed cold visit uses the same clock as the hot town event.
             visitEvery: require('./TownVisitInterval').arrived(current.stats),
@@ -611,6 +723,7 @@ const ColdMarketService = {
     planPurchase,
     buyHere,
     acquire,
+    acquireMaterials,
     errandGoal,
     pendingErrand
 };

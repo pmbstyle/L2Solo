@@ -19,7 +19,7 @@ const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Shot = invoke('GameServer/Inventory/ShotStock');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+const Npc = invoke('GameServer/Bot/Economy/NpcRestockPlan');
 const SellJunk = invoke('GameServer/World/Generics/NpcBypasses/SellJunk');
 const Response = invoke('GameServer/Network/Response');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -38,10 +38,10 @@ async function run() {
     Data.init();
     const seed = new DatabaseSync(worldPath);
     seed.exec(fs.readFileSync(path.resolve(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
-    seed.exec("INSERT INTO accounts(username,password) VALUES('quests','test')");
+    seed.exec("INSERT INTO accounts(username,password) VALUES('bot_stock_refill','test')");
     seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,maxHp,maxMp,hp,mp,
         sex,face,hair,hairColor,locX,locY,locZ,newbie,newbieShotsReceived)
-        VALUES(?,'quests','StockRefill',1,0,40,0,0,187,74,187,74,0,0,0,0,83396,147904,-3400,-1,0)`).run(id);
+        VALUES(?,'bot_stock_refill','StockRefill',1,0,40,0,0,187,74,187,74,0,0,0,0,83396,147904,-3400,-1,0)`).run(id);
     seed.close();
     await Database.init();
     await Life.init();
@@ -55,21 +55,36 @@ async function run() {
             fetchItems() { return this.items; }, fetchItemFromSelfId(selfId) { return this.items.find(row => row.selfId === selfId); },
             fetchEquippedWeapon() { return this.items.find(row => row.equipped && row.slot === 7); },
             insertItem(objectId, selfId, attributes) { this.items.push(actorItem({ id: objectId, selfId, ...attributes })); } };
-        const actor = { fetchId: () => id, fetchLevel: () => 40, fetchClassId: () => 1, fetchName: () => 'StockRefill', backpack };
+        const actor = { fetchId: () => id, fetchLevel: () => 40, fetchClassId: () => 1, fetchName: () => 'StockRefill', backpack,
+            fetchLocX: () => 83396, fetchLocY: () => 147904, fetchLocZ: () => -3400,
+            fetchExp: () => Data.experience[39], fetchSp: () => 0,
+            fetchHp: () => 187, fetchMaxHp: () => 187, fetchMp: () => 74, fetchMaxMp: () => 74 };
         const session = { accountId: 'bot_stock_refill', actor, coldLifeState: { phase: 'hot', activity: 'shopping', stats: { classId: 1 } },
             dataSendToMe() {} };
         actor.session = session;
+        session.coldLifeState = await Life.upsertState({ ...Economy.stateForActor(actor), characterId: id,
+            accountName: 'bot_stock_refill', name: 'StockRefill', phase: 'hot', activity: 'shopping', currentRegion: 'Giran',
+            level: 40, adena: 10000000, stats: { classId: 1, money: [1, 0, 0, 0] },
+            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
+            vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 },
+            loc: { locX: 83396, locY: 147904, locZ: -3400 }, timing: {} }, 'stock_native_actor');
+        assert(Life.hotRow(id), 'the fixture has retained native hot authority before the purchase');
         const empty = Economy.stateForActor(actor), before = Economy.basics(empty).stock('shots');
         assert.equal(before.itemId, SHOT);
         assert(before.usePerHour > 0 && before.target > 1000);
-        const unitPrice = Pricing.botPurchasePrice(SHOT);
+        const unitPrice = Npc.quoteFor(SHOT, 'Giran').price;
         assert(Number.isSafeInteger(unitPrice) && unitPrice > 0);
-        const purchase = await Shot.purchaseActorRestock(actor, { town: 'Giran', unitPrice, potionUnitPrice: 0 });
+        console.log('NATIVE_STOCK_TARGET', JSON.stringify({ characterId: id, level: 40, classId: 1, weaponId: SWORD,
+            target: before.target, targetHours: before.targetHours, usePerHour: before.usePerHour,
+            perAction: Shot.planForState(empty).perAction, unitPrice }));
+        const purchase = await Shot.purchaseActorRestock(actor, { town: 'Giran', potionUnitPrice: 0 });
         assert.equal(purchase.ok, true);
         assert.equal(purchase.delta, before.target, 'the paid physical purchase reaches the native target from an absent stack');
+        assert.equal(purchase.cost / purchase.delta, Npc.quoteFor(SHOT, 'Giran').price,
+            'the default direct actor adapter pays the current NPC quote after native economy preparation');
         const rowsAfterPurchase = await Database.fetchItems(id);
         assert.equal(rowsAfterPurchase.find(row => row.selfId === SHOT).amount, before.target);
-        assert.equal(rowsAfterPurchase.find(row => row.selfId === 57).amount, 10000000 - before.target * unitPrice);
+        assert.equal(rowsAfterPurchase.find(row => row.selfId === 57).amount, 10000000 - purchase.cost);
         const after = Economy.stateForActor(actor), afterStock = Economy.basics(after).stock('shots');
         const coldSales = ItemDisposition.saleCandidates(after, { unlimited: true }).filter(row => row.selfId === SHOT);
         const liquidation = ItemDisposition.npcLiquidationCandidates(after).filter(row => row.selfId === SHOT);
@@ -79,7 +94,7 @@ async function run() {
         const rowsAfterHotSale = await Database.fetchItems(id);
         // The normal hot market can retain surplus for the board. Forced
         // cold NPC cleanup uses its native liquidation set and real writer.
-        const saved = await Life.upsertState({ ...after, accountName: 'quests', name: 'StockRefill',
+        const saved = await Life.upsertState({ ...after, accountName: 'bot_stock_refill', name: 'StockRefill',
             inventory: Life.inventorySummaryFromItems(rowsAfterHotSale), physicalInventory: undefined }, 'stock_refill_preservation');
         assert(saved, 'native inventory summaries must persist before the cold liquidation');
         if (liquidation.length) await Life.applyNpcLiquidation(saved, liquidation);

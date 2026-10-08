@@ -12,6 +12,8 @@ const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigatio
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
 const BotSkillTraining = invoke('GameServer/Bot/BotSkillTraining');
+const NpcRestock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 DataCache.init();
 
@@ -35,6 +37,8 @@ const original = {
     bestOffer: MarketOpportunity.bestOffer,
     npcOffers: MarketOpportunity.npcOffers,
     buyFromStore: TradeService.buyFromStore,
+    npcPurchase: NpcRestock.purchaseForActor,
+    hotRow: LifeState.hotRow,
     applyBestUpgrades: BotEquipmentUpgrade.applyBestUpgrades,
     sellAndRestock: ShoppingState.sellAndRestock,
     scheduleRestock: ShoppingState.scheduleRestock,
@@ -253,6 +257,7 @@ async function run() {
     let sameTownShoppingStarted = 0;
     ShoppingState.sellAndRestock = () => { sameTownShoppingStarted++; };
     session.companionShopping = errand;
+    LifeState.hotRow = () => ({ phase: 'hot' });
     session.shoppingTarget = errand.target;
     session.shoppingDoneAnnounced = false;
     ShoppingState.tick(session, bot, null, {
@@ -321,13 +326,13 @@ async function run() {
         'generic town errands must retain failed NPC sources across route replans');
 
     session.companionShopping = errand;
-    TradeService.buyFromStore = async (_actor, store, selfId, qty, options) => {
-        assert.strictEqual(store.storeType, 1);
-        assert.strictEqual(selfId, 1);
-        assert.strictEqual(qty, 1);
-        assert.strictEqual(options.expectedUnitPrice, 883);
+    NpcRestock.purchaseForActor = async (_actor, options) => {
+        assert.strictEqual(options.seller.sourceId, 7001);
+        assert.strictEqual(options.extras[0].selfId, 1);
+        assert.strictEqual(options.extras[0].amount, 1);
+        assert.strictEqual(options.extras[0].offer.price, 883);
         purchased = true;
-        return { qty: 1, totalAdena: 883, name: 'Short Sword' };
+        return { ok: true, receipts: [{ lines: [{ selfId: 1, amount: 1, unitPrice: 883 }] }] };
     };
     BotEquipmentUpgrade.applyBestUpgrades = (_session, options) => {
         equippedWith = options;
@@ -346,6 +351,15 @@ async function run() {
     assert.strictEqual(session.coldLifeState.stats.lastMarketPurchase.sourceId, 7001);
     assert.strictEqual(restocked, 1,
         'the companion should continue to normal restocking after no more current-town equipment is buyable');
+    session.companionShopping = errand;
+    equippedWith = null;
+    NpcRestock.purchaseForActor = async () => {
+        session.actor = { fetchId: bot.fetchId };
+        return { ok: true, receipts: [{ hot: false, lines: [{ selfId: 1, amount: 1, unitPrice: 883 }] }] };
+    };
+    await ShoppingState.sellAndRestock(session, bot, null, { getClosestTown: () => town, say() {} });
+    assert.strictEqual(equippedWith, null, 'paid receipt cannot mutate the actor replaced during the NPC await');
+    assert.strictEqual(restocked, 1, 'a replaced actor cannot continue the old shopping callback');
     console.log('Companion equipment shopping checks passed');
 }
 
@@ -358,6 +372,8 @@ run().catch((error) => {
     MarketOpportunity.bestOffer = original.bestOffer;
     MarketOpportunity.npcOffers = original.npcOffers;
     TradeService.buyFromStore = original.buyFromStore;
+    NpcRestock.purchaseForActor = original.npcPurchase;
+    LifeState.hotRow = original.hotRow;
     BotEquipmentUpgrade.applyBestUpgrades = original.applyBestUpgrades;
     ShoppingState.sellAndRestock = original.sellAndRestock;
     ShoppingState.scheduleRestock = original.scheduleRestock;

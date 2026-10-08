@@ -62,8 +62,6 @@ const ClanEconomyService = invoke('GameServer/Clan/ClanEconomyService');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const ClanPartyService = invoke('GameServer/Clan/ClanPartyService');
 const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
-const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
-const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 
 const {
     partyObjectiveForPlan,
@@ -87,27 +85,6 @@ function logPartyActivationFailure(state, result, timestamp = Date.now()) {
     activationFailureLogAt.set(key, timestamp);
     utils.infoWarn('BotPopulation', 'party activation deferred %s reason=%s%s',
         partyId, reason, detail ? ` detail=${detail}` : '');
-}
-
-function restockColdHealingPotions(state) {
-    if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
-    const potion = HealingPotionStock.purchasePotionFor(state);
-    const unitPrice = HealingPotionStock.localNpcPrice(potion, state.currentRegion);
-    if (unitPrice <= 0) return Promise.resolve(state);
-    const patch = HealingPotionStock.coldPurchasePatch(state, { potion, unitPrice });
-    if (!patch) return Promise.resolve(state);
-    return LifeState.applyConsumablePurchase(state, patch, 'healing_potion_restock')
-        .then((saved) => saved || state);
-}
-
-// After the potions, the Scrolls of Escape for the next town trip (ScrollStock).
-function restockColdScrolls(state) {
-    if (!state || state.activity !== 'shopping' || !state.currentRegion) return Promise.resolve(state);
-    const unitPrice = ScrollStock.localNpcPrice(state.currentRegion);
-    const patch = unitPrice > 0 ? ScrollStock.coldPurchasePatch(state, { unitPrice }) : null;
-    if (!patch) return Promise.resolve(state);
-    return LifeState.applyConsumablePurchase(state, patch, 'scroll_of_escape_restock')
-        .then((saved) => saved || state);
 }
 
 function deterministicRandom(state = {}) {
@@ -3735,8 +3712,7 @@ const PopulationService = {
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;
                         if (listingResult.listed && listingState.activity !== 'shopping') return listingState;
-                        return restockColdHealingPotions(listingState).then(restockColdScrolls)
-                            .then(restocked => ColdMarketService.finishTownErrands(restocked)).then((restockedState) => {
+                        return ColdMarketService.finishTownErrands(listingState).then((restockedState) => {
                             if (LifeState.hotRow(restockedState.characterId)) return LifeState.hotRow(restockedState.characterId);
                             const returnState = GoalExecutor.finishMarketVisit(restockedState);
                             return returnState
