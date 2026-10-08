@@ -25,38 +25,45 @@ async function seed(id, money) {
 }
 (async () => {
     Database.init(); invoke('GameServer/World/World').user = { sessions: [], revision: 0 };
-    await seed(1, 1000000); await seed(2, 1000000); await seed(3, 1000000);
-    const recipe = Recipes.resolveByRecipeId(79);
-    // The producer already wears stronger armour; a useful personal upgrade
-    // must retain its existing protection instead of being sold by this test.
-    const armour = Data.items.find(item => String(item.etc?.rank) === 's' && Number(item.etc?.slot) === 10);
-    assert(armour);
-    await Database.setItem(1, { selfId: armour.selfId, name: armour.template.name, amount: 1, equipped: true, slot: 10 });
-    for (const row of recipe.materials) await Database.setItem(1, { selfId: row.selfId, name: 'Material', amount: row.amount });
-    const scroll = await Database.setItem(2, { selfId: recipe.recipeItemId, name: 'Recipe', amount: 2, stackable: true });
-    const ask = await Database.createAfkTradeShop(2, { storeType: 1, kind: 'shop', town: 'Giran', title: 'Recipe',
-        lines: [{ objectId: scroll.insertId, selfId: recipe.recipeItemId, name: 'Recipe', count: 2, price: 10, stackable: true }] });
-    const bid = await Database.createAfkTradeShop(3, { storeType: 3, kind: 'shop', town: 'Giran', title: 'D gear',
-        lines: [{ selfId: recipe.productId, name: 'D gear', count: 1, price: 1000000 }] });
-    Afk.refreshRecord(ask.shop); Afk.refreshRecord(bid.shop);
-    let state = await Life.refreshInventory(Life.cachedState(1));
-    const board = Afk.boardIndex(), offer = board.list(recipe.recipeItemId, 1)[0], buyer = board.list(recipe.productId, 3)[0];
-    const step = { recipeId: recipe.recipeId, batches: 1, scroll: [offer.lineId, offer.revision],
-        exit: [buyer.recordId, buyer.lineId, buyer.price, buyer.revision] };
-    const opportunity = Service.recheck(state, step, await Database.fetchCharacterRecipes(1));
-    assert(opportunity?.learning);
-    const before = Native.amount(await Database.fetchItems(1), 57);
-    const result = await Service.execute(state, opportunity);
-    assert(result.crafted, result.reason); assert(result.sold, result.reason);
-    assert.equal(result.spent, 10); assert.equal(result.revenue, 1000000);
-    assert((await Database.fetchCharacterRecipes(1)).some(row => row.recipeId === recipe.recipeId));
-    assert.equal(Native.amount(await Database.fetchItems(1), recipe.recipeItemId), 0, 'learning consumed exactly the purchased scroll');
-    assert.equal(Native.amount(await Database.fetchItems(1), 57), before - 10 + 1000000, 'actual purse paid recipe once and received actual gear sale');
-    assert.equal(Native.amount(await Database.fetchItems(3), recipe.productId), recipe.productCount);
-    state = result.state;
-    assert((await Service.acquireRecipe(state, opportunity)).ready);
-    assert.equal(Native.amount(await Database.fetchItems(1), 57), before - 10 + 1000000, 'learned recipe re-entry cannot charge again');
-    console.log('PASS native SQLite ordinary recipe purchase→learning→craft→sale, physical stock/purse and no duplicate acquisition');
+    for (const [index, recipeId] of [79, 2, 3, 4].entries()) {
+        const producerId = index * 3 + 1, sellerId = producerId + 1, buyerId = producerId + 2;
+        await seed(producerId, 1000000); await seed(sellerId, 1000000); await seed(buyerId, 1000000);
+        const recipe = Recipes.resolveByRecipeId(recipeId);
+        // The producer already wears stronger armour; a useful personal upgrade
+        // must retain its existing protection instead of being sold by this test.
+        const armour = Data.items.find(item => String(item.etc?.rank) === 's' && Number(item.etc?.slot) === 10);
+        assert(armour);
+        await Database.setItem(producerId, { selfId: armour.selfId, name: armour.template.name, amount: 1, equipped: true, slot: 10 });
+        const weapon = Data.items.find(item => String(item.etc?.rank) === 's' && Number(item.etc?.slot) === 7
+            && String(item.template?.kind).startsWith('Weapon.Blunt'));
+        assert(weapon);
+        await Database.setItem(producerId, { selfId: weapon.selfId, name: weapon.template.name, amount: 1, equipped: true, slot: 7 });
+        for (const row of recipe.materials) await Database.setItem(producerId, { selfId: row.selfId, name: 'Material', amount: row.amount });
+        const scroll = await Database.setItem(sellerId, { selfId: recipe.recipeItemId, name: 'Recipe', amount: 2, stackable: true });
+        const ask = await Database.createAfkTradeShop(sellerId, { storeType: 1, kind: 'shop', town: 'Giran', title: 'Recipe',
+            lines: [{ objectId: scroll.insertId, selfId: recipe.recipeItemId, name: 'Recipe', count: 2, price: 10, stackable: true }] });
+        const bid = await Database.createAfkTradeShop(buyerId, { storeType: 3, kind: 'shop', town: 'Giran', title: 'Crafted gear',
+            lines: [{ selfId: recipe.productId, name: 'Crafted gear', count: 1, price: 1000000 }] });
+        Afk.refreshRecord(ask.shop); Afk.refreshRecord(bid.shop);
+        let state = await Life.refreshInventory(Life.cachedState(producerId));
+        const board = Afk.boardIndex(), offer = board.list(recipe.recipeItemId, 1)[0], buyer = board.list(recipe.productId, 3)[0];
+        const step = { recipeId: recipe.recipeId, batches: 1, scroll: [offer.lineId, offer.revision],
+            exit: [buyer.recordId, buyer.lineId, buyer.price, buyer.revision] };
+        const opportunity = Service.recheck(state, step, await Database.fetchCharacterRecipes(producerId));
+        assert(opportunity?.learning);
+        const before = Native.amount(await Database.fetchItems(producerId), 57);
+        const result = await Service.execute(state, opportunity);
+        assert(result.crafted, result.reason); assert(result.sold, result.reason);
+        assert.equal(result.spent, 10); assert.equal(result.revenue, 1000000);
+        assert((await Database.fetchCharacterRecipes(producerId)).some(row => row.recipeId === recipe.recipeId));
+        assert.equal(Native.amount(await Database.fetchItems(producerId), recipe.recipeItemId), 0, 'learning consumed exactly the purchased scroll');
+        assert.equal(Native.amount(await Database.fetchItems(producerId), 57), before - 10 + 1000000, 'actual purse paid recipe once and received actual gear sale');
+        assert.equal(Native.amount(await Database.fetchItems(buyerId), recipe.productId), recipe.productCount);
+        state = result.state;
+        assert((await Service.acquireRecipe(state, opportunity)).ready);
+        assert.equal(Native.amount(await Database.fetchItems(producerId), 57), before - 10 + 1000000, 'learned recipe re-entry cannot charge again');
+    }
+    console.log('PASS native SQLite NG/D recipe purchase→learning→craft→sale, physical stock/purse and no duplicate acquisition');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; }).finally(async () => {
     await Database.close(); fs.rmSync(fixture.directory, { recursive: true, force: true });
 });
