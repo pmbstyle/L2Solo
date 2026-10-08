@@ -1,5 +1,7 @@
 const assert = require('assert');
 require('../src/Global');
+const DiagnosticConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+DiagnosticConfig.developerDiagnostics = true;
 
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
@@ -98,7 +100,15 @@ async function main() {
         assert.strictEqual(merchant.bot.market.lines[0].unitPrice, 522450);
         assert.strictEqual(merchant.bot.inventory, undefined);
         assert.strictEqual(merchant.bot.skills, undefined);
-        console.log('Bot context assembler checks passed');
+        const parityInput = { session: { actor: { fetchId: () => 20 } }, status: { available: true },
+            text: 'What skills and items do you have?', requestContext: { playerId: 10 } };
+        const on = await BotContextAssembler.assemble(parityInput);
+        DiagnosticConfig.developerDiagnostics = false;
+        const off = await BotContextAssembler.assemble(parityInput);
+        assert.deepStrictEqual(off.bot, on.bot); assert.deepStrictEqual(off.fragments, on.fragments);
+        assert.deepStrictEqual(off.journal, on.journal); assert.strictEqual(off.estimatedTokens, on.estimatedTokens);
+        assert.deepStrictEqual(off.telemetry, { enabled: false }, 'off skips optional included-fragment mapping');
+        console.log('Bot context assembler checks passed, canonical prompt identical on/off');
     } finally {
         BotBrainContext.compactStatus = originalCompact;
         BotBrainContext.compactMerchantStatus = originalMerchantCompact;

@@ -326,7 +326,6 @@ function telemetry(request, cfg, outcome, startedAt, extra = {}) {
         repairTriggered: extra.repairTriggered === true,
         repairType: extra.repairType || null,
         initialOutcome: extra.initialOutcome || null,
-        initialRawContent: extra.initialRawContent || null,
         initialFinishReason: extra.initialFinishReason || null
     };
 }
