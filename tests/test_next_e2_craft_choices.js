@@ -68,6 +68,14 @@ const noDeal = Decision.recipePaths(recipeOwner, recipe, { route: { ...finite, v
 assert.equal(noDeal.best.kind, 'sale', 'a valuable scroll stays saleable when one action cannot repay it');
 const unavailable = Decision.recipePaths(state, recipe, { route: finite, acquisition: { available: false, price: 1 }, context });
 assert.equal(unavailable.best.kind, 'hold');
+const affordableScroll = Decision.recipePaths(state, recipe, {
+    route: finite, acquisition: { available: true, price: 1 }, context
+});
+assert.equal(affordableScroll.best.kind, 'acquire', 'shared finite benefit admits a useful cheap shot recipe');
+const expensiveScroll = Decision.recipePaths(state, recipe, { route: finite,
+    acquisition: { available: true, price: finite.valueHours / context.moneyPrice + 1 }, context });
+assert.equal(expensiveScroll.best.kind, 'hold',
+    'a scroll that costs more than its finite benefit is rejected even with ample wallet funds');
 const commissioned = Decision.recipePaths(state, recipe, { commission: { available: true,
     outcome: { receipts: 100 } }, context });
 assert.equal(commissioned.best.kind, 'hold', 'no imagined commissioned contract');

@@ -101,7 +101,10 @@ function lineObservations(line, belief, ctx) {
     const previous = line.pricing;
     const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
     const fills = Math.max(0, Number(line.fills || 0) - Number(previous.seenFills || 0));
-    const passed = Math.min(PASSED_MAX, Math.max(0,
+    // A bid nobody took, seen on a town look, passed once even with no deal on
+    // the board (nobody sells), like a deal that went to someone else.
+    const unanswered = ctx.visit && line.storeType === BUY && fills === 0 ? 1 : 0;
+    const passed = Math.min(PASSED_MAX, Math.max(unanswered,
         counter.deals - previous.seenCounter - fills));
     const price = Number(previous.price);
     const observations = [];

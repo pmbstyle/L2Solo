@@ -86,16 +86,17 @@ const craftHours = shotD.mpCost / (10000 / (restMs / 1000)) / 3600;
 near(crafted.labour, craftHours * Efficiency.hourValue({ level: crafterLevel, stats: {} }).perHour / shotD.productCount,
     'labour = the craft time (MP over seated regeneration) at the crafter\'s hour');
 const shotBase = Number(DataCache.items.find((item) => Number(item.selfId) === 1463).template.price);
-assert.strictEqual(crafted.price, Math.min(shotBase, Math.max(NpcSellRules.npcBuyPrice(shotBase),
-    Math.round(crafted.materials + crafted.labour))), 'crafted price inside the NPC walls');
+// No NPC sells a D shot: its price has the NPC buy-back as the floor and no ceiling (E91).
+assert.strictEqual(crafted.price, Math.max(NpcSellRules.npcBuyPrice(shotBase),
+    Math.round(crafted.materials + crafted.labour)), 'crafted price above the NPC buy-back, no NPC ceiling');
 // A crystal: Saber (743 D crystals) drops from monster 65 on the table's spot.
 const sabers = [{ id: 'S', avgLevel: 18, density: 30, npcEntries: [{ selfId: 65, name: 'x', level: 18, count: 1 }] }];
 const saber = FirstPrice.firstPrice(123, { spots: sabers });
 const crystal = FirstPrice.firstPrice(1458, { spots: sabers });
 const crystalBase = Number(DataCache.items.find((item) => Number(item.selfId) === 1458).template.price);
 assert.strictEqual(crystal.source, 'crystal');
-assert.strictEqual(crystal.price, Math.min(crystalBase, Math.max(NpcSellRules.npcBuyPrice(crystalBase), Math.round(saber.price / 743))),
-    'a crystal costs the gear it comes from per crystal');
+assert.strictEqual(crystal.price, Math.max(NpcSellRules.npcBuyPrice(crystalBase), Math.round(saber.price / 743)),
+    'a crystal costs the gear it comes from per crystal, no NPC ceiling');
 BotMarketPricing.useNpcOfferSnapshot([{ selfId: 1835, price: 7 }]);
 assert.deepStrictEqual(FirstPrice.firstPrice(1835, { spots }), { price: 7, source: 'npc' }, 'a no-grade shot at the NPC price');
 BotMarketPricing.useNpcOfferSnapshot(null);

@@ -99,6 +99,11 @@ function attention(state, line, ctx, observed) {
 }
 
 function review(state, lines, ctx, lookSeen) {
+    // A completed town visit is a named own observation. Reuse the bounded
+    // hot/cold look owner; do not restore a second per-bot worker visit map.
+    const visitNumber = Math.max(0, finite(state.stats?.townLook?.n));
+    const visit = !!lookSeen && visitNumber > (lookSeen.townVisit ?? visitNumber);
+    if (lookSeen) lookSeen.townVisit = visitNumber;
     const own = lines.filter(line => line.pricing && line.count > 0
         && (!line.ownerId || Number(line.ownerId) === Number(state.characterId)));
     if (lookSeen) {
@@ -116,6 +121,7 @@ function review(state, lines, ctx, lookSeen) {
         const line = own[(first + i) % own.length];
         const input = inputsFor(state, line, ctx), before = seenInputs(lookSeen, line.lineId);
         let reason = 0;
+        if (visit && line.storeType === 3) reason |= 8;
         if (input[0] && (!before || before[0] !== input[0])) reason |= 1;
         if (before && (before[1] !== input[1] || before[2] !== input[2])
             || Number.isFinite(line.pricing.seenCount) && Number(line.pricing.seenCount) !== input[1]
@@ -128,7 +134,7 @@ function review(state, lines, ctx, lookSeen) {
         selected.push({ line, input, deals: choice?.deals ?? finite(line.pricing.seenCounter) });
     }
     if (!selected.length) return null;
-    const review = require('./MarketPricing').look(state, selected.map(row => row.line), { ...ctx, reviewReasons });
+    const review = require('./MarketPricing').look(state, selected.map(row => row.line), { ...ctx, visit, reviewReasons });
     if (lookSeen) {
         const changed = new Set([...(review?.reprices || []), ...(review?.withdrawals || [])].map(row => row.lineId));
         for (const { line, input, deals } of selected) {

@@ -201,7 +201,7 @@ function look(state, lines, ctx) {
         if (line.ownerId && Number(line.ownerId) !== Number(ctx.characterId)) continue;
         const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
         const reason = Number(ctx.reviewReasons?.get(line.lineId) || 0);
-        const forced = Boolean(reason & 6);
+        const forced = Boolean(reason & 14);
         if (!forced && !(reason & 1) && counter.deals <= line.pricing.seenCounter) continue;
         const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
             expectedRevision: line.revision, previousPricing: { ...line.pricing } };
