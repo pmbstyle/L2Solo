@@ -25,24 +25,67 @@ const NativeWriteCheckpoint = require('./GameServer/Bot/Population/NativeWriteCh
 const EconomyCommit = require('./GameServer/Bot/Economy/EconomyCommit');
 const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
 let nativeDiagnosticFacts = null;
+let nativeDiagnosticCounts = null;
+let nativeDiagnosticOverflow = 0;
 function stageNativeDiagnostic(characterId, step, phase, reason, fields) {
     if (!Diagnostics.active()) return;
-    Diagnostics.count('native', phase, reason);
-    if (!Diagnostics.enabled(characterId)) return;
-    if ((nativeDiagnosticFacts?.length || 0) >= 64) { Diagnostics.noteDropped(1); return; }
-    nativeDiagnosticFacts ||= [];
-    nativeDiagnosticFacts.push(Object.freeze({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
-        commandId: step?.command?.[0], sequence: step?.command?.[2], revision: Number(step?.row?.simulationRevision) }));
+    try {
+        nativeDiagnosticCounts ||= new Map();
+        const key = `${phase}:${reason}`, previous = nativeDiagnosticCounts.get(key);
+        if (previous) previous.count++;
+        else if (nativeDiagnosticCounts.size < 64) nativeDiagnosticCounts.set(key, { phase, reason, count: 1 });
+        else nativeDiagnosticOverflow++;
+        if (!Diagnostics.enabled(characterId)) return;
+        if ((nativeDiagnosticFacts?.length || 0) >= 64) { Diagnostics.noteDropped(1); return; }
+        nativeDiagnosticFacts ||= [];
+        nativeDiagnosticFacts.push(Object.freeze({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
+            commandId: step?.command?.[0], commandKind: step?.command?.[1], sequence: step?.command?.[2],
+            revision: Number(step?.row?.simulationRevision) }));
+    } catch (_) { /* Observations cannot abort the physical transaction. */ }
 }
 function publishNativeDiagnostics(rolledBack = null) {
-    if (!nativeDiagnosticFacts) return;
-    try {
-        for (const row of nativeDiagnosticFacts) Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
-            reason: rolledBack, planned: row.planned ?? row.actual, actual: 0, spent: 0,
-            ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
+    const counts = nativeDiagnosticCounts, facts = nativeDiagnosticFacts, overflow = nativeDiagnosticOverflow;
+    // Release transaction ownership before calling any observational consumer.
+    nativeDiagnosticCounts = null; nativeDiagnosticFacts = null; nativeDiagnosticOverflow = 0;
+    if (!counts && !facts && !overflow) return;
+    const count = (...args) => { try { Diagnostics.count(...args); } catch (_) { /* Keep the native result. */ } };
+    if (counts) {
+        if (rolledBack) count('native', 'transaction', 'rolled_back');
+        for (const row of counts.values()) {
+            // Attempts and refusals are real even when the proposed effects roll back.
+            const layer = rolledBack && row.phase !== 'native_attempt' && row.phase !== 'native_refusal'
+                ? 'native_rollback' : 'native';
+            count(layer, row.phase, row.reason, row.count);
+        }
+    }
+    if (overflow) count('native', 'aggregate_overflow', rolledBack ? 'rolled_back' : 'committed', overflow);
+    if (!facts) return;
+    for (const row of facts) {
+        try {
+            Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
+                reason: row.phase === 'native_refusal' ? row.reason : rolledBack,
+                planned: row.planned ?? row.actual, actual: 0, spent: 0,
+                ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
+        } catch (_) { /* Observations cannot change native results or errors. */ }
+    }
+}
 
-    } catch (_) { /* Observations cannot change native results or errors. */ }
-    nativeDiagnosticFacts = null;
+function invalidNpcPurchase(characterId, step, line, lineId, reason, field, value, details, message = 'invalid npc purchase') {
+    if (Diagnostics.active()) {
+        try {
+            const numeric = Number(value);
+            const kind = Number.isNaN(numeric) ? 'NaN' : !Number.isFinite(numeric) ? String(numeric)
+                : !Number.isInteger(numeric) ? 'fractional' : !Number.isSafeInteger(numeric) ? 'unsafe_integer'
+                    : numeric <= 0 ? 'nonpositive' : 'finite';
+            stageNativeDiagnostic(characterId, step, 'native_refusal', reason, {
+                item: Number(line.selfId), requested: Number(line.amount), unitPrice: Number(line.unitPrice),
+                cost: Number(line.amount) * Number(line.unitPrice), after: numeric, lineId,
+                caller: details.diagnosticCaller || 'purchaseNpcInventoryBasket', source: step?.row?.phase || 'legacy',
+                trigger: `${field}:${typeof value}:${kind}`, actual: 0, spent: 0
+            });
+        } catch (_) { /* Input observations preserve the original refusal. */ }
+    }
+    return Error(message);
 }
 
 let connection;
@@ -413,7 +456,7 @@ function performTransaction(work, operation) {
             throw error;
         }
         pendingSettlementUndo = new Map();
-        nativeDiagnosticFacts = null;
+        nativeDiagnosticFacts = null; nativeDiagnosticCounts = null; nativeDiagnosticOverflow = 0;
         let phase = 'work';
         try {
             const result = work();
@@ -432,11 +475,11 @@ function performTransaction(work, operation) {
                     if (pending) pendingSettlementOwners.add(ownerId);
                     else pendingSettlementOwners.delete(ownerId);
                 }
+                publishNativeDiagnostics(error?.message || 'rollback');
             }
-            publishNativeDiagnostics(error?.message || 'rollback');
             throw error;
         } finally {
-            nativeDiagnosticFacts = null;
+            nativeDiagnosticFacts = null; nativeDiagnosticCounts = null; nativeDiagnosticOverflow = 0;
             pendingSettlementUndo = null;
         }
 }
@@ -6969,6 +7012,7 @@ const Database = {
 
     purchaseNpcInventoryItem(characterId, details) {
         return this.purchaseNpcInventoryBasket(characterId, { ...details,
+            ...(Diagnostics.active() && { diagnosticCaller: 'purchaseNpcInventoryItem' }),
             lines: [{ stackable: true, slot: 0, ...details }] });
     },
 
@@ -7008,9 +7052,16 @@ const Database = {
                     { lineId: lines.length, item: itemId, requested: count, planned: count, unitPrice: price,
                         npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town,
                         goalRevision: Number(line.goal?.updatedAt) });
-                if (!Number.isSafeInteger(itemId) || itemId <= 0 || seen.has(itemId)
-                    || !Number.isSafeInteger(count) || count <= 0
-                    || !Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(count * price)) throw Error('invalid npc purchase');
+                if (!Number.isSafeInteger(itemId) || itemId <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_item', 'selfId', line.selfId, details);
+                if (seen.has(itemId))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'duplicate_item', 'selfId', line.selfId, details);
+                if (!Number.isSafeInteger(count) || count <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_count', 'amount', line.amount, details);
+                if (!Number.isSafeInteger(price) || price <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_price', 'unitPrice', line.unitPrice, details);
+                if (!Number.isSafeInteger(count * price))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_line_total', 'total', count * price, details);
                 seen.add(itemId);
                 const template = Index.find(Data.items, itemId);
                 if (seller) {
@@ -7022,7 +7073,8 @@ const Database = {
                 const slot = line.slot === undefined ? Number(template?.etc?.slot || 0) : Number(line.slot);
                 // Stack quantities come from the funded missing need. They use
                 // one physical row; retain the instance bound for unstacked goods.
-                if (!stackable && count > 10000) throw Error('invalid npc purchase');
+                if (!stackable && count > 10000)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'nonstackable_limit', 'amount', line.amount, details);
                 if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
                     || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
                 if (seller && step && slot > 0) {
@@ -7042,7 +7094,9 @@ const Database = {
                 }
                 if (attributed > count || attributedCost > count * price) throw Error('invalid npc errand attribution');
                 total += count * price; units += count;
-                if (!Number.isSafeInteger(total) || !Number.isSafeInteger(units)) throw Error('invalid npc basket total');
+                if (!Number.isSafeInteger(total) || !Number.isSafeInteger(units))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_basket_total',
+                        Number.isSafeInteger(total) ? 'units' : 'total', Number.isSafeInteger(total) ? units : total, details, 'invalid npc basket total');
                 lines.push({ ...line, selfId: itemId, amount: count, unitPrice: price, stackable, slot,
                     name: line.name || template?.template?.name || `Item ${itemId}` });
             }
@@ -7085,7 +7139,8 @@ const Database = {
                 const existing = line.stackable ? one('SELECT id,amount FROM items WHERE characterId=? AND selfId=? ORDER BY id LIMIT 1', [characterId, line.selfId]) : null;
                 if (existing) {
                     const nextAmount = Number(existing.amount) + line.amount;
-                    if (!Number.isSafeInteger(nextAmount)) throw Error('invalid npc stack total');
+                    if (!Number.isSafeInteger(nextAmount))
+                        throw invalidNpcPurchase(characterId, step, line, lines.indexOf(line), 'invalid_stack_total', 'amount', nextAmount, details, 'invalid npc stack total');
                     write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [nextAmount, existing.id, characterId]);
                 }
                 else for (let index = 0; index < (line.stackable ? 1 : line.amount); index++) {

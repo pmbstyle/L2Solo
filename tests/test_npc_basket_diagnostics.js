@@ -39,6 +39,8 @@ async function seed(id, wallet = 5000, stats = {}, phase = 'cold') {
 }
 const read = async sql => DB.execute([sql]);
 const amount = async (id, item) => Native.amount(await DB.fetchItems(id), item);
+const counter = key => Diagnostics.metrics().counts?.[key] || 0;
+const successes = () => ['native:native_quantity:npc_filled', 'native:npc_goal:applied', 'native:native_result:completed'].map(counter);
 async function parity(on) {
     Config.developerDiagnostics = on; Config.economyDiagnostics = true;
     const state = await seed(9600, 5000, { money: [1000, .001, 1000, 0, .003, 2000, 999] });
@@ -86,8 +88,10 @@ async function scenarios() {
     assert.equal(partial.errandAt, errand.at); assert(partial.errandKey.length <= 96);
     assert(recorded.some(row => row.phase === 'npc_admission' && row.requested === 102));
     assert(recorded.some(row => row.phase === 'npc_delivery' && row.reason === 'state_accepted'));
+    const beforeReplay = successes();
     const start = rows.length; clock += 2000;
     const replay = await Basket.purchase(result.state, { seller: { ...seller, sourceId: 1, town: 'Wrong' }, lines: [], original: result.economyCommand });
+    assert.deepEqual(successes(), beforeReplay, 'replay does not count saved effects as new success');
     assert(replay.replayed); assert.equal(await amount(9601, 57), 2984);
     const replayRows = rows.slice(start).filter(row => row.commandId === result.economyCommand[0]);
     assert(replayRows.some(row => row.receiptUnits === 102 && row.receiptSpent === 2016 && row.actual === 0 && row.spent === 0));
@@ -114,13 +118,42 @@ async function scenarios() {
     const rollbackState = await seed(9604);
     const rollbackGoal = await Goals.set(9604, { type: 'buy_craft_material', status: 'active', target: { itemId: 2509, amount: 120 } });
     await DB.execute(["CREATE TEMP TRIGGER fail_diagnostic_receipt BEFORE UPDATE ON bot_life_state WHEN NEW.characterId=9604 AND json_extract(NEW.statsJson,'$.economyCommit[1]')=1 BEGIN SELECT RAISE(ABORT,'diagnostic rollback'); END"]);
+    const beforeRollback = successes(), rollbacks = counter('native:transaction:rolled_back');
     await assert.rejects(Basket.purchase(rollbackState, { seller, lines: [{ ...lines[0], goal: {
         expectedGoal: rollbackGoal.current, updatedAt: rollbackGoal.updatedAt, units: 100 } }] }), /diagnostic rollback/);
+    assert.deepEqual(successes(), beforeRollback, 'rolled-back filled/goal/result facts never increment success');
+    assert.equal(counter('native:transaction:rolled_back'), rollbacks + 1);
+    assert(counter('native_rollback:native_result:completed') > 0);
     const rolled = rows.filter(row => row.owner === 9604 && row.outcome === 'rolled_back');
     assert(rolled.length); assert(rolled.every(row => row.actual === 0 && row.spent === 0 && (row.goalApplied === undefined || row.goalApplied === 0)));
     assert(rolled.some(row => row.phase === 'npc_goal' && row.reason === 'diagnostic rollback' && row.goalApplied === 0));
     assert.equal(await amount(9604, 57), 5000); assert.equal(await amount(9604, 2509), 0);
     assert.equal(JSON.parse((await read('SELECT goalJson FROM bot_goal_state WHERE characterId=9604'))[0].goalJson).target.amount, 120);
+    for (const [id, detail] of [[9610, false], [9611, true]]) {
+        const probe = await seed(id);
+        Config.economyDiagnostics = detail;
+        if (detail) Config.economyDiagnosticsBotIds = '999999';
+        const before = successes(), beforeRows = rows.length, beforeCount = counter('native:transaction:rolled_back');
+        await DB.execute([`CREATE TEMP TRIGGER fail_diagnostic_${id} BEFORE UPDATE ON bot_life_state WHEN NEW.characterId=${id} AND json_extract(NEW.statsJson,'$.economyCommit[1]')=1 BEGIN SELECT RAISE(ABORT,'diagnostic rollback'); END`]);
+        await assert.rejects(Basket.purchase(probe, { seller, lines }), /diagnostic rollback/);
+        assert.deepEqual(successes(), before, 'aggregate-only and unselected rollbacks preserve successes');
+        assert.equal(counter('native:transaction:rolled_back'), beforeCount + 1);
+        assert.equal(rows.length, beforeRows, 'aggregate collection does not bypass detail selection');
+        assert.equal(await amount(id, 57), 5000);
+        await DB.execute([`DROP TRIGGER fail_diagnostic_${id}`]);
+        // Direct native call confirms subsequent transactions do not inherit scratch state.
+        await DB.purchaseNpcInventoryBasket(id, { lines });
+        assert.equal(counter('native:native_quantity:npc_filled'), before[0] + lines.length);
+    }
+    Config.economyDiagnostics = true;
+    // Collector exceptions before/after COMMIT must never reject a paid purchase.
+    await seed(9612);
+    const savedHooks = { count: Diagnostics.count, push: Diagnostics.push };
+    try {
+        Diagnostics.count = Diagnostics.push = () => { throw Error('diagnostic sink failed'); };
+        assert((await DB.purchaseNpcInventoryBasket(9612, { lines })).ok);
+    } finally { Object.assign(Diagnostics, savedHooks); }
+    assert.equal(await amount(9612, 57), 2984);
     const hotState = await seed(9605, 5000, {}, 'hot');
     const Actor = invoke('GameServer/Model/Actor'), Backpack = invoke('GameServer/Actor/Backpack');
     const actor = new Actor({ id: 9605, name: 'Diagnostic9605', classId: 0, race: 0, level: 1,
@@ -177,6 +210,66 @@ async function scenarios() {
     assert.equal(merged[0].lines[0].amount, 120);
     assert(rows.some(row => row.owner === 9607 && row.phase === 'npc_plan' && row.reason === 'line_changed' && row.planned === 0));
     assert(Diagnostics.metrics().durations.npc_plan.count >= 2);
+    // Every existing invalid-purchase branch keeps its generic API error while
+    // emitting a precise bounded reason and JSON-safe input classification.
+    const bad = await seed(9620);
+    const cases = [
+        [{ selfId: NaN }, 'invalid_item', 'selfId:number:NaN'],
+        [{ amount: NaN }, 'invalid_count', 'amount:number:NaN'],
+        [{ amount: Infinity }, 'invalid_count', 'amount:number:Infinity'],
+        [{ amount: 1.5 }, 'invalid_count', 'amount:number:fractional'],
+        [{ unitPrice: 'oops' }, 'invalid_price', 'unitPrice:string:NaN'],
+        [{ unitPrice: 0 }, 'invalid_price', 'unitPrice:number:nonpositive'],
+        [{ amount: Number.MAX_SAFE_INTEGER }, 'invalid_line_total', 'total:number:unsafe_integer'],
+        [{ stackable: false, amount: 10001 }, 'nonstackable_limit', 'amount:number:finite']
+    ];
+    for (const [patch, reason, trigger] of cases) {
+        clock += 2000;
+        const startRows = rows.length, before = counter(`native:native_refusal:${reason}`);
+        await assert.rejects(DB.purchaseNpcInventoryItem(9620, { ...lines[0], ...patch }), { message: 'invalid npc purchase' });
+        assert.equal(counter(`native:native_refusal:${reason}`), before + 1);
+        const row = rows.slice(startRows).find(row => row.phase === 'native_refusal');
+        assert(row, reason); assert.equal(row.reason, reason); assert.equal(row.trigger, trigger);
+        assert.equal(row.caller, 'purchaseNpcInventoryItem'); assert.equal(row.outcome, 'rolled_back');
+        assert.equal(row.actual, 0); assert.equal(row.spent, 0);
+        assert(Object.values(row).every(value => typeof value !== 'number' || Number.isFinite(value)));
+    }
+    clock += 2000;
+    await assert.rejects(DB.purchaseNpcInventoryBasket(9620, { lines: [lines[0], lines[0]] }), { message: 'invalid npc purchase' });
+    assert(rows.some(row => row.owner === 9620 && row.phase === 'native_refusal' && row.reason === 'duplicate_item' && row.lineId === 1));
+    clock += 2000;
+    await assert.rejects(DB.purchaseNpcInventoryBasket(9620, { lines: [
+        { ...lines[0], amount: Number.MAX_SAFE_INTEGER, unitPrice: 1 },
+        { ...lines[1], amount: 1, unitPrice: 1 }
+    ] }), { message: 'invalid npc basket total' });
+    assert(rows.some(row => row.owner === 9620 && row.reason === 'invalid_basket_total'));
+    clock += 2000;
+    const invalidCommandStart = rows.length;
+    await assert.rejects(Basket.purchase(bad, { seller, lines: [{ ...lines[0], amount: NaN }] }), { message: 'invalid npc purchase' });
+    const commandRefusal = rows.slice(invalidCommandStart).find(row => row.phase === 'native_refusal');
+    assert(commandRefusal.commandId); assert.equal(commandRefusal.source, 'cold');
+    assert.equal(commandRefusal.commandKind, require('../src/GameServer/Bot/Economy/EconomyCommit').KINDS.npcBuy);
+    assert.equal(await amount(9620, 57), 5000); assert.equal(await amount(9620, 2509), 0);
+    Config.economyDiagnosticsBotIds = '999999'; clock += 2000;
+    const noDetailRows = rows.length, invalidBefore = counter('native:native_refusal:invalid_count');
+    await assert.rejects(DB.purchaseNpcInventoryItem(9620, { ...lines[0], amount: NaN }), { message: 'invalid npc purchase' });
+    assert.equal(counter('native:native_refusal:invalid_count'), invalidBefore + 1);
+    assert.equal(rows.length, noDetailRows, 'invalid detail obeys existing owner selection');
+    await seed(9621);
+    await DB.setItem(9621, { selfId: 2509, name: 'Spirits', amount: Number.MAX_SAFE_INTEGER });
+    await assert.rejects(DB.purchaseNpcInventoryItem(9621, { ...lines[0], amount: 1 }), { message: 'invalid npc stack total' });
+    assert(rows.some(row => row.owner === 9621 && row.reason === 'invalid_stack_total'
+        && row.trigger === 'amount:number:unsafe_integer' && row.after === Number.MAX_SAFE_INTEGER + 1));
+    assert.equal(await amount(9621, 57), 5000);
+    assert.equal(await amount(9621, 2509), Number.MAX_SAFE_INTEGER);
+    Config.developerDiagnostics = false;
+    const hooks = {};
+    try {
+        for (const key of ['enabled', 'count', 'push', 'noteDropped']) {
+            hooks[key] = Diagnostics[key]; Diagnostics[key] = () => { throw Error('disabled diagnostic hook'); };
+        }
+        await assert.rejects(DB.purchaseNpcInventoryItem(9620, { ...lines[0], amount: NaN }), { message: 'invalid npc purchase' });
+    } finally { Object.assign(Diagnostics, hooks); Config.developerDiagnostics = true; }
     assert.equal(DB.stats().pending, 0);
 }
 (async () => {
