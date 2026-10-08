@@ -296,7 +296,7 @@ for (let deal = 0; deal < 12; deal++) MarketCounters.deal(dEnchantScroll.selfId,
 assert.strictEqual(MarketListingPolicy.evaluate(scrollState, { now, slots: 0 }).warehouse[0]?.selfId, dEnchantScroll.selfId,
     'scroll cleanup must choose warehouse retention when the board has buyers but no slot');
 MarketCounters.reset();
-// Native town travel reserves two Scrolls of Escape (H13); only its surplus
+// Native town travel reserves ten Scrolls of Escape (H13); only its surplus
 // is NPC junk. A party resurrection remains a cast without an item.
 for (const consumable of [escapeScroll, resurrectionScroll]) {
     const consumableItem = {
@@ -304,15 +304,15 @@ for (const consumable of [escapeScroll, resurrectionScroll]) {
         name: consumable.template.name,
         kind: consumable.template.kind,
         stackable: true,
-        amount: 10
+        amount: 13
     };
     const consumableState = { ...state, inventory: { [consumable.selfId]: consumableItem } };
     assert.deepStrictEqual(MarketListingPolicy.evaluate(consumableState, { states: [] }).npc.map((item) => item.selfId),
         [consumable.selfId], `${consumable.template.name} surplus is sold to the NPC`);
     const sale = MarketListingPolicy.evaluate(consumableState, { states: [] }).npc[0];
-    const expectedKept = consumable.selfId === escapeScroll.selfId ? 2 : 0;
-    assert.strictEqual(invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT, 2);
-    assert.strictEqual(sale.count, 10 - expectedKept, 'the actual travel stock is protected from liquidation');
+    const expectedKept = consumable.selfId === escapeScroll.selfId ? 10 : 0;
+    assert.strictEqual(invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT, 10);
+    assert.strictEqual(sale.count, 13 - expectedKept, 'the actual travel stock is protected from liquidation');
     assert.strictEqual(ItemDisposition.isWarehouseCandidate(consumableItem), false,
         `${consumable.template.name} must not be parked in the warehouse`);
 }

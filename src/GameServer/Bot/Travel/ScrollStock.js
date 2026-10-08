@@ -7,9 +7,8 @@ const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const TripPayment = require('./TripPayment');
 
-// One trip to town reads one scroll and the return is by gatekeeper; a bot
-// restocks on every visit, so two cover the next trip and one spare.
-const TARGET_AMOUNT = 2;
+// Temporary carried target (user, 2026-10-08), pending travel-based stock planning.
+const TARGET_AMOUNT = 10;
 const SCROLL = Object.freeze({ selfId: TripPayment.SCROLL_OF_ESCAPE, name: 'Scroll of Escape' });
 
 function heldAmount(value, inventory = value?.inventory) {
