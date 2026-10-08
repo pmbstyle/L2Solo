@@ -644,6 +644,10 @@ let partyGoalJobs = 0;
 let partyGoalTail = Promise.resolve();
 const partyGoalPages = new Map();
 const partyGoalSeen = new Map();
+function partyMembersAvailable(members) {
+    return members.every(member => kernel.commandStartedAt.get(member.characterId)?.kind !== 'meeting'
+        && (occupationPlanner.slots.get(member.characterId) || occupationPlanner.waiting.get(member.characterId))?.input.mode !== 'meeting');
+}
 
 function admitPartyGoalPages(payload, msgId) {
     for (const [id, until] of partyGoalSeen) if (until <= Date.now()) partyGoalSeen.delete(id);
@@ -709,6 +713,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             return native && JSON.stringify(native) === JSON.stringify(member) ? native : member;
         });
         preparedMembers = members;
+        if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
         const joint = await Calculation.calculate(payload.party, members, async (member, timestamp) => {
             const context = { ...(kernel.states.get(member.characterId)?.context || {}),
                 buyOrderEscrow: payload.escrows[members.indexOf(member)] };
@@ -717,14 +722,16 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             delete context.recipeBook; delete context.knownShotRecipes;
             Object.assign(context, payload.recipeKnowledge?.[members.indexOf(member)] || {});
             const routeRows = await occupationFor(member, timestamp, context, 'wish');
+            if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
             const workshop = await occupationFor(member, timestamp,
                 { ...context, routeRows, routeKey: EconomicTrip.key(member) });
+            if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
             return invoke('GameServer/Bot/Economy/EconomyContext').forState(member, {
                 timestamp, spots: planningSpots, board: boardReady(),
                 occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows,
                 rememberContext: kernel.states.get(member.characterId)?.state === member,
                 buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal' });
-        }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy);
+        }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy && partyMembersAvailable(members));
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
             send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);
     }).catch(error => {

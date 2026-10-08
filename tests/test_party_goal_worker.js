@@ -14,8 +14,24 @@ const members = [701, 702].map(characterId => ({ characterId, phase: 'cold', upd
 const party = { partyId: 'goal-worker', memberIds: [701, 702], leaderId: 701,
     stats: { objective: { clanGoalKey: 'clan-native', spotId: 'protected' } } };
 const observer = String.raw`
+const assert=require('node:assert/strict');
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
+    if(message.queryProbe==='hold-meeting') {
+        const held={input:{mode:'meeting',state:kernel.states.get(701).state}};
+        occupationPlanner.waiting.set(701,held);
+        module.exports.heldMeeting=held;
+    }
+    if(message.queryProbe==='release-meeting') {
+        assert.strictEqual(occupationPlanner.waiting.get(701),module.exports.heldMeeting);
+        occupationPlanner.waiting.delete(701);
+    }
+    if(message.queryProbe==='hold-lifecycle') {
+        kernel.commanding.add(701);kernel.commandStartedAt.set(701,{kind:'lifecycle'});
+    }
+    if(message.queryProbe==='release-lifecycle') {
+        kernel.commanding.delete(701);kernel.commandStartedAt.delete(701);
+    }
     parentPort.postMessage({probe:message.queryProbe,slots:[...occupationPlanner.slots.values()].map(entry=>({
         id:entry.id,recipeBook:entry.input.recipeBook,knownShotRecipes:entry.input.knownShotRecipes,
         canonical:entry.input.state===kernel.states.get(entry.id)?.state}))});
@@ -72,6 +88,20 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     worker.postMessage({ queryProbe: 'private-release' });
     const released = await wait(message => message.probe === 'private-release');
     assert(released.slots.every(row => row.id <= 0 || row.canonical), 'no completed planner slot retains a private query snapshot');
+    worker.postMessage({queryProbe:'hold-meeting'});
+    await wait(message=>message.probe==='hold-meeting');
+    post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-meeting');
+    const blocked=await wait(message=>message.type==='party_goal_result'&&message.msgId==='during-meeting');
+    assert.equal(blocked.payload.reason,'party_goal_member_busy','party advice cannot cancel native trade preparation');
+    worker.postMessage({queryProbe:'release-meeting'});
+    await wait(message=>message.probe==='release-meeting');
+    worker.postMessage({queryProbe:'hold-lifecycle'});
+    await wait(message=>message.probe==='hold-lifecycle');
+    post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-lifecycle');
+    const lifecycle=await wait(message=>message.type==='party_goal_result'&&message.msgId==='during-lifecycle');
+    assert.equal(lifecycle.payload.ok,true,'a lifecycle command waiting for main review may request party advice');
+    worker.postMessage({queryProbe:'release-lifecycle'});
+    await wait(message=>message.probe==='release-lifecycle');
     const page = (pageIndex, id, replyBy = Date.now() + 5000) => post('party_goal_request', {
         ...(pageIndex === 0 ? { party } : { partyId: party.partyId }), members: [members[pageIndex]], escrows: [0],
         timestamp, replyBy, pageIndex, pageCount: 2 }, id);
