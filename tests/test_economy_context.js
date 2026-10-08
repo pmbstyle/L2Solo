@@ -219,6 +219,19 @@ async function run() {
 
     const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const ownedIngredient = { key: 'item:990002', price: 2,
+        paths: [{ kind: 'buy', activity: 'shopping', itemId: 990002, price: 2, executable: true }] };
+    const ownedCraftRoot = { key: 'closure-owned-craft', need: 'power', valueHours: 1e9, price: 1,
+        paths: [{ kind: 'craft', activity: 'crafting', itemId: 990001, recipeId: 1, productCount: 1,
+            requirements: [], grossRequirements: [{ key: ownedIngredient.key, amount: 4 }] }] };
+    const closure = Providers.build(base, context, { spots, nodes: [ownedCraftRoot, ownedIngredient] });
+    assert(closure.nodes.some(node => node.key === ownedIngredient.key),
+        'provider pruning retains already owned ingredients needed by whole-batch allocation');
+    const closureNetwork = new (require('../src/GameServer/Bot/Economy/WishNetwork').WishNetwork)().build({
+        actorKey: 'closure', inputKey: 'owned', ...closure, wallet: 1000, hourAdena: 100,
+        stockFor: id => id === 990002 ? { owned: 4 } : {}, remembered: false });
+    assert.equal(closureNetwork.plans.get(ownedCraftRoot.key).requirements.length, 0,
+        'physical owned ingredients remain executable after native provider pruning');
     const mage = { ...base, characterId: 903, level: 40, sp: 100000,
         stats: { ...base.stats, classId: 14, exp: Data.experience[39], coldCombat: { classId: 14, skillSource: 'database', skills: [] } } };
     const missing = Catalog.missingBooks(mage);

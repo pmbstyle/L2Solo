@@ -229,12 +229,14 @@ function buildProjection(state, ctx, deps) {
             const combined = require('./CraftProfitPolicy').requirements(recipe) || new Map();
             const freeAmount = require('./WealthCraftDecision').freeAmount;
             const requirements = [];
+            const grossRequirements = [];
             let ownInputOpportunityValue = 0;
             for (const [selfId, amount] of combined) {
                 const owned = Math.min(amount, freeAmount(state, state.inventory?.[selfId] || {}));
                 ownInputOpportunityValue += owned * positive(price(selfId));
                 const missing = amount - owned;
                 const materialKey = itemNode(selfId, depth + 1);
+                grossRequirements.push({ key: materialKey, amount });
                 if (missing > 0) requirements.push({ key: materialKey, amount: missing });
             }
             const learned = !!workshop || recipe.kind === 'dual_sword_combine' || knownRecipes.has(Number(recipe.recipeId));
@@ -257,14 +259,15 @@ function buildProjection(state, ctx, deps) {
             const recoveryHours = positive(recipe.mpCost) > 0 && regen > 0 ? positive(recipe.mpCost) / regen * 3 / 3600 : NaN;
             const cycleHours = workshop ? 1 / 3600
                 : recipe.kind === 'dual_sword_combine' ? Number(recipe.costHours || 1 / 3600) : recoveryHours;
-            if (scrollAvailable && (learned || scrollKey) && Number.isFinite(cycleHours) && cycleHours > 0 && requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
+            if (scrollAvailable && (learned || scrollKey) && Number.isFinite(cycleHours) && cycleHours > 0
+                && requirements.every(row => row.key) && grossRequirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
                 itemId: Number(id), recipeId: recipe.recipeId,
                 ...(workshop ? { workshop, price: workshop.price, town: workshop.townName,
                     tripHours: workshop.tripHours, tripFees: workshop.tripFees,
                     executable: workshop.capacityBatches > 0, availableUnits: workshop.capacityBatches * Number(recipe.productCount || 1), quoted: true } : {}),
                 requiresRecipeLearning: !learned, successProbability: Number(recipe.successRate ?? 100) / 100,
                 ownInputOpportunityValue, costHours: cycleHours, productCount: Number(recipe.productCount || 1),
-                grossRequirements: [...[...combined].map(([selfId, amount]) => ({ key: `item:${selfId}`, amount })),
+                grossRequirements: [...grossRequirements,
                     ...(!learned && scrollAvailable ? [{ key: scrollKey, amount: 1, once: true }] : [])],
                 requirements });
         }
@@ -430,7 +433,10 @@ function buildProjection(state, ctx, deps) {
     const reachable = () => {
         const seen = new Set();
         const visit = key => { if (seen.has(key)) return; seen.add(key);
-            for (const path of byKey.get(key)?.paths || []) for (const requirement of path.requirements || []) visit(requirement.key); };
+            for (const path of byKey.get(key)?.paths || []) {
+                for (const requirement of path.requirements || []) visit(requirement.key);
+                for (const requirement of path.grossRequirements || []) visit(requirement.key);
+            } };
         roots.forEach(visit); return seen;
     };
     let kept = reachable();
