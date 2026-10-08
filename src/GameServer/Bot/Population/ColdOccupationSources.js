@@ -147,11 +147,22 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
 
 const EconomicTrip = require('../Economy/EconomicTrip');
 const { regionalTown, details: tripDetails } = EconomicTrip;
+function recipeIndex(board) {
+    initialise();
+    return require('../Economy/RecipeProductionIndex').forBoard(board, {
+        accept: recipe => !String(ItemIndex.find(Data.items, recipe.productId)?.template?.kind || '').startsWith('Other.Shot'),
+        fixedBuyer: recipe =>
+        !Production.buyersDisabled() && String(ItemIndex.find(Data.items, recipe.productId)?.template?.kind || '').startsWith('Other.Material')
+        && !!fixedBuy.get(Number(recipe.productId))?.length });
+}
 
-function* prepare(state, { board, timestamp, read = () => {}, stock = null, economy = null,
+function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
     if (!board || !Array.isArray(packet) || packet.length < 4 || !(packet[0] > 0) || !(packet[1] > 0)) return null;
+    const admission = recipeIndex(board);
+    const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
+    readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
     if (!reserved) return null;
     const preparedFeasibility = yield* feasibility(state, { board, read }, reserved);
@@ -294,10 +305,11 @@ function* prepare(state, { board, timestamp, read = () => {}, stock = null, econ
         }
     };
     return { context, feasibility: preparedFeasibility, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
+        unknownRecipes: () => admission.rowsFor(craftLevel),
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH,
+module.exports = { initialise, prepare, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],
     catalogCounts: () => ({ npcItems: npcByItem?.size || 0,
         npcQuotes: [...(npcByItem?.values() || [])].reduce((sum, rows) => sum + rows.length, 0),

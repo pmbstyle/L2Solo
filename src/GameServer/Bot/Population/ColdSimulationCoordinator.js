@@ -61,11 +61,6 @@ function yieldToLoop() {
     return new Promise((resolve) => setImmediate(resolve));
 }
 
-function directDropTargetNpcId(plan = {}) {
-    if (!plan || plan.status !== 'active') return 0;
-    return Number(plan.next?.npcId || plan.targetNpcId || 0);
-}
-
 function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, timestamp = Date.now()) {
     const travel = nextState?.stats?.travel;
     if (nextState?.activity !== 'traveling'
@@ -92,7 +87,8 @@ function admitSoloRouteTravelState(nextState, baseState, profiles, occupancy, ti
         };
     }
 
-    const { travel: _travel, ...stats } = nextState.stats || {};
+    const stats = { ...(nextState.stats || {}) };
+    delete stats.travel;
     return {
         state: SpotRiskPolicy.withCapacityBackoff({
             ...nextState,
@@ -1005,11 +1001,12 @@ class ColdSimulationCoordinator {
         const leaf = !party ? this.economyDecisions.activity(state) : null;
         const workshop = this.economyDecisions.workshopFor(state);
         const context = {
-            // ARCH-NOTE: recipe DB rows are hydrated on main; the worker gets
-            // <=8 numbers, never saved state or an extra recipe store.
+            // The public workshop is capped at 16 entries, not the recipe
+            // book. Hydrated knowledge travels as one catalogue bitset.
             ...(invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)
                 ? { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(
-                    require('../Economy/CraftWorkshopService').cachedRecipes(state.characterId)) } : {}),
+                    require('../Economy/CraftWorkshopService').cachedRecipes(state.characterId)),
+                    recipeBook: require('../Economy/CraftWorkshopService').bookFor(state.characterId) } : {}),
             ...(state.stats?.workshop?.entries?.length ? { workshop } : {}),
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,

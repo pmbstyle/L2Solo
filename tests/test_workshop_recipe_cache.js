@@ -14,6 +14,9 @@ Life.upsertState = async next => { writes++; current = next; return next; };
 (async () => {
     current = await Workshop.review(state);
     assert.equal(reads, 1); assert.equal(writes, 1);
+    const book = Workshop.bookFor(state.characterId);
+    assert.deepEqual(require('../src/GameServer/Bot/Economy/RecipeBookCodec').unpack(book), [{ recipeId: 20 }]);
+    assert.strictEqual(Workshop.bookFor(state.characterId), book, 'book encoding is reused with the knowledge cache');
     const first = current;
     assert.equal(await Workshop.review(current), first);
     assert.equal(reads, 1, 'a second review reads the recipe cache');
@@ -22,6 +25,7 @@ Life.upsertState = async next => { writes++; current = next; return next; };
     current = await Workshop.review(current);
     assert.equal(reads, 2); assert.equal(writes, 2);
     assert.equal(current.stats.workshop.entries.length, 2);
+    assert.notEqual(Workshop.bookFor(state.characterId), book, 'learning invalidates the encoded full book');
     known = []; Workshop.recipesChanged(state.characterId);
     current = await Workshop.review(current);
     assert.equal(reads, 3); assert.equal(writes, 3);
@@ -31,6 +35,12 @@ Life.upsertState = async next => { writes++; current = next; return next; };
     Workshop.remove(state.characterId);
     await Workshop.review(current);
     assert.equal(reads, 4, 'removal releases the per-bot cache');
+    known = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems()).filter(row => row.type === 'dwarven')
+        .map(row => row.recipeId);
+    Workshop.recipesChanged(state.characterId); await Workshop.review(current);
+    assert.equal(current.stats.workshop.entries.length, 16);
+    assert(require('../src/GameServer/Bot/Economy/RecipeBookCodec').unpack(Workshop.bookFor(state.characterId)).length > 16,
+        'public portfolio cap never truncates production knowledge');
     assert.equal(Database.isReady(), false);
     console.log('PASS workshop recipe cache, unchanged write suppression, learning and deletion');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {

@@ -8,7 +8,8 @@ const inputOwners = new Map();
 const ownerInputs = new Map();
 const crafters = new Map();
 const knownRecipes = new Map();
-function recipesChanged(id) { knownRecipes.delete(Number(id)); }
+const encodedRecipes = new Map();
+function recipesChanged(id) { knownRecipes.delete(Number(id)); encodedRecipes.delete(Number(id)); }
 let inputIds = null;
 function watchedInputs() {
     if (!inputIds) {
@@ -153,6 +154,12 @@ async function knownFor(id) {
     return known;
 }
 function cachedRecipes(id) { return knownRecipes.get(Number(id)) || []; }
+function bookFor(id) {
+    id = Number(id);
+    if (!knownRecipes.has(id)) return null;
+    if (!encodedRecipes.has(id)) encodedRecipes.set(id, require('./RecipeBookCodec').pack(knownRecipes.get(id)));
+    return encodedRecipes.get(id);
+}
 async function review(state) {
     init();
     const rules = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -243,4 +250,4 @@ async function publishDemand(state, recipe, productPrice, context) {
     }
     return state;
 }
-module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, review, find, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };
+module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, bookFor, review, find, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };

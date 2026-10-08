@@ -12,12 +12,13 @@ const CURSOR_FIELDS = ['stage', 'row', 'ingredient', 'quote', 'edge', 'recipe', 
 // native input, a 128 B numeric cursor and one completion callback, no graph.
 class ColdOccupationPlanner {
     constructor({ capture, create, step, result, ownCurrent = () => true, sameInput = (left, right) => left === right,
-        sourceToken, sourceScope = () => null,
+        sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
         onSlots = () => {}, publish = () => {}, now = () => performance.now(),
         schedule = callback => setImmediate(callback) } = {}) {
-        Object.assign(this, { capture, create, step, result, ownCurrent, sameInput, sourceToken, sourceScope, onSlots, publish, now, schedule });
+        Object.assign(this, { capture, create, step, result, ownCurrent, sameInput, sourceToken, sourceScope, sourceScopeToken, onSlots, publish, now, schedule });
         this.slots = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.scopes = new Map();
+        this.scopeDependencies = new Map();
         this.scheduled = false; this.stopped = false;
         this.stats = { portions: 0, units: 0, yields: 0, capacityDeferrals: 0, invalidations: 0,
             staleOwners: 0, unchanged: 0, maxUnitMs: 0, overBudgetUnits: 0, maxPortionUnits: 0 };
@@ -63,6 +64,13 @@ class ColdOccupationPlanner {
             }
         }
         entry.reads?.clear();
+        if (entry.admissionScope != null) {
+            const scope = entry.admissionScope;
+            const owners = this.scopeDependencies.get(scope);
+            owners?.delete(entry.id);
+            if (!owners?.size) this.scopeDependencies.delete(scope);
+        }
+        entry.admissionScope = null; entry.admissionToken = null;
     }
 
     read(entry, id) {
@@ -95,7 +103,31 @@ class ColdOccupationPlanner {
         }
         this.kick();
     }
-    scopeChanged(scope) { for (const id of this.scopes.get(scope) || []) this.sourceChanged(id); }
+    readScope(entry, scope) {
+        if (scope == null || entry.admissionScope === scope) return;
+        // Admission needs one scope. Do not turn discovery into a per-bot
+        // catalogue of category dependencies.
+        if (entry.admissionScope != null) throw Error('occupation_admission_scope_limit');
+        entry.admissionScope = scope; entry.admissionToken = this.sourceScopeToken(scope);
+        let owners = this.scopeDependencies.get(scope);
+        if (!owners) this.scopeDependencies.set(scope, owners = new Set());
+        owners.add(entry.id);
+    }
+    scopeChanged(scope) {
+        for (const id of this.scopes.get(scope) || []) this.sourceChanged(id);
+        const token = this.sourceScopeToken(scope);
+        for (const owner of this.scopeDependencies.get(scope) || []) {
+            const entry = this.slots.get(owner);
+            if (!entry || entry.admissionToken === token) continue;
+            entry.admissionToken = token;
+            const wasDirty = entry.dirty;
+            entry.dirty = true; entry.cursor[14] = 1;
+            if (!wasDirty) DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
+            if (!entry.done) this.ready.add(owner);
+            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+        }
+        this.kick();
+    }
     resetSources() {
         for (const entry of this.slots.values()) {
             if (entry.input.mode === 'wish') continue; // Route-only work has no board/market dependencies.
@@ -123,7 +155,7 @@ class ColdOccupationPlanner {
     initialise(entry) {
         this.removeDependencies(entry);
         entry.reads = new Map(); entry.dirty = false; entry.cursor.fill(0);
-        entry.captured = this.capture(entry.id, entry.input, id => this.read(entry, id));
+        entry.captured = this.capture(entry.id, entry.input, id => this.read(entry, id), scope => this.readScope(entry, scope));
         entry.work = this.create(entry.captured);
         entry.validation = null;
     }
@@ -145,9 +177,9 @@ class ColdOccupationPlanner {
         if (entry.validation) {
             const next = entry.validation.next();
             if (!next.done) {
-                const [id, token] = next.value;
+                const [id, token, scope] = next.value;
                 entry.cursor[3]++;
-                if (this.sourceToken(id) !== token) {
+                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id)) !== token) {
                     entry.dirty = true; entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
                 }
                 return;
@@ -161,7 +193,10 @@ class ColdOccupationPlanner {
             if (Number.isFinite(value)) entry.cursor[i] = value;
         }
         entry.cursor[15]++;
-        if (done) entry.validation = entry.reads.entries();
+        if (done) entry.validation = (function* () {
+            yield* entry.reads.entries();
+            if (entry.admissionScope != null) yield [entry.admissionScope, entry.admissionToken, true];
+        })();
     }
 
     portion() {
@@ -210,7 +245,7 @@ class ColdOccupationPlanner {
     stop() {
         this.stopped = true;
         for (const id of [...this.slots.keys(), ...this.waiting.keys()]) this.cancel(id);
-        this.ready.clear(); this.dependencies.clear(); this.scopes.clear();
+        this.ready.clear(); this.dependencies.clear(); this.scopes.clear(); this.scopeDependencies.clear();
     }
     snapshot() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, contexts: this.slots.size, pending: this.waiting.size,
         active: this.ready.size, dependencies: this.dependencies.size, cursorBytes: (this.slots.size + this.waiting.size) * 128 }; }

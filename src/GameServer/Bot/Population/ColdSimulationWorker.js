@@ -140,6 +140,7 @@ let nativeRouteSequence = 0;
 const occupationPlanner = new ColdOccupationPlanner({
     sourceToken: id => `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}`,
     sourceScope: id => MarketCounters.counterOf(id),
+    sourceScopeToken: scope => OccupationSources.recipeIndex(boardIndex).revision(scope),
     ownCurrent: (id, input) => !shuttingDown && (id < 0 ? routeRequests.get(-id) === input
         && (!input.native || kernel?.states.get(-id)?.state === input.sourceState)
         : kernel?.states.get(id)?.state === input.sourceState),
@@ -152,15 +153,16 @@ const occupationPlanner = new ColdOccupationPlanner({
         && left.state.simulation?.leaseId === right.state.simulation?.leaseId
         && left.state.inventory === right.state.inventory
         && left.state.stats?.workshop?.entries === right.state.stats?.workshop?.entries
-        && left.knownShotRecipes === right.knownShotRecipes && left.stock === right.stock
+        && left.knownShotRecipes === right.knownShotRecipes && left.recipeBook === right.recipeBook && left.stock === right.stock
         && left.sourceReady === right.sourceReady
         && left.routeKey === right.routeKey
         && left.mode === right.mode && left.buyOrderEscrow === right.buyOrderEscrow,
     onSlots: count => invoke('GameServer/Bot/Economy/EconomyContext').setPlanningContexts?.(count),
-    capture: (id, input, read) => {
-        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read,
-            knownRecipes: input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
-            recipesKnown: Array.isArray(input.state.stats?.workshop?.entries),
+    capture: (id, input, read, readScope) => {
+        const book = require('../Economy/RecipeBookCodec').unpack(input.recipeBook);
+        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read, readScope,
+            knownRecipes: book || input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
+            recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries),
             buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
             routeRows: input.routeRows || null, routeKey: input.routeKey, mode: input.mode || 'occupation' };
     },
@@ -168,7 +170,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (input.mode === 'wish') return yield* EconomicTrip.prepare(input.state);
         if (input.mode === 'occupation') {
             const eligible = invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(input.state);
-            if (!eligible || !input.recipesKnown || !input.knownRecipes.length) {
+            if (!eligible || !input.recipesKnown) {
                 const mask = input.board?.ownerLines(input.state.characterId)?.length
                     ? yield* OccupationSources.feasibility(input.state, input) : null;
                 return eligible && !input.recipesKnown ? { ...ColdEconomyDecision.unknownWorkshop(), feasibility: mask }
@@ -196,6 +198,11 @@ const occupationPlanner = new ColdOccupationPlanner({
                 const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
                     : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0] : null;
                 selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
+                    ...(value.learning ? { scroll: (() => {
+                        const purchase = value.basket.purchases.find(row => Number(row.selfId) === Number(value.recipe.recipeItemId));
+                        const quote = purchase?.lines?.[0]?.line;
+                        return quote ? [Number(quote.lineId), Number(quote.revision ?? quote.expectedRevision)] : [-1];
+                    })() } : {}),
                     ...(exit?.every(Number.isFinite) ? { exit } : {}),
                     ...(Number(input.stock?.itemId) === Number(value.recipe.productId)
                         ? { ownReserve: Number(input.stock?.target || 0) } : {}) } };
@@ -276,7 +283,7 @@ function occupationFor(state, timestamp, context = {}, mode = 'occupation') {
         return occupationPlanner.request(-id, input);
     }
     return occupationPlanner.request(id, { state, sourceState, timestamp, buyOrderEscrow: context.buyOrderEscrow || 0,
-        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null, economy,
+        knownShotRecipes: context.knownShotRecipes || [], recipeBook: context.recipeBook, stock: context.stock || null, economy,
         sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
 }
 function cancelRoute(characterId) {
@@ -306,6 +313,7 @@ function occupationOwnerChanged(id) {
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state,
         timestamp: Date.now(), buyOrderEscrow: entry.context.buyOrderEscrow || 0,
         knownShotRecipes: entry.context.knownShotRecipes || [],
+        recipeBook: entry.context.recipeBook,
         routeKey: EconomicTrip.key(entry.state),
         sourceReady: tables.ready('board') && tables.ready('market') }, { awaitResult: false });
 }
@@ -313,10 +321,14 @@ function changedItems(previous, next) {
     const ids = new Set();
     for (const row of previous || []) ids.add(Number(row.selfId));
     for (const row of next || []) ids.add(Number(row.selfId));
-    for (const id of ids) occupationPlanner.sourceChanged(id);
+    for (const id of ids) {
+        const admission = OccupationSources.recipeIndex(boardIndex);
+        for (const scope of admission.update(id)) occupationPlanner.scopeChanged(scope);
+        occupationPlanner.sourceChanged(id);
+    }
 }
 tables.watch('board', {
-    reset: () => { boardReplacing = true; boardFollower.reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
+    reset: () => { boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
     put: (key, row) => {
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);

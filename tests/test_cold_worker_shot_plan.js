@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts the optional worker telemetry bridge.
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('worker-shot-plan');
@@ -132,7 +133,7 @@ parentPort.on('message', message => {
             rows: catalog.slice(at, at + Protocol.MAX_BATCH), done: at + Protocol.MAX_BATCH >= catalog.length });
         const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
-        send('init', { config: { loopIntervalMs: 1000, economyDiagnostics: true, economyDiagnosticsBotIds: '710021' } }, 'init');
+        send('init', { config: { loopIntervalMs: 1000, developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '710021' } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
         // Finite funded demand and explicit finite inputs/scroll. E2 correctly
         // refuses to invent a missing recipe or ingredient source from a bid.
@@ -175,7 +176,7 @@ parentPort.on('message', message => {
             assert.deepEqual(await Database.fetchItems(id), before);
         } finally { invoke('GameServer/Bot/Economy/ColdMarketService').acquire = previousAcquire; }
         const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(selectedStep.recipeTarget);
-        let supplier = await Life.upsertState({ characterId: sellerId, accountName: 'bot_recipe_supplier', name: 'RecipeSupplier',
+        await Life.upsertState({ characterId: sellerId, accountName: 'bot_recipe_supplier', name: 'RecipeSupplier',
             level: 30, exp: Number(DataCache.experience[29]), phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
             adena: Number((await Database.fetchItems(sellerId)).find(row => row.selfId === 57)?.amount || 0), inventory: Life.inventorySummaryFromItems(await Database.fetchItems(sellerId)),
             loc: state.loc, vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 }, stats: { classId: 0 } }, 'shot_supplier_fixture');

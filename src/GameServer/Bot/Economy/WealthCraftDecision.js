@@ -106,8 +106,21 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
     }
     const ownedFor = id => ownStock.get(Number(id)) || null;
     let best = null;
-    for (const known of knownRecipes || []) {
-        const recipe = Recipes.resolveByRecipeId(known.recipeId);
+    const learned = new Set((knownRecipes || []).map(row => Number(row.recipeId ?? row)));
+    const seen = new Set();
+    function* candidates() {
+        yield* knownRecipes || [];
+        for (const key in state.inventory || {}) {
+            const recipe = Recipes.resolve(Number(state.inventory[key].selfId || key));
+            if (recipe && freeAmount(state, state.inventory[key], reserved) > 0) yield recipe;
+        }
+        yield* options.unknownRecipes?.() || [];
+    }
+    for (const known of candidates()) {
+        const id = Number(known.recipeId ?? known);
+        if (seen.has(id)) { yield 'recipe'; continue; }
+        seen.add(id);
+        const recipe = Recipes.resolveByRecipeId(id);
         yield 'recipe';
         if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
@@ -121,7 +134,16 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
                 yield 'quote';
             }
         }
+        const learning = !learned.has(id);
+        // Unknown shot acquisition already belongs to the shared shot route;
+        // retain that executor and its existing compact recipeTarget command.
+        if (learning && String(template.template?.kind || '').startsWith('Other.Shot')) continue;
+        if (learning && !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) continue;
         const recipeContext = { ...evaluationContext,
+            ...(learning ? { recipeInput: Number(recipe.recipeItemId),
+                recipeStock: ownStock.get(Number(recipe.recipeItemId)),
+                ...(options.preparePurchase ? { preparePurchase: (itemId, missing) => options.preparePurchase(state, itemId, missing,
+                    { npc: Number(itemId) !== Number(recipe.recipeItemId), cost: trip }) } : {}) } : {}),
             existingOutput: Number(ownStock.get(Number(recipe.productId))?.count || 0) + Number(outputStock.get(Number(recipe.productId)) || 0) };
         const candidate = yield* Policy.searchQuantity({ state: budgetState, recipe,
             planFor: (id, missing) => options.planPurchase?.(state, id, missing, { npc: true, cost: trip }),
@@ -131,7 +153,7 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         const r = cash > 0 ? candidate.valueHours / cash : Infinity;
         const score = mode === 'occupation' ? candidate.incomePerHour : candidate.valueHours;
         if (cash <= PurchaseFunding.spendable(state, 0, { r }) && score > 0
-            && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = { ...candidate, template, r };
+            && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = { ...candidate, template, r, learning };
         yield 'funding';
     }
     return best;

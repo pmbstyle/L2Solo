@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts optional postcommit error counters.
 const assert = require('node:assert/strict');
 const { createWorld, Database, DataCache } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');

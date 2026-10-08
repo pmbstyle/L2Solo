@@ -10,9 +10,6 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const StaticBuyerService = invoke('GameServer/Bot/Economy/StaticBuyerService');
-const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
-const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -23,7 +20,7 @@ const inFlight = new Set();
 // Spending rechecks a single worker-selected native batch/exit. It uses the
 // current scalar purse and at most five indexed input quotes; it never builds
 // wishes, a catalogue scan, or a new quantity optimisation on main.
-function recheck(state, step = {}) {
+function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.characterId)) {
     const recipe = Recipes.resolveByRecipeId(Number(step.recipeId)), batches = Number(step.batches || 1);
     const packet = state.stats?.money;
     if (!recipe || !CraftShopService.canCraft(state, recipe) || !Number.isSafeInteger(batches)
@@ -35,6 +32,21 @@ function recheck(state, step = {}) {
     const context = { hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
         mpPerHour: Number(regen.mp) * 1200, fixedBatches: batches };
     const trip = Profit.tripFor(state, context); context.trip = trip;
+    const learning = !(knownRecipes || []).some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId));
+    let scrollQuote = null;
+    if (learning) {
+        if (!Array.isArray(step.scroll) || !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) return null;
+        const owned = require('./WealthCraftDecision').freeAmount(state, state.inventory?.[recipe.recipeItemId] || {});
+        if (!owned) {
+            if (step.scroll.length !== 2) return null;
+            scrollQuote = board.list(recipe.recipeItemId, AfkTrade.SELL).slice(0, 5).find(row =>
+                Number(row.lineId) === Number(step.scroll[0]) && Number(row.revision) === Number(step.scroll[1])
+                && Number(row.ownerId) !== Number(state.characterId) && Number(row.count) >= 1
+                && Number(row.price) > 0 && !Number(row.enchant || 0));
+            if (!scrollQuote) return null;
+        }
+        context.recipeInput = Number(recipe.recipeItemId);
+    }
     let exit = null;
     if (Array.isArray(step.exit) && step.exit.length === 4) {
         const [recordId, lineId, price, revision] = step.exit.map(Number);
@@ -89,6 +101,13 @@ function recheck(state, step = {}) {
             unitValue: value };
     };
     const planFor = (id, amount) => {
+        if (learning && Number(id) === Number(recipe.recipeItemId)) {
+            if (!scrollQuote || amount !== 1) return null;
+            const travel = trip(scrollQuote.town);
+            return { town: scrollQuote.town, units: 1, whole: true, cost: Number(scrollQuote.price),
+                landed: Number(scrollQuote.price) + travel, tripDetails: trip.details?.(scrollQuote.town),
+                lines: [{ line: scrollQuote, count: 1, price: Number(scrollQuote.price) }], npc: 0 };
+        }
         const groups = new Map(), lines = board.list(id, AfkTrade.SELL);
         for (let at = 0; at < Math.min(5, lines.length); at++) {
             const line = lines[at];
@@ -114,11 +133,12 @@ function recheck(state, step = {}) {
         }
         return best;
     };
+    if (learning) context.recipeStock = ownedFor(Number(recipe.recipeItemId));
     const candidate = Policy.evaluateBasket({ state, recipe, batches, planFor, exit, ownedFor, context });
     if (!candidate || !(candidate.valueHours > 0)) return null;
     const cash = candidate.basket.cashCost + candidate.basket.actualCashFees;
     const r = cash > 0 ? candidate.valueHours / cash : Infinity;
-    return cash <= PurchaseFunding.spendable(state, 0, { r }) ? { ...candidate, template, r } : null;
+    return cash <= PurchaseFunding.spendable(state, 0, { r }) ? { ...candidate, template, r, learning } : null;
 }
 
 function eligible(state) {
@@ -145,16 +165,6 @@ function eligible(state) {
 
 function staticExits(recipe, template) {
     return require('./WealthCraftDecision').staticExits(recipe, template);
-}
-
-// The buyers of a craft: the buy ads on the board, each answered in its town
-// (its trip counts against the profit, E45), and the static buyers (until
-// step 3.6).
-function exitsFor(state, recipe, template, trip) {
-    const dynamic = AfkTrade.offers(recipe.productId, AfkTrade.BUY, { characterId: state.characterId })
-        .map((offer) => ({ type: 'afk', price: Number(offer.price), count: Number(offer.count), offer,
-            town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false }));
-    return [...dynamic, ...staticExits(recipe, template)].sort((a, b) => b.price - a.price);
 }
 
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
@@ -214,10 +224,16 @@ async function execute(state, opportunity) {
     if (!current) return { state, crafted: false, reason: 'state_write_rejected' };
     let spent = 0;
     try {
+        // Knowledge is authoritative in the book, not the capped public
+        // workshop. Acquired knowledge survives a later buyer/material loss.
+        const knowledge = await acquireRecipe(current, opportunity);
+        current = knowledge.state; spent += knowledge.spent;
+        if (!knowledge.ready) return { state: current, crafted: false, reason: knowledge.reason, spent };
         // Each input is bought in its town (the one purchase path): here, or
         // the bot goes there and the craft waits for the next look.
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
-        const inputs = opportunity.basket.purchases.map(purchase => ({ selfId: purchase.selfId,
+        const inputs = opportunity.basket.purchases.filter(purchase => Number(purchase.selfId) !== Number(recipe.recipeItemId))
+            .map(purchase => ({ selfId: purchase.selfId,
             amount: recipe.materials.filter(row => Number(row.selfId) === Number(purchase.selfId))
                 .reduce((sum, row) => sum + Number(row.amount) * batches, 0),
             options: { towns: [purchase.town], npc: Number(purchase.npc || 0) > 0, purpose: 'wealth_craft',
@@ -374,7 +390,8 @@ async function tryCraft(state) {
         const decision = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state);
         const step = require('./ShotCraftPolicy').unpackStep(decision?.shot);
         if (!step?.wealth) return { state, crafted: false, reason: 'no_profit' };
-        const opportunity = recheck(state, step.wealth);
+        const book = await Database.fetchCharacterRecipes(characterId);
+        const opportunity = recheck(state, step.wealth, book);
         if (!opportunity) return { state, crafted: false, reason: 'no_profit' };
         return await execute(state, opportunity);
     } catch (error) {
@@ -393,4 +410,28 @@ function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {})
     return opportunity ? [{ ...opportunity, value: opportunity.expectedProfit, activity: 'crafting' }] : [];
 }
 
-module.exports = { eligible, chooseOpportunity, opportunities, tryCraft, execute, recheck };
+async function acquireRecipe(state, opportunity) {
+    const recipe = opportunity.recipe;
+    const knows = async () => (await Database.fetchCharacterRecipes(state.characterId))
+        .some(row => Number(row.recipeId) === Number(recipe.recipeId));
+    if (await knows()) return { state, ready: true, spent: 0 };
+    let current = state, spent = 0;
+    const free = () => require('./WealthCraftDecision').freeAmount(current,
+        current.inventory?.[recipe.recipeItemId] || {});
+    if (!free()) {
+        const purchase = opportunity.basket.purchases.find(row => Number(row.selfId) === Number(recipe.recipeItemId));
+        if (!purchase || purchase.count !== 1 || !purchase.lines?.length) return { state, ready: false, spent, reason: 'recipe_unavailable' };
+        const result = await invoke('GameServer/Bot/Economy/ColdMarketService').acquire(current, recipe.recipeItemId, 1, {
+            towns: [purchase.town], npc: false, purpose: 'recipe', r: opportunity.r,
+            money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }),
+            maxPrice: Number(purchase.cost), quoteDepth: 5, sourcePlan: purchase
+        });
+        current = result.state || current; spent += Number(result.spent || 0);
+        if (result.hot || current.phase !== 'cold') return { state: current, ready: false, spent, reason: 'bot_went_hot' };
+        if (!free()) return { state: current, ready: false, spent,
+            reason: result.traveling || current.stats?.marketErrand ? 'buying_trip' : 'recipe_unavailable' };
+    }
+    current = await LifeState.learnCraftableRecipes(current, { recipeIds: [Number(recipe.recipeId)] }) || current;
+    return { state: current, ready: await knows(), spent, reason: 'recipe_not_learned' };
+}
+module.exports = { eligible, chooseOpportunity, opportunities, tryCraft, execute, recheck, acquireRecipe };

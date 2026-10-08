@@ -1,7 +1,6 @@
 // Native shot decisions, shared by town reviews and the cold worker.
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const StaticMerchantPricing = require('./StaticMerchantPricing');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Profit = require('./CraftProfitPolicy');
 const Basket = require('./WealthCraftPolicy');
@@ -467,6 +466,10 @@ function packStep(step) {
         if (action.exit || action.gear || action.ownReserve) row.push(sparseExit(action.exit));
         if (action.gear || action.ownReserve) row.push(sparseGear(action.gear));
         if (action.ownReserve) row.push(Number(action.ownReserve));
+        if (action.scroll) {
+            while (row.length < 5) row.push(null);
+            row.push(action.scroll.map(Number));
+        }
         return row;
     };
     if (step?.craft) return { craft: tuple(step.craft) };
@@ -477,6 +480,7 @@ function packStep(step) {
 function unpackStep(step) {
     const action = row => {
         const result = { recipeId: Number(row[0]), batches: Number(row[1]) };
+        if (Array.isArray(row[5])) result.scroll = row[5].map(Number);
         if (Array.isArray(row[2])) {
             const exit = row[2], gear = row[3];
             if (exit.length === 2) result.exit = exit[0] > 0 ? [null, Number(exit[0]), null, Number(exit[1])]
@@ -488,7 +492,7 @@ function unpackStep(step) {
             if (row[4] > 0) result.ownReserve = Number(row[4]);
         } else {
             // Existing durable compact packets retain their former six fields.
-            if (row.length >= 6 && (row[2] !== 0 || row[3] > 0)) result.exit = row.slice(2, 6).map(Number);
+            if (row.length >= 6 && !Array.isArray(row[5]) && (row[2] !== 0 || row[3] > 0)) result.exit = row.slice(2, 6).map(Number);
             if (row.length >= 12 && row[6] > 0) result.gear = row.slice(6, 12).map(Number);
             if (row.length === 13 && row[12] > 0) result.ownReserve = Number(row[12]);
         }

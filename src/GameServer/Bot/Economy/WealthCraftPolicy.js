@@ -20,6 +20,10 @@ function requirements(recipe, batches = 1) {
 }
 function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, context = {}) {
     const required = new Map();
+    // Learning consumes one scroll for this whole decision, never one per
+    // manufactured batch. Its purchase joins the same town/fee allocation.
+    const entry = Number(context.recipeInput || 0);
+    if (entry > 0) required.set(entry, 1);
     for (const row of recipe?.materials || []) {
         const id = Number(row.selfId), amount = Number(row.amount);
         if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(amount) || amount <= 0
@@ -32,7 +36,7 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
         extraMp = 0, residualValue = 0, unknownTrip = false, repeatableInputs = true;
     for (const [selfId, needed] of required) {
         let missing = needed;
-        const stock = ownedFor(selfId) || {};
+        const stock = (selfId === entry ? context.recipeStock : ownedFor(selfId)) || {};
         const available = count(Math.max(0, Number(stock.count ?? 0) - Number(allocated.get(selfId) || 0)));
         if (!Number.isFinite(available)) return null;
         const ownCount = Math.min(missing, available);
@@ -85,6 +89,7 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
         } else return null;
         yield 'trip';
     }
+    if (entry) processingHours += Number(context.learningHours || 0);
     const cost = cashCost + ownedValue + tripEquivalent;
     return Number.isFinite(cost) ? { purchases, owned, cashCost, ownedValue, actualCashFees, travelHours,
         processingHours, extraMp, residualValue, tripTowns: trips, unknownTrip, repeatableInputs, cost: Math.ceil(cost), batches } : null;
