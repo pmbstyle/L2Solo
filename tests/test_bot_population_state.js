@@ -9,6 +9,7 @@ delete process.env.L2NODE_SHARED_CONFIG_FILE;
 fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${directory}/world.sqlite\nhistoryPath=${directory}/history.sqlite\n`);
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const Database = invoke('Database');
 Database.init();
@@ -570,7 +571,16 @@ try {
         }, 'summary_probe').then(() => {
             const summary = BotLifeState.coldDueSummary(1000);
             assert(summary.due >= 1, 'cold due telemetry must include stale hunting plans before their persisted deadline');
-        })).then(() => {
+        })).then(async () => {
+            const config = invoke('GameServer/Bot/Population/PopulationConfig');
+            config.developerDiagnostics = false;
+            const diagnosticOptions = {};
+            for (const field of ['onTiming', 'onStage']) Object.defineProperty(diagnosticOptions, field,
+                { get() { throw Error('optional lifecycle timing callback read off'); } });
+            try {
+                await BotLifeState.marketGoalCandidates(5, 123458, diagnosticOptions);
+                await BotLifeState.staleGoalCandidates(5, 123458, diagnosticOptions);
+            } finally { config.developerDiagnostics = true; }
             console.log('Bot population state checks passed');
         });
     }).catch((err) => {

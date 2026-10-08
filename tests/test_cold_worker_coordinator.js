@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional worker and queue counters.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');

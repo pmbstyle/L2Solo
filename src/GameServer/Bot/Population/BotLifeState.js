@@ -10,6 +10,7 @@ const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const Consumption = require('../Economy/ConsumptionDiagnostics');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -489,6 +490,7 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
 }
 
 function compactResolveDebug(debug = {}) {
+    if (Config.developerDiagnostics !== true) return null;
     return {
         route: debug.route || null,
         partyId: debug.partyId || null,
@@ -2525,6 +2527,7 @@ const BotLifeState = {
         // lookup or extra inventory query to the simulation tick. shotActions
         // counts the shots this bot's own casts, skills and landed normal
         // attacks loaded from this stock (BackgroundResolver.coldShotSupply).
+        const consumeFacts = Config.developerDiagnostics === true ? [] : null;
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
             const shot = invoke('GameServer/Inventory/ShotStock').planForState({ ...state, inventory });
@@ -2532,6 +2535,8 @@ const BotLifeState = {
             if (stock && Number(stock.amount || 0) > 0) {
                 inventory[String(shot.selfId)] = { ...stock,
                     amount: Math.max(0, Number(stock.amount) - shotActions * shot.perAction) };
+                if (consumeFacts) Consumption.fact(consumeFacts, shot.selfId, Number(stock.amount),
+                    inventory[String(shot.selfId)].amount, 0);
             }
         }
         // Cold combat drinks healing potions from the same stock. The fight
@@ -2541,8 +2546,11 @@ const BotLifeState = {
             const stock = inventory[String(selfId)];
             if (!stock || Number(stock.amount || 0) <= 0) continue;
             inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - Number(count || 0)) };
+            if (consumeFacts) Consumption.fact(consumeFacts, selfId, Number(stock.amount),
+                inventory[String(selfId)].amount, 1);
         }
 
+        if (consumeFacts) Consumption.attach(result, consumeFacts);
         const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
             ...state,
             level,
@@ -2742,6 +2750,7 @@ const BotLifeState = {
                                     || Number(result.materialize?.adena || 0) > 0
                                     || (result.events || []).length > 0
                             });
+                            if (consumeFacts) Consumption.publish(snapshot.characterId, consumeFacts, { source: 'cold_commit', commandId: options.workerAdmission?.commandId, revision: state.simulation?.revision });
                             return snapshot;
                         };
                         return nativeWriteOptions ? Database.publishBotResolvedState(characterId, nativeWriteOptions, publish) : publish();
@@ -2838,7 +2847,7 @@ const BotLifeState = {
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.characterId || 0)
             ],
-            { read: true, onTiming: options.onTiming }
+            { read: true, onTiming: Config.developerDiagnostics === true ? options.onTiming : undefined }
         ], 'bot-life:market-goal-candidates');
         return fetchAfter(marketGoalCursor).then(async (rows) => {
             if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
@@ -2852,7 +2861,7 @@ const BotLifeState = {
                     characterId: Math.max(0, Number(last.characterId || 0))
                 };
             }
-            const startedAt = now();
+            const startedAt = Config.developerDiagnostics === true ? now() : null;
             const states = rows.map((row) => {
                 const state = normalize(row);
                 if (row.currentGoalJson) {
@@ -2865,7 +2874,7 @@ const BotLifeState = {
                 cache.set(state.characterId, state);
                 return state;
             });
-            options.onStage?.('hydrate', now() - startedAt);
+            if (Config.developerDiagnostics === true) options.onStage?.('hydrate', now() - startedAt);
             return states;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
@@ -3056,9 +3065,9 @@ const BotLifeState = {
             INNER JOIN bot_goal_state goals USING (characterId)
             ORDER BY goals.updatedAt ASC, states.updatedAt ASC`,
             [Number(timestamp) || now()],
-            { read: true, onTiming: options.onTiming }
+            { read: true, onTiming: Config.developerDiagnostics === true ? options.onTiming : undefined }
         ], 'bot-life:stale-goal-candidates').then((rows) => {
-            const startedAt = now();
+            const startedAt = Config.developerDiagnostics === true ? now() : null;
             const states = rows.map((row) => {
                 const state = normalize(row);
                 invoke('GameServer/Bot/Goals/GoalState').prime(
@@ -3069,7 +3078,7 @@ const BotLifeState = {
                 cache.set(state.characterId, state);
                 return state;
             });
-            options.onStage?.('hydrate', now() - startedAt);
+            if (Config.developerDiagnostics === true) options.onStage?.('hydrate', now() - startedAt);
             return states;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch stale goal candidates: %s', err.message);
@@ -3661,6 +3670,7 @@ const BotLifeState = {
     },
 
     targetCombatSummary() {
+        if (Config.developerDiagnostics !== true) return null;
         return Array.from(cache.values()).reduce((summary, state) => {
             const targets = state.stats?.targetCombat?.populationTargets || {};
             const values = Object.values(targets);
