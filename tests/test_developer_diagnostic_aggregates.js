@@ -41,3 +41,13 @@ workerWire.push({ owner: 64, phase: 'wire_test' });
 assert.equal(workerWire.stats().sentBytes, Buffer.byteLength(JSON.stringify(actualMessage)));
 workerWire.ack(actualMessage.id, 1); assert.equal(workerWire.stats().destination, 'main_admission');
 assert.equal(workerWire.stats().acceptedByMain, 1); assert.equal(workerWire.stats().written, undefined);
+
+const failedTransport = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' } });
+failedTransport.connect(() => false); failedTransport.push({ owner: 64, phase: 'transport_refused' });
+assert.equal(failedTransport.stats().attemptedBatches, 1); assert.equal(failedTransport.stats().batches, 0);
+assert.equal(failedTransport.stats().sent, 0); assert.equal(failedTransport.stats().sentBytes, 0);
+assert.equal(failedTransport.stats().drops.transport, 1);
+const rejectedByMain = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' }, thread: 'worker' });
+let rejectedId; rejectedByMain.connect(batch => { rejectedId = batch.id; return true; });
+rejectedByMain.push({ owner: 64, phase: 'main_refused' }); rejectedByMain.ack(rejectedId, 0);
+assert.equal(rejectedByMain.stats().drops.admission, 1); assert.equal(rejectedByMain.stats().drops.writer, 0);

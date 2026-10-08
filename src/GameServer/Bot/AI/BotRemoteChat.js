@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -568,7 +569,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     'chain'
                 );
                 if (result?.providerFailure) {
-                    state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                    if (DiagnosticConfig.developerDiagnostics) state.lastRemoteChatTelemetry = result.llmTelemetry || null;
                     const failed = {
                         ...fallback,
                         providerOutcome: result.providerOutcome,

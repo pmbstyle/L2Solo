@@ -10,6 +10,8 @@ fs.writeFileSync(config, fs.readFileSync(path.join(__dirname, '../config/default
 process.env.L2NODE_CONFIG_FILE = config;
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+const DiagnosticConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+DiagnosticConfig.developerDiagnostics = true;
 const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -98,6 +100,10 @@ Events.raiseDecision(fallback, 'revived');
 Hunting.economyForHunt(fallback, actor);
 assert.deepEqual(Object.keys(fallback.decisionStats).sort(), ['activityLeaf', 'decisionSeq']);
 assert(Events.summary(1, Date.now() + 60000).total >= 6);
+DiagnosticConfig.developerDiagnostics = false;
+const observedClock = Date.now;
+Date.now = () => { throw Error('optional summary clock off'); };
+try { assert.deepEqual(Events.summary(1), { enabled: false }); } finally { Date.now = observedClock; }
 assert.equal(invoke('Database').isReady(), false);
 assert.deepEqual(fs.readdirSync(dir), ['config.ini']);
 console.log('PASS gap money edge / 1,000 hot ticks / level / town / weight / bag / no SQL');

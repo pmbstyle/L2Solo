@@ -26,6 +26,22 @@ async function run() {
         assert.equal(clocks, 3, 'start, duration and diagnostic record timestamp only on');
         assert.equal(on.telemetry.rawContent, '{"reply":"hello"}');
         assert.equal(on.telemetry.latencyMs, 0);
+        const requestMessages = [];
+        const repair = async (enabled) => {
+            Config.developerDiagnostics = enabled; Gateway.resetCircuit(); let attempt = 0;
+            Gateway.setTransport(async (_url, init) => {
+                requestMessages.push(JSON.parse(init.body).messages);
+                return { ok: true, json: async () => ({ choices: [{ message: { content: ++attempt === 1
+                    ? '{invalid json' : '{"reply":"repaired"}' } }], usage: { prompt_tokens: 3, total_tokens: 3 } }) };
+            });
+            return Gateway.request({ ...spec, repairSchema: true, responseSchema: { name: 'fixture', schema: {
+                type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] } } });
+        };
+        const repairedOff = await repair(false), repairedOn = await repair(true);
+        assert.equal(repairedOff.ok, true); assert.equal(repairedOff.telemetry.attempts, 2);
+        assert.equal(repairedOff.telemetry.initialRawContent, undefined);
+        assert.deepEqual(repairedOff.data, repairedOn.data); assert.deepEqual(repairedOff.usage, repairedOn.usage);
+        assert.deepEqual(requestMessages.slice(0, 2), requestMessages.slice(2), 'repair prompts identical on/off');
     } finally { Date.now = originalNow; Gateway.resetTransport(); Gateway.resetMetrics(); }
     console.log('OpenRouter diagnostics: no off clocks/raw copy/metric snapshot; identity, usage and output preserved');
 }

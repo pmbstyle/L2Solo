@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
@@ -689,6 +690,7 @@ async function applyDecision(session, decision, visiblePlayers, requestContext) 
 }
 
 function rememberTelemetry(session, result) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     const telemetry = result?.llmTelemetry || result?.telemetry;
     if (!telemetry) return;
 
@@ -725,7 +727,7 @@ function recordInferenceEvent(session, event, result, requestContext = null, ext
             action,
             reason: decisionReason,
             confidence: Number.isFinite(Number(result?.confidence)) ? Number(result.confidence) : null,
-            latencyMs: Number(telemetry.latencyMs || 0),
+            ...(DiagnosticConfig.developerDiagnostics ? { latencyMs: Number(telemetry.latencyMs || 0) } : {}),
             providerStatus: telemetry.status || null,
             usage: {
                 promptTokens: Number(usage.promptTokens || 0),
@@ -954,7 +956,7 @@ const BotBrain = {
             model: cfg.model,
             meta: { source: requestContext?.source || event }
         }).then(() => BotLLMTurnStore.markStarted({ turnId })).catch(() => false);
-        if (requestContext?.assembledContext?.telemetry) {
+        if (DiagnosticConfig.developerDiagnostics && requestContext?.assembledContext?.telemetry) {
             session.lastBrainContextTelemetry = {
                 ...requestContext.assembledContext.telemetry,
                 estimatedTokens: requestContext.assembledContext.estimatedTokens,

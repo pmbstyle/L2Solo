@@ -37,7 +37,9 @@ async function run() {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const originalInterval = global.setInterval;
     global.setInterval = () => { throw new Error('diagnostic timer off'); };
-    try { BotManager.startStatusLogMonitor(); } finally { global.setInterval = originalInterval; }
+    try {
+        BotManager.startStatusLogMonitor();
+    } finally { global.setInterval = originalInterval; }
     const Observer = invoke('WorldObserver/WorldObserverServer');
     const originalMemory = process.memoryUsage;
     process.memoryUsage = () => { throw new Error('diagnostic memory query off'); };
@@ -45,6 +47,22 @@ async function run() {
         assert.strictEqual(Observer.worldStatus().runtime, null);
         assert.deepStrictEqual(Observer.snapshotCacheStats(), { enabled: false });
     } finally { process.memoryUsage = originalMemory; }
+    const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
+    const World = invoke('GameServer/World/World');
+    const oldNpcs = World.fetchNpcsInRadius;
+    World.fetchNpcsInRadius = () => [];
+    const statusActor = new Proxy({ state: { fetchDead: () => false, fetchTowards: () => false },
+        fetchName: () => 'diagnostic fixture', fetchSkills: () => [], fetchLevel: () => 1,
+        fetchMaxHp: () => 100, fetchMaxMp: () => 100 }, {
+        get(target, key) { return key in target ? target[key] : String(key).startsWith('fetch') ? () => 0 : undefined; }
+    });
+    const statusSession = { actor: statusActor, accountId: 'bot_fixture' };
+    for (const field of ['lastBrainTelemetry', 'lastBrainContextTelemetry'])
+        Object.defineProperty(statusSession, field, { get() { throw Error('LLM diagnostic read off'); } });
+    const oldTracingStatus = Tracing.status;
+    Tracing.status = () => { throw Error('LLM SDK status read off'); };
+    try { assert.deepStrictEqual(BotStatus.getStatus(statusSession).llm, { enabled: false }); }
+    finally { World.fetchNpcsInRadius = oldNpcs; Tracing.status = oldTracingStatus; }
     Config.developerDiagnostics = true;
     assert.strictEqual(cancelSkill(42).__packetTrace, 'actor=42');
     const onRoute = TownPathfinder.routeWithSession({}, null, origin, target);

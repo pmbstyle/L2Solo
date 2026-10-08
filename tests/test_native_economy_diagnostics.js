@@ -57,6 +57,7 @@ async function run() {
     const replayRow = rows.find(row => row.phase === 'native_replay' && row.commandId === id && row.reason === 'saved_receipt');
     assert(replayRow); assert.equal(replayRow.actual, 0); assert.equal(replayRow.spent, 0);
     assert.equal(replayRow.receiptUnits, 6); assert.equal(replayRow.receiptSpent, 648);
+
     const current = Commit.acceptRow(on.result.coldLifeRow);
     const before = Native.amount(await Database.fetchItems(128), 57);
     const rejected = await Commit.admit(current, Commit.KINDS.npcBuy);
@@ -72,4 +73,4 @@ async function run() {
     await Database.close(); Diagnostics.stop();
     console.log('Native diagnostics: off no hooks, canonical quantities unchanged, funding/correlation, replay and rollback passed');
 }
-run().catch(async error => { console.error(error); try { await Database.close(); } catch {} process.exitCode = 1; }).finally(() => fs.rmSync(fixture.directory, { recursive: true, force: true }));
+run().catch(async error => { console.error(error); try { await Database.close(); } catch { /* Preserve the original test failure. */ } process.exitCode = 1; }).finally(() => fs.rmSync(fixture.directory, { recursive: true, force: true }));

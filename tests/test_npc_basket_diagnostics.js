@@ -118,8 +118,8 @@ async function scenarios() {
     await assert.rejects(Basket.purchase(rollbackState, { seller, lines: [{ ...lines[0], goal: {
         expectedGoal: rollbackGoal.current, updatedAt: rollbackGoal.updatedAt, units: 100 } }] }), /diagnostic rollback/);
     const rolled = rows.filter(row => row.owner === 9604 && row.outcome === 'rolled_back');
-    assert(rolled.length); assert(rolled.every(row => row.actual === 0 && row.spent === 0 && row.goalApplied === 0));
-    assert(rolled.some(row => row.phase === 'npc_goal' && row.reason === 'diagnostic rollback'));
+    assert(rolled.length); assert(rolled.every(row => row.actual === 0 && row.spent === 0 && (row.goalApplied === undefined || row.goalApplied === 0)));
+    assert(rolled.some(row => row.phase === 'npc_goal' && row.reason === 'diagnostic rollback' && row.goalApplied === 0));
     assert.equal(await amount(9604, 57), 5000); assert.equal(await amount(9604, 2509), 0);
     assert.equal(JSON.parse((await read('SELECT goalJson FROM bot_goal_state WHERE characterId=9604'))[0].goalJson).target.amount, 120);
     const hotState = await seed(9605, 5000, {}, 'hot');

@@ -1681,6 +1681,11 @@ class ColdSimulationCoordinator {
     }
 
     async afterCommit(entry, committed = {}) {
+        if (Config.developerDiagnostics === true) require('../Economy/ConsumptionDiagnostics').publish(
+            entry.nextState.characterId, entry.proposal.result?.consumptionDiagnostics, {
+                source: 'cold_commit', commandId: entry.proposal.commandId, proposalId: entry.proposal.proposalId,
+                revision: committed.revision ?? committed.row?.simulationRevision ?? entry.proposal.token?.revision, sequence: entry.proposal.sequence
+            });
         const id = entry.nextState.characterId;
         const source = entry.proposal[PROPOSAL_SOURCE];
         const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);

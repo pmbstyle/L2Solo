@@ -130,7 +130,10 @@ function buyOffer(state, offer, options = {}) {
             const buyer = done.state || state;
             const units = Number(trade.amount ?? trade.units ?? 0), spent = Number(trade.totalPrice ?? trade.spent ?? 0);
             const diagnostics = require('./EconomyDiagnostics');
-            if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+            if (diagnostics.enabled(state.characterId)) diagnostics.push(trade.replayed ? { owner: state.characterId,
+                phase: 'purchase_receipt', reason: 'replayed', actual: 0, spent: 0, receiptUnits: units, receiptSpent: spent,
+                commandId: trade.economyCommand?.[0], sequence: trade.economyCommand?.[2],
+                nativeId: Number(trade.eventId ?? trade.nativeId) } : { owner: state.characterId,
                 phase: 'native_purchase', trigger: 'public_quote', reason: trade.replayed ? 'replayed' : 'committed',
                 source: offer.sourceType, item: Number(offer.selfId), actual: units, spent, quote: Number(offer.price),
                 town: offer.town, recordId: Number(offer.recordId), lineId: Number(offer.lineId),
@@ -404,6 +407,7 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
     if (!purchase?.ok) return null;
 
     return purchase;
+
 }
 
 // The bot's errand while it still stands (ERRAND_MS), else null.

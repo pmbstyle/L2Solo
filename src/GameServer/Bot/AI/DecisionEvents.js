@@ -1,6 +1,7 @@
 'use strict';
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const reasons = { town: 0, revived: 0, level: 0, weight: 0, bag: 0, money: 0 };
-let hotEconomyBuilds = 0, reportedBuilds = 0, reportedAt = Date.now();
+let hotEconomyBuilds = 0, reportedBuilds = 0, reportedAt = 0;
 function statsFor(session) {
     return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
 }
@@ -11,7 +12,7 @@ function raiseDecision(session, reason) {
     stats.activityLeaf = 0;
     // ARCH-NOTE: visit ends share the arrival clock until a single native arrival event exists.
     if (reason === 'town') stats.visitEvery = require('../Economy/TownVisitInterval').arrived(stats);
-    reasons[reason]++;
+    if (DiagnosticConfig.developerDiagnostics) reasons[reason]++;
     return stats.decisionSeq;
 }
 function marksFor(session, actor) {
@@ -49,13 +50,18 @@ function hold(session, actor, context) {
     session.heldEconomy = { network: { activity }, statsPacket: context.statsPacket,
         riskWeight: context.riskWeight };
     session.decisionMarks = marksFor(session, actor);
-    hotEconomyBuilds++;
+    if (DiagnosticConfig.developerDiagnostics) {
+        if (!reportedAt) reportedAt = Date.now();
+        hotEconomyBuilds++;
+    }
     return session.heldEconomy;
 }
 function held(session) {
     return session.economySeq === Number(statsFor(session).decisionSeq || 0) ? session.heldEconomy : null;
 }
-function summary(hotHunters = 0, timestamp = Date.now()) {
+function summary(hotHunters = 0, timestamp) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
+    timestamp ??= Date.now();
     const builds = hotEconomyBuilds - reportedBuilds;
     const perMinute = builds * 60000 / Math.max(1, timestamp - reportedAt) / Math.max(1, hotHunters);
     reportedBuilds = hotEconomyBuilds; reportedAt = timestamp;

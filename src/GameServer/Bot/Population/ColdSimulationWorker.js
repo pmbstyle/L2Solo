@@ -486,7 +486,10 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
 function send(type, payload = {}, msgId = null, payloadBytes = null) {
     const message = Protocol.envelope(type, epoch, payload, msgId);
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
-    const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
+    let valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
+    if (!valid.ok && economyDiagnostics.omitAggregatesOnOverflow(message, valid.reason)) {
+        valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
+    }
     if (!valid.ok) {
         if (type !== 'fault') {
             parentPort.postMessage(Protocol.envelope('fault', epoch, {
@@ -525,8 +528,10 @@ function startKernel(config = {}) {
     if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
         if (shuttingDown) return false;
         const message = { type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped };
+        const wireBytes = Buffer.byteLength(JSON.stringify(message));
+        if (wireBytes > 16384) return false;
         parentPort.postMessage(message);
-        return Buffer.byteLength(JSON.stringify(message));
+        return wireBytes;
     });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);

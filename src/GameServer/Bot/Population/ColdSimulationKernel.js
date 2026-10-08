@@ -340,7 +340,9 @@ function compactProposal(proposal = {}, includeInventory = true) {
         result: {
             events: Array.isArray(result.events) ? result.events : [],
             ...(result.memoryEvents ? { memoryEvents: result.memoryEvents } : {}),
-            debug: result.debug || {}
+            debug: result.debug || {},
+            ...(DiagnosticConfig.developerDiagnostics === true && result.consumptionDiagnostics
+                ? { consumptionDiagnostics: result.consumptionDiagnostics } : {})
         }
     };
 }
@@ -1807,6 +1809,10 @@ class ColdSimulationKernel {
             group.forEach(entry => visited.add(entry.characterId));
             let transportGroup = group;
             let transportSizes = proposalSizes(group);
+            if (DiagnosticConfig.developerDiagnostics === true && groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                group.forEach(entry => require('../Economy/ConsumptionDiagnostics').drop(entry));
+                transportSizes = proposalSizes(group);
+            }
             if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
                 DiagnosticConfig.developerDiagnostics && (this.stats.proposalOversize += group.length);
                 transportGroup = group.map(entry => compactProposal(entry, true));
@@ -1830,8 +1836,21 @@ class ColdSimulationKernel {
                 }
                 DiagnosticConfig.developerDiagnostics && (this.stats.proposalCompactions += group.length);
             }
-            const candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+            let candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
             const candidateCount = proposals.length + transportGroup.length;
+            if (DiagnosticConfig.developerDiagnostics === true && proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                const consumption = require('../Economy/ConsumptionDiagnostics');
+                let dropped = false;
+                for (const entry of proposals) dropped = consumption.drop(entry) || dropped;
+                for (const entry of transportGroup) dropped = consumption.drop(entry) || dropped;
+                if (dropped) {
+                    const priorSizes = proposalSizes(proposals);
+                    proposalBytes.splice(0, proposalBytes.length, ...priorSizes);
+                    itemBytes = priorSizes.reduce((sum, size) => sum + size, 0);
+                    transportSizes = proposalSizes(transportGroup);
+                    candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+                }
+            }
             if (proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
             proposals.push(...transportGroup);
             proposalBytes.push(...transportSizes);

@@ -128,7 +128,7 @@ async function resolve(clanId, options) {
                 : await exchangeCold(request);
             if (result.ok) {
                 exchanged += 1;
-                console.info('ClanGear :: %s exchanged warehouse item %d, returned %s', member.name, item.selfId,
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('ClanGear :: %s exchanged warehouse item %d, returned %s', member.name, item.selfId,
                     result.returned.map((old) => `${old.selfId}+${old.enchant}`).join(', ') || 'empty slot');
                 break;
             }
