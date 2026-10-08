@@ -16,6 +16,9 @@ const id = 730062;
         await Database.execute(['UPDATE characters SET username=? WHERE id=?', ['bot_field_trade_ads', id]]);
         await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 100000, slot: 0 });
         await Database.setItem(id, { selfId: 1786, name: 'Recipe: Broad Sword', amount: 2, slot: 0 });
+        await Database.setItem(id, { selfId: 1867, name: 'Animal Skin', amount: 500, slot: 0 });
+        await Database.setItem(id, { selfId: 79, name: 'D spear', amount: 1, slot: 7 });
+        await Database.setItem(id, { selfId: 1835, name: 'Soulshot: No Grade', amount: 500, slot: 0 });
         let state = await Life.upsertState({ characterId: id, accountName: 'bot_field_trade_ads', name: 'FieldTrader',
             level: 5, exp: Number(DataCache.experience[4]), phase: 'cold', activity: 'hunting', adena: 100000,
             loc: { locX: -84700, locY: 244200, locZ: -3730 }, currentRegion: 'Talking Island',
@@ -28,18 +31,19 @@ const id = 730062;
         const before = await Database.fetchItems(id);
         const execute = plan => Market.executePlan(state, { withdraw: [], travel: null, ...plan },
             { step: work => work() });
-        const result = await execute({ sell: [[1786, 2, 100, 'Giran']] });
+        const sell = [[1786, 2, 100, 'Giran'], [1867, 500, 100, 'Dion'], [79, 1, 1000, 'Giran'], [1835, 500, 10, 'Dion']];
+        const result = await execute({ sell });
         state = result.state;
         const ads = Afk.ownerRecords(id);
-        assert.equal(ads.length, 1);
-        assert.equal(ads[0].kind, 'sell_ad', 'the first selected item becomes a WTS, not a shop reservation');
+        assert.equal(ads.length, 4, 'recipe, material, gear and shots become WTS, including the first three rows');
+        assert(ads.every(ad => ad.kind === 'sell_ad' && ad.custodyPolicy === 1));
         assert.equal(ads[0].custodyPolicy, 1, 'an unaccepted advertisement holds no physical inventory');
         assert.equal(ads[0].town, 'Giran');
         assert.equal(ads[0].lines[0].count, 2);
         assert.equal(state.activity, 'hunting'); assert.equal(state.currentRegion, 'Talking Island');
         assert.deepEqual(await Database.fetchItems(id), before, 'publishing WTS consumes no stock or money');
-        await execute({ sell: [[1786, 2, 100, 'Giran']] });
-        assert.equal(Afk.ownerRecords(id).filter(row => row.kind === 'sell_ad').length, 1,
+        await execute({ sell });
+        assert.equal(Afk.ownerRecords(id).filter(row => row.kind === 'sell_ad').length, 4,
             'a repeated prepared WTS creates no duplicate advertisement');
         state = Life.cachedState(id) || state;
         state = await Life.upsertState({ ...state, stats: { ...state.stats,
