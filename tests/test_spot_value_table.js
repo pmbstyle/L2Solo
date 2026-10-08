@@ -17,13 +17,16 @@ process.env.L2NODE_PROGRESSION_RATE = 'x1';
 
 const ref = Table.value('S', 'dps', 24, true);
 near(ref.kills, 200, 'at the reference level the row\'s kills');
-near(ref.exp, 20000, 'exp per hour = kills x exp per kill');
-near(ref.sp, 1000, 'SP per hour');
+// ARCH-NOTE: the shipped reader already applies the C4 gap-six XP/SP penalty;
+// this older fixture expected unpenalized rewards. Preserve that gameplay rule.
+near(ref.exp, 20000 * (5 / 6), 'exp per hour = kills x exp per kill x gap-six penalty');
+near(ref.sp, 1000 * (5 / 6), 'SP per hour follows the same C4 penalty');
 near(ref.adena, 6000, 'adena per hour');
 near(ref.loot, 4000, 'loot per hour');
 near(ref.shots, 800, 'shots per hour');
 near(ref.deaths, 0.2, 'deaths per hour = kills x deaths per kill');
 near(ref.busyShare, 0.5, 'combat and recovery share of the hour');
+assert.strictEqual(ref.stacks, null, 'an old table does not invent zero bag growth');
 near(Table.value('S', 'dps', 18).kills, 100, 'at the spot\'s level the curve halves the kills');
 near(Table.value('S', 'dps', 18).deaths, 100 * (0.001 + 0.01), 'deaths per kill add the curve\'s difference');
 near(Table.value('S', 'dps', 19).kills, 200 * 0.625, 'between measured gaps the curve is linear');
@@ -54,6 +57,31 @@ process.env.L2NODE_PROGRESSION_RATE = 'x50';
 near(Table.value('S', 'dps', 24, true).loot, ref.loot * 50 * 0.6, 'and at x50');
 near(Table.value('T', 'dps', 24, true).loot, Table.value('T', 'dps', 24, true).kills * 20 * 50, 'a spot whose drops scale fully');
 process.env.L2NODE_PROGRESSION_RATE = 'x1';
+
+// New tables report distinct bag slots per hour, with the drop response and
+// without multiplying distinct kinds by the drop amount rate.
+const scratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-stacks-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.rowFields.push('stacks');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(.02);
+    const file = path.join(scratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    near(Table.value('S', 'dps', 24).stacks, 4, '200 kills x .02 new slots per kill');
+    process.env.L2NODE_PROGRESSION_RATE = 'x10';
+    near(Table.value('S', 'dps', 24).stacks, 4 * .8, 'distinct slots use the drop response, not the drop amount');
+    process.env.L2NODE_PROGRESSION_RATE = 'x50';
+    near(Table.value('S', 'dps', 24).stacks, 4 * .6, 'the high-rate response also preserves distinct kinds');
+    fixture.rows[0][0][fixture.rowFields.indexOf('stacks')] = null;
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    assert.strictEqual(Table.value('S', 'dps', 24).stacks, null, 'an absent regenerated measurement remains unknown');
+} finally {
+    process.env.L2NODE_PROGRESSION_RATE = 'x1';
+    Table.useFile();
+    fs.rmSync(scratch, { recursive: true, force: true });
+}
 
 // ---------------------------------------------------------------- the committed table
 const raw = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8'));

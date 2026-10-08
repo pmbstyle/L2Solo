@@ -34,7 +34,9 @@ async function bot(label, { player = false } = {}) {
     return { id, stock };
 }
 async function stats(id) {
-    return JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0].statsJson);
+    const saved = JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0].statsJson);
+    const rows = await Database.execute(['SELECT counter,deals FROM bot_market_counts WHERE characterId=?', [id]]);
+    return { ...saved, marketTrades: Object.fromEntries(rows.map(row => [row.counter, Number(row.deals)])) };
 }
 async function history(eventKey, fields) {
     return Database.recordMarketTrade({ eventKey, occurredAt: Date.now() - 3600000, selfId: 1864,
@@ -95,8 +97,17 @@ async function run() {
         near(Learning.stageError(0.2, 0.03, n, stage.grade), 0.115, 'one N halves excess error');
         near(Learning.stageError(0.2, 0.03, 3 * n, stage.grade), 0.05125, 'three N leaves 1/8 of excess');
         near(Learning.halfLifeOf(stage.grade, 'market'), Learning.halfLifeOf(stage.grade, 'crafting'));
+        assert.equal(Learning.halfLifeOf(stage.grade, 'market'), 3);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'crafting'), 3);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'mobs'), stage.halfLife);
+        assert.equal(Learning.halfLifeOf(stage.grade, 'people'), stage.halfLife);
         near(PriceLearning.errorOf(0.5, Learning.halfLifeOf(stage.grade, 'market'), `gear ${stage.grade}`), 0.0725);
     }
+    for (const counter of ['gear none', 'gear d', 'gear b', 'gear s', 'material a']) {
+        near(PriceLearning.errorOf(0.3, 0, counter), 0.149, 'a new counter starts with the full personal error');
+        near(PriceLearning.errorOf(0.3, 3, counter), 0.0895, 'three own deals halve the excess in every grade');
+    }
+    assert.throws(() => Learning.halfLifeOf('unknown', 'market'), /unknown_learning_grade/);
     assert.equal(Learning.gradeOfLevel(19), 'none');
     assert.equal(Learning.gradeOfLevel(20), 'd');
     assert.equal(Learning.gradeOfLevel(40), 'c');
@@ -111,8 +122,8 @@ async function run() {
 
     const owner = await bot('Owner'), buyer = await bot('Buyer'), veteran = await bot('Veteran');
     const player = await bot('Player', { player: true });
-    await Database.execute(["UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.marketTrades', json(?)) WHERE characterId = ?",
-        [JSON.stringify({ 'material none': 7 }), veteran.id]]);
+    await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,7)', [veteran.id, 'material none']]);
+    Life.acceptMarketTrades(veteran.id, { 'material none': 7 });
     for (const row of await Database.execute(['SELECT * FROM bot_life_state'])) Life.acceptLifecycleRow(row);
     const oldDeal = { sellerCharacterId: owner.id, buyerCharacterId: buyer.id };
     await history('old:one', oldDeal);
@@ -127,7 +138,7 @@ async function run() {
     assert.equal((await stats(owner.id)).marketTrades['material none'], 2);
     assert.equal((await stats(buyer.id)).marketTrades['material none'], 1);
     assert.equal((await stats(veteran.id)).marketTrades['material none'], 7, 'already authoritative counters stay exact');
-    assert.equal(Life.cachedState(owner.id).stats.marketTrades['material none'], 2, 'startup publishes seeded native rows');
+    assert.equal(Life.cachedState(owner.id).marketTrades['material none'], 2, 'startup publishes seeded native rows');
     assert.equal((await stats(owner.id)).retainedKnowledge, 17);
     assert.equal((await Database.execute(["SELECT value FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].value, 'history');
     await history('late:import', oldDeal);
@@ -163,8 +174,8 @@ async function run() {
     assert.equal(deal.amount, 2);
     assert.equal((await stats(owner.id)).marketTrades['material none'], before.owner + 1);
     assert.equal((await stats(buyer.id)).marketTrades['material none'], before.buyer + 1);
-    assert.equal(Life.cachedState(buyer.id).stats.marketTrades['material none'], before.buyer + 1);
-    assert.equal(Life.cachedState(owner.id).stats.marketTrades['material none'], before.owner + 1);
+    assert.equal(Life.cachedState(buyer.id).marketTrades['material none'], before.buyer + 1);
+    assert.equal(Life.cachedState(owner.id).marketTrades['material none'], before.owner + 1);
     assert.equal(Afk.boardIndex().ownerLines(owner.id)[0].fills, 1);
     assert.deepEqual(Afk.boardIndex().ownerLines(owner.id)[0].pricing, authoredPricing, 'experience cannot replace authored line observations');
     await Life.upsertState({ ...Life.cachedState(buyer.id), stats: { ...Life.cachedState(buyer.id).stats,
@@ -188,7 +199,7 @@ async function run() {
 
     await Database.flushHistory();
     const conserved = await nativeFacts(owner, buyer, shop);
-    await Database.execute([`CREATE TEMP TRIGGER learning_deal_failure BEFORE UPDATE OF statsJson ON main.bot_life_state
+    await Database.execute([`CREATE TEMP TRIGGER learning_deal_failure BEFORE UPDATE OF deals ON main.bot_market_counts
         WHEN NEW.characterId = ${owner.id} BEGIN SELECT RAISE(ABORT, 'learning settlement refused'); END`]);
     try { await assert.rejects(Afk.buyFromShop(buyer.id, offer().store, 1864, 1), /learning settlement refused/); }
     finally { await Database.execute(['DROP TRIGGER temp.learning_deal_failure']); }

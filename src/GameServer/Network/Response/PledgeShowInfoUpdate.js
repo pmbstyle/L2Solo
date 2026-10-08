@@ -19,7 +19,7 @@ function pledgeShowInfoUpdate(clan) {
         .writeD(0); // Clan war state
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `clan=${clan.id}:level=${clan.level}:members=${clan.members.length}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `clan=${clan.id}:level=${clan.level}:members=${clan.members.length}`;
     return buffer;
 }
 

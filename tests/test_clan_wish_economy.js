@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+require('./helpers/databaseIsolation');
 const root = path.resolve(__dirname, '..');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-clan-economy-'));
 const config = path.join(directory, 'default.ini');
@@ -28,9 +29,16 @@ async function seedBot(id, clanId, adena = 10000) {
     await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [account, 'test']]);
     await Database.execute([`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,hp,maxHp,mp,maxMp,sex,face,hair,hairColor,locX,locY,locZ,clanId)
         VALUES (?,?,?,1,0,40,100000,700000,500,500,250,250,0,0,0,0,83000,148000,-3400,?)`, [id, account, `ClanMember${id}`, clanId]]);
+    const inventory = { 57: { selfId: 57, name: 'Adena', amount: adena } };
+    // This clan fixture has no personal discretionary wishes. Publish that
+    // existing money-queue state explicitly; native payments require its
+    // authoritative packet even when a treasury supplies most of the price.
+    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').survivalReserve({
+        characterId: id, level: 40, adena, inventory, stats: { classId: 1, clanId } });
+    const money = invoke('GameServer/Bot/Economy/PurchaseFunding').packetFor({ queue: [], moneyPrice: 0, gap: null }, 0, reserve);
     await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,exp,sp,hp,maxHp,mp,maxMp,adena,phase,activity,currentRegion,
         locX,locY,locZ,inventorySummary,statsJson,updatedAt) VALUES (?,?,?,40,100000,700000,500,500,250,250,?,'cold','shopping','Giran',83000,148000,-3400,?,?,1)`,
-        [id, account, `ClanMember${id}`, adena, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1, clanId })]]);
+        [id, account, `ClanMember${id}`, adena, JSON.stringify(inventory), JSON.stringify({ classId: 1, clanId, money })]]);
     await Database.setItem(id, { selfId: 57, name: 'Adena', amount: adena, enchant: 0, equipped: false, slot: 0 });
     await Database.execute([`INSERT INTO bot_personas(characterId,seed,primaryDrive,archetype,traitsJson) VALUES (?,'test','status','clan',?)`, [id, JSON.stringify(persona.traits)]]);
 }
@@ -43,12 +51,21 @@ async function main() {
     const contexts = [{ inputKey: 'own', persona, hunt: { perHour: 100000, restFraction: 0.25 }, clanHorizon: 30,
         itemUsefulness: () => 4 }];
     const poor = Context.build(clan, { warehouse: warehouse(100000), memberContexts: contexts, halls: [lot] });
-    const rich = Context.build(clan, { warehouse: warehouse(50000000), memberContexts: contexts, halls: [lot] });
+    const lowIncome = Context.build(clan, { warehouse: warehouse(50000000), memberContexts: contexts, halls: [lot] });
     assert.equal(poor.hallBid(lot), 0);
+    assert(lowIncome.hallBid(lot) < lot.minimumBid,
+        'a large purse alone does not make an expensive residence worth its dues income floor');
+    assert.equal(lowIncome.moneyPrice, 1 / lowIncome.incomePerHour);
+    const establishedMembers = Array.from({ length: invoke('GameServer/Clan/ClanRules').memberLimit(clan.level) },
+        (_, at) => ({ ...members[0], characterId: at + 1, currentRegion: lot.town }));
+    const establishedContexts = establishedMembers.map(member => ({ ...contexts[0], inputKey: `own:${member.characterId}` }));
+    const rich = Context.build({ ...clan, members: establishedMembers }, {
+        warehouse: warehouse(50000000), memberContexts: establishedContexts, halls: [lot] });
     assert(rich.hallBid(lot) >= lot.minimumBid);
     assert(rich.hallBid(lot) > lot.minimumBid * 1.15, 'wealth/value replaces minimum plus markup');
-    assert(rich.hallBid(lot) + Hall.reserve(lot, Hall.desired(lot, members)) <= 50000000);
-    assert.equal(rich.incomePerHour, 100000 * invoke('GameServer/Clan/ClanContributionPolicy').duesRate([persona.traits]));
+    assert(rich.hallBid(lot) + Hall.reserve(lot, Hall.desired(lot, establishedMembers)) <= 50000000);
+    assert.equal(rich.incomePerHour, establishedMembers.length * 100000
+        * invoke('GameServer/Clan/ClanContributionPolicy').duesRate(establishedContexts.map(context => context.persona.traits)));
     done('one clan purse: marginal money price, own dues and valued residence');
 
     const mixed = Context.build(clan, { warehouse: warehouse(200000), memberContexts: contexts, halls: [lot],
@@ -76,7 +93,7 @@ async function main() {
     assert(sale.shop);
     await Afk.init();
     let wakes = 0;
-    Actions.startEvents(() => { wakes++; });
+    await Actions.startEvents(() => { wakes++; });
     await Life.init();
     await new Promise(resolve => setImmediate(resolve));
     assert((await Events.drain(Database)).some(event => event.clanId === 77));
@@ -87,12 +104,13 @@ async function main() {
     assert.equal(Events.pending(), 0);
     await Database.execute(['UPDATE bot_life_state SET adena=adena+1,updatedAt=updatedAt+1 WHERE characterId=100']);
     Life.acceptNewerLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=100']))[0]);
-    assert((await Events.drain(Database)).some(event => event.clanId === 77));
+    assert.equal(Events.pending(), 0,
+        'a member wallet publication alone does not replan a clan from every hunting payout');
     // Restore the genuine 10k physical/native wallet for the purchase below.
     await Database.execute(['UPDATE bot_life_state SET adena=10000,updatedAt=updatedAt+1 WHERE characterId=100']);
     Life.acceptNewerLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=100']))[0]);
     await Events.drain(Database);
-    done('shared native Life publications hydrate clan inputs; movement is ignored, wealth wakes its clan');
+    done('native Life publications keep member inputs available without movement or wallet wake loops');
     const projection = await Goals.clanProjectionById(77);
     const resolved = await Goals.resolveClan(projection);
     assert(resolved.ok, JSON.stringify(resolved));
@@ -119,6 +137,9 @@ async function main() {
     assert.equal(Number((await Database.execute(['SELECT SUM(amount) AS amount FROM clan_warehouse_items WHERE clanId=77 AND selfId=57']))[0].amount), Number(moneyBefore.amount));
     done('ordinary or stale progression payment cannot consume the earmark');
 
+    const buyer = current.members.find(member => Number(member.characterId) === Number(current.state.goal.assignedMemberIds[0]));
+    const memberPart = Math.floor(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(buyer, 0, { free: true }));
+    assert(memberPart > 0 && memberPart < 10000, 'the member retains its native operating reserve');
     const purchase = await Market.resolveClan(current);
     assert(purchase.purchased, JSON.stringify(purchase));
     assert(purchase.advanced.ok, JSON.stringify(purchase.advanced));
@@ -129,7 +150,8 @@ async function main() {
     const [leader] = await Database.execute(['SELECT sp FROM characters WHERE id=100']);
     assert.equal(Number(leader.sp), 200000, 'native leader SP charge remains');
     const [clanMoney] = await Database.execute(['SELECT SUM(amount) AS amount FROM clan_warehouse_items WHERE clanId=77 AND selfId=57']);
-    assert.equal(Number(clanMoney.amount), 10000, 'member pays its 10k, clan pays the actual remaining price');
+    assert.equal(Number(clanMoney.amount), memberPart,
+        'member spends only free money and the clan pays the exact remaining price');
     assert.equal((await Database.fetchItems(100)).filter(row => Number(row.selfId) === 1419).length, 0);
     const replay = await Market.resolveClan(await Goals.clanProjectionById(77));
     assert(replay.skipped);
@@ -145,6 +167,14 @@ async function main() {
     done('coalesced addressed events admit one planning/supplies pair and no periodic repeat');
 
     await Database.execute(['UPDATE clan_warehouse_items SET amount=50000000 WHERE clanId=77 AND selfId=57']);
+    const Efficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    for (let id = 100; id < 105; id++) {
+        let state = await Life.findByCharacterId(id);
+        for (let sample = 0; sample < 3; sample++) state = { ...state, stats: { ...state.stats,
+            huntEfficiency: Efficiency.record(state, { spotId: 'hall-income-fixture', cycleMs: 180000,
+                adena: 50000, exp: 1000, kills: 5 }) } };
+        await Life.upsertState(state, 'test_hall_measured_income');
+    }
     const plan = await Database.planClanHallFinance(77);
     assert(plan.ok, JSON.stringify(plan)); assert.equal(plan.goal.status, 'bidding');
     const [bid] = await Database.execute(['SELECT amount FROM clan_hall_bids WHERE clanId=77']);

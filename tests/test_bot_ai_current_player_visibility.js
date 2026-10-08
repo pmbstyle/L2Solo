@@ -143,12 +143,12 @@ try {
     assert.notEqual(retired.token, beforeRetire.token);
     assert.equal(retired.retired, true);
     assert.equal(retired.actor, terminal.actor);
-    refs(query(terminalSource), [terminal], 'current terminal raw actor remains a BotAI human');
+    refs(query(terminalSource), [], 'retired hall actor is absent from bot player visibility');
     terminal.actor.setLocXYZ({ locX: 12500, locY: 0, locZ: 0 });
     refs(query(terminalSource), [], 'late terminal XYZ crosses cell and reads original live point');
     assert.equal(World.registeredActorById(retired.id), retired);
     terminal.actor.setLocXYZH({ locX: 5500, locY: 0, locZ: NaN, head: 321 });
-    refs(query(terminalSource), [terminal], 'late terminal XYZH returns without generic/token revival');
+    refs(query(terminalSource), [], 'late terminal XYZH cannot revive retired grid membership');
     assert.equal(World.registeredActorById(retired.id), retired);
     assert.equal(retired.retired, true);
     assert.equal(terminal.actor.fetchHead(), 321);
@@ -163,7 +163,7 @@ try {
     terminal.actor.setLocX(12500);
     refs(query(terminalSource), [], 'terminal individual X refreshes raw XY without registration revival');
     terminal.actor.setLocXYZ({ locX: 6000, locY: 0, locZ: NaN });
-    refs(query(terminalSource), [terminal], 'terminal valid XY/badZ returns on inclusive boundary');
+    refs(query(terminalSource), [], 'terminal valid XY/badZ cannot revive retired grid membership');
     assert.equal(World.registeredActorById(retired.id), retired);
     assert.equal(retired.retired, true);
     assert.equal(Runtime.index.getSource(retired.id, 'state'), stateRecord);
@@ -189,7 +189,7 @@ try {
     }
     assert.equal(coercions, 0, 'native raw XY does not add object conversion');
     unsupported.actor.setLocXYZ({ locX: '100', locY: null, locZ: NaN });
-    refs(query(unsupportedSource), [unsupported], 'supported terminal scalar recovers with same raw token');
+    refs(query(unsupportedSource), [], 'supported terminal scalar keeps retired grid membership absent');
     assert.equal(World.registeredActorById(unsupportedRecord.id), unsupportedRecord);
     observed('native unsupported scalar disable/no coercion and terminal recovery; no all-JS parity claim');
 

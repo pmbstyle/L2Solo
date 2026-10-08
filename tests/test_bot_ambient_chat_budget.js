@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Budget = invoke('GameServer/Bot/AI/BotChatterBudget');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -6,6 +7,43 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const World = invoke('GameServer/World/World');
+
+// Native ActorModel/World publication follows test_n62_visibility_index.
+// This isolated fixture creates no database rows, cold claims or World timers.
+const ActorModel = invoke('GameServer/Model/Actor');
+const publishedSessions = new Set();
+let fixtureWorld;
+function clearPublishedSessions() {
+    // Disconnect the whole old scene before removing its registrations: no
+    // still-connected peer should receive an unrelated clan UI update here.
+    for (const session of publishedSessions) session.actor.setIsOnline(false);
+    for (const session of publishedSessions) World.removeUser(session);
+    publishedSessions.clear();
+}
+function publishSessions(sessions) {
+    clearPublishedSessions();
+    if (!fixtureWorld) {
+        fixtureWorld = { sessions: [], revision: 0 };
+        World.user = fixtureWorld;
+    }
+    for (const session of sessions) {
+        session.actor.session = session;
+        World.insertUser(session);
+        session.actor.setIsOnline(true);
+        publishedSessions.add(session);
+    }
+}
+function presenceSession(characterId, accountId, receive, clanId = 0, locX = 0) {
+    const session = { accountId, fetchAccountId() { return this.accountId; },
+        socket: { write() {}, destroy() {} }, dataSendToMe: receive,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    session.actor = new ActorModel({ id: characterId, name: accountId, username: accountId,
+        title: '', level: 20, classId: 0, clanId, clanPrivileges: 0,
+        locX, locY: 0, locZ: 0, hp: 100, maxHp: 100, isOnline: false });
+    session.actor.session = session;
+    return session;
+}
+
 const Response = invoke('GameServer/Network/Response');
 
 function bot(id, x = 0) {
@@ -16,7 +54,7 @@ const original = { user: World.user, sessions: World.user?.sessions, speak: Resp
     random: Math.random, info: console.info, say: BotManager.botSay,
     timeout: global.setTimeout, config: { ...Config } };
 try {
-    World.user = { sessions: [] };
+    publishSessions([]);
     Config.globalChatEnabled = true;
     Config.globalChatMinIntervalMs = 180000;
     Config.globalChatImportantChance = 1;
@@ -58,8 +96,9 @@ try {
     assert.strictEqual(second.inConversation, false);
 
     const packets = [];
-    World.user.sessions = [{ accountId: 'player', socket: { write() {} },
-        dataSendToMe(packet) { packets.push(packet); } }];
+    // The original audience had no actor ID; this is an isolated native actor
+    // in the same explicit 8000000+ fixture namespace as the visibility test.
+    publishSessions([presenceSession(8000001, 'player', packet => packets.push(packet))]);
     Response.speak = (actor, packet) => ({ id: actor.fetchId(), ...packet });
     const state = { characterId: 5, name: 'Cold', spotId: '24_14' };
     assert(!GlobalChat.maybeAnnounce(state, [{ type: 'hunt', weight: 4, meta: { wins: 7 } }], 0));
@@ -71,14 +110,13 @@ try {
         'a new speaker cannot bypass the death-topic cooldown');
     assert(GlobalChat.maybeAmbient(bot(6), 180000));
     assert(!GlobalChat.maybeAmbient(bot(6), 360000), 'global speakers need their own cooldown');
-    World.user.sessions = [];
+    clearPublishedSessions();
     assert(!GlobalChat.maybeAmbient(bot(8), 360000));
-    World.user.sessions = original.sessions;
+    publishSessions(original.sessions || []);
 
     GlobalChat.reset();
     const sample = [];
-    World.user.sessions = [{ accountId: 'player', socket: { write() {} },
-        dataSendToMe(packet) { sample.push(packet); } }];
+    publishSessions([presenceSession(8000001, 'player', packet => sample.push(packet))]);
     for (let time = 0; time < 30 * 60000; time += 1000) {
         // A busy population repeatedly offers both cold events and hot
         // chatter; increasing its size must not increase the output rate.
@@ -102,9 +140,9 @@ try {
     Config.globalChatChance = 0;
     assert(!GlobalChat.maybeAnnounce(alive, [], 0), 'ambient chance can disable cold openers');
     Config.globalChatChance = original.config.globalChatChance;
-    World.user.sessions = [];
+    clearPublishedSessions();
     assert(!GlobalChat.maybeAnnounce(alive, [], 0), 'cold openers need a real audience');
-    World.user.sessions = [{ accountId: 'player', socket: { write() {} }, dataSendToMe(packet) { sample.push(packet); } }];
+    publishSessions([presenceSession(8000001, 'player', packet => sample.push(packet))]);
     Config.globalChatEnabled = false;
     assert(!GlobalChat.maybeAnnounce(alive, [], 0));
     Config.globalChatEnabled = true;
@@ -120,6 +158,7 @@ try {
     assert(new Set(sample.map(packet => packet.id)).size >= 10, 'the same pair must not monopolize the channel');
     process.stdout.write(`Cold-only ambient check: ${sample.length} global lines in 30 simulated minutes, 1,700 bots, no death events.\n`);
 } finally {
+    clearPublishedSessions();
     World.user = original.user;
     Response.speak = original.speak;
     Math.random = original.random;

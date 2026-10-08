@@ -1,6 +1,12 @@
 const assert = require('assert');
+const fs = require('node:fs');
+const nodePath = require('node:path');
+const isolated = require('./helpers/isolatedSocialDatabase')('party-companion-follow', nodePath.resolve(__dirname, '..'));
 
+require('./helpers/databaseIsolation');
+const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const World = invoke('GameServer/World/World');
 const FollowingState = invoke('GameServer/Bot/AI/States/FollowingState');
@@ -37,6 +43,146 @@ const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const ActorGenerics = invoke(path.actor);
 
 DataCache.init();
+// Build authored raid/economic profiles before the per-scenario combat NPC facades.
+// No NPC spawn or World.init is needed for these isolated hot behavior checks.
+invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+
+// Native item metadata and physical board records for the original town
+// errands. A rank-only weapon with an empty wallet has zero use/funding in
+// the wish engine; the behavioral branch requires an equipped item and adena.
+const NativeBackpack = invoke('GameServer/Actor/Backpack');
+const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
+let fixtureSql;
+const fixtureAds = [];
+function ensureFixtureSql() {
+    if (fixtureSql) return;
+    fixtureSql = new DatabaseSync(isolated.world);
+    fixtureSql.exec(fs.readFileSync(nodePath.resolve(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
+    fixtureSql.prepare('INSERT INTO accounts(username,password) VALUES (?,?)').run('seller', 'test-only');
+}
+function recordPhysicalKit(actor, account) {
+    ensureFixtureSql();
+    fixtureSql.prepare('INSERT OR IGNORE INTO accounts(username,password) VALUES (?,?)').run(account,'test-only');
+    fixtureSql.prepare(`INSERT INTO characters(id,username,name,classId,race,level,maxHp,maxMp,
+        sex,face,hair,hairColor,locX,locY,locZ) VALUES (?,?,?,0,0,?,100,100,0,0,0,0,?,?,?)`)
+        .run(actor.fetchId(), account, actor.fetchName(), actor.fetchLevel(), actor.fetchLocX(),actor.fetchLocY(),actor.fetchLocZ());
+    const insert = fixtureSql.prepare(`INSERT INTO items(id,selfId,name,amount,equipped,slot,characterId) VALUES (?,?,?,?,?,?,?)`);
+    for (const item of actor.backpack.fetchItems()) insert.run(item.fetchId(),item.fetchSelfId(),item.fetchName(),item.fetchAmount(),Number(item.fetchEquipped()),item.fetchSlot(),actor.fetchId());
+    const before = fixtureSql.prepare('SELECT id,selfId,amount,equipped,slot FROM items WHERE characterId=? ORDER BY id').all(actor.fetchId());
+    // node:sqlite rows have a null prototype; actor DTOs are plain records.
+    // Compare every physical value without changing the native SQL oracle.
+    const physicalValues = before.map(row => ({ ...row }));
+    return () => {
+        assert.deepStrictEqual(fixtureSql.prepare('SELECT id,selfId,amount,equipped,slot FROM items WHERE characterId=? ORDER BY id').all(actor.fetchId()),before,
+            'errand planning must not alter physical SQL items or money');
+        assert.deepStrictEqual(actor.backpack.fetchItems().map(item => ({ id:item.fetchId(), selfId:item.fetchSelfId(), amount:item.fetchAmount(), equipped:Number(item.fetchEquipped()),slot:item.fetchSlot() })),physicalValues,
+            'errand planning must not spend or mint the physical actor kit');
+        console.log('NATIVE_SQL_KIT_CONSERVATION', JSON.stringify({ characterId:actor.fetchId(), before,
+            after:fixtureSql.prepare('SELECT id,selfId,amount,equipped,slot FROM items WHERE characterId=? ORDER BY id').all(actor.fetchId()),
+            boundary:'native fixture rows + unit actor setup; no purchase transaction executed' }));
+    };
+}
+function equippedErrandKit(actor, weaponId, adena = 0) {
+    actor.backpack = new NativeBackpack({ paperdoll: {}, items: [
+        { id: actor.fetchId() * 10 + 1, selfId: 57, amount: adena, equipped: false, slot: 0 },
+        { id: actor.fetchId() * 10 + 2, selfId: weaponId, amount: 1, equipped: true, slot: 7 }
+    ] });
+    actor.backpack.equipPaperdoll(7, actor.fetchId() * 10 + 2, weaponId);
+}
+// Setup arithmetic reads the authored hunt table and price priors directly.
+// It never reads a purchase result, wishlist packet, stock target or budget.
+function authoredKitInputs(actor, session) {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const state = Economy.stateForActor(actor, session);
+    const timestamp = Date.now();
+    assert.strictEqual(state.stats.money, undefined, 'fixture funding must precede any money packet');
+    assert.strictEqual(Hunt.sampledRows(state, timestamp).length, 0, 'no favorable hunt history may fund the fixture');
+    const role = state.party?.role || state.stats?.role || BotRoles.inferRole(state.stats.classId);
+    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
+    const hunt = Hunt.huntIncome(state, timestamp);
+    const spotId = hunt.spotId || state.spotId;
+    const tableRow = (spotId && Table.value(spotId, tableRole, state.level, true)) || Table.best(tableRole, state.level, true);
+    assert(tableRow, 'the authored role/level table must supply the ordinary hunt');
+    const without = spotId && Table.value(spotId, tableRole, state.level, false);
+    const plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const persona = invoke('GameServer/Bot/AI/BotPersona').of(state);
+    const priceContext = { characterId: state.characterId, understanding: persona?.understanding ?? 0.3,
+        marketTrades: state.marketTrades, board: AfkTrade.boardIndex(), timestamp,
+        knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled() };
+    const price = id => {
+        const prior = invoke('GameServer/Bot/Economy/PriceBelief').prior(id, priceContext);
+        return prior ? Math.exp(prior.mu) : 0;
+    };
+    const positive = value => Math.max(0, Number(value) || 0);
+    const shotPrice = price(plan.selfId);
+    const rawShots = plan.perAction > 0 ? positive(tableRow.shots) : 0;
+    const benefit = Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(tableRow.exp)));
+    const hourAdena = Hunt.huntHour(hunt, state);
+    const shotUse = benefit < rawShots * shotPrice / hourAdena ? 0 : rawShots;
+    const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
+    const potionUse = positive(tableRow.potions);
+    const potionPrice = price(potionId);
+    const escapePrice = price(736);
+    const shotHeld = positive(state.inventory[plan.selfId]?.amount);
+    const potionHeld = positive(state.inventory[potionId]?.amount);
+    const escapeHeld = positive(state.inventory[736]?.amount);
+    const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats.karma) ? 0
+        : escapePrice * Math.max(0, 1 - escapeHeld);
+    const survivalReserve = escapeCost + Math.max(0, shotUse - shotHeld) * shotPrice
+        + Math.max(0, potionUse - potionHeld) * potionPrice;
+    const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
+    const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
+    return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,
+        weaponId: actor.backpack.fetchEquippedWeapon().fetchSelfId(), perAction: plan.perAction,
+        shotId: plan.selfId, shotUse, shotPrice, shotHeld, benefit, potionId, potionUse, potionPrice, potionHeld,
+        potionUnitPrice, potionReserve, escapePrice, escapeHeld, escapeCost, survivalReserve };
+}
+function fundAuthoredKit(actor, session, extraCost, label) {
+    const inputs = authoredKitInputs(actor, session);
+    const amount = Math.ceil(inputs.survivalReserve + inputs.potionReserve + extraCost(inputs));
+    actor.backpack.fetchItemFromSelfId(57).setAmount(amount);
+    // The native reserve is an oracle only after the independent input is set.
+    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(inputs.state), inputs.survivalReserve);
+    const { state, ...values } = inputs;
+    console.log('AUTHORED_FUNDED_INPUTS', JSON.stringify({ label, characterId: actor.fetchId(), level: actor.fetchLevel(),
+        ...values, fundedAdena: amount }));
+    return inputs;
+}
+
+function publishNativeEquipmentShop(actor, town) {
+    ensureFixtureSql();
+    fixtureSql.prepare(`INSERT OR IGNORE INTO characters(id,username,name,classId,race,level,maxHp,maxMp,
+        sex,face,hair,hairColor,locX,locY,locZ) VALUES (?, 'seller', ?, 0,0,26,100,100,0,0,0,0,?,?,?)`)
+        .run(actor.fetchId(), actor.fetchName(), actor.fetchLocX(), actor.fetchLocY(), actor.fetchLocZ());
+    const nativeOwner = fixtureSql.prepare('SELECT * FROM characters WHERE id=?').get(actor.fetchId());
+    const appearanceJson = JSON.stringify({ model: nativeOwner, items: [] });
+    const at = Date.now();
+    const packet = fixtureSql.prepare(`INSERT INTO afk_trade_shops(ownerId,storeType,status,title,town,locX,locY,locZ,kind,appearanceJson,createdAt,updatedAt)
+        VALUES (?,1,'active','native fixture',?,?,?,?,'shop',?,?,?)`).run(actor.fetchId(),town,actor.fetchLocX(),actor.fetchLocY(),actor.fetchLocZ(),appearanceJson,at,at);
+    const shopId = Number(packet.lastInsertRowid);
+    fixtureSql.prepare(`INSERT INTO afk_trade_lines(shopId,selfId,name,count,initialCount,price,createdAt,updatedAt)
+        VALUES (?,1,'Short Sword',1,1,1,?,?)`).run(shopId,at,at);
+    // Same native SELECT shape as afkTradeShopUnsafe, read from real rows.
+    const row = fixtureSql.prepare(`SELECT shops.*, characters.name AS ownerName, characters.username AS ownerAccount
+        FROM afk_trade_shops shops JOIN characters ON characters.id=shops.ownerId WHERE shops.id=?`).get(shopId);
+    row.lines = fixtureSql.prepare('SELECT * FROM afk_trade_lines WHERE shopId=? ORDER BY id').all(shopId);
+    row.appearance = JSON.parse(row.appearanceJson);
+    const projection = AfkTrade.refreshRecord(row);
+    assert(projection?.actor, 'a real physical AFK shop must publish its native actor projection');
+    row.projection = projection;
+    fixtureAds.push(row);
+    console.log('NATIVE_SQL_SHOP_SETUP', JSON.stringify({ shopId:row.id, ownerId:row.ownerId,
+        projectedActorId:projection.actor.fetchId(), kind:row.kind, storeType:row.storeType,
+        town:row.town, lines:row.lines.map(({id,shopId,selfId,count,initialCount,price}) => ({id,shopId,selfId,count,initialCount,price})),
+        boundary:'seeded real native SQLite board rows + genuine AFK projection; no deal transaction executed' }));
+    return row;
+}
+function clearEquipmentAd(row) {
+    fixtureSql.prepare("UPDATE afk_trade_shops SET status='closed' WHERE id=?").run(row.id);
+    AfkTrade.refreshRecord({ ...row, status: 'closed' });
+}
 
 function corpseSummonControlProbe() {
     return {
@@ -215,6 +361,7 @@ function fakeActor(id, loc = {}) {
 function fakeSession(accountId, actor) {
     const session = {
         accountId,
+        fetchAccountId() { return this.accountId; },
         actor,
         sent: 0,
         packets: [],
@@ -240,6 +387,31 @@ function learnSkill(actor, data) {
     });
     actor.skillset.skills.push(skill);
     return skill;
+}
+
+// Keep each original hot actor/session/ID. Native membership publication is
+// required by hasDeadPartyMember; assigning a sessions array does not register
+// its actor or the party group. Registration makes no SQL writes or starts World tickers.
+const publishedSessions = new Set();
+let fixtureUsers;
+function publishSessions(sessions) {
+    if (!fixtureUsers) { fixtureUsers = { sessions: [], revision: 0 }; World.user = fixtureUsers; }
+    for (const session of [...publishedSessions]) {
+        if (sessions.includes(session)) continue;
+        // This fixture has no clan members; remove only its own registrations.
+        World.removeUser(session);
+        publishedSessions.delete(session);
+    }
+    for (const session of sessions) {
+        if (typeof session.fetchAccountId !== 'function') session.fetchAccountId = () => session.accountId;
+        session.actor.session = session;
+        if (!publishedSessions.has(session)) { World.insertUser(session); publishedSessions.add(session); }
+        else World.updateUserLocation(session);
+    }
+    World.refreshPartyMemberships(sessions);
+}
+function clearPublishedSessions() {
+    for (const session of [...publishedSessions]) { World.removeUser(session); publishedSessions.delete(session); }
 }
 
 const originalUsers = World.user;
@@ -310,7 +482,7 @@ try {
                 attacker.fetchAttackable = () => true;
                 const tankMob = fakeActor(1200000 + classId,{locX:50,destId:leader.actor.fetchId()});
                 tankMob.fetchAttackable = () => true;
-                World.user = {sessions:[leader,member]};
+                publishSessions([leader,member]);
                 BotManager.sessions = [member];
                 World.npc = {spawns:[tankMob,attacker]};
                 World.fetchNpcsInRadius = () => [tankMob,attacker];
@@ -403,7 +575,7 @@ try {
         mob.fetchAttackable = () => true;
         mob.fetchStateAttack = () => true;
         mob.state.fetchCombats = () => true;
-        World.user = { sessions: [campLeader, returned, courier] };
+        publishSessions([campLeader, returned, courier]);
         BotManager.sessions = [returned, courier];
         World.npc = { spawns: [mob] };
         World.fetchNpcsInRadius = (x, y, radius) => Math.hypot(mob.locX - x, mob.locY - y) <= radius ? [mob] : [];
@@ -452,7 +624,7 @@ try {
         learnSkill(archer.actor, { selfId: 56, name: 'Power Shot', distance: 700, mp: 5 });
         const mob = fakeActor(1000810, { locX: 450, destId: tank.actor.fetchId() });
         mob.fetchAttackable = () => true;
-        World.user = { sessions: [tank, archer] };
+        publishSessions([tank, archer]);
         World.npc = { spawns: [mob] };
         World.fetchNpcsInRadius = () => [mob];
         const calls = { attacks: [], skills: [],
@@ -483,7 +655,7 @@ try {
     botSession.followPlayerSession = leaderSession;
     botSession.partyCompanion = true;
     botSession.plan = 'following';
-    World.user = { sessions: [leaderSession, botSession] };
+    publishSessions([leaderSession, botSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(botSession, bot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -519,7 +691,7 @@ try {
             const field = { locX: dion.locX + 12000, locY: dion.locY, locZ: dion.locZ };
             const white = companionAt(2000902, 0, field);
             const red = companionAt(2000903, 500, field);
-            World.user = { sessions: [karmaLeaderSession, white, red] };
+            publishSessions([karmaLeaderSession, white, red]);
             World.fetchNpcsInRadius = () => [];
             BotManager.sessions = [white, red];
 
@@ -549,7 +721,7 @@ try {
             const whiteInTown = companionAt(2000904, 0, giran);
             const redInTown = companionAt(2000905, 500, giran);
             BotManager.sessions = [whiteInTown, redInTown];
-            World.user = { sessions: [karmaLeaderSession, whiteInTown, redInTown] };
+            publishSessions([karmaLeaderSession, whiteInTown, redInTown]);
             teleports.length = 0;
             FollowingState.tick(whiteInTown, whiteInTown.actor, {}, ai);
             FollowingState.tick(redInTown, redInTown.actor, {}, ai);
@@ -625,7 +797,7 @@ try {
         selectedAt: Date.now() - 1000,
         lastActiveAt: Date.now() - 1000
     };
-    World.user = { sessions: [leaderSession, raidDpsSession, raidTankSession, raidHealerSession] };
+    publishSessions([leaderSession, raidDpsSession, raidTankSession, raidHealerSession]);
     World.npc = { spawns: [staleRaidBoss, raidBoss] };
     World.fetchNpcsInRadius = () => [staleRaidBoss, raidBoss];
     const raidOpeners = [];
@@ -765,7 +937,7 @@ try {
     // not proof that the party is in combat.
     leader.destId = 1099;
     selectedTargetRefreshSession.currentTargetId = 1099;
-    World.user = { sessions: [leaderSession, selectedTargetRefreshSession] };
+    publishSessions([leaderSession, selectedTargetRefreshSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 
@@ -865,7 +1037,7 @@ try {
     inviteBot.hp = 40;
     inviteBot.mp = 20;
     inviteBot.state.setSeated(true);
-    World.user = { sessions: [leaderSession, inviteBotSession] };
+    publishSessions([leaderSession, inviteBotSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     RestingState.tick(inviteBotSession, inviteBot, {}, {
@@ -883,7 +1055,7 @@ try {
     movingSession.partyCompanion = true;
     movingSession.plan = 'following';
     movingSession.lastFollowMoveTarget = { locX: 40, locY: 0, locZ: 0 };
-    World.user = { sessions: [leaderSession, movingSession] };
+    publishSessions([leaderSession, movingSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(movingSession, movingBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -898,7 +1070,7 @@ try {
     arrivedSession.lastTickLoc = { x: 0, y: 0 };
     arrivedSession.lastStuckSampleAt = Date.now();
     arrivedSession.stuckTicks = 2;
-    World.user = { sessions: [leaderSession, arrivedSession] };
+    publishSessions([leaderSession, arrivedSession]);
     FollowingState.tick(arrivedSession, arrivedBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(arrivedSession.stuckTicks, 0, 'arriving must clear stale stuck state before the next movement command');
     assert(movingSession.lastFollowMoveHeldAt, 'companion should record that a follow retarget was held');
@@ -909,7 +1081,7 @@ try {
     campSession.followPlayerSession = leaderSession;
     campSession.partyCompanion = true;
     campSession.plan = 'following';
-    World.user = { sessions: [leaderSession, campSession] };
+    publishSessions([leaderSession, campSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(campSession, campBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -922,7 +1094,7 @@ try {
     supportCampSession.followPlayerSession = leaderSession;
     supportCampSession.partyCompanion = true;
     supportCampSession.plan = 'following';
-    World.user = { sessions: [leaderSession, supportCampSession] };
+    publishSessions([leaderSession, supportCampSession]);
 
     FollowingState.tick(supportCampSession, supportCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
 
@@ -934,7 +1106,7 @@ try {
     farCampSession.followPlayerSession = leaderSession;
     farCampSession.partyCompanion = true;
     farCampSession.plan = 'following';
-    World.user = { sessions: [leaderSession, farCampSession] };
+    publishSessions([leaderSession, farCampSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(farCampSession, farCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -955,7 +1127,7 @@ try {
     recoveringCampSession.followPlayerSession = leaderSession;
     recoveringCampSession.partyCompanion = true;
     recoveringCampSession.plan = 'following';
-    World.user = { sessions: [leaderSession, recoveringCampSession] };
+    publishSessions([leaderSession, recoveringCampSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(recoveringCampSession, recoveringCampBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -969,7 +1141,7 @@ try {
     distantRecoveringSession.partyCompanion = true;
     distantRecoveringSession.plan = 'resting';
     leader.destId = undefined;
-    World.user = { sessions: [leaderSession, distantRecoveringSession] };
+    publishSessions([leaderSession, distantRecoveringSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 
@@ -984,7 +1156,7 @@ try {
     unknownMoveSession.followPlayerSession = leaderSession;
     unknownMoveSession.partyCompanion = true;
     unknownMoveSession.plan = 'following';
-    World.user = { sessions: [leaderSession, unknownMoveSession] };
+    publishSessions([leaderSession, unknownMoveSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(unknownMoveSession, unknownMoveBot, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -998,7 +1170,7 @@ try {
     restingSession.followPlayerSession = leaderSession;
     restingSession.partyCompanion = true;
     restingSession.plan = 'resting';
-    World.user = { sessions: [leaderSession, restingSession] };
+    publishSessions([leaderSession, restingSession]);
     World.fetchNpcsInRadius = () => [{
         fetchId: () => 1001,
         fetchAttackable: () => true,
@@ -1035,7 +1207,7 @@ try {
         fetchLocX: () => 120,
         fetchLocY: () => 0
     };
-    World.user = { sessions: [leaderSession, targetWakeSession] };
+    publishSessions([leaderSession, targetWakeSession]);
     World.npc = { spawns: [wakeTargetNpc] };
     World.fetchNpcsInRadius = () => [];
 
@@ -1051,7 +1223,7 @@ try {
     physicalRestBot.state.setSeated(true);
     const physicalRestSession = fakeSession('bot_physical_rest_complete', physicalRestBot);
     physicalRestSession.plan = 'resting';
-    World.user = { sessions: [physicalRestSession] };
+    publishSessions([physicalRestSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     RestingState.tick(physicalRestSession, physicalRestBot, {}, { say() {} });
@@ -1076,7 +1248,7 @@ try {
     };
     PartyCompanionService.updateSettings(leaderSession, { pullMode: 'leader' });
     leader.destId = distantLeaderPull.fetchId();
-    World.user = { sessions: [leaderSession, restingPullSession] };
+    publishSessions([leaderSession, restingPullSession]);
     World.npc = { spawns: [distantLeaderPull] };
     World.fetchNpcsInRadius = () => [];
 
@@ -1094,7 +1266,7 @@ try {
     regroupingRestSession.plan = 'resting';
     leader.state.setSeated(true);
     leader.destId = undefined;
-    World.user = { sessions: [leaderSession, regroupingRestSession] };
+    publishSessions([leaderSession, regroupingRestSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
 
@@ -1114,7 +1286,7 @@ try {
     orderedRestSession.partyCompanion = true;
     orderedRestSession.plan = 'resting';
     orderedRestSession.explicitRestOrder = true;
-    World.user = { sessions: [leaderSession, orderedRestSession] };
+    publishSessions([leaderSession, orderedRestSession]);
 
     RestingState.tick(orderedRestSession, orderedRestBot, {}, { say() {} });
 
@@ -1137,7 +1309,7 @@ try {
         fetchLocZ: () => 0,
         fetchName: () => 'next mob'
     };
-    World.user = { sessions: [leaderSession, assistingSession] };
+    publishSessions([leaderSession, assistingSession]);
     World.npc = { spawns: [leaderTargetNpc] };
     World.fetchNpcsInRadius = () => [];
     World.fetchUser = () => ({
@@ -1170,7 +1342,7 @@ try {
     staleTargetSession.partyCompanion = true;
     staleTargetSession.plan = 'following';
     staleTargetSession.currentTargetId = 1009;
-    World.user = { sessions: [leaderSession, staleTargetSession] };
+    publishSessions([leaderSession, staleTargetSession]);
     World.npc = { spawns: [{
         fetchId: () => 1009,
         fetchAttackable: () => true,
@@ -1198,7 +1370,7 @@ try {
     let assistedNpcId = null;
     const threatChat = [];
     leader.destId = undefined;
-    World.user = { sessions: [leaderSession, threatAssistSession] };
+    publishSessions([leaderSession, threatAssistSession]);
     World.fetchNpcsInRadius = () => [{
         fetchId: () => 1006,
         fetchAttackable: () => true,
@@ -1254,7 +1426,7 @@ try {
     distantThreatSession.plan = 'following';
     let distantThreatAssistId = null;
     PartyCompanionService.updateSettings(leaderSession, { pullMode: 'auto' });
-    World.user = { sessions: [leaderSession, distantThreatSession] };
+    publishSessions([leaderSession, distantThreatSession]);
     World.npc = { spawns: [distantArcher] };
     World.fetchNpcsInRadius = (_x, _y, radius) => radius >= 1490 ? [distantArcher] : [];
 
@@ -1285,7 +1457,7 @@ try {
     let hiddenAggroAssistId = null;
     leaderSession.incomingThreatId = hiddenAggroNpc.fetchId();
     leaderSession.incomingThreatAt = Date.now();
-    World.user = { sessions: [leaderSession, hiddenAggroSession] };
+    publishSessions([leaderSession, hiddenAggroSession]);
     World.npc = { spawns: [hiddenAggroNpc] };
     World.fetchNpcsInRadius = () => [hiddenAggroNpc];
 
@@ -1318,7 +1490,7 @@ try {
     selfDefenseSession.incomingThreatId = selfDefenseNpc.fetchId();
     selfDefenseSession.incomingThreatAt = Date.now();
     let selfDefenseAssistId = null;
-    World.user = { sessions: [leaderSession, selfDefenseSession] };
+    publishSessions([leaderSession, selfDefenseSession]);
     World.npc = { spawns: [selfDefenseNpc] };
     World.fetchNpcsInRadius = () => [selfDefenseNpc];
 
@@ -1339,7 +1511,7 @@ try {
     criticalSession.incomingThreatId = selfDefenseNpc.fetchId();
     criticalSession.incomingThreatAt = Date.now();
     let criticalCombatStarted = false;
-    World.user = { sessions: [leaderSession, criticalSession] };
+    publishSessions([leaderSession, criticalSession]);
     FollowingState.tick(criticalSession, criticalBot, {}, {
         say() {},
         executeCombat() { criticalCombatStarted = true; },
@@ -1373,7 +1545,7 @@ try {
     pvpAssistSession.partyCompanion = true;
     pvpAssistSession.plan = 'following';
     let assistedPlayerId = null;
-    World.user = { sessions: [leaderSession, pvpAssistSession, hostileBotSession] };
+    publishSessions([leaderSession, pvpAssistSession, hostileBotSession]);
     World.fetchNpcsInRadius = () => [];
 
     FollowingState.tick(pvpAssistSession, pvpAssistBot, {}, {
@@ -1399,7 +1571,7 @@ try {
     woundedCompanionSession.followPlayerSession = healerLeaderSession;
     woundedCompanionSession.partyCompanion = true;
     woundedCompanionSession.plan = 'following';
-    World.user = { sessions: [healerLeaderSession, healerSession, woundedCompanionSession] };
+    publishSessions([healerLeaderSession, healerSession, woundedCompanionSession]);
     World.fetchNpcsInRadius = () => [];
     const healerCasts = [];
 
@@ -1442,13 +1614,13 @@ try {
     criticalCompanionSession.followPlayerSession = healerLeaderSession;
     criticalCompanionSession.partyCompanion = true;
     criticalCompanionSession.plan = 'following';
-    World.user.sessions.push(criticalCompanionSession);
+    publishSessions([...World.user.sessions, criticalCompanionSession]);
     FollowingState.tick(healerSession, healerBot, {
         skillExec(session, bot, data) { healerCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.deepStrictEqual(healerCasts, [{ id: criticalCompanion.fetchId(), selfId: 1011, ctrl: false }], 'a critical party member must preempt a pending top-off approach');
     assert.strictEqual(healerSession.pendingSupportApproach, undefined, 'preempting a stale support approach must release its pending state after the emergency cast');
-    World.user.sessions.pop();
+    publishSessions(World.user.sessions.filter(session => session !== criticalCompanionSession));
 
     healerCasts.length = 0;
     healerBot.hp = 100;
@@ -1512,7 +1684,7 @@ try {
     lowManaDancerSession.followPlayerSession = manaLeaderSession;
     lowManaDancerSession.partyCompanion = true;
     lowManaDancerSession.plan = 'following';
-    World.user = { sessions: [manaLeaderSession, rechargeHealerSession, lowManaArcherSession, lowManaSingerSession, lowManaDancerSession] };
+    publishSessions([manaLeaderSession, rechargeHealerSession, lowManaArcherSession, lowManaSingerSession, lowManaDancerSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     const rechargeCasts = [];
@@ -1540,12 +1712,12 @@ try {
     assert.strictEqual(BotRoles.shouldRestForMana(lowManaPaladin), false, 'a Paladin must stay standing with the melee line when MP is low');
     assert.strictEqual(BotRoles.needsPartyManaRecovery(lowManaPaladin), true, 'a Paladin must remain eligible for Recharge so taunt control does not collapse');
 
-    World.user = { sessions: [manaLeaderSession, lowManaSingerSession] };
+    publishSessions([manaLeaderSession, lowManaSingerSession]);
     FollowingState.tick(lowManaSingerSession, lowManaSinger, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(lowManaSingerSession.plan, 'following', 'low MP alone must not seat a Sword Singer');
     assert.strictEqual(lowManaSinger.state.fetchSeated(), false, 'Sword Singer should stay on its feet at low MP');
 
-    World.user = { sessions: [manaLeaderSession, lowManaDancerSession] };
+    publishSessions([manaLeaderSession, lowManaDancerSession]);
     FollowingState.tick(lowManaDancerSession, lowManaDancer, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(lowManaDancerSession.plan, 'following', 'low MP alone must not seat a Bladedancer');
     assert.strictEqual(lowManaDancer.state.fetchSeated(), false, 'Bladedancer should stay on its feet at low MP');
@@ -1553,7 +1725,7 @@ try {
     rechargeCasts.length = 0;
     rechargeHealerSession.currentTargetId = undefined;
     rechargeHealer.unselect();
-    World.user = { sessions: [manaLeaderSession, rechargeHealerSession] };
+    publishSessions([manaLeaderSession, rechargeHealerSession]);
     FollowingState.tick(rechargeHealerSession, rechargeHealer, {
         skillExec(_session, _bot, data) { rechargeCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -1566,7 +1738,7 @@ try {
     rechargePaladinSession.plan = 'following';
     rechargeCasts.length = 0;
     manaLeaderSession.partyRecoveryCast = undefined;
-    World.user = { sessions: [manaLeaderSession, rechargeHealerSession, rechargePaladinSession] };
+    publishSessions([manaLeaderSession, rechargeHealerSession, rechargePaladinSession]);
     FollowingState.tick(rechargeHealerSession, rechargeHealer, {
         skillExec(_session, _bot, data) { rechargeCasts.push(data); }
     }, { say() {}, executeCombat() {}, executePvPCombat() {} });
@@ -1577,7 +1749,7 @@ try {
     lowManaMeleeSession.followPlayerSession = manaLeaderSession;
     lowManaMeleeSession.partyCompanion = true;
     lowManaMeleeSession.plan = 'following';
-    World.user = { sessions: [manaLeaderSession, lowManaMeleeSession] };
+    publishSessions([manaLeaderSession, lowManaMeleeSession]);
     FollowingState.tick(lowManaMeleeSession, lowManaMelee, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(lowManaMeleeSession.plan, 'following', 'a melee companion must keep following at critically low MP');
     assert.strictEqual(lowManaMelee.state.fetchSeated(), false, 'low MP alone must never seat a melee companion');
@@ -1593,7 +1765,7 @@ try {
     lowManaArcherRestSession.followPlayerSession = manaLeaderSession;
     lowManaArcherRestSession.partyCompanion = true;
     lowManaArcherRestSession.plan = 'following';
-    World.user = { sessions: [manaLeaderSession, lowManaArcherRestSession] };
+    publishSessions([manaLeaderSession, lowManaArcherRestSession]);
     FollowingState.tick(lowManaArcherRestSession, lowManaArcherRest, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(lowManaArcherRestSession.plan, 'resting', 'a low-MP archer should still enter party recovery');
     assert.strictEqual(lowManaArcherRest.state.fetchSeated(), true, 'ranged MP users should continue sitting to recover mana');
@@ -1603,7 +1775,7 @@ try {
     lowHpMeleeSession.followPlayerSession = manaLeaderSession;
     lowHpMeleeSession.partyCompanion = true;
     lowHpMeleeSession.plan = 'following';
-    World.user = { sessions: [manaLeaderSession, lowHpMeleeSession] };
+    publishSessions([manaLeaderSession, lowHpMeleeSession]);
     FollowingState.tick(lowHpMeleeSession, lowHpMelee, {}, { say() {}, executeCombat() {}, executePvPCombat() {} });
     assert.strictEqual(lowHpMeleeSession.plan, 'resting', 'low HP must still seat a melee companion regardless of its MP policy');
 
@@ -1627,7 +1799,7 @@ try {
         fetchKind: () => 'Weapon.Blunt',
         fetchName: () => 'Willow Staff'
     });
-    World.user = { sessions: [healerLeaderSession, healerAssistSession] };
+    publishSessions([healerLeaderSession, healerAssistSession]);
     World.npc = { spawns: [healerAssistThreat] };
     World.fetchNpcsInRadius = () => [healerAssistThreat];
     FollowingState.tick(healerAssistSession, healerAssistBot, {}, {
@@ -1679,7 +1851,7 @@ try {
     approachBufferSession.followPlayerSession = buffLeaderSession;
     approachBufferSession.partyCompanion = true;
     approachBufferSession.plan = 'following';
-    World.user = { sessions: [buffLeaderSession, approachBufferSession] };
+    publishSessions([buffLeaderSession, approachBufferSession]);
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
     const approachBuffCasts = [];
@@ -1770,7 +1942,7 @@ try {
     assert.strictEqual(approachBufferSession.pendingPartyChatResult, undefined, 'a disappeared support target must cancel its pending success announcement');
     World.fetchNpc = originalFetchNpc;
     World.fetchUser = originalFetchUser;
-    World.user = { sessions: [healerLeaderSession, healerAssistSession] };
+    publishSessions([healerLeaderSession, healerAssistSession]);
     World.npc = { spawns: [healerAssistThreat] };
     World.fetchNpcsInRadius = () => [healerAssistThreat];
 
@@ -1786,7 +1958,7 @@ try {
         busyAssistBot.state.setTowards(false);
     };
     let busyAssistTarget = null;
-    World.user = { sessions: [healerLeaderSession, busyAssistSession] };
+    publishSessions([healerLeaderSession, busyAssistSession]);
     FollowingState.tick(busyAssistSession, busyAssistBot, {}, {
         say() {},
         executeCombat(_session, _bot, npc) { busyAssistTarget = npc.fetchId(); },
@@ -1803,7 +1975,7 @@ try {
     unskilledHealerSession.followPlayerSession = healerLeaderSession;
     unskilledHealerSession.partyCompanion = true;
     unskilledHealerSession.plan = 'following';
-    World.user = { sessions: [healerLeaderSession, unskilledHealerSession, woundedCompanionSession] };
+    publishSessions([healerLeaderSession, unskilledHealerSession, woundedCompanionSession]);
     let inventedHeal = false;
     FollowingState.tick(unskilledHealerSession, unskilledHealer, {
         skillExec() { inventedHeal = true; }
@@ -1827,7 +1999,7 @@ try {
         fetchLocZ: () => 0,
         fetchName: () => 'tank threat'
     };
-    World.user = { sessions: [healerLeaderSession, unskilledTankSession] };
+    publishSessions([healerLeaderSession, unskilledTankSession]);
     World.npc = { spawns: [tankThreat] };
     World.fetchNpcsInRadius = () => [tankThreat];
     let inventedAggression = false;
@@ -1864,7 +2036,7 @@ try {
     transferTankSession.partyCompanion = true;
     transferTankSession.plan = 'following';
     learnSkill(transferTank, { selfId: 28, name: 'Aggression', mp: 10 });
-    World.user = { sessions: [healerLeaderSession, transferTankSession] };
+    publishSessions([healerLeaderSession, transferTankSession]);
     World.npc = { spawns: [tankThreat] };
     World.fetchNpcsInRadius = () => [tankThreat];
     let aggressionCasts = 0;
@@ -1968,7 +2140,7 @@ try {
         fetchLocZ: () => 0,
         fetchName: () => 'free pull target'
     };
-    World.user = { sessions: [healerLeaderSession, autoPullTankSession] };
+    publishSessions([healerLeaderSession, autoPullTankSession]);
     World.npc = { spawns: [autoPullTarget] };
     World.fetchNpcsInRadius = () => [autoPullTarget];
     let autoPullSkillCast = false;
@@ -2006,13 +2178,13 @@ try {
     const crowdedTarget = { ...autoPullTarget, fetchId: () => 1011, fetchLevel: () => 40, fetchLocX: () => 300, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
     const socialAdd = { ...autoPullTarget, fetchId: () => 1012, fetchLevel: () => 40, fetchLocX: () => 320, fetchClanName: () => 'ant', fetchClanHelpRadius: () => 400 };
     const safeTarget = { ...autoPullTarget, fetchId: () => 1013, fetchLevel: () => 40, fetchLocX: () => 800 };
-    World.user = { sessions: [scoredLeaderSession, scoredPullerSession] };
+    publishSessions([scoredLeaderSession, scoredPullerSession]);
     World.fetchNpcsInRadius = (x) => x < 500 ? [crowdedTarget, socialAdd] : [safeTarget];
     const crowdedScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, crowdedTarget);
     const safeScore = PartyPulling.scorePullTarget(scoredPuller, scoredLeaderSession, safeTarget);
     assert.ok(safeScore.score > crowdedScore.score, 'pull scoring should prefer a slightly farther isolated mob over a crowded social-risk target');
     assert.ok(crowdedScore.reasons.includes('social:1'), 'pull scoring should expose its social-risk reason');
-    World.user = { sessions: [healerLeaderSession, autoPullTankSession] };
+    publishSessions([healerLeaderSession, autoPullTankSession]);
     World.npc = { spawns: [autoPullTarget] };
     World.fetchNpcsInRadius = () => [autoPullTarget];
 
@@ -2057,7 +2229,7 @@ try {
     PartyAwareness.invalidateThreatProjection(healerLeaderSession);
     autoPullTankSession.currentTargetId = undefined;
     autoPullTank.unselect();
-    World.user = { sessions: [healerLeaderSession, autoPullTankSession, fallenAutoPullSession] };
+    publishSessions([healerLeaderSession, autoPullTankSession, fallenAutoPullSession]);
     let blockedAutoPullCombat = false;
     FollowingState.tick(autoPullTankSession, autoPullTank, {
         skillExec() { blockedAutoPullCombat = true; }
@@ -2088,7 +2260,7 @@ try {
     unbuffedCompanionSession.followPlayerSession = bufferLeaderSession;
     unbuffedCompanionSession.partyCompanion = true;
     unbuffedCompanionSession.plan = 'following';
-    World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
+    publishSessions([bufferLeaderSession, bufferSession, unbuffedCompanionSession]);
     let buffedTargetId = null;
     let appliedBuffSkillId = null;
 
@@ -2110,7 +2282,7 @@ try {
     fieldRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
     fieldRefreshSession.partyCompanion = true;
     fieldRefreshSession.plan = 'following';
-    World.user = { sessions: [fieldRefreshLeaderSession, fieldRefreshSession] };
+    publishSessions([fieldRefreshLeaderSession, fieldRefreshSession]);
     FollowingState.tick(fieldRefreshSession, fieldRefreshBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
@@ -2124,7 +2296,7 @@ try {
     overleveledRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
     overleveledRefreshSession.partyCompanion = true;
     overleveledRefreshSession.plan = 'following';
-    World.user = { sessions: [fieldRefreshLeaderSession, overleveledRefreshSession] };
+    publishSessions([fieldRefreshLeaderSession, overleveledRefreshSession]);
     FollowingState.tick(overleveledRefreshSession, overleveledRefreshBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
@@ -2140,7 +2312,7 @@ try {
     refreshSession.followPlayerSession = refreshLeaderSession;
     refreshSession.partyCompanion = true;
     refreshSession.plan = 'following';
-    World.user = { sessions: [refreshLeaderSession, refreshSession] };
+    publishSessions([refreshLeaderSession, refreshSession]);
     FollowingState.tick(refreshSession, refreshBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
@@ -2155,7 +2327,7 @@ try {
     recoverySession.followPlayerSession = recoveryLeaderSession;
     recoverySession.partyCompanion = true;
     recoverySession.plan = 'following';
-    World.user = { sessions: [recoveryLeaderSession, recoverySession] };
+    publishSessions([recoveryLeaderSession, recoverySession]);
     FollowingState.tick(recoverySession, recoveryBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
@@ -2168,7 +2340,7 @@ try {
     fieldRecoverySession.followPlayerSession = fieldRefreshLeaderSession;
     fieldRecoverySession.partyCompanion = true;
     fieldRecoverySession.plan = 'following';
-    World.user = { sessions: [fieldRefreshLeaderSession, fieldRecoverySession] };
+    publishSessions([fieldRefreshLeaderSession, fieldRecoverySession]);
     FollowingState.tick(fieldRecoverySession, fieldRecoveryBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
@@ -2177,23 +2349,84 @@ try {
 
     const errandLeader = fakeActor(2000037, { locX: 83396, locY: 147904, locZ: -3404 });
     const errandLeaderSession = fakeSession('player_town_errand_party', errandLeader);
-    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404 });
-    errandBot.backpack.fetchEquippedWeapon = () => ({ fetchRank: () => 'c' });
+    const zeroWalletErrandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404 });
+    zeroWalletErrandBot.backpack.fetchEquippedWeapon = () => ({ fetchRank: () => 'c' });
+    const zeroWalletErrandSession = fakeSession('bot_town_errand_party', zeroWalletErrandBot);
+    zeroWalletErrandSession.followPlayerSession = errandLeaderSession;
+    zeroWalletErrandSession.partyCompanion = true;
+    zeroWalletErrandSession.plan = 'following';
+    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404, level: 40 });
+    const cWeapon = DataCache.items.find(row => row.etc?.rank === 'c' && row.template?.kind === 'Weapon.Sword');
+    assert(cWeapon, 'the native C-grade sword catalog must exist');
+    equippedErrandKit(errandBot, cWeapon.selfId);
     const shotSeller = fakeActor(2090038, { locX: 83600, locY: 148300, locZ: -3406 });
     shotSeller.fetchName = () => 'Squeesh';
     shotSeller.fetchPrivateStore = () => ({ storeType: 1, town: 'Giran',
         items: [{ selfId: 1464, count: 999999, price: 150 }] });
+    // Original unfunded setup: retaining the rank-only weapon and no Adena
+    // must neither create an errand nor manufacture inventory/money.
+    publishSessions([errandLeaderSession, zeroWalletErrandSession, fakeSession('bot_shot_seller', shotSeller)]);
+    FollowingState.tick(zeroWalletErrandSession, zeroWalletErrandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(zeroWalletErrandSession.plan, 'following');
+    assert.strictEqual(zeroWalletErrandSession.companionShopping, undefined);
+    assert.deepStrictEqual(zeroWalletErrandBot.backpack.fetchItems(), []);
+    assert.strictEqual(zeroWalletErrandBot.backpack.fetchTotalAdena(), 0);
+
     const errandSession = fakeSession('bot_town_errand_party', errandBot);
     errandSession.followPlayerSession = errandLeaderSession;
     errandSession.partyCompanion = true;
     errandSession.plan = 'following';
+    // Isolate the stock errand within the native equipment review cooldown.
+    errandSession.lastCompanionEquipmentCheckAt = Date.now();
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
+    assert(Economy.forActor(errandBot, errandSession).stock('shots').usePerHour > 0,
+        'the equipped zero-wallet control must have positive native shot use');
+    FollowingState.tick(errandSession, errandBot, {}, {
+        getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
+        getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
+        say() {}, executeCombat() {}, executePvPCombat() {}
+    });
+    assert.strictEqual(errandSession.plan, 'following', 'positive shot use alone cannot fund an errand');
+    assert.strictEqual(errandSession.companionShopping, undefined);
+    assert.strictEqual(errandBot.backpack.fetchTotalAdena(), 0);
+    assert.strictEqual(errandBot.backpack.fetchItemFromSelfId(1464), undefined,
+        'an unfunded actor cannot mint a shot stack');
+    const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
+    // The original zero-wallet scene above keeps its legacy quote 150.
+    // This separate positive scene uses the authored Squeesh price (15 at
+    // the default rate), rather than raising the wallet against a fake quote.
+    const authoredSqueeshPrice = Pricing.sellersOf(1464)
+        .find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price;
+    shotSeller.fetchPrivateStore = () => ({ storeType: 1, town: 'Giran',
+        items: [{ selfId: 1464, count: 999999, price: authoredSqueeshPrice }] });
+    const physicalShotQuote = MarketOpportunity.hotOffers(1464, { town: 'Giran', buyerCharacterId: errandBot.fetchId() })
+        .find(offer => offer.sourceName === 'Squeesh');
+    assert(physicalShotQuote && physicalShotQuote.price > 0);
+    const authoredShotInputs = fundAuthoredKit(errandBot, errandSession, inputs => {
+        assert(inputs.shotUse > 0, 'the equipped native C weapon must have positive authored shot use');
+        assert.strictEqual(inputs.potionUse, 0, 'this original DPS actor has no potion expense in the authored hunt table');
+        return Math.ceil(inputs.shotUse) * physicalShotQuote.price;
+    }, 'Giran stock: one authored hour at the actual Squeesh quote');
+    const desiredShotQuantity = Math.ceil(authoredShotInputs.shotUse);
+    assert.strictEqual(physicalShotQuote.price,
+        Pricing.sellersOf(authoredShotInputs.shotId).find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price,
+        'the scene quote must equal the independently authored static merchant price');
+    assert.strictEqual(Economy.forActor(errandBot, errandSession).stock('shots').usePerHour, authoredShotInputs.shotUse,
+        'the native economic output must agree with the independently funded input');
+
+    const assertFundedStockKitUnchanged = recordPhysicalKit(errandBot, errandSession.accountId);
     const errandLines = [];
     BotManager.sessions = [];
     BotManager.botPartySay = (_session, text) => {
         errandLines.push(text);
         return true;
     };
-    World.user = { sessions: [errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)] };
+    publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
     FollowingState.tick(errandSession, errandBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
@@ -2207,19 +2440,21 @@ try {
         'shot errands must target the actual static merchant instead of an ordinary NPC');
     assert(errandLines.some((line) => line.includes('returning') || line.includes('back to camp')), 'companion should announce its return before shopping');
     assert.strictEqual(errandBot.fetchPrivateStore?.(), undefined, 'companion errand must never create a private sale store');
+    assertFundedStockKitUnchanged();
 
-    const marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
+    let marketSeller = fakeActor(2000039, { locX: 83500, locY: 147904, locZ: -3404 });
     const marketBot = fakeActor(2000040, { locX: 83456, locY: 147904, locZ: -3404 });
+    equippedErrandKit(marketBot, 2369);
     const marketSession = fakeSession('bot_market_errand_party', marketBot);
     marketSession.followPlayerSession = errandLeaderSession;
     marketSession.partyCompanion = true;
     marketSession.plan = 'following';
     marketSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.hotOffers = () => ([{
-        sourceType: 'private_store', sourceId: marketSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
-        town: 'Giran', session: { accountId: 'bot_market_seller', actor: marketSeller }
-    }]);
-    World.user = { sessions: [errandLeaderSession, marketSession, { accountId: 'seller', actor: marketSeller }] };
+    const giranAd = publishNativeEquipmentShop(marketSeller, 'Giran');
+    marketSeller = giranAd.projection.actor;
+    fundAuthoredKit(marketBot, marketSession, () => giranAd.lines[0].price, 'Giran physical Short Sword ask');
+    const assertMarketKitUnchanged = recordPhysicalKit(marketBot, marketSession.accountId);
+    publishSessions([errandLeaderSession, marketSession]);
     FollowingState.tick(marketSession, marketBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),
@@ -2227,22 +2462,25 @@ try {
     });
     assert.strictEqual(marketSession.companionShopping?.kind, 'market_purchase', 'companion should prefer an available planned market upgrade in town');
     assert.strictEqual(marketSession.shoppingTarget?.actorId, marketSeller.fetchId(), 'companion market errand should walk to the live seller');
-    MarketOpportunity.hotOffers = originalHotOffers;
+    assertMarketKitUnchanged();
+    assert.strictEqual(fixtureSql.prepare('SELECT count FROM afk_trade_lines WHERE shopId=?').get(giranAd.id).count, 1, 'walking to a seller must not manufacture a deal');
+    clearEquipmentAd(giranAd);
 
     const starterTownLeader = fakeActor(2000046, { locX: 45475, locY: 48359, locZ: -3060 });
     const starterTownLeaderSession = fakeSession('player_elven_town_errand_party', starterTownLeader);
-    const starterTownSeller = fakeActor(2000047, { locX: 45520, locY: 48359, locZ: -3060 });
+    let starterTownSeller = fakeActor(2000047, { locX: 45520, locY: 48359, locZ: -3060 });
     const starterTownBot = fakeActor(2000048, { locX: 45500, locY: 48359, locZ: -3060 });
+    equippedErrandKit(starterTownBot, 2369);
     const starterTownSession = fakeSession('bot_elven_town_market_errand', starterTownBot);
     starterTownSession.followPlayerSession = starterTownLeaderSession;
     starterTownSession.partyCompanion = true;
     starterTownSession.plan = 'following';
     starterTownSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.hotOffers = () => ([{
-        sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
-        town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
-    }]);
-    World.user = { sessions: [starterTownLeaderSession, starterTownSession, { accountId: 'seller', actor: starterTownSeller }] };
+    const elvenAd = publishNativeEquipmentShop(starterTownSeller, 'Elven Village');
+    starterTownSeller = elvenAd.projection.actor;
+    fundAuthoredKit(starterTownBot, starterTownSession, () => elvenAd.lines[0].price, 'Elven Village physical Short Sword ask');
+    const assertStarterKitUnchanged = recordPhysicalKit(starterTownBot, starterTownSession.accountId);
+    publishSessions([starterTownLeaderSession, starterTownSession]);
     World.fetchNpcsInRadius = () => [];
     FollowingState.tick(starterTownSession, starterTownBot, {}, {
         getClosestNewbieGuide: () => ({ locX: 45475, locY: 48359, locZ: -3060 }),
@@ -2250,30 +2488,31 @@ try {
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
     assert.strictEqual(starterTownSession.companionShopping?.kind, 'market_purchase', 'a starter village outside the movement atlas must still allow normal in-town errands');
-    MarketOpportunity.hotOffers = originalHotOffers;
 
+
+    assertStarterKitUnchanged();
     const fieldNearStarterLeader = fakeActor(2000051, { locX: 49475, locY: 48359, locZ: -3060 });
     const fieldNearStarterLeaderSession = fakeSession('player_near_elven_field_party', fieldNearStarterLeader);
     const fieldNearStarterBot = fakeActor(2000052, { locX: 49500, locY: 48359, locZ: -3060 });
+    equippedErrandKit(fieldNearStarterBot, 2369);
     const fieldNearStarterSession = fakeSession('bot_near_elven_field_market', fieldNearStarterBot);
     fieldNearStarterSession.followPlayerSession = fieldNearStarterLeaderSession;
     fieldNearStarterSession.partyCompanion = true;
     fieldNearStarterSession.plan = 'following';
+    fundAuthoredKit(fieldNearStarterBot, fieldNearStarterSession, () => elvenAd.lines[0].price, 'Field negative control with the same physical ask');
     fieldNearStarterSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
-    MarketOpportunity.hotOffers = () => ([{
-        sourceType: 'private_store', sourceId: starterTownSeller.fetchId(), itemName: 'Sword of Reflection', price: 0,
-        town: 'Elven Village', session: { accountId: 'bot_elven_market_seller', actor: starterTownSeller }
-    }]);
-    World.user = { sessions: [fieldNearStarterLeaderSession, fieldNearStarterSession, { accountId: 'seller', actor: starterTownSeller }] };
+    const assertFieldKitUnchanged = recordPhysicalKit(fieldNearStarterBot, fieldNearStarterSession.accountId);
+    publishSessions([fieldNearStarterLeaderSession, fieldNearStarterSession]);
     FollowingState.tick(fieldNearStarterSession, fieldNearStarterBot, {}, {
         getClosestNewbieGuide: () => ({ locX: 45475, locY: 48359, locZ: -3060 }),
         getClosestTown: () => ({ name: 'Elven Village', x: 46926, y: 51511, z: -2976 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
     assert.notStrictEqual(fieldNearStarterSession.companionShopping?.kind, 'market_purchase', 'a nearby farming field must not be treated as a starter village market');
-    MarketOpportunity.hotOffers = originalHotOffers;
+    assertFieldKitUnchanged();
+    clearEquipmentAd(elvenAd);
 
-    World.user = { sessions: [bufferLeaderSession, bufferSession, unbuffedCompanionSession] };
+    publishSessions([bufferLeaderSession, bufferSession, unbuffedCompanionSession]);
 
     const compactPartyStatus = BotBrainContext.compactStatus(
         bufferSession,
@@ -2292,16 +2531,39 @@ try {
     rewardBotSession.followPlayerSession = rewardLeaderSession;
     rewardBotSession.partyCompanion = true;
     rewardBotSession.plan = 'hunting';
-    World.user = { sessions: [rewardLeaderSession, rewardBotSession] };
+    publishSessions([rewardLeaderSession, rewardBotSession]);
     World.removeNpc = () => {};
 
-    NpcDied(rewardBotSession, rewardBot, {
-        fetchId: () => 1004,
-        fetchLocX: () => 60,
-        fetchLocY: () => 0,
-        fetchAcquiredExp: () => 100,
-        fetchRewardSp: () => 20
-    });
+    // This synchronous unit tests native reward sharing, not durable quests
+    // or training. Observe those asynchronous boundaries explicitly.
+    const Quest = invoke('GameServer/Quest/QuestService');
+    const Training = invoke('GameServer/Bot/BotSkillTraining');
+    const savedOnKill = Quest.onKill, savedReview = Training.review;
+    const killedNpc = { fetchId: () => 1004, fetchLocX: () => 60, fetchLocY: () => 0,
+        fetchAcquiredExp: () => 100, fetchRewardSp: () => 20 };
+    let killCallbacks = 0, trainingCallbacks = 0;
+    Quest.onKill = (session, npc, killer) => {
+        killCallbacks++;
+        assert.strictEqual(session, rewardBotSession);
+        assert.strictEqual(npc, killedNpc);
+        assert.strictEqual(killer, rewardBot);
+        return Promise.resolve(null);
+    };
+    Training.review = (session, options) => {
+        trainingCallbacks++;
+        assert.strictEqual(session, rewardBotSession);
+        assert.deepStrictEqual(options, { onSpAward: true });
+        assert.strictEqual(session.actor.fetchSp(), 13, 'native reward SP must be present before the training callback');
+        return Promise.resolve(null);
+    };
+    try {
+        NpcDied(rewardBotSession, rewardBot, killedNpc);
+        assert.strictEqual(killCallbacks, 1, 'the actual killer must receive one ordinary quest callback');
+        assert.strictEqual(trainingCallbacks, 1, 'only the bot member receives a training callback');
+    } finally {
+        Quest.onKill = savedOnKill;
+        Training.review = savedReview;
+    }
 
     assert.strictEqual(rewardLeader.fetchExp(), 65, 'two eligible party members should receive the C4 1.30 party EXP bonus');
     assert.strictEqual(rewardLeader.fetchSp(), 13, 'two eligible party members should receive the C4 1.30 party SP bonus');
@@ -2329,7 +2591,7 @@ try {
         'service should preserve both server-side companions'
     );
 
-    World.user = { sessions: [partyHudLeaderSession, partyHudBotASession, partyHudBotBSession] };
+    publishSessions([partyHudLeaderSession, partyHudBotASession, partyHudBotBSession]);
     World.fetchNpcsInRadius = () => [];
     assert.deepStrictEqual(
         PartyPulling.supportProviders(partyHudLeaderSession),
@@ -2935,7 +3197,7 @@ try {
     toolSession.followPlayerSession = leaderSession;
     toolSession.partyCompanion = true;
     toolSession.plan = 'following';
-    World.user = { sessions: [leaderSession, toolSession] };
+    publishSessions([leaderSession, toolSession]);
 
     toolBot.classId = 15;
     learnSkill(toolBot, { selfId: 1204, name: 'Wind Walk', spell: true, distance: 400, mp: 20 });
@@ -3047,7 +3309,7 @@ try {
     huntingSession.partyCompanion = true;
     huntingSession.plan = 'hunting';
     huntingSession.currentSpot = { id: 'test-spot' };
-    World.user = { sessions: [leaderSession, huntingSession] };
+    publishSessions([leaderSession, huntingSession]);
     World.fetchNpcsInRadius = () => [{
         fetchId: () => 1002,
         fetchAttackable: () => true,
@@ -3073,7 +3335,7 @@ try {
     emptyHuntSession.partyCompanion = true;
     emptyHuntSession.plan = 'hunting';
     emptyHuntSession.currentSpot = { id: 'test-spot', name: 'Test Spot' };
-    World.user = { sessions: [leaderSession, emptyHuntSession] };
+    publishSessions([leaderSession, emptyHuntSession]);
     World.fetchNpcsInRadius = () => [];
 
     HuntingState.tick(emptyHuntSession, emptyHuntBot, {}, {
@@ -3113,6 +3375,10 @@ try {
     });
 } finally {
     Math.random = originalRandom;
+    for (const row of fixtureAds) AfkTrade.refreshRecord({ ...row, status: 'closed' });
+    fixtureSql?.close();
+    fs.rmSync(isolated.directory, { recursive: true, force: true });
+    clearPublishedSessions();
     World.user = originalUsers;
     World.fetchUser = originalFetchUser;
     World.fetchNpc = originalFetchNpc;

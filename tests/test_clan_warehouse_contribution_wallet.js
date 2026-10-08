@@ -4,6 +4,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-warehouse-contribution-wallet.sqlite');

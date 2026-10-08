@@ -163,7 +163,7 @@ async function until(predicate, label) {
         assert.deepEqual(await row(duplicateToken.characterId), duplicateBefore);
         console.log('Cross-page token repetition cancels without a second deadline write: PASS');
 
-        for (const gateName of ['fencedBots', 'economyBots', 'commandInflight']) {
+        for (const gateName of ['fencedBots', 'commandInflight']) {
             const held = await claim(), heldBefore = await row(held.characterId), heldRound = begin();
             const heldRequest = page(heldRound, [held]);
             await flushBarrier(async ({ entry, resume }) => {
@@ -176,7 +176,7 @@ async function until(predicate, label) {
             assert.deepEqual(await row(held.characterId), heldBefore);
             assert.deepEqual(ack(heldRequest).payload.renewals, []);
         }
-        console.log('Main fence/economy/command changes during actual native flush reject renewal: PASS');
+        console.log('Main fence/command changes during actual native flush reject renewal: PASS');
 
         const changed = await claim(), changedBefore = await row(changed.characterId), changedRound = begin();
         const changedRequest = page(changedRound, [changed]);

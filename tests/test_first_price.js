@@ -39,7 +39,7 @@ const expected = Math.min(basePrice, Math.max(NpcSellRules.npcBuyPrice(basePrice
 assert.strictEqual(first.price, Math.round(expected), 'price = hours x their hour = kills needed x their income per kill, inside the NPC walls');
 assert(first.price >= NpcSellRules.npcBuyPrice(basePrice) && first.price <= basePrice, 'first price within the NPC walls');
 
-// The hour of the level comes from the bots' measured band: a rich band hits the NPC price, a poor one the buy-back.
+// ARCH-NOTE: first prices use the shared table; private income from another bot is not a cohort price input.
 function band(level, perKill) {
     let bot = { characterId: 7000 + perKill, level, stats: { classId: 1 }, inventory: { 1: { selfId: 1, equipped: true } } };
     for (let i = 0; i < 3; i++) {
@@ -49,11 +49,11 @@ function band(level, perKill) {
 }
 Efficiency.resetLevelBands();
 band(24, 1e7);
-assert.strictEqual(FirstPrice.firstPrice(itemId, { spots, timestamp: 1000 }).price, basePrice, 'capped at the NPC price');
+assert.strictEqual(FirstPrice.firstPrice(itemId, { spots, timestamp: 1000 }).price, first.price, 'another rich bot cannot change the first price');
 Efficiency.resetLevelBands();
 band(24, 0.001);
-assert.strictEqual(FirstPrice.firstPrice(itemId, { spots, timestamp: 1000 }).price, NpcSellRules.npcBuyPrice(basePrice),
-    'never below the NPC buy-back');
+assert.strictEqual(FirstPrice.firstPrice(itemId, { spots, timestamp: 1000 }).price, first.price, 'another poor bot cannot change the first price');
+assert(first.price >= NpcSellRules.npcBuyPrice(basePrice), 'never below the NPC buy-back');
 Efficiency.resetLevelBands();
 
 const notDropped = DataCache.items.find((item) => Number(item.template?.price) > 0 && !dropIds.has(Number(item.selfId))

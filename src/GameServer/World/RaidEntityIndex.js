@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const telemetry = {
     rebuilds: 0,
     objectsScanned: 0,
@@ -129,8 +130,8 @@ function rebuild(world) {
     if (!state) return null;
     const spawns = state.source;
     spawns.forEach((npc) => indexObject(state, npc));
-    telemetry.rebuilds += 1;
-    telemetry.objectsScanned += spawns.length;
+    DiagnosticConfig.developerDiagnostics && (telemetry.rebuilds += 1);
+    DiagnosticConfig.developerDiagnostics && (telemetry.objectsScanned += spawns.length);
     return state;
 }
 
@@ -151,7 +152,7 @@ function add(world, npc) {
     if (!state) return false;
     const wasTracked = state.tracked.has(npc);
     indexObject(state, npc);
-    if (!wasTracked) telemetry.adds += 1;
+    if (!wasTracked) DiagnosticConfig.developerDiagnostics && (telemetry.adds += 1);
     return true;
 }
 
@@ -163,22 +164,22 @@ function remove(world, npc) {
     removeMembership(state, npc, state.membership.get(npc));
     state.tracked.delete(npc);
     state.indexedCount = Math.max(0, state.indexedCount - 1);
-    telemetry.removes += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.removes += 1);
     return true;
 }
 
 function bossByObjectId(world, id) {
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     return ensure(world)?.bossesByObjectId.get(positiveId(id)) || null;
 }
 
 function raidEntityByObjectId(world, id) {
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     return ensure(world)?.raidEntitiesByObjectId.get(positiveId(id)) || null;
 }
 
 function bossByTemplateId(world, id) {
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     const bosses = ensure(world)?.bossesByTemplateId.get(positiveId(id));
     return bosses?.values().next().value || null;
 }
@@ -186,7 +187,7 @@ function bossByTemplateId(world, id) {
 function bossFor(world, target) {
     if (!target) return null;
     if (isRaidBoss(target)) return target;
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     const state = ensure(world);
     if (!state) return null;
     const bossObjectId = positiveId(target.minionBossObjectId);
@@ -197,7 +198,7 @@ function bossFor(world, target) {
 }
 
 function entitiesForRaid(world, raid) {
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     const state = ensure(world);
     if (!state || !raid) return [];
     const bossObjectId = positiveId(raid.bossId);
@@ -218,7 +219,7 @@ function entitiesForRaid(world, raid) {
 }
 
 function bosses(world) {
-    telemetry.lookups += 1;
+    DiagnosticConfig.developerDiagnostics && (telemetry.lookups += 1);
     return [...(ensure(world)?.bossesByObjectId.values() || [])];
 }
 
@@ -227,6 +228,7 @@ function has(world, npc) {
 }
 
 function stats(world) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     const state = ensure(world);
     const minions = new Set();
     state?.minionsByBossObjectId.forEach((values) => values.forEach((npc) => minions.add(npc)));

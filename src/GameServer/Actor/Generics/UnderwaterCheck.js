@@ -74,7 +74,7 @@ function underwaterCheck(session, actor) {
         }
 
         let current = actor.fetchLocZ() + 3790;
-        console.info(mapX + ' ' + mapY + ' ' + current + ' ' + (current < 0 ? 'Underwater?' : ''));
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(mapX + ' ' + mapY + ' ' + current + ' ' + (current < 0 ? 'Underwater?' : ''));
 
         if (actor.stateWater === true) {
             return;

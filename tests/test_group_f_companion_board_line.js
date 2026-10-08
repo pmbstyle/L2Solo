@@ -10,13 +10,14 @@ const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const Equipment = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
 const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
 const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+const Training = invoke('GameServer/Bot/BotSkillTraining');
 
 const scratch = path.join(process.cwd(), 'tmp', 'test-group-f-companion-line');
 fs.mkdirSync(scratch, { recursive: true });
 const directory = fs.mkdtempSync(path.join(scratch, 'world-'));
 const originalTmp = process.env.TMPDIR;
 process.env.TMPDIR = directory;
-const originals = { world: RuntimeWorld.user, restock: Shopping.scheduleRestock, upgrade: Upgrade.applyBestUpgrades };
+const originals = { world: RuntimeWorld.user, restock: Shopping.scheduleRestock, upgrade: Upgrade.applyBestUpgrades, training: Training.review };
 const BUYER = 988100;
 const SELLER = 988101;
 const SABER = 123;
@@ -36,6 +37,10 @@ const SABER = 123;
         // Certify arrival and real escrow settlement; equipping/restocking is
         // covered elsewhere and requires a full world actor beyond this harness.
         Upgrade.applyBestUpgrades = () => [];
+        // The quest harness is a bag/packet actor, not a full skill actor.
+        // Skill training is certified separately; keep this exact-line native
+        // purchase fixture confined to arrival, money and escrow settlement.
+        Training.review = async () => null;
         const savedPlan = () => {
             session.coldLifeState = { characterId: BUYER, level: 40, stats: { classId: 0,
                 equipmentPlan: { strategy: 'market', status: 'active', target: { selfId: SABER, name: 'Saber', slot: 7 } } } };
@@ -91,6 +96,7 @@ const SABER = 123;
     } finally {
         Shopping.scheduleRestock = originals.restock;
         Upgrade.applyBestUpgrades = originals.upgrade;
+        Training.review = originals.training;
         RuntimeWorld.user = originals.world;
         AfkTrade._resetForTests();
         await fixture.close();

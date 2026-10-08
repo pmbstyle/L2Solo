@@ -15,6 +15,8 @@ function createLifecycleSafetyRuntime(population, coordinator) {
         && population.lifecycleSafetySweep === runtime && population.backgroundJobRegistry?.started === true;
     runtime = new LifecycleSafetySweep({
         active,
+        repairTotals: () => [Metrics.counters.coldSafetyStateRepairs, Metrics.counters.coldSafetyQueueRepairs, Metrics.counters.coldSafetyOrphanRepairs],
+        onFinished: deltas => { Metrics.lastSafetyRepairs = deltas; },
         now: () => Date.now(),
         budgetMs: Math.max(1, Number(Config.schedulerSliceMs) || 12),
         retryMs: Math.max(100, Number(Config.backgroundGovernorWindowMs) || 1000),
@@ -50,12 +52,6 @@ function createLifecycleSafetyRuntime(population, coordinator) {
             request: (kind, rows, worker) => coordinator.requestSafety(kind, rows, worker),
             poll: timestamp => coordinator.pollSafety(timestamp),
             cancel: () => coordinator.cancelSafety()
-        },
-        hot: {
-            probe: checkpoint => population.hotBoardReviewService?.probeSafety?.(checkpoint)
-                || { status: 'deferred', reason: 'hot_service_not_ready' },
-            repair: receipt => population.hotBoardReviewService?.repairSafety?.(receipt)
-                || { status: 'deferred', reason: 'hot_service_not_ready' }
         }
     });
     return runtime;

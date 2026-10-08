@@ -99,17 +99,24 @@ try {
         assert.strictEqual(errorCalls.length, calls, 'disabled knowledge does not request a personal learning curve');
     });
 
-    contract('craft value keeps its original sixth-source weight', () => {
-        C4RecipeItems.loadRecipeItems = () => ({ fixture: { type: 'dwarven', productId: OTHER,
-            productCount: 2, successRate: 100, materials: [{ selfId: ITEM, amount: 2 }] } });
+    contract('prepared owner craft value keeps its sixth-source weight; unsupported speculation is unknown', () => {
+        C4RecipeItems.loadRecipeItems = () => { throw Error('prior must not scan the recipe catalogue'); };
         PriceBelief.resetCaches();
-        const crafted = PriceBelief.prior(ITEM, ctx({ knowledgeEnabled: false }));
-        // Product median 2000, two outputs / two inputs: one input worth 2000.
-        near(PriceBelief.demandValue(ITEM, now), 2000, 'existing recipe margin source');
-        near(crafted.K, 8.1, 'craft adds weight 0.3');
+        assert.strictEqual(PriceBelief.demandValue(ITEM, now), null, 'legacy owner-blind cache is unavailable');
+        const prepared = ctx({ knowledgeEnabled: false,
+            derivedDemandValue: { known: true, value: 2000, ownerId: 43 } });
+        const crafted = PriceBelief.prior(ITEM, prepared);
+        near(PriceBelief.demandValue(ITEM, prepared), 2000, 'completed finite owner route supplies its scalar');
+        near(crafted.K, 8.1, 'prepared craft adds weight 0.3');
         const unbiased = (5 * Math.log(2000) + Math.log(2200) + Math.log(1800)
             + 0.5 * Math.log(600) + 0.3 * Math.log(500) + 0.3 * Math.log(2000)) / 8.1;
-        near(crafted.mu, unbiased, 'all six sources retain the weighted log centre');
+        near(crafted.mu, unbiased, 'supported prepared source retains weighted log centre');
+        assert.strictEqual(PriceBelief.demandValue(ITEM, ctx({ derivedDemandValue: 2000 })), null,
+            'a bare unqualified value is not a supported owner calculation');
+        assert.strictEqual(PriceBelief.demandValue(ITEM, ctx({ derivedDemandValue: { known: true, value: 2000, ownerId: 44 } })), null);
+        const unknown = PriceBelief.prior(ITEM, ctx({ knowledgeEnabled: false,
+            derivedDemandValue: { known: false, value: 2000 } }));
+        near(unknown.K, 7.8, 'unknown preparation contributes no speculative willingness');
     });
 }
 finally {

@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Policy = require('./InteractionMemoryPolicy');
 
 // Combat callbacks enqueue immutable episodes; SQL runs after the callback.
@@ -20,7 +21,7 @@ class InteractionEventQueue {
         if (this.stopping) return false;
         const event = Policy.event(this.memory.enrichEvent ? this.memory.enrichEvent(input) : input);
         if (this.pending.has(event.key)) return true;
-        if (this.pending.size >= 1024) { this.counters.busy++; return false; }
+        if (this.pending.size >= 1024) { DiagnosticConfig.developerDiagnostics && (this.counters.busy++); return false; }
         this.pending.set(event.key, event);
         this.schedule(0);
         return true;
@@ -50,7 +51,7 @@ class InteractionEventQueue {
             if (this.now() >= this.drainDeadline) break;
             if (event.at < this.now() - Policy.ACCEPT_WINDOW_MS) {
                 this.pending.delete(event.key);
-                this.counters.expired++;
+                DiagnosticConfig.developerDiagnostics && (this.counters.expired++);
                 continue;
             }
             try {
@@ -58,15 +59,15 @@ class InteractionEventQueue {
                 if (!result.ok) {
                     if (result.reason === 'expired_event') {
                         this.pending.delete(event.key);
-                        this.counters.expired++;
+                        DiagnosticConfig.developerDiagnostics && (this.counters.expired++);
                     }
                     continue;
                 }
                 this.pending.delete(event.key);
-                this.counters.committed++;
+                DiagnosticConfig.developerDiagnostics && (this.counters.committed++);
                 this.onCommit(event.sourceId);
             } catch (error) {
-                this.counters.errors++;
+                DiagnosticConfig.developerDiagnostics && (this.counters.errors++);
                 this.onError(error);
                 // Rotate failed episodes so one unavailable owner cannot starve others.
                 if (this.pending.delete(event.key)) this.pending.set(event.key, event);
@@ -74,7 +75,7 @@ class InteractionEventQueue {
         }
     }
 
-    snapshot() { return { ...this.counters, pending: this.pending.size }; }
+    snapshot() { return { ...(DiagnosticConfig.developerDiagnostics ? this.counters : { diagnosticsEnabled: false }), pending: this.pending.size }; }
 
     async drain(timeoutMs = 3000) {
         this.stopping = true;

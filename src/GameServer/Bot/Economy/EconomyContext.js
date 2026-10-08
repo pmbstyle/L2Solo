@@ -5,7 +5,12 @@ const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const { WishNetwork, remember } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
+const Diagnostics = require('./EconomyDiagnostics');
+const { fnv1a32 } = require('../Fnv1a');
 const engine = new WishNetwork();
+const Trip = require('./EconomicTrip');
+let routeAnchors = new WeakMap();
+let mainColdForState = null;
 let runtime = {};
 const extensions = new Map();
 function configure(providers = {}) { runtime = providers; reset(); }
@@ -15,6 +20,14 @@ function registerProvider(key, provider) {
 }
 // actorKey -> { key, reads, context } of bots: bounded (WishNetwork.remember).
 const cache = new Map();
+let planningContexts = 0;
+function setPlanningContexts(count) {
+    planningContexts = Math.max(0, Math.min(64, Math.floor(Number(count) || 0)));
+    while (cache.size > 64 - planningContexts) {
+        const key = cache.keys().next().value; cache.delete(key); engine.forget(key, 'planning_capacity');
+        if (Diagnostics.active()) Diagnostics.count('context', 'eviction', 'planning_capacity');
+    }
+}
 // Groups apart, so a party composition that weighs many candidate groups
 // never evicts the bots' own reviews: `group:<partyId>` -> { key, members,
 // context }, removed when the party ends (forgetGroup) and bounded besides;
@@ -41,25 +54,43 @@ function stateForActor(actor, session = actor?.session) {
                 slot: Number(item.fetchSlot?.() || 0), enchant: item.fetchEnchantLevel?.() ?? item.fetchEnchant?.() ?? 0 }] };
     }
     const hotKit = invoke('GameServer/Bot/Population/ColdCombatProfile').capture(actor);
-    return { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
+    const state = { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
         spotId: session?.currentSpot?.id || stored.spotId,
-        stats: { ...stored.stats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
+        stats: { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...stored.stats, coldCombat: hotKit, hennas: [...(session?.hennas || stored.stats?.hennas || [])], soulCrystalQuest: session?.questStates?.get(350)?.isStarted() === true || stored.stats?.soulCrystalQuest, classId: actor.fetchClassId?.(), exp: actor.fetchExp?.(), karma: actor.fetchKarma?.(), pk: actor.fetchPk?.() },
         party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored.party?.role } : null,
         activity: session?.plan || 'hunting' };
+    const loc = { locX: Number(actor.fetchLocX?.()), locY: Number(actor.fetchLocY?.()), locZ: Number(actor.fetchLocZ?.()) };
+    if (!Object.values(loc).every(Number.isFinite)) Object.assign(loc, stored.loc || {});
+    state.loc = loc;
+    return routeState(state, session);
+}
+function routeState(state, session) {
+    if (!session || typeof session !== 'object') return state;
+    const frame = Trip.frame(state); frame.loc = null;
+    const event = JSON.stringify([state.spotId, state.stats?.decisionSeq, frame]);
+    const held = routeAnchors.get(session);
+    const anchor = held?.event === event ? held : { event, loc: state.loc };
+    routeAnchors.set(session, anchor);
+    return { ...state, loc: anchor.loc };
 }
 function inputKey(state, deps = {}) {
     const stats = state.stats || {};
     const items = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount, row.equippedCount || row.equipped,
-        row.slot, row.enchant, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
+        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, row.kind, row.rank, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
-    return [state.level, stats.classId, items, positive(state.adena),
-        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
+    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
+        deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
+        Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
+        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.clanId, state.party?.partyId, state.partyId,
+        stats.generatedCold, stats.race, stats.marketSellRetryAfter,
+        Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
+        invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
-        deps.productionStatus?.inputKey || '', deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
+        deps.inputKey || '', deps.mode || '', Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
         stats.production?.crafts || 0, positive(state.sp),
@@ -95,7 +126,8 @@ function watchedBoard(board, watch) {
     if (!board) return board;
     return Object.assign(Object.create(board), {
         first: (selfId, ...rest) => { watch(selfId); return board.first(selfId, ...rest); },
-        list: (selfId, ...rest) => { watch(selfId); return board.list(selfId, ...rest); }
+        list: (selfId, ...rest) => { watch(selfId); return board.list(selfId, ...rest); },
+        ...(board.heads ? { heads: (selfId, ...rest) => { watch(selfId); return board.heads(selfId, ...rest); } } : {})
     });
 }
 function resolved(state, deps) {
@@ -103,9 +135,14 @@ function resolved(state, deps) {
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
+    if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
+    if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
+    if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
-    if (typeof deps.productionStatus === 'function') deps.productionStatus = deps.productionStatus(state.characterId);
-    if (deps.productionStatus == null && isMainThread && state.stats?.production) deps.productionStatus = invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (deps.memory?.relations || []).map(row => row.targetId));
+    if (!deps.npcOffersFor && isMainThread) deps.npcOffersFor = id => {
+        const Sources = require('../Population/ColdOccupationSources');
+        Sources.initialise(); return Sources.npcOffersFor(id);
+    };
     return deps;
 }
 function personaOf(state, deps) {
@@ -116,7 +153,7 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}) {
     const prices = new Map();
     const knowledgeEnabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
-        marketTrades: state.stats?.marketTrades, knowledgeEnabled, board, timestamp };
+        marketTrades: state.marketTrades, knowledgeEnabled, board, timestamp };
     return { knowledgeEnabled, price: id => {
         read(id);
         if (!prices.has(Number(id))) {
@@ -138,26 +175,82 @@ function foundation(state, deps, persona, timestamp, price) {
     const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
     const bestSpotId = hunt.spotId || state.spotId;
-    const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours });
-    const bestTable = (bestSpotId && Table.value(bestSpotId, tableRole, state.level, true))
-        || Table.best(tableRole, state.level, true);
+    const walkBackHours = require('./WalkBack').hours(bestSpotId, state, deps.spots || invoke('GameServer/Bot/AI/SpotService').spots);
+    const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
+    const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
+    const bestTable = spotTable || Table.best(tableRole, state.level, true);
+    const { selfId: shotItemId, perAction: shotPerAction } = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
+    const rawShots = shotPerAction > 0 ? positive(bestTable?.shots) : 0;
+    const withoutShots = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
+    const shotBenefit = Math.max(0, 1 - positive(withoutShots?.exp) / Math.max(1, positive(bestTable?.exp)));
+    const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
+    const potionUse = positive(bestTable?.potions);
+    let bagHours = 2;
+    const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
+    if (hasBagForecast) {
+        const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
+        const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
+        // ARCH-NOTE: size the E9 bag interval on the bag after its
+        // planned kit stacks exist. Otherwise an empty shot/potion row uses
+        // no slot, its refill uses one, and the shorter interval immediately
+        // sells part of that refill back to the NPC. Existing stacks retain
+        // the exact physical free-slot formula; zero-use stock reserves none.
+        const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount))
+            + Number(potionUse > 0 && !positive(state.inventory?.[potionItemId]?.amount));
+        let slotLimit = Floor.inventoryLimit(race);
+        const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+        const saleLimit = Disposition.soloSaleSlotLimit(state, timestamp);
+        if (saleLimit !== null) {
+            // Stock cannot be its own reason for an earlier town visit. Keep
+            // the entire usable kit while checking known free saleable loot.
+            const keptAmounts = { [shotItemId]: positive(state.inventory?.[shotItemId]?.amount),
+                ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
+                736: positive(state.inventory?.[736]?.amount) };
+            if (Disposition.saleCandidates(state, { keptAmounts, preparedReservations: deps.saleReservations,
+                presenceOnly: true })) slotLimit = Math.min(slotLimit, saleLimit);
+        }
+        const free = Math.max(0, slotLimit - Floor.stateInventory(state, Data.items).slots - plannedSlots);
+        bagHours = free === 0 ? 0 : spotTable.stacks > 0 ? free / spotTable.stacks : 24;
+    }
+    const Visits = require('./TownVisitInterval');
+    // Bag space bounds a planned outing; it never chooses its duration.
+    // Keep the existing initial estimate until actual town visits teach one.
+    const targetHours = hasBagForecast
+        ? Math.min(Visits.targetHours(state.stats), Visits.targetHours({}, bagHours))
+        : Visits.targetHours(state.stats);
     const stock = kind => {
         const shots = kind === 'shots';
-        const plan = shots ? invoke('GameServer/Inventory/ShotStock').planForState(state)
-            : invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
-        const use = shots && !(plan.perAction > 0) ? 0 : positive(bestTable?.[shots ? 'shots' : 'potions']);
-        const current = positive(state.inventory?.[plan.selfId]?.amount);
-        const targetHours = 1 + 2 * Valuation.trait(persona, 'commitment');
+        const itemId = shots ? shotItemId : potionItemId;
+        const use = shots ? shotUse : potionUse;
+        const current = positive(state.inventory?.[itemId]?.amount);
         const target = Math.ceil(use * targetHours);
-        const missing = Math.max(0, target - current);
-        const without = shots && bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-        const benefitHours = shots ? Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(bestTable?.exp))) * targetHours
+        const survivalMissing = Math.max(0, Math.ceil(use) - current);
+        const missing = Math.max(0, target - Math.max(current, use));
+        const benefitHours = shots ? (use > 0 ? shotBenefit * targetHours : 0)
             : positive(bestTable?.deaths) * deathHours * targetHours;
-        return { itemId: Number(plan.selfId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
-            targetHours, target, missing, unitPrice: price(plan.selfId), benefitHours,
+        return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
+            targetHours, target, missing, survivalMissing, unitPrice: price(itemId), benefitHours,
             needed: use > 0 && current < use };
     };
-    return { tableRole, hunt, lostGearHours, bestSpotId, deathHours, bestTable, stock,
+    const kit = [stock('shots'), stock('potions')];
+    const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats?.karma) ? 0
+        : price(736) * Math.max(0, 1 - positive(state.inventory?.[736]?.amount));
+    // A known executable quote pays whole missing units once. The personal
+    // price estimate still values an unseen option; it must not underfund
+    // a concrete merchant's mandatory stock and trigger repeated tiny fills.
+    const kitCost = (id, unitPrice = null) => {
+        const quoted = Number.isFinite(unitPrice) && unitPrice > 0;
+        if (Number(id) === 736 && invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return 0;
+        if (Number(id) === 736) return quoted
+            ? unitPrice * Math.max(0, 1 - positive(state.inventory?.[736]?.amount)) : escapeCost;
+        return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
+            + Math.max(0, (quoted ? Math.ceil(row.usePerHour) : row.usePerHour) - row.current)
+                * (quoted ? unitPrice : row.unitPrice), 0);
+    };
+    const reserve = escapeCost + kit.reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
+    return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost,
+        lostGearHours, bestSpotId, deathHours, bestTable, stock,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
@@ -172,13 +265,38 @@ function basics(state = {}, deps = {}) {
 }
 function stockFor(state, kind, deps = {}) { return basics(state, deps).stock(kind); }
 function forState(state = {}, deps = {}) {
+    const diagnostic = Diagnostics.active();
+    if (diagnostic) Diagnostics.count('context', 'request');
+    if (diagnostic && isMainThread && state.phase === 'cold') {
+        const caller = deps.caller || 'other';
+        mainColdForState ||= new Map();
+        const slot = mainColdForState.has(caller) || mainColdForState.size < 63 ? caller : 'overflow';
+        mainColdForState.set(slot, (mainColdForState.get(slot) || 0) + 1);
+    }
     deps = resolved(state, deps);
+    if (typeof deps.routeRows === 'function') deps.routeRows = deps.routeRows(state);
+    if (!deps.tripCost && !deps.routeRows && isMainThread)
+        deps.routeRows = preparedRouteRows(state) || invoke('GameServer/Bot/Population/ColdSimulationCoordinator').routeRows?.(state);
     const timestamp = Number(deps.timestamp || Date.now());
-    const key = inputKey(state, { ...deps, timestamp });
     const actorKey = deps.actorKey || `character:${Number(state.characterId || 0)}`;
     const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
     const held = cache.get(actorKey);
-    if (held?.key === key && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
+    // A valid completed card survives planner-slot reuse or card eviction;
+    // the same route is repriced with the current hour value, never a wallet.
+    if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
+    const key = inputKey(state, { ...deps, timestamp });
+    if (held?.key === key && (isMainThread || held.context.state === state)
+        && marketHolds(sourceBoard, held.reads)) {
+        if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
+        return remember(cache, actorKey, held).context;
+    }
+    const started = diagnostic ? performance.now() : 0;
+    // Identity replacement is the worker's technical safety backstop, not an
+    // economic event. An input-key mismatch is named as a dependency change;
+    // it does not claim which historical event caused it.
+    const diagnosticReason = !diagnostic ? null : !held ? 'not_retained' : held.key !== key
+        ? 'input_dependency_changed' : !isMainThread && held.context.state !== state ? 'state_publication' : 'used_market_changed';
+    if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     const reads = new Map();
     let building = true;
     const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
@@ -203,47 +321,46 @@ function forState(state = {}, deps = {}) {
     const Tendency = require('../AI/TendencyRoll');
     const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
-        karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock };
+        karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
+        survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena };
+    const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : isMainThread
+        ? craftIncome(state, { hourAdena: base.hourAdena, worth: price, timestamp }) : null;
+    context.workshop = workshop || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
+    const productive = workshop?.known !== false && workshop?.incomePerHour > 0 && Number.isFinite(workshop.incomePerHour)
+        && workshop.cycleHours > 0 && Number.isFinite(workshop.cycleHours);
+    if (productive) { watch(workshop.productId); context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour); }
+    context.routeKey = Trip.key(state); context.routeRows = Array.isArray(deps.routeRows) && deps.routeRows.length === Trip.towns.length ? deps.routeRows : null;
+    context.routePending = !deps.tripCost && !context.routeRows;
+    context.trip = deps.tripCost || Trip.preparedReader(context.routeRows || [], { hourAdena: context.hourAdena });
     context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
-    // The items read so far name this network; a later price read through
-    // context.price still joins `reads` and keeps the held context honest.
+    if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
+        object: workshop.productId, incomePerHour: workshop.incomePerHour,
+        cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = `${key}#${marketKey(reads)}`;
-    let network = engine.build({ actorKey, inputKey: networkKey, ...projection,
-        wallet: positive(state.adena), survivalReserve: survivalReserve(state),
+    const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
+        characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
+        wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
-        hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
-    // A known production opportunity uses the same marginal hour. Its
-    // provider never calls Context, so the common evaluation has no cycle.
-    if (isMainThread && state.stats?.workshop?.entries?.length) {
-        const opportunities = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state, {
-            hourAdena: network.hourAdena, worth: price, timestamp, insideContext: true });
-        // The crafter's exits read the board directly: their products are inputs too.
-        for (const row of opportunities) if (row.recipe?.productId) watch(row.recipe.productId);
-        const statusNode = projection.nodes.find(node => node.key === 'status:producer');
-        if (statusNode && opportunities.length) statusNode.paths = [{activity:'crafting',kind:'producer_status',
-            recipeId:opportunities[0].recipe.recipeId,costHours:opportunities[0].margin?.hours || 0,available:true}];
-        for (const row of opportunities.slice(0, 1)) projection.moneyPaths.push({ activity: 'crafting', kind: 'production',
-            recipeId: row.recipe?.recipeId, object: row.recipe?.productId,
-            incomePerHour: row.expectedProfit / Math.max(1 / 3600, row.margin?.hours || row.hours || row.basket?.hours || 1) });
-        if (opportunities.length) network = engine.build({ actorKey, inputKey: networkKey + ':production', ...projection,
-            wallet: positive(state.adena), survivalReserve: survivalReserve(state),
-            playedHours: positive(state.stats?.playedHours), persona,
-            previous: { focus: network.focus, dormant: network.dormant }, hourAdena: base.hunt.perHour, riskWeight: context.riskWeight });
-    }
+        hourAdena: context.hourAdena, riskWeight: context.riskWeight,
+        caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason || 'context_build' });
     context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
     context.projection = projection;
     context.network = network;
     context.moneyPrice = network.moneyPrice;
     context.hourAdena = network.hourAdena;
+    // Affordability removes a funding gap, not the benefit lost while waiting.
+    const urgent = network.gap || network.queue.find(row => row.key === network.focus?.[0]) || network.queue[0];
+    context.gapHorizonHours = !urgent ? 0 : urgent.key === 'stock:shots' ? base.stock('shots').targetHours
+        : urgent.key === 'stock:potions' ? base.stock('potions').targetHours : projection.horizon;
     context.itemUsefulness = id => (network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0)
         * (knowledgeEnabled ? 1 + (1 - Number(persona.understanding ?? 0.3))
             * (2 * Tendency.roll('usefulness', state.characterId, id) - 1) : 1);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    const gap = network.queue.findIndex(wish => !wish.funded);
+    const gap = network.gap ? network.queue.indexOf(network.gap) : -1;
     const wanted = gap < 0 ? network.queue : network.queue.slice(0, gap + 1);
     const watched = new Set();
     context.watchList = wanted.flatMap(wish => {
@@ -253,31 +370,57 @@ function forState(state = {}, deps = {}) {
         return [{ itemId: id, amount: Math.max(1, Math.floor(wish.object?.amount || 1)),
             worth: context.worth(id) ?? price(id), kind: wish.object?.kind, key: wish.key }];
     }).slice(0, 3);
+    const Funding = require('./PurchaseFunding');
+    context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
+        decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
+        money: Funding.packetFor(network, context.hourAdena, base.survivalReserve) };
     context.purchaseBudget = id => {
-        let left = Math.max(0, positive(state.adena) - survivalReserve(state));
-        for (const wish of network.queue) {
-            if (Number(wish.object?.itemId) === Number(id)) return left;
-            if (!wish.funded) return 0;
-            left -= wish.price;
-        }
-        return 0;
+        const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
+        return Funding.spendable({ ...state, stats: { ...state.stats, money: context.statsPacket.money } }, 0,
+            { itemId: id, ...(wish ? { r: Funding.significant(wish.ratio) } : {}), survivalCost: base.kitCost(id) });
     };
-    context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant };
     building = false;
 
-    remember(cache, actorKey, { key, reads, context });
+    if (diagnostic) {
+        Diagnostics.count('context', 'build', diagnosticReason);
+        Diagnostics.duration('context', performance.now() - started);
+    }
+    if (diagnostic && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+        caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason,
+        phase: 'wish_context', reason: diagnosticReason, inputHash: fnv1a32(networkKey),
+        decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
+        revision: state.simulation?.revision, wallet: positive(state.adena), escrow: positive(deps.buyOrderEscrow),
+        available: network.available, reserve: base.survivalReserve, wishKey: network.focus?.[0] });
+    if (planningContexts < 64) {
+        if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
+            Diagnostics.count('context', 'eviction', 'capacity');
+        remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
+    }
     return context;
 }
 function survivalReserve(state = {}) {
-    // Only an already authored survival trip/potion requirement is held.
-    // There is no percentage, level cushion or separate investment purse.
-    return positive(state.stats?.survivalReserve) + positive(state.stats?.townVisit?.returnFee);
+    return Array.isArray(state.stats?.money) ? positive(state.stats.money[2]) : basics(state).survivalReserve;
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
+function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
+    // The guarded worker publication is the only production income reader on
+    // main. A missing result leaves the independently supported hunt baseline.
+    if (isMainThread) {
+        const coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+        return coordinator.economyDecisions?.workshopFor?.(state)
+            || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
+    }
+    return { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
+}
 function forGroup(group, members, deps = {}) {
-    const contexts = (members || []).slice(0, 9).map(state => forState(state, deps));
+    const diagnostic = Diagnostics.active();
+    if (diagnostic) Diagnostics.count('context_group', 'request');
+    const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
-    if (!first) return null;
+    if (!first) {
+        if (diagnostic) Diagnostics.count('context_group', 'miss', 'empty_group');
+        return null;
+    }
     const actorKey = `group:${group.id || group.partyId}`;
     const proposal = String(group.id || group.partyId || '').startsWith('proposal:');
     const wallet = positive(group.adena ?? group.wallet);
@@ -285,8 +428,13 @@ function forGroup(group, members, deps = {}) {
     const held = proposal ? null : groups.get(actorKey);
     // A member rebuilt on a late price read keeps its network key; the held
     // group copies its first member, so it is valid only with the same members.
-    if (held?.key === key && held.members.every((member, i) => member === contexts[i]))
+    if (held?.key === key && held.members.every((member, i) => member === contexts[i])) {
+        if (diagnostic) Diagnostics.count('context_group', 'hit', 'same_members');
         return remember(groups, actorKey, held, GROUP_LIMIT).context;
+    }
+    const started = diagnostic ? performance.now() : 0;
+    if (diagnostic) Diagnostics.count('context_group', 'miss', proposal ? 'uncached_proposal'
+        : !held ? 'not_retained' : held.key !== key ? 'input_dependency_changed' : 'member_publication');
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
@@ -294,7 +442,7 @@ function forGroup(group, members, deps = {}) {
         const source = contexts[i].projection;
         const prefix = `${i}:`;
         for (const node of source.nodes) nodes.push({ ...node, key: prefix + node.key,
-            paths: (node.paths || []).map(path => ({ ...path, requirements: (path.requirements || [])
+            paths: (node.paths || []).map(path => ({ ...path, ...(path.quoted ? { tripScope: contexts[i].actorKey } : {}), requirements: (path.requirements || [])
                 .map(row => ({ ...row, key: prefix + row.key })) })) });
         roots.push(...source.roots.map(key => prefix + key));
     }
@@ -314,18 +462,52 @@ function forGroup(group, members, deps = {}) {
         moneyPaths: first.projection.moneyPaths, riskWeight: first.riskWeight });
     const groupHunt = { ...first.hunt, perHour: contexts.reduce((sum, member) => sum + member.hunt.perHour, 0),
         expPerHour: contexts.reduce((sum, member) => sum + member.hunt.expPerHour, 0) };
-    const context = { ...first, actorKey, inputKey: key, network, hunt: groupHunt, groupIncomePerHour: groupHunt.perHour,
+    const context = { ...first, actorKey, inputKey: key, network, routePending: contexts.some(member => member.routePending), hunt: groupHunt, groupIncomePerHour: groupHunt.perHour,
         moneyPrice: network.moneyPrice,
         hourAdena: network.hourAdena, statsPacket: { wishFocus: network.focus, dormantWishes: network.dormant } };
     context.itemUsefulness = id => contexts.reduce((sum, member) => sum + member.itemUsefulness(id), 0);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    if (!proposal) remember(groups, actorKey, { key, members: contexts, context }, GROUP_LIMIT);
+    if (diagnostic) {
+        Diagnostics.count('context_group', 'build');
+        Diagnostics.duration('context_group', performance.now() - started);
+    }
+    if (!proposal) {
+        if (diagnostic && !groups.has(actorKey) && groups.size >= GROUP_LIMIT)
+            Diagnostics.count('context_group', 'eviction', 'capacity');
+        remember(groups, actorKey, { key, members: contexts, context }, GROUP_LIMIT);
+    }
     return context;
 }
-function forgetGroup(partyId) { groups.delete(`group:${partyId}`); }
+function preparedRouteRows(state) {
+    const context = cache.get(`character:${Number(state.characterId)}`)?.context;
+    return context?.routeKey === Trip.key(state) ? context.routeRows : null;
+}
+function forgetGroup(partyId) {
+    if (groups.delete(`group:${partyId}`) && Diagnostics.active()) Diagnostics.count('context_group', 'eviction', 'group_release');
+}
+function forgetContext(id, reason = 'explicit_invalidation') {
+    id = Number(id);
+    const key = `character:${id}`;
+    if (cache.delete(key) && Diagnostics.active()) Diagnostics.count('context', 'eviction', reason);
+    engine.forget(key, reason);
+    for (const [groupKey, held] of groups) {
+        if (held.members.some(member => Number(member.state.characterId) === id)) {
+            groups.delete(groupKey);
+            if (Diagnostics.active()) Diagnostics.count('context_group', 'eviction', reason);
+        }
+    }
+}
 function forget(id) {
-    const key = `character:${id}`; cache.delete(key); engine.forget(key);
+    forgetContext(id);
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
-function reset() { cache.clear(); groups.clear(); engine.clear(); }
-module.exports = { forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forget, reset, configure, registerProvider };
+function reset() {
+    if (Diagnostics.active() && cache.size) Diagnostics.count('context', 'eviction', 'reset', cache.size);
+    if (Diagnostics.active() && groups.size) Diagnostics.count('context_group', 'eviction', 'reset', groups.size);
+    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap();
+}
+function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
+
+module.exports = { size, setPlanningContexts, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, routeState, preparedRouteRows, inputKey, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    craftIncome, summary: () => ({ mainColdForState: Diagnostics.active() ? Object.fromEntries(mainColdForState || []) : null }),
+    resetCounters: () => { mainColdForState = null; } };

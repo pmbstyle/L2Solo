@@ -33,7 +33,7 @@ const VirtualObstacles = {
                         this.obstaclesByRegion[loc.region] = [];
                     }
                     this.obstaclesByRegion[loc.region].push(loc);
-                    utils.infoSuccess("GeodataEngine", "Loaded virtual obstacles for %s (Region: %s)", loc.name || file, loc.region);
+                    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) utils.infoSuccess("GeodataEngine", "Loaded virtual obstacles for %s (Region: %s)", loc.name || file, loc.region);
                 }
             } catch (err) {
                 console.error(`VirtualObstacles :: Failed to load ${file}:`, err);

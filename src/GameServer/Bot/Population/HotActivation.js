@@ -212,7 +212,7 @@ const HotActivation = {
                     }, 10000);
                     pendingTimer.unref?.();
 
-                    console.info(
+                    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                         'BotPopulation :: requested activation for %s reason=%s activity=%s plan=%s spot=%s loc=%d,%d,%d playerDist=%s ready=%s',
                         state.name,
                         reason,

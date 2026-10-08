@@ -1,126 +1,110 @@
-const assert = require('assert');
-const path = require('path');
-const { Worker } = require('worker_threads');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { Worker } = require('node:worker_threads');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 
-// Exercise the real worker event/command boundary. The price decision
-// is independently tested; this fixture supplies an unchanged quote update.
-const update = { recordId: 7, lineId: 11, expectedRevision: 4,
-    previousPricing: { price: 100, seenCounter: 2, seenItem: 1, rival: 0, worth: 0, seenFills: 0 },
-    pricing: { price: 100, seenCounter: 3, seenItem: 2, rival: 100, worth: 0, seenFills: 0 } };
+// The real worker mirrors counters without waking 300 owners. A single
+// owner's naturally due resolve may carry a changed quote in its proposal.
 const source = `
-const { parentPort, workerData } = require('worker_threads');
+const { parentPort, workerData } = require('node:worker_threads');
 require(workerData.workerPath);
 invoke('GameServer/Bot/AI/GearPlanSelection').selectAcquisitionPlan = () => ({
     acquisitionPlan: { status: 'active', strategy: 'farm', partyNeed: 'solo_ok', next: {} },
-    replanContext: {}, reusablePartyRequest: false, excludedSpotIds: new Set()
+    replanContext: {}, reusablePartyRequest: false, excludedSpotIds: new Set(),
+    economy: { statsPacket: {}, network: {} }
 });
 invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan = () => null;
-invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => {
-    const count = invoke('GameServer/Bot/Economy/MarketCounters').counter('material none').deals;
-    parentPort.postMessage({ trace: 'look', ownerId: state.characterId, count });
-    return { updates: [{ ...workerData.update, previousPricing: lines[0].pricing,
-        pricing: { ...workerData.update.pricing, seenCounter: count } }],
-        reprices: [], withdrawals: [] };
-};
-`;
+invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo = ({ timestamp }) => ({
+    patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000
+});
+invoke('GameServer/Bot/Population/BotLifeState').prepareResolve = async (state, result, opts) =>
+    ({ ...state, updatedAt: opts.timestamp });
+invoke('GameServer/Bot/AI/TendencyRoll').roll = () => 0;
+invoke('GameServer/Bot/Economy/MarketPricing').traderContext = (state, opts) => ({
+    ...opts, hour: 0, understanding: .3
+});
+invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines, ctx) => {
+    parentPort.postMessage({ trace: 'look', ownerId: state.characterId });
+    return workerData.unchanged ? null : { reprices: [{ recordId: lines[0].recordId,
+        lineId: lines[0].lineId, expectedRevision: 4, previousPricing: lines[0].pricing,
+        price: 110, pricing: { ...lines[0].pricing, price: 110, seenCounter: 3, seenAt: ctx.timestamp } }], withdrawals: [] };
+};`;
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-(async () => {
-    const epoch = 'n79-review-transport';
-    const worker = new Worker(source, { eval: true, workerData: { workerEpoch: epoch, update,
+async function check(unchanged) {
+    const epoch = `own-board-transport-${unchanged}`;
+    const worker = new Worker(source, { eval: true, workerData: { workerEpoch: epoch, unchanged,
         workerPath: process.env.N79_WORKER_PATH || path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js') } });
     const received = [];
     let fault;
-    worker.on('error', (error) => { fault = error; });
-    worker.on('message', (message) => received.push(message));
-    const send = (type, payload) => worker.postMessage(Protocol.envelope(type, epoch, payload));
-    const until = async (predicate) => {
-        const deadline = Date.now() + 20000;
+    worker.on('error', error => { fault = error; });
+    worker.on('message', message => received.push(message));
+    const send = (type, payload, msgId) => worker.postMessage(Protocol.envelope(type, epoch, payload, msgId));
+    const until = async predicate => {
+        const deadline = Date.now() + 10000;
         while (!received.some(predicate)) {
             if (fault) throw fault;
-            const failure = received.find((m) => m.type === 'fault');
-            if (failure) throw new Error(JSON.stringify(failure.payload));
-            if (Date.now() >= deadline) throw new Error(`worker timeout: ${received.map((m) => m.type).join(',')}`);
-            await new Promise((resolve) => setTimeout(resolve, 25));
+            const failure = received.find(message => message.type === 'fault');
+            if (failure) throw Error(JSON.stringify(failure.payload));
+            if (Date.now() >= deadline) throw Error(`worker timeout: ${received.map(message => message.type || message.trace).join(',')}`);
+            await pause(10);
         }
         return received.find(predicate);
     };
     try {
-        await until((m) => m.type === 'ready' && m.payload.phase === 'loaded');
-        const spot = { id: 'n79-field', name: 'N79 Field', center: { locX: 123000, locY: 123000, locZ: -3000 },
+        await until(message => message.type === 'ready' && message.payload.phase === 'loaded');
+        const now = Date.now();
+        const spot = { id: 'board-field', name: 'Board Field', center: { locX: 123000, locY: 123000, locZ: -3000 },
             minLevel: 28, maxLevel: 32, avgLevel: 30, density: 12, levelCounts: { 30: 12 },
             npcSelfIds: [], npcEntries: [], mob: { hp: 1, damage: 1 },
             rewards: { exp: 100, sp: 10, adenaMin: 1, adenaMax: 1 } };
         send('catalog_page', { catalog: 'spots', rows: [spot], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
+        const pricing = { price: 100, seenCounter: 2, seenAt: 0, seenItem: 1, rival: 0, worth: 0, seenFills: 0 };
         send('table_page', { tables: [{ name: 'board', from: null, to: 0, full: true,
-            rows: [[7, [7, 'shop', 1, 4242, 'Giran', 1, [[11, 1864, 0, 100, 100, update.previousPricing, 0]], 4]],
-                [8, [8, 'shop', 1, 4243, 'Giran', 1, [[12, 1463, 0, 100, 100, update.previousPricing, 0]], 4]]], removed: [] },
-            { name: 'market', from: null, to: 0, full: true, rows: [
-                ['c:material none', ['c:material none', 2, 1, Date.now(), 0, 0, null]]
-            ], removed: [] }] });
+            rows: Array.from({ length: 300 }, (_, i) => [7 + i, [7 + i, 'shop', 1, 4242 + i, 'Giran', 1,
+                [[11 + i, 1864, 0, 100, 100, pricing, 0]], 4]]), removed: [] },
+            { name: 'market', from: null, to: 0, full: true,
+                rows: [['c:material none', ['c:material none', 2, 1, now, 0, 0, null]]], removed: [] }] });
         send('init', { config: { loopIntervalMs: 10, flushTargetMs: 10, flushHardMs: 50 } });
-        await until((m) => m.type === 'ready' && m.payload.phase === 'running');
-        const now = Date.now();
-        const state = {
-            characterId: 4242, name: 'ReviewTrader', accountName: 'bot_review_trader', level: 30,
+        await until(message => message.type === 'ready' && message.payload.phase === 'running');
+        const state = { characterId: 4242, name: 'ReviewOwner', accountName: 'bot_review_owner', level: 30,
             phase: 'cold', activity: 'hunting', spotId: spot.id, currentRegion: spot.name, loc: spot.center,
             inventory: {}, adena: 1000, vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
-            timing: { lastResolvedAt: now - 45000, nextResolveAt: now + 60000 },
-            stats: { generatedCold: true, classId: 0, role: 'dps', equipment: [] }
-        };
+            timing: { lastResolvedAt: now - 45000, nextResolveAt: now + 600000 },
+            simulation: { ownerId: 'legacy_main', revision: 0, leaseId: null, leaseUntil: 0 },
+            stats: { generatedCold: true, classId: 0, role: 'dps', equipment: [] } };
         const context = { spot, route: null };
-        send('snapshot_page', { done: true, ack: true, rows: [{ state, context },
-            { state: { ...state, characterId: 4243, name: 'OtherCounter' }, context }] });
-        await until((m) => m.type === 'ready' && m.payload.phase === 'state_loaded');
-        const counter = (from, to, count, extra = {}) => send('table_page', { tables: [{
-            name: 'market', from, to, full: false,
-            rows: [['c:material none', ['c:material none', count, 1, Date.now(), 0, 0, null]]], removed: [], ...extra
-        }] });
-        const commands = () => received.filter((m) => m.type === 'command_request');
-        counter(0, 1, 3);
-        const first = await until((m) => m.type === 'command_request');
-        const request = first.payload.requests[0];
-        assert.strictEqual(request.kind, 'market_review');
-        assert.deepStrictEqual(request.market.updates, [update], 'metadata-only evidence reaches the native command');
-        assert.strictEqual(request.characterId, 4242);
-        assert.deepStrictEqual(request.state.timing, state.timing, 'market evidence does not manufacture a combat due time');
-        assert.strictEqual(request.state.stats.priceBeliefs, undefined);
-        counter(1, 2, 4);
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.strictEqual(commands().length, 1, 'new deals wait for the pending native command');
-        const publish = (from, to, pricing) => send('table_page', { tables: [{ name: 'board', from, to, full: false,
-            rows: [[7, [7, 'shop', 1, 4242, 'Giran', 1, [[11, 1864, 0, 100, 100, pricing, 0]], 4]]], removed: [] }] });
-        publish(0, 1, update.pricing);
-        send('command_ack', { results: [{ ok: true, characterId: 4242, state, context,
-            commandId: request.commandId, commandCheckpoint: request.commandCheckpoint,
-            marketCommandId: request.commandId }] });
-        const second = await until((m) => m.type === 'command_request' && m !== first);
-        const secondUpdate = second.payload.requests[0].market.updates[0];
-        assert.deepStrictEqual(secondUpdate.previousPricing, update.pricing);
-        assert.strictEqual(secondUpdate.pricing.seenCounter, 4, 'a deal during the command is retained');
-        publish(1, 2, secondUpdate.pricing);
-        send('command_ack', { results: [{ ok: true, characterId: 4242, state, context,
-            commandId: second.payload.requests[0].commandId,
-            commandCheckpoint: second.payload.requests[0].commandCheckpoint,
-            marketCommandId: second.payload.requests[0].commandId }] });
-        counter(2, 3, 4);
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.strictEqual(commands().length, 2, 'replayed counters are inert');
-        counter(99, 100, 5);
-        await until((m) => m.type === 'table_resync');
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.strictEqual(commands().length, 2, 'a counter gap cannot review stale tables');
-        counter(null, 10, 5, { full: true, last: 0 });
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        assert.strictEqual(commands().length, 2, 'a partial full copy cannot review partial tables');
-        send('table_page', { tables: [{ name: 'market', from: 10, to: 10, full: false, last: 1, rows: [], removed: [] }] });
-        await until((m) => m.type === 'command_request' && m !== first && m !== second);
-        assert.strictEqual(received.filter((m) => m.trace === 'look' && m.ownerId === 4243).length, 0,
-            'a counter event does not scan or review a different-counter owner');
-        assert.strictEqual(received.some((m) => m.type === 'claim_request' || m.type === 'proposal_batch'), false,
-            'market events stay independent of combat');
-        assert.strictEqual(received.some((m) => m.type === 'fault'), false);
-        console.log('Real worker delivers indexed, fenced metadata reviews independently of combat');
+        for (let offset = 0; offset < 300; offset += 64) send('snapshot_page', {
+            done: offset + 64 >= 300, ack: offset + 64 >= 300,
+            rows: Array.from({ length: Math.min(64, 300 - offset) }, (_, i) => ({
+                state: { ...state, characterId: 4242 + offset + i, name: `ReviewOwner${offset + i}` }, context }))
+        });
+        await until(message => message.type === 'ready' && message.payload.phase === 'state_loaded');
+        send('table_page', { tables: [{ name: 'market', from: 0, to: 1, full: false,
+            rows: [['c:material none', ['c:material none', 3, 1, now, 0, 0, null]]], removed: [] }] });
+        await pause(100);
+        assert.equal(received.some(message => ['command_request', 'claim_request', 'proposal_batch'].includes(message.type)
+            || message.trace === 'look'), false, 'one deal wakes zero of 300 owners');
+        const due = { ...state, simulation: { ...state.simulation, revision: 1 },
+            timing: { ...state.timing, nextResolveAt: Date.now() - 1 } };
+        send('snapshot_page', { done: true, rows: [{ state: due, context }] });
+        const claim = await until(message => message.type === 'claim_request');
+        assert.deepEqual(claim.payload.candidates.map(row => row.characterId), [4242]);
+        send('claim_ack', { grants: [{ ok: true, characterId: 4242, ownerId: 'cold_simulation_owner', revision: 2,
+            leaseId: 'own-look-lease', leaseUntil: Date.now() + 30000 }] }, claim.msgId);
+        const proposal = (await until(message => message.type === 'proposal_batch')).payload.proposals[0];
+        assert.equal(proposal.token.characterId, 4242);
+        assert.equal(received.filter(message => message.trace === 'look').length, 1);
+        assert.equal(received.some(message => message.type === 'command_request'), false, 'board looks use no command');
+        assert.equal(Object.hasOwn(proposal, 'market'), !unchanged);
+        if (!unchanged) {
+            assert.equal(proposal.market.reprices[0].price, 110);
+            assert.equal(proposal.market.reprices[0].pricing.seenCounter, 3);
+            assert(proposal.market.reprices[0].pricing.seenAt > 0);
+            assert.equal(proposal.market.updates, undefined, 'no metadata-only review crosses IPC');
+        }
+        console.log(`Real worker 300-owner fanout=0; own resolve ${unchanged ? 'unchanged quote has no market field' : 'carries only its changed quote'}: PASS`);
     } finally { await worker.terminate(); }
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+}
+(async () => { await check(false); await check(true); })().catch(error => { console.error(error); process.exitCode = 1; });

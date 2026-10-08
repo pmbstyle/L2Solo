@@ -1,3 +1,4 @@
+const { DiagnosticMetricMap } = require('./DiagnosticMetricMap');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Database = invoke('Database');
@@ -18,8 +19,8 @@ const metrics = {
     overruns: 0,
     grantedMs: 0,
     actualMs: 0,
-    deferralReasons: new Map(),
-    jobs: new Map()
+    deferralReasons: new DiagnosticMetricMap(),
+    jobs: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -42,8 +43,8 @@ function jobMetrics(job) {
             overruns: 0,
             grantedMs: 0,
             actualMs: 0,
-            reasons: new Map(),
-            stages: new Map(),
+            reasons: new DiagnosticMetricMap(),
+            stages: new DiagnosticMetricMap(),
             progress: { selected: 0, processed: 0, skipped: 0, resumed: 0, deadlineStops: 0, pending: 0 }
         });
     }
@@ -51,6 +52,7 @@ function jobMetrics(job) {
 }
 
 function recordStage(job, stage, durationMs) {
+    if (!Config.developerDiagnostics) return;
     const name = String(stage || 'unknown');
     const values = jobMetrics(job).stages;
     if (!values.has(name)) values.set(name, []);
@@ -60,6 +62,7 @@ function recordStage(job, stage, durationMs) {
 }
 
 function recordProgress(job, progress) {
+    if (!Config.developerDiagnostics) return;
     const target = jobMetrics(job).progress;
     for (const key of ['selected', 'processed', 'skipped', 'resumed', 'deadlineStops']) {
         target[key] += Math.max(0, number(progress[key]));
@@ -127,11 +130,13 @@ function pressureSnapshot(options = {}) {
 }
 
 function defer(job, reason, pressure, timestamp) {
+    if (Config.developerDiagnostics) {
     metrics.deferred += 1;
     increment(metrics.deferralReasons, reason);
     const perJob = jobMetrics(job);
     perJob.deferred += 1;
     increment(perJob.reasons, reason);
+    }
     return {
         ok: false,
         job: String(job || 'unknown'),
@@ -192,11 +197,13 @@ function admit(options = {}) {
     };
     state.usedMs += grantedBudgetMs;
     if (resource) state.resources.set(resource, lease.id);
+    if (Config.developerDiagnostics) {
     metrics.admitted += 1;
     metrics.grantedMs += grantedBudgetMs;
     const perJob = jobMetrics(job);
     perJob.admitted += 1;
     perJob.grantedMs += grantedBudgetMs;
+    }
     return { ok: true, budgetMs: grantedBudgetMs, pressure, lease };
 }
 
@@ -208,6 +215,7 @@ function complete(lease, options = {}) {
     if (lease.generation === state.generation) {
         state.usedMs = Math.max(0, state.usedMs - number(lease.budgetMs) + durationMs);
     }
+    if (Config.developerDiagnostics) {
     metrics.completed += 1;
     metrics.actualMs += durationMs;
     const perJob = jobMetrics(lease.job);
@@ -216,6 +224,7 @@ function complete(lease, options = {}) {
     if (durationMs > number(lease.budgetMs)) {
         metrics.overruns += 1;
         perJob.overruns += 1;
+    }
     }
     return { durationMs, overrun: durationMs > number(lease.budgetMs) };
 }
@@ -246,6 +255,7 @@ function snapshot(timestamp = Date.now()) {
         availableMs: Math.max(0, Math.round(capMs - state.usedMs)),
         capMs,
         resources: Object.fromEntries(state.resources.entries()),
+        ...(Config.developerDiagnostics ? {
         admitted: metrics.admitted,
         deferred: metrics.deferred,
         completed: metrics.completed,
@@ -254,6 +264,7 @@ function snapshot(timestamp = Date.now()) {
         actualMs: Math.round(metrics.actualMs),
         deferralReasons: Object.fromEntries(metrics.deferralReasons.entries()),
         jobs: serializeJobMetrics()
+        } : { diagnosticsEnabled: false })
     };
 }
 

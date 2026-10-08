@@ -1,0 +1,81 @@
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const DataCache = invoke('GameServer/DataCache');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+
+function templateFor(selfId) {
+    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
+}
+
+function bidFor(state, goal, { money = Infinity, ...options } = {}) {
+    const selfId = Number(goal?.target?.itemId || 0);
+    const template = templateFor(selfId);
+    const basePrice = Number(template?.template?.price || 0);
+    const adena = Math.max(0, Number(state?.adena || 0));
+    if (!selfId || !template || basePrice <= 0 || adena <= 0) return null;
+    if (goal.type === 'upgrade_gear' && Number(template.etc?.slot || 0) > 0
+        && Number(state?.inventory?.[String(selfId)]?.amount || 0) > 0) return null;
+
+    // `state.adena` already holds the order's escrow (callers add it).
+    const spendable = Math.min(money, PurchaseFunding.spendable(state, 0,
+        goal.plan?.valueRate === undefined ? { itemId: selfId } : { r: goal.plan.valueRate }));
+    // Older generic equipment goals stored the unscaled template value as
+    // their budget: like a reference estimate, it says nothing of the price.
+    const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource
+        && !goal.plan?.marketTown && Number(goal.target.adena) === basePrice
+        && Number(goal.plan?.estimatedCost) === basePrice;
+    const referenceEstimate = goal.plan?.priceSource === 'reference' || legacyEstimate;
+    const requestedPrice = referenceEstimate ? 0 : Math.max(0, Number(goal.target.adena || goal.plan?.estimatedCost || 0));
+    const requestedCount = goal.type === 'buy_craft_material'
+        ? Math.max(1, Math.floor(Number(goal.target.amount) || 1))
+        : 1;
+    // The bid (group E): the bot's belief of the item and the mirror of its
+    // ask; the item is worth its plan's price to it, or its own belief's
+    // centre when the plan only estimated; never more than it can spend on
+    // one unit: a bot short of the whole amount asks for fewer units.
+    const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const PriceBelief = invoke('GameServer/Bot/Economy/PriceBelief');
+    const ctx = invoke('GameServer/Bot/Economy/MarketListingPolicy').traderContext(state, options);
+    let worth = ctx.economy.worth(selfId) ?? requestedPrice;
+    if (!(worth > 0)) {
+        const belief = PriceBelief.prior(selfId, ctx);
+        if (!belief) return null;
+        worth = Math.exp(belief.mu);
+    }
+    const cap = Math.floor(Math.min(worth, spendable));
+    const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
+        rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
+    if (!chosen) return null;
+    const price = Math.floor(chosen.price);
+    const count = Math.min(requestedCount, Math.floor(spendable / price));
+    if (count <= 0) return null;
+    return {
+        selfId,
+        name: goal.target.itemName || template.template?.name || `Item ${selfId}`,
+        kind: template.template?.kind || '',
+        rank: template.etc?.rank || 'none',
+        price,
+        count,
+        pricing: chosen.pricing
+    };
+}
+
+function linesFor(state, goal, { money = Infinity, watchList, ...options } = {}) {
+    const goals = (watchList || require('../Population/ColdEconomyDecision').economyFor(state).watchList).map(row => ({ type: 'buy_craft_material',
+        target: { itemId: row.itemId, amount: row.amount },
+        plan: { estimatedCost: row.worth, purpose: row.kind } }));
+    if (goal?.target?.itemId && !goals.some(row => row.target.itemId === goal.target.itemId)) goals.unshift(goal);
+    let wallet = Number(state.adena || 0);
+    const lines = [];
+    for (const candidate of goals.slice(0, 3)) {
+        const bid = bidFor({ ...state, adena: wallet }, candidate, { money, ...options });
+        if (!bid) continue;
+        const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
+        lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
+            enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing });
+        wallet -= bid.count * bid.price;
+        money -= bid.count * bid.price;
+    }
+    return lines;
+}
+
+module.exports = { bidFor, linesFor };

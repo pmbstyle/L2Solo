@@ -1,5 +1,9 @@
 const assert = require('assert');
+const fs = require('node:fs');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('market-economy-policy');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -23,25 +27,48 @@ const originalStates = Life.allStates;
 
     let scans = 0;
     const now = Date.now();
-    Life.allStates = () => {
-        scans++;
-        return Array.from({ length: 1779 }, (_, i) => ({ characterId: i + 1, adena: i === 0 ? 0 : 100,
-            inventory: {}, stats: { shotDemand: { itemId: 1463, amount: 3000, maxSpend: 100, at: now } } }));
-    };
-    Shots._resetForTests();
-    let yielded = false;
-    setImmediate(() => { yielded = true; });
+    // The shot catalogue subscribes before native lifecycle publications.
+    // Its index receives each owner delta; snapshots do not rescan a roster.
+    Shots.marketSnapshot(now);
+    Life.allStates = () => { scans++; throw Error('market snapshot enumerated the population'); };
+    const rows = Array.from({ length: 1779 }, (_, i) => ({ characterId: i + 1,
+        phase: 'cold', adena: i === 0 ? 0 : 100, inventorySummary: '{}',
+        statsJson: JSON.stringify({ shotDemand: { itemId: 1463, amount: 3000, maxSpend: 100, at: now } }),
+        simulationRevision: 1, updatedAt: now }));
+    for (const row of rows) Life.acceptLifecycleRow(row);
     const [first, second] = await Promise.all([Shots.marketSnapshot(now), Shots.marketSnapshot(now)]);
-    assert.strictEqual(first, second);
-    assert(yielded, 'building a population snapshot yields to player traffic');
-    assert.strictEqual(scans, 1);
+    for (const key of ['shotDemand', 'shotSupply', 'shotMinPrice', 'unlistedSupply', 'recipeStock', 'recipeHolders']) {
+        assert.strictEqual(first[key], second[key], `${key} reuses its native incremental view`);
+    }
+    assert.strictEqual(scans, 0);
     assert.strictEqual(Shots.fundedDemand(first, 1463, 90, 99999), 1778, 'production demand must be bounded by each wallet');
     assert.strictEqual(Shots.fundedDemand(first, 1463, 101, 99999), 0, 'unfunded demand cannot trigger production');
-    for (let i = 0; i < 20; i++) assert.strictEqual(await Shots.marketSnapshot(now + i * 100), first);
-    assert.strictEqual(scans, 1, 'one cache serves the whole background pass');
-    await Shots.marketSnapshot(now + 31000);
-    assert.strictEqual(scans, 2);
-    console.log('Market lots, material lots for the market, funded production and cooperative cached snapshot passed');
+    const nativeView = first.shotDemand.get(1463);
+    for (let i = 0; i < 20; i++) {
+        const current = await Shots.marketSnapshot(now + i * 100);
+        assert.strictEqual(current.shotDemand.get(1463), nativeView, 'snapshot reuses the readonly holder view');
+        assert.strictEqual(Shots.fundedDemand(current, 1463, 90, 99999), 1778);
+    }
+    Life.acceptLifecycleRow({ ...rows[1], adena: 0, simulationRevision: 2 });
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now), 1463, 90, 99999), 1777,
+        'a committed wallet delta changes funded demand immediately');
+    Life.acceptLifecycleRow({ ...rows[1], simulationRevision: 3 });
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now), 1463, 90, 99999), 1778);
+    Life.acceptLifecycleRow({ ...rows[1], phase: 'hot', simulationRevision: 4 });
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now), 1463, 90, 99999), 1777,
+        'hot publication retires the cold owner contribution');
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now + 31 * 60000), 1463, 90, 99999), 1777,
+        'snapshot time does not rewrite a captured native owner budget');
+    Life.acceptLifecycleRow({ ...rows[2], simulationRevision: 2,
+        statsJson: JSON.stringify({ shotDemand: { itemId: 1463, amount: 3000, maxSpend: 100, at: now - 31 * 60000 } }) });
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now), 1463, 90, 99999), 1776,
+        'an owner publication drops its expired demand');
+    assert.strictEqual(scans, 0, 'repeated snapshots, time passage and owner deltas never rescan the population');
+    for (const row of rows) Life.acceptLifecycleRow({ ...row, phase: 'hot', simulationRevision: 5 });
+    assert.strictEqual(Shots.fundedDemand(Shots.marketSnapshot(now), 1463, 90, 99999), 0,
+        'retiring all owners removes their entire funded demand');
+    console.log('Market lots, material lots for the market, funded production and incremental native snapshot passed');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     Life.allStates = originalStates; Shots._resetForTests();
+    fs.rmSync(isolated.directory, { recursive: true, force: true });
 });

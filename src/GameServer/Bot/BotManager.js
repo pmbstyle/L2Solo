@@ -317,7 +317,7 @@ const BotManager = {
     },
 
     init() {
-        console.info("BotManager :: Initializing automated bots...");
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotManager :: Initializing automated bots...");
         BotSocialMemory.init();
         BotFriendship.init();
         PopulationService.init();
@@ -337,7 +337,7 @@ const BotManager = {
         // seeder. Keeping the old static starters here doubled the fresh-world
         // population before wave one had even begun.
         const bots = process.env.L2NODE_HOT_LOAD_TEST === '1' ? [] : [...MERCHANT_BOTS];
-        console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotManager :: Static services: merchants=%d; adventure population is seeder-managed', bots.length);
         
         // Wait 5 seconds after startup to let world finish loading
         setTimeout(() => {
@@ -754,11 +754,13 @@ const BotManager = {
                         BotAI.init(session);
 
                         this.sessions.push(session);
+                        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) {
                         let modeText = "[Hunting Mode]";
                         if (session.townGossip) modeText = "[Gossip Mode]";
                         if (session.plan === 'pk_hunting') modeText = "[PK Mode]";
                         if (session.plan === 'merchant') modeText = "[Merchant Mode]";
                         utils.infoSuccess("BotManager", "%s (Level %d) is active in World %s", character.name, character.level, modeText);
+                        }
                         return session;
                     } catch (error) {
                         if (hotPersisted) await rollbackPublishedBot(session, 'hot_spawn_rollback');
@@ -1494,13 +1496,14 @@ const BotManager = {
     },
 
     startDynamicScalingMonitor() {
-        console.info("BotManager :: Dynamic bot teleport/level scaling removed; using persistent starter populations.");
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotManager :: Dynamic bot teleport/level scaling removed; using persistent starter populations.");
     },
 
     startStatusLogMonitor() {
-        if (process.env.BOT_STATUS_LOGS === '0') return;
+        if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) || process.env.BOT_STATUS_LOGS === '0') return;
 
         setInterval(() => {
+            if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
             try {
                 const summaries = this.sessions
                     .filter((session) => session.actor && session.plan !== 'merchant')

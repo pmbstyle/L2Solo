@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 
 require('../src/Global');
@@ -7,6 +8,7 @@ const Governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
+const ClanWarehouse = invoke('GameServer/Clan/ClanWarehouseEquipmentService');
 
 async function main() {
     const originalConfig = {
@@ -26,7 +28,7 @@ async function main() {
     const originalProfile = PopulationService.playerActivityProfile;
     const originalStaleCandidates = LifeState.staleGoalCandidates;
     const originalReviewBatch = GoalService.reviewBatch;
-    const originalReleaseWarehouse = PopulationService.releaseWarehouseMaterials;
+    const originalReleaseWarehouse = ClanWarehouse.resolveBatch;
     const originalReconcileMarket = PopulationService.reconcileMarketGoals;
     const originalRuntime = {
         staleGoalReviewRunning: PopulationService.staleGoalReviewRunning,
@@ -64,7 +66,7 @@ async function main() {
             return [];
         };
         GoalService.reviewBatch = async (states) => states;
-        PopulationService.releaseWarehouseMaterials = async () => [];
+        ClanWarehouse.resolveBatch = async () => [];
         PopulationService.reconcileMarketGoals = async () => [];
 
         const blocker = Governor.admit({
@@ -100,10 +102,10 @@ async function main() {
         assert(delayMs > 900 && delayMs <= 1000, 'a full stale-goal batch must continue in the next governor window');
 
         Governor.reset();
-        PopulationService.releaseWarehouseMaterials = async () => Array.from({ length: 8 }, () => ({}));
+        ClanWarehouse.resolveBatch = async () => Array.from({ length: 8 }, () => ({}));
         await PopulationService.reconcileWarehouseReleases();
         delayMs = PopulationService.nextWarehouseReleaseAt - Date.now();
-        assert(delayMs > 900 && delayMs <= 1000, 'a full warehouse batch must continue independently');
+        assert(delayMs > 900 && delayMs <= 1000, 'a full clan warehouse batch must continue independently');
 
         Governor.reset();
         PopulationService.reconcileMarketGoals = async () => {
@@ -120,7 +122,7 @@ async function main() {
         PopulationService.playerActivityProfile = originalProfile;
         LifeState.staleGoalCandidates = originalStaleCandidates;
         GoalService.reviewBatch = originalReviewBatch;
-        PopulationService.releaseWarehouseMaterials = originalReleaseWarehouse;
+        ClanWarehouse.resolveBatch = originalReleaseWarehouse;
         PopulationService.reconcileMarketGoals = originalReconcileMarket;
         Object.assign(PopulationService, originalRuntime);
         Governor.reset();

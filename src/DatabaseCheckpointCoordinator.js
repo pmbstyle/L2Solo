@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 'use strict';
 
 const path = require('path');
@@ -57,7 +58,7 @@ function rejectPending(error) {
 
 function scheduleRestart() {
     if (stopping || !databasePath || restartTimer) return;
-    counters.restarts += 1;
+    DiagnosticConfig.developerDiagnostics && (counters.restarts += 1);
     restartTimer = setTimeout(() => {
         restartTimer = null;
         spawn();
@@ -68,25 +69,25 @@ function scheduleRestart() {
 function record(result = {}) {
     const normalized = {
         ...result,
-        durationMs: Math.max(0, Number(result.durationMs || 0)),
+        ...(DiagnosticConfig.developerDiagnostics ? { durationMs: Math.max(0, Number(result.durationMs || 0)) } : {}),
         at: Date.now()
     };
     last = normalized;
     const reset = normalized.mode === 'restart' || normalized.mode === 'truncate';
-    if (!normalized.ok) counters.errors += 1;
-    else if (normalized.skipped) counters.skipped += 1;
+    if (!normalized.ok) DiagnosticConfig.developerDiagnostics && (counters.errors += 1);
+    else if (normalized.skipped) DiagnosticConfig.developerDiagnostics && (counters.skipped += 1);
     else {
-        counters.completed += 1;
-        counters.busy += Math.max(0, Number(normalized.busy || 0));
-        counters.frames += Math.max(0, Number(normalized.checkpointedFrames || 0));
-        durations.push(normalized.durationMs);
+        DiagnosticConfig.developerDiagnostics && (counters.completed += 1);
+        DiagnosticConfig.developerDiagnostics && (counters.busy += Math.max(0, Number(normalized.busy || 0)));
+        DiagnosticConfig.developerDiagnostics && (counters.frames += Math.max(0, Number(normalized.checkpointedFrames || 0)));
+        if (DiagnosticConfig.developerDiagnostics) durations.push(normalized.durationMs);
         if (durations.length > SAMPLE_LIMIT) durations.shift();
     }
     if (reset) {
-        if (!normalized.ok) counters.resetErrors += 1;
-        else if (Number(normalized.busy || 0) > 0) counters.resetBusy += 1;
+        if (!normalized.ok) DiagnosticConfig.developerDiagnostics && (counters.resetErrors += 1);
+        else if (Number(normalized.busy || 0) > 0) DiagnosticConfig.developerDiagnostics && (counters.resetBusy += 1);
         else {
-            counters.resets += 1;
+            DiagnosticConfig.developerDiagnostics && (counters.resets += 1);
             lastReset = { ...normalized };
         }
     }
@@ -97,10 +98,10 @@ function spawn() {
     if (!databasePath || stopping || worker) return;
     ready = false;
     const instance = new Worker(path.join(__dirname, 'DatabaseCheckpointWorker.js'), {
-        workerData: { databasePath }
+        workerData: { databasePath, developerDiagnostics: DiagnosticConfig.developerDiagnostics === true }
     });
     worker = instance;
-    counters.starts += 1;
+    DiagnosticConfig.developerDiagnostics && (counters.starts += 1);
     instance.on('message', (message = {}) => {
         if (instance !== worker) return;
         if (message.type === 'ready') {
@@ -120,7 +121,7 @@ function spawn() {
     });
     instance.on('error', (error) => {
         if (instance !== worker) return;
-        counters.errors += 1;
+        DiagnosticConfig.developerDiagnostics && (counters.errors += 1);
         last = { ok: false, error: error?.message || String(error), at: Date.now() };
     });
     instance.on('exit', (code) => {
@@ -156,18 +157,18 @@ function start(nextDatabasePath, options = {}) {
 function request(options = {}) {
     if (stopping || !worker) return Promise.reject(new Error('checkpoint worker is not available'));
     if (activeRequest) {
-        counters.coalesced += 1;
+        DiagnosticConfig.developerDiagnostics && (counters.coalesced += 1);
         if (options.force === true) {
             return activeRequest.promise.then(() => request(options));
         }
         return activeRequest.promise;
     }
     const id = ++sequence;
-    counters.requests += 1;
+    DiagnosticConfig.developerDiagnostics && (counters.requests += 1);
     const mode = options.mode === 'restart'
         ? 'restart'
         : options.mode === 'truncate' ? 'truncate' : 'passive';
-    if (mode === 'restart') counters.resetRequests += 1;
+    if (mode === 'restart') DiagnosticConfig.developerDiagnostics && (counters.resetRequests += 1);
     let resolveRequest;
     let rejectRequest;
     const promise = new Promise((resolve, reject) => {
@@ -226,10 +227,11 @@ function snapshot() {
         ready,
         inFlight: !!activeRequest,
         databasePath,
-        ...counters,
+        ...(DiagnosticConfig.developerDiagnostics ? { ...counters,
         p50Ms: percentile(durations, 0.5),
         p95Ms: percentile(durations, 0.95),
         maxMs: durations.length ? Number(Math.max(...durations).toFixed(2)) : 0,
+        } : { diagnosticsEnabled: false }),
         last: last ? { ...last } : null,
         lastReset: lastReset ? { ...lastReset } : null
     };

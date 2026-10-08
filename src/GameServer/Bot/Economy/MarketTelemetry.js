@@ -1,3 +1,4 @@
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const RECENT_TRADE_LIMIT = 100;
 const Database = invoke('Database');
 const RUNTIME_STARTED_AT = Date.now();
@@ -42,7 +43,7 @@ const recentNpcTrades = [];
 const itemTotals = new Map();
 const townTotals = new Map();
 
-function add(key, amount = 1) { counters[key] = Number(counters[key] || 0) + Number(amount || 0); }
+function add(key, amount = 1) { if (!Config.developerDiagnostics) return; counters[key] = Number(counters[key] || 0) + Number(amount || 0); }
 
 function boundedPush(target, value) {
     target.unshift(value);
@@ -93,6 +94,7 @@ function recordTrade(details = {}) {
         buyer: party(details.buyerCharacterId, details.buyerName)
     };
 
+    if (Config.developerDiagnostics) {
     if (channel === 'static_wtb') boundedPush(recentStaticTrades, trade);
     else if (channel === 'npc_buy') boundedPush(recentNpcTrades, trade);
     else if (channel === 'player_wts' || channel === 'fixed_wts') boundedPush(recentPlayerTrades, trade);
@@ -113,6 +115,7 @@ function recordTrade(details = {}) {
     const town = townTotals.get(townName) || { town: townName, trades: 0, items: 0, adena: 0, channels: {} };
     incrementTotals(town, trade);
     townTotals.set(townName, town);
+    }
     // AFK settlement writes its own canonical trade row in the same SQLite
     // transaction. Telemetry still updates live counters, but must not journal
     // the same exchange again with a second event key.
@@ -128,6 +131,7 @@ function recordTrade(details = {}) {
 }
 
 function transactions() {
+    if (!Config.developerDiagnostics) return { enabled: false };
     const byItem = Array.from(itemTotals.values())
         .map((item) => ({ ...item, channels: { ...item.channels } }));
     const peerValue = (entry, key) => Number(entry.channels?.wts?.[key] || 0) + Number(entry.channels?.wtb?.[key] || 0);
@@ -279,8 +283,9 @@ module.exports = {
     recordTrade,
     transactions,
     reset,
-    current() { return { ...counters }; },
+    current() { return Config.developerDiagnostics ? { ...counters } : { enabled: false }; },
     snapshot() {
+        if (!Config.developerDiagnostics) return { enabled: false };
         const delta = Object.fromEntries(Object.keys(counters).map((key) => [key, counters[key] - previous[key]]));
         previous = { ...counters };
         return { total: { ...counters }, delta };

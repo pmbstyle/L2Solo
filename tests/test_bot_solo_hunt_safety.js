@@ -33,6 +33,19 @@ const servitor = { role: 'dps', maxHp: 2000, pDef: 300, pAtk: 300, atkSpd: 300, 
 assert(!Match.soloSurvival([fragile], target).eligible);
 assert(Match.soloSurvival([fragile, servitor], target).eligible, 'a real summon contributes damage and tanking');
 
+const bow = { role: 'archer', pAtk: 100, pDef: 100, maxHp: 1000, atkSpd: 300,
+    weaponMask: 32, equipment: { weaponKind: 'Weapon.Bow' }, skills: [] };
+const resistedTarget = { ...target, vulnerabilities: { bowWpnVuln: 0.1 } };
+const bowRatio = Match.soloSurvival([bow], resistedTarget).survivalRatio;
+const safeBow = { ...bow, maxHp: bow.maxHp * 1.6 / bowRatio };
+assert(!Match.evaluate([safeBow], resistedTarget).eligible, 'fixture: the ordinary resistance gate rejects efficiency 0.1');
+assert(Match.soloCanHunt([safeBow], resistedTarget).eligible, 'solo hunting accepts a resisted mob it safely survives');
+assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 1.2 / 1.6 }], resistedTarget).eligible);
+assert(!Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).eligible);
+assert.equal(Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).reason, 'recovery_level');
+assert(!Match.soloCanHunt([{ ...safeBow, maxHp: undefined }], resistedTarget).eligible,
+    'an unknown kit still uses the ordinary resistance gate');
+
 const exp = Number(Data.experience[28]) + 100000;
 const state = { characterId: 990003, level: 29, exp, sp: 0, adena: 0,
     phase: 'cold', activity: 'hunting', spotId: 'danger', inventory: {}, loc: {}, timing: {},
@@ -101,8 +114,11 @@ try {
     const otherEasy = { ...easy, id: 'other-easy', density: 20 };
     Spots.cache = [hard, easy, otherEasy];
     assert.strictEqual(Spots.findForState({ ...stranded, spotId: easy.id }, {
-        matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id, 'easy',
-    'a safe lower-level fallback must not become an endless travel loop between comparable camps');
+        matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id, 'other-easy',
+    'a lower-level fallback leaves its old camp when another allowed camp has a better value');
+    assert.strictEqual(Spots.findForState({ ...stranded, spotId: otherEasy.id }, {
+        matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id, 'other-easy',
+    'the best lower-level fallback remains stable');
 } finally { Spots.cache = original; }
 
 const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');

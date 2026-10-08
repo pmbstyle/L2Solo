@@ -69,21 +69,21 @@ function applyCommittedCraft(actor, consumed, product, template, result) {
     }
 }
 
-async function craftSelf(session, recipeId, random = Math.random) {
+async function craftSelf(session, recipeId, random = Math.random, options = {}) {
     const actor = session?.actor;
     const actorId = Number(actor?.fetchId?.());
     const recipe = C4RecipeItems.resolveByRecipeId(recipeId);
-    if (!actor || !recipe || actor.isDead?.() || Number(actor.fetchPrivateStoreType?.() || 0) > 0) {
+    if (!actor || !recipe || (!options.economyCommand && (actor.isDead?.() || Number(actor.fetchPrivateStoreType?.() || 0) > 0))) {
         return fail(session);
     }
     if (!Number.isFinite(actorId) || activeCrafters.has(actorId)) return fail(session, recipe);
-    if (!hasLearnedRecipe(actor, recipe) || Number(craftLevelFor(actor, recipe) || 0) < recipe.level) {
+    if (!options.economyCommand && (!hasLearnedRecipe(actor, recipe) || Number(craftLevelFor(actor, recipe) || 0) < recipe.level)) {
         return fail(session, recipe);
     }
-    if (Number(actor.fetchMp?.() || 0) < recipe.mpCost) return fail(session, recipe);
+    if (!options.economyCommand && Number(actor.fetchMp?.() || 0) < recipe.mpCost) return fail(session, recipe);
 
     const consumed = materialPlan(actor.backpack, recipe.materials);
-    if (!consumed) return fail(session, recipe);
+    if (!consumed && !options.economyCommand) return fail(session, recipe);
 
     const template = productTemplate(recipe);
     if (!template) return fail(session, recipe);
@@ -97,17 +97,44 @@ async function craftSelf(session, recipeId, random = Math.random) {
     };
 
     activeCrafters.add(actorId);
+    const bot = session.botSession === true || session.constructor?.name === 'BotSession'
+        || String(session.accountId || '').startsWith('bot_');
+    const Commit = require('../Bot/Economy/EconomyCommit');
+    let command = null, committed = null;
     try {
         await CharacterWriteQueue.flushCharacter(actorId);
-        const success = recipe.successRate >= 100 || (Number(random()) * 100) < recipe.successRate;
+        if (bot) {
+            const state = invoke('GameServer/Bot/Population/BotLifeState').cachedState(actorId);
+            if (!state) throw Error('economy_owner_missing');
+            const admitted = await Commit.admit(state, Commit.KINDS.craft, options.economyCommand);
+            command = admitted.command;
+            if (Object.isExtensible(options)) options.economyCommand = command;
+        }
+        const drawn = bot ? true : recipe.successRate >= 100 || (Number(random()) * 100) < recipe.successRate;
         const result = await Database.craftInventoryItems(actorId, {
-            materials: consumed.map(({ item, amount }) => ({ id: item.fetchId(), selfId: item.fetchSelfId(), amount })),
-            product: success ? product : null,
-            mp
+            materials: (consumed || []).map(({ item, amount }) => ({ id: item.fetchId(), selfId: item.fetchSelfId(), amount })),
+            product: drawn ? product : null, mp, economyCommand: command,
+            recipeId: bot ? recipe.recipeId : 0, random,
+            validate: bot ? () => {
+                const registered = invoke('GameServer/World/World').registeredActorById(actorId);
+                if (registered?.session !== session || registered?.actor !== actor || session.actor !== actor
+                    || actor.isDead?.() || Number(actor.fetchPrivateStoreType?.() || 0) > 0
+                    || !hasLearnedRecipe(actor, recipe) || Number(craftLevelFor(actor, recipe)) < recipe.level) throw Error('craft_actor_changed');
+            } : null
         });
-        if (success) applyCommittedCraft(actor, consumed, product, template, result);
+        committed = result;
+        const success = bot ? result.success : drawn;
+        if (result.coldLifeRow) Commit.acceptRow(result.coldLifeRow);
+        if (result.replayed) {
+            const rows = await Database.fetchItems(actorId);
+            actor.backpack.items = rows.map(row => {
+                const data = ItemTemplateIndex.find(DataCache.items, Number(row.selfId));
+                return new Item(row.id, { ...utils.crushOb(data || {}), amount: row.amount,
+                    enchant: row.enchant, equipped: !!row.equipped, slot: row.slot });
+            });
+        } else if (success) applyCommittedCraft(actor, consumed, product, template, result);
         else applyCommittedMaterials(actor, consumed, result.sources);
-        actor.setMp?.(mp);
+        if (!result.replayed) actor.setMp?.(Number(result.mp ?? mp));
         actor.statusUpdateVitals?.(actor);
         actor.automation?.replenishVitals?.(actor);
         session.dataSendToMe?.(ServerResponse.itemsList(actor.backpack.fetchItems()));
@@ -115,8 +142,10 @@ async function craftSelf(session, recipeId, random = Math.random) {
         return success;
     } catch (error) {
         utils.infoWarn('Crafting', 'craft rejected: %s', error.message || error);
+        if (committed?.committed) return !!committed.success;
         return fail(session, recipe);
     } finally {
+        Commit.finish(actorId, command);
         activeCrafters.delete(actorId);
     }
 }

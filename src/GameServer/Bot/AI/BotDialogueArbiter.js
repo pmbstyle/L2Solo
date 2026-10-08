@@ -26,7 +26,7 @@ function deliverFallback(input, turn, reason) {
     const playerId = input.playerSession?.actor?.fetchId?.() || null;
     const turnId = turn?.turnId || input.turnId || input.requestId || null;
     const channel = turn?.channel || input.channel || input.source || 'hot_dialogue';
-    const metadata = {
+    const metadata = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
         event: 'player_chat',
         source: input.source || channel,
         channel,
@@ -37,7 +37,7 @@ function deliverFallback(input, turn, reason) {
         sessionId: `hot-bot:${botId || 'unknown'}:player:${playerId || 'unknown'}`,
         providerOutcome: reason || 'fallback',
         preProviderFallback: true
-    };
+    }) : null;
     let delivered = false;
     let persisted = false;
     const fallbackResult = (traceError = null) => ({
@@ -48,7 +48,7 @@ function deliverFallback(input, turn, reason) {
         reply,
         delivered,
         persisted,
-        traceOutput: {
+        traceOutput: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             providerOutcome: reason || 'fallback',
             requestedAction: null,
             toolOutcome: null,
@@ -56,21 +56,21 @@ function deliverFallback(input, turn, reason) {
             playerVisibleReply: delivered ? reply : null,
             replyDelivered: delivered,
             traceError: traceError?.message || null
-        }
+        }) : null
     });
 
     return LangfuseTracing.withRootObservation(
         'hot-bot.dialogue',
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             event: 'player_chat',
             playerMessage: turn?.playerText || input.text || '',
             conversation: turn?.context || null
-        },
+        }) : null,
         metadata,
         async () => {
             const delivery = await LangfuseTracing.withObservation(
                 'bot.reply.deliver',
-                { action: 'fallback', reply, reason: reason || 'fallback' },
+                (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ action: 'fallback', reply, reason: reason || 'fallback' }) : null,
                 metadata,
                 async () => {
                     BotManager.botTell(input.botSession, input.playerSession, reply);
@@ -83,7 +83,7 @@ function deliverFallback(input, turn, reason) {
             persisted = turnId
                 ? await LangfuseTracing.withObservation(
                     'bot.conversation.persist',
-                    { botId, playerId, turnId, fallback: true },
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ botId, playerId, turnId, fallback: true }) : null,
                     metadata,
                     () => BotConversationService.recordFallback({
                         playerSession: input.playerSession,
@@ -151,7 +151,7 @@ async function executePartyJoin(input, turn) {
             applied: result.applied === true
         }
     });
-    console.info(
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
         'BotParty :: chat join request player=%s speaker=%s party=%s result=%s applied=%s',
         input.playerSession.actor.fetchName?.() || 'unknown',
         input.botSession.actor.fetchName?.() || 'unknown',

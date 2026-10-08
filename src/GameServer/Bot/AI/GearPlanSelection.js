@@ -9,12 +9,13 @@ const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
-const planningCache = new Map();
-function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {} } = {}) {
-    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
-        spots, occupancy, timestamp, board: planningOptions.board
+function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, timestamp = Date.now(), planningOptions = {}, preparedEconomy = null } = {}) {
+    if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
+    const economy = preparedEconomy || invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
+        spots, occupancy, timestamp, board: planningOptions.board, buyOrderEscrow: planningOptions.buyOrderEscrow
     });
-    const chosen = economy.network.queue.find(wish => wish.key === economy.network.focus?.[0]);
+    const chosen = economy.network.queue.find(wish => wish.key === economy.network.activity?.rootKey)
+        || economy.network.queue.find(wish => wish.key === economy.network.focus?.[0]);
     const wishTargetId = chosen?.object?.slot ? chosen.object.itemId : null;
     const activity = economy.network.activity;
     const activeGear = wishTargetId && activity?.rootKey === chosen.key
@@ -23,9 +24,12 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.
         return { acquisitionPlan: { ...previousPlan, status: 'deferred', strategy: 'none', next: null,
-            reason: 'wish_focus', economyInputKey: economy.inputKey }, replanContext: {},
-            reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp) };
+            reason: 'wish_focus' }, replanContext: {},
+            reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
     }
+    // The selected item's native funding gate reads the packet made by this
+    // same review, including the bot's own funded buy-order escrow.
+    state = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
     const bag = Object.values(state.inventory || {}).filter(row => row.equipped || row.equippedCount)
         .map(row => [row.selfId, row.enchant, row.slot].join(':')).sort().join(',');
     const materials = (previousPlan?.materials || []).map(row => [row.selfId,
@@ -34,11 +38,11 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         chosen?.funded, activity?.key, previousPlan?.status, previousPlan?.acquisitionProgress?.failures,
         previousPlan?.target?.selfId, state.stats?.partyRequest?.status,
         state.stats?.clanEquipmentOrder?.revision].join('|');
-    const held = planningCache.get(state.characterId);
+    const held = economy.gearPlanMemo;
     if (held?.key === key && held.spots === spots && !state.stats?.lastResolveDebug?.failed) {
         // A transport copy retains the current native progress/claims; only
         // the expensive choice is cached, never a stale whole state.
-        return { ...held.result, acquisitionPlan: previousPlan || held.result.acquisitionPlan };
+        return { ...held.result, acquisitionPlan: previousPlan || held.result.acquisitionPlan, economy };
     }
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
     // Equal-price towns are ranked from the bot's hunting ground, for every caller.
@@ -122,10 +126,10 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
         marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     };
-    const result = { acquisitionPlan: { ...acquisitionPlan, economyInputKey: economy.inputKey },
+    const result = { acquisitionPlan: { ...acquisitionPlan },
         replanContext, reusablePartyRequest, excludedSpotIds };
-    planningCache.set(state.characterId, { key, spots, previous: result.acquisitionPlan, result });
-    return result;
+    economy.gearPlanMemo = { key, spots, result };
+    return { ...result, economy };
 }
 
 module.exports = { selectAcquisitionPlan };

@@ -2,6 +2,9 @@ const DEFAULTS = {
     enabled: true,
     staticBuyersDisabled: false,
     staticShotsDisabled: false,
+    developerDiagnostics: false,
+    economyDiagnostics: false,
+    economyDiagnosticsBotIds: '',
     // Personal knowledge errors and learning by own actions share one switch.
     knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,
@@ -226,6 +229,7 @@ const DEFAULTS = {
 };
 
 const ENV_KEYS = {
+    developerDiagnostics: 'BOT_DEVELOPER_DIAGNOSTICS',
     staticBuyersDisabled: 'BOT_STATIC_BUYERS_DISABLED',
     staticShotsDisabled: 'BOT_STATIC_SHOTS_DISABLED',
     knowledgeErrorsEnabled: 'BOT_KNOWLEDGE_ERRORS_ENABLED',

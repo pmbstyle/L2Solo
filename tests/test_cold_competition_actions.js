@@ -1,6 +1,9 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
 require('../src/Global');
+// Load native data before the first economic route or combat profile check.
+invoke('GameServer/DataCache').init();
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.

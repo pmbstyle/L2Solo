@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const Manager = invoke('GameServer/Bot/BotManager');
 const Menu = invoke('GameServer/World/Generics/NpcBypasses/BotStatus');
 const Native = invoke('GameServer/World/Generics/NpcBypasses/NativeStatus');

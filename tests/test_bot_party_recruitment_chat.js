@@ -7,6 +7,7 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const PartyRecruitmentChat = invoke('GameServer/Bot/Population/ColdPartyRecruitmentChat');
 
 const originalUser = World.user;
+const originalPresence = World.actorPresenceSessions;
 const originalConfig = {
     partyMaxSize: Config.partyMaxSize,
     partyRecruitmentChatEnabled: Config.partyRecruitmentChatEnabled,
@@ -25,6 +26,8 @@ try {
         socket: { write: () => {} },
         dataSendToMe: (packet) => packets.push(packet)
     }] };
+    // The live audience now comes from the native actor-presence index.
+    World.actorPresenceSessions = () => World.user.sessions;
     PartyRecruitmentChat.reset();
 
     const party = { partyId: 'party_1', leaderId: 1, spotId: 'cruma', stats: {} };
@@ -34,7 +37,7 @@ try {
     ];
     const announced = PartyRecruitmentChat.maybeAnnounce(party, members, { name: 'Cruma Tower' }, 1000);
     assert.strictEqual(announced.announced, true);
-    assert.strictEqual(announced.text, 'Tank and Healer LFM DPS and Buffer — Lv. 15 party at Cruma Tower.');
+    assert.strictEqual(announced.text, 'LF dps/buffer, Cruma Tower lv15');
     assert.strictEqual(packets.length, 1, 'a real player should receive the party shout');
     assert.strictEqual(announced.party.stats.lastRecruitmentAdAt, 1000);
 
@@ -48,6 +51,7 @@ try {
     console.log('Bot party recruitment chat checks passed');
 } finally {
     World.user = originalUser;
+    World.actorPresenceSessions = originalPresence;
     Object.assign(Config, originalConfig);
     PartyRecruitmentChat.reset();
 }

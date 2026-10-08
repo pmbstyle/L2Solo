@@ -85,26 +85,58 @@ async function run() {
     // The common economy now owns the missing quantity. The goal adapter
     // forwards its selected shopping leaf and resolves the displayed name.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const { capture, ColdEconomyDecisions } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const decisions = new ColdEconomyDecisions();
+    const full = Economy.forState(nestedState);
     const originalContext = Economy.forState;
     let selected = { activity: 'shopping', itemId: 1869, amount: 1, price: 10, rootKey: 'ingredient' };
-    Economy.forState = () => ({ network: { activity: selected, queue: [] } });
+    const publish = input => {
+        const snapshot = { ...input, stats: { ...input.stats, ...full.statsPacket } };
+        decisions.accept(input.characterId, capture({ ...full, network: { ...full.network, activity: selected } }, snapshot, input));
+        return snapshot;
+    };
+    const evaluate = input => needs.evaluate(publish(input), { now, decisions, errand: null });
+    Economy.forState = () => { throw Error('cold_needs_main_network_forbidden'); };
     try {
-        const nestedGoal = needs.evaluate(nestedState, { now }).find((goal) => goal.type === 'buy_craft_material');
+        const beforePurchase = publish(nestedState);
+        const nestedGoal = needs.evaluate(beforePurchase, { now, decisions, errand: null }).find((goal) => goal.type === 'buy_craft_material');
         assert.strictEqual(nestedGoal.target.itemId, 1869);
         assert.strictEqual(nestedGoal.target.amount, 1, 'shopping forwards the missing quantity from the economy');
         const ingredientName = DataCache.items.find((item) => Number(item.selfId) === 1869).template.name;
         assert.strictEqual(nestedGoal.target.itemName, ingredientName, 'a buy ad names the material, not its id (T25)');
+        const filled = { ...beforePurchase, inventory: { 1869: { selfId: 1869, amount: 3 } } };
+        assert.deepStrictEqual(needs.evaluate(filled, { now, decisions, errand: null }), [],
+            'the captured missing quantity is filled by the one newly acquired ingredient');
         const noneHeld = { ...nestedState, inventory: {} };
         selected = { ...selected, amount: 3, price: 30 };
-        const noneHeldGoal = needs.evaluate(noneHeld, { now }).find((goal) => goal.type === 'buy_craft_material');
+        const noneHeldGoal = evaluate(noneHeld).find((goal) => goal.type === 'buy_craft_material');
         assert.strictEqual(noneHeldGoal.target.amount, 3);
         assert.strictEqual(noneHeldGoal.target.itemName, ingredientName,
             'a bot holding none of the material still names it (T25)');
+        const beforePartial = publish(noneHeld);
+        const afterPartial = { ...beforePartial, inventory: { 1869: { selfId: 1869, amount: 2 } } };
+        const remainder = needs.evaluate(afterPartial, { now, decisions, errand: null })[0];
+        assert.strictEqual(remainder.target.amount, 1, 'two newly acquired copies reduce missing three to one');
+        assert.strictEqual(remainder.target.adena, 10, 'partial acquisition preserves the native unit price');
+        assert.strictEqual(remainder.plan.estimatedCost, 10);
+        assert.deepStrictEqual(needs.evaluate({ ...afterPartial,
+            inventory: { 1869: { selfId: 1869, amount: 3 } } }, { now, decisions, errand: null }), []);
+        const hot = { ...nestedState, phase: 'hot' };
+        const hotEconomy = { ...full, state: hot, network: { ...full.network,
+            activity: { ...selected, amount: 1, price: 10 } } };
+        assert.strictEqual(needs.evaluate(hot, { now, economy: hotEconomy, errand: null })[0].target.amount, 1,
+            'a fresh hot context carries a missing quantity despite already holding two copies');
         const named = { ...nestedState, inventory: { 1869: { selfId: 1869, amount: 2, name: 'Iron Ore' } } };
-        assert.strictEqual(needs.evaluate(named, { now })[0].target.itemName, 'Iron Ore');
+        assert.strictEqual(evaluate(named)[0].target.itemName, 'Iron Ore');
+        selected = { ...selected, itemId: 391, amount: 1, price: 30000, rootKey: 'power:391' };
+        const beforeGear = publish(noneHeld);
+        assert.strictEqual(needs.evaluate(beforeGear, { now, decisions, errand: null }).length, 1);
+        assert.deepStrictEqual(needs.evaluate({ ...beforeGear,
+            inventory: { 391: { selfId: 391, amount: 1 } } }, { now, decisions, errand: null }), [],
+            'acquiring a requested physical gear copy still drops its old request');
         selected = null;
         nestedState.inventory[1869].amount = 3;
-        assert(!needs.evaluate(nestedState, { now }).some((goal) => goal.type === 'buy_craft_material'),
+        assert(!evaluate(nestedState).some((goal) => goal.type === 'buy_craft_material'),
             'a completed ingredient without a shopping leaf must not create another WTB goal');
     } finally {
         Economy.forState = originalContext;

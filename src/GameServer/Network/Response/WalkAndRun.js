@@ -9,7 +9,7 @@ function walkAndRun(creatureId, movement) {
         .writeD(0x00); // Unknown legacy tail.
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${creatureId}:running=${movement ? 1 : 0}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${creatureId}:running=${movement ? 1 : 0}`;
     return buffer;
 }
 

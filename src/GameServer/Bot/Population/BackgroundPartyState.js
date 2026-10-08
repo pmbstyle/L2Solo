@@ -1,4 +1,4 @@
-const { createHash } = require('node:crypto');
+const { fnv1a32 } = require('../Fnv1a');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -6,20 +6,29 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const TABLE = 'bot_background_parties';
 const cache = new Map();
 const acceptedStamps = new Map();
+const byStatus = new Map([['active', new Set()], ['hot', new Set()]]);
 let cacheGeneration = 0;
 const publicationListeners = new Set();
 
 function acceptedParty(snapshot) {
     const current = cache.get(snapshot.partyId);
-    const stampOf = party => createHash('sha256').update(JSON.stringify(party)).digest('hex');
-    const stamp = stampOf(snapshot);
-    if (current && acceptedStamps.get(snapshot.partyId) === stamp && stampOf(current) === stamp) return current;
+    // ARCH-NOTE: Snapshots have no revision. One FNV stamp per accept replaces
+    // two cryptographic hashes; the prior accepted stamp is already known.
+    const stamp = fnv1a32(JSON.stringify(snapshot));
+    if (current && acceptedStamps.get(snapshot.partyId) === stamp) return current;
     cache.set(snapshot.partyId, snapshot);
     acceptedStamps.set(snapshot.partyId, stamp);
+    for (const ids of byStatus.values()) ids.delete(snapshot.partyId);
+    byStatus.get(snapshot.status)?.add(snapshot.partyId);
     cacheGeneration++;
     for (const listener of publicationListeners) {
         try { listener(snapshot, current || null); }
         catch (error) { utils.infoWarn('BotParty', 'publication listener failed: %s', error?.message || error); }
+    }
+    if (!byStatus.has(snapshot.status)) {
+        cache.delete(snapshot.partyId);
+        acceptedStamps.delete(snapshot.partyId);
+        invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(snapshot.partyId);
     }
     return snapshot;
 }
@@ -193,6 +202,7 @@ const BackgroundPartyState = {
             if (changedOrder) {
                 cache.clear();
                 acceptedStamps.clear();
+                for (const ids of byStatus.values()) ids.clear();
                 cacheGeneration++;
             }
             next.forEach(acceptedParty);
@@ -282,11 +292,11 @@ const BackgroundPartyState = {
     },
 
     active() {
-        return Array.from(cache.values()).filter((party) => party.status === 'active');
+        return Array.from(byStatus.get('active'), id => cache.get(id));
     },
 
     admitted() {
-        return Array.from(cache.values()).filter(party => ['active', 'hot'].includes(party.status));
+        return [...byStatus.get('active'), ...byStatus.get('hot')].map(id => cache.get(id));
     },
 
     due(limit = 10, at = now()) {
@@ -312,19 +322,14 @@ const BackgroundPartyState = {
     setStatus(partyId, status = 'inactive') {
         const party = this.find(partyId);
         if (!party) return Promise.resolve(null);
-        // A group's wish review dies with the group (design 16.26).
-        if (status !== 'active') invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(partyId);
         return this.createOrUpdate({ ...party, status });
     },
 
+    size() { return cache.size; },
+
     counts() {
-        const counts = { active: 0, inactive: 0, total: 0 };
-        cache.forEach((party) => {
-            if (party.status === 'active') counts.active += 1;
-            else counts.inactive += 1;
-            counts.total += 1;
-        });
-        return counts;
+        const active = byStatus.get('active').size;
+        return { active, inactive: cache.size - active, total: cache.size };
     }
 };
 

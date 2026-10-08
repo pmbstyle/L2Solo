@@ -128,6 +128,7 @@ function retreatFromThreat(session, bot, threat) {
 module.exports = {
     maybeCastManaRegeneration,
     tick(session, bot, Generics, BotAI) {
+        invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 1);
         if (session.followPlayerSession && session.partyCompanion === true) {
             const playerSession = session.followPlayerSession;
             const player = playerSession?.actor;

@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 require('../src/Global');
 const { TownNavigation, POINT_LIMIT, CACHE_LIMIT } = invoke('GameServer/Bot/AI/TownNavigation');

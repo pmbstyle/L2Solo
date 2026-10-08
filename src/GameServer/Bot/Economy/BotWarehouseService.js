@@ -1,5 +1,3 @@
-const BackgroundCandidateQueue = require('../Population/BackgroundCandidateQueue');
-const releaseQueue = new BackgroundCandidateQueue();
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantScrolls = invoke('GameServer/Items/C4EnchantScrolls');
@@ -7,11 +5,8 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const craftScanAt = new Map();
 const depositQueues = new Map();
-let enchantReleaseCursor = 0;
-let marketReleaseCursor = 0;
-const MAX_GEAR_COPIES_PER_TYPE = 2;
+const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 let templateSource = null;
 let templateIndex = new Map();
 
@@ -77,11 +72,17 @@ function overflowCandidate(item, count) {
     };
 }
 
-async function learnActorRecipes(actor, state = null, session = null) {
+async function learnActorRecipes(actor, state = null, session = null, { recipeIds = null } = {}) {
     const backpack = actor?.backpack;
     if (!session || !backpack?.fetchItems || !backpack.deleteItem || !backpack.registerRecipe || !backpack.hasRecipe) return [];
     const craftLevel = Number(backpack.fetchDwarvenCraftLevel?.(actor) || 0);
     if (craftLevel <= 0) return [];
+    const accepted = LifeState.cachedState(Number(actor.fetchId())) || state;
+    if (!recipeIds) {
+        const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(accepted)?.activity;
+        recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+    }
+    if (!recipeIds.length) return [];
 
     const craftState = {
         ...(state || {}),
@@ -94,18 +95,34 @@ async function learnActorRecipes(actor, state = null, session = null) {
     for (const source of backpack.fetchItems().slice()) {
         const item = itemData(source);
         const info = ItemDisposition.recipeInfo(item);
-        if (!info || backpack.hasRecipe(actor, info.recipe.recipeId)) continue;
+        if (!info || !recipeIds.includes(Number(info.recipe.recipeId)) || backpack.hasRecipe(actor, info.recipe.recipeId)) continue;
         const decision = ItemDisposition.recipeDisposition(craftState, item, []);
         if (decision?.action !== 'learn') continue;
         if (actor.isDead?.()) continue;
 
-        const registered = await new Promise((resolve) => {
-            backpack.deleteItem(session, source.fetchId?.() || source.id, 1, () => {
-                backpack.registerRecipe(actor, info.recipe);
-                resolve(true);
-            });
-        });
-        if (registered) learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
+        const Commit = require('./EconomyCommit');
+        const current = LifeState.cachedState(Number(actor.fetchId())) || state;
+        if (!current || current.phase !== 'hot') continue;
+        const admitted = await Commit.admit(current, Commit.KINDS.learn);
+        let registered;
+        try { registered = await Database.learnColdRecipes(actor.fetchId(), [info.recipe], null, {
+            economyCommand: admitted.command, validate: () => {
+                const registered = invoke('GameServer/World/World').registeredActorById(Number(actor.fetchId()));
+                if (registered?.session !== session || registered?.actor !== actor || session.actor !== actor || actor.isDead?.()
+                    || Number(backpack.fetchDwarvenCraftLevel?.(actor) || 0) < Number(info.recipe.level)) throw Error('recipe_actor_changed');
+            }
+        }); } finally { Commit.finish(actor.fetchId(), admitted.command); }
+        if (registered.coldLifeRow) Commit.acceptRow(registered.coldLifeRow);
+        if (registered.learned?.length) {
+            const book = backpack.fetchRecipeBook?.(actor, info.recipe.type);
+            if (book && !book.some(entry => Number(entry.recipeId) === Number(info.recipe.recipeId))) book.push(Object.fromEntries(
+                ['recipeId', 'recipeItemId', 'level', 'productId', 'productCount', 'successRate', 'mpCost'].map(key => [key, info.recipe[key]])));
+            const remaining = Number(source.fetchAmount?.() || item.amount) - 1;
+            if (remaining > 0) source.setAmount?.(remaining);
+            else backpack.items = backpack.fetchItems().filter(entry => entry !== source);
+            invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(actor.fetchId());
+            learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
+        }
     }
     return learned;
 }
@@ -433,56 +450,36 @@ function marketRequests(state, warehouseItems, reserved = new Map(), options = {
     });
 }
 
-function canRelease(state) {
-    return !!state && isLegacyMainState(state) && state.phase === 'cold'
-        && !(state.party?.partyId || state.partyId) && ['hunting', 'resting'].includes(state.activity);
+function canRelease(state, options = {}) {
+    return options.inTown === true && !!state && isLegacyMainState(state) && state.phase === 'cold'
+        && !(state.party?.partyId || state.partyId) && ['hunting', 'resting', 'shopping', 'merchant'].includes(state.activity);
+}
+
+function materialRequests(state, warehouseItems) {
+    // ARCH-NOTE: the legacy plan and captured worker materials can describe
+    // the same recipe gap. Reserve/withdraw that gap once across both readers.
+    const merged = new Map();
+    for (const request of [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)]) {
+        const key = `${request.selfId}:${request.reason}`;
+        const previous = merged.get(key);
+        merged.set(key, previous ? { ...previous, amount: Math.max(previous.amount, request.amount) } : request);
+    }
+    return [...merged.values()];
 }
 
 function reservedWithdrawalAmounts(state, warehouseItems) {
-    const requests = [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)];
+    const requests = materialRequests(state, warehouseItems);
     return requests.reduce((amounts, item) => amounts.set(item.selfId,
         (amounts.get(item.selfId) || 0) + item.amount), new Map());
 }
 
-function hasFundedReleasedMarketMaterial(state) {
-    return (state?.stats?.lastWarehouseWithdrawal?.items || []).some((item) => (
-        item.reason === 'market'
-        && Number(state.inventory?.[String(item.selfId)]?.amount || 0) > 0
-        && !!MarketOpportunity.bestBuyOffer(item.selfId, { sellerCharacterId: state.characterId })
-    ));
-}
-
-function pendingMarketReleaseCandidates(limit = 8, timestamp = Date.now()) {
-    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    return LifeState.allStates(2000).filter((state) => (
-        canRelease(state)
-        && Number(state.stats?.marketSellRetryAfter || 0) > Number(timestamp)
-        && hasFundedReleasedMarketMaterial(state)
-    )).sort((left, right) => Number(left.stats?.marketSellRetryAfter || 0) - Number(right.stats?.marketSellRetryAfter || 0))
-        .slice(0, safeLimit);
-}
-
-async function resumeReleasedMarket(state, timestamp = Date.now()) {
-    if (!canRelease(state) || !hasFundedReleasedMarketMaterial(state)) return { state, resumed: false, items: [] };
-    const nextState = {
-        ...state,
-        stats: { ...(state.stats || {}), marketSellRetryAfter: null },
-        timing: {
-            ...(state.timing || {}),
-            nextResolveAt: state.activity === 'hunting' ? Number(timestamp) : state.timing?.nextResolveAt
-        }
-    };
-    const saved = await LifeState.upsertState(nextState, 'cold_warehouse_market_resumed');
-    return { state: saved || nextState, resumed: true, released: false, items: [] };
-}
-
 function releaseCold(state, options = {}) {
-    if (!canRelease(state)) return Promise.resolve({ state, released: false, items: [] });
+    if (!canRelease(state, options)) return Promise.resolve({ state, released: false, items: [] });
     return serializeDeposit(state.characterId, () => releaseColdUnlocked(state, options));
 }
 
 async function releaseColdUnlocked(state, options = {}) {
-    if (!canRelease(state)) {
+    if (!canRelease(state, options)) {
         return { state, released: false, items: [] };
     }
     const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
@@ -492,25 +489,23 @@ async function releaseColdUnlocked(state, options = {}) {
     // The read yielded to lifecycle writers. Plan with their latest goals and
     // reservations rather than merely checking whether the old owner survives.
     state = LifeState.cachedState(state.characterId) || state;
-    if (!canRelease(state)) return { state, released: false, items: [] };
+    if (!canRelease(state, options)) return { state, released: false, items: [] };
     if (!warehouseItems.length) return { state, released: false, items: [] };
 
     const planStartedAt = Date.now();
-    const crafting = craftRequests(state, warehouseItems);
-    const reserved = crafting.reduce((amounts, item) => amounts.set(
+    const materials = materialRequests(state, warehouseItems);
+    const reserved = materials.reduce((amounts, item) => amounts.set(
         item.selfId,
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
-    const enchanting = ColdSafeEnchantService.warehouseRequests(state, warehouseItems);
-    for (const item of enchanting) reserved.set(item.selfId, (reserved.get(item.selfId) || 0) + item.amount);
     const selling = marketRequests(state, warehouseItems, reserved, options);
     recordStage('item_plan', planStartedAt);
-    return releaseRequests(state, warehouseItems, [...crafting, ...enchanting, ...selling], options);
+    return releaseRequests(state, warehouseItems, [...materials, ...selling], options);
 }
 
 async function releaseRequests(state, warehouseItems, requested, options = {}) {
     const current = LifeState.cachedState(state.characterId) || state;
-    if (!canRelease(current) || current !== state) return { state: current, released: false, items: [], reason: 'economy_state_changed' };
+    if (!canRelease(current, options) || current !== state) return { state: current, released: false, items: [], reason: 'economy_state_changed' };
     const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
     const requests = requested.reduce((merged, request) => {
         const key = `${request.selfId}:${request.reason}`;
@@ -524,8 +519,18 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
     const released = [];
     const timestamp = Date.now();
     let atomicSnapshot = false;
-    const stopped = () => ({ state: LifeState.cachedState(state.characterId) || state,
-        released: released.length > 0, items: released, reason: 'economy_state_changed', aborted: true });
+    let recorded = false;
+    const recordWithdrawal = async () => {
+        if (!released.length || recorded) return;
+        recorded = true;
+        const row = await Database.patchWarehouseWithdrawal(state.characterId, withdrawalRecord(released, timestamp));
+        if (row) state = LifeState.acceptWarehouseWithdrawal(row) || state;
+    };
+    const stopped = async () => {
+        await recordWithdrawal();
+        return { state: LifeState.cachedState(state.characterId) || state,
+            released: released.length > 0, items: released, reason: 'economy_state_changed', aborted: true };
+    };
     const transferStartedAt = Date.now();
     try {
         for (const row of warehouseItems) {
@@ -533,20 +538,23 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                 const latest = LifeState.cachedState(state.characterId) || state;
                 // The requests are tied to this planning snapshot. A changed
                 // goal between rows waits for another bounded release attempt.
-                if (!canRelease(latest) || latest !== state) return stopped();
+                if (!canRelease(latest, options) || latest !== state) return stopped();
                 const key = `${Number(row.selfId)}:${reason}`;
                 const remaining = Number(remainingByRequest.get(key) || 0);
                 if (remaining <= 0 || Number(row.amount || 0) <= 0) continue;
                 const amount = Math.min(remaining, Number(row.amount));
                 const template = templateFor(row.selfId);
                 const withdrawal = { selfId: Number(row.selfId), name: row.name || template?.template?.name || `Item ${row.selfId}`, amount, reason };
+                const inTown = options.inTown === true
+                    && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state);
+                if (!inTown) return stopped();
                 const transfer = await Database.transferWarehouseToInventory(state.characterId, {
                     id: Number(row.id),
                     selfId: Number(row.selfId),
                     name: row.name || template?.template?.name || `Item ${row.selfId}`,
                     amount,
                     stackable: !!template?.etc?.stackable
-                }, { coldState: state, withdrawal: { items: [...released, withdrawal], at: timestamp } });
+                }, { coldState: state, inTown });
                 row.amount = Number(row.amount) - amount;
                 remainingByRequest.set(key, remaining - amount);
                 released.push(withdrawal);
@@ -555,25 +563,27 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
                     // one transaction. Never overwrite a newer cache/owner
                     // with the row returned by an earlier awaited transfer.
                     if ((LifeState.cachedState(state.characterId) || state) !== state) return stopped();
-                    state = LifeState.acceptLifecycleRow(transfer.coldLifeRow);
+                    state = LifeState.acceptInventoryProjection(transfer.coldLifeRow) || state;
                     atomicSnapshot = true;
                 }
             }
         }
     } catch (error) {
         if (error?.message === 'economy_state_changed' || error?.message === 'warehouse_owner_changed') return stopped();
+        await recordWithdrawal();
         throw error;
     } finally {
         recordStage('item_transfer', transferStartedAt);
     }
     if (!released.length) return { state, released: false, items: [] };
+    await recordWithdrawal();
 
     const refreshStartedAt = Date.now();
     // The native transfer already returned the real bag. The fallback only
     // supports callers/test adapters using the original row-only return shape.
     const refreshed = atomicSnapshot ? state : await LifeState.refreshInventory(state);
     recordStage('item_refresh', refreshStartedAt);
-    if ((LifeState.cachedState(state.characterId) || state) !== state || !canRelease(state)) return stopped();
+    if ((LifeState.cachedState(state.characterId) || state) !== state || !canRelease(state, options)) return stopped();
     const enchantStartedAt = Date.now();
     let enchantResult;
     try {
@@ -584,7 +594,7 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
         recordStage('item_enchant', enchantStartedAt);
     }
     const releasedState = LifeState.cachedState(state.characterId) || enchantResult.state || refreshed;
-    if (!canRelease(releasedState)) return stopped();
+    if (!canRelease(releasedState, options)) return stopped();
     if (atomicSnapshot) return { state: releasedState, released: true, items: released };
     const releasedForMarket = released.some((item) => item.reason === 'market');
     const nextState = {
@@ -592,7 +602,7 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
         stats: {
             ...(releasedState.stats || {}),
             marketSellRetryAfter: releasedForMarket ? null : releasedState.stats?.marketSellRetryAfter,
-            lastWarehouseWithdrawal: { items: released, at: timestamp }
+            lastWarehouseWithdrawal: withdrawalRecord(released, timestamp)
         },
         timing: {
             ...(releasedState.timing || {}),
@@ -606,150 +616,9 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
     return { state: nextState, released: true, items: released };
 }
 
-function enchantReleaseCandidates(limit = 8, options = {}) {
-    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    const scrollIds = Object.entries(EnchantScrolls.ENCHANT_SCROLLS)
-        .filter(([, scroll]) => scroll.grade === 'D')
-        .map(([selfId]) => Number(selfId));
-    const fetchAfter = (cursor) => Database.execute([`
-        SELECT DISTINCT states.characterId
-        FROM warehouse_items warehouse INDEXED BY warehouse_items_positive_self_owner
-        INNER JOIN bot_life_state states INDEXED BY bot_life_state_warehouse_release
-            ON states.characterId = warehouse.characterId
-        WHERE warehouse.amount > 0
-        AND warehouse.selfId IN (${scrollIds.map(() => '?').join(', ')})
-        AND states.phase = 'cold'
-        AND states.simulationOwner = 'legacy_main'
-        AND states.accountName NOT LIKE 'bot_craft_%'
-        AND (states.partyId IS NULL OR states.partyId = '')
-        AND states.activity IN ('hunting', 'resting')
-        AND states.characterId > ?
-        ORDER BY states.characterId ASC
-        LIMIT ${safeLimit}`,
-    [...scrollIds, Number(cursor || 0)], { onTiming: options.onTiming }], 'warehouse:enchant-release-candidates');
-    return fetchAfter(enchantReleaseCursor).then(async (rows) => {
-        if (!rows.length && enchantReleaseCursor > 0) {
-            enchantReleaseCursor = 0;
-            rows = await fetchAfter(0);
-        }
-        const characterIds = rows.map((row) => Number(row.characterId)).filter(Boolean);
-        if (characterIds.length) enchantReleaseCursor = characterIds[characterIds.length - 1];
-        return characterIds;
-    });
-}
-
-async function releaseCandidates(limit = 8, demandSelfIds = null, options = {}) {
-    const totalLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    const safeLimit = Math.floor(totalLimit / 2);
-    const demandIds = demandSelfIds || MarketOpportunity.activeBuyDemandSelfIds();
-    // Keep the indexed demand lookup for prompt ad answers. At least half
-    // the batch visits warehouse owners by cursor, including no-ad listings.
-    const demanded = demandIds.length && safeLimit > 0 ? await Database.execute([`
-        SELECT DISTINCT states.characterId
-        FROM warehouse_items warehouse
-        INNER JOIN bot_life_state states INDEXED BY bot_life_state_warehouse_demand
-            ON states.characterId = warehouse.characterId
-        WHERE warehouse.amount > 0
-        AND warehouse.selfId IN (${demandIds.map(() => '?').join(', ')})
-        AND states.phase = 'cold'
-        AND states.simulationOwner = 'legacy_main'
-        AND states.accountName NOT LIKE 'bot_craft_%'
-        AND (states.partyId IS NULL OR states.partyId = '')
-        AND states.activity IN ('hunting', 'resting')
-        ORDER BY states.updatedAt ASC
-        LIMIT ${safeLimit}`,
-    demandIds, { onTiming: options.onTiming }], 'warehouse:release-candidates') : [];
-    const demandOwners = demanded.map((row) => Number(row.characterId)).filter(Boolean).slice(0, safeLimit);
-    const remaining = totalLimit - demandOwners.length;
-    let ids = await historicalCleanupCandidates(marketReleaseCursor, remaining, options);
-    if (!ids.length && marketReleaseCursor > 0) ids = await historicalCleanupCandidates(0, remaining, options);
-    marketReleaseCursor = ids.at(-1) || 0;
-    return [...new Set([...demandOwners, ...ids])].slice(0, totalLimit);
-}
-
-function craftReleaseCandidates(limit = 4, timestamp = Date.now()) {
-    const safeLimit = Math.max(1, Math.min(25, Number(limit) || 4));
-    const candidates = LifeState.allStates(2000).filter((state) => {
-        const plan = state?.stats?.equipmentPlan;
-        return state?.phase !== 'hot'
-            && isLegacyMainState(state)
-            && !state?.party?.partyId
-            && ['hunting', 'resting'].includes(state?.activity)
-            && ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status)
-            && plan?.strategy === 'craft';
-    }).sort((left, right) => Number(craftScanAt.get(left.characterId) || 0) - Number(craftScanAt.get(right.characterId) || 0))
-        .slice(0, safeLimit);
-    candidates.forEach((state) => craftScanAt.set(Number(state.characterId), Number(timestamp)));
-    return candidates;
-}
-
-async function releaseColdBatch(limit = 8, deadlineAt = Infinity, options = {}) {
-    const safeLimit = Math.max(1, Math.min(50, Number(limit) || 8));
-    const released = [];
-    const resumedStates = pendingMarketReleaseCandidates(safeLimit);
-    const recordStage = (stage, startedAt) => options.onStage?.(stage, Date.now() - startedAt);
-    const resumeStartedAt = Date.now();
-    try {
-        for (const state of resumedStates) {
-            if (Date.now() >= deadlineAt) return released;
-            const resumed = await resumeReleasedMarket(state);
-            if (resumed.resumed) released.push(resumed);
-        }
-    } finally {
-        recordStage('resume', resumeStartedAt);
-    }
-    if (Date.now() >= deadlineAt) return released;
-    const remainingLimit = Math.max(0, safeLimit - released.length);
-    if (remainingLimit <= 0) return released;
-    const result = await releaseQueue.run({
-        limit: remainingLimit, deadlineAt,
-        select: async () => {
-            const prepareStartedAt = Date.now();
-            const craftStates = craftReleaseCandidates(Math.max(1, Math.floor(remainingLimit / 2)));
-            const demandIds = MarketOpportunity.activeBuyDemandSelfIds();
-            recordStage('prepare', prepareStartedAt);
-            const queryOptions = (kind) => ({
-                onTiming: ({ waitMs, runMs }) => {
-                    options.onStage?.(`${kind}_queue_wait`, waitMs);
-                    options.onStage?.(`${kind}_sql`, runMs);
-                }
-            });
-            const [marketIds, enchantIds] = await Promise.all([
-                releaseCandidates(remainingLimit, demandIds, queryOptions('market')),
-                enchantReleaseCandidates(remainingLimit, queryOptions('enchant'))
-            ]);
-            const ids = craftStates.map((state) => Number(state.characterId));
-            for (let index = 0; index < Math.max(marketIds.length, enchantIds.length); index++) {
-                if (enchantIds[index]) ids.push(enchantIds[index]);
-                if (marketIds[index]) ids.push(marketIds[index]);
-            }
-            const startedAt = Date.now();
-            const states = await LifeState.statesByIds([...new Set(ids)].slice(0, remainingLimit), {
-                ownerId: 'legacy_main', unassigned: true
-            });
-            recordStage('hydrate', startedAt);
-            return states;
-        },
-        refresh: (selected) => {
-            const state = LifeState.cachedState(selected.characterId) || selected;
-            return state && state.phase !== 'hot' && isLegacyMainState(state) && !state.party?.partyId
-                && ['hunting', 'resting'].includes(state.activity) ? state : null;
-        },
-        work: async (state) => {
-            try {
-                const result = await releaseCold(state, options);
-                return result.released ? result : null;
-            } catch (error) {
-                utils.infoWarn('BotWarehouse', 'cold warehouse release failed for %s: %s', state.name, error?.message || String(error));
-                return null;
-            }
-        },
-        onStage: (stage, duration) => options.onStage?.(stage === 'projection' ? 'candidates' : 'release_items', duration),
-        onProgress: (progress) => options.onProgress?.(progress)
-    });
-    released.push(...result.results);
-    Object.defineProperty(released, 'continuation', { value: result.continuation });
-    return released;
+function withdrawalRecord(items, at) {
+    return require('../LastOperations').compact({ at: Number(at) },
+        items.map(item => [Number(item.selfId), Number(item.amount), item.reason === 'market' ? 1 : 0]), { marketFirst: true });
 }
 
 module.exports = {
@@ -764,16 +633,10 @@ module.exports = {
     retentionAmount,
     craftRequests,
     marketRequests,
-    enchantReleaseCandidates,
-    hasFundedReleasedMarketMaterial,
-    pendingMarketReleaseCandidates,
+    withdrawalRecord,
     historicalGearOverflow,
     historicalCleanupCandidates,
     cleanupHistoricalOwner,
     cleanupHistoricalBatch,
-    resumeReleasedMarket,
     releaseCold,
-    releaseCandidates,
-    craftReleaseCandidates,
-    releaseColdBatch
 };

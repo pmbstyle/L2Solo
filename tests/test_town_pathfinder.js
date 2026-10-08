@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownGateCatalog = invoke('GameServer/Bot/AI/TownGateCatalog');

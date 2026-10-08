@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
 const { tablePagesWithBytes, streamedTablePageWithBytes } = require('./ColdMessagePages');
 
@@ -101,7 +102,7 @@ class ColdTableChannel {
         }
         entry.suspended = false;
         entry.retried = false;
-        this.stats.resyncs += 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.resyncs += 1);
         this.flush();
     }
 
@@ -114,7 +115,7 @@ class ColdTableChannel {
     pages(tables) {
         if (!tables.length) return [];
         const { pages, skipped } = tablePagesWithBytes(tables);
-        this.stats.skipped += skipped;
+        DiagnosticConfig.developerDiagnostics && (this.stats.skipped += skipped);
         return pages;
     }
 
@@ -139,14 +140,14 @@ class ColdTableChannel {
         for (const target of this.targets.values()) {
             if (target.suspended && target.retried) {
                 for (const delta of deltas) target.synced.delete(delta.name);
-                this.stats.suspendedFlushes += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.suspendedFlushes += 1);
                 continue;
             }
             // The one try after a failed post: what it missed goes in full.
             if (target.suspended) {
                 target.suspended = false;
                 target.retried = true;
-                this.stats.retries += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.retries += 1);
             }
             // A table the worker does not hold yet goes in full; the full copy
             // already has this flush's changes.
@@ -156,7 +157,7 @@ class ColdTableChannel {
                 if (target.synced.has(table.name)) continue;
                 fulls.push(this.full(table));
                 target.synced.add(table.name);
-                this.stats.fulls += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.fulls += 1);
             }
             const fullNames = new Set(fulls.map((full) => full.name));
             const own = fullNames.size ? deltas.filter((delta) => !fullNames.has(delta.name)) : deltas;
@@ -164,12 +165,12 @@ class ColdTableChannel {
             const pages = [...this.pages(fulls), ...(own === deltas ? sharedPages : this.pages(own))];
             for (let at = 0; at < pages.length; at++) {
                 if (target.post(pages[at].payload, pages[at].bytes)) {
-                    this.stats.pages += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.stats.pages += 1);
                     continue;
                 }
                 // The worker missed this page and the rest: their tables go
                 // in full when it is back.
-                this.stats.failedPosts += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.failedPosts += 1);
                 for (const page of pages.slice(at)) {
                     for (const piece of page.payload.tables) target.synced.delete(piece.name);
                 }
@@ -182,8 +183,8 @@ class ColdTableChannel {
             if (!target.suspended && !target.actorRecord?.job) target.retried = false;
         }
         if (deltas.length) {
-            this.stats.flushes += 1;
-            for (const delta of deltas) this.stats.rows += delta.rows.length + delta.removed.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.flushes += 1);
+            for (const delta of deltas) DiagnosticConfig.developerDiagnostics && (this.stats.rows += delta.rows.length + delta.removed.length);
         }
     }
 
@@ -309,7 +310,7 @@ class ColdTableChannel {
 
     failActor(record) {
         if (!this.actorRecordCurrent(record)) return;
-        this.actorStats.refused++;
+        DiagnosticConfig.developerDiagnostics && (this.actorStats.refused++);
         this.cancelActorJob(record);
         record.target.suspended = true;
         // No new retry task here. Only a NEXT real flush or explicit resync /
@@ -387,7 +388,7 @@ class ColdTableChannel {
         for (const receipt of receipts) {
             const selected = receipt.kind === 'put' ? puts++ < page.consumedRows : removes++ < page.consumedRemoved;
             if (!selected) continue;
-            this.actorStats.receiptChecks++;
+            DiagnosticConfig.developerDiagnostics && (this.actorStats.receiptChecks++);
             if (!this.actorSyncTrue(receipt.current())) throw new Error('stale_actor_receipt');
         }
         if (!this.actorJobCurrent(record, job)) return false;
@@ -399,7 +400,7 @@ class ColdTableChannel {
             return false;
         }
         if (!this.actorJobCurrent(record, job)) return false;
-        this.actorStats.pages++;
+        DiagnosticConfig.developerDiagnostics && (this.actorStats.pages++);
         job.pageIndex++;
         if (!Number.isSafeInteger(job.pageIndex)) throw new RangeError('actor_stream_page_exhausted');
         return page;
@@ -440,7 +441,7 @@ class ColdTableChannel {
         while (inspected < 64 && refs.length < 64) {
             if (job.carryAt < job.carry.length) {
                 inspected++;
-                this.actorStats.inspections++;
+                DiagnosticConfig.developerDiagnostics && (this.actorStats.inspections++);
                 refs.push(job.carry[job.carryAt++]);
                 continue;
             }
@@ -455,7 +456,7 @@ class ColdTableChannel {
             }
             const iterator = job.stage === 'baseline' ? job.baseline : job.cutIterator;
             inspected++;
-            this.actorStats.inspections++;
+            DiagnosticConfig.developerDiagnostics && (this.actorStats.inspections++);
             const next = iterator.next();
             if (!this.actorJobCurrent(record, job)) return;
             if (next.done) {
@@ -504,13 +505,14 @@ class ColdTableChannel {
         const record = this.actorRecipient;
         return { subscribed: !!record, stopped: record?.stopped === true,
             transfer: record?.job?.stage ?? null, pending: record?.table.pending.size ?? 0,
-            ...this.actorStats };
+            ...(DiagnosticConfig.developerDiagnostics ? this.actorStats : { diagnosticsEnabled: false }) };
     }
 
     snapshot() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         const tables = {};
         for (const table of this.tables.values()) tables[table.name] = { version: table.version, pending: table.pending.size };
-        return { tables, targets: this.targets.size, ...this.stats };
+        return { tables, targets: this.targets.size, ...(DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }) };
     }
 }
 

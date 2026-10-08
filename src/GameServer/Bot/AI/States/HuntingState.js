@@ -32,6 +32,7 @@ const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy'
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
+const DecisionEvents = require('../DecisionEvents');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
@@ -61,19 +62,20 @@ function sellTripDue(session, bot, now = Date.now()) {
     const life = session.coldLifeState || null;
     const level = Number(bot.fetchLevel?.() || 0);
     const partyId = session.hotBackgroundPartyId || null;
+    const decisionSeq = Number(DecisionEvents.statsFor(session).decisionSeq || 0);
     const last = session.sellTripCheck;
     if (last && last.items === items && last.count === items.length && last.life === life
         && last.revision === Number(bot.backpack.inventoryRevision || 0)
-        && last.level === level && last.partyId === partyId
+        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq
         && !(last.pauseEndsAt && now >= last.pauseEndsAt)) return last.need;
     const state = MarketListingPolicy.actorState(session);
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
-    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp: now });
-    const need = forced || (economy.network.activity?.activity === 'selling'
-        ? { reason: 'wish_funding', itemIds: economy.network.activity.items } : null);
+    const activity = DecisionEvents.held(session)?.network.activity;
+    const need = forced || (activity?.activity === 'selling'
+        ? { reason: 'wish_funding', itemIds: activity.items } : null);
     const pause = Number(state.stats?.marketSellRetryAfter || 0);
-    session.sellTripCheck = { items, count: items.length, life, level, partyId,
+    session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
         revision: Number(bot.backpack.inventoryRevision || 0),
         pauseEndsAt: pause > now ? pause : 0, need };
     return need;
@@ -93,6 +95,11 @@ function isPartyCompanion(session) {
     return session.partyCompanion === true && !!session.followPlayerSession;
 }
 
+function economyForHunt(session, bot) {
+    return DecisionEvents.held(session) || DecisionEvents.hold(session, bot,
+        invoke('GameServer/Bot/Economy/EconomyContext').forActor(bot, session));
+}
+
 function isClaimedByOtherSoloBot(session, npc) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const npcId = npc.fetchId();
@@ -104,7 +111,7 @@ function isClaimedByOtherSoloBot(session, npc) {
     });
 }
 
-function startShopping(session, bot, BotAI, reason) {
+function startShopping(session, bot, BotAI, reason, townName = null) {
     if (isPartyCompanion(session)) {
         session.plan = 'following';
         session.shoppingTarget = undefined;
@@ -113,7 +120,11 @@ function startShopping(session, bot, BotAI, reason) {
         return false;
     }
 
-    return BotTownTravel.request(session, bot, BotAI, reason);
+    const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
+        .find(town => town.name === townName) : null;
+    return BotTownTravel.request(session, bot, BotAI, reason, destination ? {
+        destinationTown: { name: destination.name, x: destination.locX, y: destination.locY, z: destination.locZ }
+    } : {});
 }
 
 function claimedTargetIds(session, sessions = invoke('GameServer/Bot/BotManager').sessions || []) {
@@ -178,8 +189,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             const matchupTarget = TargetMatchup.targetView(npc, matchupStats);
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
-                const survival = TargetMatchup.soloSurvival(matchupProfiles, matchupTarget);
-                if (targetMatchup.eligible && !survival.eligible) Object.assign(targetMatchup, survival);
+                const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, matchupTarget);
+                Object.assign(targetMatchup, { eligible: canHunt.eligible, reason: canHunt.reason });
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
@@ -533,6 +544,7 @@ function targetProgressing(session, bot, target) {
 }
 
 module.exports = {
+    economyForHunt,
     sellTripDue,
     pauseSelling,
     findPreferredMonster,
@@ -545,6 +557,7 @@ module.exports = {
         }
 
         const floor = SurvivalFloor.forActor(bot);
+        if (isSoloHunter(session)) DecisionEvents.observe(session, bot);
         if (floor?.action === 'rest') {
             bot.automation.abortAll(bot);
             session.plan = 'resting';
@@ -578,18 +591,18 @@ module.exports = {
         }
 
         if (isSoloHunter(session) && Number(session.companionEquipmentRetryAt || 0) <= Date.now()) {
-            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forActor(bot, session);
-            if (session.coldLifeState) Object.assign(session.coldLifeState.stats ||= {}, economy.statsPacket);
+            const economy = economyForHunt(session, bot);
             if (economy.network.activity?.activity === 'improving') {
-                if (economy.network.activity.improvement?.kind !== 'enchant' && !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(economy.state)) {
+                const state = MarketListingPolicy.actorState(session);
+                if (economy.network.activity.improvement?.kind !== 'enchant' && !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state)) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my planned improvement.');
                     if (trip !== 'deferred' && trip !== false) return;
                 }
-                invoke('GameServer/Bot/Economy/BotImprovementService').reviewHot(session, economy)
+                invoke('GameServer/Bot/Economy/BotImprovementService').reviewHot(session, { ...economy, state })
                     .catch(error => utils.infoWarn('BotImprovement', '%s', error.message));
             }
             if (economy.network.activity?.activity === 'shopping') {
-                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.');
+                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', economy.network.activity.town);
                 if (trip !== 'deferred' && trip !== false) return;
             }
         }

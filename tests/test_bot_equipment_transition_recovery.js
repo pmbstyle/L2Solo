@@ -1,9 +1,13 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('equipment-transition-goals');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 const Data = invoke('GameServer/DataCache');
 Data.init();
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => Spots.ensure());
 const Craft = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ClanCrafting = invoke('GameServer/Clan/ClanCraftingPolicy');
 const item = (id) => Data.items.find(entry => Number(entry.selfId) === id);
@@ -29,10 +33,10 @@ assert.strictEqual(Gear.replanContextFor({ ...failed, level: 40 },
     'crossing D to C must retain the old route failure too');
 const cooldown = { ...oldPlan, status: 'complete', recoveryTargets: context.recoveryTargets };
 assert(context.recoveryTargets.some(entry => entry.targetId === 84));
-assert(Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).excludedTargetIds.includes(84),
-    'the same route cooldown must survive another grade transition');
-assert(!Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
-    'expired route cooldowns must still clear');
+assert(!Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).excludedTargetIds.includes(84),
+    'a new level wakes an old target');
+assert(Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
+    'unchanged combat inputs keep the target dormant across elapsed time');
 
 const caster = { level: 56, adena: 11564058, stats: { classId: 51, role: 'buffer' },
     inventory: inventory([...heavy, [156, [7]]]) };
@@ -86,18 +90,14 @@ const Membership = invoke('GameServer/Clan/ClanMembershipPolicy');
 assert.strictEqual(Membership.reconcileState({ ...bought, stats: { ...bought.stats, equipmentPlan: ready } }, 7).stats.equipmentPlan, ready,
     'membership reconciliation must preserve a personal NPC exchange');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
-const goals = Needs.evaluate({ ...dual, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-    stats: { ...dual.stats, equipmentPlan: forced, equipment: [{ selfId: 127, slot: 7, rank: 'd' }] } }, { now: at });
-assert(goals.some(goal => goal.type === 'upgrade_gear' && goal.target.itemId === 127),
-    'an equipped first blade must not hide the market goal for a second copy');
-assert.deepStrictEqual(goals.find(goal => goal.type === 'upgrade_gear').blockers, [],
-    'a funded concrete blade purchase must not require a farming spot');
-const unfundedGoals = Needs.evaluate({ ...dual, adena: 0,
-    vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-    stats: { ...dual.stats, equipmentPlan: forced, equipment: [{ selfId: 127, slot: 7, rank: 'd' }] }
-}, { now: at });
-assert.deepStrictEqual(unfundedGoals.find(goal => goal.type === 'upgrade_gear').blockers, ['missing_spot'],
-    'earning the purchase budget must still require a farming spot');
+// ARCH-NOTE: E3/C1/E5 retain one native chosen leaf. A forced blade plan
+// cannot outrank funded shot stock through the retired weapon priority ladder.
+const nativeDualState = { ...dual, phase: 'cold', activity: 'hunting', updatedAt: at,
+    vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
+    stats: { ...dual.stats, exp: Data.experience[58] + 1, equipmentPlan: forced,
+        equipment: [{ selfId: 127, slot: 7, rank: 'd' }] } };
+assert.deepStrictEqual(Needs.evaluate(nativeDualState, { now: at }), [],
+    'a second-blade plan needs an accepted worker decision before main selects shopping');
 const finalized = Gear.finalizePlan(bought, bridge, ready, {}, at);
 assert.strictEqual(finalized.status, 'ready_to_craft', 'clan membership must not suppress an NPC blacksmith exchange');
 bought.stats.equipmentPlan = finalized;
@@ -131,3 +131,47 @@ async function verifyOrphanedMarketRecovery() {
     } finally { Life.upsertState = original; }
 }
 verifyOrphanedMarketRecovery().catch(error => { console.error(error); process.exitCode = 1; });
+
+async function verifyNativeTransitionGoal() {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const { ColdEconomyDecisions, compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const native = await require('./helpers/workerEconomyDecision')(nativeDualState, { timestamp: at });
+    const state = { ...nativeDualState, stats: { ...nativeDualState.stats, ...native.statsPacket } };
+    const decisions = new ColdEconomyDecisions();
+    decisions.accept(state.characterId, native.decision);
+    const leaf = compact(native.decision).activity;
+    assert(leaf, 'the real healthy dual buyer must retain a native activity');
+    const build = Economy.forState;
+    try {
+        Economy.forState = () => { throw Error('cold transition goal rebuilt its network on main'); };
+        const goals = Needs.evaluate(state, { now: at, decisions });
+        assert.strictEqual(goals.length, 1);
+        assert.strictEqual(goals[0].priority, 50);
+        assert.strictEqual(goals[0].plan.wishKey, leaf.rootKey);
+        assert.strictEqual(goals[0].plan.economyActivity, leaf.activity);
+        if (leaf.activity === 'shopping') {
+            assert.strictEqual(goals[0].target.itemId, leaf.itemId);
+            assert.strictEqual(goals[0].target.amount, Math.max(1, Math.ceil(leaf.amount)));
+            assert.strictEqual(goals[0].plan.estimatedCost, leaf.price);
+            assert(Number.isFinite(leaf.price) && leaf.price > 0, 'the native shopping quote is finite and positive');
+            assert(Funding.spendable(state, 0, { itemId: leaf.itemId }) >= leaf.price,
+                'the chosen shopping quote fits the native funded queue after reserve and prior wishes');
+            const stockKind = require('../src/GameServer/Bot/Population/ColdEconomyDecision').kindFor(compact(native.decision).wish?.[0]);
+            if (['shots', 'potions'].includes(stockKind)) {
+                const stock = Economy.basics(state, { timestamp: at }).stock(stockKind);
+                assert.strictEqual(leaf.itemId, stock.itemId);
+                assert.strictEqual(stock.target, Math.ceil(stock.usePerHour * stock.targetHours));
+                assert.strictEqual(leaf.amount, stock.missing, 'E5 buys the native interval gap above the survival hour');
+                assert.strictEqual(stock.survivalMissing, Math.max(0, Math.ceil(stock.usePerHour) - stock.current));
+            }
+        }
+        const poor = { ...state, adena: 0 };
+        assert.strictEqual(Funding.spendable(poor, 0, { itemId: forced.target.selfId }), 0,
+            'an empty wallet cannot fund the synthetic second-blade purchase');
+        assert.deepStrictEqual(Needs.evaluate({ ...state, updatedAt: at + 1 }, { now: at, decisions }), [],
+            'a changed checkpoint must wait for a new worker decision');
+    } finally { Economy.forState = build; decisions.forget(state.characterId); }
+    console.log('Native transition leaf/funding checks passed');
+}
+verifyNativeTransitionGoal().catch(error => { console.error(error); process.exitCode = 1; });

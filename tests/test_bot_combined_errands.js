@@ -7,6 +7,9 @@ const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'combined-errands-'));
 const oldConfig = process.env.L2NODE_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = path.join(directory, 'test.ini');
 fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${directory}/world.sqlite\nhistoryPath=${directory}/history.sqlite\n`);
+const defaults = fs.readFileSync(path.resolve(__dirname, '../config/default.ini'), 'utf8');
+fs.appendFileSync(process.env.L2NODE_CONFIG_FILE, '\n' + defaults.slice(defaults.indexOf('[AuthServer]')));
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
@@ -23,6 +26,7 @@ const Actor = invoke('GameServer/Model/Actor');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Skill = invoke('GameServer/Model/Skill');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const withNativeInput = require('./helpers/nativeEconomyInput');
 let serial = 0;
 async function seed(items) {
     const account = `bot_combined_${++serial}`;
@@ -63,7 +67,9 @@ async function run() {
     actor.skillset = { fetchSkills: () => skills.map(skill => new Skill(skill)) };
     assert.equal(Floor.forActor(actor).reason, 'no_mp');
     assert.equal(Floor.forState(mage).reason, 'no_mp');
-    assert.equal(Needs.evaluate(mage)[0].target.floorReason, 'no_mp');
+    const mandatoryRest = Needs.evaluate(mage)[0];
+    assert.deepEqual({ type: mandatoryRest.type, priority: mandatoryRest.priority, kind: mandatoryRest.plan.kind },
+        { type: 'recover', priority: 100, kind: 'rest' }, 'the native no-MP floor selects mandatory rest');
     assert.equal(Background.resolveSolo({ state: mage, timestamp: Date.now(), elapsedMs: 1000 }).patch.activity, 'resting');
     const lowHp = { ...mage, vitals: { ...mage.vitals, hp: 1, mp: profile.maxMp } };
     assert.equal(Needs.evaluate(lowHp).some(goal => goal.type === 'recover' && goal.priority === 100), false,
@@ -131,7 +137,43 @@ async function run() {
     // neither use its saved price nor prevent the other native purchases.
     const sale = records.opened[0];
     await Afk.repriceBot(seller.characterId, sale.lines[0].id, 90, sale.revision);
-    const finished = await Market.finishTownErrands(arrived);
+    const policyFinished = await withNativeInput(arrived, accepted => Market.finishTownErrands(accepted));
+    const beforeExecution = await Database.fetchItems(buyer.characterId);
+    const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(policyFinished);
+    assert.equal(arrived.level, invoke('GameServer/Progression/ProgressionCap').levelForExperience(arrived.exp || 0, buyer.level),
+        'native arrival projects the original EXP0; the historical Life20 input does not grant XP');
+    assert.equal(basics.kitCost(1060), 0, 'full HP supplies no missing healing kit');
+    assert.equal(basics.kitCost(736), 0, 'the existing escape scroll stack supplies the kit');
+    assert.equal(basics.stock('shots').target, 0, 'these unchanged arrival facts supply no economic shot stock');
+    assert.equal(physical(beforeExecution, 1869), 0, 'changed quote remains refused');
+    assert.equal(physical(beforeExecution, 1060), 0, 'an unvalued legacy healing errand is not funded');
+    assert.equal(physical(beforeExecution, 736), held(arrived, 736), 'the unneeded scroll errand makes no purchase');
+    assert.equal(policyFinished.adena, arrived.adena, 'no selected budget means no automatic payment');
+
+    // Explicit execution seam for the original same-town quantities: native
+    // merchant quote, physical SQL debit and unchanged scalar economy CAS.
+    // This is NOT a voluntary E3 funding claim for those refused jobs.
+    let finished = await Life.upsertState(policyFinished, 'combined_native_visit_finished');
+    assert(finished, 'the actual completion marker is published before separate SQL execution');
+    for (const job of jobs.slice(1, 3)) {
+        const quoted = Market.planPurchase(finished, job.selfId, job.amount,
+            { towns: ['Dion'], money: job.money, timestamp: now });
+        assert(quoted && quoted.npcPrice > 0, 'the original stack has an authored local merchant quote');
+        const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
+        const quote = [...Opportunity.npcOffersAll(job.selfId), ...Opportunity.fixedStoreOffers(job.selfId)]
+            .find(offer => offer.town === 'Dion' && Number(offer.price) === Number(quoted.npcPrice));
+        assert(quote, 'execution uses the actual source shop price');
+        const beforeWallet = finished.adena;
+        const bought = await Database.purchaseNpcInventoryItem(finished.characterId,
+            { selfId: job.selfId, amount: job.amount, unitPrice: Number(quote.price), coldState: finished });
+        assert(bought.ok && bought.coldLifeRow);
+        const old = finished;
+        finished = Life.acceptLifecycleRow(bought.coldLifeRow);
+        assert.equal(finished.adena, beforeWallet - job.amount * Number(quote.price));
+        await assert.rejects(Database.purchaseNpcInventoryItem(old.characterId,
+            { selfId: job.selfId, amount: 1, unitPrice: Number(quote.price), coldState: old }), /economy_state_changed/);
+        assert.equal(Life.snapshot(finished.characterId).adena, finished.adena, 'stale execution rolls back its physical debit');
+    }
     const bag = await Database.fetchItems(buyer.characterId);
     assert.equal(physical(bag, 1869), 0, 'changed offer is rechecked against its authored price cap');
     assert.equal(physical(bag, 1060), 2, 'other same-town NPC errand is completed');
@@ -140,9 +182,13 @@ async function run() {
     assert.equal(Errands.pending(finished).length, 1, 'a different town does not get smuggled into this visit');
     assert.deepEqual(finished.stats.marketReturn, originalReturn, 'original physical return remains');
     const shotPlan = ShotStock.planForState(finished);
-    assert(shotPlan.perAction > 0 && held(finished, shotPlan.selfId) > 0,
-        'the town visit also restocks the equipped shot kind via the native purchase path');
+    assert(shotPlan.perAction > 0);
+    assert.equal(held(finished, shotPlan.selfId), 0, 'the refused stock has not been invented by explicit other-item executions');
     assert(finished.adena < arrived.adena, 'actual purchases debit the wallet');
+    assert.equal(physical(bag, 57), finished.adena, 'physical and lifecycle wallet remain equal');
+    console.log('PHYSICAL_EXECUTION_SEAM', JSON.stringify({ inputLevel: buyer.level, arrivalLevel: arrived.level,
+        exp: arrived.exp, policyWallet: policyFinished.adena, executedWallet: finished.adena,
+        healing: physical(bag, 1060), scrolls: physical(bag, 736), shots: physical(bag, shotPlan.selfId) }));
     const returning = Goals.finishMarketVisit(finished);
     assert(returning && returning.activity === 'traveling');
     assert.equal(held(returning, 736), held(finished, 736), 'return consumes no second departure scroll');

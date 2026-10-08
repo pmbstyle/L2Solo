@@ -1,4 +1,5 @@
 const fs = require('fs');
+const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -21,6 +22,71 @@ const BoardRules = require('./GameServer/AfkTrade/BoardRules');
 const BotErrands = require('./GameServer/Bot/Population/BotErrands');
 const ColdProtocol = require('./GameServer/Bot/Population/ColdSimulationProtocol');
 const NativeWriteCheckpoint = require('./GameServer/Bot/Population/NativeWriteCheckpoint');
+const EconomyCommit = require('./GameServer/Bot/Economy/EconomyCommit');
+const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
+let nativeDiagnosticFacts = null;
+let nativeDiagnosticCounts = null;
+let nativeDiagnosticOverflow = 0;
+function stageNativeDiagnostic(characterId, step, phase, reason, fields) {
+    if (!Diagnostics.active()) return;
+    try {
+        nativeDiagnosticCounts ||= new Map();
+        const key = `${phase}:${reason}`, previous = nativeDiagnosticCounts.get(key);
+        if (previous) previous.count++;
+        else if (nativeDiagnosticCounts.size < 64) nativeDiagnosticCounts.set(key, { phase, reason, count: 1 });
+        else nativeDiagnosticOverflow++;
+        if (!Diagnostics.enabled(characterId)) return;
+        if ((nativeDiagnosticFacts?.length || 0) >= 64) { Diagnostics.noteDropped(1); return; }
+        nativeDiagnosticFacts ||= [];
+        nativeDiagnosticFacts.push(Object.freeze({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
+            commandId: step?.command?.[0], commandKind: step?.command?.[1], sequence: step?.command?.[2],
+            revision: Number(step?.row?.simulationRevision) }));
+    } catch (_) { /* Observations cannot abort the physical transaction. */ }
+}
+function publishNativeDiagnostics(rolledBack = null) {
+    const counts = nativeDiagnosticCounts, facts = nativeDiagnosticFacts, overflow = nativeDiagnosticOverflow;
+    // Release transaction ownership before calling any observational consumer.
+    nativeDiagnosticCounts = null; nativeDiagnosticFacts = null; nativeDiagnosticOverflow = 0;
+    if (!counts && !facts && !overflow) return;
+    const count = (...args) => { try { Diagnostics.count(...args); } catch (_) { /* Keep the native result. */ } };
+    if (counts) {
+        if (rolledBack) count('native', 'transaction', 'rolled_back');
+        for (const row of counts.values()) {
+            // Attempts and refusals are real even when the proposed effects roll back.
+            const layer = rolledBack && row.phase !== 'native_attempt' && row.phase !== 'native_refusal'
+                ? 'native_rollback' : 'native';
+            count(layer, row.phase, row.reason, row.count);
+        }
+    }
+    if (overflow) count('native', 'aggregate_overflow', rolledBack ? 'rolled_back' : 'committed', overflow);
+    if (!facts) return;
+    for (const row of facts) {
+        try {
+            Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
+                reason: row.phase === 'native_refusal' ? row.reason : rolledBack,
+                planned: row.planned ?? row.actual, actual: 0, spent: 0,
+                ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
+        } catch (_) { /* Observations cannot change native results or errors. */ }
+    }
+}
+
+function invalidNpcPurchase(characterId, step, line, lineId, reason, field, value, details, message = 'invalid npc purchase') {
+    if (Diagnostics.active()) {
+        try {
+            const numeric = Number(value);
+            const kind = Number.isNaN(numeric) ? 'NaN' : !Number.isFinite(numeric) ? String(numeric)
+                : !Number.isInteger(numeric) ? 'fractional' : !Number.isSafeInteger(numeric) ? 'unsafe_integer'
+                    : numeric <= 0 ? 'nonpositive' : 'finite';
+            stageNativeDiagnostic(characterId, step, 'native_refusal', reason, {
+                item: Number(line.selfId), requested: Number(line.amount), unitPrice: Number(line.unitPrice),
+                cost: Number(line.amount) * Number(line.unitPrice), after: numeric, lineId,
+                caller: details.diagnosticCaller || 'purchaseNpcInventoryBasket', source: step?.row?.phase || 'legacy',
+                trigger: `${field}:${typeof value}:${kind}`, actual: 0, spent: 0
+            });
+        } catch (_) { /* Input observations preserve the original refusal. */ }
+    }
+    return Error(message);
+}
 
 let connection;
 let queryTail = Promise.resolve();
@@ -28,6 +94,8 @@ let shuttingDown = false;
 let closePromise = null;
 let databasePath;
 let historyPath;
+let boardDealCountsReady = false;
+let boardCounterCountsReady = false;
 let flushPendingCharacterWrites = null;
 const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
@@ -46,7 +114,7 @@ const metrics = {
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
-    byOperation: new Map()
+    byOperation: null
 };
 
 function now() {
@@ -144,6 +212,9 @@ function operationName(sql, fallback = 'raw') {
 }
 
 function record(operation, wait, run, read, failed = false) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
+    metrics.byOperation ||= new Map();
+    if (!metrics.byOperation.has(operation) && metrics.byOperation.size >= 127) operation = 'other';
     metrics.total += 1;
     metrics.waitMs += wait;
     metrics.runMs += run;
@@ -162,27 +233,28 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
     if (shuttingDown) {
         return Promise.reject(new Error(`SQLite shutdown is in progress (${operation})`));
     }
-    const queuedAt = now();
+    const timed = DiagnosticConfig.developerDiagnostics;
+    const queuedAt = timed ? now() : 0;
     metrics.pending += 1;
-    metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
+    if (timed) metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
     const execute = () => {
-        const startedAt = now();
+        const startedAt = timed ? now() : 0;
         const wait = startedAt - queuedAt;
         EconomyJournal.begin(operation);
         try {
             const result = work();
             EconomyJournal.commit();
-            record(operation, wait, now() - startedAt, read);
+            if (timed) record(operation, wait, now() - startedAt, read);
             return result;
         } catch (error) {
             EconomyJournal.discard();
-            record(operation, wait, now() - startedAt, read, true);
+            if (timed) record(operation, wait, now() - startedAt, read, true);
             throw error;
         } finally {
             metrics.pending -= 1;
             if (typeof onTiming === 'function') {
                 // Observability must never turn a committed operation into a failure.
-                try { onTiming({ waitMs: wait, runMs: now() - startedAt }); }
+                try { onTiming(timed ? { waitMs: wait, runMs: now() - startedAt } : undefined); }
                 catch (_) { /* Timing delivery is best effort. */ }
             }
         }
@@ -301,7 +373,7 @@ function flushJournals() {
         const rows = EconomyJournal.snapshot();
         const conflicts = PvpJournal.snapshot();
         if (!rows.length && !conflicts.length) return 0;
-        metrics.transactions += 1;
+        if (DiagnosticConfig.developerDiagnostics) metrics.transactions += 1;
         connection.exec('BEGIN IMMEDIATE');
         try {
             historyOutboxUnsafe('journal', { rows, conflicts });
@@ -332,29 +404,171 @@ function cleanZeroAmountItems() {
     return run('DELETE FROM items WHERE amount <= 0', [], 'maintenance:zero-items');
 }
 
-async function inTransaction(work, operation = 'transaction') {
-    return enqueue(() => {
-        metrics.transactions += 1;
-        connection.exec('BEGIN IMMEDIATE');
+// ARCH-NOTE: Failure-only diagnostics retain native rejection identity and existing SQL accounting.
+// The configured timeout is a source value, not a sampled PRAGMA; SQL/parameters are omitted.
+function reportTransactionSqliteFailure(operation, phase, error) {
+    try {
+        if (error?.code !== 'ERR_SQLITE_ERROR') return;
+        if (!DiagnosticConfig.developerDiagnostics) {
+            console.warn('DB          :: sqlite transaction failure %s %s %s', operation, phase, error.code);
+            return;
+        }
+        const frames = String(error.stack || '').split('\n')
+            .filter(line => /^\s+at /.test(line)).slice(0, 8);
+        console.warn('DB          :: sqlite transaction failure %s', JSON.stringify({
+            operation, phase, code: error.code, sqliteCode: error.errcode ?? null,
+            sqliteReason: error.errstr ?? null, configuredWriterBusyTimeoutMs: 5000,
+            frames
+        }));
+    } catch (_) { /* Logging must preserve the original SQLite rejection. */ }
+}
+
+// ARCH-NOTE: A queued lifecycle save can reject a stale native command before
+// SQL. Failure-only diagnostics distinguish that admission from a SQLite fault
+// without changing either rejection identity or the existing failure counters.
+function reportBotLifeSaveFailure(phase, error) {
+    try {
+        if (!DiagnosticConfig.developerDiagnostics) {
+            console.warn('DB          :: bot life save failure %s %s', phase, error?.message || 'unknown');
+            return;
+        }
+        const { WorkerCommandAdmissionRefusal } = require('./GameServer/Bot/Population/WorkerCommandAdmission');
+        const reasons = ['stale_worker_source', 'coordinator_stopping', 'missing_state',
+            'hot_handoff_fenced', 'stale_command', 'invalid_worker_admission'];
+        const frames = String(error?.stack || '').split('\n')
+            .filter(line => /^\s+at /.test(line)).slice(0, 8);
+        console.warn('DB          :: bot life save failure %s', JSON.stringify({
+            operation: 'bot-life:save', phase, errorName: error?.name ?? null, code: error?.code ?? null,
+            sqliteCode: error?.errcode ?? null, sqliteReason: error?.errstr ?? null,
+            admissionRefusalReason: error instanceof WorkerCommandAdmissionRefusal
+                && reasons.includes(error.message) ? error.message : null,
+            configuredWriterBusyTimeoutMs: 5000, frames
+        }));
+    } catch (_) { /* Diagnostics must preserve the original save rejection. */ }
+}
+
+function performTransaction(work, operation) {
+        if (DiagnosticConfig.developerDiagnostics) metrics.transactions += 1;
+        try {
+            connection.exec('BEGIN IMMEDIATE');
+        } catch (error) {
+            reportTransactionSqliteFailure(operation, 'begin', error);
+            throw error;
+        }
         pendingSettlementUndo = new Map();
+        nativeDiagnosticFacts = null; nativeDiagnosticCounts = null; nativeDiagnosticOverflow = 0;
+        let phase = 'work';
         try {
             const result = work();
+            phase = 'commit';
             connection.exec('COMMIT');
+            publishNativeDiagnostics();
             return result;
         } catch (error) {
+            reportTransactionSqliteFailure(operation, phase, error);
             try {
                 connection.exec('ROLLBACK');
             } finally {
+                boardDealCountsReady = false;
+                boardCounterCountsReady = false;
                 for (const [ownerId, pending] of pendingSettlementUndo) {
                     if (pending) pendingSettlementOwners.add(ownerId);
                     else pendingSettlementOwners.delete(ownerId);
                 }
+                publishNativeDiagnostics(error?.message || 'rollback');
             }
             throw error;
         } finally {
+            nativeDiagnosticFacts = null; nativeDiagnosticCounts = null; nativeDiagnosticOverflow = 0;
             pendingSettlementUndo = null;
         }
+}
+
+async function inTransaction(work, operation = 'transaction') {
+    return enqueue(() => performTransaction(work, operation), { operation, read: false });
+}
+
+// ARCH-NOTE: Hall input reads/planning join the existing write queue before
+// BEGIN, eliminating intervening local queued writes without widening the lock.
+// Native total_changes/data_version CAS still checks all planning-time writes.
+async function inPreparedTransaction(prepare, operation) {
+    return enqueue(() => {
+        const prepared = prepare();
+        if (prepared && typeof prepared.then === 'function')
+            throw new TypeError('prepared_transaction_must_be_synchronous');
+        return typeof prepared === 'function' ? performTransaction(prepared, operation) : prepared;
     }, { operation, read: false });
+}
+
+// ARCH-NOTE: One bounded queue admission; each clan still prepares before its
+// own BEGIN and commits independently. Journal each durable child before the
+// next child so a later rollback cannot discard an earlier committed flow.
+function syncPreparedHook(hook, ...args) {
+    if (!hook) return;
+    const result = hook(...args);
+    if (result && typeof result.then === 'function')
+        throw new TypeError('prepared_transaction_hook_must_be_synchronous');
+    return result;
+}
+
+async function inPreparedTransactionBatch(items, prepare, hooks, operation) {
+    const count = Array.isArray(items) ? items.length : -1;
+    if (count < 0 || count > 4)
+        throw new RangeError('prepared_transaction_batch_bound');
+    // Capture bounded inputs before callbacks or queue wait; later caller
+    // mutation cannot admit extra clans or replace the deadline/hook references.
+    const admitted = new Array(count);
+    for (let index = 0; index < count; index++) admitted[index] = items[index];
+    Object.freeze(admitted);
+    const { deadline, before, failed, committed } = hooks || {};
+    if (!Number.isFinite(deadline))
+        throw new TypeError('prepared_transaction_deadline_required');
+    if (deadline > Date.now() + 40)
+        throw new RangeError('prepared_transaction_deadline_bound');
+    if (!admitted.length || Date.now() >= deadline) return [];
+    // Match the original loop's first call admission/deletion before it waits
+    // on the queue. Later wakeups for this ID must survive that wait.
+    try { syncPreparedHook(before, admitted[0]); }
+    catch (error) { syncPreparedHook(failed, admitted[0], error); throw error; }
+    const firstTimestamp = Date.now();
+    let entered = false;
+    return enqueue(() => {
+        entered = true;
+        const completed = [];
+        for (let index = 0; index < admitted.length; index++) {
+            if (index > 0 && Date.now() >= deadline) break;
+            const id = admitted[index];
+            let value;
+            try {
+                if (index > 0) syncPreparedHook(before, id);
+                EconomyJournal.begin(operation);
+                const prepared = prepare(id, index === 0 ? firstTimestamp : Date.now());
+                if (prepared && typeof prepared.then === 'function')
+                    throw new TypeError('prepared_transaction_must_be_synchronous');
+                value = typeof prepared === 'function' ? performTransaction(prepared, operation) : prepared;
+                EconomyJournal.commit();
+            } catch (error) {
+                EconomyJournal.discard();
+                syncPreparedHook(failed, id, error);
+                throw error;
+            }
+            try {
+                completed.push({ id, result: committed ? syncPreparedHook(committed, id, value) : value });
+            } catch (error) {
+                syncPreparedHook(failed, id, error);
+                // The previous single-clan tx continuation also rejects after
+                // SQL queue success. Keep that native counter/error boundary.
+                return { completed, afterCommitError: error };
+            }
+        }
+        return { completed };
+    }, { operation, read: false }).catch(error => {
+        if (!entered) syncPreparedHook(failed, admitted[0], error);
+        throw error;
+    }).then(result => {
+        if (Object.hasOwn(result, 'afterCommitError')) throw result.afterCommitError;
+        return result.completed;
+    });
 }
 
 function withCharacterFlush(characterId, work) {
@@ -1417,6 +1631,31 @@ function applySchemaMigrations() {
             WHERE json_valid(statsJson) AND json_type(statsJson, '$.priceBeliefs') IS NOT NULL;
     `)]);
     migrations.push([58, () => require('./GameServer/Social/InteractionMemoryRows').install(connection)]);
+    migrations.push([59, () => connection.exec(`
+        CREATE TABLE IF NOT EXISTS bot_market_counts (
+            characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+            counter TEXT NOT NULL,
+            deals INTEGER NOT NULL,
+            PRIMARY KEY(characterId, counter)
+        );
+        INSERT INTO bot_market_counts(characterId, counter, deals)
+            SELECT life.characterId, counts.key, MAX(0, CAST(counts.value AS INTEGER))
+            FROM bot_life_state life JOIN characters c ON c.id=life.characterId,
+                json_each(life.statsJson, '$.marketTrades') counts
+            WHERE substr(c.username, 1, 4)='bot_' AND counts.type IN ('integer', 'real')
+            ON CONFLICT(characterId, counter) DO UPDATE SET deals=MAX(deals, excluded.deals);
+        UPDATE bot_life_state SET statsJson=json_remove(statsJson, '$.marketTrades')
+            WHERE json_type(statsJson, '$.marketTrades') IS NOT NULL;
+        INSERT OR IGNORE INTO world_meta(key,value) VALUES('botMarketCountsMoved','1');
+    `)]);
+    // Own-line price attention checkpoints time only with publication/reprice.
+    migrations.push([60, () => connection.exec(`
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenAt INTEGER NOT NULL DEFAULT 0;
+    `)]);
+    migrations.push([61, () => connection.exec(`
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSeenCount INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE afk_trade_lines ADD COLUMN pricingSigma REAL NOT NULL DEFAULT 0;
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -1456,6 +1695,10 @@ function write(sql, params = []) {
 // Capture before a native flush can await; skill writers capture at their call.
 // Each admitted writer keeps its original SQL queue.
 const coldTrainingGuards = new WeakMap();
+// ARCH-NOTE: Only a native training checkpoint refusal belongs to this domain; same-message SQL/user errors stay distinct.
+class ColdTrainingSourceRetired extends Error {
+    constructor() { super('cold_training_source_retired'); }
+}
 function captureWriteAdmission(options, errorCode, characterId, rowStatement = null) {
     let beforeWrite, nativeProof, present = false, captureFailed = false, captureError;
     try {
@@ -1467,8 +1710,9 @@ function captureWriteAdmission(options, errorCode, characterId, rowStatement = n
                 throw new TypeError(errorCode);
             }
             beforeWrite = descriptor.value;
-            nativeProof = rowStatement ? NativeWriteCheckpoint.captureRow(beforeWrite, rowStatement)
-                : NativeWriteCheckpoint.capture(beforeWrite, characterId);
+            const nativeBeforeWrite = coldTrainingGuards.get(beforeWrite)?.nativeBeforeWrite || beforeWrite;
+            nativeProof = rowStatement ? NativeWriteCheckpoint.captureRow(nativeBeforeWrite, rowStatement)
+                : NativeWriteCheckpoint.capture(nativeBeforeWrite, characterId);
         } else if ('beforeWrite' in options) throw new TypeError(errorCode);
     } catch (error) {
         captureFailed = true;
@@ -1487,17 +1731,24 @@ function checkCapturedWriteAdmission(admission, characterId) {
             throw new TypeError(admission.errorCode);
         }
     }
+    let trainingRow;
     if (admission.coldTraining) {
         const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
-        const row = one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')} FROM bot_life_state WHERE characterId = ?`, [characterId]);
+        const row = trainingRow = one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')},
+            COALESCE(json_extract(statsJson, '$.clanInventoryRevision'), 0) <= COALESCE(json_extract(?, '$'), 0)
+            AND COALESCE(json_extract(statsJson, '$.clanLevelSpVersion'), 0) <= COALESCE(json_extract(?, '$'), 0)
+            AND COALESCE(json_extract(statsJson, '$.clanMembershipVersion'), 0) <= COALESCE(json_extract(?, '$'), 0)
+                AS trainingVersionsCurrent
+            FROM bot_life_state WHERE characterId = ?`, [...admission.coldTraining.versions, characterId]);
         const current = Protocol.commandCheckpoint(row && { ...row, activityStartedAt: row.activityStartedAt || 0,
             nextResolveAt: row.nextResolveAt || 0, lastResolvedAt: row.lastResolvedAt || 0, lastHotAt: row.lastHotAt || 0 });
         if (current?.phase !== 'cold' || current.simulationOwner !== LEGACY_SIMULATION_OWNER
-            || !Protocol.sameCommandCheckpoint(admission.coldTraining, current)) throw Error('cold_training_source_retired');
+            || row.trainingVersionsCurrent !== 1
+            || (!admission.nativeProof && !Protocol.sameCommandCheckpoint(admission.coldTraining, current))) throw new ColdTrainingSourceRetired();
     }
     if (admission.nativeProof) {
         NativeWriteCheckpoint.checkTarget(admission.nativeProof, characterId);
-        NativeWriteCheckpoint.check(admission.nativeProof, one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')}
+        NativeWriteCheckpoint.check(admission.nativeProof, trainingRow || one(`SELECT ${NativeWriteCheckpoint.columns.join(', ')}
             FROM bot_life_state WHERE characterId = ?`, [characterId]));
     }
 }
@@ -1858,6 +2109,125 @@ function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null) {
     return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp);
 }
 
+function economyOwnerUnsafe(characterId, authority, fresh = false) {
+    checkMutationAdmission();
+    const row = one('SELECT life.*, c.username FROM bot_life_state life JOIN characters c ON c.id=life.characterId WHERE life.characterId=?',
+        [Number(characterId)]);
+    if (!row || !BoardRules.isBotAccount(row.username) || !authority
+        || row.phase !== authority.phase || row.simulationOwner !== authority.ownerId
+        || (row.simulationLeaseId || null) !== (authority.leaseId || null)
+        || Number(row.lastHotAt || 0) !== Number(authority.hotAt || 0)
+        || row.simulationOwner !== LEGACY_SIMULATION_OWNER || row.simulationLeaseId
+        || (fresh && Number(row.simulationRevision) !== authority.revision)) throw Error('economy_owner_changed');
+    return row;
+}
+
+// Read a saved completion before examining the now-consumed physical inputs.
+// Authority is still checked first; an obsolete session/worker cannot spend.
+function economyStepUnsafe(characterId, command, kind) {
+    if (!command) return null;
+    if (kind !== undefined && command[1] !== kind) throw Error('economy_kind_changed');
+    EconomyCommit.header(command[0], command[1], command[2], command.authority);
+    if (Diagnostics.active()) stageNativeDiagnostic(characterId, { command }, 'native_attempt', 'requested', { commandKind: command[1] });
+    const row = economyOwnerUnsafe(characterId, command.authority);
+    if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_admission', 'authority_checked',
+        { commandKind: command[1] });
+    const tuple = jsonObject(row.statsJson).economyCommit;
+    if (!EconomyCommit.valid(tuple) || tuple[2] !== command[0] || tuple[3] !== command[1]) throw Error('economy_intent_changed');
+    if (tuple[1] === 1 && command[2] === tuple[0] - 1) {
+        if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_replay', 'saved_receipt',
+            { nativeId: tuple[8], receiptUnits: tuple[5], receiptSpent: tuple[6], actual: 0, spent: 0 });
+
+        return { row, replay: { ...EconomyCommit.result(tuple), coldLifeRow: normalizeRow(row) } };
+    }
+    if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
+    economyOwnerUnsafe(characterId, command.authority, true);
+    const state = { level: Number(row.level), phase: row.phase, stats: jsonObject(row.statsJson),
+        inventory: jsonObject(row.inventorySummary) };
+    // Current own protection is prepared once inside the atomic boundary,
+    // never inferred from the worker's spending proposal.
+    const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
+    return { row, command, reserved };
+}
+
+function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = null, learning = null, statsPatch = null) {
+    if (!step) return null;
+    const tuple = EconomyCommit.completed(step.command, result);
+    if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_result', result.success === false ? 'failed_outcome' : 'completed',
+        { actual: Number(result.units || 0), spent: Number(result.spent || 0), nativeId: Number(result.nativeId || 0),
+            source: step.command[1] === EconomyCommit.KINDS.npcBuy ? 'npc' : step.command[1] === EconomyCommit.KINDS.craft ? 'craft' : 'board',
+            recipeId: step.command[1] === EconomyCommit.KINDS.craft ? Number(result.nativeId || 0) : undefined });
+    const patch = { ...statsPatch, economyCommit: tuple, ...(learning ? { lastRecipeBookLearning: learning } : {}) };
+    if (step.row.phase === 'cold') return writeColdInventorySnapshotUnsafe(characterId, step.row, changedIds, mp, patch);
+    write("UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)) WHERE characterId=?",
+        [JSON.stringify(patch), Number(characterId)]);
+    return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [Number(characterId)]));
+}
+
+// Preserve the pre-native-receipt cold auto-equip rule inside the purchase.
+// Only physical flags move; no predicted cold items are materialized here.
+function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip, heldItemIds = []) {
+    if (!step || step.row.phase !== 'cold' || autoEquip === false) return null;
+    const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(itemId));
+    if (template?.etc?.stackable || !(Number(template?.etc?.slot) > 0)) return null;
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const physical = all('SELECT * FROM items WHERE characterId=? AND amount>0', [characterId]);
+    const stats = jsonObject(step.row.statsJson);
+    const held = new Set(heldItemIds);
+    const reconciled = Life.reconcileEquipmentInventory({ characterId, level: Number(step.row.level), phase: 'cold', stats,
+        inventory: Life.inventorySummaryFromItems(physical.filter(row => Number(row.equipped) || !held.has(Number(row.selfId)))) });
+    const ids = new Set([Number(itemId)]);
+    for (const row of physical) {
+        const instance = reconciled.inventory[row.selfId]?.instances?.find(item => Number(item.id) === Number(row.id));
+        if (!instance) continue;
+        const equipped = instance.equipped ? 1 : 0, slot = Number(instance.slot || 0);
+        if (equipped !== Number(row.equipped) || slot !== Number(row.slot)) {
+            write('UPDATE items SET equipped=?,slot=? WHERE id=? AND characterId=?', [equipped, slot, row.id, characterId]);
+            ids.add(Number(row.selfId));
+            if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_equip', equipped ? 'equipped' : 'unequipped',
+                { item: Number(row.selfId), nativeId: Number(row.id), actual: equipped });
+        }
+    }
+    const patch = {};
+    for (const key of ['equipment', 'equipmentPlan', 'partyRequest', 'clanPartyObjective', 'clanEquipmentAcquisition',
+        'marketWanted', 'marketRetryAfter', 'marketLead']) {
+        if (Object.hasOwn(reconciled.stats, key)) patch[key] = reconciled.stats[key];
+        else if (Object.hasOwn(stats, key)) patch[key] = null;
+    }
+    return { ids: [...ids], patch };
+}
+
+function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
+    if (!step) return;
+    const stats = jsonObject(step.row.statsJson), packet = packetOverride || stats.money;
+    if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+    const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
+    const { r, itemId, valueHours, survivalCost, clanPart } = funding;
+    const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
+    const budget = require('./GameServer/Bot/Economy/PurchaseFunding').spendable({
+        adena: wallet, stats: { money: packet }
+    }, 0, { r, itemId, valueHours, survivalCost, clanPart, free: funding.free === true }, fundingCapture);
+    if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
+        { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
+            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
+            decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
+
+    if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
+}
+
+function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used) {
+    if (!step) return;
+    const stats = jsonObject(step.row.statsJson), inventory = jsonObject(step.row.inventorySummary);
+    const item = inventory[selfId] || {};
+    if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) throw Error('economy_material_protected');
+    const goalReserve = stats.equipmentPlan?.status === 'active' && Number(stats.equipmentPlan.target?.selfId) === Number(selfId) ? 1 : 0;
+    const reserve = Math.max(Number(stats.clanMaterialDemand?.[selfId] || 0), goalReserve,
+        Number(step.reserved?.[selfId] || 0), Number(item.protectedAmount || 0), Number(item.starterMobLootAmount || 0), Number(item.reservedAmount || 0));
+    const available = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=? AND equipped=0',
+        [characterId, Number(selfId)]).amount);
+    if (available - reserve < used) throw Error('economy_material_protected');
+}
+
 // An AFK fill changes the items of a bot whose row the cold worker may lease;
 // the worker would later commit its older summary over them. Fence it as clan
 // writes do: the same transaction writes the new amounts into the summary and
@@ -1871,7 +2241,7 @@ function fenceLeasedColdInventoryUnsafe(characterId, changedIds) {
 
 // The summary entries of changedIds and adena from the physical rows, and the
 // next simulationRevision, for a row its caller has checked.
-function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = null) {
+function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = null, statsPatch = null) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [Number(characterId)]));
     const inventory = jsonObject(row.inventorySummary);
@@ -1881,9 +2251,13 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     }
     const adena = Number(physical[57]?.amount || 0);
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?, mp = COALESCE(?, mp),
+        statsJson = CASE WHEN ? IS NULL THEN statsJson ELSE json_patch(statsJson,json(?)) END,
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-    [JSON.stringify(inventory), adena, mp, now(), Number(characterId)]);
-    return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]));
+    [JSON.stringify(inventory), adena, mp, statsPatch ? JSON.stringify(statsPatch) : null,
+        statsPatch ? JSON.stringify(statsPatch) : null, now(), Number(characterId)]);
+    const inventoryPatch = Object.fromEntries([...new Set([57, ...changedIds].map(Number))]
+        .map(id => [id, physical[id] || null]));
+    return { ...normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)])), inventoryPatch };
 }
 
 // The funded order belongs to the native party row. Worker patches may
@@ -2118,11 +2492,17 @@ function preserveColdVersionedStatsParsed(row, patch = {}) {
     const current = currentViews.plain;
     const incoming = next.statsJson === proposedRaw ? proposedViews.plain : jsonObject(next.statsJson);
     if (next.statsJson !== proposedRaw) stats = incoming;
-    // A worker may hold older stats while a trade commits its own-deal count.
-    if (current.marketTrades || incoming.marketTrades || incoming.priceBeliefs) {
-        if (current.marketTrades && typeof current.marketTrades === 'object' && !Array.isArray(current.marketTrades)) {
-            incoming.marketTrades = current.marketTrades;
-        } else delete incoming.marketTrades;
+    // The native transaction owns this leaf. A stale worker/handoff snapshot
+    // cannot remove, fabricate or rewind an intent or its saved completion.
+    if (Object.hasOwn(current, 'economyCommit') || Object.hasOwn(incoming, 'economyCommit')) {
+        if (Object.hasOwn(current, 'economyCommit')) incoming.economyCommit = current.economyCommit;
+        else delete incoming.economyCommit;
+        next.statsJson = JSON.stringify(incoming);
+        stats = incoming;
+    }
+    // ARCH-NOTE: old workers can still carry the retired counters; the row table owns them now.
+    if (incoming.marketTrades || incoming.priceBeliefs) {
+        delete incoming.marketTrades;
         delete incoming.priceBeliefs;
         next.statsJson = JSON.stringify(incoming);
         stats = incoming;
@@ -2358,11 +2738,11 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}) {
 }
 
 function dropPkDeathItemsUnsafe(characterId) {
+    const current = one('SELECT hp,karma,pk FROM characters WHERE id=?', [characterId]);
+    if (!current || Number(current.hp) > 0 || !require('./GameServer/PkDropPolicy').enabled(current)) return { drops: [] };
     const life = one('SELECT deathCount,statsJson FROM bot_life_state WHERE characterId=?', [characterId]);
     const stats = jsonObject(life?.statsJson), death = Number(life?.deathCount || stats.deaths || 0);
     if (!life || death <= Number(stats.pkDropDeathSequence || 0)) return { drops: [] };
-    const current = one('SELECT hp,karma,pk FROM characters WHERE id=?', [characterId]);
-    if (Number(current?.hp) > 0) return { drops: [] };
     const Data = invoke('GameServer/DataCache');
     const Templates = require('./GameServer/Item/ItemTemplateIndex');
     const inventory = all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]).map(item => {
@@ -2564,9 +2944,10 @@ function recordClanGoalEventUnsafe({ clanId, eventType, goalType = '', plan = ''
 const BOARD_TRADE_SOURCES = new Set(['afk_bot_store', 'afk_player_store', 'afk_bot_buy_store', 'afk_player_buy_store']);
 const BOARD_DEAL_COUNT_PREFIX = 'boardDealCount:';
 const BOARD_COUNTER_COUNT_PREFIX = 'boardCounterDealCount:';
-const PRICING_FIELDS = Object.freeze(['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills']);
+const PRICING_FIELDS = Object.freeze(['price', 'seenCounter', 'seenItem', 'rival', 'worth', 'seenFills', 'seenAt', 'seenCount', 'sigma']);
 const PRICING_COLUMNS = Object.freeze(['pricingPrice', 'pricingSeenCounter', 'pricingSeenItem',
-    'pricingRival', 'pricingWorth', 'pricingSeenFills']);
+    'pricingRival', 'pricingWorth', 'pricingSeenFills', 'pricingSeenAt', 'pricingSeenCount', 'pricingSigma']);
+const OPTIONAL_PRICING_FIELDS = new Set(['seenAt', 'seenCount', 'sigma']);
 
 function boardTradeEligible(trade) {
     return Number(trade.selfId) > 0 && Number(trade.selfId) !== 57
@@ -2575,19 +2956,28 @@ function boardTradeEligible(trade) {
 
 function linePricing(line) {
     if (line.pricingPrice === null || line.pricingPrice === undefined) return undefined;
-    return Object.fromEntries(PRICING_FIELDS.map((field, index) => [field, Number(line[PRICING_COLUMNS[index]])]));
+    const pricing = Object.fromEntries(PRICING_FIELDS.map((field, index) => [field, Number(line[PRICING_COLUMNS[index]])]));
+    // A legacy cursor with no timestamp retains the one-hour default and its
+    // old external shape until an actual reprice checkpoints the time.
+    if (!pricing.seenAt) delete pricing.seenAt;
+    if (!pricing.seenCount) delete pricing.seenCount;
+    if (!pricing.sigma) delete pricing.sigma;
+    return pricing;
 }
 
 function pricingValues(pricing) {
-    const values = PRICING_FIELDS.map(field => pricing?.[field]);
-    if (values.some((value, index) => !(PRICING_FIELDS[index] === 'worth' ? Number.isFinite(value) : Number.isSafeInteger(value))
+    const values = PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? pricing?.[field] ?? 0 : pricing?.[field]);
+    if (values.some((value, index) => !(['worth', 'sigma'].includes(PRICING_FIELDS[index]) ? Number.isFinite(value) : Number.isSafeInteger(value))
         || value < 0)) throw new Error('invalid_board_pricing');
+    const sigma = values[PRICING_FIELDS.indexOf('sigma')];
+    if (sigma !== 0 && (sigma < 0.6 / Math.sqrt(61) || sigma > 0.6)) throw new Error('invalid_board_pricing');
     return values;
 }
 
 function checkLinePricingUnsafe(line, previousPricing) {
     const current = linePricing(line);
-    if (!current || !previousPricing || PRICING_FIELDS.some(field => current[field] !== previousPricing[field])) {
+    if (!current || !previousPricing || PRICING_FIELDS.some(field => OPTIONAL_PRICING_FIELDS.has(field)
+        ? (current[field] ?? 0) !== (previousPricing[field] ?? 0) : current[field] !== previousPricing[field])) {
         throw new Error('afk_trade_pricing_changed');
     }
 }
@@ -2596,14 +2986,15 @@ function updateLinePricingUnsafe(line, pricing) {
     const values = pricingValues(pricing);
     if (pricing.seenFills > Number(line.fills)) throw new Error('invalid_board_pricing');
     const current = linePricing(line);
-    if (current && PRICING_FIELDS.every((field, index) => current[field] === values[index])) return false;
+    if (current && PRICING_FIELDS.every((field, index) => (current[field] ?? 0) === values[index])) return false;
     write(`UPDATE afk_trade_lines SET ${PRICING_COLUMNS.map(column => `${column} = ?`).join(', ')}, updatedAt = ? WHERE id = ?`,
         [...values, now(), line.id]);
     return true;
 }
 
 function ensureBoardDealCountsUnsafe() {
-    if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) return;
+    if (boardDealCountsReady) return;
+    if (one("SELECT value FROM world_meta WHERE key = 'boardDealCountsReady'")) { boardDealCountsReady = true; return; }
     // A queued world write freezes the outbox while one history query counts
     // the union. Rows already transferred but not yet deleted count once.
     const pending = all("SELECT payload FROM history_outbox WHERE kind = 'market_trade' ORDER BY id")
@@ -2621,11 +3012,13 @@ function ensureBoardDealCountsUnsafe() {
     for (const { selfId, deals } of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
         [`${BOARD_DEAL_COUNT_PREFIX}${Number(selfId)}`, String(deals)]);
     write("INSERT INTO world_meta (key, value) VALUES ('boardDealCountsReady', '1')");
+    boardDealCountsReady = true;
 }
 
 function ensureBoardCounterCountsUnsafe() {
     ensureBoardDealCountsUnsafe();
-    if (one("SELECT value FROM world_meta WHERE key = 'boardCounterCountsReady'")) return;
+    if (boardCounterCountsReady) return;
+    if (one("SELECT value FROM world_meta WHERE key = 'boardCounterCountsReady'")) { boardCounterCountsReady = true; return; }
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
     if (!invoke('GameServer/DataCache').items?.length) throw new Error('board_market_data_not_ready');
     const totals = new Map();
@@ -2636,6 +3029,7 @@ function ensureBoardCounterCountsUnsafe() {
     for (const [key, count] of totals) write('INSERT INTO world_meta (key, value) VALUES (?, ?)',
         [`${BOARD_COUNTER_COUNT_PREFIX}${key}`, String(count)]);
     write("INSERT INTO world_meta (key, value) VALUES ('boardCounterCountsReady', '1')");
+    boardCounterCountsReady = true;
 }
 
 function initialLinePricingUnsafe(selfId, price, storeType) {
@@ -2644,25 +3038,19 @@ function initialLinePricingUnsafe(selfId, price, storeType) {
     return { price,
         seenCounter: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_COUNTER_COUNT_PREFIX}${key}`])?.value || 0),
         seenItem: Number(one('SELECT value FROM world_meta WHERE key = ?', [`${BOARD_DEAL_COUNT_PREFIX}${selfId}`])?.value || 0),
-        rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0 };
+        rival: 0, worth: Number(storeType) === BoardRules.BUY ? price : 0, seenFills: 0, seenAt: now() };
 }
 
-function learnBoardTradeUnsafe(trade) {
+function learnBoardTradeUnsafe(trade, participants) {
     if (!boardTradeEligible(trade)) return {};
     if (!invoke('GameServer/Bot/Economy/PriceLearning').knowledgeEnabled()) return {};
     const counter = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(trade.selfId);
     const rows = {};
-    for (const id of new Set([trade.sellerCharacterId, trade.buyerCharacterId].map(Number).filter(Boolean))) {
-        const row = one(`SELECT life.statsJson FROM bot_life_state life JOIN characters c ON c.id = life.characterId
-            WHERE life.characterId = ? AND substr(c.username, 1, 4) = 'bot_'`, [id]);
-        if (!row) continue;
-        const stats = jsonObject(row.statsJson);
-        const counts = stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)
-            ? { ...stats.marketTrades } : {};
-        counts[counter] = Math.max(0, Number(counts[counter]) || 0) + 1;
-        stats.marketTrades = counts;
-        write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), id]);
-        rows[id] = counts;
+    for (const [id, participant] of participants) {
+        if (!BoardRules.isBotAccount(participant?.username) || rows[id]) continue;
+        const row = one(`INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,1)
+            ON CONFLICT(characterId,counter) DO UPDATE SET deals=deals+1 RETURNING deals`, [id, counter]);
+        rows[id] = { [counter]: Number(row.deals) };
     }
     return rows;
 }
@@ -3016,7 +3404,7 @@ function validBoardRecord(kind, storeType, rows) {
 // and one per item. `expectedRevision` names the shop it replaces. No kind
 // has a deadline (expiresAt 0): records close by events (user, 2026-10-05).
 // Returns { shop, changedIds }.
-function openBoardRecordUnsafe(characterId, config, rows) {
+function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = {}) {
     const kind = config.kind;
     const storeType = BoardRules.storeTypeFor(kind, config.storeType);
     const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
@@ -3054,8 +3442,10 @@ function openBoardRecordUnsafe(characterId, config, rows) {
                 || !Number.isSafeInteger(sum + count * price)) throw new Error('invalid_afk_trade_line');
             return sum + count * price;
         }, 0);
-        afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
-        changedIds.push(57);
+        if (!prepaid) {
+            afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
+            changedIds.push(57);
+        }
     }
 
     const shopId = Number(write(`INSERT INTO afk_trade_shops(
@@ -3097,7 +3487,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         const fills = botOwned ? (line.fills ?? 0) : 0;
         if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
         const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
-        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(() => null);
+        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? 0 : null);
         if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
 
         let source = null;
@@ -3123,7 +3513,7 @@ function openBoardRecordUnsafe(characterId, config, rows) {
             shopId, sourceObjectId, selfId, name, count, initialCount, price,
             enchant, slot, stackable, petData, createdAt, updatedAt, fills,
             ${PRICING_COLUMNS.join(', ')}
-        ) VALUES (${Array(20).fill('?').join(', ')})`, [
+        ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
             shopId,
             source ? Number(source.id) : null,
             selfId,
@@ -3142,6 +3532,84 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         ]);
     });
     return { shop: afkTradeShopUnsafe(shopId), changedIds };
+}
+
+// A bot's at-most-five buy ads are one reserved obligation. Retain native
+// identities and pricing cursors; money moves once by the net remaining
+// reserve, including additions/removals. The caller already checked the
+// complete expected set inside this same transaction.
+function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {
+    if (configs.length > BoardRules.BOT_RECORDS.buy_ad) throw Error('board_cap_reached');
+    const key = (town, line) => `${town || ''}:${Number(line.selfId)}:${Number(line.enchant || 0)}`;
+    const current = new Map(held.map(shop => [key(shop.town, shop.lines[0]), shop]));
+    const identities = new Set(), wanted = configs.map(config => {
+        const line = config.lines[0], selfId = Number(line.selfId), count = Number(line.count);
+        const enchant = Number(line.enchant || 0), identity = `${selfId}:${enchant}`;
+        if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+            || !Number.isSafeInteger(count) || count <= 0 || !Number.isSafeInteger(enchant) || enchant < 0
+            || !Number.isSafeInteger(Number(line.price)) || Number(line.price) <= 0) throw Error('invalid_afk_trade_line');
+        if (identities.has(identity)) throw Error('board_ad_exists');
+        identities.add(identity);
+        const previous = current.get(key(config.town, line));
+        // A retained line's price belongs to MarketPricing.look, not the
+        // newly prepared opening price. A quantity review preserves it.
+        const price = previous ? Number(previous.lines[0].price) : Number(line.price);
+        const reserve = count * price;
+        if (!Number.isSafeInteger(reserve)) throw Error('invalid_afk_trade_budget');
+        if (!previous && line.pricing) pricingValues(line.pricing);
+        return { config, line, previous, count, price, reserve };
+    });
+    const oldReserve = held.reduce((sum, shop) => sum + Number(shop.escrowAdena), 0);
+    const newReserve = wanted.reduce((sum, row) => sum + row.reserve, 0);
+    if (!Number.isSafeInteger(oldReserve) || !Number.isSafeInteger(newReserve)) throw Error('invalid_afk_trade_budget');
+    const difference = newReserve - oldReserve;
+    // Existing reservations may shrink or remain without another admission.
+    // Growth must fit today's native wallet and protected money queue; no
+    // other kind's escrow or settlement enters this allowance.
+    const additions = wanted.filter(row => !row.previous || row.count > Number(row.previous.lines[0].count));
+    if (additions.length) {
+        const life = one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+        const stats = jsonObject(life?.statsJson);
+        if (life && (!Array.isArray(stats.money) || stats.money.length < 4)) throw Error('economy_funding_missing');
+        if (Array.isArray(stats.money)) {
+            const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
+            const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
+            for (const row of additions) {
+                if (newReserve > Funding.spendable({ adena: wallet, stats }, oldReserve, { itemId: Number(row.line.selfId) })) {
+                    throw Error('economy_funding_changed');
+                }
+            }
+        }
+    }
+    if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
+    else if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
+    const kept = new Set(wanted.filter(row => row.previous).map(row => row.previous.id));
+    const removed = held.filter(shop => !kept.has(shop.id));
+    removed.forEach(shop => deleteBoardRecordUnsafe(shop.id, timestamp));
+    const retained = [], opened = [], changed = [];
+    for (const row of wanted) {
+        const { previous, config, count, reserve } = row;
+        if (!previous) {
+            const created = openBoardRecordUnsafe(characterId, { ...config, kind: 'buy_ad' }, config.lines, { prepaid: true }).shop;
+            opened.push(created); changed.push(created);
+            continue;
+        }
+        const line = previous.lines[0], title = String(config.title || '').slice(0, 52);
+        const countChanged = Number(line.count) !== count;
+        const metadataChanged = String(previous.title || '') !== title;
+        if (countChanged) {
+            write('UPDATE afk_trade_lines SET count = ?, updatedAt = ? WHERE id = ?', [count, timestamp, line.id]);
+        }
+        if (countChanged || metadataChanged) {
+            write(`UPDATE afk_trade_shops SET title = ?, escrowAdena = ?, revision = revision + 1,
+                updatedAt = ? WHERE id = ?`, [title, reserve, timestamp, previous.id]);
+            const updated = afkTradeShopUnsafe(previous.id);
+            retained.push(updated); changed.push(updated);
+        } else retained.push(previous);
+    }
+    return { closed: removed.map(shop => closedRecord(shop, 'closed')), opened, retained, changed,
+        ownerInventory: difference ? afkTradeInventoryUnsafe(characterId) : null,
+        coldLifeRows: difference ? fenceAfkTradePartiesUnsafe([characterId], [57]) : {} };
 }
 
 // Merges a bot's settlements into its bag; its cold row follows: the summary
@@ -3273,12 +3741,23 @@ function commitColdInteractionMemoryUnsafe(request) {
 }
 
 const ClanMembership = require('./GameServer/Clan/ClanMembershipRepository')({ all, write, inTransaction, now });
+function publishClanMembership(result) {
+    const { previousClanId, nextClanId, ...value } = result || {};
+    if (result?.ok || Number(result?.affectedRows) > 0) {
+        const Events = require('./GameServer/Clan/ClanReviewEvents');
+        for (const id of new Set([previousClanId, nextClanId])) if (Number(id) > 0) Events.changed(id, 'membership');
+    }
+    return value;
+}
+
 
 const Database = {
     reconcileBotClanMembership: ClanMembership.reconcile,
     reconcileBotClanGoals: ClanMembership.reconcileGoals,
     init(callback = () => {}) {
         try {
+            boardDealCountsReady = false;
+            boardCounterCountsReady = false;
             shuttingDown = false;
             closePromise = null;
             databasePath = databaseFile();
@@ -3334,12 +3813,21 @@ const Database = {
     saveBotLifeState(statement, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_bot_life_before_write', null, statement);
         return enqueue(() => {
-            if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
-            checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
-            const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson` : 'statsJson';
-            const row = one(`${statement[0]} RETURNING ${returning}`, statement[1] || []);
-            if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
-            return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
+            let phase = 'row_admission';
+            try {
+                if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
+                phase = 'write_admission';
+                checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
+                const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson` : 'statsJson';
+                phase = 'write';
+                const row = one(`${statement[0]} RETURNING ${returning}`, statement[1] || []);
+                phase = 'advance';
+                if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
+                return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson };
+            } catch (error) {
+                reportBotLifeSaveFailure(phase, error);
+                throw error;
+            }
         }, { operation: 'bot-life:save', read: false });
     },
 
@@ -3607,17 +4095,21 @@ const Database = {
                 }
             }
             const rows = [];
-            for (const life of all(`SELECT life.characterId, life.statsJson FROM bot_life_state life
+            for (const life of all(`SELECT life.characterId FROM bot_life_state life
                 JOIN characters c ON c.id = life.characterId WHERE substr(c.username, 1, 4) = 'bot_'`)) {
-                const stats = jsonObject(life.statsJson);
-                if (stats.marketTrades && typeof stats.marketTrades === 'object' && !Array.isArray(stats.marketTrades)) continue;
-                stats.marketTrades = totals.get(Number(life.characterId)) || {};
-                write('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), life.characterId]);
-                rows.push(normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [life.characterId])));
+                if (one('SELECT 1 FROM bot_market_counts WHERE characterId=? LIMIT 1', [life.characterId])) continue;
+                const counts = totals.get(Number(life.characterId)) || {};
+                for (const [counter, deals] of Object.entries(counts)) write(
+                    'INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,?)', [life.characterId, counter, deals]);
+                rows.push({ characterId: Number(life.characterId), marketTrades: counts });
             }
             write("INSERT INTO world_meta (key, value) VALUES ('botMarketTradesInitialized', ?)", [mode]);
             return { skipped: false, mode, rows };
         }, 'board:own-trades-initialize'));
+    },
+
+    fetchBotMarketCounts() {
+        return run('SELECT characterId,counter,deals FROM bot_market_counts', [], 'board:own-counts', true);
     },
 
     fetchRecentBoardDeals({ perItem = 32, rangeMs = 24 * 60 * 60 * 1000 } = {}) {
@@ -3642,6 +4134,8 @@ const Database = {
                     connection.exec('COMMIT');
                 } catch (error) {
                     connection.exec('ROLLBACK');
+                    boardDealCountsReady = false;
+                    boardCounterCountsReady = false;
                     throw error;
                 }
             }
@@ -3777,6 +4271,10 @@ const Database = {
                         || Number(expected[shop.id]) < 1) throw new Error('afk_trade_shop_changed');
                     checkRecordRevisionUnsafe(shop, expected[shop.id]);
                 });
+            }
+            if (kind === 'buy_ad' && isBotOwnerUnsafe(characterId)) {
+                if (!expected) throw Error('afk_trade_shop_changed');
+                return reconcileBotBuyAdsUnsafe(characterId, closed, list, timestamp);
             }
             const changedIds = [57];
             closed.forEach((shop) => changedIds.push(...closeBoardRecordUnsafe(shop, { ownMove: true, at: timestamp })));
@@ -4092,6 +4590,11 @@ const Database = {
             return Promise.reject(new Error('invalid_afk_trade_purchase'));
         }
         return withCharacterFlushes([buyerId, Number(details.ownerId)], () => inTransaction(() => {
+            const step = economyStepUnsafe(buyerId, details.economyCommand, EconomyCommit.KINDS.afkBuy);
+            if (step?.replay) return { ...step.replay, eventId: step.replay.nativeId,
+                totalPrice: step.replay.spent, counterpartyInventory: afkTradeInventoryUnsafe(buyerId),
+                coldLifeRows: { [buyerId]: step.replay.coldLifeRow } };
+            details.validate?.();
             const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 1", [shopId]);
             if (!shop || Number(shop.ownerId) === buyerId) throw new Error('afk_trade_shop_unavailable');
             const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
@@ -4100,6 +4603,7 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
+            checkEconomyFundingUnsafe(buyerId, step, total, { ...details.funding, itemId: line.selfId });
             const timestamp = now();
             afkTradeDebitAdenaUnsafe(buyerId, total);
             afkTradeCreditItemUnsafe(buyerId, line, quantity);
@@ -4111,7 +4615,7 @@ const Database = {
                 itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
             }));
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
-            const buyer = one('SELECT name FROM characters WHERE id = ?', [buyerId]);
+            const buyer = one('SELECT name, username FROM characters WHERE id = ?', [buyerId]);
             const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
                 eventKey: `afk:${eventId}`, occurredAt: timestamp, channel: botOwned ? 'bot_wts' : 'player_wts',
@@ -4121,11 +4625,16 @@ const Database = {
                 buyerCharacterId: buyerId, buyerName: buyer?.name || null
             }, { unique: true });
             const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
-                sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId });
+                sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId }, [[Number(shop.ownerId), owner], [buyerId, buyer]]);
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
+            const equipped = equipColdPurchaseUnsafe(buyerId, step, line.selfId, details.autoEquip);
+            const completedRow = completeEconomyStepUnsafe(buyerId, step,
+                { units: quantity, spent: total, nativeId: eventId }, equipped?.ids || [line.selfId], null, null, equipped?.patch);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([buyerId], [line.selfId]),
+                committed: true,
+                ...(completedRow ? { economyCommit: jsonObject(completedRow.statsJson).economyCommit } : {}),
+                coldLifeRows: completedRow ? { [buyerId]: completedRow } : fenceAfkTradePartiesUnsafe([buyerId], [line.selfId]),
                 settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
                 marketTrades,
@@ -4153,6 +4662,11 @@ const Database = {
             return Promise.reject(new Error('invalid_afk_trade_sale'));
         }
         return withCharacterFlushes([sellerId, Number(details.ownerId)], () => inTransaction(() => {
+            const step = economyStepUnsafe(sellerId, details.economyCommand, EconomyCommit.KINDS.afkSell);
+            if (step?.replay) return { ...step.replay, eventId: step.replay.nativeId,
+                totalPrice: step.replay.received, counterpartyInventory: afkTradeInventoryUnsafe(sellerId),
+                coldLifeRows: { [sellerId]: step.replay.coldLifeRow } };
+            details.validate?.();
             const shop = one("SELECT * FROM afk_trade_shops WHERE id = ? AND status = 'active' AND storeType = 3", [shopId]);
             if (!shop || Number(shop.ownerId) === sellerId) throw new Error('afk_trade_shop_unavailable');
             const line = one('SELECT * FROM afk_trade_lines WHERE id = ? AND shopId = ?', [lineId, shopId]);
@@ -4161,6 +4675,7 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 1 || Number(shop.escrowAdena) < total) throw new Error('afk_trade_budget_changed');
+            checkEconomyMaterialProtectionUnsafe(sellerId, step, line.selfId, quantity);
             const timestamp = now();
             const source = afkTradeTakeItemUnsafe(
                 sellerId,
@@ -4179,7 +4694,7 @@ const Database = {
                 shopId, ownerId: shop.ownerId, counterpartyId: sellerId, kind: 'purchase', selfId: line.selfId,
                 itemName: line.name, amount: quantity, unitPrice: line.price, totalPrice: total, createdAt: timestamp
             }));
-            const seller = one('SELECT name FROM characters WHERE id = ?', [sellerId]);
+            const seller = one('SELECT name, username FROM characters WHERE id = ?', [sellerId]);
             const owner = one('SELECT name, username FROM characters WHERE id = ?', [shop.ownerId]);
             const botOwned = BoardRules.isBotAccount(owner?.username);
             recordMarketTradeUnsafe({
@@ -4190,11 +4705,15 @@ const Database = {
                 buyerCharacterId: shop.ownerId, buyerName: owner?.name || null
             }, { unique: true });
             const marketTrades = learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity,
-                sellerCharacterId: sellerId, buyerCharacterId: shop.ownerId });
+                sellerCharacterId: sellerId, buyerCharacterId: shop.ownerId }, [[sellerId, seller], [Number(shop.ownerId), owner]]);
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
+            const completedRow = completeEconomyStepUnsafe(sellerId, step,
+                { units: quantity, received: total, nativeId: eventId }, [line.selfId]);
             return {
-                coldLifeRows: fenceAfkTradePartiesUnsafe([sellerId], [line.selfId]),
+                committed: true,
+                ...(completedRow ? { economyCommit: jsonObject(completedRow.statsJson).economyCommit } : {}),
+                coldLifeRows: completedRow ? { [sellerId]: completedRow } : fenceAfkTradePartiesUnsafe([sellerId], [line.selfId]),
                 settlementOwners: pendingSettlementOwners.has(Number(shop.ownerId)) ? [Number(shop.ownerId)] : [],
                 eventId,
                 marketTrades,
@@ -5358,6 +5877,7 @@ const Database = {
                     utils.infoWarn('DB', 'history outbox cleanup failed: %s', error.message);
                 }
             }
+            EconomyCommit.clear();
             openConnection.close();
             queryTail = Promise.resolve();
             await CheckpointCoordinator.stop({ final: true });
@@ -5368,6 +5888,35 @@ const Database = {
 
     registerCharacterWriteFlush(flush) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+    },
+
+    admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null, reconcilePending = false } = {}) {
+        const beforeWrite = mutationAdmission.getStore();
+        // Admission metadata is saved BEFORE the concrete physical step is
+        // guarded. The synchronous guard never enqueues another DB mutation.
+        return mutationAdmission.run(undefined, () => inTransaction(() => {
+            if (beforeWrite && beforeWrite() !== undefined) throw Error('invalid_economy_admission');
+            const row = economyOwnerUnsafe(characterId, authority, !original);
+            const previous = jsonObject(row.statsJson).economyCommit;
+            if (previous && !EconomyCommit.valid(previous)) throw Error('invalid_economy_receipt');
+            const sequence = previous?.[0] || 0;
+            if (original) {
+                const command = EconomyCommit.header(original[0], original[1], original[2], authority);
+                if (kind !== command[1]) throw Error('economy_kind_changed');
+                economyStepUnsafe(characterId, command);
+                return { command, row: normalizeRow(row) };
+            }
+            if (sequence >= Number.MAX_SAFE_INTEGER) throw Error('economy_sequence_exhausted');
+            if (previous && JSON.stringify(previous) !== JSON.stringify(acknowledged)) throw Error('economy_result_unacknowledged');
+            if (previous?.[1] === 0 && !reconcilePending) throw Error('economy_intent_pending');
+            // A recovered pending intent has no physical commit. Its arguments
+            // are not reconstructed; the new step is planned from actual state.
+            const command = EconomyCommit.create(kind, sequence, authority);
+            write("UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),'$.economyCommit',json(?)) WHERE characterId=?",
+                [JSON.stringify(EconomyCommit.pending(command)), Number(characterId)]);
+            return { command, row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [Number(characterId)])),
+                recovered: previous?.[1] === 0 ? 'pending_aborted' : null };
+        }, 'economy:intent'));
     },
 
     withMutationAdmission(beforeWrite, work) {
@@ -5392,7 +5941,10 @@ const Database = {
     },
 
     stats({ resetPeak = false } = {}) {
-        const operations = Object.fromEntries(Array.from(metrics.byOperation.entries()).map(([key, value]) => [key, { ...value }]));
+        // Depth and physical checkpoint outcomes are runtime control sources.
+        if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
+            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(), history: History.stats() };
+        const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
             path: databasePath || null,
             historyPath: historyPath || null,
@@ -5416,14 +5968,19 @@ const Database = {
     checkpoint(options = {}) {
         if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
         if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));
-        return CheckpointCoordinator.request({
+        const requestOptions = {
             force: true,
             mode: options.mode === 'truncate'
                 ? 'truncate'
                 : options.mode === 'restart' ? 'restart' : 'passive',
             minWalBytes: 0,
             busyTimeoutMs: options.busyTimeoutMs
-        });
+        };
+        const request = () => CheckpointCoordinator.request(requestOptions);
+        if (requestOptions.mode === 'passive') return request();
+        const result = queryTail.then(request, request);
+        queryTail = result.catch(() => null);
+        return result;
     },
 
     applyBufferedCharacterState(characterId, state = {}) {
@@ -5654,16 +6211,36 @@ const Database = {
     fetchSkill(characterId, skillSelfId) {
         return selectOne('skills', ['*'], 'characterId = ? AND selfId = ?', [characterId, skillSelfId], 'skill:one');
     },
-    createColdTrainingGuard(state, validate) {
+    isColdTrainingSourceRetired(error) {
+        return error instanceof ColdTrainingSourceRetired;
+    },
+    createColdTrainingGuard(state, validate, nativeBeforeWrite) {
         const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
         const expected = Protocol.commandCheckpoint({ characterId: state.characterId, phase: state.phase, activity: state.activity,
             simulationOwner: state.simulation?.ownerId, simulationRevision: state.simulation?.revision,
             simulationLeaseId: state.simulation?.leaseId || null,
             activityStartedAt: state.timing?.activityStartedAt || 0, nextResolveAt: state.timing?.nextResolveAt || 0,
             lastResolvedAt: state.timing?.lastResolvedAt || 0, lastHotAt: state.timing?.lastHotAt || 0, updatedAt: state.updatedAt });
-        if (!expected || expected.phase !== 'cold' || expected.simulationOwner !== LEGACY_SIMULATION_OWNER || typeof validate !== 'function') throw Error('invalid_cold_training_source');
-        const beforeWrite = () => { validate(); };
-        coldTrainingGuards.set(beforeWrite, Object.freeze({ ...expected }));
+        if (!expected || expected.phase !== 'cold' || expected.simulationOwner !== LEGACY_SIMULATION_OWNER
+            || typeof validate !== 'function' || (nativeBeforeWrite !== undefined && typeof nativeBeforeWrite !== 'function')) {
+            throw Error('invalid_cold_training_source');
+        }
+        // Training alone carries immutable ROW version floors. Its optional
+        // native callback still supplies the original target/checkpoint proof.
+        const beforeWrite = () => { validate(); nativeBeforeWrite?.(); };
+        // ARCH-NOTE: These three short-lived SQL scalars preserve ROW JSON <= semantics without protocol/cache fields.
+        const versions = Object.freeze(['clanInventoryRevision', 'clanLevelSpVersion', 'clanMembershipVersion'].map(key => {
+            const descriptor = Object.getOwnPropertyDescriptor(state.stats || {}, key);
+            if (descriptor?.enumerable && !Object.prototype.hasOwnProperty.call(descriptor, 'value')) {
+                throw new TypeError('invalid_cold_training_version');
+            }
+            const value = descriptor?.enumerable ? descriptor.value : undefined;
+            if (value !== null && value !== undefined && !['number', 'string', 'boolean'].includes(typeof value)) {
+                throw new TypeError('invalid_cold_training_version');
+            }
+            return JSON.stringify(value ?? null);
+        }));
+        coldTrainingGuards.set(beforeWrite, Object.freeze({ ...expected, versions, nativeBeforeWrite }));
         return beforeWrite;
     },
     publishColdTraining(characterId, resolved, options = {}) {
@@ -5939,18 +6516,28 @@ const Database = {
         }, 'warehouse:deposit'));
     },
 
-    transferWarehouseToInventory(characterId, item, { coldState = null, withdrawal = null } = {}) {
+    transferWarehouseToInventory(characterId, item, { coldState = null, inTown = false } = {}) {
+        if (coldState && inTown !== true) return Promise.reject(new Error('economy_state_changed'));
+        // ARCH-NOTE: a legacy movement save need not advance simulationRevision.
+        // Capture the town intent before the character flush/queue, then compare
+        // its scalar location and activity inside the native transaction.
+        const townIntent = coldState && { activity: coldState.activity, currentRegion: coldState.currentRegion,
+            locX: Number(coldState.loc?.locX || 0), locY: Number(coldState.loc?.locY || 0), locZ: Number(coldState.loc?.locZ || 0) };
         return withCharacterFlush(characterId, () => inTransaction(() => {
             let life = null;
             if (coldState) {
-                life = one('SELECT phase, activity, simulationOwner, simulationRevision, partyId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+                life = one(`SELECT phase, activity, currentRegion, locX, locY, locZ,
+                    simulationOwner, simulationRevision, partyId, inventorySummary,
+                    json_extract(statsJson,'$.equipmentPlan') AS equipmentPlan FROM bot_life_state WHERE characterId=?`, [characterId]);
                 // A queued flush can hand the bot to a worker or add a craft
                 // reservation after the caller planned the withdrawal.
                 if (!life || Number(coldState.characterId) !== Number(characterId)
                     || life.phase !== 'cold' || life.simulationOwner !== LEGACY_SIMULATION_OWNER
-                    || life.partyId || !['hunting', 'resting'].includes(life.activity)
+                    || life.partyId || !['hunting', 'resting', 'shopping', 'merchant'].includes(life.activity)
+                    || life.activity !== townIntent.activity || life.currentRegion !== townIntent.currentRegion
+                    || Number(life.locX) !== townIntent.locX || Number(life.locY) !== townIntent.locY || Number(life.locZ) !== townIntent.locZ
                     || (coldState.simulation && Number(life.simulationRevision) !== Number(coldState.simulation.revision))
-                    || JSON.stringify(jsonObject(life.statsJson).equipmentPlan || null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
+                    || JSON.stringify(life.equipmentPlan ? JSON.parse(life.equipmentPlan) : null) !== JSON.stringify(coldState.stats?.equipmentPlan || null)) {
                     throw new Error('economy_state_changed');
                 }
                 // A resolve saves its lifecycle row before materializing loot.
@@ -5977,18 +6564,24 @@ const Database = {
             const warehouseAmount = Number(source.amount) - Number(item.amount);
             if (warehouseAmount <= 0) write('DELETE FROM warehouse_items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE warehouse_items SET amount = ? WHERE id = ? AND characterId = ?', [warehouseAmount, item.id, characterId]);
-            if (life && withdrawal) {
-                const timestamp = Number(withdrawal.at) || now();
-                const stats = jsonObject(life.statsJson);
-                stats.lastWarehouseWithdrawal = { items: withdrawal.items, at: timestamp };
-                if (withdrawal.items.some(entry => entry.reason === 'market')) stats.marketSellRetryAfter = null;
-                write(`UPDATE bot_life_state SET statsJson=?, nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END
-                    WHERE characterId=?`, [JSON.stringify(stats), timestamp, characterId]);
-            }
             const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
             return { inventoryId: Number(inventoryId), inventoryAmount, warehouseAmount, petData: source.petData, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:withdraw'));
+    },
+
+    patchWarehouseWithdrawal(characterId, withdrawal) {
+        const record = require('./GameServer/Bot/LastOperations').compact({ at: Number(withdrawal.at) || now() },
+            withdrawal.items, { marketFirst: true });
+        const raw = JSON.stringify(record);
+        const market = record.items.some(row => row[2] === 1);
+        return enqueue(() => {
+            const row = one(`UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),
+                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellRetryAfter', NULL" : ''}),
+                nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END WHERE characterId=?
+                RETURNING characterId,nextResolveAt,simulationRevision,updatedAt`, [raw, record.at, Number(characterId)]);
+            return row ? { ...row, withdrawal: record, market } : null;
+        }, { operation: 'warehouse:withdrawal-record' });
     },
 
     transferPlayerInventoryBatchToClanWarehouse({ clanId, characterId, transfers = [] } = {}) {
@@ -6378,68 +6971,310 @@ const Database = {
     fetchCharacterRecipes(characterId) { return run('SELECT recipeId, type FROM character_recipes WHERE characterId = ?', [characterId], 'recipe:list'); },
     setCharacterRecipe(characterId, recipeId, type) { return run(UPSERT_RECIPE, [characterId, recipeId, type], 'recipe:upsert'); },
 
-    learnColdRecipes(characterId, recipes, coldState) {
+    learnColdRecipes(characterId, recipes, coldState, { economyCommand = null, validate = null } = {}) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.learn);
+            if (step?.replay) return { ...step.replay, learned: step.replay.success && step.replay.nativeId
+                ? [{ recipeId: step.replay.nativeId }] : [] };
+            if (step && recipes.length !== 1) throw Error('economy_learning_requires_one_recipe');
+            validate?.();
             const learned = [];
             for (const recipe of recipes) {
+                if (step) {
+                    const native = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(recipe.recipeId);
+                    const skill = one('SELECT level FROM skills WHERE characterId=? AND selfId=?',
+                        [Number(characterId), native?.type === 'dwarven' ? 172 : 132]);
+                    if (!native || Number(native.recipeItemId) !== Number(recipe.recipeItemId)
+                        || Number(skill?.level || 0) < Number(native.level)) throw Error('recipe_learning_not_available');
+                }
                 if (one('SELECT recipeId FROM character_recipes WHERE characterId = ? AND recipeId = ?',
                     [characterId, recipe.recipeId])) continue;
                 const scroll = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND amount > 0 AND equipped = 0 ORDER BY id LIMIT 1',
                     [characterId, recipe.recipeItemId]);
                 if (!scroll) throw new Error('recipe_scroll_missing');
+                checkEconomyMaterialProtectionUnsafe(characterId, step, recipe.recipeItemId, 1);
                 if (Number(scroll.amount) === 1) write('DELETE FROM items WHERE id = ? AND characterId = ?', [scroll.id, characterId]);
                 else write('UPDATE items SET amount = amount - 1 WHERE id = ? AND characterId = ?', [scroll.id, characterId]);
                 write(UPSERT_RECIPE, [characterId, recipe.recipeId, recipe.type]);
                 learned.push({ recipeId: recipe.recipeId, recipeItemId: recipe.recipeItemId, name: recipe.name || '' });
             }
-            if (!learned.length) return { learned, coldLifeRow: null };
-            syncEconomySnapshotUnsafe(characterId, coldState, learned.map(recipe => recipe.recipeItemId));
-            write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.lastRecipeBookLearning', json(?)) WHERE characterId = ?",
-                [JSON.stringify({ learned, at: now() }), characterId]);
-            return { learned, coldLifeRow: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId])) };
+            if (!learned.length && !step) return { learned, coldLifeRow: null };
+            const receipt = { success: learned.length > 0, units: learned.length, nativeId: Number(recipes[0]?.recipeId || 0) };
+            const learning = { learned, at: now() };
+            const completedRow = step ? completeEconomyStepUnsafe(characterId, step, receipt,
+                learned.map(recipe => recipe.recipeItemId), null, learning) : syncEconomySnapshotUnsafe(characterId, coldState, learned.map(recipe => recipe.recipeItemId));
+            if (!step) write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.lastRecipeBookLearning', json(?)) WHERE characterId = ?",
+                [JSON.stringify(learning), characterId]);
+            return { learned, committed: true, ...(step ? { economyCommit: jsonObject(completedRow.statsJson).economyCommit } : {}),
+                coldLifeRow: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId])) };
         }, 'recipe:cold-learn'));
     },
 
-    purchaseNpcInventoryItem(characterId, { selfId, name, amount, unitPrice, stackable = true, slot = 0, coldState = null }) {
-        const count = Number(amount), price = Number(unitPrice), itemId = Number(selfId);
-        if (!Number.isSafeInteger(count) || count <= 0 || count > 10000
-            || !Number.isSafeInteger(price) || price <= 0
-            || !Number.isSafeInteger(itemId) || itemId <= 0
-            || !Number.isSafeInteger(count * price)) return Promise.reject(new Error('invalid npc purchase'));
+    purchaseNpcInventoryItem(characterId, details) {
+        return this.purchaseNpcInventoryBasket(characterId, { ...details,
+            ...(Diagnostics.active() && { diagnosticCaller: 'purchaseNpcInventoryItem' }),
+            lines: [{ stackable: true, slot: 0, ...details }] });
+    },
+
+    // A bounded purchase from one real NPC. The legacy scalar adapter retains
+    // its direct-call contract; autonomous baskets supply a seller and command.
+    purchaseNpcInventoryBasket(characterId, details = {}) {
+        if (Array.isArray(details.lines) && details.lines.length > 12) return Promise.reject(Error('invalid npc basket'));
+        if (details.lines?.some(line => line.fundingParts?.length > 12 || line.errands?.length > 8)) return Promise.reject(Error('invalid npc basket attribution'));
+        const { economyCommand = null, coldState = null, validate = null } = details;
+        const seller = details.seller ? { ...details.seller } : null;
+        const captured = Array.isArray(details.lines) ? details.lines.map(line => ({ ...line,
+            funding: { ...line.funding }, fundingParts: line.fundingParts?.map(part => ({ ...part, funding: { ...part.funding } })),
+            errands: (line.errands || []).map(entry => ({ ...entry,
+                errand: JSON.parse(JSON.stringify(entry.errand)) })),
+            goal: line.goal ? JSON.parse(JSON.stringify(line.goal)) : null })) : [];
         return withCharacterFlush(characterId, () => inTransaction(() => {
-            const wallet = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [characterId]);
-            if (!wallet || Number(wallet.amount) < count * price) return { ok: false, reason: 'insufficient_adena' };
-            write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(wallet.amount) - count * price, wallet.id, characterId]);
-            const existing = stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, itemId]) : null;
-            if (existing) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(existing.amount) + count, existing.id, characterId]);
-            else for (let index = 0; index < (stackable ? 1 : count); index += 1) {
-                write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
-                    [itemId, name || `Item ${itemId}`, stackable ? count : 1, Number(slot) || 0, characterId]);
+            const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.npcBuy);
+            const goalRow = () => normalizeRow(one('SELECT * FROM bot_goal_state WHERE characterId=?', [characterId]));
+            if (step?.replay) return { ...step.replay, ok: step.replay.success, goalRow: goalRow() };
+            if (!captured.length || captured.length > 12) throw Error('invalid npc basket');
+            const Shop = invoke('GameServer/World/Generics/NpcShopBuyLists');
+            const Index = require('./GameServer/Item/ItemTemplateIndex');
+            const Data = invoke('GameServer/DataCache');
+            if (seller) {
+                const found = invoke('GameServer/Bot/Economy/TownNpcCatalog').rowsForTown(seller.town).some(row =>
+                    Number(row.npcSelfId) === Number(seller.sourceId) && ['locX', 'locY', 'locZ'].every(key =>
+                        Number.isFinite(Number(seller[key])) && Number(row[key]) === Number(seller[key])));
+                if (!found || step && seller.town !== step.row.currentRegion) throw Error('npc_seller_changed');
             }
-            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [itemId]);
-            return { ok: true, spent: count * price, amount: count, ...(coldLifeRow ? { coldLifeRow } : {}) };
+
+            validate?.();
+            const seen = new Set(), lines = [];
+            let total = 0, units = 0, errandCount = 0;
+            for (const line of captured) {
+                const itemId = Number(line.selfId), count = Number(line.amount), price = Number(line.unitPrice);
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_requested',
+                    { lineId: lines.length, item: itemId, requested: count, planned: count, unitPrice: price,
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town,
+                        goalRevision: Number(line.goal?.updatedAt) });
+                if (!Number.isSafeInteger(itemId) || itemId <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_item', 'selfId', line.selfId, details);
+                if (seen.has(itemId))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'duplicate_item', 'selfId', line.selfId, details);
+                if (!Number.isSafeInteger(count) || count <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_count', 'amount', line.amount, details);
+                if (!Number.isSafeInteger(price) || price <= 0)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_price', 'unitPrice', line.unitPrice, details);
+                if (!Number.isSafeInteger(count * price))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_line_total', 'total', count * price, details);
+                seen.add(itemId);
+                const template = Index.find(Data.items, itemId);
+                if (seller) {
+                    const quote = Shop.rowForNpc(Number(seller.sourceId), itemId);
+                    if (!quote || Number(quote.price) !== price
+                        || !require('./GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId)) throw Error('npc_quote_changed');
+                }
+                const stackable = line.stackable === undefined ? !!template?.etc?.stackable : !!line.stackable;
+                const slot = line.slot === undefined ? Number(template?.etc?.slot || 0) : Number(line.slot);
+                // Stack quantities come from the funded missing need. They use
+                // one physical row; retain the instance bound for unstacked goods.
+                if (!stackable && count > 10000)
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'nonstackable_limit', 'amount', line.amount, details);
+                if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
+                    || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
+                if (seller && step && slot > 0) {
+                    const blocker = invoke('GameServer/Bot/Population/BotLifeState').marketPurchaseBlocker({
+                        stats: jsonObject(step.row.statsJson), inventory: jsonObject(step.row.inventorySummary)
+                    }, { selfId: itemId }, count);
+                    if (blocker) throw Error(blocker);
+                }
+                let attributed = 0, attributedCost = 0;
+                for (const entry of line.errands) {
+                    if (!entry.errand || Number(entry.errand.selfId) !== itemId || seller && entry.errand.town !== seller.town
+                        || !Number.isSafeInteger(entry.units) || entry.units <= 0
+                        || entry.units > Number(entry.errand.amount)
+                        || !Number.isSafeInteger(entry.spent) || entry.spent < 0 || entry.spent !== entry.units * price) throw Error('invalid npc errand attribution');
+                    attributed += entry.units; attributedCost += entry.spent;
+                    if (++errandCount > 8) throw Error('invalid npc errand attribution');
+                }
+                if (attributed > count || attributedCost > count * price) throw Error('invalid npc errand attribution');
+                total += count * price; units += count;
+                if (!Number.isSafeInteger(total) || !Number.isSafeInteger(units))
+                    throw invalidNpcPurchase(characterId, step, line, lines.length, 'invalid_basket_total',
+                        Number.isSafeInteger(total) ? 'units' : 'total', Number.isSafeInteger(total) ? units : total, details, 'invalid npc basket total');
+                lines.push({ ...line, selfId: itemId, amount: count, unitPrice: price, stackable, slot,
+                    name: line.name || template?.template?.name || `Item ${itemId}` });
+            }
+            if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'planned',
+                { requested: units, planned: units, cost: total, npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
+            const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
+            let remainingWallet = Number(wallet?.amount || 0);
+            const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
+            let remainingPacket = step ? jsonObject(step.row.statsJson).money : null;
+            const parts = [];
+            for (const [index, line] of lines.entries()) {
+                const fundingParts = line.fundingParts || [{ amount: line.amount, funding: line.funding, order: index }];
+                let count = 0;
+                for (const part of fundingParts) {
+                    if (!Number.isSafeInteger(part.amount) || part.amount <= 0
+                        || !Number.isSafeInteger(part.order) || part.order < 0 || part.order >= 12) throw Error('invalid npc funding part');
+                    count += part.amount;
+                    parts.push({ ...part, selfId: line.selfId, unitPrice: line.unitPrice });
+                }
+                if (count !== line.amount) throw Error('invalid npc funding part');
+            }
+            if (parts.length > 12 || new Set(parts.map(part => part.order)).size !== parts.length) throw Error('invalid npc funding parts');
+            parts.sort((left, right) => left.order - right.order);
+            for (const part of parts) {
+                const spent = part.amount * part.unitPrice, funding = { ...part.funding, itemId: part.selfId };
+                checkEconomyFundingUnsafe(characterId, step, spent, funding, remainingWallet, remainingPacket);
+                remainingWallet -= spent;
+                remainingPacket = Funding.packetAfterPurchase(remainingPacket, spent, funding);
+            }
+            if (!wallet || remainingWallet < 0) {
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'insufficient_adena',
+                    { requested: units, planned: units, actual: 0, spent: 0, wallet: Number(wallet?.amount || 0),
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
+                const row = completeEconomyStepUnsafe(characterId, step, { success: false,
+                    nativeId: Number(seller?.sourceId || lines[0].selfId) }, []);
+                return { ok: false, reason: 'insufficient_adena', ...(row ? { coldLifeRow: row } : {}) };
+            }
+            write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [remainingWallet, wallet.id, characterId]);
+            for (const line of lines) {
+                const existing = line.stackable ? one('SELECT id,amount FROM items WHERE characterId=? AND selfId=? ORDER BY id LIMIT 1', [characterId, line.selfId]) : null;
+                if (existing) {
+                    const nextAmount = Number(existing.amount) + line.amount;
+                    if (!Number.isSafeInteger(nextAmount))
+                        throw invalidNpcPurchase(characterId, step, line, lines.indexOf(line), 'invalid_stack_total', 'amount', nextAmount, details, 'invalid npc stack total');
+                    write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [nextAmount, existing.id, characterId]);
+                }
+                else for (let index = 0; index < (line.stackable ? 1 : line.amount); index++) {
+                    write('INSERT INTO items(selfId,name,amount,equipped,slot,characterId) VALUES(?,?,?,0,?,?)',
+                        [line.selfId, line.name, line.stackable ? line.amount : 1, line.slot, characterId]);
+                }
+            }
+            if (Diagnostics.active()) for (const [lineId, line] of lines.entries()) {
+                stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_filled',
+                    { lineId, item: line.selfId, requested: line.amount, planned: line.amount, actual: line.amount,
+                        spent: line.amount * line.unitPrice, unitPrice: line.unitPrice,
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
+            }
+            const changed = new Set(lines.map(line => line.selfId)), patch = {};
+            if (step) patch.money = remainingPacket;
+            // Reconcile the complete purchased bag once, not once per line.
+            const gear = lines.find(line => !line.stackable && line.slot > 0
+                && (line.autoEquip ?? details.autoEquip) !== false);
+            const heldIds = lines.filter(line => (line.autoEquip ?? details.autoEquip) === false).map(line => line.selfId);
+            const equipped = gear ? equipColdPurchaseUnsafe(characterId, step, gear.selfId, true, heldIds) : null;
+            for (const id of equipped?.ids || []) changed.add(id);
+            Object.assign(patch, equipped?.patch);
+            if (step && lines.some(line => line.errands.length)) {
+                const Errands = require('./GameServer/Bot/Population/CombinedErrandPolicy');
+                const stats = jsonObject(step.row.statsJson);
+                let errands = Errands.pending({ stats });
+                for (const line of lines) for (const entry of line.errands) {
+                    const index = errands.findIndex(other => Errands.key(other) === Errands.key(entry.errand)
+                        && Number(other.at) === Number(entry.errand.at) && Number(other.amount) === Number(entry.errand.amount));
+                    if (index < 0) {
+                        if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_errand', 'stale_errand',
+                            { item: line.selfId, errandKey: Errands.key(entry.errand), errandAt: Number(entry.errand.at),
+                                requested: Number(entry.errand.amount), planned: entry.units, actual: 0, spent: 0 });
+                        continue;
+                    }
+                    const old = errands[index], rest = Math.max(0, Number(old.amount) - entry.units);
+                    if (!rest) errands.splice(index, 1);
+                    else errands[index] = { ...old, amount: rest,
+                        ...(Number.isFinite(old.money) ? { money: Math.max(0, old.money - entry.spent) } : {}),
+                        ...(old.purpose === 'clan' ? { tag: { ...old.tag, clanPart: Math.max(0, Number(old.tag?.clanPart || 0) - entry.spent) } } : {}) };
+                    if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_errand', rest ? 'partial' : 'completed',
+                        { item: line.selfId, errandKey: Errands.key(old), errandAt: Number(old.at),
+                            requested: Number(old.amount), planned: entry.units, actual: entry.units, spent: entry.spent, remaining: rest });
+                    patch.lastErrand = { purpose: old.purpose, selfId: old.selfId, units: entry.units, tag: old.tag || null, at: now() };
+                }
+                Object.assign(patch, { marketErrands: errands, marketErrand: errands[0] || null });
+            }
+            const Goals = invoke('GameServer/Bot/Goals/GoalState');
+            for (const line of lines) if (line.goal) {
+                const { expectedGoal, updatedAt } = line.goal;
+                const count = Number(line.goal.units ?? line.amount);
+                if (!Number.isSafeInteger(count) || count <= 0 || count > line.amount
+                    || Number(expectedGoal?.target?.itemId) !== line.selfId) throw Error('invalid npc goal attribution');
+                const timestamp = now(), next = Goals.purchasePatch(expectedGoal, count, timestamp);
+                const applied = next ? write('UPDATE bot_goal_state SET goalJson=?,updatedAt=? WHERE characterId=? AND updatedAt=? AND goalJson=?',
+                    [JSON.stringify(next), timestamp, characterId, updatedAt, JSON.stringify(expectedGoal)]) : null;
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_goal', applied?.affectedRows ? 'applied' : 'unchanged',
+                    { item: line.selfId, goalRevision: Number(updatedAt), goalApplied: Number(applied?.affectedRows || 0),
+                        requested: Number(expectedGoal?.target?.amount), planned: count, actual: applied?.affectedRows ? count : 0,
+                        remaining: applied?.affectedRows ? Number(next.target?.amount) : undefined });
+            }
+            const receipt = { units, spent: total, nativeId: Number(seller?.sourceId || lines[0].selfId) };
+            const row = step ? completeEconomyStepUnsafe(characterId, step, receipt, [...changed], null, null, patch)
+                : syncEconomySnapshotUnsafe(characterId, coldState, [...changed]);
+            return { ok: true, committed: true, ...receipt, amount: units, lines,
+                goalRow: goalRow(), ...(row ? { coldLifeRow: row, economyCommit: jsonObject(row.statsJson).economyCommit } : {}) };
         }, 'bot:npc-purchase'));
     },
 
-    craftInventoryItems(characterId, { materials, product, mp, coldState = null }) {
+    craftInventoryItems(characterId, { materials, product, mp, coldState = null, economyCommand = null,
+        recipeId = 0, batches = 1, random = Math.random, validate = null }) {
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.craft);
+            if (step?.replay) return step.replay;
+            validate?.();
+            let success = !!product;
+            if (step) {
+                const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(recipeId);
+                if (!recipe || !Number.isSafeInteger(batches) || batches < 1 || batches > 64
+                    || !one('SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=?', [characterId, recipeId])) throw Error('craft_recipe_changed');
+                const skill = one('SELECT level FROM skills WHERE characterId=? AND selfId=?',
+                    [characterId, recipe.type === 'dwarven' ? 172 : 132]);
+                const currentMp = step.row.phase === 'cold' ? Number(step.row.mp)
+                    : Number(one('SELECT mp FROM characters WHERE id=?', [characterId])?.mp || 0);
+                if (Number(skill?.level || 0) < Number(recipe.level) || currentMp < recipe.mpCost * batches) throw Error('craft_skill_or_mp_changed');
+                const required = new Map(), supplied = new Map();
+                for (const material of recipe.materials) required.set(Number(material.selfId),
+                    (required.get(Number(material.selfId)) || 0) + Number(material.amount) * batches);
+                for (const material of materials) supplied.set(Number(material.selfId),
+                    (supplied.get(Number(material.selfId)) || 0) + Number(material.amount));
+                if (required.size !== supplied.size || [...required].some(([id, amount]) => supplied.get(id) !== amount)) throw Error('craft_recipe_materials_changed');
+                for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(characterId, step, id, amount);
+                if (!product || Number(product.selfId) !== Number(recipe.productId)
+                    || Number(product.amount) !== Number(recipe.productCount) * batches) throw Error('craft_product_changed');
+                const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(recipe.productId));
+                if (!template || !!product.stackable !== !!template.etc?.stackable || Number(product.slot || 0) !== Number(template.etc?.slot || 0)) throw Error('craft_product_template_changed');
+                mp = currentMp - recipe.mpCost * batches;
+                success = recipe.successRate >= 100 || Number(random()) * 100 < recipe.successRate;
+                if (!success) product = null;
+            }
             const sources = [];
-            for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
-                const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, characterId]);
-                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('craft material changed');
+            const rows = new Map();
+            for (const material of materials) {
+                if (!Number.isSafeInteger(Number(material.amount)) || Number(material.amount) <= 0) throw Error('invalid_craft_material');
+                const previous = rows.get(Number(material.id));
+                if (previous && Number(previous.selfId) !== Number(material.selfId)) throw Error('craft_material_identity_changed');
+                rows.set(Number(material.id), { ...material, amount: Number(material.amount) + Number(previous?.amount || 0) });
+            }
+            for (const material of rows.values()) {
+                const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [material.id, characterId]);
+                if (!source || source.equipped || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'craft_material', 'validated',
+                    { item: Number(material.selfId), nativeId: Number(source.id), recipeId: Number(recipeId), owned: Number(source.amount), requested: Number(material.amount) });
             }
             const target = product?.stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, product.selfId]) : null;
             let productId = Number(target?.id || 0);
             const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
             sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, characterId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, characterId]));
             if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, characterId]);
-            else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, characterId]).insertId;
+            else if (product) {
+                for (let index = 0; index < (product.stackable ? 1 : Number(product.amount)); index++) {
+                    const inserted = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
+                        [product.selfId, product.name || '', product.stackable ? product.amount : 1, product.slot || 0, characterId]).insertId;
+                    if (!productId) productId = inserted;
+                }
+            }
             write('UPDATE characters SET mp = ? WHERE id = ?', [mp, characterId]);
-            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState,
-                [...materials.map(item => item.selfId), ...(product ? [product.selfId] : [])], mp);
-            return { sources, product: product ? { id: productId, amount: productAmount } : null,
-                ...(coldLifeRow ? { coldLifeRow } : {}) };
+            const changedIds = [...materials.map(item => item.selfId), ...(product ? [product.selfId] : [])];
+            const result = { success, units: Number(product?.amount || 0), nativeId: Number(recipeId || 0), mp };
+            const coldLifeRow = step ? completeEconomyStepUnsafe(characterId, step, result, changedIds, mp)
+                : syncEconomySnapshotUnsafe(characterId, coldState, changedIds, mp);
+            return { ...result, committed: true, sources, product: product ? { id: productId, amount: productAmount } : null,
+                ...(coldLifeRow ? { coldLifeRow, economyCommit: jsonObject(coldLifeRow.statsJson).economyCommit } : {}) };
         }, 'craft:self'));
     },
 
@@ -6915,6 +7750,8 @@ const Database = {
                 const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
                 if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
+                if (Diagnostics.active()) stageNativeDiagnostic(customerId, null, 'craft_material', 'validated',
+                    { item: Number(material.selfId), nativeId: Number(source.id), recipeId: Number(clanCraft?.recipeId || 0), owned: Number(source.amount), requested: Number(material.amount) });
             }
             const fee = Number(price) || 0;
             const customerAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [customerId]) : null;
@@ -7681,7 +8518,7 @@ const Database = {
             if (!memory.ok) throw Error('expulsion memory rejected');
             return { ok: true, clanId: clan, characterId: id, banUntil, snapshot,
                 row: coldSimulationRow(id), memorySnapshots: memory.snapshots };
-        }, 'clan-social:expel'));
+        }, 'clan-social:expel')).then(result => publishClanMembership({ ...result, previousClanId: clan }));
     },
     migrateAutonomousClanNames({ dryRun = false } = {}) {
         return inTransaction(() => {
@@ -7796,7 +8633,7 @@ const Database = {
                 botMembers: nextBotMembers,
                 maxBotMembers: maxMembers
             };
-        }, 'clan-simulation:create').then(ClanMembership.publish).catch((error) => {
+        }, 'clan-simulation:create').then(result => publishClanMembership({ ...result, nextClanId: result.clanId })).then(ClanMembership.publish).catch((error) => {
             if (/UNIQUE constraint failed: clans\.name/i.test(String(error.message || ''))) {
                 return { ok: false, code: 'name_exists' };
             }
@@ -7869,7 +8706,7 @@ const Database = {
                 botMembers: nextBotMembers,
                 maxBotMembers: maxMembers
             };
-        }, 'clan-simulation:join').then(ClanMembership.publish);
+        }, 'clan-simulation:join').then(result => publishClanMembership({ ...result, nextClanId: result.clanId })).then(ClanMembership.publish);
     },
     fetchClanContributionSummary(clanId, targetLevel = null) {
         const params = [Number(clanId)];
@@ -8980,10 +9817,11 @@ const Database = {
     updateClanLevel(id, level) { return update('clans', { level }, 'id = ?', [id], 'clan:level'); },
     updateCharacterClan(id, clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime) {
         return withCharacterFlush(id, () => inTransaction(() => {
+            const previousClanId = Number(one('SELECT clanId FROM characters WHERE id = ?', [id])?.clanId || 0);
             const result = write(`UPDATE characters SET clanId = ?, clanPrivileges = ?, clanJoinExpiryTime = ?, clanCreateExpiryTime = ? WHERE id = ?`,
                 [clanId, clanPrivileges, clanJoinExpiryTime, clanCreateExpiryTime, id]);
-            return { ...result, membershipRepair: ClanMembership.repairUnsafe([id]) };
-        }, 'character:clan')).then(ClanMembership.publish);
+            return { ...result, previousClanId, nextClanId: Number(clanId), membershipRepair: ClanMembership.repairUnsafe([id]) };
+        }, 'character:clan')).then(publishClanMembership).then(ClanMembership.publish);
     },
     updateCharacterClanPrivileges(id, clanPrivileges) { return update('characters', { clanPrivileges }, 'id = ?', [id], 'character:clan-privileges'); },
     updateCharacterTitle(id, title) { return withCharacterFlush(id, () => update('characters', { title: String(title || '') }, 'id = ?', [id], 'character:title')); },
@@ -9037,10 +9875,11 @@ const Database = {
     },
     removeCharacterFromClan(id) {
         return withCharacterFlush(id, () => inTransaction(() => {
+            const previousClanId = Number(one('SELECT clanId FROM characters WHERE id = ?', [id])?.clanId || 0);
             const result = write(`UPDATE characters SET clanId = 0, clanPrivileges = 0,
                 clanJoinExpiryTime = 0, clanCreateExpiryTime = 0, title = '' WHERE id = ?`, [id]);
-            return { ...result, membershipRepair: ClanMembership.repairUnsafe([id]) };
-        }, 'character:clan-remove')).then(ClanMembership.publish);
+            return { ...result, previousClanId, nextClanId: 0, membershipRepair: ClanMembership.repairUnsafe([id]) };
+        }, 'character:clan-remove')).then(publishClanMembership).then(ClanMembership.publish);
     },
     dissolveClan({ clanId, leaderId } = {}) {
         const id = Number(clanId);
@@ -9069,7 +9908,7 @@ const Database = {
                 write('DELETE FROM clans WHERE id = ?', [id]);
                 return { ok: true, clanId: id, memberIds: currentMembers.map((member) => Number(member.id)),
                     membershipRepair: ClanMembership.repairUnsafe(currentMembers.map(member => member.id)) };
-            }, 'clan:dissolve'))).then(ClanMembership.publish);
+            }, 'clan:dissolve'))).then(result => publishClanMembership({ ...result, previousClanId: id })).then(ClanMembership.publish);
     },
     deleteGearItems(characterId) { return withCharacterFlush(characterId, () => remove('items', 'characterId = ? AND selfId != 57', [characterId], 'item:delete-gear')); },
     setShortcut(characterId, shortcut) { return run(`INSERT INTO shortcuts (id, kind, slot, unknown, characterId) VALUES (?, ?, ?, ?, ?)
@@ -9235,7 +10074,7 @@ const ClanLevelSp = require('./GameServer/Clan/ClanLevelSpRepository')({ one, wr
 Object.assign(Database, require('./GameServer/Clan/ClanAllianceRepository')({ one, all, write, inTransaction, withCharacterFlushes, ClanLevelSp, recordClanGoalEventUnsafe }));
 
 Object.assign(Database, require('./GameServer/ClanHall/Repository')({
-    one, all, write, inTransaction, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
+    one, all, write, inTransaction, inPreparedTransaction, inPreparedTransactionBatch, withCharacterFlush, updateColdInventorySnapshotUnsafe, syncInventorySummaryUnsafe,
     rememberClanContributionUnsafe
 }));
 

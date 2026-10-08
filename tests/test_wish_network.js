@@ -38,7 +38,7 @@ assert.equal(first.focus[0], 'sword');
 assert.equal(first.focus[1], 5, 'loyal focus retains its original age');
 assert.equal(first.demands.get('ore'), 6.5, 'shared means sum value per required unit without multiplying the root value');
 assert.equal(first.queue[0].key, 'sword');
-assert(first.activity && first.valuePerHour > 0);
+assert(first.activity && first.hourAdena === input.hourAdena);
 assert.equal(network.build(input), first, 'unchanged event input reuses the derived network');
 assert.notEqual(network.build({ ...input, inputKey: 'level30:bag2:board1' }), first);
 assert.notEqual(network.build({ ...input, actorKey: 'clan:1' }), first, 'clan uses the same engine with its own wallet');
@@ -59,7 +59,7 @@ const funding = network.build({ actorKey: 'funding', inputKey: 'gap', wallet: 50
     ], moneyPaths: [{ activity: 'hunting', incomePerHour: 100 }] });
 assert.equal(funding.activity.funding, true, 'smaller purchases cannot steal the first-gap money');
 assert.equal(funding.activity.shortfall, 50);
-assert.equal(first.valuePerHour, 10 / .6, 'whole requirement cost prices the focused progress hour');
+assert.equal(first.hourAdena, 100, 'repeatable income prices the hour independently of funded wishes');
 const stock = network.build({ actorKey: 'stock', inputKey: 'quantity', wallet: 1000, hourAdena: 100,
     roots: ['shots'], nodes: [
         { key: 'shots', need: 'power', valueHours: 2, price: 100, paths: [{ requirements: [{ key: 'item', amount: 10 }] }] },
@@ -68,3 +68,42 @@ const stock = network.build({ actorKey: 'stock', inputKey: 'quantity', wallet: 1
 assert.equal(stock.activity.amount, 10);
 assert.equal(stock.activity.price, 100, 'funded leaf spends the complete required quantity');
 console.log('wish funding, complete progress hour and acquisition quantity: PASS');
+
+const overpriced = moneyQueue([{ key: 'luxury', valueHours: .5, price: 1000 }], 50000, 0, .001);
+assert.equal(overpriced.queue[0].funded, false);
+assert.equal(overpriced.gap, null);
+assert.equal(overpriced.moneyPrice, .001);
+const wealthy = network.build({ ...input, inputKey: 'wealthy-hour', wallet: 1e8, hourAdena: 1000 });
+assert.equal(wealthy.hourAdena, 1000);
+assert.equal(wealthy.moneyPrice, .001);
+
+const eventInput = { actorKey: 'character:77', characterId: 77, inputKey: 'event:1', decisionSeq: 1,
+    activityLeaf: 0, wallet: 10000, hourAdena: 100, persona: { traits: { commitment: 0 } },
+    previous: { focus: ['left', 0, 0] }, roots: ['left', 'right'], nodes: [
+        { key: 'left', need: 'power', valueHours: 1, paths: [{ activity: 'shopping', costHours: 1 }] },
+        { key: 'right', need: 'care', valueHours: 1, paths: [{ activity: 'hunting', costHours: 1 }] }
+    ] };
+const eventFirst = network.build(eventInput);
+assert.equal(eventFirst.decisionSeq, 1);
+assert.equal(typeof eventFirst.activityLeaf, 'number');
+assert(eventFirst.activityLeaf > 0);
+const afterLoot = network.build({ ...eventInput, inputKey: 'bag:2', wallet: eventInput.wallet + 1000,
+    activityLeaf: eventFirst.activityLeaf });
+assert.equal(afterLoot.activity.key, eventFirst.activity.key, 'loot holds the chosen leaf for this event');
+const rolled = new Set();
+for (let decisionSeq = 1; decisionSeq <= 50; decisionSeq++) {
+    const a = network.build({ ...eventInput, inputKey: `event:${decisionSeq}`, decisionSeq, remembered: false });
+    const b = network.build({ ...eventInput, inputKey: `loot:${decisionSeq}`, decisionSeq, wallet: 11000, remembered: false });
+    assert.equal(a.activity.key, b.activity.key, 'whole-state keys cannot seed an individual roll');
+    rolled.add(a.activity.activity);
+}
+assert.deepEqual([...rolled].sort(), ['hunting', 'shopping']);
+const removed = network.build({ ...eventInput, inputKey: 'leaf-removed', activityLeaf: eventFirst.activityLeaf,
+    roots: ['replacement'], nodes: [{ key: 'replacement', need: 'power', valueHours: 1,
+        paths: [{ activity: 'crafting', costHours: 1 }] }] });
+assert.equal(removed.activity.activity, 'crafting');
+assert.notEqual(removed.activityLeaf, eventFirst.activityLeaf);
+assert.equal(removed.decisionSeq, 2, 'a new focus raises the decision once before its activity roll');
+const sameKeyNewEvent = network.build({ ...eventInput, decisionSeq: 51 });
+assert.equal(sameKeyNewEvent.decisionSeq, 51, 'an unchanged input key cannot reuse another decision');
+console.log('PASS individual event seeds / held leaves / missing leaf / focus transition');

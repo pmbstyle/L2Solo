@@ -1,9 +1,12 @@
 const { parentPort, workerData } = require('worker_threads');
 const epoch = String(workerData?.workerEpoch || 'cold-worker');
+// Resolve the master before loading planning modules; inherited env cannot bypass Main's config.
+process.env.BOT_DEVELOPER_DIAGNOSTICS = workerData?.developerDiagnostics === true ? 'true' : 'false';
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const workerProjectorRole = CharacterLocationRuntime.beginWorkerProjectorRole(epoch);
 const path = require('path');
 const { performance, monitorEventLoopDelay } = require('perf_hooks');
+let heapTelemetry = null;
 
 const srcRoot = path.resolve(__dirname, '../../..');
 require(path.join(srcRoot, 'Global'));
@@ -83,6 +86,9 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
+const { ColdOccupationPlanner } = require('./ColdOccupationPlanner');
+const OccupationSources = require('./ColdOccupationSources');
+const EconomicTrip = require('../Economy/EconomicTrip');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
@@ -91,7 +97,6 @@ const { beginHuntingTrip } = require('./HuntingTravel');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
 const { BoardIndex, recordOf } = require('../../AfkTrade/BoardIndex');
-const BoardReviewEvents = require('../Economy/BoardReviewEvents');
 const { MarketBuyerWaiters } = require('../Economy/MarketBuyerWaiters');
 const SpotIndex = require('../AI/SpotIndex');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
@@ -113,22 +118,16 @@ let competitionReady = false;
 let safetyStateReady = false;
 let leaseProbe = null;
 let safetyStateRepairs = 0;
-let safetyBoardRepairs = 0;
-let previousElu = performance.eventLoopUtilization();
+let safetyOrphanRepairs = 0;
+let previousElu = null;
 let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
-const actorSources = require('../../World/CharacterActorSources').native();
-const actorOwner = tables.attachStore('actors', actorSources.createStore);
-const ColdActorTableReceiver = require('./ColdActorTableReceiver');
-const actorTables = new ColdActorTableReceiver({ mirror: tables, owner: actorOwner,
-    onResync: names => send('table_resync', { names }) });
+// Planning producers import this same collector; its worker cap is64 rows.
+const economyDiagnostics = require('../Economy/EconomyDiagnostics');
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
-const marketEvents = new BoardReviewEvents({ board: boardIndex,
-    counter: (key) => MarketCounters.counter(key).deals });
-const marketCommands = new Map();
 const buyerWaiters = new MarketBuyerWaiters({
     stateFor: id => kernel?.states.get(id)?.state,
     demandsFor: (state, timestamp) => invoke('GameServer/Bot/Economy/MarketDemandIndex').signalsOfState(state, timestamp),
@@ -136,36 +135,225 @@ const buyerWaiters = new MarketBuyerWaiters({
 });
 const boardFollower = boardIndex.follower();
 let boardReplacing = false;
+const routeRequests = new Map();
+let nativeRouteSequence = 0;
+const occupationPlanner = new ColdOccupationPlanner({
+    sourceToken: id => `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}`,
+    sourceScope: id => MarketCounters.counterOf(id),
+    ownCurrent: (id, input) => !shuttingDown && (id < 0 ? routeRequests.get(-id) === input
+        && (!input.native || kernel?.states.get(-id)?.state === input.sourceState)
+        : kernel?.states.get(id)?.state === input.sourceState),
+    sameInput: (left, right) => left.mode === 'wish' || right.mode === 'wish'
+        ? left.mode === right.mode && left.sourceState === right.sourceState && left.routeKey === right.routeKey
+        : left.state.updatedAt === right.state.updatedAt
+        && ColdEconomyDecision.stateKey(left.state) === ColdEconomyDecision.stateKey(right.state)
+        && left.state.simulation?.revision === right.state.simulation?.revision
+        && left.state.simulation?.ownerId === right.state.simulation?.ownerId
+        && left.state.simulation?.leaseId === right.state.simulation?.leaseId
+        && left.state.inventory === right.state.inventory
+        && left.state.stats?.workshop?.entries === right.state.stats?.workshop?.entries
+        && left.knownShotRecipes === right.knownShotRecipes && left.stock === right.stock
+        && left.sourceReady === right.sourceReady
+        && left.routeKey === right.routeKey
+        && left.mode === right.mode && left.buyOrderEscrow === right.buyOrderEscrow,
+    onSlots: count => invoke('GameServer/Bot/Economy/EconomyContext').setPlanningContexts?.(count),
+    capture: (id, input, read) => {
+        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read,
+            knownRecipes: input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
+            recipesKnown: Array.isArray(input.state.stats?.workshop?.entries),
+            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
+            routeRows: input.routeRows || null, routeKey: input.routeKey, mode: input.mode || 'occupation' };
+    },
+    create: input => ({ iterator: (function* () {
+        if (input.mode === 'wish') return yield* EconomicTrip.prepare(input.state);
+        if (input.mode === 'occupation') {
+            const eligible = invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(input.state);
+            if (!eligible || !input.recipesKnown || !input.knownRecipes.length) {
+                const mask = input.board?.ownerLines(input.state.characterId)?.length
+                    ? yield* OccupationSources.feasibility(input.state, input) : null;
+                return eligible && !input.recipesKnown ? { ...ColdEconomyDecision.unknownWorkshop(), feasibility: mask }
+                    : { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: mask };
+            }
+        }
+        const prepared = yield* OccupationSources.prepare(input.state, input);
+        if (!prepared) return input.mode === 'action' ? null : ColdEconomyDecision.unknownWorkshop();
+        const Wealth = require('../Economy/WealthCraftDecision');
+        const action = input.mode === 'action';
+        const options = { ...prepared.options, knownShotRecipes: input.knownShotRecipes, stock: input.stock,
+            buyOrderEscrow: input.buyOrderEscrow, now: input.timestamp };
+        if (!action) {
+            const cursor = Wealth.createOccupation(input.state, input.knownRecipes, prepared.context, options);
+            while (!Wealth.stepOccupation(cursor)) yield cursor.stage;
+            return { ...Wealth.resultOccupation(cursor), feasibility: prepared.feasibility };
+        }
+        let selected = null, selectedValue = 0;
+        if (Wealth.eligible(input.state, options)) {
+            const cursor = Wealth.createAction(input.state, input.knownRecipes, prepared.context, options);
+            while (!Wealth.stepAction(cursor)) yield cursor.stage;
+            const value = Wealth.resultAction(cursor);
+            if (value && cursor.selectedValueHours > 0) {
+                const offer = value.exit?.offer;
+                const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
+                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0] : null;
+                selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
+                    ...(exit?.every(Number.isFinite) ? { exit } : {}),
+                    ...(Number(input.stock?.itemId) === Number(value.recipe.productId)
+                        ? { ownReserve: Number(input.stock?.target || 0) } : {}) } };
+                selectedValue = cursor.selectedValueHours;
+            }
+        }
+        const Shots = require('../Economy/ShotCraftPolicy');
+        if (Shots.eligible(input.state, input.timestamp)) {
+            const cursor = Shots.createShot(input.state, input.knownRecipes, prepared.context, options);
+            while (!Shots.stepShot(cursor)) yield cursor.stage;
+            const value = Shots.resultShot(cursor);
+            if (value && cursor.selectedValueHours > selectedValue) selected = value;
+        }
+        const economyPlan = input.economy ? yield* require('./ColdEconomyPlan').prepare(input.state, input.economy, {
+            ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
+            tripCost: prepared.context.trip, preparedCraft: selected,
+            npcOffersFor: OccupationSources.npcOffersFor,
+            ...(economyDiagnostics.enabled(input.state.characterId) ? { onTownDecision: decision => economyDiagnostics.push({
+                owner: input.state.characterId, revision: Number(input.state.simulation?.revision), trigger: 'economy_plan',
+                phase: 'town_choice', town: decision.town, reason: decision.reason, candidates: decision.candidates,
+                tripHours: decision.tripHours, tripFees: decision.tripFees
+            }) } : null),
+            findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)),
+            buyOrderEscrow: input.buyOrderEscrow, knownShotRecipes: input.knownShotRecipes
+        }) : null;
+        return { selected, economyPlan };
+    })(), done: false, value: null, stage: 0, units: 0 }),
+    step: work => {
+        const next = work.iterator.next(); work.units++;
+        work.stage = typeof next.value === 'number' ? next.value
+            : ['stock', 'recipe', 'ingredient', 'owned', 'quote', 'trip', 'exit', 'without', 'success', 'utility', 'candidate', 'funding', 'edge'].indexOf(next.value) + 1;
+        if (next.done) { work.done = true; work.value = next.value; work.iterator = null; }
+        return work.done;
+    },
+    result: work => work.value,
+    publish: (id, input, workshop, meta = {}) => {
+        if (input.mode === 'wish') {
+            if (id < 0 && routeRequests.get(-id) === input) {
+                if (!shuttingDown && !input.native) send('economy_route_result', { characterId: -id, requestId: input.requestId,
+                    key: input.routeKey, rows: Array.isArray(workshop) ? workshop : [] });
+                routeRequests.delete(-id);
+                occupationPlanner.release(id);
+            }
+            return;
+        }
+        // The action result is the existing compact native plan. Its derived
+        // network is needed while preparing it, never by the completed cache.
+        if (input.mode === 'action') input.economy = null;
+        if (shuttingDown || kernel?.states.get(id)?.state !== input.sourceState) return;
+        if (meta.stale) {
+            send('ready', { phase: 'economy_workshop_stale', characterId: id,
+                updatedAt: Number(input.state.updatedAt || 0), key: ColdEconomyDecision.stateKey(input.state) });
+        } else if (input.mode !== 'action' && input.state.phase === 'hot') {
+            const decision = ColdEconomyDecision.capture({ workshop }, input.state);
+            send('ready', { phase: 'economy_decided', characterId: id, economyDecision: decision });
+        }
+    }
+});
+function occupationFor(state, timestamp, context = {}, mode = 'occupation') {
+    const id = Number(state.characterId), sourceState = kernel?.states.get(id)?.state;
+    if (!sourceState || shuttingDown) return Promise.resolve(ColdEconomyDecision.unknownWorkshop());
+    const routeKey = EconomicTrip.key(state), economy = context.economy || null;
+    const directRows = context.routeKey === routeKey && Array.isArray(context.routeRows)
+        && context.routeRows.length === EconomicTrip.towns.length ? context.routeRows : null;
+    const routeRows = directRows || (economy?.routeKey === routeKey ? economy.routeRows
+        : invoke('GameServer/Bot/Economy/EconomyContext').preparedRouteRows?.(state));
+    if (mode === 'wish' && Array.isArray(routeRows) && routeRows.length === EconomicTrip.towns.length)
+        return Promise.resolve(routeRows);
+    if (mode === 'wish') {
+        const previous = routeRequests.get(id);
+        if (previous?.native && previous.sourceState === sourceState && previous.routeKey === routeKey)
+            return occupationPlanner.request(-id, previous);
+        if (!previous && routeRequests.size >= 64) return Promise.resolve([]);
+        cancelRoute(id);
+        const input = { state: EconomicTrip.frame(state), sourceState, timestamp, mode: 'wish', native: true,
+            routeKey, requestId: ++nativeRouteSequence };
+        routeRequests.set(id, input);
+        return occupationPlanner.request(-id, input);
+    }
+    return occupationPlanner.request(id, { state, sourceState, timestamp, buyOrderEscrow: context.buyOrderEscrow || 0,
+        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null, economy,
+        sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
+}
+function cancelRoute(characterId) {
+    const id = Number(characterId);
+    routeRequests.delete(id);
+    occupationPlanner.cancel(-id);
+}
+function requestRoute(payload) {
+    if (shuttingDown) return;
+    const id = payload.characterId, previous = routeRequests.get(id);
+    if (previous && !previous.native && previous.requestId === payload.requestId && previous.routeKey === payload.key) return;
+    if (payload.key !== EconomicTrip.key(payload.frame)) {
+        send('economy_route_result', { characterId: id, requestId: payload.requestId, key: payload.key, rows: [] }); return;
+    }
+    if (!previous && routeRequests.size >= 64) {
+        send('economy_route_result', { characterId: id, requestId: payload.requestId, key: payload.key, rows: [] }); return;
+    }
+    cancelRoute(id);
+    const input = { state: payload.frame, sourceState: null, timestamp: Date.now(), mode: 'wish',
+        routeKey: payload.key, requestId: payload.requestId };
+    routeRequests.set(id, input);
+    occupationPlanner.request(-id, input, { awaitResult: false });
+}
+function occupationOwnerChanged(id) {
+    const entry = kernel?.states.get(Number(id));
+    if (!entry || entry.state.phase !== 'hot') return;
+    occupationPlanner.request(id, { state: entry.state, sourceState: entry.state,
+        timestamp: Date.now(), buyOrderEscrow: entry.context.buyOrderEscrow || 0,
+        knownShotRecipes: entry.context.knownShotRecipes || [],
+        routeKey: EconomicTrip.key(entry.state),
+        sourceReady: tables.ready('board') && tables.ready('market') }, { awaitResult: false });
+}
+function changedItems(previous, next) {
+    const ids = new Set();
+    for (const row of previous || []) ids.add(Number(row.selfId));
+    for (const row of next || []) ids.add(Number(row.selfId));
+    for (const id of ids) occupationPlanner.sourceChanged(id);
+}
 tables.watch('board', {
-    reset: () => { boardReplacing = true; boardFollower.reset(); marketEvents.resetBoardCoverage(); },
+    reset: () => { boardReplacing = true; boardFollower.reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
     put: (key, row) => {
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
-        marketEvents.ownerChanged(recordOf(row).ownerId, { current: false });
+        changedItems(previous, boardIndex.records.get(Number(key)));
+        pruneLookSeen(recordOf(row).ownerId);
+        if (previous[0]?.ownerId !== recordOf(row).ownerId) pruneLookSeen(previous[0]?.ownerId);
         if (!boardReplacing && tables.ready('board')) buyerWaiters.recordChanged(recordOf(row), previous);
     },
     remove: (key) => {
-        const ownerId = boardIndex.records.get(Number(key))?.[0]?.ownerId;
+        const previous = boardIndex.records.get(Number(key)) || [];
+        const ownerId = previous[0]?.ownerId;
         boardFollower.remove(key);
-        if (ownerId) marketEvents.ownerChanged(ownerId, { current: tables.ready('board') && tables.ready('market') });
-    }
-});
-tables.watch('market', {
-    reset: () => marketEvents.resetCounterHistory(),
-    put: (key, row) => {
-        if (String(key).startsWith('c:')) marketEvents.counterChanged(String(key).slice(2), Number(row[1]));
+        changedItems(previous, []);
+        if (ownerId) pruneLookSeen(ownerId);
     }
 });
 // The market counters come from the main thread's 'market' table.
 MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);
+tables.watch('market', {
+    reset: () => occupationPlanner.resetSources(),
+    put: key => {
+        if (String(key).startsWith('i:')) occupationPlanner.sourceChanged(Number(String(key).slice(2)));
+        else if (String(key).startsWith('c:')) occupationPlanner.scopeChanged(String(key).slice(2));
+    },
+    remove: key => {
+        if (String(key).startsWith('i:')) occupationPlanner.sourceChanged(Number(String(key).slice(2)));
+        else if (String(key).startsWith('c:')) occupationPlanner.scopeChanged(String(key).slice(2));
+    }
+});
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
 }
 
 function safetyTotals() {
-    return { stateRepairs: safetyStateRepairs, boardRepairs: safetyBoardRepairs,
-        coverageRepairs: kernel?.stats.orphanRecoveries || 0 };
+    return { stateRepairs: safetyStateRepairs,
+        coverageRepairs: 0, orphanRepairs: safetyOrphanRepairs };
 }
 
 function sendLeasePage() {
@@ -189,11 +377,9 @@ function safetyPresence(checkpoint) {
     const id = checkpoint.characterId, entry = kernel?.states.get(id);
     const result = { characterId: id, checkpoint, observedCheckpoint: Protocol.safetyCheckpoint(entry?.state),
         workerVersion: kernel?.versions.get(id) || 0,
-        normal: { status: 'deferred', reason: 'state_catalog_loading' },
-        board: { status: 'deferred', reason: 'state_catalog_loading', coverageVersion: marketEvents.coverageVersion(id) } };
+        normal: { status: 'deferred', reason: 'state_catalog_loading' } };
     const gate = (status, reason) => {
         result.normal = { status, reason };
-        result.board = { status, reason, coverageVersion: marketEvents.coverageVersion(id) };
         return result;
     };
     if (!kernel || !safetyStateReady) return result;
@@ -202,38 +388,16 @@ function safetyPresence(checkpoint) {
     if (checkpoint.simulationOwner !== 'legacy_main' || checkpoint.simulationLeaseId !== null
         || checkpoint.simulationLeaseUntil > 0) return gate('deferred', 'native_ownership_active');
     // Native ownership can be ahead of the cached row during ACK processing.
-    if (kernel.busy(id) || marketCommands.has(id)) return gate('deferred', 'worker_busy');
+    if (kernel.busy(id)) return gate('deferred', 'worker_busy');
     const normalCovered = kernel.hasNormalCoverage(id);
     if (!normalCovered && kernel.hasAcceptedPartyGrant(id)) return gate('deferred', 'partial_party_accepted');
     if (entry && !Protocol.sameSafetyCheckpoint(checkpoint, entry.state)) return gate('deferred', 'checkpoint_changed');
     result.normal = normalCovered ? { status: 'covered', reason: 'normal_schedule' }
         : kernel.paused ? { status: 'deferred', reason: 'worker_paused' }
             : !entry ? { status: 'uncovered', reason: 'missing_state' }
-                : kernel.needsNormalSchedule(id) ? { status: 'deferred', reason: 'local_coverage_missing' }
+                : kernel.needsNormalSchedule(id) ? { status: 'uncovered', reason: 'local_coverage_missing' }
                     : { status: 'ineligible', reason: 'no_normal_schedule' };
-    if (!tables.ready('board') || !tables.ready('market')) {
-        result.board = { status: 'deferred', reason: 'table_not_ready', coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (!entry) {
-        result.board = { status: 'deferred', reason: 'state_projection_required', coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (marketEvents.pending.has(id) || marketEvents.inFlight.has(id)) {
-        const deferred = !marketEvents.ready.has(id) && !marketEvents.inFlight.has(id);
-        result.board = { status: deferred ? 'deferred' : 'covered', reason: deferred ? 'intentional_pending' : 'board_event',
-            coverageVersion: marketEvents.coverageVersion(id) };
-    } else if (kernel.paused) {
-        result.board = { status: 'deferred', reason: 'worker_paused', coverageVersion: marketEvents.coverageVersion(id) };
-    } else {
-        const status = marketEvents.ownerStatus(id), edge = status.behind ? marketEvents.edgeOf(id) : null;
-        if (status.behind && edge && marketEvents.lastAcceptedEdge(id) !== edge && kernel.hasAcceptedPartyGrant(id)) {
-            result.board = { status: 'deferred', reason: 'partial_party_accepted',
-                coverageVersion: marketEvents.coverageVersion(id) };
-            return result;
-        }
-        result.board = { status: !status.priced || !status.behind ? 'ineligible'
-            : !edge || marketEvents.lastAcceptedEdge(id) === edge ? 'deferred' : 'uncovered',
-        reason: !status.priced ? 'no_priced_lines' : !status.behind ? 'checkpoint_current'
-            : !edge ? 'board_edge_unavailable' : marketEvents.lastAcceptedEdge(id) === edge ? 'edge_already_accepted' : 'board_event_absent',
-        coverageVersion: marketEvents.coverageVersion(id) };
-    }
+
     return result;
 }
 
@@ -241,14 +405,18 @@ function safetyRepair(row) {
     const checkpoint = Protocol.safetyCheckpoint(row.checkpoint), id = checkpoint.characterId;
     let presence = safetyPresence(checkpoint);
     const receipt = (status, reason) => ({ edgeId: row.edgeId, characterId: id, kind: row.kind, status, reason,
-        checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion,
-        boardCoverageVersion: presence.board.coverageVersion });
+        checkpoint, observedCheckpoint: presence.observedCheckpoint, workerVersion: presence.workerVersion });
     if (presence.workerVersion !== row.expectedWorkerVersion) return receipt('stale', 'worker_version_changed');
-    if (row.kind === 'board' && presence.board.coverageVersion !== row.expectedBoardCoverageVersion) {
-        return receipt('stale', 'board_coverage_changed');
-    }
-    const coverage = row.kind === 'state' ? presence.normal : presence.board;
+    if (!['state', 'orphan'].includes(row.kind)) return receipt('ineligible', 'unsupported_repair');
+    const coverage = presence.normal;
     if (coverage.status !== 'uncovered') return receipt(coverage.status, coverage.reason);
+    if (row.kind === 'orphan') {
+        if (coverage.reason !== 'local_coverage_missing') return receipt('deferred', coverage.reason);
+        if (!kernel.ensureScheduled(id)) return receipt('deferred', 'schedule_not_restored');
+        safetyOrphanRepairs++;
+        presence = safetyPresence(checkpoint);
+        return receipt('accepted', 'orphan_schedule_restored');
+    }
     if (row.kind === 'state') {
         if (coverage.reason !== 'missing_state') return receipt('deferred', 'local_safety_owns_schedule');
         const entry = row.entry, state = entry?.state, context = entry?.context;
@@ -259,20 +427,12 @@ function safetyRepair(row) {
         }
         if (!Protocol.sameSafetyCheckpoint(checkpoint, state)) return receipt('stale', 'projection_checkpoint_changed');
         if (!kernel.upsert(entry)) return receipt('stale', 'projection_not_accepted');
-        marketEvents.rearm(id);
-        marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
         presence = safetyPresence(checkpoint);
         if (!Protocol.sameSafetyCheckpoint(presence.observedCheckpoint, checkpoint)) return receipt('stale', 'checkpoint_changed');
         safetyStateRepairs++;
         return receipt('accepted', 'state_delivery_restored');
     }
-    if (kernel.hasAcceptedPartyGrant(id)) return receipt('deferred', 'partial_party_accepted');
-    const edge = marketEvents.edgeOf(id);
-    if (!edge || marketEvents.lastAcceptedEdge(id) === edge) return receipt('deferred', 'edge_already_accepted');
-    marketEvents.acceptSafetyEdge(id, edge);
-    presence = safetyPresence(checkpoint);
-    safetyBoardRepairs++;
-    return receipt('accepted', 'board_event_restored');
+
 }
 let planningNpcCatalog = ColdNpcPlanningCatalog.createLookup([], boardReady);
 let planningOccupancyCache = null;
@@ -280,53 +440,35 @@ let planningOccupancyCachedAt = 0;
 // Personas come from the main thread's 'personas' table (BotPersona.loadAll).
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
-const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
-eventLoopDelay.enable();
+let eventLoopDelay = null;
 
-// A changed board counter makes the bot review its own lines. The review
-// checkpoints observations even when its standing quote remains best.
+// The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
-function reviewMarket(state, timestamp) {
+function reviewMarket(state, timestamp, economy) {
     const board = boardReady();
     if (!board || state?.phase !== 'cold') return null;
     const lines = board.ownerLines(state.characterId);
-    if (!lines.length) return null;
+    if (!lines.length) { kernel.lookSeen.delete(Number(state.characterId)); return null; }
     const ctx = MarketPricing.traderContext(state, {
-        timestamp, board, persona: BotPersona.of(state),
+        timestamp, board, economy, persona: BotPersona.of(state),
         npcOffersFor: (selfId) => planningNpcCatalog.offersFor(selfId),
-        findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId)
+        findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId),
+        canSell: require('../Economy/BoardLook').feasibilityPredicate(state, lines, economy?.workshop?.feasibility)
     });
-    const looked = MarketPricing.look(state, lines, ctx);
+    const id = Number(state.characterId);
+    let seen = kernel.lookSeen.get(id);
+    if (!seen) kernel.lookSeen.set(id, seen = new (require('../Economy/BoardLook').SeenLines)());
+    const looked = MarketPricing.lookOwn(state, lines, ctx, seen);
     if (!looked) return null;
     return looked;
 }
 
-function drainMarketEvents() {
-    if (!kernel || kernel.paused || shuttingDown || !tables.ready('board') || !tables.ready('market')) return;
-    const capacity = Math.max(0, kernel.maxInFlight
-        - kernel.claiming.size - kernel.inFlight.size - kernel.commanding.size);
-    for (const id of marketEvents.take(Math.min(8, kernel.maxBatch, capacity))) {
-        const entry = kernel.states.get(id);
-        if (!entry) { marketEvents.defer(id); continue; }
-        if (entry.state.phase !== 'cold') { marketEvents.forget(id); continue; }
-        if (kernel.busy(id)) { marketEvents.defer(id); continue; }
-        const market = reviewMarket(entry.state, Date.now());
-        if (!market || !(market.updates?.length || market.reprices?.length || market.withdrawals?.length)) {
-            marketEvents.defer(id);
-            continue;
-        }
-        const attempt = kernel.beginCommand(id, 'market_review');
-        if (!attempt) { marketEvents.defer(id); continue; }
-        const commandId = attempt.commandId;
-        marketCommands.set(id, commandId);
-        attempt.sent = true;
-        if (!send('command_request', { requests: [{ kind: 'market_review', characterId: id,
-            commandId, commandCheckpoint: attempt.checkpoint, state: entry.state, context: entry.context, market }] })) {
-            marketCommands.delete(id);
-            kernel.cancelCommand(id, attempt);
-            marketEvents.defer(id);
-        }
-    }
+function pruneLookSeen(ownerId) {
+    const seen = kernel?.lookSeen.get(Number(ownerId));
+    if (!seen) return;
+    const ids = new Set(boardIndex.ownerLines(ownerId).map(line => line.lineId));
+    for (const id of [...seen.keys()]) if (!ids.has(id)) seen.delete(id);
+    if (!seen.size) kernel.lookSeen.delete(Number(ownerId));
 }
 
 function currentPlanningOccupancy(timestamp = Date.now()) {
@@ -345,7 +487,10 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
 function send(type, payload = {}, msgId = null, payloadBytes = null) {
     const message = Protocol.envelope(type, epoch, payload, msgId);
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
-    const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
+    let valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
+    if (!valid.ok && economyDiagnostics.omitAggregatesOnOverflow(message, valid.reason)) {
+        valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
+    }
     if (!valid.ok) {
         if (type !== 'fault') {
             parentPort.postMessage(Protocol.envelope('fault', epoch, {
@@ -371,10 +516,29 @@ function stopTimers() {
 
 function startKernel(config = {}) {
     if (kernel) return;
+    if (typeof config.coldHonestTravel === 'boolean') Config.coldHonestTravel = config.coldHonestTravel;
+    Config.developerDiagnostics = config.developerDiagnostics === true;
+    Config.economyDiagnostics = Config.developerDiagnostics && config.economyDiagnostics === true;
+    if (Config.developerDiagnostics) {
+        heapTelemetry = require('./WorkerHeapTelemetry').observe();
+        if (Config.developerDiagnostics) previousElu = performance.eventLoopUtilization();
+        eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+        eventLoopDelay.enable();
+    }
+    Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
+    if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
+        if (shuttingDown) return false;
+        const message = { type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped };
+        const wireBytes = Buffer.byteLength(JSON.stringify(message));
+        if (wireBytes > 16384) return false;
+        parentPort.postMessage(message);
+        return wireBytes;
+    });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
     kernel = new ColdSimulationKernel({
         stateSources: LifeStateProjector.passiveWorkerStateSources(workerProjectorRole),
+        shotIndex: require('../Economy/ShotMarketIndex').native(),
         resolveSolo: (options) => BackgroundResolver.resolveSolo(options),
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
         partySession: {
@@ -395,10 +559,15 @@ function startKernel(config = {}) {
                 timestamp,
                 projectClassProgression: true,
                 // Spot crowding, as main gave the same leaf before (L25).
-                economyDeps: { occupancy: currentPlanningOccupancy(timestamp) },
+                economyDepsFor: async projected => {
+                    const context = kernel.states.get(Number(state.characterId))?.context || {};
+                    const routeRows = await occupationFor(projected, timestamp, context, 'wish');
+                    const workshop = await occupationFor(projected, timestamp,
+                        { ...context, routeRows, routeKey: EconomicTrip.key(projected) });
+                    return { occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows };
+                },
                 onEconomy: (built, seen) => { economy = built; seenKey = ColdEconomyDecision.stateKey(seen); }
             });
-            // Board events submit price observations through market commands.
             const projected = resolved;
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
@@ -410,22 +579,47 @@ function startKernel(config = {}) {
                 ...(progressionChanged ? { classId: afterClassId } : {}),
                 ...(result.soulCrystals?.length ? { soulCrystals: result.soulCrystals } : {})
             };
+            const context = kernel.states.get(Number(state.characterId))?.context || {};
+            const planner = require('./ColdEconomyPlan');
+            const economyEdges = planner.edges(state, projected, context, timestamp);
+            const preparedAction = economyEdges && economy ? await occupationFor(projected, timestamp,
+                { ...context, stock: economy.stock('shots'), economy }, 'action') : null;
+            const economyPlan = preparedAction?.economyPlan || null;
+            const market = reviewMarket(projected, timestamp, economy);
             return {
                 state: projected,
+                economyEdges,
+                ...(economyPlan ? { economyPlan } : {}),
+                ...(market ? { market } : {}),
                 durable: Object.keys(durable).length ? durable : null,
+                buffOffer: require('../Economy/ColdBuffOffer').project(projected,
+                    kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
                 // Main reads this instead of building the network again.
-                ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture(economy, projected), key: seenKey } } : {})
+                ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture({ ...economy,
+                    shot: economyPlan?.shot || null }, projected), key: seenKey } } : {})
             };
         },
-        planLifecycle: ({ state, context, timestamp }) => {
+        planPartyRequirement: ({ state, context, timestamp }) => require('./PartyRequirementRefresh').plan(state, {
+            spots: planningSpots, occupancy: currentPlanningOccupancy(timestamp), timestamp,
+            planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
+        }),
+        planLifecycle: async ({ state, context, timestamp }) => {
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
             if (karmaPlan) return karmaPlan;
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
-            const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds } = GearPlanSelection
+            // GearPlanSelection uses EconomyContext's same prepared occupation
+            // reader. No synchronous recipe scan can run through it.
+            const routeRows = await occupationFor(state, timestamp, context, 'wish');
+            const workshop = await occupationFor(state, timestamp,
+                { ...context, routeRows, routeKey: EconomicTrip.key(state) });
+            const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+            const preparedEconomy = Economy.forState(state, { spots, occupancy, timestamp, board: boardReady(),
+                buyOrderEscrow: context?.buyOrderEscrow, workshop, routeRows });
+            const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds, economy } = GearPlanSelection
                 .selectAcquisitionPlan(state, previousPlan, {
-                    spots, occupancy, timestamp,
+                    spots, occupancy, timestamp, preparedEconomy,
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
                 });
             const reservedSpot = acquisitionPlan?.next?.spotId
@@ -453,10 +647,14 @@ function startKernel(config = {}) {
             };
             const routedState = beginHuntingTrip(plannedState, context?.route, timestamp) || plannedState;
             return {
+                statsPacket: economy.statsPacket,
+                activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
+                    spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
+                economyDecision: ColdEconomyDecision.capture({ ...economy, workshop }, routedState),
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
-                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan.next?.npcId || 0),
+                targetNpcId: partyRouteWaiting ? Number(partyFallback?.npcId || 0) : Number(acquisitionPlan?.next?.npcId || 0),
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,
                 plannedState: routedState
@@ -469,16 +667,70 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
+    // Keep dependencies tied to the kernel's native lifetime. In-flight
+    // scratch is cancelled on a newer canonical owner; it is never LRU-evicted.
+    const nativeSet = kernel.states.set.bind(kernel.states), nativeDelete = kernel.states.delete.bind(kernel.states);
+    const nativeClear = kernel.states.clear.bind(kernel.states);
+    kernel.states.set = (id, entry) => {
+        const previous = kernel.states.get(Number(id))?.state;
+        const result = nativeSet(id, entry);
+        if (previous !== entry.state) {
+            const route = routeRequests.get(Number(id));
+            if (route?.native && route.sourceState !== entry.state) cancelRoute(id);
+            const held = occupationPlanner.slots.get(Number(id));
+            const routeKey = EconomicTrip.key(entry.state);
+            const incoming = held ? { ...held.input, state: entry.state, sourceState: entry.state, routeKey,
+                routeRows: held.input.routeKey === routeKey ? held.input.routeRows : null } : null;
+            const acceptedPublication = held?.done && entry.context?.workshop?.known === true
+                && held.input.routeKey === routeKey
+                && held.input.state.updatedAt === entry.state.updatedAt
+                && ColdEconomyDecision.stateKey(held.input.state) === ColdEconomyDecision.stateKey(entry.state)
+                && Number(entry.state.simulation?.revision || 0) > Number(held.input.state.simulation?.revision || 0)
+                && held.input.state.simulation?.ownerId === entry.state.simulation?.ownerId
+                && held.input.state.simulation?.leaseId === entry.state.simulation?.leaseId;
+            if (held?.done && (acceptedPublication || held.input.state === entry.state || occupationPlanner.sameInput(held.input, incoming))) {
+                held.input = incoming;
+            } else {
+                occupationPlanner.cancel(id);
+                occupationOwnerChanged(id);
+            }
+        }
+        return result;
+    };
+    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); return nativeDelete(id); };
+    kernel.states.clear = () => {
+        for (const id of [...occupationPlanner.slots.keys(), ...occupationPlanner.waiting.keys()]) occupationPlanner.cancel(id);
+        routeRequests.clear();
+        return nativeClear();
+    };
     kernel.buyerEvents = buyerWaiters;
+    // Craft input shops are authored data, separate from gear planning rows.
+    // This pure catalogue needs neither World actors nor a new IPC table.
+    let craftNpcRows = null, craftNpcRate = null;
+    require('../Economy/ShotMarketIndex').configure({ board: boardReady, stateFor: id => kernel.states.get(Number(id))?.state, npcOffers: () => {
+        const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+        if (rate !== craftNpcRate) {
+            craftNpcRate = rate;
+            craftNpcRows = require('../../World/Generics/NpcShopBuyLists').allOffers();
+        }
+        return craftNpcRows;
+    } });
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
-        productionStatus: id => kernel.states.get(Number(id))?.context?.productionStatus,
+        npcOffersFor: OccupationSources.npcOffersFor,
+        workshop: id => {
+            const entry = kernel.states.get(Number(id));
+            const held = occupationPlanner.slots.get(Number(id));
+            return (held?.input.mode === 'occupation' ? occupationPlanner.valueFor(id, entry?.state) : null)
+                || entry?.context?.workshop || ColdEconomyDecision.unknownWorkshop();
+        },
+        buyOrderEscrow: id => kernel.states.get(Number(id))?.context?.buyOrderEscrow || 0,
         spots: () => planningSpots,
         memory: (characterId) => kernel.interactionMemory.snapshot(characterId)
     });
+    OccupationSources.initialise();
     loopTimer = setInterval(() => {
         if (leaseProbe && (shuttingDown || Date.now() >= leaseProbe.replyBy)) leaseProbe = null;
-        drainMarketEvents();
         kernel.tick();
     }, Math.max(5, Number(config.loopIntervalMs) || 20));
     if (Config.coldCompetitionObserveEnabled) {
@@ -494,21 +746,23 @@ function startKernel(config = {}) {
         competitionCandidates = new ColdCompetitionCandidates({
             records: id => kernel.states.locationIndex.getSource(id, 'state'),
             packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
-            monitor: competition, deadlines: kernel, sequence: id => kernel.states.safetyNodes.get(id)?.sequence,
-            fitsFrame: frame => {
+            monitor: competition, deadlines: kernel,
+            frameSizing: frame => {
+                // ARCH-NOTE: these retained fields determine the existing byte admission.
+                // Keep identical conservative capacity on/off; Candidates.snapshot hides
+                // their optional publication. Removing this coupling needs a protocol task.
                 const report = competition.snapshot();
                 const large = Number.MAX_SAFE_INTEGER;
-                const outcomes = Object.fromEntries([...new Set([...Object.keys(report.outcomes),
-                    ...frame.events.filter(event => event.action !== 'revenge').map(event => event.action)])].map(key => [key, large]));
-                const kernelReport = kernel.heartbeatSnapshot();
+                const outcomes = Object.fromEntries(Object.keys(report.outcomes).map(key => [key, large]));
+                const kernelReport = kernel.heartbeatSnapshot(true);
                 const message = Protocol.envelope('heartbeat', epoch, {
                     ...kernelReport, safety: safetyTotals(),
                     // Forecast cooldowns can make a decision alarm the new
                     // head. Include both optional shapes before those effects.
-                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'worker_safety',
+                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'claim_ack',
                         dueAt: large, overdue: false, current: false },
-                    competition: { ...report, events: frame.events,
-                        recent: [...report.recent, ...frame.events].slice(-12), frame, at: frame.at, outcomes,
+                    competition: { ...report, events: [],
+                        recent: [], frame: { ...frame, events: [] }, at: frame.at, outcomes,
                         scans: large, evaluated: large, pvpIntents: large, activeHunters: large, lastSampleMs: large,
                         deliverySendFailures: large, lastScanEvents: 160, consumedSpotKeys: 32, consumedActorKeys: 128,
                         pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
@@ -517,12 +771,7 @@ function startKernel(config = {}) {
                     eventLoopUtilization: 1, eventLoopLagP95Ms: large,
                     eventLoopLagMaxMs: large
                 }, 'x'.repeat(160));
-                // Every finite IEEE Number serializes in fewer than32 chars.
-                // Quote numeric fields conservatively, including fractional
-                // telemetry; validate the original values and shape below.
-                const bytes = Buffer.byteLength(JSON.stringify(message,
-                    (_, value) => typeof value === 'number' ? 'x'.repeat(32) : value));
-                return Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes }).ok;
+                return new (require('./ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, report.recent);
             }
         });
         kernel.decisionEvents = competitionCandidates;
@@ -530,33 +779,38 @@ function startKernel(config = {}) {
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
         if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
-            const started = performance.now();
+            const started = Config.developerDiagnostics ? performance.now() : 0;
             competitionCandidates.reviewBatch(Date.now());
-            competition.report.lastSampleMs = performance.now() - started;
+            if (Config.developerDiagnostics) competition.report.lastSampleMs = performance.now() - started;
         }
-        const elu = performance.eventLoopUtilization(previousElu);
-        previousElu = performance.eventLoopUtilization();
+        const elu = Config.developerDiagnostics ? performance.eventLoopUtilization(previousElu) : null;
+        if (Config.developerDiagnostics) previousElu = performance.eventLoopUtilization();
         const heartbeat = {
             ...kernel.heartbeatSnapshot(),
+            ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
+            ...(Config.developerDiagnostics ? {
             tables: tables.summary(),
+            developerDiagnostics: economyDiagnostics.metrics(),
+            ...heapTelemetry.snapshot(),
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
             eventLoopLagP95Ms: Number(eventLoopDelay.percentile(95) / 1e6) || 0,
             eventLoopLagMaxMs: Number(eventLoopDelay.max / 1e6) || 0
+            } : {})
         };
         try {
             if (!send('heartbeat', heartbeat) && competition) {
-                competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+                if (Config.developerDiagnostics) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
             }
         } catch {
             // Main has not admitted this frame. Its exact origin/content stay
             // owned here for the next existing heartbeat, including backpressure.
-            if (competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+            if (Config.developerDiagnostics && competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
         }
-        eventLoopDelay.reset();
+        eventLoopDelay?.reset();
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
     flushTimer.unref?.();
@@ -599,10 +853,14 @@ async function handle(message) {
         }, message.msgId);
         break;
     case 'table_page': {
-        actorTables.apply(payload.tables);
+        const resync = tables.apply(payload.tables.filter(table => table.name !== 'actors'));
+        if (resync.length) send('table_resync', { names: resync });
         if (tables.ready('board')) boardReplacing = false;
         break;
     }
+    case 'economy_route_request':
+        requestRoute(payload);
+        break;
     case 'clan_social_page':
         if (!kernel) break;
         for (const snapshot of payload.rows || []) {
@@ -618,15 +876,12 @@ async function handle(message) {
         break;
     case 'snapshot_page':
         if (!kernel) throw new Error('kernel_not_initialized');
-        kernel.upsertMany(payload.rows || []);
-        for (const row of payload.rows || []) {
-            const id = Number(row.state?.characterId);
-            if (marketCommands.has(id) && kernel.commandStartedAt.get(id)?.commandId !== marketCommands.get(id)) {
-                marketCommands.delete(id);
-            }
-            if (!marketCommands.has(id)) marketEvents.rearm(id);
-            marketEvents.ownerChanged(id, { current: tables.ready('board') && tables.ready('market') });
+        if (payload.economyOwnerId !== undefined) {
+            if (Number.isSafeInteger(payload.economyOwnerId) && payload.economyOwnerId > 0
+                && Array.isArray(payload.rows) && !payload.rows.length) occupationOwnerChanged(payload.economyOwnerId);
+            break;
         }
+        kernel.upsertMany(payload.rows || []);
         if (payload.initial === true && payload.done === true) safetyStateReady = true;
         if (payload.ack) {
             send('ready', {
@@ -667,32 +922,13 @@ async function handle(message) {
         else sendLeasePage();
         break;
     case 'commit_ack':
-        for (const result of kernel?.onCommitAck(payload) || []) {
-            const id = Number(result.characterId);
-            if (marketCommands.has(id)) marketEvents.ownerChanged(id);
-            else marketEvents.rearm(id);
-        }
+        kernel?.onCommitAck(payload);
         break;
     case 'release_ack':
-        for (const result of kernel?.onReleaseAck(payload) || []) {
-            const id = Number(result.characterId);
-            if (marketCommands.has(id)) marketEvents.ownerChanged(id);
-            else marketEvents.rearm(id);
-        }
+        kernel?.onReleaseAck(payload);
         break;
     case 'command_ack':
-        (payload.results || []).forEach((result) => {
-            const identity = Protocol.commandIdentity(result);
-            if (!identity || typeof result.ok !== 'boolean') return;
-            const id = identity.characterId;
-            const market = kernel?.commandStartedAt.get(id)?.kind === 'market_review';
-            if (market ? marketCommands.get(id) !== result.commandId || result.marketCommandId !== result.commandId
-                : result.marketCommandId !== undefined || marketCommands.has(id)) return;
-            if (!kernel?.completeCommand(result)) return;
-            if (market) marketCommands.delete(id);
-            if (result.marketDeferred && result.reason !== 'stale_market_review') marketEvents.deferAfterCommand(id);
-            else marketEvents.rearm(id);
-        });
+        (payload.results || []).forEach(result => kernel?.completeCommand(result));
         break;
     case 'party_formation_request': {
         const states = kernel
@@ -702,8 +938,8 @@ async function handle(message) {
         break;
     }
     case 'fence': {
-        marketCommands.delete(Number(payload.characterId));
-        marketEvents.defer(Number(payload.characterId));
+        occupationPlanner.cancel(payload.characterId);
+        cancelRoute(payload.characterId);
         const result = kernel?.fence(payload.characterId) || { characterId: Number(payload.characterId), proposal: null, token: null };
         send('fence_ack', result, message.msgId);
         break;
@@ -723,15 +959,16 @@ async function handle(message) {
         break;
     case 'shutdown':
         leaseProbe = null;
-        marketCommands.clear();
-        marketEvents.clear();
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
-        actorTables.stop();
+        routeRequests.clear();
+        if (Config.economyDiagnostics) economyDiagnostics.stop();
+        occupationPlanner.stop();
         competitionCandidates?.stop();
         stopTimers();
-        eventLoopDelay.disable();
+        eventLoopDelay?.disable();
+        heapTelemetry?.close();
         send('drained', await kernel?.shutdown() || {}, message.msgId);
         parentPort.close();
         break;
@@ -742,6 +979,14 @@ async function handle(message) {
 }
 
 parentPort.on('message', (message) => {
+    if (message?.type === 'economy_diagnostics_selection') {
+        if (Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch)
+            economyDiagnostics.useSelection(message.ownerIds);
+        return;
+    }
+    if (message?.type === 'economy_diagnostics_ack' && Config.economyDiagnostics && message.epoch === epoch) {
+        economyDiagnostics.ack(message.id, message.accepted); return;
+    }
     Promise.resolve(handle(message)).catch((error) => {
         send('fault', { reason: error?.message || 'worker_message_error', stack: error?.stack || null, msgId: message?.msgId || null });
     });

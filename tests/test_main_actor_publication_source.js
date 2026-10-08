@@ -1,7 +1,7 @@
 'use strict';
 
-// UNEXECUTED future native issuer contract. An approved helper/Root assembly
-// is required; missing future exports are not a repeated BEFORE regression.
+// Optional native issuer contract: attach/retire/remove publish; M7 moves do not.
+// This test never initializes SQLite and preserves independent state-view facts.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -157,7 +157,7 @@ try {
     first.actor.setLocXYZ({ locX: -0, locY: '42', locZ: null });
     const moved = put(firstEvidence);
     assert.equal(moved.row.sourceGeneration, firstPut.row.sourceGeneration);
-    assert(moved.row.publication > firstPut.row.publication); assert.equal(firstPut.current(), false);
+    assert.equal(moved.row.publication, firstPut.row.publication); assert.equal(firstPut.current(), true);
     assert(Object.is(moved.row.axes.x.value, -0)); assert(Object.is(structuredClone(moved.row).axes.x.value, -0));
     assert.deepEqual(moved.row.axes.y, { tag: 'string', value: '42' }); assert.deepEqual(moved.row.axes.z, { tag: 'null' });
     World.retireUserActor(first, first.actor);
@@ -213,22 +213,22 @@ try {
     const fetchSecondZ = second.actor.fetchLocZ;
     let reentered = false;
     const stopReentry = shadow(second.actor, 'fetchLocZ', function() {
-        if (!reentered) { reentered = true; newest.actor.setLocX(211); }
+        if (!reentered) { reentered = true; World.retireUserActor(newest, newest.actor); }
         return Reflect.apply(fetchSecondZ, this, []);
     });
     try { put(secondEvidence); } finally { stopReentry(); }
     assert.equal(reentered, true); assert.equal(earlier.current(), false);
     assert.equal(put(newestEvidence).current(), true); stateConserved();
-    observe('later native getter publication invalidates earlier receipt without re-reading its axes');
+    observe('reentrant retirement publication invalidates earlier receipt without re-reading its axes');
 
     let received = 0, attachmentUnknown = false;
     const isolatedError = new Error('isolated subscriber fault'), deliveredFaults = [];
     const badSubscription = subscribe(() => { received++; throw isolatedError; }, (error, occurrence) => {
         attachmentUnknown = true; deliveredFaults.push({ error, occurrence, received });
-        newest.actor.setLocY(17);
+        World.retireUserActor(second, second.actor);
         return true; // A consumer return is observational, never native authority/recovery.
     });
-    newest.actor.setLocX(218);
+    const subscriberFixture = member();
     assert.equal(received, 1, 'suspended BEFORE reentrant onError producer');
     assert.equal(attachmentUnknown, true); assert.equal(deliveredFaults.length, 1);
     assert.equal(deliveredFaults[0].error, isolatedError); assert.equal(deliveredFaults[0].occurrence, issuer.currentOccurrence());
@@ -236,7 +236,7 @@ try {
     badSubscription(); badSubscription();
     let recoveredCalls = 0;
     const recoverySubscription = subscribe(() => { recoveredCalls++; }, (error, occurrence) => faults.push({ error, occurrence }));
-    assert.equal(recoveredCalls, 0); newest.actor.setLocX(219); assert.equal(recoveredCalls, 1);
+    assert.equal(recoveredCalls, 0); World.retireUserActor(subscriberFixture, subscriberFixture.actor); assert.equal(recoveredCalls, 1);
     recoverySubscription(); stateConserved(); observe('faulty subscriber suspended before unknown notification; explicit new subscription only');
 
     const beforeReset = issuer.currentOccurrence(), held = issuer.capture();
@@ -280,6 +280,8 @@ try {
     try { faultActor.actor.setLocX(1e100); } catch (error) { thrown = error; }
     finally { stopNativeObserver(); }
     assert(nativeError instanceof RangeError); assert.equal(thrown, nativeError, 'accepted-prefix publication preserves ORIGINAL native Error');
+    assert.equal(beforeFault.current(), true, 'movement error has no publication');
+    World.retireUserActor(faultActor, faultActor.actor);
     assert.equal(beforeFault.current(), false); assert.equal(resolve(faultEvidence).kind, 'refused');
     let captureThrew = false, captureThrown;
     try { issuer.capture(); } catch (error) { captureThrew = true; captureThrown = error; }
@@ -294,14 +296,15 @@ try {
     assert.equal(subscribeThrew, true); assert.equal(subscribeThrown, handlerThrownValue);
     faultActor.actor.setLocX(2);
     assert.equal(resolve(faultEvidence).kind, 'refused', 'new subscription/native motion cannot clear permanent issuer failure');
-    inert?.(); stateConserved(); observe('onError fault permanently fail-closes issuer without masking native accepted-prefix RangeError');
+    inert?.(); stateConserved(); observe('movement RangeError unchanged; later retirement onError permanently fail-closes optional issuer');
 
+    const retainedFaultRecord = Runtime.index.getSource(faultEvidence.ref.id, 'actor');
     issuer.dispose(); issuer.dispose();
     assert.equal(beforeFault.current(), false); assert.throws(() => Native.native());
     const afterDisposeCount = dirty.length;
     faultActor.actor.setLocX(3);
     assert.equal(dirty.length, afterDisposeCount);
-    assert.equal(Runtime.index.getSource(faultEvidence.ref.id, 'actor'), faultEvidence.ref.record);
+    assert.equal(Runtime.index.getSource(faultEvidence.ref.id, 'actor'), retainedFaultRecord);
     stateConserved(); observe('terminal disposal invalidates receipts and leaves current native actor/state sources intact');
     assert.equal(Database.isReady(), false); assert.deepEqual(fs.readdirSync(directory), []);
     assert.equal(observations.length, 9);

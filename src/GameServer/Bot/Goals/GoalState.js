@@ -32,13 +32,15 @@ function normalizeGoal(goal = {}, timestamp = now()) {
     const type = text(goal.type);
     if (!type) return null;
 
+    const plan = goal.plan && typeof goal.plan === 'object' ? { ...goal.plan } : {};
+    delete plan.economyInputKey; delete plan.inputKey;
     const status = STATUSES.has(goal.status) ? goal.status : 'planned';
     return {
         type,
         status,
         priority: Math.max(0, Math.min(100, Number(goal.priority) || 0)),
         target: goal.target && typeof goal.target === 'object' ? { ...goal.target } : {},
-        plan: goal.plan && typeof goal.plan === 'object' ? { ...goal.plan } : {},
+        plan,
         progress: goal.progress && typeof goal.progress === 'object' ? { ...goal.progress } : {},
         blockers: Array.isArray(goal.blockers) ? [...new Set(goal.blockers.map(text).filter(Boolean))].slice(0, 8) : [],
         createdAt: Number(goal.createdAt) || timestamp,
@@ -56,6 +58,15 @@ function normalize(row) {
         current: normalizeGoal(parseJson(row.goalJson, null), Number(row.updatedAt) || now()),
         updatedAt: Number(row.updatedAt || 0)
     };
+}
+
+// Shared by the asynchronous goal caller and the native NPC transaction.
+function purchasePatch(expectedGoal, units, timestamp = now()) {
+    const amount = expectedGoal?.type === 'upgrade_gear' ? 1 : Number(expectedGoal?.target?.amount);
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !Number.isSafeInteger(units) || units <= 0) return null;
+    const remaining = Math.max(0, amount - units);
+    return normalizeGoal({ ...expectedGoal, target: { ...expectedGoal.target, amount: remaining },
+        status: remaining ? 'active' : 'completed', reviewedAt: timestamp, nextReviewAt: timestamp });
 }
 
 function save(snapshot) {
@@ -118,12 +129,12 @@ const GoalState = {
         });
     },
 
-    set(characterId, goal) {
+    set(characterId, goal, { inputHash } = {}) {
         const id = Number(characterId || 0);
         const current = normalizeGoal(goal);
         if (!id || !current) return Promise.resolve(null);
 
-        const snapshot = { characterId: id, current, updatedAt: now() };
+        const snapshot = { characterId: id, current, updatedAt: now(), inputHash };
         return this.init().then((ready) => {
             if (!ready) return null;
             return save(snapshot).then(() => {
@@ -141,7 +152,7 @@ const GoalState = {
             const characterId = Number(entry?.characterId || 0);
             const current = normalizeGoal(entry?.goal);
             if (!characterId || !current) return null;
-            return { characterId, current, updatedAt: now() };
+            return { characterId, current, updatedAt: now(), inputHash: entry.inputHash };
         }).filter(Boolean);
         if (!snapshots.length) return Promise.resolve([]);
         return this.init().then((ready) => {
@@ -172,11 +183,33 @@ const GoalState = {
         });
     },
 
+    // Advance only the goal accepted before the asynchronous native purchase.
+    // Matching its persisted value also makes a repeated receipt a no-op.
+    applyPurchase(characterId, expectedGoal, units) {
+        const id = Number(characterId), existing = this.snapshot(id);
+        if (!existing?.current || safeJson(existing.current) !== safeJson(expectedGoal)
+            || !Number.isSafeInteger(units) || units <= 0) return Promise.resolve(null);
+        const timestamp = now(), current = purchasePatch(existing.current, units, timestamp);
+        if (!current) return Promise.resolve(null);
+        const snapshot = { ...existing, current, updatedAt: timestamp, inputHash: undefined };
+        return Database.execute([
+            `UPDATE ${TABLE} SET goalJson = ?, updatedAt = ?
+             WHERE characterId = ? AND updatedAt = ? AND goalJson = ?`,
+            [safeJson(current), timestamp, id, existing.updatedAt, safeJson(existing.current)]
+        ], 'bot-goals:purchase-progress').then(result => {
+            if (Number(result?.affectedRows) !== 1) return null;
+            if (cache.get(id) === existing) cache.set(id, snapshot);
+            return snapshot;
+        });
+    },
+
     reset() {
         cache.clear();
         initialized = false;
         initPromise = null;
     }
 };
+
+GoalState.purchasePatch = purchasePatch;
 
 module.exports = GoalState;

@@ -1,6 +1,15 @@
+// Native input catalogue and own paths precede all game modules.
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_CONFIG_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+delete process.env.N53_GAME_ROOT;
+const fixture = require('./helpers/isolatedSocialDatabase')('late-cold-travel');
+process.once('exit', () => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
 const assert = require('assert');
 
 require('../src/Global');
+fixture.assertConfigured(options.default);
+invoke('GameServer/DataCache').init();
 
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
@@ -68,12 +77,23 @@ assert.strictEqual(arrived.patch.activity, 'shopping');
 assert.strictEqual(arrived.events[0].type, 'arrived_town');
 assert(arrived.nextResolveAt <= Date.now(), 'arrival must make the shopping event due without another polling delay');
 
-const shoppingState = {
+const unfinishedShoppingState = {
     ...arrivedState,
     activity: 'shopping',
     currentRegion: 'Giran',
     loc: { ...started.stats.travel.to },
     stats: { ...started.stats, travel: null }
+};
+// ARCH-NOTE: C2a preserves the native town steps. Arrival alone does not
+// supply ColdMarketService's completed-visit input for the return boundary.
+assert.strictEqual(GoalExecutor.finishMarketVisit(unfinishedShoppingState, Date.now()), null,
+    'an arrived but unfinished visit must not start its return trip');
+const shoppingState = {
+    ...unfinishedShoppingState,
+    stats: {
+        ...unfinishedShoppingState.stats,
+        townVisit: { ...unfinishedShoppingState.stats.townVisit, completed: true }
+    }
 };
 const returning = GoalExecutor.finishMarketVisit(shoppingState, Date.now());
 assert.strictEqual(returning.activity, 'traveling');

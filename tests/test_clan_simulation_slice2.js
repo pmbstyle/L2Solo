@@ -4,6 +4,7 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-simulation-slice2.sqlite');
@@ -65,7 +66,8 @@ async function main() {
         assert.strictEqual(x1, 650000);
         assert(x10 > x1, 'level-one clan Adena requirement must scale with progression rate');
 
-        assert.strictEqual(Policy.personalReserve({ level: 20, adena: 10000 }), 5000);
+        assert.strictEqual(Policy.personalReserve({ level: 20, adena: 10000,
+            stats: { money: [77000, 2e-5, 1500, 0] } }), 1500);
 
         const created = await Database.createAutonomousClan({
             name: 'SliceTwoClan',

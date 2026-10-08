@@ -3,7 +3,19 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
+const fixtureDirectory = require('node:os').tmpdir() + '/l2solo-market-cursors-' + require('node:crypto').randomUUID();
+fs.mkdirSync(fixtureDirectory);
+const databasePath = path.join(fixtureDirectory, 'world.sqlite');
+const historyPath = path.join(fixtureDirectory, 'history.sqlite');
+const fixtureConfig = path.join(fixtureDirectory, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.resolve('config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
+assert.strictEqual(options.default.Database.path, databasePath);
+assert.strictEqual(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -12,8 +24,6 @@ const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { shared: channel } = require('../src/GameServer/Bot/Population/ColdTableChannel');
 const TableMirror = require('../src/GameServer/Bot/Population/TableMirror');
-const databasePath = path.join(process.cwd(), 'tmp', 'test-market-restart-cursors.sqlite');
-const historyPath = databasePath.replace(/\.sqlite$/, '.history.sqlite');
 const old = Date.now() - 48 * 3600000;
 const PRICING_COLUMNS = ['fills', 'pricingPrice', 'pricingSeenCounter', 'pricingSeenItem', 'pricingRival',
     'pricingWorth', 'pricingSeenFills'];
@@ -39,7 +49,9 @@ async function bot(label, { player = false } = {}) {
     return { id, stock };
 }
 async function storedStats(id) {
-    return JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0].statsJson);
+    const saved = JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [id]]))[0].statsJson);
+    const rows = await Database.execute(['SELECT counter,deals FROM bot_market_counts WHERE characterId=?', [id]]);
+    return { ...saved, marketTrades: Object.fromEntries(rows.map(row => [row.counter, Number(row.deals)])) };
 }
 async function storedShop(id) { return (await Database.fetchAfkTradeShops(id))[0]; }
 async function trade(eventKey, occurredAt, fields = {}) {
@@ -57,7 +69,6 @@ async function restart() {
 }
 async function run() {
     clean();
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
     options.default.Database.historyPath = historyPath;
     Database.init();
     assert(Database.isReady());
@@ -120,7 +131,8 @@ async function run() {
     }
     const migrated = await storedShop(owner.id);
     assert.strictEqual(migrated.id, sell.shop.id);
-    const checkpoint = { price: 100, seenCounter: 101, seenItem: 100, rival: 0, worth: 0, seenFills: 0 };
+    const checkpoint = { price: 100, seenCounter: 101, seenItem: 100, rival: 0, worth: 0, seenFills: 0, seenAt: migrated.lines[0].pricing.seenAt };
+    assert(Number.isSafeInteger(checkpoint.seenAt) && checkpoint.seenAt > 0, 'migration initializes durable observation time');
     assert.deepStrictEqual(migrated.lines[0].pricing, checkpoint);
     assert.strictEqual(migrated.revision, 1);
     assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900);
@@ -175,6 +187,9 @@ async function run() {
         assert.strictEqual((await storedShop(owner.id)).lines[0].fills - consumed.seenFills, 0);
     }
     await Database.execute(["DELETE FROM world_meta WHERE key IN ('boardDealCountsReady', 'boardCounterCountsReady') OR key LIKE 'boardDealCount:%' OR key LIKE 'boardCounterDealCount:%'"]);
+    // Readiness is cached until reopen; this fixture starts the next upgrade boundary.
+    await Database.close();
+    Database.init();
     const pending = (eventKey, selfId = 1864) => ({ eventKey, occurredAt: old + 6500, selfId, unitPrice: 100,
         quantity: 1, sourceType: 'afk_bot_store', sellerCharacterId: owner.id, buyerCharacterId: buyer.id });
     await Database.execute(["INSERT INTO history_outbox (kind, payload) VALUES ('market_trade', ?), ('market_trade', ?)",
@@ -206,15 +221,15 @@ async function run() {
     // This disposable scenario reopens the one-time initializer independently
     // of the startup choice already verified above. Existing learned owners stay.
     await Database.execute(["DELETE FROM world_meta WHERE key = 'botMarketTradesInitialized'"]);
-    await Database.execute(["UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.marketTrades') WHERE characterId = ?", [inactive.id]]);
+    await Database.execute(['DELETE FROM bot_market_counts WHERE characterId=?', [inactive.id]]);
     const legacyOwner = await bot('HistorySeed');
     await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });
     await trade('cursor:seed', old + 9000, { sellerCharacterId: legacyOwner.id, buyerCharacterId: player.id });
-    await Database.execute([`CREATE TEMP TRIGGER cursor_seed_failure BEFORE UPDATE OF statsJson ON main.bot_life_state
+    await Database.execute([`CREATE TEMP TRIGGER cursor_seed_failure BEFORE INSERT ON main.bot_market_counts
         WHEN NEW.characterId = ${legacyOwner.id} BEGIN SELECT RAISE(ABORT, 'injected seed failure'); END`]);
     try { await assert.rejects(Database.initializeBotMarketTrades('history'), /injected seed failure/); }
     finally { await Database.execute(['DROP TRIGGER temp.cursor_seed_failure']); }
-    assert.strictEqual((await storedStats(inactive.id)).marketTrades, undefined, 'seed rollback must include earlier bot rows');
+    assert.deepStrictEqual((await storedStats(inactive.id)).marketTrades, {}, 'seed rollback must include earlier bot rows');
     assert.strictEqual((await Database.execute(["SELECT COUNT(*) AS n FROM world_meta WHERE key = 'botMarketTradesInitialized'"]))[0].n, 0);
     const seeded = await Database.initializeBotMarketTrades('history');
     assert.strictEqual(seeded.skipped, false);

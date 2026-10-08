@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const moveTo = invoke('GameServer/Actor/Generics/MoveTo');
 const Automation = invoke('GameServer/Automation');
 const World = invoke('GameServer/World/World');

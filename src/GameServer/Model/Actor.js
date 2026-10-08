@@ -23,12 +23,12 @@ class ActorModel extends CreatureModel {
 
     setDestId(id) {
         super.setDestId(id);
-        publishLocation(this);
+        invoke('GameServer/World/World').updateUserPresence?.(this.session, this);
     }
 
     clearDestId() {
         super.clearDestId();
-        publishLocation(this);
+        invoke('GameServer/World/World').updateUserPresence?.(this.session, this);
     }
 
     setLocY(data) {

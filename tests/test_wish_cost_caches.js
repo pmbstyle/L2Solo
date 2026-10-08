@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'wish-cost-caches-'));
-delete process.env.L2NODE_CONFIG_SHARED_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = path.join(directory, 'default.ini');
 fs.writeFileSync(process.env.L2NODE_CONFIG_FILE, `[Database]\npath=${directory}/world.sqlite\nhistoryPath=${directory}/history.sqlite\n`);
 require('../src/Global');
@@ -23,6 +23,7 @@ function check(name, fn) {
     catch (error) { failures++; console.error(`not ok - ${name}\n${error.stack}`); }
 }
 
+const rounded = value => ({ attack: value.attack, defence: value.defence });
 const POWER = ['pAtk', 'mAtk', 'atkSpd', 'castSpd', 'pDef', 'mDef', 'maxHp'];
 const subset = profile => Object.fromEntries(POWER.map(key => [key, profile[key]]));
 const weapon = Data.items.find(item => String(item.template?.kind || '').startsWith('Weapon.') && item.etc?.rank === 'c'
@@ -66,7 +67,7 @@ check('power numbers equal the full profile, for the base build and each change'
     ];
     const seen = new Set();
     for (const state of variants) {
-        const power = Profile.buildGainsFor(state, now).power;
+        const power = Profile.powerNumbers(Profile.buildGainsFor(state, now));
         assert.deepEqual(power, subset(Profile.profileFor(state, now)));
         assert.deepEqual(Profile.powerFor(state, now), power);
         seen.add(JSON.stringify(power));
@@ -101,9 +102,9 @@ check('gear gains from the store equal the direct calculation, per role', () => 
             defence: Math.max(0, 1 - before.pDef / Math.max(1, after.pDef), 1 - before.mDef / Math.max(1, after.mDef)) };
     };
     const fighter = base({ characterId: 501 }), mage = base({ characterId: 502, stats: { ...base().stats, role: 'nuker' } });
-    assert.deepEqual(Providers.gearGain(fighter, better, now), direct(fighter, false));
-    assert.deepEqual(Providers.gearGain(mage, better, now), direct(mage, true));
-    assert.deepEqual(Providers.gearGain(fighter, better, now), direct(fighter, false), 'remembered value is the same');
+    assert.deepEqual(Providers.gearGain(fighter, better, now), rounded(direct(fighter, false)));
+    assert.deepEqual(Providers.gearGain(mage, better, now), rounded(direct(mage, true)));
+    assert.deepEqual(Providers.gearGain(fighter, better, now), rounded(direct(fighter, false)), 'remembered value is the same');
 });
 
 check('a build entry is shared by its owners and dies with the last one', () => {
@@ -123,8 +124,8 @@ check('no inventory and an empty inventory are different builds', () => {
     const none = base(); delete none.inventory;
     const empty = base({ inventory: {} });
     assert.notEqual(Profile.buildGainsFor(none, now), Profile.buildGainsFor(empty, now));
-    assert.deepEqual(Profile.buildGainsFor(none, now).power, subset(Profile.profileFor(none, now)));
-    assert.deepEqual(Profile.buildGainsFor(empty, now).power, subset(Profile.profileFor(empty, now)));
+    assert.deepEqual(Profile.powerNumbers(Profile.buildGainsFor(none, now)), subset(Profile.profileFor(none, now)));
+    assert.deepEqual(Profile.powerNumbers(Profile.buildGainsFor(empty, now)), subset(Profile.profileFor(empty, now)));
 });
 
 check('a timed effect counts while active and not after it expires', () => {
@@ -132,7 +133,7 @@ check('a timed effect counts while active and not after it expires', () => {
     const effect = { id: 1068, key: 'might', category: 'buff', expiresAt: now + 60000, stats: { pAtkMul: 1.15 } };
     const state = base();
     state.stats.coldCombat = { ...state.stats.coldCombat, effects: [effect] };
-    const active = Profile.buildGainsFor(state, now).power, expired = Profile.buildGainsFor(state, now + 120000).power;
+    const active = Profile.powerNumbers(Profile.buildGainsFor(state, now)), expired = Profile.powerNumbers(Profile.buildGainsFor(state, now + 120000));
     assert.deepEqual(active, subset(Profile.profileFor(state, now)));
     assert.deepEqual(expired, subset(Profile.profileFor(state, now + 120000)));
     assert.ok(active.pAtk > expired.pAtk);
@@ -150,6 +151,34 @@ check('a caller without spots gets no sources and keeps the index built for the 
     assert.equal(Planner.sourceIndexFor([]).size, 0);
     assert.equal(Planner.sourceIndexFor(undefined).size, 0);
     assert.equal(Planner.sourceIndexFor(spots), index);
+});
+
+check('a large native drop result stays complete without being retained across decisions', () => {
+    const spots = Array.from({ length: 2050 }, (_, at) => ({ id: `golem-source:${at}`, avgLevel: 19,
+        npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 3 }] }));
+    const state = base({ level: 20 });
+    const first = Planner.sourceForItem(1869, spots, state);
+    assert.equal(first.length, spots.length, 'every native Iron Ore drop source is returned');
+    assert.equal(new Set(first.map(row => row.spotId)).size, spots.length);
+    const second = Planner.sourceForItem(1869, spots, state);
+    assert.notEqual(second, first, 'an oversized list is not retained globally');
+    assert.deepEqual(second, first, 'eviction does not truncate or change yields, fields or order');
+    const sourceCache = new Map();
+    const owned = Planner.sourceForItem(1869, spots, state, { sourceCache });
+    assert.equal(Planner.sourceForItem(1869, spots, state, { sourceCache }), owned,
+        'one active decision still shares its complete result');
+    const small = spots.slice(0, 64);
+    const remembered = Planner.sourceForItem(1869, small, state);
+    assert.deepEqual(Planner.sourceForItem(1869, small, state), remembered, 'a bounded result keeps its fields and order');
+    for (let level = 1; level <= 80; level++) if (level !== 20) Planner.sourceForItem(1869, small, base({ level }));
+    const rebuilt = Planner.sourceForItem(1869, small, state);
+    assert.notEqual(rebuilt, remembered, 'plain result objects are not retained between decisions');
+    assert.deepEqual(rebuilt, remembered, 'a later rebuild keeps the entire native result');
+    const size = Planner.sourceCacheSize();
+    assert(size.resolved > 0 && size.resolved <= 128, 'shared input keys have a fixed bound');
+    assert(size.packedBytes > 0 && size.packedBytes <= 128 * small.length * 2,
+        'the retained results contain only numeric source positions');
+    assert(size.yields <= 16384, 'recomputable yield pairs also have a fixed bound');
 });
 
 check('per-actor wish results are bounded, least recently used out, a reused actor kept', () => {
@@ -266,6 +295,75 @@ check('a party composition keeps no proposed groups; a real group is kept until 
     Economy.forgetGroup('bgp_test');
     assert.notEqual(Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps), real, 'an ended group is gone');
     assert.equal(Economy.forState(members[0], deps), own, 'group reviews never evict a bot\'s own');
+});
+
+check('93 packed candidates fit under 4 KB, candidate and entry caps do not grow', () => {
+    const entry = Profile.buildGainsFor(base({ characterId: 801, level: 40 }), 0);
+    assert.ok(entry.power instanceof Float64Array);
+    assert.ok(entry.ids instanceof Uint16Array);
+    assert.ok(entry.gains instanceof Float64Array);
+    for (let i = 0; i < 93; i++) Profile.gainFor(entry, `p:packed:${i}`, () => ({ attack: i / 100, defence: .2 }));
+    assert.equal(entry.size, 93);
+    assert.ok(require('node:v8').serialize(entry).byteLength < 4096);
+    assert.equal(Object.values(entry).some(value => typeof value === 'string'), false);
+    for (let i = 93; i < 300; i++) Profile.gainFor(entry, `p:packed:${i}`, () => ({ attack: .3, defence: .2 }));
+    assert.equal(entry.size, 128);
+    assert.equal(entry.ids.length, 128);
+    assert.ok(require('node:v8').serialize(entry).byteLength < 4096);
+});
+
+check('night-free builds share day/night; native 294 tracks night and releases markers', () => {
+    const GameTime = invoke('GameServer/World/GameTime');
+    const midnight = GameTime.localMidnight(Date.now());
+    const night = midnight + 1000, day = midnight + 7200000;
+    assert.ok(GameTime.isNight(night)); assert.ok(!GameTime.isNight(day));
+    const plain = base({ characterId: 810 });
+    const entry = Profile.buildGainsFor(plain, day);
+    assert.equal(entry.night, 0);
+    assert.equal(Profile.buildGainsFor(plain, night), entry);
+    const before = Profile.size();
+    const nocturnal = base({ characterId: 811, stats: { ...base().stats, coldCombat: { ...base().stats.coldCombat,
+        skills: Profile.skillSnapshotsFromRecords([{ selfId: 294, level: 1 }]), skillSource: 'database' } } });
+    const daytime = Profile.buildGainsFor(nocturnal, day);
+    const nightOwner = { ...nocturnal, characterId: 812 };
+    const nighttime = Profile.buildGainsFor(nightOwner, night);
+    assert.notEqual(daytime, nighttime);
+    assert.equal(daytime.night, 1); assert.equal(nighttime.night, 1);
+    // ARCH-NOTE: Native 294 changes accuracy, outside the seven stored power fields.
+    assert.equal(Profile.profileFor(nocturnal, night).accur - Profile.profileFor(nocturnal, day).accur, 3);
+    assert.equal(Profile.size().buildGains, before.buildGains + 3);
+    assert.equal(Profile.buildGainsFor(nocturnal, night), nighttime, 'a sole day owner joins the existing night variant');
+    assert.equal(Profile.size().buildGains, before.buildGains + 2, 'the unowned day variant is released');
+    Profile.forgetBuild(811); Profile.forgetBuild(812);
+    assert.equal(Profile.size().buildGains, before.buildGains, 'both variants and marker leave with owners');
+});
+
+check('five books reuse the own before profile and cached gains on later reviews', () => {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const Books = invoke('GameServer/Skills/SkillBookCatalog');
+    const Policy = invoke('GameServer/Bot/Economy/BotImprovementPolicy');
+    const state = base({ characterId: 820, level: 51 });
+    const original = { profile: Profile.profileFor, books: Books.missingBooks, opportunities: Policy.opportunities };
+    let ownCalls = 0;
+    Profile.profileFor = function(value, ...args) { if (value === state) ownCalls++; return original.profile(value, ...args); };
+    Policy.opportunities = () => [];
+    Books.missingBooks = () => [1230, 1234, 1235, 1239, 1275].map((skillId, index) => ({ skillId, level: 1, selfId: 20000 + index }));
+    try {
+        const basics = Economy.basics(state, { spots: [] });
+        const ctx = { ...basics, timestamp: 0, price: () => 1, buyback: () => 0, stock: () => ({}), spotValue: () => 0 };
+        Providers.build(state, ctx, { spots: [] });
+        assert.equal(ownCalls, 1);
+        Providers.build(state, ctx, { spots: [] });
+        assert.equal(ownCalls, 1, 'all five gains stay in the build');
+    } finally { Profile.profileFor = original.profile; Books.missingBooks = original.books; Policy.opportunities = original.opportunities; }
+});
+
+check('the shared candidate index stops at 65536 without dropping uncached results', () => {
+    const entry = Profile.buildGainsFor(base({ characterId: 830 }), 0);
+    for (let i = 0; i < 66000; i++) Profile.gainFor(entry, `p:global-cap:${i}`, () => ({ attack: .3, defence: .2 }));
+    assert.equal(Profile.size().candidateIndex, 65536);
+    assert.deepEqual(Profile.gainFor(entry, 'p:past-cap', () => ({ attack: .123456789, defence: .2 })), { attack: .123456789, defence: .2 });
 });
 
 if (failures) { console.error(`${failures} failed`); process.exit(1); }

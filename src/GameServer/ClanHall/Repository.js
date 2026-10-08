@@ -14,6 +14,8 @@ module.exports = function ({
     all,
     write,
     inTransaction,
+    inPreparedTransaction,
+    inPreparedTransactionBatch,
     withCharacterFlush,
     updateColdInventorySnapshotUnsafe,
     syncInventorySummaryUnsafe,
@@ -56,16 +58,127 @@ module.exports = function ({
             ]);
     }
     let transactionChanges = null;
-    const tx = (fn, tag) => inTransaction(() => {
+    function trackTransactionChanges(fn) {
         const changes = new Set(), previous = transactionChanges;
         transactionChanges = changes;
         try { return { result: fn(), changed: [...changes] }; }
         finally { transactionChanges = previous; }
-    }, 'clan-hall:' + tag).then(({ result, changed }) => {
+    }
+    function committedChanges({ result, changed }) {
         // Only a successful commit wakes planners. A rollback emits nothing.
         for (const id of changed) ReviewEvents.changed(id, 'treasury');
         return result;
-    });
+    }
+    const tx = (fn, tag) => inTransaction(() => trackTransactionChanges(fn), 'clan-hall:' + tag)
+        .then(committedChanges);
+    const preparedTx = (prepare, tag) => inPreparedTransaction(() => {
+        const prepared = prepare();
+        return typeof prepared === 'function' ? () => trackTransactionChanges(prepared)
+            : { result: prepared, changed: [] };
+    }, 'clan-hall:' + tag).then(committedChanges);
+    function prepareClanHallFinance(clanId, timestamp) {
+            // ARCH-NOTE: clans has no revision covering treasury and lot rows.
+            // Native scalar epochs conservatively reject any intervening write,
+            // including a different clan or a rolled-back local write. No state
+            // fingerprint, cache or planning runs under the write lock.
+            const stamp = () => [one('SELECT total_changes() AS epoch').epoch,
+                one('PRAGMA data_version').data_version];
+            const before = stamp();
+            const c = clan(Number(clanId));
+            if (!c || c.mode !== 'autonomous' || c.level < 2 || c.dissolvingExpiryTime)
+                return { ok: true, skipped: true };
+            const clanState = json(c.stateJson);
+            const warehouse = all('SELECT * FROM clan_warehouse_items WHERE clanId=? ORDER BY id', [c.id]);
+            const free = Policy.freeAdena(warehouse, c, c.mode, clanState.goal);
+            const protectedFunds = Policy.protectedReserve(c, c.mode, clanState.goal);
+            const roster = all(`SELECT c.id AS characterId,c.level,c.classId,p.traitsJson,p.primaryDrive,p.archetype
+                FROM characters c LEFT JOIN bot_personas p ON p.characterId=c.id WHERE c.clanId=? ORDER BY c.id`, [c.id]);
+            const Life = invoke('GameServer/Bot/Population/BotLifeState');
+            const cached = new Map(roster.map(member => [member.characterId, Life.cachedState(member.characterId)]));
+            const missing = roster.filter(member => !cached.get(member.characterId)).map(member => member.characterId);
+            const stored = new Map((missing.length ? all(`SELECT * FROM bot_life_state WHERE characterId IN (${missing.map(() => '?').join(',')})`, missing) : [])
+                .map(row => [row.characterId, row]));
+            const members = roster.map(member => {
+                const state = cached.get(member.characterId);
+                const row = stored.get(member.characterId) || {};
+                return { ...member, ...(state || row), characterId: member.characterId,
+                    classId: state?.stats?.classId ?? member.classId,
+                    stats: state?.stats || json(row.statsJson), inventory: state?.inventory || json(row.inventorySummary),
+                    persona: state?.persona || { traits: json(member.traitsJson), primaryDrive: member.primaryDrive, archetype: member.archetype } };
+            });
+            const lots = all('SELECT * FROM clan_halls').map(row => ({ ...Policy.definition(row.id), ...row, functions: json(row.functionsJson) }));
+            const current = { goal: json(one('SELECT stateJson FROM clan_hall_finances WHERE clanId=?', [c.id])?.stateJson),
+                hall: lots.find(row => Number(row.ownerId) === Number(c.id)) || null,
+                bid: one('SELECT * FROM clan_hall_bids WHERE clanId=?', [c.id]) || null };
+            const economy = invoke('GameServer/Clan/ClanEconomyContext').forClan({ ...c, state: clanState, members }, { warehouse, halls: lots });
+            const operations = [];
+            let treasuryChanged = false;
+            const append = (sql, values) => operations.push([sql, values]);
+            const planEvent = (hallId, kind, amount) => {
+                treasuryChanged = true;
+                append('INSERT INTO clan_hall_events(clanId,hallId,kind,amount,at) VALUES (?,?,?,?,?)', [c.id, hallId, kind, amount, timestamp]);
+            };
+            const planDebit = (amount, hallId, kind) => {
+                let left = amount;
+                for (const row of warehouse) {
+                    if (Number(row.selfId) !== 57) continue;
+                    const take = Math.min(left, Math.max(0, n(row.amount) - n(row.reservedAmount)));
+                    if (!take) continue;
+                    if (take === n(row.amount)) append('DELETE FROM clan_warehouse_items WHERE id=?', [row.id]);
+                    else append('UPDATE clan_warehouse_items SET amount=amount-?, updatedAt=? WHERE id=?', [take, timestamp, row.id]);
+                    left -= take;
+                    if (!left) break;
+                }
+                if (left) throw Error('clan_hall_plan_treasury_shortfall');
+                planEvent(hallId, kind, -amount);
+            };
+            let goal = current.goal, h = current.hall;
+            if (h) {
+                const def = Policy.definition(h.id), wanted = Policy.desired(def, members), installed = h.functions;
+                const next = Object.entries(wanted).find(([kind, level]) => n(installed[kind]) < level);
+                const upgrades = next ? { ...installed, [next[0]]: next[1] } : installed;
+                const activation = next ? Math.max(0, Policy.fee(def, ...next) - (Policy.fee(def, next[0], n(installed[next[0]])) || 0)) : 0;
+                const desiredReserve = Policy.reserve(def, upgrades) + activation;
+                goal = { status: next ? 'saving_upgrade' : 'maintaining', hallId: h.id,
+                    target: desiredReserve, progress: Math.min(desiredReserve, free), protected: protectedFunds, updatedAt: timestamp };
+                if (next && free >= desiredReserve && economy.budgetFor('hall_upgrade', h.id) >= desiredReserve - economy.reserve) {
+                    if (activation) planDebit(activation, h.id, 'hall_upgrade');
+                    append('UPDATE clan_halls SET functionsJson=? WHERE id=?', [JSON.stringify(upgrades), h.id]);
+                    planEvent(h.id, 'hall_function_changed', next[1]);
+                }
+            } else if (current.bid) {
+                goal = { ...goal, status: 'bidding', hallId: current.bid.hallId, round: current.bid.round,
+                    bid: current.bid.amount, progress: 0, target: 0, updatedAt: timestamp };
+            } else {
+                h = economy.hall;
+                if (!h) goal = { status: 'waiting_auction', target: 0, progress: 0, updatedAt: timestamp };
+                else {
+                    const def = Policy.definition(h.id), maintenance = Policy.reserve(def, Policy.desired(def, members));
+                    const valued = Math.min(economy.hallBid(h), Math.max(0, free - maintenance));
+                    const planned = Math.max(def.minimumBid, valued), target = planned + maintenance;
+                    goal = { status: 'saving', hallId: h.id, round: h.round, bid: planned, target,
+                        progress: Math.min(target, free), protected: protectedFunds, updatedAt: timestamp };
+                    // These are the native bid checks, evaluated on this snapshot.
+                    if (free >= target && !h.ownerId && h.auctionEndsAt > timestamp && Number.isSafeInteger(planned)) {
+                        planDebit(planned, h.id, 'hall_bid');
+                        append(`INSERT INTO clan_hall_bids(clanId,hallId,round,amount,placedAt) VALUES (?,?,?,?,?)
+                            ON CONFLICT(clanId) DO UPDATE SET amount=excluded.amount,placedAt=excluded.placedAt`, [c.id, h.id, h.round, planned, timestamp]);
+                        goal = { ...goal, status: 'bidding', target: 0, progress: 0 };
+                    }
+                }
+            }
+            goal.economy = { focus: economy.network.focus, dormant: economy.network.dormant,
+                moneyPrice: economy.moneyPrice, incomePerHour: economy.incomePerHour };
+            append(`INSERT INTO clan_hall_finances(clanId,stateJson) VALUES (?,?)
+                ON CONFLICT(clanId) DO UPDATE SET stateJson=excluded.stateJson`, [c.id, JSON.stringify(goal)]);
+            return () => {
+                const after = stamp();
+                if (after[0] !== before[0] || after[1] !== before[1]) return { ok: false, staleFinance: true };
+                for (const [sql, values] of operations) write(sql, values);
+                if (treasuryChanged) transactionChanges.add(c.id);
+                return { ok: true, goal };
+            };
+    }
     function event(clanId, hallId, kind, amount, at) {
         transactionChanges?.add(clanId);
         write('INSERT INTO clan_hall_events(clanId,hallId,kind,amount,at) VALUES (?,?,?,?,?)', [
@@ -443,87 +556,22 @@ module.exports = function ({
             }, 'configure');
         },
         planClanHallFinance(clanId, timestamp = Date.now()) {
-            return tx(() => {
-                const c = clan(Number(clanId));
-                if (!c || c.mode !== 'autonomous' || c.level < 2 || c.dissolvingExpiryTime)
-                    return { ok: true, skipped: true };
-                const current = snapshot(c.id),
-                    members = all(
-                        `SELECT c.id AS characterId,c.level,c.classId,l.currentRegion,l.adena,l.statsJson,l.inventorySummary,
-                            p.traitsJson,p.primaryDrive,p.archetype FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
-                            LEFT JOIN bot_personas p ON p.characterId=c.id WHERE c.clanId=? ORDER BY c.id`,
-                        [c.id]
-                    );
-                for (const member of members) {
-                    member.stats = json(member.statsJson);
-                    member.inventory = json(member.inventorySummary);
-                    member.persona = { traits: json(member.traitsJson), primaryDrive: member.primaryDrive, archetype: member.archetype };
+            return preparedTx(() => prepareClanHallFinance(clanId, timestamp), 'plan');
+        },
+        planClanHallFinanceBatch(clanIds, { deadline, before, settled, failed } = {}) {
+            return inPreparedTransactionBatch(clanIds, (id, timestamp) => {
+                const prepared = prepareClanHallFinance(id, timestamp);
+                return typeof prepared === 'function' ? () => trackTransactionChanges(prepared)
+                    : { result: prepared, changed: [] };
+            }, { deadline, before, failed,
+                committed: (id, value) => {
+                    const result = committedChanges(value);
+                    const notified = settled?.(id, result);
+                    if (notified && typeof notified.then === 'function')
+                        throw new TypeError('prepared_transaction_hook_must_be_synchronous');
+                    return result;
                 }
-                const lots = all('SELECT * FROM clan_halls').map(row => ({ ...Policy.definition(row.id), ...row, functions: json(row.functionsJson) }));
-                const economy = invoke('GameServer/Clan/ClanEconomyContext').forClan({ ...c, state: json(c.stateJson), members }, {
-                    warehouse: all('SELECT * FROM clan_warehouse_items WHERE clanId=?', [c.id]), halls: lots
-                });
-                let goal = current.goal,
-                    h = current.hall;
-                if (h) {
-                    const def = Policy.definition(h.id),
-                        wanted = Policy.desired(def, members),
-                        installed = json(h.functionsJson);
-                    const next = Object.entries(wanted).find(([k, l]) => n(installed[k]) < l);
-                    const upgrades = next ? { ...installed, [next[0]]: next[1] } : installed;
-                    const activation = next
-                        ? Math.max(0, Policy.fee(def, ...next) - (Policy.fee(def, next[0], n(installed[next[0]])) || 0))
-                        : 0;
-                    const desiredReserve = Policy.reserve(def, upgrades) + activation;
-                    goal = {
-                        status: next ? 'saving_upgrade' : 'maintaining',
-                        hallId: h.id,
-                        target: desiredReserve,
-                        progress: Math.min(desiredReserve, spendable(c)),
-                        protected: protectedAmount(c),
-                        updatedAt: timestamp
-                    };
-                    if (next && spendable(c) >= desiredReserve && economy.budgetFor('hall_upgrade', h.id) >= desiredReserve - economy.reserve)
-                        upgrade(c, h, ...next, timestamp);
-                } else if (current.bid) {
-                    goal = {
-                        ...goal,
-                        status: 'bidding',
-                        hallId: current.bid.hallId,
-                        round: current.bid.round,
-                        bid: current.bid.amount,
-                        progress: 0,
-                        target: 0,
-                        updatedAt: timestamp
-                    };
-                } else {
-                    h = economy.hall;
-                    if (!h) goal = { status: 'waiting_auction', target: 0, progress: 0, updatedAt: timestamp };
-                    else {
-                        const def = Policy.definition(h.id);
-                        const maintenance = Policy.reserve(def, Policy.desired(def, members));
-                        const valued = Math.min(economy.hallBid(h), Math.max(0, spendable(c) - maintenance));
-                        const planned = Math.max(def.minimumBid, valued);
-                        const target = planned + Policy.reserve(def, Policy.desired(def, members));
-                        goal = {
-                            status: 'saving',
-                            hallId: h.id,
-                            round: h.round,
-                            bid: planned,
-                            target,
-                            progress: Math.min(target, spendable(c)),
-                            protected: protectedAmount(c),
-                            updatedAt: timestamp
-                        };
-                        if (spendable(c) >= target && bid(c, h, planned, timestamp).ok)
-                            goal = { ...goal, status: 'bidding', target: 0, progress: 0 };
-                    }
-                }
-                goal.economy = { focus: economy.network.focus, dormant: economy.network.dormant,
-                    moneyPrice: economy.moneyPrice, incomePerHour: economy.incomePerHour };
-                saveGoal(c.id, goal);
-                return { ok: true, goal };
-            }, 'plan');
+            }, 'clan-hall:plan');
         },
         // Clan money to a member (amount > 0: a share of a clan purchase, a gear
         // compensation, from the clan's free money) or back to the clan (amount < 0:
@@ -570,8 +618,18 @@ module.exports = function ({
         // Every level pays the clan warehouse; levels 0-1 also write the contribution
         // ledger that the level-up checks.
         settleClanDues({ clanId, characterId, rate = 0, investFraction = 0, timestamp = Date.now() }) {
-            return withCharacterFlush(Number(characterId), () =>
-                tx(() => {
+            return withCharacterFlush(Number(characterId), () => {
+                // ARCH-NOTE: Dues also spend a bot's wallet; read its fixed money packet before the transaction instead of stripping it.
+                const member = one(`SELECT c.level, c.classId,
+                    COALESCE((SELECT SUM(amount) FROM items WHERE characterId=c.id AND selfId=57),0) AS adena,
+                    json_extract(l.statsJson,'$.money') AS money FROM characters c
+                    LEFT JOIN bot_life_state l ON l.characterId=c.id WHERE c.id=?`, [Number(characterId)]);
+                const personal = { level: n(member?.level), adena: n(member?.adena), stats: { classId: n(member?.classId),
+                    money: member?.money ? json(member.money) : undefined } };
+                const funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+                const freeBudget = funding.spendable(personal, 0, { free: true });
+                const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve(personal);
+                return tx(() => {
                     const c = clan(Number(clanId)),
                         id = Number(characterId),
                         m = one('SELECT clanId,level FROM characters WHERE id=?', [id]);
@@ -582,8 +640,7 @@ module.exports = function ({
                     const cursor = one('SELECT * FROM clan_hall_earnings WHERE clanId=? AND characterId=?', [c.id, id]);
                     const wealth = payer.amount + n(cursor?.contributed),
                         earned = cursor ? Math.max(0, wealth - cursor.highWater) : 0;
-                    const reserve = invoke('GameServer/Clan/ClanContributionPolicy').personalReserve({ level: m.level, adena: payer.amount });
-                    const free = Math.max(0, payer.amount - reserve);
+                    const free = Math.max(0, Math.min(freeBudget, payer.amount - reserve));
                     const dues = Math.min(free, Math.floor(earned * Math.max(0, Math.min(1, rate))));
                     const target = duesTarget(c, level);
                     const state = json(c.stateJson);
@@ -617,8 +674,8 @@ module.exports = function ({
                         investment,
                         row: amount ? one('SELECT * FROM bot_life_state WHERE characterId=?', [id]) : null
                     };
-                }, 'dues')
-            );
+                }, 'dues');
+            });
         },
         clanHallBlocksDissolution(clanId) {
             return tx(

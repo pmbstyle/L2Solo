@@ -96,14 +96,14 @@ for (let index = 0; index < 10; index++) {
 assert.strictEqual(crowded.stats.spotBackoffs.length, Risk.MAX_BACKOFFS);
 assert.strictEqual(Risk.MAX_BACKOFFS, 8);
 
-// Spot search: the regular window is +-4 levels; the solo fallback takes max mob level in [level - 16, level - 4).
+// Spot search: the regular window is +-4 levels; the solo fallback considers all lower safe ground.
 const spot = (id, level) => ({ id, name: id, minLevel: level, maxLevel: level, avgLevel: level,
     density: 8, tags: [], tagsAuthoritative: true, center: { locX: 50000, locY: 150000, locZ: -3000 },
     npcEntries: [{ selfId: SAFE_NPC, count: 8 }], levelCounts: { [level]: 8 } });
 const original = Spots.cache;
-const search = (cache, searchState) => {
+const search = (cache, searchState, matchupProfiles = [mage]) => {
     Spots.cache = cache;
-    return Spots.findForState(searchState, { matchupProfiles: [mage], occupancy: {}, timestamp: at })?.id || null;
+    return Spots.findForState(searchState, { matchupProfiles, occupancy: {}, timestamp: at })?.id || null;
 };
 try {
     const level35 = { ...state, level: 35, spotId: null };
@@ -111,9 +111,21 @@ try {
     assert.strictEqual(search([spot('top', 39)], level35), 'top', 'level + 4 is inside the window');
     assert.strictEqual(search([spot('fallback_top', 30)], level35), 'fallback_top', 'level - 5 is easier ground');
     assert.strictEqual(search([spot('fallback_low', 19)], level35), 'fallback_low', 'level - 16 is easier ground');
-    assert.strictEqual(search([spot('too_low', 18)], level35), null, 'level - 17 is below easier ground');
+    assert.strictEqual(search([spot('too_low', 18)], level35), 'too_low', 'the solo fallback has no fixed lower-level cutoff');
     assert.strictEqual(search([spot('fallback_top', 30)], { ...level35, party: { partyId: 'p1' } }), null,
         'party bots do not fall back to easier ground');
+    const allowed = Routes.isSpotAllowedForState;
+    let fallbackChecks = 0;
+    try {
+        Routes.isSpotAllowedForState = (...args) => { fallbackChecks++; return allowed(...args); };
+        const crowdedCatalogue = Array.from({ length: 200 }, (_, i) => ({
+            ...spot(`bounded-${String(i).padStart(3, '0')}`, 19), npcEntries: [{ selfId: UNSAFE_NPC, count: 8 }] }));
+        assert.strictEqual(search(crowdedCatalogue, level35), null);
+        assert.strictEqual(fallbackChecks, 0, 'the cheap optimistic bound rejects certainly lethal camps');
+        Routes.isSpotAllowedForState = () => { fallbackChecks++; return false; };
+        assert.strictEqual(search(crowdedCatalogue, level35, [{ ...mage, survivalKnown: false }]), null);
+        assert.strictEqual(fallbackChecks, 128, 'one fallback search never runs more than 128 combat gates');
+    } finally { Routes.isSpotAllowedForState = allowed; }
 } finally { Spots.cache = original; }
 
 console.log('test_bot_routing_thresholds passed');

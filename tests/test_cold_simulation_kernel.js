@@ -1,4 +1,7 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
+require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const {
@@ -300,14 +303,30 @@ function claimAck(kernel, payload) {
     })), 'command');
     assert.strictEqual(lifecycleKind(state(2, { party: { partyId: 'party' } }), { isPartyLeader: true }), 'party');
 
+    // An absent main decision sends target 0; the worker's own hunting pick
+    // remains the target for the native solo resolver.
+    let pickedTarget = 0;
+    const pickKernel = recordingKernel({ now: () => 5000,
+        resolveSolo: input => { pickedTarget = input.targetNpcId; return resolver(input); },
+        planLifecycle: ({ state }) => ({ plannedState: state, targetNpcId: 0,
+            activityPick: { activity: 'hunting', npcId: 20101, spotId: 'worker-ground' } }) });
+    pickKernel.upsert({ state: state(79), context: { targetNpcId: 0, spot: { id: 'worker-ground' } } });
+    pickKernel.tick();
+    claimAck(pickKernel, { grants: [{ ok: true, characterId: 79, ownerId: 'cold_simulation_owner', revision: 4,
+        leaseId: 'pick-lease', leaseUntil: 35000 }] });
+    await pickKernel.resolveChain;
+    assert.strictEqual(pickedTarget, 20101, 'native solo resolve uses worker activityPick when main target is absent');
+
     const commandMessages = [];
     let plannedOnWorker = 0;
     const commandKernel = recordingKernel({
-        resolveSolo: resolver,
+        resolveSolo: input => { assert.strictEqual(input.targetNpcId, 20101, 'command uses worker hunting pick'); return resolver(input); },
         planLifecycle: ({ state: commandState }) => {
             plannedOnWorker += 1;
             return {
                 previousPlan: null,
+                targetNpcId: 0, activityPick: { activity: 'hunting', npcId: 20101 },
+                statsPacket: { money: [30000, .00001, 1000, 0], wishFocus: ['worker', 1], decisionSeq: 5, activityLeaf: 19, dormantWishes: [] },
                 acquisitionPlan: { strategy: 'direct_drop', status: 'active' },
                 plannedState: { ...commandState, stats: { ...commandState.stats, workerPlanned: true } }
             };
@@ -321,6 +340,7 @@ function claimAck(kernel, payload) {
     const commandRequest = commandMessages.find((entry) => entry.type === 'command_request');
     assert.strictEqual(plannedOnWorker, 1, 'lifecycle planning must execute in the cold kernel');
     assert.strictEqual(commandRequest.payload.requests[0].precomputedPlan.plannedState.stats.workerPlanned, true);
+    assert.strictEqual(commandRequest.payload.requests[0].precomputedPlan.statsPacket.activityLeaf, 19, 'kernel forwards whole packet');
     assert(commandRequest.payload.requests[0].precomputedResult, 'main command gateway must receive worker-computed lifecycle output');
     assert.strictEqual(commandRequest.payload.requests[0].computedAt, now);
     assert.strictEqual(commandKernel.scheduleTokens.has(3), false,
@@ -394,7 +414,7 @@ function claimAck(kernel, payload) {
     memberOnlyKernel.upsert({ state: state(4, { party: { partyId: 'member-only' } }), context: {} });
     assert.strictEqual(memberOnlyKernel.heap.values.filter(entry => entry.kind !== 'alarm').length, 0,
         'party members must be scheduled only through their leader');
-    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
+    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 0);
     assert.strictEqual(memberOnlyKernel.snapshot().due, 0,
         'party members must not inflate independent worker due-age telemetry');
 
@@ -444,14 +464,12 @@ function claimAck(kernel, payload) {
     orphanKernel.tick();
     assert.strictEqual(orphanKernel.scheduleTokens.has(7), false, 'safety has no startup/full-population pass');
     recoveryNow += 30 * 60000;
-    orphanKernel.pause();
-    orphanKernel.tick();
-    assert.strictEqual(orphanKernel.scheduleTokens.has(7), true,
-        'the thirty-minute paged safety must restore an orphaned schedulable state');
-    assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1);
-    recoveryNow += 30 * 60000;
-    orphanKernel.tick();
-    assert.strictEqual(orphanKernel.snapshot().orphanRecoveries, 1, 'accepted scheduler repair is counted only once');
+    orphanKernel.pause(); orphanKernel.tick();
+    assert.equal(orphanKernel.scheduleTokens.has(7), false, 'there is no autonomous second safety sweep');
+    assert.equal(orphanKernel.states.safetyNodes, undefined);
+    assert.equal(typeof orphanKernel.recoverOrphanedSchedules, 'undefined');
+    assert.equal(orphanKernel.ensureScheduled(7), true, 'the addressed main sweep restores a local orphan');
+    assert.equal(orphanKernel.ensureScheduled(7), false, 'a healthy scheduled state is not repaired twice');
 
     const ackRaceKernel = recordingKernel({
         resolveSolo: resolver,
@@ -541,6 +559,32 @@ function claimAck(kernel, payload) {
     assert(partyProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 20).partyResolution,
         'the leader proposal must carry the party durable update');
     assert(!partyMessages.some((entry) => entry.type === 'command_request'), 'party combat compute must never fall back to main');
+
+    const refreshMessages = [], refreshed = [];
+    const refreshMembers = [state(120, { party: { partyId: 'refresh-party' }, stats: { equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 55 } } } }),
+        state(121, { party: { partyId: 'refresh-party' }, stats: { equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 56 } } } })];
+    const refreshParty = { partyId: 'refresh-party', status: 'active', leaderId: 120, memberIds: [120, 121], stats: {}, nextResolveAt: now };
+    const refreshKernel = recordingKernel({ resolveSolo: resolver, now: () => now,
+        resolveParty: ({ members, timestamp }) => ({ memberResults: members.map(member => ({ state: member, result: {} })),
+            partyPatch: {}, events: [], nextResolveAt: timestamp + 45000 }),
+        projectResolve: state => ({ state }),
+        planPartyRequirement: ({ state }) => { refreshed.push(state.characterId); return { acquisitionPlan: state.characterId === 120
+            ? { status: 'active', strategy: 'market', target: { selfId: 55 } } : state.stats.equipmentPlan }; },
+        emit: (type, payload) => refreshMessages.push({ type, payload }) });
+    refreshKernel.upsert({ state: refreshMembers[0], context: { isPartyLeader: true, party: refreshParty,
+        partyMembers: refreshMembers, spot: { id: 'refresh-spot' }, requirementRefresh: true } });
+    refreshKernel.upsert({ state: refreshMembers[1], context: {} }); refreshKernel.tick();
+    const refreshClaim = refreshMessages.find(message => message.type === 'claim_request');
+    claimAck(refreshKernel, { grants: refreshClaim.payload.candidates.map(candidate => ({ ok: true,
+        characterId: candidate.characterId, ownerId: 'cold_simulation_owner', revision: candidate.expectedRevision + 1,
+        leaseId: `refresh-${candidate.characterId}`, leaseUntil: now + 30000, purpose: candidate.purpose })) });
+    await refreshKernel.resolveChain;
+    const refreshProposal = refreshMessages.find(message => message.type === 'proposal_batch').payload.proposals.find(proposal => proposal.partyResolution);
+    assert.deepStrictEqual(refreshed, [120, 121], 'the party resolve refreshes each member after its projection');
+    assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
+    assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
+    assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
+    assert(refreshKernel.snapshot().partyRequirementRefreshMaxMs < 20);
 
     const stalePartyMessages = [];
     let stalePartyNow = now;
@@ -1297,8 +1341,8 @@ function claimAck(kernel, payload) {
     const marketKernel = recordingKernel({
         resolveSolo: resolver,
         projectResolve: async (current) => ({ state: current,
-            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }], withdrawals: [],
-                updates: [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }] } }),
+            market: { reprices: [{ recordId: 5, lineId: 6, selfId: 1864, price: 990,
+                pricing: { seenCounter: 3, seenAt: now } }], withdrawals: [] } }),
         emit: (type, payload) => marketMessages.push({ type, payload }),
         now: () => now
     });
@@ -1310,10 +1354,20 @@ function claimAck(kernel, payload) {
     await marketKernel.resolveChain;
     marketKernel.flush(null, true);
     const marketProposal = marketMessages.find((entry) => entry.type === 'proposal_batch').payload.proposals[0];
-    assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990 }]);
-    assert.deepStrictEqual(marketProposal.market.updates, [{ recordId: 5, lineId: 7, expectedRevision: 4, pricing: { price: 100, seenCounter: 3 } }],
-        'unchanged quotes carry their observation checkpoint');
+    assert.deepStrictEqual(marketProposal.market.reprices, [{ recordId: 5, lineId: 6, selfId: 1864, price: 990,
+        pricing: { seenCounter: 3, seenAt: now } }]);
+    assert.strictEqual(marketProposal.market.updates, undefined, 'unchanged quotes send no metadata update');
     assert.strictEqual(marketProposal.nextState.stats.priceBeliefs, undefined, 'line knowledge does not ride in bot stats');
+    assert.strictEqual(marketKernel.beginCommand(40, 'market_review'), null, 'board review command kind is retired');
+    marketKernel.lookSeen.set(40, new Map([[6, { deals: 3, at: now }]]));
+    marketKernel.fence(40);
+    assert.strictEqual(marketKernel.lookSeen.has(40), false, 'hot handoff deletes worker line observations');
+    marketKernel.upsert({ state: state(41), context: {} });
+    marketKernel.lookSeen.set(41, new Map([[7, { deals: 3, at: now }]]));
+    marketKernel.remove(41);
+    assert.strictEqual(marketKernel.lookSeen.has(41), false);
+    await marketKernel.shutdown();
+    assert.strictEqual(marketKernel.lookSeen.size, 0);
 
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {

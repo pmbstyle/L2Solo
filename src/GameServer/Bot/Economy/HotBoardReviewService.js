@@ -1,6 +1,5 @@
 const { performance } = require('perf_hooks');
 const BoardReviewEvents = require('./BoardReviewEvents');
-const Protocol = require('../Population/ColdSimulationProtocol');
 
 function authorityOf(state) {
     return { ownerId: state.simulation?.ownerId || 'legacy_main',
@@ -41,7 +40,6 @@ class HotBoardReviewService {
         // Resolve the main-thread modules after board/lifecycle startup. A
         // module import neither starts work nor creates an import cycle.
         this.afk = invoke('GameServer/AfkTrade/AfkTradeService');
-        this.counters = invoke('GameServer/Bot/Economy/MarketCounters');
         this.world = invoke('GameServer/World/World');
         this.life = invoke('GameServer/Bot/Population/BotLifeState');
         this.metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -50,8 +48,7 @@ class HotBoardReviewService {
         this.market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
         this.dispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
         this.board = this.afk.boardIndex();
-        this.events = new BoardReviewEvents({ board: this.board,
-            counter: key => this.counters.counter(key).deals });
+        this.events = new BoardReviewEvents({ board: this.board });
         this.admit = admit;
         this.complete = complete;
         this.generation = (this.generation || 0) + 1;
@@ -61,21 +58,16 @@ class HotBoardReviewService {
         // A disposed generation may still be awaiting native flush. Its
         // token fences writes and keeps a restarted service from overlapping.
         this.inFlight = this.inFlight || null;
-        this.safetyRepairs = this.safetyRepairs || 0;
         this.unsubscribers = [];
+        this.lookOwners = new Map();
         try {
-            this.unsubscribers.push(this.counters.subscribeChanges(change => {
-                if (change.reset) this.events.resetCounterHistory();
-                else this.counterChanged(change.key, change.deals);
-            }));
             this.unsubscribers.push(this.afk.subscribeBoardChanges(change => {
-                for (const id of change.ownerIds || []) this.ownerChanged(id);
-                if (change.ready && !change.ownerIds) this.seed();
+                for (const id of change.ownerIds || []) this.ownerChanged(id, 'line', change.revision ?? null);
             }));
-            this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id)));
-            this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id)));
-            this.unsubscribers.push(this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId))));
-            this.seed();
+            this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id, 'user')));
+            this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id, 'review')));
+            this.unsubscribers.push(this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId), 'life',
+                Number(state.simulation?.revision || 0))));
             return true;
         } catch (error) {
             this.stop();
@@ -83,68 +75,41 @@ class HotBoardReviewService {
         }
     }
 
-    seed() {
-        if (!this.running || !this.afk.isBoardReady()) return;
-        const owners = new Set(this.events.pending);
-        for (const key of this.counters.COUNTER_KEYS) {
-            for (const id of this.board.ownersForCounter(key)) owners.add(id);
-        }
-        // Startup/full-copy hydration visits priced board owners, never all
-        // actors or life states. Event paths visit only affected owners.
-        for (const id of owners) this.events.ownerChanged(id);
-        this.pump();
-    }
-
-    counterChanged(key, deals) {
-        if (!this.running) return;
-        this.events.counterChanged(key, deals);
-        this.pump();
-    }
-
-    ownerChanged(id) {
-        if (!this.running) return;
-        this.events.ownerChanged(Number(id));
-        this.pump();
-    }
-
-    probeSafety(checkpoint) {
-        const deferred = reason => ({ status: 'deferred', reason });
-        if (!this.running || !this.afk.isBoardReady()) return deferred('not_ready');
-        const expected = Protocol.safetyCheckpoint(checkpoint);
-        if (!expected || expected.phase !== 'hot' || expected.simulationLeaseId
-            || expected.simulationLeaseUntil > Date.now()
-            || !['legacy_main', 'cold_worker'].includes(expected.simulationOwner)) return deferred('ineligible');
-        const id = expected.characterId;
-        if (!Protocol.sameSafetyCheckpoint(expected, Protocol.safetyCheckpoint(this.life.hotRow(id)))) {
-            return deferred('changed_checkpoint');
-        }
-        // Intentional deferral and the actual native command cover this owner
-        // even if another callback has removed its queue input meanwhile.
-        if (this.events.pending.has(id) || this.events.inFlight.has(id) || this.inFlight?.id === id) {
-            return { status: 'covered', reason: 'pending' };
-        }
-        if (!this.events.ownerStatus(id).behind) return { status: 'covered', reason: 'current' };
-        const edge = this.events.edgeOf(id);
-        if (!edge) return deferred('unknown_input');
-        if (this.events.lastAcceptedEdge(id) === edge) return deferred('already_accepted');
-        const record = this.world.registeredActorById(id);
-        if (!usableOwner(record)) return deferred('owner_unavailable');
-        return { status: 'uncovered', checkpoint: expected, generation: this.generation,
-            coverageVersion: this.events.coverageVersion(id), edge,
-            token: record.token, session: record.session, actor: record.actor };
-    }
-
-    repairSafety(receipt) {
-        if (receipt?.status !== 'uncovered' || !Number.isSafeInteger(this.safetyRepairs + 1)) return false;
-        const current = this.probeSafety(receipt.checkpoint);
-        if (current.status !== 'uncovered' || current.generation !== receipt.generation
-            || current.coverageVersion !== receipt.coverageVersion || current.edge !== receipt.edge
-            || current.token !== receipt.token || current.session !== receipt.session || current.actor !== receipt.actor) return false;
-        this.events.acceptSafetyEdge(receipt.checkpoint.characterId, receipt.edge);
-        this.safetyRepairs++;
-        this.metrics.recordHotSafetyTotal(this.safetyRepairs);
-        this.pump();
+    // ARCH-NOTE: no universal break-enter hook exists. Rest/shopping ticks
+    // use this numeric session guard; BotAI clears it on any other state.
+    // Each actual hot owner keeps at most eight numeric observations on its
+    // native session; retirement/handoff releases them below.
+    naturalBreak(session, kind) {
+        if (!kind) { delete session.boardBreakKind; return false; }
+        if (session.boardBreakKind === kind) return false;
+        session.boardBreakKind = kind;
+        if (!this.running) return false;
+        const id = Number(session.actor?.fetchId?.());
+        invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyLook(id);
+        this.ownerChanged(id, 'natural');
         return true;
+    }
+
+    preparedOwner(id) {
+        if (!this.running) return false;
+        const record = this.world.registeredActorById(Number(id));
+        if (!usableOwner(record) || !record.session.boardBreakKind) return false;
+        this.ownerChanged(Number(id), 'prepared');
+        return true;
+    }
+
+    ownerChanged(id, reason = 'owner', revision = null) {
+        if (!this.running) return;
+        id = Number(id);
+        if (!this.life.hotRow(id) || !this.events.ownerStatus(id).priced) this.forgetLook(id);
+        this.events.ownerChanged(Number(id), reason, revision);
+        this.pump();
+    }
+
+    forgetLook(id) {
+        const session = this.lookOwners?.get(Number(id));
+        if (session) delete session.boardLookSeen;
+        this.lookOwners?.delete(Number(id));
     }
 
     pump() {
@@ -175,15 +140,30 @@ class HotBoardReviewService {
             const record = this.world.registeredActorById(id);
             const hot = this.life.hotRow(id);
             if (!usableOwner(record) || !hot) { this.events.defer(id); return; }
-            const live = this.listings.actorState(record.session);
-            const state = { ...hot, characterId: id, level: live.level, adena: live.adena,
-                inventory: live.inventory, phase: 'hot',
+            const actor = record.actor;
+            const state = { ...hot, characterId: id,
+                level: Number(actor.fetchLevel?.() || hot.level || 1),
+                adena: Number(actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? hot.adena ?? 0),
+                inventory: hot.inventory, phase: 'hot',
                 activity: record.session.plan || hot.activity, loc: liveLocation(record.actor),
                 currentRegion: record.session.currentRegion || hot.currentRegion,
                 spotId: record.session.currentSpot?.id ?? hot.spotId,
-                stats: { ...hot.stats, classId: live.stats.classId, marketTrades: hot.stats?.marketTrades || {} } };
-            const ctx = this.listings.traderContext(state);
-            const review = this.pricing.look(state, this.board.ownerLines(id), ctx);
+                marketTrades: hot.marketTrades || {}, stats: { ...hot.stats, classId: Number(actor.fetchClassId?.() ?? hot.stats?.classId ?? 0) } };
+            const persona = invoke('GameServer/Bot/AI/BotPersona').of(state), packet = state.stats?.money;
+            // A natural look consumes accepted scalar prices of time/money.
+            // It cannot build a whole hunt/stock/recipe forecast on main.
+            const economy = { persona, hourAdena: Number(packet?.[0]), moneyPrice: Number(packet?.[1]),
+                gapHorizonHours: NaN };
+            const Look = require('./BoardLook'), lines = this.board.ownerLines(id);
+            const mask = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.feasibilityFor(state);
+            const ctx = this.pricing.traderContext(state, { economy, persona, board: this.board,
+                npcOffersFor: selfId => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId),
+                canSell: Look.feasibilityPredicate(state, lines, mask) });
+            // The cursor is attached to the native hot session, so >8 lines
+            // advance on successive natural breaks without a polling timer.
+            const seen = record.session.boardLookSeen || (record.session.boardLookSeen = new Look.SeenLines());
+            this.lookOwners.set(id, record.session);
+            const review = this.pricing.lookOwn(state, lines, ctx, seen);
             if (!review) { this.events.deferAfterCommand(id); return; }
             const hotAuthority = authorityOf(hot);
             const canCommitReview = () => {
@@ -219,6 +199,7 @@ class HotBoardReviewService {
         for (const unsubscribe of this.unsubscribers) unsubscribe();
         this.dispatcher.cancel(this.dispatchKey);
         this.events.clear();
+        for (const id of this.lookOwners.keys()) this.forgetLook(id);
         this.scheduled = false;
         return true;
     }

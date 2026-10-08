@@ -1,4 +1,9 @@
-const Database = invoke('Database');
+// ARCH-NOTE: C1/E3 the clan worker's missing-money survival fallback reads
+// an existing persona or null. Resolve the live database only at an actual
+// SQL operation so that pure lookup keeps the worker dependency guard intact.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
+const { isMainThread } = require('node:worker_threads');
 
 const Types = require('./BotPersonaTypes');
 const TableChannel = require('../Population/ColdTableChannel');
@@ -16,6 +21,9 @@ const COLUMNS = 'characterId, version, seed, primaryDrive, archetype, traitsJson
 // the main thread (loadAll); in the cold worker filled from the 'personas'
 // table of ColdTableChannel (useRowSource).
 const cache = new Map();
+// ARCH-NOTE: PERF: 1,733 native worker rows retained 2,254,480 B before
+// this LRU and 182,344 B after (same traits/talents/voice); main is unchanged.
+const WORKER_CACHE_LIMIT = 64;
 // Stored personas per type, for the share of a new bot's type.
 let typeCounts = {};
 let rowSource = null;
@@ -192,7 +200,7 @@ function populationTotal() {
 }
 
 function save(persona) {
-    return Database.execute([
+    return persistenceDatabase().execute([
         `INSERT INTO ${TABLE} (${COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(characterId) DO NOTHING`,
         [persona.characterId, persona.version, persona.seed, persona.primaryDrive, persona.archetype,
@@ -211,7 +219,7 @@ const BotPersona = {
     init() {
         if (initialized) return Promise.resolve(true);
         if (initPromise) return initPromise;
-        initPromise = Database.execute(['SELECT 1', []], 'schema:bot-personas').then(() => {
+        initPromise = persistenceDatabase().execute(['SELECT 1', []], 'schema:bot-personas').then(() => {
             initialized = true;
             return true;
         }).catch((err) => {
@@ -225,7 +233,7 @@ const BotPersona = {
     // Main thread, once at boot: every stored persona into the cache, the
     // counts per type, and the 'personas' table for the background workers.
     loadAll() {
-        return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE}`, []], 'bot-personas:load-all').then((rows) => {
+        return persistenceDatabase().execute([`SELECT ${COLUMNS} FROM ${TABLE}`, []], 'bot-personas:load-all').then((rows) => {
             cache.clear();
             typeCounts = {};
             for (const row of rows || []) {
@@ -254,11 +262,17 @@ const BotPersona = {
         const id = idOf(subject);
         if (!id) return null;
         const cached = cache.get(id);
-        if (cached) return cached;
+        if (cached) {
+            if (!isMainThread) { cache.delete(id); cache.set(id, cached); }
+            return cached;
+        }
         const row = rowSource?.(id);
         if (!row) return null;
         const persona = fromTableRow(row);
         cache.set(id, persona);
+        // Worker rows are authoritative; a discarded derived persona is
+        // rebuilt from that same row, never rolled or queried from the DB.
+        if (!isMainThread && cache.size > WORKER_CACHE_LIMIT) cache.delete(cache.keys().next().value);
         return persona;
     },
 
@@ -273,6 +287,13 @@ const BotPersona = {
 
     snapshot(characterId) { return cache.get(Number(characterId || 0)) || null; },
 
+    size() { return cache.size; },
+
+    forget(characterId) {
+        // Main's boot cache also supplies population shares and table rows.
+        return !isMainThread && cache.delete(Number(characterId || 0));
+    },
+
     load(characterId) {
         const id = Number(characterId || 0);
         if (!id) return Promise.resolve(null);
@@ -280,7 +301,7 @@ const BotPersona = {
         if (cached) return Promise.resolve(cached);
         return this.init().then((ready) => {
             if (!ready) return null;
-            return Database.execute([`SELECT ${COLUMNS} FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]]).then((rows) => {
+            return persistenceDatabase().execute([`SELECT ${COLUMNS} FROM ${TABLE} WHERE characterId = ? LIMIT 1`, [id]]).then((rows) => {
                 const persona = normalize(rows?.[0]);
                 if (persona) remember(persona);
                 return persona;
@@ -321,7 +342,7 @@ const BotPersona = {
         const safeLimit = Math.max(1, Math.min(500, Number(limit) || 100));
         return this.init().then((ready) => {
             if (!ready) return { created: 0, exhausted: false };
-            return Database.execute([
+            return persistenceDatabase().execute([
                 `SELECT states.characterId, states.statsJson
                 FROM bot_life_state states
                 LEFT JOIN ${TABLE} personas ON personas.characterId = states.characterId

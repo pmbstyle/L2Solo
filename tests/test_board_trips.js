@@ -1,7 +1,12 @@
 // Trading on the board by trips (market-sim step 3.3 group C): what a trip
 // costs, where a bot with karma may go, and the decisions built on them.
 const assert = require('assert');
+const fs = require('node:fs');
+const nodePath = require('node:path');
+const isolated = require('./helpers/isolatedSocialDatabase')('board_trips', nodePath.resolve(__dirname, '..'));
+require('./helpers/databaseIsolation');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
@@ -12,6 +17,7 @@ const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const Efficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 
+async function checkBoardTrips() {
 const HOUR_MS = 3600000;
 const town = (name) => Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
 const SPOT = { locX: 20000, locY: 140000, locZ: -3000 };
@@ -79,10 +85,7 @@ Config.coldHonestTravel = false;
     // Buyers of 'gear d': three in Giran for each one in Gludio.
     for (let deal = 0; deal < 40; deal++) MarketCounters.deal(SABER, 50000, 1, 1000 + deal, 7, deal % 4 ? 'Giran' : 'Gludio');
     const rolled = tally([{ selfId: SABER, price: 50000, count: 1 }]);
-    const giran = rolled.get('Giran') || 0;
-    const gludio = rolled.get('Gludio') || 0;
-    assert(giran > 2 * gludio && gludio > 50, `in proportion to the buyers: Giran ${giran}, Gludio ${gludio}`);
-    assert(400 - giran - gludio < 30, 'a town without buyers keeps only a small chance');
+    assert.strictEqual(rolled.get(seed), 400, 'category history cannot replace an unsupported item/town forecast');
     // A trip that costs more than the shop would see there leaves it nothing.
     const farGiran = MarketTownPolicy.shopTown(hunter(), [{ selfId: SABER, price: 50000, count: 1 }],
         { tripCost: (name) => (name === 'Giran' ? 1e9 : 0), timestamp: 5000, rollKey: ['far'] });
@@ -211,7 +214,19 @@ Config.coldHonestTravel = false;
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, inventory: {},
         stats: { equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1,
             materials: [{ selfId: STEM, amount: 10, missing: 10, farmEffort: 1e6 }] } } };
-    const goal = NeedsEvaluator.evaluate(crafter, { now: 1000 }).find((candidate) => candidate.type === 'buy_craft_material');
+    const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
+    // A stale acquisition field is not a cold wish decision (FX-C1).
+    // Preserve that missing-decision contract separately from the trip quote.
+    const missingDecision = NeedsEvaluator.evaluate(crafter, { now: 1000 });
+    assert(!missingDecision.some(candidate => candidate.type === 'buy_craft_material'),
+        'without a worker decision main must not invent a material-shopping leaf');
+    // The native planner owns stack/town selection. This is an offer quote,
+    // with the original wallet as its pre-filter bound, not an admitted spend
+    // or a fabricated money packet. Its public errand adapter keeps the same
+    // town assertion while testing the actual landed-price owner.
+    const materialPlan = ColdMarketService.planPurchase(crafter, STEM, 10,
+        { money: crafter.adena, timestamp: 1000 });
+    const goal = materialPlan ? ColdMarketService.errandGoal(materialPlan) : null;
     assert.strictEqual(goal?.plan?.marketTown, 'Dion', `the near offer wins by its landed price (${goal?.plan?.marketTown})`);
     AfkTrade._resetForTests();
 }
@@ -235,7 +250,23 @@ Config.coldHonestTravel = false;
         const state = { characterId: me, level: 30, adena: 50000, activity: 'resting', loc: { ...SPOT }, inventory: {}, stats: {} };
         const ctx = MarketPricing.traderContext(state, { board, persona: { traits: {}, understanding: 0.5 }, npcOffersFor: () => [],
             timestamp: t0 + 100, knowledgeEnabled: false });
-        const chosen = MarketPricing.bid(STEM, ctx, { units: 20, worth: 400, cap: 400, rollKey: ['b'] });
+        // N79 derives current OwnWorth from native usefulness/money price.
+        // These original empty-bag inputs need no Stem, so a new ad is refused.
+        const nativeWorth = ctx.economy.itemUsefulness(STEM) / ctx.economy.network.moneyPrice;
+        assert.strictEqual(ctx.economy.worth(STEM), nativeWorth);
+        assert.strictEqual(nativeWorth, 0, 'no native Stem use is manufactured from legacy metadata');
+        assert.strictEqual(MarketPricing.bid(STEM, ctx, { units: 20, worth: 400, cap: 400, rollKey: ['b'] }), null,
+            'legacy metadata cannot fund a new bid above current OwnWorth');
+        // This branch is explicitly a historical standing-line learning unit,
+        // not a new native buy-ad publication or physical SQLite trade. Preserve
+        // the original prior/market/trader/grid/roll and worth400 metadata that
+        // MarketPricing.look reads from an already open line.
+        const historical = PriceDecision.chooseBid(PriceBelief.prior(STEM, ctx),
+            PriceDecision.marketFor(STEM, { board: ctx.board, ownerId: ctx.characterId, units: 20,
+                tripCost: ctx.tripCost, npcOffers: ctx.npcOffersFor(STEM), timestamp: ctx.timestamp }),
+            ctx.trader, { worth: 400, cap: 400 }, ['b']);
+        const chosen = historical ? { ...historical, pricing: MarketPricing.lineState(STEM, ctx,
+            { price: historical.price, storeType: BUY, worth: 400 }) } : null;
         assert(chosen, 'a bid');
         assert.strictEqual(chosen.pricing.worth, 400, 'the line carries the authored worth');
         board.put({ id: 1, kind: 'buy_ad', storeType: BUY, ownerId: me, town: 'Giran', botOwned: true,
@@ -254,20 +285,38 @@ Config.coldHonestTravel = false;
         const chooseBid = PriceDecision.chooseBid;
         let after;
         let looked;
+        let reviewCalls = 0;
+        let reviewChoice;
         try {
             PriceDecision.chooseBid = (belief, market, trader, options, ...rest) => {
+                reviewCalls++;
                 after = belief.mu;
                 assert.strictEqual(options.worth, 400, 'review retains worth despite its public prior moving');
-                return chooseBid(belief, market, trader, options, ...rest);
+                reviewChoice = chooseBid(belief, market, trader, options, ...rest);
+                return reviewChoice;
             };
             looked = MarketPricing.look(state, board.ownerLines(me), reviewCtx);
         } finally { PriceDecision.chooseBid = chooseBid; }
-        assert(looked, 'a counter event reviewed the line');
+        assert.strictEqual(reviewCalls, 1, 'the native counter event reaches the shared bid choice');
+        if (reviewChoice && reviewChoice.price === chosen.price) {
+            assert.strictEqual(looked, null, 'a learned near-best standing bid needs no line mutation');
+        } else if (reviewChoice) {
+            assert(looked?.reprices.some(move => move.price === reviewChoice.price), 'a new native price is returned as a proposal');
+        } else assert(looked?.withdrawals.length, 'the native refusal proposes withdrawal');
+        assert.strictEqual(board.ownerLines(me)[0].price, chosen.price, 'stateless review leaves the standing board line unchanged');
         assert(Number.isFinite(after), 'shared bid decision received the observed prior');
-        return { before, after, price: chosen.price };
+        const observationWeight = observations.reduce((sum, row) => sum + row[1], 0);
+        const expectedAfter = (publicPrior.K * before + observations.reduce((sum, row) => sum + row[0] * row[1], 0))
+            / (publicPrior.K + observationWeight);
+        assert(Math.abs(after - expectedAfter) < 1e-12, 'review uses the unchanged weighted line-observation update');
+        return { before, after, price: chosen.price, observation: observations[0][0] };
     };
     const filled = run(me);
-    assert(filled.after < filled.before, `its fills say the price is no higher (${filled.before} -> ${filled.after})`);
+    // A below-bid observation can still exceed the fresh public prior. Its
+    // update moves toward that actual observation; mirror ordering below is
+    // the direction contract, independent of removed speculative priors.
+    assert(filled.after >= Math.min(filled.before, filled.observation)
+        && filled.after <= Math.max(filled.before, filled.observation));
     const passed = run(5);
     assert.strictEqual(passed.before, filled.before, 'the mirror comparison starts from the same fresh public prior');
     assert.strictEqual(passed.price, filled.price, 'the mirror comparison uses the same standing bid');
@@ -275,10 +324,9 @@ Config.coldHonestTravel = false;
     MarketCounters.reset();
 }
 
-// 9. On arrival the errand is bought there (ColdMarketService.tryPurchase):
-// the board's lines of the town one deal each, the merchant the rest, then
-// the errand is done.
-(async () => {
+// 9. A legacy arrival plan fills the town's cheaper public line before its
+// NPC remainder. A plan alone does not supply native execution authority.
+await (async () => {
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const GoalState = invoke('GameServer/Bot/Goals/GoalState');
@@ -288,16 +336,17 @@ Config.coldHonestTravel = false;
         clear: GoalState.clear, buyFromShop: AfkTrade.buyFromShop, npc: Database.purchaseNpcInventoryItem };
     const buys = [];
     try {
+        Database.init();
         LifeState.upsertState = async (state) => state;
         GoalState.clear = async () => null;
         AfkTrade.buyFromShop = async (_id, _store, selfId, amount, options) => {
             buys.push(['line', amount, options.expectedPrice]);
-            return { coldState: { ...options.coldState, adena: options.coldState.adena - amount * options.expectedPrice } };
+            return kept.buyFromShop.call(AfkTrade, _id, _store, selfId, amount, options);
         };
         LifeState.refreshInventory = async (state) => state;
-        Database.purchaseNpcInventoryItem = async (_id, item) => {
+        Database.purchaseNpcInventoryItem = async (_id, item, ...args) => {
             buys.push(['merchant', item.amount, item.unitPrice]);
-            return { ok: true, spent: item.amount * item.unitPrice };
+            return kept.npc.call(Database, _id, item, ...args);
         };
         const merchant = invoke('GameServer/Bot/Economy/StaticMerchantPricing').sellersOf(1463)
             .find((seller) => seller.town === 'Dion').price;
@@ -312,21 +361,42 @@ Config.coldHonestTravel = false;
         const lapsed = { ...arrived, stats: { marketErrand: { ...arrived.stats.marketErrand, at: Date.now() - 31 * 60 * 1000 } } };
         assert.strictEqual((await ColdMarketService.tryPurchase(lapsed, null)).purchased, false);
         assert.deepStrictEqual(buys, [], 'a lapsed errand buys nothing');
-        const result = await ColdMarketService.tryPurchase(arrived, null);
-        assert.strictEqual(result.purchased, true);
-        assert.deepStrictEqual(buys, [['line', 500, cheaper], ['merchant', 1500, merchant]], 'the cheaper line, then the merchant');
-        assert.strictEqual(result.state.stats.marketErrand, null, 'the errand is done');
-        assert.strictEqual(result.state.stats.lastErrand.units, 2000);
+        const planned = ColdMarketService.planPurchase(arrived, 1463, 2000,
+            { money: 180000, towns: ['Dion'], purpose: 'shots' });
+        assert.deepStrictEqual(planned.lines.map(entry => [entry.count, entry.price]), [[500, cheaper]],
+            'the original quote and finite stock supply the cheaper part');
+        assert.strictEqual(planned.npc, 1500, 'the actual merchant supplies only the remaining units');
+        assert.strictEqual(planned.cost, 500 * cheaper + 1500 * merchant);
+        // ARCH-NOTE: the original unit had synthetic board/state projections
+        // and mocked physical writers, with no declared SQL owner/life row.
+        // It now proves the native admission refusal rather than inventing an
+        // E2 receipt. Real admitted success/replay is covered by its own fixture.
+        const before = structuredClone(arrived);
+        await assert.rejects(ColdMarketService.tryPurchase(arrived, null), /economy_owner_changed/);
+        assert.deepStrictEqual(arrived, before, 'refusal preserves the original wallet, bag and errand');
+        assert.deepStrictEqual(buys, [['line', 500, cheaper]],
+            'the native public route refuses at admission; NPC admission refuses before its physical writer');
+        assert.deepStrictEqual(await Database.fetchItems(arrived.characterId), [],
+            'synthetic bag projections never mint native holdings');
     } finally {
         Object.assign(LifeState, { upsertState: kept.upsertState, refreshInventory: kept.refreshInventory });
         Database.purchaseNpcInventoryItem = kept.npc;
         GoalState.clear = kept.clear;
         AfkTrade.buyFromShop = kept.buyFromShop;
         AfkTrade._resetForTests();
+        await Database.close();
     }
     console.log('Board trips: trip cost, karma towns, the shop town, buy-ad answers, the cheapest town, errands, landed material'
-        + ' prices, the buy-ad look and the purchase on arrival passed');
+        + ' prices, the buy-ad look and arrival admission boundary passed');
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
+});
+
+}
+checkBoardTrips().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+}).finally(() => {
+    fs.rmSync(isolated.directory, { recursive: true, force: true });
 });

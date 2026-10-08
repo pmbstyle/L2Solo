@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Corridor = invoke('GameServer/Geodata/TownPathCorridor');
 
@@ -86,7 +87,7 @@ class TownNavigation {
         if (!entry) return;
         this.points -= entry.count;
         this.cache.delete(key);
-        this.metrics.evicted++;
+        DiagnosticConfig.developerDiagnostics && (this.metrics.evicted++);
     }
 
     request(request, options = {}, exact = false) {
@@ -109,12 +110,12 @@ class TownNavigation {
                     const path = this.adapt(entry.result, request, actorKey);
                     this.finish(actorKey, consumer);
                     if (path !== undefined) {
-                        this.metrics.hits++;
+                        DiagnosticConfig.developerDiagnostics && (this.metrics.hits++);
                         // Another delivery may have evicted this entry already.
                         if (this.cache.get(key) === entry) { this.cache.delete(key); this.cache.set(key, entry); }
                         resolve(path);
                     } else {
-                        this.metrics.rejectedConnectors++;
+                        DiagnosticConfig.developerDiagnostics && (this.metrics.rejectedConnectors++);
                         if (exact) this.remove(key);
                         resolve(this.request(request, options, true));
                     }
@@ -123,9 +124,9 @@ class TownNavigation {
         } else if (entry) this.remove(key);
 
         let group = this.groups.get(key);
-        if (group) this.metrics.joined++;
+        if (group) DiagnosticConfig.developerDiagnostics && (this.metrics.joined++);
         else {
-            this.metrics.misses++;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.misses++);
             group = { key, request, workerKey: `${options.priority >= 100 ? 'companion:town' : 'town'}:${++this.sequence}`, consumers: new Set() };
             this.groups.set(key, group);
             group.promise = this.pool.request({ ...request, townCorridor: true, navigationRevision: Geodata.navigationRevision || 0 }, { ...options, key: group.workerKey });
@@ -154,7 +155,7 @@ class TownNavigation {
                 )) { resolve(this.request(request, options, true)); return; }
                 const path = this.adapt(result, request, actorKey);
                 if (path === undefined && !exact) {
-                    this.metrics.rejectedConnectors++;
+                    DiagnosticConfig.developerDiagnostics && (this.metrics.rejectedConnectors++);
                     resolve(this.request(request, options, true));
                 } else resolve(path === undefined ? result.path : path);
             }, (error) => { this.finish(actorKey, consumer); reject(error); }), (error) => {
@@ -184,7 +185,7 @@ class TownNavigation {
         return true;
     }
 
-    stats() { return { ...this.metrics, entries: this.cache.size, points: this.points, pending: this.groups.size, consumers: this.consumers.size }; }
+    stats() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.metrics, entries: this.cache.size, points: this.points, pending: this.groups.size, consumers: this.consumers.size }; }
 }
 
 function forPool(pool) {

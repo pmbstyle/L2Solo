@@ -739,7 +739,7 @@ function cancelPendingSupportCast(session, provider, target, skill, reason = 're
         skillId: pending.skillId,
         at: Date.now()
     };
-    console.info(
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
         'PartySupport :: provider=%s target=%s skill=%s outcome=failed reason=%s',
         provider?.fetchName?.() || actorOrder(provider),
         pending.targetId,
@@ -778,7 +778,7 @@ function finishSupportCast(session, provider, skill) {
             at: Date.now()
         };
     }
-    console.info(
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
         'PartySupport :: provider=%s target=%s skill=%s effect=%s outcome=%s durationMs=%s',
         provider?.fetchName?.() || actorOrder(provider),
         active.targetId,

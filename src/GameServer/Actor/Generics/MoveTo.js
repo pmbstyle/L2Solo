@@ -27,7 +27,7 @@ const TOWN_NPC_EGRESS_MAX_AGE_MS = 120000;
 const TOWN_NPC_EGRESS_START_TOLERANCE = 96;
 
 function recordMovementTrace(session, entry) {
-    if (!session) return;
+    if (!session || !(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
     if (!Array.isArray(session.movementTrace)) session.movementTrace = [];
     session.movementTrace.push({ at: Date.now(), ...entry });
     if (session.movementTrace.length > MOVEMENT_TRACE_LIMIT) {
@@ -185,7 +185,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         const duration = Math.max(1, (distance / speed) * 1000);
         const tickRate = isClose ? 100 : 250;
         const segmentStartedAt = Date.now();
-        recordMovementTrace(session, {
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) recordMovementTrace(session, {
             event: 'move',
             index,
             pathLength: path.length,
@@ -206,7 +206,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
                 actor.setLocXYZ(nextLoc);
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                 session.moveTimer = null;
-                recordMovementTrace(session, {
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) recordMovementTrace(session, {
                     event: 'arrive',
                     index,
                     pathLength: path.length,
@@ -415,7 +415,7 @@ function moveTo(session, actor, coords) {
         const isClose = isCompanion || distanceToPlayer <= 500;
 
         let pathTarget = { ...requestedTo };
-        const pathStartedAt = Date.now();
+        const pathStartedAt = invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true ? Date.now() : null;
         const moveGoal = previewOnly ? null : beginMoveGoal(session, actor, requestedTo, coords.targetActor);
         if (moveGoal && townName) {
             moveGoal.town = townName;
@@ -430,7 +430,7 @@ function moveTo(session, actor, coords) {
                 session.lastPathfinding = {
                     requestedTo,
                     routedTo,
-                    townRoute: {
+                    townRoute: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? {
                         from: { locX: startX, locY: startY, locZ: startZ },
                         to: { ...requestedTo },
                         routedTo: { ...routedTo },
@@ -440,7 +440,7 @@ function moveTo(session, actor, coords) {
                         plan: null,
                         reason: 'reverse_shop_ingress',
                         shopKey: egress.key
-                    },
+                    } : { changedTarget: true },
                     pathLength: egress.path.length,
                     routeUsable: true,
                     lowLodWarp: false,
@@ -529,7 +529,7 @@ function moveTo(session, actor, coords) {
                 const movementPath = routeFound
                     ? candidatePath
                     : (fallbackLineOfSight ? [{ ...pathTarget }] : []);
-                PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
                 session.lastPathfinding = {
                     requestedTo,
                     routedTo: { ...pathTarget },
@@ -543,7 +543,7 @@ function moveTo(session, actor, coords) {
                     worker: true,
                     arrivalRadius: pathArrivalRadius,
                     maxNodes: pathMaxNodes,
-                    ...(townName ? { townNavigation: pool.stats() } : {}),
+                    ...(townName && (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? { townNavigation: pool.stats() } : {}),
                     ...(error ? { error: error.code || error.message || String(error) } : {}),
                     at: Date.now()
                 };
@@ -693,7 +693,7 @@ function moveTo(session, actor, coords) {
         }
 
         const routeFound = Array.isArray(path) && path.length > 1;
-        PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) PopulationMetrics.recordPathfindingDuration(isCompanion ? 'companion' : 'actor', Date.now() - pathStartedAt);
         // A* is deliberately bounded and can return null in otherwise open
         // terrain. The runtime has always handled that case with a direct
         // movement fallback, so distinguish a clear line from a genuinely

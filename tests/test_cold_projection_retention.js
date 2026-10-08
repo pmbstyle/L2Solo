@@ -186,7 +186,10 @@ async function publish() {
         assert.equal(coordinator.projectedEntryFor(row.characterId).ok, true);
 
         delivered = receive();
-        await coordinator.handleCommitResults([{ ok: true, characterId: row.characterId, revision: 5 }]);
+        const inputToken = { characterId: row.characterId, ownerId: 'cold_simulation_owner', revision: 4,
+            leaseId: 'projection_commit_fixture', leaseUntil: Date.now() + 30000 };
+        await coordinator.handleCommitResults([{ ok: true, characterId: row.characterId, revision: 5,
+            proposal: { token: inputToken, proposalId: 'projection_commit_fixture' } }]);
         message = await delivered;
         assert.equal(message.type, 'commit_ack');
         assert.equal(coordinator.projectedEntryFor(row.characterId).entry.context.targetNpcId,
@@ -214,12 +217,6 @@ async function publish() {
         await coordinator.commandTail;
         message = await delivered;
         assert.equal(message.type, 'command_ack');
-        const currentEntry = coordinator.projectedEntryFor(row.characterId).entry;
-        delivered = receive();
-        coordinator.postCollections('command_ack', { results: [{ state, context: {}, marketCommandId: 'borrowed_worker_context' }] });
-        await delivered;
-        assert.equal(coordinator.projectedEntryFor(row.characterId).entry, currentEntry, 'market ACK cannot bless borrowed Worker context');
-
         const partyRow = { partyId: 'projection-party', leaderId: row.characterId,
             memberIdsJson: JSON.stringify([row.characterId, row.characterId + 1]), status: 'active',
             statsJson: '{}', startedAt: 0, updatedAt: 1 };

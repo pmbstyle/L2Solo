@@ -1,10 +1,14 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
 require('../src/Global');
 const Availability = invoke('GameServer/Bot/AI/BotAvailability');
 const Legacy = invoke('GameServer/Bot/AI/BotSocialMemory');
 const Runtime = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Bridge = require('../src/GameServer/Social/PlayerPartyRelationship');
+const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
+const originalRoll = Tendency.roll;
+const inviteRolls = [];
 const Revenge = require('../src/GameServer/Social/RevengePolicy');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const originalFindClan = ClanService.findById;
@@ -28,12 +32,22 @@ const event = type => {
     Runtime.accept(snapshot);
 };
 (async () => { try {
+    // Relationship admission is tested with a successful native invitation
+    // tendency roll; unrelated tendency decisions retain their native stream.
+    Tendency.roll = (...parts) => {
+        if (parts[0] !== 'party_invite') return originalRoll(...parts);
+        inviteRolls.push(parts);
+        return 0;
+    };
     Legacy.getSnapshot = Legacy.peekSnapshot = () => legacy;
     Runtime.clanSocial = null;
     for (const result of assessBoth()) assert.strictEqual(result.reason, 'relationship_unloaded',
         'unloaded field memory cannot silently turn a remembered killer into a stranger');
     Runtime.accept(snapshot);
     assert(assessBoth().every(r => r.available), 'known legacy partners remain eligible with loaded neutral field memory');
+    assert.strictEqual(inviteRolls.length, 2, 'hot and cold use the native invite policy after relationship admission');
+    assert(inviteRolls.every(parts => parts[1] === botId && parts[2] === 501),
+        'the controlled invitation roll retains the original bot and player identities');
     event('killed'); at += 60000; event('killed'); at += 60000; event('killed');
     const angry = Runtime.assess({ id: botId }, { id: 501 }, {}, at);
     const angrySnapshot = structuredClone(snapshot);
@@ -96,6 +110,7 @@ const event = type => {
     }
     console.log('Player party relationship: hot/cold parity, revenge, reconciliation, clan context, pending memory and no duplicate credit passed');
 } finally {
+    Tendency.roll = originalRoll;
     ClanService.findById = originalFindClan;
     Legacy.getSnapshot = original.get; Legacy.peekSnapshot = original.peek; Runtime.clanSocial = original.clans;
     Runtime.views.delete(botId); Runtime.snapshots.delete(botId);

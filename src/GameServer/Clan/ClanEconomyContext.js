@@ -52,7 +52,7 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
             object: { kind: 'equipment', itemId: id, memberId: Number(entry.memberId) }, valueHours: usefulness,
             paths: [{ kind: entry.plan?.strategy || 'market', activity: 'clan_equipment',
                 price: Math.max(0, positive(entry.plan?.bridgeCost ?? entry.plan?.market?.price)
-                    - positive(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(members[memberIndex] || {}))),
+                    - positive(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(members[memberIndex] || {}, 0, { free: true }))),
                 costHours: positive(entry.costHours), available: entry.plan?.status !== 'blocked' }] });
     }
     if (owned) {
@@ -131,18 +131,29 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
 function forClan(clan, inputs = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+    const Decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
     const memberContexts = (clan.members || []).map(member => {
-        const context = Economy.forState(member, { persona: member.persona });
-        const clanHorizon = context.horizonHours ?? Valuation.stageHours(member, context.hunt.expPerHour, context.persona);
+        const numbers = Decisions.clanNumbers(member.characterId ?? member.id);
+        // ARCH-NOTE: a complete cold decision already supplies the member's
+        // hour and horizon. Compute its network-free fallback only on demand,
+        // at most once in this clan review; retain no additional member cache.
+        let fallback;
+        const basics = () => fallback ??= Economy.basics(member, { persona: member.persona });
+        const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics().hunt.expPerHour, basics().persona);
         const clanItemUsefulness = id => {
-            const estimated = positive(context.itemUsefulness(id));
-            if (estimated > 0) return estimated;
+            if (Number(id) === Number(numbers?.plan?.itemId)) return positive(numbers.plan.valueHours);
             const item = require('../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
             if (!item?.etc?.slot) return 0;
             const gain = require('../Bot/Economy/WishProviders').gearGain(member, item);
-            return Math.max(0, (gain.attack + gain.defence * context.deathHours) * clanHorizon);
+            return Math.max(0, (gain.attack + gain.defence * basics().deathHours) * clanHorizon);
         };
-        return { ...context, clanHorizon, clanItemUsefulness };
+        return { persona: member.persona || basics().persona, clanHorizon,
+            hunt: { perHour: numbers?.huntPerHour ?? basics().hunt.perHour },
+            // ARCH-NOTE: Address the member decision, without retaining its
+            // multi-KB network key. The clan's unchanged event-key lottery
+            // gets a new seed; values and funding stay identical.
+            inputKey: `${member.characterId ?? member.id}:${numbers?.updatedAt ?? member.updatedAt ?? 0}`,
+            clanItemUsefulness };
     });
     const equipment = inputs.equipment || (clan.members || []).flatMap(member => member.stats?.equipmentPlan
         ? [{ memberId: member.characterId ?? member.id, plan: member.stats.equipmentPlan }] : []);

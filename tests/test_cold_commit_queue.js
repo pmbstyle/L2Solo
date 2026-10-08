@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 const { ColdCommitQueue } = require('../src/GameServer/Bot/Population/ColdCommitQueue');
 

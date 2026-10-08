@@ -53,7 +53,7 @@ async function resolve({ party, members, spot, pressure, targetNpcId, elapsedMs 
             const current = Life.cachedState(row.characterId);
             if (current) await Life.reviewTrainingAfterCommit(current);
         }
-        Parties.acceptRow(committed[0].raidPartyRow);
+        const committedParty = Parties.acceptRow(committed[0].raidPartyRow);
         Authority.accept(committed[0].raidRow);
         if (nextParty.stats.raidEncounter?.status === 'defeated') await require('./ColdRaidWorldBridge').settle(nextParty,
             { respawnAt: committed[0].raidRespawnAt });
@@ -64,7 +64,7 @@ async function resolve({ party, members, spot, pressure, targetNpcId, elapsedMs 
         const Metrics = require('./PopulationMetrics');
         Metrics.recordPartyResolve(); Metrics.recordCombat(result.debug);
         if (nextParty.status === 'dissolved') Metrics.recordPartyDissolution();
-        return { ok: true, party: Parties.find(party.partyId), debug: result.debug };
+        return { ok: true, party: committedParty, debug: result.debug };
     } finally {
         Raid.abort(id);
         await Owner.releaseBatch(grants, { releaseInvalidated: true });

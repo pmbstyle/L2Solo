@@ -32,20 +32,11 @@ function realPlayerSessions() {
     ));
 }
 
-function joinRoles(roles) {
-    if (roles.length <= 1) return roles[0] || '';
-    if (roles.length === 2) return `${roles[0]} and ${roles[1]}`;
-    return `${roles.slice(0, -1).join(', ')}, and ${roles[roles.length - 1]}`;
-}
-
 function recruitmentText(party, members, spot, maxSize) {
     const coverage = PartyComposition.roleCoverage(members);
     const openSlots = Math.max(0, Number(maxSize || 0) - members.length);
     if (!openSlots) return '';
 
-    const present = ['tank', 'healer', 'buffer']
-        .filter((role) => coverage[role])
-        .map((role) => ROLE_NAMES[role]);
     const wanted = ['tank', 'healer', 'buffer']
         .filter((role) => !coverage[role])
         .map((role) => ROLE_NAMES[role]);
@@ -54,9 +45,14 @@ function recruitmentText(party, members, spot, maxSize) {
 
     const leader = members.find((member) => Number(member.characterId) === Number(party.leaderId)) || members[0];
     const level = Number(leader?.level || 1);
-    const group = present.length ? joinRoles(present) : 'Party';
     const place = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot, spotId: party.spotId });
-    return `${group} LFM ${joinRoles(wanted)} — Lv. ${level} party at ${place}. ${require('./PartyAgreement').describe(party.stats?.objective, party.stats?.agreement)}`.slice(0, 220);
+    const Agreement = require('./PartyAgreement');
+    const base = `LF ${wanted.map(role => role.toLowerCase()).join('/')}, ${place} lv${level}`;
+    let clause = Agreement.describe(party.stats?.objective, party.stats?.agreement, { place });
+    if (base.length + clause.length + 2 > 220) {
+        clause = Agreement.describe(null, party.stats?.agreement, { place, includeGoal: false });
+    }
+    return base + (clause ? `, ${clause}` : '');
 }
 
 function maybeAnnounce(party, members, spot, timestamp = Date.now()) {
@@ -86,7 +82,7 @@ function maybeAnnounce(party, members, spot, timestamp = Date.now()) {
         ...party,
         stats: { ...(party.stats || {}), lastRecruitmentAdAt: timestamp }
     };
-    console.info('BotParty :: %s recruitment ad: %s', leader?.name || 'Bot', text);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotParty :: %s recruitment ad: %s', leader?.name || 'Bot', text);
     return { party: nextParty, announced: true, text };
 }
 

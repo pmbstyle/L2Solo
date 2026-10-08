@@ -1,6 +1,7 @@
 require('../../Global');
 
-const { parentPort } = require('worker_threads');
+const { parentPort, workerData } = require('worker_threads');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = workerData?.developerDiagnostics === true;
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TownPathCorridor = invoke('GameServer/Geodata/TownPathCorridor');
 
@@ -14,7 +15,8 @@ parentPort.on('message', (message) => {
         if (navigationRevision !== null && navigationRevision !== request.navigationRevision) GeodataEngine.init();
         navigationRevision = request.navigationRevision;
     }
-    const startedAt = performance.now();
+    const timed = request.townCorridor || workerData?.developerDiagnostics === true;
+    const startedAt = timed ? performance.now() : null;
     const cancelFlag = message.cancelBuffer ? new Int32Array(message.cancelBuffer) : null;
     const checkBudget = () => {
         const cancelled = cancelFlag && Atomics.load(cancelFlag, 0) !== 0;
@@ -43,13 +45,13 @@ parentPort.on('message', (message) => {
             }
         );
         const result = request.townCorridor ? TownPathCorridor.build(path, checkBudget) : path;
-        parentPort.postMessage({ id, ok: true, path: result, workerMs: performance.now() - startedAt });
+        parentPort.postMessage({ id, ok: true, path: result, workerMs: timed ? performance.now() - startedAt : null });
     } catch (error) {
         parentPort.postMessage({
             id,
             ok: false,
             code: error?.code,
-            workerMs: performance.now() - startedAt,
+            workerMs: timed ? performance.now() - startedAt : null,
             error: error?.message || String(error)
         });
     }

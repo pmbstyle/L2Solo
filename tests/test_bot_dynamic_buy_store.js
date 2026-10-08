@@ -1,12 +1,15 @@
-// A bot that finds nothing to buy in town asks for it on the board (step 3.3):
-// ColdMarketBuyStoreService.open opens a buy ad whose escrow leaves the wallet;
-// the author's budget-backed stall (money left in the wallet, the bot waiting
-// in town as a merchant) is gone. A seller fills the ad in one deal.
+// The unchanged actors cannot fund a native purchase or sale decision.
+// A separate public DAO execution verifies buy-ad escrow and settlement:
+// the wallet pays the escrow, the ad has no world stall, and a seller fills it.
 const assert = require('assert');
 const fs = require('fs');
-const path = require('path');
-
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+const nativeChoice = require('./helpers/nativeMarketChoice');
+const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const Database = invoke('Database');
@@ -19,14 +22,7 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const World = invoke('GameServer/World/World');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 
-const databasePath = path.join(process.cwd(), 'tmp', 'test-bot-dynamic-buy-store.sqlite');
-
-function clean() {
-    const history = databasePath.replace(/\.sqlite$/, '.history.sqlite');
-    for (const file of [databasePath, history]) {
-        for (const suffix of ['', '-wal', '-shm']) fs.rmSync(file + suffix, { force: true });
-    }
-}
+function clean() { fs.rmSync(fixture.directory, { recursive: true, force: true }); }
 
 async function bagAmount(characterId, selfId) {
     const [row] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS amount FROM items WHERE characterId = ? AND selfId = ?',
@@ -52,8 +48,6 @@ async function makeBot(account, name, level, items) {
 }
 
 async function run() {
-    clean();
-    options.default.Database.path = path.relative(process.cwd(), databasePath);
     Database.init();
     DataCache.init();
     World.user = { sessions: [], revision: 0 };
@@ -61,33 +55,41 @@ async function run() {
     await AfkTrade.init();
     MarketTelemetry.reset();
 
-    // Level 2: the operating reserve every purchase keeps (PurchaseFunding:
-    // 500, 250 per level or 10%) leaves 1,500 of the 2,000 adena spendable,
-    // enough for the five stems at the bot's own belief of their price.
-    const buyerSeed = await makeBot('bot_budget_buyer', 'BudgetBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 2000 }]);
+    // ARCH-NOTE: E1 removed the flat500/level/10% reserve. E3 requires
+    // an actual funded gain; the original2000/level2/Stem5 has none.
+    const buyerOriginal = await makeBot('bot_budget_buyer', 'BudgetBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 2000 }]);
     const goal = { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 5 }, plan: {} };
-    const bid = BuyStoreService.bidFor(buyerSeed, goal);
-    assert(bid && bid.count > 0);
-    assert(bid.price * bid.count <= 1500, 'a buy ad must preserve its operating reserve');
+    const buyerNative = await nativeChoice.capture(buyerOriginal, { now: 1791000000000 }, 'original_dynamic_buyer');
+    const buyerSeed = buyerNative.state;
+    assert.strictEqual(Funding.spendable(buyerSeed, 0, { itemId: 1864 }), 0);
+    assert.strictEqual(BuyStoreService.bidFor(buyerSeed, goal), null, 'the original unfunded Stem request cannot bid');
+    const deferred = await BuyStoreService.open(buyerSeed, goal);
+    assert.strictEqual(deferred.opened, false);
+    assert.strictEqual(await bagAmount(buyerSeed.characterId, 57), 2000);
+    assert.deepStrictEqual(AfkTrade.ownerRecords(buyerSeed.characterId), []);
+    assert.strictEqual(await bagAmount(buyerSeed.characterId, 1864), 0);
 
-    // The town roll has its own group F coverage. This settlement fixture
-    // needs a local ad: two Stems cannot pay for a cross-country sale trip.
-    const chooseTown = MarketTownPolicy.shopTown;
-    let opened;
-    try {
-        MarketTownPolicy.shopTown = () => 'Giran';
-        opened = await BuyStoreService.open(buyerSeed, goal);
-    } finally {
-        MarketTownPolicy.shopTown = chooseTown;
-    }
-    assert.strictEqual(opened.opened, true);
-    assert.strictEqual(opened.state.activity, 'shopping', 'the bot does not stand in town: its ad waits on the board');
-    assert.strictEqual(opened.store.storeType, 3);
-    assert.strictEqual(opened.store.kind, 'buy_ad');
-    const escrow = Number(opened.store.escrowAdena);
-    assert.strictEqual(escrow, bid.price * bid.count, 'the ad holds the whole bid as escrow');
+    // Independent execution seam: original wallet2000, requested Stem5,
+    // native DAO and authored catalogue reference quote. This is not an
+    // invented wish, MarketPricing bid or native BuyStore approval.
+    const template = DataCache.items.find(item => Number(item.selfId) === 1864);
+    const executionQuote = { price: Number(template.template.price), count: goal.target.amount };
+    assert.strictEqual(executionQuote.price, 100, 'authored Stem template reference, fixed before publication');
+    assert.strictEqual(executionQuote.count, 5);
+    assert(executionQuote.price * executionQuote.count <= 2000, 'the original physical wallet covers the entire execution quote');
+    const record = await AfkTrade.publishBot(buyerSeed.characterId, { kind: 'buy_ad', storeType: AfkTrade.BUY,
+        title: 'WTB Stem', town: 'Giran', locX: 0, locY: 0, locZ: 0,
+        lines: [{ selfId: 1864, name: 'Stem', count: executionQuote.count, price: executionQuote.price,
+            enchant: 0, slot: 0, stackable: template.etc.stackable === true }] });
+    const openedState = LifeState.snapshot(buyerSeed.characterId);
+    assert(Number.isSafeInteger(Number(record.id)) && Number(record.id) > 0, 'the actual native publication returned a durable record ID');
+    assert.strictEqual(openedState.activity, 'shopping', 'the bot does not stand in town: its ad waits on the board');
+    assert.strictEqual(record.storeType, 3);
+    assert.strictEqual(record.kind, 'buy_ad');
+    const escrow = Number(record.escrowAdena);
+    assert.strictEqual(escrow, executionQuote.price * executionQuote.count, 'the ad holds the whole bid as escrow');
     assert.strictEqual(await bagAmount(buyerSeed.characterId, 57), 2000 - escrow, 'the escrow left the wallet');
-    assert.strictEqual(opened.state.adena, 2000 - escrow);
+    assert.strictEqual(openedState.adena, 2000 - escrow);
     assert.strictEqual(AfkTrade.findOwnerProjection(buyerSeed.characterId), null, 'an ad has no stall in the world');
     assert.deepStrictEqual(MarketOpportunity.activeBuyDemandSelfIds(), [1864],
         'a funded buy ad is demand the warehouse circulation can see');
@@ -96,22 +98,35 @@ async function run() {
     assert(Number.isFinite(marketSnapshot.activity.dynamicBuyerSales), 'market snapshot must expose non-mutating trade totals to Observer');
     assert(marketSnapshot.byTown['Elven Village'].fixedWtb > 0, 'starter market coverage must be visible in the market snapshot');
 
-    const seller = await makeBot('bot_material_seller', 'MaterialSeller', 20, [{ selfId: 1864, name: 'Stem', amount: 2 }]);
-    const town = opened.store.town;
+    const sellerOriginal = await makeBot('bot_material_seller', 'MaterialSeller', 20, [{ selfId: 1864, name: 'Stem', amount: 2 }]);
+    const seller = (await nativeChoice.capture(sellerOriginal, { now: 1791000000000 }, 'original_dynamic_seller')).state;
+    const town = record.town;
     // One decision point for the seller's sale decision (its rolls stand still).
     const decided = { now: 1791000000000 };
-    assert.strictEqual(BuyStoreService.bestTownFor(seller, decided).town, town, 'a seller must discover the ad in its town');
-    const sale = await BuyStoreService.sellToBestBuyer(seller, town, decided);
-    assert.strictEqual(sale.sold, true);
-    assert.strictEqual(sale.itemCount, 2);
-    assert.strictEqual(sale.adena, 2 * bid.price);
-    assert.strictEqual(await bagAmount(seller.characterId, 57), 2 * bid.price, 'the seller is paid from the escrow');
+    assert.strictEqual(BuyStoreService.bestTownFor(seller, decided), null,
+        'the original two Stem cannot fund their native sale/return-trip value at the unchanged clock');
+    const noSale = await BuyStoreService.sellToBestBuyer(seller, town, decided);
+    assert.strictEqual(noSale.sold, false);
+    assert.strictEqual(await bagAmount(seller.characterId, 1864), 2);
+    assert.strictEqual(await bagAmount(seller.characterId, 57), 0);
+    assert.strictEqual(Number(AfkTrade.ownerRecords(buyerSeed.characterId)[0].escrowAdena), escrow);
+    // Separate genuine public execution seam, with no handmade sale answers.
+    const publicOffer = MarketOpportunity.bestBuyOffer(1864, { town, sellerCharacterId: seller.characterId });
+    assert.strictEqual(publicOffer.recordId, record.id);
+    assert.strictEqual(publicOffer.price, executionQuote.price);
+    const stock = (await Database.fetchItems(seller.characterId)).find(item => Number(item.selfId) === 1864);
+    const nativeTrade = await AfkTrade.sellToShop(seller.characterId, publicOffer.store, 1864, 2, {
+        objectId: Number(stock.id), lineId: publicOffer.lineId, expectedPrice: publicOffer.price, coldState: seller });
+    const committed = AfkTrade.committedTrade(nativeTrade, seller.characterId);
+    assert.strictEqual(committed.committed, true, 'positive is a real SQLite settlement, not an inferred AI choice');
+    MarketTelemetry.dynamicBuyerSale(publicOffer, 2, { sellerCharacterId: seller.characterId, sellerName: seller.name, town });
+    assert.strictEqual(await bagAmount(seller.characterId, 57), 2 * executionQuote.price, 'the seller is paid from the escrow');
     assert.strictEqual(await bagAmount(seller.characterId, 1864), 0);
     assert.strictEqual(await bagAmount(buyerSeed.characterId, 1864), 2, 'the buyer\'s next save brings the stems');
     assert.strictEqual(LifeState.snapshot(buyerSeed.characterId).inventory['1864'].amount, 2);
     const ad = AfkTrade.ownerRecords(buyerSeed.characterId)[0];
-    assert.strictEqual(Number(ad.lines[0].count), bid.count - 2);
-    assert.strictEqual(Number(ad.escrowAdena), escrow - 2 * bid.price);
+    assert.strictEqual(Number(ad.lines[0].count), executionQuote.count - 2);
+    assert.strictEqual(Number(ad.escrowAdena), escrow - 2 * executionQuote.price);
     const trade = MarketSnapshot.snapshot().transactions.recentPeerTrades[0];
     assert.strictEqual(trade.channel, 'wtb', 'Observer telemetry must distinguish a buy-ad settlement');
     assert.strictEqual(trade.itemName, 'Stem');
@@ -155,15 +170,35 @@ async function run() {
     assert.strictEqual(staticTrade.quantity, 3);
     assert.strictEqual(staticTrade.adena, 150);
     const combinedTrades = MarketTelemetry.transactions();
-    assert.strictEqual(combinedTrades.byItem[0].adena, 2 * bid.price + 150, 'all-channel totals should retain both peer and static turnover');
-    assert.strictEqual(combinedTrades.byPeerItem[0].adena, 2 * bid.price, 'peer item totals must exclude static-buyer turnover');
+    assert.strictEqual(combinedTrades.byItem[0].adena, 2 * executionQuote.price + 150, 'all-channel totals should retain both peer and static turnover');
+    assert.strictEqual(combinedTrades.byPeerItem[0].adena, 2 * executionQuote.price, 'peer item totals must exclude static-buyer turnover');
 
-    // A bot short of the whole amount asks for fewer units, never for none.
-    const poorBuyer = await makeBot('bot_poor_buyer', 'PoorBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 1000 }]);
+    // The unchanged1000/Stem20 remains a native unfunded negative.
+    const poorOriginal = await makeBot('bot_poor_buyer', 'PoorBuyer', 2, [{ selfId: 57, name: 'Adena', amount: 1000 }]);
+    const poorBuyer = (await nativeChoice.capture(poorOriginal, { now: 1791000000000 }, 'original_dynamic_poor_buyer')).state;
     const poorBid = BuyStoreService.bidFor(poorBuyer,
         { type: 'buy_craft_material', target: { itemId: 1864, itemName: 'Stem', amount: 20 }, plan: {} });
-    assert(poorBid && poorBid.count > 0 && poorBid.count < 20, 'a short wallet bids for the units it can pay');
-    assert(poorBid.price * poorBid.count <= 500, 'a smaller bid still keeps the operating reserve');
+    assert.strictEqual(Funding.spendable(poorBuyer, 0, { itemId: 1864 }), 0);
+    assert.strictEqual(poorBid, null, 'a short wallet without the genuine funded gain posts no partial ad');
+    assert.strictEqual(await bagAmount(poorBuyer.characterId, 57), 1000);
+    assert.deepStrictEqual(AfkTrade.ownerRecords(poorBuyer.characterId), []);
+    const remainingEscrow = Number(AfkTrade.ownerRecords(buyerSeed.characterId)[0].escrowAdena);
+    assert.strictEqual((await bagAmount(buyerSeed.characterId, 57)) + (await bagAmount(seller.characterId, 57)) + remainingEscrow, 2000,
+        'the original buyer/seller cash plus the remaining physical ad escrow is conserved');
+    assert.strictEqual(await bagAmount(buyerSeed.characterId, 1864), 2);
+    assert.strictEqual(await bagAmount(seller.characterId, 1864), 0);
+    const closed = await AfkTrade.closeBotRecord(buyerSeed.characterId, record.id);
+    assert.strictEqual(closed.closed, true);
+    assert.strictEqual(await bagAmount(buyerSeed.characterId, 57), 2000 - 2 * executionQuote.price);
+    assert.strictEqual((await bagAmount(buyerSeed.characterId, 57)) + (await bagAmount(seller.characterId, 57)), 2000);
+    assert.strictEqual((await AfkTrade.closeBotRecord(buyerSeed.characterId, record.id)).closed, false,
+        'the native remaining escrow is refunded only once');
+    assert.deepStrictEqual(Economy.summary().mainColdForState, {});
+    console.log(JSON.stringify({ boundary: 'genuine no-funded-bid plus independent native public DAO settlement',
+        buyerOriginalWallet: 2000, goalItem: 1864, goalAmount: 5, authoredQuote: executionQuote,
+        peerQuantity: 2, peerPaid: 2 * executionQuote.price, remainingEscrow,
+        buyerFinal: await bagAmount(buyerSeed.characterId, 57), sellerFinal: await bagAmount(seller.characterId, 57),
+        nativeMoney: buyerSeed.stats.money, selectedBuyApprovalClaim: false }));
 
     await AfkTrade._resetForTests();
     await Database.close();

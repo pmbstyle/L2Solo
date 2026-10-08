@@ -39,6 +39,7 @@ async function apply(state, { takes: wanted = [], gives = [], variables = state.
     state.state = next.state;
     state.variables = next.variables;
     if (removeRecipes.length) {
+        invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(actor.fetchId());
         const store = actor.model || actor;
         for (const type of ['dwarven', 'common']) {
             const property = type === 'dwarven' ? 'dwarvenRecipes' : 'commonRecipes';

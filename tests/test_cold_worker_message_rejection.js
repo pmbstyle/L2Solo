@@ -2,6 +2,8 @@ const assert = require('assert');
 const EventEmitter = require('events');
 
 require('../src/Global');
+// This fixture asserts optional coordinator counters; the default master is off.
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');

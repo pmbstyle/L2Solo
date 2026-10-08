@@ -3,12 +3,14 @@ const LifeStateCache = require('./LifeStateCache');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const RefreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ShopPlaces = require('../Economy/ShopPlaces');
+const { isMainThread } = require('node:worker_threads');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Database = invoke('Database');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const Metrics  = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const Consumption = require('../Economy/ConsumptionDiagnostics');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -30,6 +32,7 @@ const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 const workerProjectorRole = CharacterLocationRuntime.workerProjectorRole();
 const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index, workerProjectorRole });
+const marketCounts = new Map();
 
 function recentLimit(limit) {
     return Math.max(1, Math.min(2000, Number(limit) || 500));
@@ -37,6 +40,25 @@ function recentLimit(limit) {
 const pendingWrites = new Map();
 const changeListeners = new Set();
 const marketReviewListeners = new Set();
+// Pending ids only: each initial/new cold cache entry is examined once.
+const classMigrationCandidates = new Map();
+const classMigrationListeners = new Set();
+function notifyClassMigrationPending() {
+    for (const listener of classMigrationListeners) listener(classMigrationCandidates.size);
+}
+cache.subscribePublications(({ characterId, state, previousState }) => {
+    if (workerProjectorRole) return;
+    const id = Number(characterId);
+    if (state?.phase !== 'cold') {
+        if (classMigrationCandidates.delete(id)) notifyClassMigrationPending();
+        return;
+    }
+    if (previousState?.phase === 'cold') return;
+    if (classProgressionNeeded(state, Number(state.stats?.classId || 0), Number(state.level || 1))) {
+        classMigrationCandidates.set(id, Number(state.updatedAt || 0));
+        notifyClassMigrationPending();
+    }
+});
 let initialized = false;
 let initStarted = false;
 let initPromise = null;
@@ -98,6 +120,7 @@ function hasStaleRateModelPlan(state) {
 function safeJson(value) {
     return JSON.stringify(value || {});
 }
+function statsJson(value) { return safeJson(require('../SavedStats').compact(value)); }
 
 function parseJson(raw, fallback = {}) {
     if (!raw) return fallback;
@@ -268,6 +291,11 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
     }
     if (!equipmentTargetFulfilled(state.stats, state.inventory)) return state;
     const stats = { ...(state.stats || {}) };
+    if (Number(stats.marketWanted?.itemId || 0) === Number(plan?.target?.selfId || 0)) {
+        stats.marketWanted = null;
+        stats.marketRetryAfter = null;
+        stats.marketLead = null;
+    }
     delete stats.equipmentPlan;
     delete stats.partyRequest;
     delete stats.clanPartyObjective;
@@ -421,6 +449,7 @@ function syncNewTripPayment(state, previous) {
 }
 
 function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
+    if (debug?.targetOnSpot !== 1) return null;
     const targetNpcId = Number(debug?.targetNpcId || 0);
     if (targetNpcId <= 0) return null;
     const targetKey = String(targetNpcId);
@@ -461,6 +490,7 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
 }
 
 function compactResolveDebug(debug = {}) {
+    if (Config.developerDiagnostics !== true) return null;
     return {
         route: debug.route || null,
         partyId: debug.partyId || null,
@@ -474,6 +504,8 @@ function compactResolveDebug(debug = {}) {
 
 function normalize(row) {
     const stats = parseJson(row.statsJson, {});
+    delete stats.marketTrades;
+    delete stats.priceBeliefs;
     const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
     return ClanMembershipPolicy.reconcileState({
@@ -513,6 +545,7 @@ function normalize(row) {
             leaderId: stats.leaderId || null
         },
         stats,
+        marketTrades: marketCounts.get(Number(row.characterId)) || {},
         inventory,
         simulation: {
             ownerId: row.simulationOwner || 'legacy_main',
@@ -640,7 +673,7 @@ function recordFromSession(session, phase, reason = '') {
         deathCount: 0,
         partyId: null,
         inventorySummary: safeJson(inventory),
-        statsJson: safeJson(stats),
+        statsJson: statsJson(stats),
         updatedAt: timestamp
     };
 }
@@ -681,7 +714,7 @@ function rowFromState(state) {
         deathCount: persistedState.stats?.deaths || 0,
         partyId: persistedState.party?.partyId || null,
         inventorySummary: safeJson(persistedState.inventory || {}),
-        statsJson: safeJson(persistedState.stats || {}),
+        statsJson: statsJson(persistedState.stats || {}),
         // Legacy lifecycle writes are fenced in SQLite by simulationOwner, but
         // `save()` intentionally does not rewrite the ownership columns. Keep
         // the authoritative ownership snapshot on the transient row as well,
@@ -725,6 +758,13 @@ function setSessionSnapshotsPhase(session, phase) {
 }
 
 function save(row, options = {}) {
+    // ARCH-NOTE: strip retired counters even when an old caller supplies them on a new row.
+    const proposedStats = parseJson(row.statsJson, {});
+    if (proposedStats.marketTrades || proposedStats.priceBeliefs) {
+        delete proposedStats.marketTrades;
+        delete proposedStats.priceBeliefs;
+        row.statsJson = safeJson(proposedStats);
+    }
     // A hot row belongs to the actor in the world; only markCold hands it back
     // to the cold population. A cold row proposed over it comes from a job that
     // started while the bot was cold: reject it like the stale writers below.
@@ -733,7 +773,7 @@ function save(row, options = {}) {
         error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
         return Promise.reject(error);
     }
-    const proposed = { activity: row.activity, stats: parseJson(row.statsJson, {}) };
+    const proposed = { activity: row.activity, stats: proposedStats };
     const reconciled = ClanMembershipPolicy.reconcileState(ClanMembershipPolicy.preserveGoalInvalidation(
         proposed, cache.get(Number(row.characterId))?.stats));
     if (reconciled !== proposed) {
@@ -798,10 +838,10 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
-            statsJson = CASE WHEN json_type(${TABLE}.statsJson, '$.marketTrades') = 'object'
-                THEN json_set(json_remove(excluded.statsJson, '$.priceBeliefs'), '$.marketTrades',
-                    json(json_extract(${TABLE}.statsJson, '$.marketTrades')))
-                ELSE json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs') END,
+            statsJson = CASE WHEN json_type(bot_life_state.statsJson, '$.economyCommit') IS NULL
+                THEN json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.economyCommit')
+                ELSE json_set(json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
+                    '$.economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')) END,
             updatedAt = excluded.updatedAt
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
@@ -872,6 +912,9 @@ function hydrateCache() {
             cache.set(state.characterId, state);
             invoke('GameServer/Bot/Economy/CraftWorkshopService').register(state);
         });
+        const ordered = [...classMigrationCandidates].sort((a, b) => a[1] - b[1]);
+        classMigrationCandidates.clear();
+        for (const [id, at] of ordered) classMigrationCandidates.set(id, at);
         return rows.length;
     });
 }
@@ -1546,6 +1589,14 @@ const BotLifeState = {
         initStarted = true;
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
+            .then(() => Database.fetchBotMarketCounts()).then((rows) => {
+                marketCounts.clear();
+                for (const row of rows) {
+                    const counts = marketCounts.get(Number(row.characterId)) || {};
+                    counts[row.counter] = Number(row.deals);
+                    marketCounts.set(Number(row.characterId), counts);
+                }
+            })
             // A process restart invalidates every in-process logical owner,
             // even when its wall-clock lease had time remaining. Reclaim the
             // rows before any legacy startup repair can touch them.
@@ -1617,15 +1668,51 @@ const BotLifeState = {
         return snapshot;
     },
 
+    // Warehouse transfers patch the physical projection repeatedly; their stats
+    // stay untouched until the one final metadata patch.
+    acceptInventoryProjection(row) {
+        const current = cache.get(Number(row?.characterId));
+        if (!current || !row?.inventoryPatch || current.phase !== row.phase
+            || current.simulation?.ownerId !== row.simulationOwner
+            || Number(current.simulation?.revision || 0) >= Number(row.simulationRevision)) return current || null;
+        const inventory = { ...current.inventory };
+        for (const [id, item] of Object.entries(row.inventoryPatch)) {
+            if (item) inventory[id] = item;
+            else delete inventory[id];
+        }
+        const snapshot = { ...current, inventory, adena: Number(row.adena),
+            vitals: { ...current.vitals, mp: Number(row.mp) }, updatedAt: Number(row.updatedAt),
+            simulation: { ...current.simulation, revision: Number(row.simulationRevision) } };
+        cache.set(snapshot.characterId, snapshot);
+        notifyMarketReviewState(snapshot, current);
+        invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
+        return snapshot;
+    },
+
+    acceptWarehouseWithdrawal(row) {
+        const current = cache.get(Number(row?.characterId));
+        if (!current) return null;
+        if (Number(current.stats?.lastWarehouseWithdrawal?.at || 0) > Number(row.withdrawal.at)) return current;
+        const newerTiming = Number(current.simulation?.revision || 0) > Number(row.simulationRevision)
+            || Number(current.updatedAt || 0) > Number(row.updatedAt);
+        const snapshot = { ...current, stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal,
+            ...(row.market ? { marketSellRetryAfter: null } : {}) },
+            timing: newerTiming ? current.timing : { ...current.timing, nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null } };
+        cache.set(snapshot.characterId, snapshot);
+        notifyColdSnapshot(snapshot, 'cold_warehouse_withdrawal');
+        return snapshot;
+    },
+
     // A committed deal publishes only learning here. A cold worker keeps its
     // inventory/lease; delayed postcommit handlers cannot rewind later counts.
     acceptMarketTrades(characterId, counts) {
         const id = Number(characterId);
+        const merged = { ...(marketCounts.get(id) || {}) };
+        for (const [key, value] of Object.entries(counts)) merged[key] = Math.max(Number(merged[key] || 0), Number(value));
+        marketCounts.set(id, merged);
         const current = cache.get(id);
         if (!current) return null;
-        const merged = { ...(current.stats?.marketTrades || {}) };
-        for (const [key, value] of Object.entries(counts)) merged[key] = Math.max(Number(merged[key] || 0), Number(value));
-        const snapshot = { ...current, stats: { ...current.stats, marketTrades: merged } };
+        const snapshot = { ...current, marketTrades: merged };
         cache.set(id, snapshot);
         return snapshot;
     },
@@ -1906,21 +1993,24 @@ const BotLifeState = {
         });
     },
 
+    pendingClassProgressionMigration() { return classMigrationCandidates.size; },
+
+    subscribeClassProgressionMigration(listener) {
+        classMigrationListeners.add(listener);
+        return () => classMigrationListeners.delete(listener);
+    },
+
     migrateLegacyClassProgression(limit = 5) {
         if (!initialized) return Promise.resolve([]);
         const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
-        const candidates = Array.from(cache.values())
-            // Hot bots own a live Actor instance. Their class is reconciled
-            // through activation/level-up, not behind that actor's back.
-            .filter((state) => state.phase === 'cold')
-            .filter((state) => !pendingWrites.has(state.characterId))
-            .filter((state) => classProgressionNeeded(
-                state,
-                Number(state.stats?.classId || 0),
-                Number(state.level || 1)
-            ))
-            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
-            .slice(0, safeLimit);
+        const ids = [];
+        for (const id of classMigrationCandidates.keys()) { ids.push(id); if (ids.length >= safeLimit) break; }
+        // A pending native write is not an attempted migration. Keep that
+        // candidate for the next bounded pass after its write settles.
+        for (const id of ids) if (!pendingWrites.has(id)) classMigrationCandidates.delete(id);
+        notifyClassMigrationPending();
+        const candidates = ids.map(id => cache.get(id))
+            .filter(state => state?.phase === 'cold' && !pendingWrites.has(state.characterId));
 
         return candidates.reduce((chain, state) => chain.then((migrated) => (
             Database.execute([
@@ -2062,31 +2152,12 @@ const BotLifeState = {
         });
     },
 
-    statesForParties(partyIds = []) {
-        const ids = [...new Set((partyIds || []).map((partyId) => String(partyId || '')).filter(Boolean))];
-        if (!initialized || !ids.length) return Promise.resolve(new Map());
-
-        const placeholders = ids.map(() => '?').join(', ');
-        return Database.execute([
-            `SELECT * FROM ${TABLE}
-            WHERE phase = 'cold'
-            AND partyId IN (${placeholders})
-            ORDER BY partyId ASC, level DESC, characterId ASC`,
-            ids
-        ]).then((rows) => {
-            const grouped = new Map(ids.map((partyId) => [partyId, []]));
-            rows.forEach((row) => {
-                const state = normalize(row);
-                cache.set(state.characterId, state);
-                const partyId = String(row.partyId || '');
-                if (!grouped.has(partyId)) grouped.set(partyId, []);
-                grouped.get(partyId).push(state);
-            });
-            return grouped;
-        }).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to fetch %d parties: %s', ids.length, err.message);
-            return new Map(ids.map((partyId) => [partyId, []]));
-        });
+    cachedStatesForParties(parties = []) {
+        // The write-behind cache owns the newest member state. No publication or database read occurs here.
+        return new Map(parties.map(party => [String(party.partyId), (party.memberIds || [])
+            .map(id => cache.get(Number(id)))
+            .filter(state => state?.phase === 'cold' && String(state.party?.partyId || '') === String(party.partyId))
+            .sort((a, b) => Number(b.level) - Number(a.level) || Number(a.characterId) - Number(b.characterId))]));
     },
 
     coldPartyCandidateCount(partyRequiredOnly = false) {
@@ -2302,7 +2373,7 @@ const BotLifeState = {
         });
     },
 
-    prepareResolve(state, result, options = {}) {
+    async prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
         if (workerProjectorRole && (options.persist !== false || options.projectClassProgression !== true)) {
             return Promise.reject(new TypeError('worker_projector_projection_required'));
@@ -2402,6 +2473,24 @@ const BotLifeState = {
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
+        // ARCH-NOTE: the resolver already consumed authored summon materials
+        // from its private combat inventory. Lifecycle normally rebuilds from
+        // the input (shots/potions have separate counters), so carry only these
+        // native cast-cost decreases before adding this round's loot.
+        const summonClass = Number(state.stats?.classId || 0);
+        if (result.patch?.inventory && (BotRoles.isSummoner(summonClass) || BotRoles.isNecromancer(summonClass))) {
+            const summonProfile = { ...(result.patch.stats?.coldCombat || state.stats?.coldCombat || {}), classId: summonClass };
+            const materialIds = new Set([...ColdCombatProfile.summonSkills(summonProfile),
+                ...ColdCombatProfile.corpseSummonSkills(summonProfile)]
+                .filter(skill => Number(skill.itemId) > 0 && Number(skill.itemCount) > 0)
+                .map(skill => String(skill.itemId)));
+            for (const id of materialIds) {
+                const stock = inventory[id], remaining = Number(result.patch.inventory[id]?.amount);
+                if (stock && Number.isFinite(remaining) && remaining >= 0 && remaining < Number(stock.amount)) {
+                    inventory[id] = { ...stock, amount: remaining };
+                }
+            }
+        }
         materializedItems.filter((item) => Number(item.selfId) !== 57).forEach((item) => {
             const key = String(item.selfId);
             const amount = Number(item.amount || 0);
@@ -2438,6 +2527,7 @@ const BotLifeState = {
         // lookup or extra inventory query to the simulation tick. shotActions
         // counts the shots this bot's own casts, skills and landed normal
         // attacks loaded from this stock (BackgroundResolver.coldShotSupply).
+        const consumeFacts = Config.developerDiagnostics === true ? [] : null;
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
             const shot = invoke('GameServer/Inventory/ShotStock').planForState({ ...state, inventory });
@@ -2445,6 +2535,8 @@ const BotLifeState = {
             if (stock && Number(stock.amount || 0) > 0) {
                 inventory[String(shot.selfId)] = { ...stock,
                     amount: Math.max(0, Number(stock.amount) - shotActions * shot.perAction) };
+                if (consumeFacts) Consumption.fact(consumeFacts, shot.selfId, Number(stock.amount),
+                    inventory[String(shot.selfId)].amount, 0);
             }
         }
         // Cold combat drinks healing potions from the same stock. The fight
@@ -2454,8 +2546,11 @@ const BotLifeState = {
             const stock = inventory[String(selfId)];
             if (!stock || Number(stock.amount || 0) <= 0) continue;
             inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - Number(count || 0)) };
+            if (consumeFacts) Consumption.fact(consumeFacts, selfId, Number(stock.amount),
+                inventory[String(selfId)].amount, 1);
         }
 
+        if (consumeFacts) Consumption.attach(result, consumeFacts);
         const equippedInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
             ...state,
             level,
@@ -2521,9 +2616,26 @@ const BotLifeState = {
             inventory: equippedInventory,
             updatedAt: timestamp
         };
-        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
-        Object.assign(nextState.stats, economy.statsPacket);
-        if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
+        // ARCH-NOTE: C1 lifecycle packets precede their fight; accept the
+        // worker's focus event before E4 raises the completed-round event.
+        // Direct projections receive an already projected packet as before.
+        const beforeResolvePacket = isMainThread && options.statsPacketBeforeResolve === true && options.statsPacket;
+        if (beforeResolvePacket) Object.assign(nextState.stats, beforeResolvePacket);
+        if (state.activity === 'hunting') {
+            // Derive from the input so retrying this projection cannot raise twice.
+            const inputDecisionSeq = Math.max(0, Math.trunc(Number(state.stats?.decisionSeq) || 0));
+            const plannedDecisionSeq = beforeResolvePacket
+                ? Math.max(0, Math.trunc(Number(beforeResolvePacket.decisionSeq) || 0)) : inputDecisionSeq;
+            nextState.stats.decisionSeq = Math.max(inputDecisionSeq, plannedDecisionSeq) + 1;
+            nextState.stats.activityLeaf = 0;
+        }
+        if (!isMainThread) {
+            const economyDeps = typeof options.economyDepsFor === 'function'
+                ? await options.economyDepsFor(nextState) : options.economyDeps || {};
+            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...economyDeps, timestamp });
+            Object.assign(nextState.stats, economy.statsPacket);
+            if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
+        } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
@@ -2535,6 +2647,13 @@ const BotLifeState = {
         const nativeWriteOptions = options.persist !== false && workerOptions ? {
             beforeWrite: NativeWriteCheckpoint.create(characterId, workerOptions)
         } : undefined;
+        // ARCH-NOTE: Paid manual/worker training keeps private ROW version floors before SP/book/class writes.
+        // Training wraps the original native capability only; ROW/after-writers keep their advancing original proof.
+        const trainingWriteOptions = nativeWriteOptions && needsClassProgression && options.projectClassProgression !== true
+            ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}, nativeWriteOptions.beforeWrite) }
+            : nativeWriteOptions || (options.persist !== false && options.projectClassProgression !== true && needsClassProgression
+                && state.phase === 'cold' && state.simulation?.ownerId === 'legacy_main'
+                ? { beforeWrite: Database.createColdTrainingGuard(state, () => {}) } : undefined);
         const progression = needsClassProgression
             ? (options.projectClassProgression === true ? Promise.resolve(BotClassProgression.plan({
                 classId: currentClassId,
@@ -2545,10 +2664,10 @@ const BotLifeState = {
                 classId: currentClassId,
                 level,
                 seed: nextState.characterId
-            }, nativeWriteOptions))
+            }, trainingWriteOptions))
             : Promise.resolve({ classId: currentClassId, transitions: [] });
 
-        return progression.then((resolved) => {
+        const prepared = progression.then((resolved) => {
             const classId = Number(resolved.classId || currentClassId);
             const role = BotRoles.inferRole(classId);
             const progressedState = {
@@ -2631,6 +2750,7 @@ const BotLifeState = {
                                     || Number(result.materialize?.adena || 0) > 0
                                     || (result.events || []).length > 0
                             });
+                            if (consumeFacts) Consumption.publish(snapshot.characterId, consumeFacts, { source: 'cold_commit', commandId: options.workerAdmission?.commandId, revision: snapshot.simulation?.revision });
                             return snapshot;
                         };
                         return nativeWriteOptions ? Database.publishBotResolvedState(characterId, nativeWriteOptions, publish) : publish();
@@ -2642,6 +2762,12 @@ const BotLifeState = {
                     });
             });
         });
+        // Projections and commands without paid training keep their existing promise/handler path.
+        if (trainingWriteOptions === nativeWriteOptions) return prepared;
+        return prepared.catch(error => {
+            if (Database.isColdTrainingSourceRetired(error)) return null;
+            throw error;
+        });
     },
 
     applyResolve(state, result, options = {}) {
@@ -2650,6 +2776,12 @@ const BotLifeState = {
             const preparedOptions = { persist: true };
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
+            }
+            // ARCH-NOTE: C1/E3 lifecycle commands carry the worker's money queue;
+            // main preparation must retain that packet without rebuilding it.
+            if (Object.prototype.hasOwnProperty.call(options, 'statsPacket')) {
+                preparedOptions.statsPacket = options.statsPacket;
+                preparedOptions.statsPacketBeforeResolve = true;
             }
             return this.prepareResolve(state, result, preparedOptions);
         });
@@ -2715,7 +2847,7 @@ const BotLifeState = {
                 Number(cursor?.updatedAt || 0),
                 Number(cursor?.characterId || 0)
             ],
-            { read: true, onTiming: options.onTiming }
+            { read: true, onTiming: Config.developerDiagnostics === true ? options.onTiming : undefined }
         ], 'bot-life:market-goal-candidates');
         return fetchAfter(marketGoalCursor).then(async (rows) => {
             if (!rows.length && (marketGoalCursor.updatedAt > 0 || marketGoalCursor.characterId > 0)) {
@@ -2729,7 +2861,7 @@ const BotLifeState = {
                     characterId: Math.max(0, Number(last.characterId || 0))
                 };
             }
-            const startedAt = now();
+            const startedAt = Config.developerDiagnostics === true ? now() : null;
             const states = rows.map((row) => {
                 const state = normalize(row);
                 if (row.currentGoalJson) {
@@ -2742,7 +2874,7 @@ const BotLifeState = {
                 cache.set(state.characterId, state);
                 return state;
             });
-            options.onStage?.('hydrate', now() - startedAt);
+            if (Config.developerDiagnostics === true) options.onStage?.('hydrate', now() - startedAt);
             return states;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch market-goal candidates: %s', err.message);
@@ -2933,9 +3065,9 @@ const BotLifeState = {
             INNER JOIN bot_goal_state goals USING (characterId)
             ORDER BY goals.updatedAt ASC, states.updatedAt ASC`,
             [Number(timestamp) || now()],
-            { read: true, onTiming: options.onTiming }
+            { read: true, onTiming: Config.developerDiagnostics === true ? options.onTiming : undefined }
         ], 'bot-life:stale-goal-candidates').then((rows) => {
-            const startedAt = now();
+            const startedAt = Config.developerDiagnostics === true ? now() : null;
             const states = rows.map((row) => {
                 const state = normalize(row);
                 invoke('GameServer/Bot/Goals/GoalState').prime(
@@ -2946,7 +3078,7 @@ const BotLifeState = {
                 cache.set(state.characterId, state);
                 return state;
             });
-            options.onStage?.('hydrate', now() - startedAt);
+            if (Config.developerDiagnostics === true) options.onStage?.('hydrate', now() - startedAt);
             return states;
         }).catch((err) => {
             utils.infoWarn('BotLife', 'failed to fetch stale goal candidates: %s', err.message);
@@ -3215,7 +3347,7 @@ const BotLifeState = {
             if (!selfId || amount <= 0 || price <= 0) return;
             inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
             payout += amount * price;
-            sold.push({ selfId, amount, price });
+            sold.push([selfId, amount, price]);
         });
         if (!sold.length) return Promise.resolve(state);
 
@@ -3231,7 +3363,7 @@ const BotLifeState = {
             inventory,
             stats: {
                 ...(state.stats || {}),
-                lastNpcLiquidation: { payout, sold, at: now(), ...options }
+                lastNpcLiquidation: require('../LastOperations').compact({ at: now(), payout: Math.round(payout) }, sold, { field: 'sold' })
             },
             updatedAt: now()
         };
@@ -3385,8 +3517,13 @@ const BotLifeState = {
         return next;
     },
 
-    learnCraftableRecipes(state) {
+    learnCraftableRecipes(state, { recipeIds = null } = {}) {
         if (!state?.characterId) return Promise.resolve(state || null);
+        if (!recipeIds) {
+            const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state)?.activity;
+            recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+        }
+        if (!recipeIds.length) return Promise.resolve(state);
         const candidates = Object.values(state.inventory || {})
             .filter((item) => ItemDisposition.canLearnRecipe(state, item))
             .sort((left, right) => Number(left.selfId || 0) - Number(right.selfId || 0));
@@ -3396,12 +3533,23 @@ const BotLifeState = {
             const known = new Set((rows || []).map(row => Number(row.recipeId)));
             const recipes = candidates.filter(item => Number(item.amount || 0) > 0).flatMap(item => {
                 const decision = ItemDisposition.recipeDisposition(state, item, [...known]);
-                return decision?.action === 'learn' ? [{ ...decision.recipe, name: item.name }] : [];
+                return decision?.action === 'learn' && recipeIds.includes(Number(decision.recipe.recipeId))
+                    ? [{ ...decision.recipe, name: item.name }] : [];
             });
             if (!recipes.length) return state;
-            const learned = await Database.learnColdRecipes(state.characterId, recipes, state);
-            if (!learned.coldLifeRow) return state;
-            const saved = this.acceptLifecycleRow(learned.coldLifeRow);
+            const Commit = require('../Economy/EconomyCommit');
+            let saved = state, changed = false;
+            for (const recipe of recipes) {
+                const admitted = await Commit.admit(saved, Commit.KINDS.learn);
+                let learned;
+                try { learned = await Database.learnColdRecipes(state.characterId, [recipe], admitted.state,
+                    { economyCommand: admitted.command }); }
+                finally { Commit.finish(state.characterId, admitted.command); }
+                if (learned.learned?.length) changed = true;
+                if (learned.coldLifeRow) saved = Commit.acceptRow(learned.coldLifeRow);
+                if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
+            }
+            if (changed) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });
             return saved;
         }).catch(error => {
@@ -3522,6 +3670,7 @@ const BotLifeState = {
     },
 
     targetCombatSummary() {
+        if (Config.developerDiagnostics !== true) return null;
         return Array.from(cache.values()).reduce((summary, state) => {
             const targets = state.stats?.targetCombat?.populationTargets || {};
             const values = Object.values(targets);
@@ -3840,5 +3989,7 @@ BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
 BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;
+
+BotLifeState.targetCombatTelemetry = targetCombatTelemetry;
 
 module.exports = BotLifeState;

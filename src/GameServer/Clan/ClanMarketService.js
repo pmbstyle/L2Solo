@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
@@ -28,7 +29,7 @@ function number(value, fallback = 0) {
 }
 
 function recordReason(code) {
-    if (code) metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
+    if (code) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
 }
 
 async function stateFor(characterId) {
@@ -85,7 +86,7 @@ async function resolveClan(clan) {
         if (!state || state.phase !== 'cold' || String(state.partyId || '') !== '') continue;
         const nextOffer = playerControlled ? ClanOrderService.memberOffer(state, itemId, Math.min(maxUnitPrice, remainingBudget))
             : MarketOpportunity.bestOffer(itemId, { buyerCharacterId: state.characterId,
-                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state) + clanBudget) });
+                budget: Math.min(Number(goal.plan.maxPrice) || Infinity, PurchaseFunding.spendable(state, 0, { free: true }) + clanBudget) });
         if (nextOffer) {
             offer = nextOffer;
             buyer = state;
@@ -93,14 +94,16 @@ async function resolveClan(clan) {
         }
     }
     if (!offer || !buyer) {
-        metrics.noOffer += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.noOffer += 1);
         recordReason(Contracts.REASON_CODES.MARKET_NO_OFFER);
         return { ok: true, skipped: true, reason: Contracts.REASON_CODES.MARKET_NO_OFFER };
     }
 
     // The member buys in the offer's town (б5): at once when it stands there,
     // else it goes there with an errand and deposits at a later resolve.
-    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price)) - PurchaseFunding.spendable(buyer));
+    // ARCH-NOTE: No member clan-value wish exists; clan purchases use only unearmarked personal money and the treasury.
+    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price))
+        - Math.floor(PurchaseFunding.spendable(buyer, 0, { free: true })));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: clanPart,
             kind: 'clan_level_purchase', moveMark: false, progressionGoal: goal });
@@ -110,7 +113,8 @@ async function resolveClan(clan) {
     const placed = { price: Number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
     const purchase = await ColdMarketService.acquire(buyer, itemId, 1, {
         towns: offer.town ? [offer.town] : null, maxPrice: Number(offer.price), npc: offer.sourceType === 'npc',
-        purpose: 'clan', money: Number(offer.price), tag: { clanId: clan.id, offer: placed, clanPart }
+        purpose: 'clan', money: Number(offer.price), free: true, clanPart,
+        tag: { clanId: clan.id, offer: placed, clanPart }
     });
     if (!purchase.bought || !purchase.state) {
         if (purchase.traveling || purchase.state?.stats?.marketErrand) {
@@ -225,7 +229,7 @@ const ClanMarketService = {
             for (const clan of clans.slice(0, Math.max(1, number(limit, Config.resolveBatchSize)))) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
                 const before = { purchases: metrics.purchases, deposited: metrics.deposited, levelUps: metrics.levelUps, blocked: metrics.blocked };
@@ -237,12 +241,13 @@ const ClanMarketService = {
                 summary.blocked += metrics.blocked - before.blocked;
                 if (result?.ok === false) summary.blocked += 1;
             }
-            metrics.resolves += summary.attempted;
+            DiagnosticConfig.developerDiagnostics && (metrics.resolves += summary.attempted);
             return summary;
         });
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             purchases: metrics.purchases,

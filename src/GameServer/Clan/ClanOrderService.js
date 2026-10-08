@@ -94,7 +94,7 @@ function marketMembers(clan, memberIds = null) {
 function memberOffer(state, itemId, cap = Infinity) {
     return MarketOpportunity.bestOffer(itemId, {
         town: state.currentRegion || 'Giran',
-        budget: Math.min(PurchaseFunding.spendable(state), cap),
+        budget: Math.min(PurchaseFunding.spendable(state, 0, { free: true }), cap),
         buyerCharacterId: state.characterId
     });
 }

@@ -1,6 +1,11 @@
 const assert = require('assert');
 
+const fs = require('node:fs'), path = require('node:path');
+const isolated = require('./helpers/isolatedSocialDatabase')('bot_goal_copies', path.resolve(__dirname, '..'));
+require('./helpers/databaseIsolation');
 require('../src/Global');
+isolated.assertConfigured(options.default);
+try {
 
 invoke('GameServer/DataCache').init();
 
@@ -30,17 +35,42 @@ function bot(classId, vitals, extra = {}) {
 }
 const ratios = (hp, mp) => ({ hp: hp * 1000, maxHp: 1000, mp: mp * 500, maxMp: 500 });
 
-// Rest: the goal planner's recover goal.
+// Low ratios remain RestPolicy inputs. Voluntary recovery needs an accepted
+// economic decision; these original cold states have no decision.
 const recover = (state) => NeedsEvaluator.evaluate(state, { now }).some((goal) => goal.type === 'recover');
 assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1))), false, 'a fresh fighter has no recover goal');
-assert.strictEqual(recover(bot(FIGHTER, ratios(0.34, 1))), true, 'a fighter under 35% HP recovers');
+assert.strictEqual(recover(bot(FIGHTER, ratios(0.34, 1))), false, '35% HP alone is not the mandatory survival floor');
 assert.strictEqual(recover(bot(FIGHTER, ratios(0.36, 1))), false);
 assert.strictEqual(recover(bot(FIGHTER, ratios(1, 0.1))), false,
     'a fighter at full HP and 10% MP does not hold the recover goal: it does not rest for MP');
-assert.strictEqual(recover(bot(MYSTIC, ratios(1, 0.1))), true, 'a mage at 10% MP recovers');
+assert.strictEqual(recover(bot(MYSTIC, ratios(1, 0.1))), false, '10% MP with an affordable cast is not a mandatory floor');
 assert.strictEqual(recover(bot(MYSTIC, ratios(1, 0.21))), false);
-assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), true,
-    'a resting bot keeps its recover goal');
+assert.strictEqual(recover(bot(FIGHTER, ratios(1, 1), { activity: 'resting' })), false,
+    'a resting activity without a floor or decision creates no voluntary goal');
+
+// Genuine floor positives are separate from the unchanged ratio probes.
+const dead = bot(FIGHTER, ratios(0, 1), { activity: 'dead' });
+assert.deepStrictEqual(NeedsEvaluator.evaluate(dead, { now }), [{ type: 'recover', priority: 100,
+    target: { alive: true }, plan: { kind: 'revive', expectedBenefit: 'restore_life' }, blockers: [] }]);
+const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Data = invoke('GameServer/DataCache');
+const wind = Data.skills.find(skill => Number(skill.selfId) === 1177);
+const rank = wind.levels.find(row => Number(row.level) === 1);
+assert(rank.mp > 0, 'the authored Wind Strike rank has a real MP cost');
+// Historical already-owned native rank; this unit grants no SP/books/skills.
+const caster = bot(MYSTIC, ratios(1, 1));
+caster.stats.coldCombat = Profile.legacySnapshot(caster, [{ selfId: 1177, level: 1 }], now);
+assert.deepStrictEqual(caster.stats.coldCombat.skills.map(skill => [skill.selfId, skill.level, skill.mp]),
+    [[1177, 1, rank.mp]], 'the owned capture preserves the authored cost');
+const cannotCast = { ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) - 1 } };
+assert.deepStrictEqual(NeedsEvaluator.evaluate(cannotCast, { now }), [{ type: 'recover', priority: 100,
+    target: { hpPct: undefined, mpPct: undefined },
+    plan: { kind: 'rest', expectedBenefit: 'restore_vitals' }, blockers: [] }]);
+assert.strictEqual(recover({ ...caster, vitals: { ...caster.vitals, mp: Math.floor(rank.mp) } }), false,
+    'an affordable required cast removes the mandatory mana floor');
+assert.strictEqual(recover({ ...cannotCast, stats: { ...cannotCast.stats,
+    coldCombat: Profile.legacySnapshot(cannotCast, [], now) } }), false,
+    'an empty-owned skill list creates no fabricated required cast');
 
 // Rest: the one rule and its thresholds.
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
@@ -117,16 +147,20 @@ let needCalls = 0;
 const capacity = { reason: 'inventory_capacity', slots: 81, limit: 80, npcOnlySlots: 3 };
 ItemDisposition.inventoryCleanupNeed = () => { needCalls += 1; return capacity; };
 try {
-    const cleanup = NeedsEvaluator.evaluate(bot(FIGHTER, ratios(1, 1)), { now })
-        .find((goal) => goal.type === 'sell_inventory' && goal.target.cleanupReason);
-    assert.deepStrictEqual(cleanup, {
-        type: 'sell_inventory',
-        priority: 96,
-        target: { itemCount: 81, npcOnlySlots: 3, cleanupReason: 'inventory_capacity' },
-        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'inventory_capacity' },
-        blockers: [],
-        nextReviewAt: now + 10 * 60 * 1000
-    });
+    // The old ItemDisposition mock still exercises the clan-duty seam below;
+    // it cannot forge a native slot floor for the planner's empty bag.
+    const emptyBag = bot(FIGHTER, ratios(1, 1));
+    assert.deepStrictEqual(NeedsEvaluator.evaluate(emptyBag, { now }), [],
+        'a missing decision and empty bag produce no cleanup goal');
+    const book = Data.items.find(item => item.template.kind === 'Other.Spellbook');
+    assert(book, 'the native catalogue supplies a nonstackable book');
+    const fullBag = { ...emptyBag, inventory: { [book.selfId]: { selfId: book.selfId,
+        name: book.template.name, kind: book.template.kind, amount: 81, stackable: false,
+        instances: Array.from({ length: 81 }, (_, i) => ({ id: 9600000 + i, amount: 1, equipped: false })) } } };
+    assert.deepStrictEqual(NeedsEvaluator.evaluate(fullBag, { now }), [{ type: 'sell_inventory', priority: 100,
+        target: { itemCount: 81, npcOnlySlots: undefined, cleanupReason: 'no_slot' },
+        plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory', risk: 0, cleanupReason: 'no_slot' },
+        blockers: [] }], 'a real 81-instance bag imposes the mandatory unload');
 
     // Inventory cleanup: the clan-duty market break takes only a bag over 80.
     const clanParty = { partyId: 'clan-party', stats: { objective: { priority: 'required', clanGoalKey: 'clan:1' } } };
@@ -241,3 +275,5 @@ assert.strictEqual(PartyRequestPlanner.objectiveSpot(planned('active')), 'plan-s
 assert.strictEqual(PartyRequestPlanner.objectiveSpot({}), null);
 
 console.log('Bot goal copy checks passed');
+
+} finally { fs.rmSync(isolated.directory, { recursive: true, force: true }); }

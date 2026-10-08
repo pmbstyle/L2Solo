@@ -483,8 +483,11 @@ const strongSoloResult = BackgroundResolver.resolveSolo({
     rng: () => 0.1
 });
 assert.deepStrictEqual(strongSoloResult.debug.foughtNpcIds, [1187]);
-assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * ProgressionRates.profile().exp));
-assert.strictEqual(strongSoloResult.materialize.sp, 108 * ProgressionRates.profile().sp);
+// ARCH-NOTE: Keep the delivered shared C4 level-gap reward rule; this L30
+// hunter kills an L21 mob, so four levels beyond the five-level allowance apply.
+const expectedGapFactor = (5 / 6) ** 4;
+assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * expectedGapFactor * ProgressionRates.profile().exp));
+assert.strictEqual(strongSoloResult.materialize.sp, Math.round(108 * expectedGapFactor * ProgressionRates.profile().sp));
 assert.strictEqual(strongSoloResult.materialize.adena, 0);
 
 for (const restUntil of [timestamp - 600000, timestamp + 600000]) {
@@ -517,7 +520,7 @@ const strongPartyResult = BackgroundPartyResolver.resolve({
     timestamp,
     rng: () => 0.1
 });
-const expectedPartyShares = PartyRewardMath.sharesForLevels([30, 30], 2376, 108);
+const expectedPartyShares = PartyRewardMath.sharesForLevels([30, 30], 2376 * expectedGapFactor, 108 * expectedGapFactor);
 assert.deepStrictEqual(
     strongPartyResult.memberResults.map((entry) => entry.result.materialize.exp),
     expectedPartyShares.map((share) => Math.round(share.exp * ProgressionRates.profile().exp)),

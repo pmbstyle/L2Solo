@@ -5,6 +5,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
+const directory = path.join(os.tmpdir(), `l2solo-safety-runtime-${require('node:crypto').randomUUID()}`);
+fs.mkdirSync(directory);
+const fixtureConfig = path.join(directory,'fixture.ini'), defaultConfig=fs.readFileSync(path.resolve('config/default.ini'),'utf8');
+const otherSections=defaultConfig.indexOf('[AuthServer]');assert(otherSections>0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${path.join(directory,'fixture.sqlite')}\nhistoryPath = ${path.join(directory,'history.sqlite')}\n\n${defaultConfig.slice(otherSections)}`);
+process.env.L2NODE_CONFIG_FILE=fixtureConfig;delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require('../src/Global');
 
 const Database = invoke('Database');
@@ -18,7 +24,6 @@ const World = invoke('GameServer/World/World');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 Config.knowledgeErrorsEnabled = false;
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'l2solo-safety-runtime-'));
 const paths = { path: options.default.Database.path, historyPath: options.default.Database.historyPath };
 let opened = false;
 let registry;
@@ -42,8 +47,10 @@ async function until(predicate, label, turns = 200) {
 
 (async () => {
     try {
-        options.default.Database.path = path.join(directory, 'fixture.sqlite');
-        options.default.Database.historyPath = path.join(directory, 'history.sqlite');
+        assert.equal(options.default.Database.path,path.join(directory,'fixture.sqlite'));
+        assert.equal(options.default.Database.historyPath,path.join(directory,'history.sqlite'));
+        assert(path.isAbsolute(options.default.Database.path)&&path.isAbsolute(options.default.Database.historyPath));
+        console.log('Isolated native safety paths:',options.default.Database.path,options.default.Database.historyPath);
         await new Promise(resolve => Database.init(resolve));
         opened = true;
         await Database.createAccount('bot_safety_runtime_fixture', 'fixture');
@@ -164,7 +171,7 @@ async function until(predicate, label, turns = 200) {
         assert.equal(coordinator.projectedEntryFor(lostId).entry, prepared);
         const lostCheckpoint = Protocol.safetyCheckpoint(lostState);
         assert.equal(coordinator.canRepairSafety(lostCheckpoint), true);
-        for (const name of ['fencedBots', 'economyBots', 'commandInflight']) {
+        for (const name of ['fencedBots', 'commandInflight']) {
             const collection = coordinator[name];
             if (collection instanceof Map) collection.set(lostId, {}); else collection.add(lostId);
             assert.equal(coordinator.safetyExcluded(lostId), true, `${name} cheap exclusion`);
@@ -249,7 +256,7 @@ async function until(predicate, label, turns = 200) {
         assert.notEqual(replacementEpoch, oldEpoch);
         const beforeLate = coordinator.projectedEntryFor(characterId).entry;
         oldWorker.emit('message', Protocol.envelope('heartbeat', replacementEpoch,
-            { safety: { stateRepairs: 999, boardRepairs: 999, coverageRepairs: 999 } }));
+            { safety: { stateRepairs: 999, coverageRepairs: 999, orphanRepairs: 999 } }));
         oldWorker.emit('exit', 0);
         assert.equal(coordinator.worker, replacement, 'late old exit cannot retire replacement');
         assert.equal(coordinator.projectedEntryFor(characterId).entry, beforeLate, 'late old exit cannot clear new projection');

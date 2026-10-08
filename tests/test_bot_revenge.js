@@ -1,5 +1,13 @@
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_CONFIG_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+delete process.env.N53_GAME_ROOT;
+const fixture = require('./helpers/isolatedSocialDatabase')('late-revenge-publication');
+process.once('exit', () => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
 const assert = require('assert');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+invoke('GameServer/DataCache').init();
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
@@ -81,6 +89,13 @@ try {
     bot.session.pvpEnemyMemory = [];
 
     bot.session.coldLifeState = helper.session.coldLifeState = { party: { partyId: 'revenge_party' } };
+    // ARCH-NOTE: manually changing a registered session models the input to
+    // the native lifecycle membership writer; publish the addressed changes.
+    assert.deepStrictEqual(Threats.members(bot.session), [bot.session],
+        'an unpublished late helper is not silently discovered by a world scan');
+    World.refreshPartyMemberships([bot.session, helper.session]);
+    assert.deepStrictEqual(Threats.members(bot.session), [bot.session, helper.session],
+        'the original registered helper joins the earned-grievance encounter');
     const ai = { executePvPCombat(session, actor, target) { events.push(['attack', actor.id, target.id]); } };
     assert(Defense.tick(bot.session, bot, {}, ai, { now, rng: () => 0 }));
     assert.deepStrictEqual(events.filter(e => ['chat', 'attack'].includes(e[0])).map(e => e[0]), ['chat', 'attack'],
@@ -95,6 +110,9 @@ try {
     assert.strictEqual(new Attack().blockedPvpDefense(bot.session, bot, foe), false,
         'native damage must accept only the explicitly authorized revenge target');
     helper.session.coldLifeState = { party: { partyId: 'another_party' } };
+    World.refreshPartyMemberships([helper.session]);
+    assert.deepStrictEqual(Threats.members(bot.session), [bot.session],
+        'the changed helper leaves the published party immediately');
     assert(!Revenge.allows(helper.session, foe, now), 'leaving the party revokes its borrowed attack permission');
     assert(!Revenge.allows(bot.session, foe, now + Revenge.ENCOUNTER_MS + 1), 'abandoned objectives expire');
     foe.x = 99999;

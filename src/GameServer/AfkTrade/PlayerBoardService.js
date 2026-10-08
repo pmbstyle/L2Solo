@@ -1,6 +1,6 @@
 'use strict';
 
-// Server contract for a future client view. Each answer resolves the current
+// Server contract for the player board. Each answer resolves the current
 // canonical record; a displayed quote never becomes a remote purchase.
 const { SELL, BUY } = require('./BoardIndex');
 const SHOP_RANGE = 200;
@@ -23,48 +23,54 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
     life = () => invoke('GameServer/Bot/Population/BotLifeState'),
     database = () => invoke('Database'), response = () => invoke('GameServer/Network/Response') } = {}) {
     function entries(session, options = {}) {
-        if (!human(session)) return { available: false, entries: [], more: false };
+        if (!human(session)) return { available: false, entries: [], next: null };
         const limit = Math.min(24, Math.max(1, Math.floor(Number(options.limit) || 20)));
-        const offset = Math.min(10000, Math.max(0, Math.floor(Number(options.offset) || 0)));
         const playerId = Number(session.actor.fetchId());
-        let skipped = 0;
         const result = [];
-        const push = (entry) => {
-            if (skipped++ < offset) return true;
-            result.push(entry); return result.length <= limit;
+        let next = null;
+        const push = (entry, cursor) => {
+            if (result.length === limit) { next = cursor; return false; }
+            result.push({ ...entry, cursor }); return true;
         };
         if (options.kind === 'workshop') {
             const customer = { characterId: playerId, clanId: Number(session.actor.fetchClanId?.() || 0), stats: {} };
-            outer: for (const shop of workshops().boardRecords()) {
+            const from = options.cursor;
+            outer: for (const shop of workshops().boardRecords().slice().sort((a, b) => a.ownerId - b.ownerId)) {
                 if (shop.ownerId === playerId || options.town && shop.town !== options.town) continue;
-                for (const entry of shop.entries) {
+                if (from && Number(shop.ownerId) < Number(from.ownerId)) continue;
+                for (const entry of shop.entries.slice().sort((a, b) => a.recipeId - b.recipeId)) {
+                    if (from && Number(shop.ownerId) === Number(from.ownerId) && Number(entry.recipeId) < Number(from.recipeId)) continue;
                     const quote = workshops().lookup(shop.ownerId, entry.recipeId, customer);
-                    if (!quote || !push({ id: shop.id, kind: shop.kind, ownerId: shop.ownerId, ownerName: shop.ownerName,
-                        town: shop.town, loc: shop.loc, recipeId: entry.recipeId, price: quote.price, revision: shop.revision })) {
-                        if (result.length > limit) break outer;
-                    }
+                    if (!quote || options.selfId && Number(quote.recipe?.productId) !== Number(options.selfId)) continue;
+                    if (!push({ id: shop.id, kind: shop.kind, ownerId: shop.ownerId, ownerName: shop.ownerName,
+                        town: shop.town, loc: shop.loc, recipeId: entry.recipeId, selfId: Number(quote.recipe?.productId) || 0,
+                        price: quote.price, revision: shop.revision },
+                    { ownerId: Number(shop.ownerId), recipeId: Number(entry.recipeId) })) break outer;
                 }
             }
         } else {
             const service = afk();
-            if (!service.isBoardReady()) return { available: false, entries: [], more: false };
+            if (!service.isBoardReady()) return { available: false, entries: [], next: null };
             const board = service.boardIndex();
             const sides = [SELL, BUY].includes(Number(options.side)) ? [Number(options.side)] : [SELL, BUY];
-            const lines = options.selfId
-                ? (function* () { for (const side of sides) yield* board.list(Number(options.selfId), side, options.town || null); })()
-                : (function* () { for (const record of board.records.values()) yield* record; })();
-            for (const line of lines) {
-                if (line.ownerId === playerId || !sides.includes(line.storeType)
-                    || options.town && line.town && line.town !== options.town) continue;
-                const offer = service.offerOf(line);
-                if (!offer) continue;
-                if (!push({ id: line.recordId, kind: line.kind, side: line.storeType, ownerId: line.ownerId,
-                    ownerName: offer.sourceName, town: line.town, lineId: line.lineId, selfId: line.selfId,
-                    itemName: offer.itemName, enchant: line.enchant, count: line.count, price: line.price,
-                    revision: line.revision })) break;
+            let resume = !options.cursor?.side;
+            outer: for (const side of sides) {
+                if (!resume && side !== Number(options.cursor.side)) continue;
+                resume = true;
+                const cursor = !options.cursor?.side || side === Number(options.cursor.side) ? options.cursor : null;
+                for (const row of board.page(side, { town: options.town || null, selfId: Number(options.selfId) || 0, cursor })) {
+                    const line = row.line;
+                    if (line.ownerId === playerId) continue;
+                    const offer = service.offerOf(line);
+                    if (!offer) continue;
+                    if (!push({ id: line.recordId, kind: line.kind, side: line.storeType, ownerId: line.ownerId,
+                        ownerName: offer.sourceName, town: line.town, lineId: line.lineId, selfId: line.selfId,
+                        itemName: offer.itemName, enchant: line.enchant, count: line.count, price: line.price,
+                        revision: line.revision }, { ...row.cursor, side })) break outer;
+                }
             }
         }
-        return { available: true, entries: result.slice(0, limit), more: result.length > limit };
+        return { available: true, entries: result, next };
     }
 
     async function answer(session, request = {}) {
@@ -78,8 +84,12 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
             if (!quote || Number(quote.state.simulation?.revision || 0) !== Number(request.revision)
                 || Number(quote.price) !== Number(request.price)) return { ok: false, reason: 'record_changed' };
             if (distance(session.actor, quote.state.loc) > WORKSHOP_RANGE) {
-                return { ok: true, action: 'meet', ownerId, town: quote.state.currentRegion, loc: { ...quote.state.loc } };
+                return { ok: true, action: 'meet', ownerId, ownerName: quote.state.name, productId: quote.recipe?.productId,
+                    town: quote.state.currentRegion, loc: { ...quote.state.loc } };
             }
+            if (request.confirmed !== true) return { ok: true, action: 'confirm', ownerId, recipeId,
+                ownerName: quote.state.name, price: quote.price, revision: Number(quote.state.simulation?.revision || 0),
+                productId: quote.recipe?.productId };
             try {
                 const result = await workshops().craft(ownerId, recipeId, playerId, { expectedPrice: Number(request.price) });
                 const rows = await database().fetchItems(playerId);
@@ -102,11 +112,12 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (!merchant) {
             const owner = life().cachedState(line.ownerId);
             return { ok: true, action: 'contact', ownerId: line.ownerId, ownerName: offer.sourceName,
+                side: line.storeType,
                 town: owner?.currentRegion || line.town, loc: owner?.loc ? { ...owner.loc } : null };
         }
         const loc = location(merchant);
         if (distance(session.actor, loc) > SHOP_RANGE) return { ok: true, action: 'meet', ownerId: line.ownerId,
-            ownerName: offer.sourceName, town: line.town, loc };
+            ownerName: offer.sourceName, side: line.storeType, town: line.town, loc };
         // The normal interaction selects first, then opens the C4 store list.
         // Its existing buy/sell packets perform the real inventory transaction.
         const data = { id: merchant.fetchId(), ...location(session.actor), actionId: 0, ctrl: false };

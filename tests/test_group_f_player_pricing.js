@@ -72,7 +72,18 @@ async function player(name, { bot = false } = {}) {
     const classInfo = DataCache.classTemplates.find(entry => Number(entry.classId) === 0);
     session.actor = new Actor(session, { ...row, ...utils.crushOb(classInfo), items: await Database.fetchItems(id),
         paperdoll: utils.tupleAlloc(16, {}) });
+    World.user.sessions.push(session);
     return session;
+}
+
+let bidSequence = 0;
+async function fundedBid(price) {
+    // Display-only index rows cannot fund a deal; accepted sales use real escrow.
+    const owner = await player(`FFillBid${++bidSequence}`, { bot: true });
+    const created = await Database.createAfkTradeShop(owner.actor.fetchId(), { kind: 'buy_ad', storeType: 3, town: 'Giran',
+        lines: [{ selfId: MATERIAL, name: 'Stem', count: 10, price, stackable: true }] });
+    AfkTrade.refreshRecord(created.shop);
+    return created.shop;
 }
 
 function open(session, seller) {
@@ -237,12 +248,13 @@ test('native buyer window uses current bid and rejects stale native sale', async
     assert.strictEqual(wallet(session), money);
     assert.strictEqual(item.fetchAmount(), 20);
     assert.strictEqual(records.length, 0);
+    board.remove(30);
+    await fundedBid(502);
     open(session, buyer);
     await Sell.consumeMerchant(session, [{ objectId: item.fetchId(), selfId: MATERIAL, amount: 1, price: 502 }], { native: true });
     assert.strictEqual(wallet(session), money + 502);
-    assert.strictEqual(item.fetchAmount(), 19);
-    assert.strictEqual(records.length, 1);
-    assert.strictEqual(records[0].unitPrice, 502);
+    assert.strictEqual(amount(session, MATERIAL), 19);
+    assert.strictEqual(records.length, 0, 'the board transaction journals its own deal once');
 });
 
 test('HTML windows and both trades read current prices and journal executed price once', async () => {
@@ -264,11 +276,11 @@ test('HTML windows and both trades read current prices and journal executed pric
     line(41, 3, 701);
     await SellHtml(session, ['sell-to-merchant-item']);
     assert(session.sent.at(-1).args[1].includes('701a'));
-    line(41, 3, 702);
+    board.remove(41);
+    await fundedBid(702);
     await SellHtml(session, ['sell-to-merchant-item', String(MATERIAL), '1']);
     assert.strictEqual(wallet(session), money - configured - 124 + 702);
-    assert.strictEqual(records.length, 2);
-    assert.strictEqual(records[1].unitPrice, 702);
+    assert.strictEqual(records.length, 1, 'the HTML caller journals only the static purchase; the board journals its sale');
 });
 
 test('bot shots retain authored price after player refresh; other static purchases are denied', async () => {
@@ -432,8 +444,11 @@ test('all four accepted native/HTML player trades persist once with executed pri
     ].includes(trade.sourceType));
     const values = trades => trades.map(({ sourceType, unitPrice, quantity }) => ({ sourceType, unitPrice, quantity }))
         .sort((left, right) => left.unitPrice - right.unitPrice);
-    assert.strictEqual(allRecords.length, 4);
+    assert.strictEqual(allRecords.length, 2, 'only the two static purchases use caller telemetry');
     assert.deepStrictEqual(values(playerTrades), values(allRecords));
+    const boardTrades = history.recent.filter(trade => trade.sourceType === 'afk_bot_buy_store');
+    assert.deepStrictEqual(boardTrades.map(trade => [trade.unitPrice, trade.quantity]).sort((a, b) => a[0] - b[0]),
+        [[502, 1], [702, 1]], 'the two static-buyer fills appear once through native board settlement');
 });
 
 (async () => {

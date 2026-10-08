@@ -1,5 +1,8 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
-const Database = invoke('Database');
+// ARCH-NOTE: Pure stock plans also run in guarded workers; load SQL only
+// when an existing persistence branch is reached, before actor mutations.
+let database;
+const persistenceDatabase = () => database ||= invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
@@ -243,13 +246,13 @@ function ensureActorStock(actor, options = {}) {
 
     if (current) {
         const delta = targetAmount - currentAmount;
-        return Database.updateItemAmount(actor.fetchId(), current.fetchId(), targetAmount).then(() => {
+        return persistenceDatabase().updateItemAmount(actor.fetchId(), current.fetchId(), targetAmount).then(() => {
             current.setAmount(targetAmount);
             return { changed: true, plan, amount: targetAmount, delta };
         });
     }
 
-    return Database.setItem(actor.fetchId(), {
+    return persistenceDatabase().setItem(actor.fetchId(), {
         selfId: plan.selfId,
         name: plan.name,
         amount: targetAmount,
@@ -266,7 +269,7 @@ function ensureCharacterStock(characterId, options = {}) {
     if (!id) return Promise.resolve({ changed: false, reason: 'missing_character' });
 
     const targetAmount = Number(options.targetAmount || DEFAULT_TARGET_AMOUNT);
-    return Database.fetchItems(id).then((rows) => {
+    return persistenceDatabase().fetchItems(id).then((rows) => {
         const plan = options.plan || planForRows(rows || [], options.classId ?? characterId?.classId);
         const current = existingRow(rows, plan.selfId);
         const currentAmount = Number(current?.amount || 0);
@@ -277,7 +280,7 @@ function ensureCharacterStock(characterId, options = {}) {
 
         if (current) {
             const delta = targetAmount - currentAmount;
-            return Database.updateItemAmount(id, current.id, targetAmount).then(() => ({
+            return persistenceDatabase().updateItemAmount(id, current.id, targetAmount).then(() => ({
                 changed: true,
                 plan,
                 amount: targetAmount,
@@ -285,7 +288,7 @@ function ensureCharacterStock(characterId, options = {}) {
             }));
         }
 
-        return Database.setItem(id, {
+        return persistenceDatabase().setItem(id, {
             selfId: plan.selfId,
             name: plan.name,
             amount: targetAmount,
@@ -329,19 +332,24 @@ function restockPlan(value, options = {}) {
         ? value.backpack.fetchItemFromSelfId?.(57)?.fetchAmount?.() : value?.adena) ?? 0) || 0);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = actor ? Economy.stateForActor(value) : value;
-    const context = Economy.forState(state);
+    const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
+    const context = options.context || (coldMain ? Economy.basics(state) : Economy.forState(state));
     const stock = context.stock('shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     const reserve = PurchaseFunding.operatingReserve(state);
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
-    const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve) : context.purchaseBudget(plan.selfId);
-    const maxPrice = npcPrice > 0 ? npcPrice - 1 : context.worth(plan.selfId) ?? context.price(plan.selfId);
+    const wish = options.targetAmount === undefined ? context.network?.queue.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
+    const fundedState = !coldMain && options.targetAmount === undefined && context.statsPacket
+        ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
+    const allowance = PurchaseFunding.spendable(fundedState, 0, { itemId: plan.selfId,
+        ...(wish ? { r: PurchaseFunding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(plan.selfId, npcPrice) });
+    const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.usePerHour);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
-    const money = Math.min(allowance, Math.max(0, adena - reserve - potionCost));
+    const money = Math.min(allowance, Math.max(0, adena - potionCost));
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
     // the one rule for a stack purchase (OfferQuery.fill).
     const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
@@ -350,7 +358,7 @@ function restockPlan(value, options = {}) {
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
     const npcAmount = npcRestockAmount({ needed, targetAmount, currentAmount,
-        unitPrice: npcPrice, adena: Math.min(adena, money + reserve + potionCost), reserve, potionCost }, shopAmount, shopCost);
+        unitPrice: npcPrice, adena: Math.min(adena, money + potionCost), reserve: 0, potionCost }, shopAmount, shopCost);
     return {
         plan,
         currentAmount,
@@ -361,6 +369,7 @@ function restockPlan(value, options = {}) {
         unitPrice: npcPrice,
         amount: shopAmount + npcAmount,
         cost: shopCost + npcAmount * npcPrice,
+        spendBudget: money,
         adena,
         reserve,
         potionCost
@@ -373,7 +382,7 @@ function restockPlan(value, options = {}) {
 function npcRestockAmount(restock, bought = 0, spent = 0) {
     if (!restock.needed || !(restock.unitPrice > 0)) return 0;
     const left = restock.targetAmount - restock.currentAmount - bought;
-    const money = Math.max(0, restock.adena - restock.reserve - restock.potionCost - spent);
+    const money = Math.max(0, (restock.spendBudget ?? (restock.adena - restock.reserve - restock.potionCost)) - spent);
     return Math.max(0, Math.min(left, Math.floor(money / restock.unitPrice)));
 }
 
@@ -388,7 +397,12 @@ async function purchaseActorRestock(actor, options = {}) {
     // The board's lines of the town the bot stands in (б5: a deal is made in
     // the seller's town); away from a town, only the merchant's price.
     const town = options.town ?? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor);
-    const restock = restockPlan(actor, { plan, unitPrice: options.unitPrice, potionUnitPrice: options.potionUnitPrice,
+    const botActor = actor.session?.actor === actor
+        && Number(actor.session.coldLifeState?.characterId) === Number(actor.fetchId());
+    const localQuote = botActor && town && options.unitPrice === undefined
+        ? invoke('GameServer/Bot/Economy/NpcRestockPlan').quoteFor(plan.selfId, town) : null;
+    const restock = restockPlan(actor, { plan, targetAmount: options.targetAmount,
+        unitPrice: options.unitPrice ?? localQuote?.price, potionUnitPrice: options.potionUnitPrice,
         offers: town ? AfkTrade.offers(plan.selfId, AfkTrade.SELL, { characterId: actor.fetchId(), town }) : [] });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {
@@ -412,15 +426,31 @@ async function purchaseActorRestock(actor, options = {}) {
     const adena = Number(adenaItem?.fetchAmount ? adenaItem.fetchAmount() : 0);
     const npcAmount = npcRestockAmount(restock, delta, cost);
     const npcCost = npcAmount * restock.unitPrice;
+    if (options.skipNpc) return { ok: true, changed: delta > 0, plan,
+        amount: shotAmount(actor, plan), delta, cost, adena };
     if (!adenaItem || npcAmount <= 0 || adena < npcCost) {
         return delta > 0
             ? { ok: true, changed: true, plan, amount: shotAmount(actor, plan), delta, cost, adena }
             : { ok: false, reason: 'not_enough_adena', plan, cost: restock.cost, adena };
     }
 
+    if (botActor) {
+        if (!town) return { ok: delta > 0, changed: delta > 0, reason: 'no_local_npc', plan,
+            amount: shotAmount(actor, plan), delta, cost, adena };
+        const result = await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(actor, {
+            town, shots: false, potions: false, scrolls: false,
+            extras: [{ selfId: plan.selfId, amount: npcAmount, unitPrice: restock.unitPrice }] });
+        const bought = result.receipts.reduce((sum, row) => sum + Number(row.units || 0), 0);
+        return { ok: result.ok && delta + bought > 0, changed: delta + bought > 0, plan,
+            amount: shotAmount(actor, plan), delta: delta + bought, cost: cost + result.spent,
+            adena: Number(actor.backpack.fetchItemFromSelfId(57)?.fetchAmount?.() || 0) };
+    }
+
+    // Non-bot character adapters retain their existing owner; the player's
+    // purchase interface is outside the NPC bot basket contract.
     const nextAdena = adena - npcCost;
     const nextAmount = shotAmount(actor, plan) + npcAmount;
-    await Database.updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
+    await persistenceDatabase().updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena);
     adenaItem.setAmount(nextAdena);
     const result = await ensureActorStock(actor, { targetAmount: nextAmount, plan });
     return { ok: true, ...result, delta: delta + npcAmount, cost: cost + npcCost, adena: nextAdena };

@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const ClanRules = invoke('GameServer/Clan/ClanRules');
 const ClanService = invoke('GameServer/Clan/ClanService');
@@ -21,8 +23,8 @@ const metrics = {
     durationMs: 0,
     durationSamples: 0,
     durationMaxMs: 0,
-    stages: new Map(),
-    reasonCounts: new Map()
+    stages: new DiagnosticMetricMap(),
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 let founderScanOffset = 0;
@@ -45,7 +47,7 @@ function parseJson(value, fallback = {}) {
 
 function recordReason(code) {
     if (!code) return;
-    metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
+    DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
 }
 
 function recordReasons(codes = []) {
@@ -103,7 +105,7 @@ function candidateFilterSql() {
 }
 
 async function candidateProjection(limit = 512, offset = 0) {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, 512))));
     const safeOffset = Math.max(0, Math.floor(number(offset)));
     try {
@@ -120,12 +122,12 @@ async function candidateProjection(limit = 512, offset = 0) {
         `, []], 'clan-simulation:founder-projection');
         return rows.map(normalizeCandidate).filter((candidate) => !Policy.isStaticService(candidate));
     } finally {
-        StageMetrics.record(metrics.stages, 'candidate_projection', Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'candidate_projection', Date.now() - startedAt);
     }
 }
 
 async function autonomousClanProjection() {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     try {
         const rows = await Database.execute([`
             SELECT simulated.clanId, simulated.stateJson,
@@ -164,7 +166,7 @@ async function autonomousClanProjection() {
         });
         return [...byId.values()];
     } finally {
-        StageMetrics.record(metrics.stages, 'clan_projection', Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'clan_projection', Date.now() - startedAt);
     }
 }
 
@@ -213,11 +215,11 @@ async function joinExisting(candidate, clan, suitability) {
         maxBotMemberShare: Config.maxBotMemberShare
     });
     if (!result.ok) {
-        metrics.joinBlocked += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.joinBlocked += 1);
         recordReason(result.code);
         return result;
     }
-    metrics.existingClanJoins += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.existingClanJoins += 1);
     ClanService.reload().then(() => {
         invoke('GameServer/Bot/AI/BotClanChat').onJoined(candidate, clan.id);
     }).catch((error) => utils.infoWarn('Clan', 'failed to reload after autonomous join: %s', error.message));
@@ -225,7 +227,7 @@ async function joinExisting(candidate, clan, suitability) {
 }
 
 async function resolveCandidate(candidate, options = {}) {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     try {
         const clans = options.clans || await autonomousClanProjection();
         const existing = Policy.selectExistingClan(candidate, clans, {
@@ -242,10 +244,10 @@ async function resolveCandidate(candidate, options = {}) {
             quorumCandidates: [candidate, ...recruits],
             founderThresholds: options.founderThresholds || await founderThresholds()
         });
-        metrics.founderEvaluations += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.founderEvaluations += 1);
         recordReasons(eligibility.reasons);
         if (!eligibility.ok) {
-            metrics.founderBlocked += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.founderBlocked += 1);
             return { ok: false, code: eligibility.reasons[0] || Contracts.REASON_CODES.FOUNDER_NO_QUORUM, eligibility, recruits };
         }
 
@@ -264,11 +266,11 @@ async function resolveCandidate(candidate, options = {}) {
             }
         });
         if (!result.ok) {
-            metrics.founderBlocked += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.founderBlocked += 1);
             recordReason(result.code);
             return { ...result, eligibility, recruits };
         }
-        metrics.founderCreated += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.founderCreated += 1);
         try {
             const crest = await ClanCrestService.ensureAutonomousCrest(result.clanId);
             if (!crest.ok) utils.infoWarn('ClanCrest', 'could not assign crest to clan %d: %s', result.clanId, crest.code);
@@ -278,7 +280,7 @@ async function resolveCandidate(candidate, options = {}) {
         await ClanService.reload();
         return { ...result, eligibility, recruits };
     } finally {
-        StageMetrics.record(metrics.stages, 'resolve_candidate', Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'resolve_candidate', Date.now() - startedAt);
     }
 }
 
@@ -300,7 +302,7 @@ const ClanSimulationService = {
                 return { candidate, existingClan: existing, recruits, eligibility };
             }));
         }).then((evaluations) => {
-            metrics.founderCandidates = evaluations.filter((entry) => entry.eligibility.ok).length;
+            DiagnosticConfig.developerDiagnostics && (metrics.founderCandidates = evaluations.filter((entry) => entry.eligibility.ok).length);
             return evaluations;
         });
     },
@@ -318,9 +320,9 @@ const ClanSimulationService = {
         const safeLimit = Math.max(1, Math.min(2000, Math.floor(number(limit, Config.resolveBatchSize))));
         const scanOffset = founderScanOffset;
         const summary = { attempted: 0, created: 0, joined: 0, blocked: 0, budgetStopped: false };
-        metrics.runs += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.runs += 1);
         const stopForBudget = () => {
-            if (!summary.budgetStopped) metrics.budgetStops += 1;
+            if (!summary.budgetStopped) DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
             summary.budgetStopped = true;
         };
         try {
@@ -336,7 +338,7 @@ const ClanSimulationService = {
             deadlineAt = Date.now() + budgetMs;
             if (!candidates.length) return summary;
             const pool = candidates;
-            const scanStartedAt = Date.now();
+            const scanStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
             const reservedIds = new Set();
             let processed = 0;
             for (const candidate of candidates) {
@@ -369,19 +371,20 @@ const ClanSimulationService = {
             }
             founderScanOffset += processed;
             if (processed >= candidates.length && candidates.length < safeLimit) founderScanOffset = 0;
-            StageMetrics.record(metrics.stages, 'scan_loop', Date.now() - scanStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'scan_loop', Date.now() - scanStartedAt);
             return summary;
         } finally {
-            const durationMs = Math.max(0, Date.now() - startedAt);
-            metrics.durationMs += durationMs;
-            metrics.durationSamples += 1;
-            metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs);
-            if (Date.now() > deadlineAt) metrics.budgetOverruns += 1;
-            StageMetrics.record(metrics.stages, 'total', durationMs);
+            const durationMs = DiagnosticConfig.developerDiagnostics ? Math.max(0, Date.now() - startedAt) : 0;
+            DiagnosticConfig.developerDiagnostics && (metrics.durationMs += durationMs);
+            DiagnosticConfig.developerDiagnostics && (metrics.durationSamples += 1);
+            DiagnosticConfig.developerDiagnostics && (metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs));
+            if (Date.now() > deadlineAt) DiagnosticConfig.developerDiagnostics && (metrics.budgetOverruns += 1);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'total', durationMs);
         }
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             founderCandidates: metrics.founderCandidates,
             founderEvaluations: metrics.founderEvaluations,

@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotAvailability = invoke('GameServer/Bot/AI/BotAvailability');
 const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
@@ -291,13 +292,13 @@ function activateNearPlayer(playerSession, state) {
     };
     return LangfuseTracing.withObservation(
         'bot.tool.come_to_player',
-        { player: playerSummary(playerSession), bot: stateSummary(state), playerLoc: playerLocation(playerSession) },
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ player: playerSummary(playerSession), bot: stateSummary(state), playerLoc: playerLocation(playerSession) }) : null,
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             source: 'cold_chat',
             tool: 'come_to_player',
             botId: state.characterId,
             playerId: playerSession.actor.fetchId()
-        },
+        }) : null,
         run,
         'tool'
     );
@@ -311,14 +312,14 @@ function recordReply(playerSession, state, turn, result, extra = {}) {
         extra.fallback === true;
     return LangfuseTracing.withObservation(
         'bot.conversation.persist',
-        { botId: state.characterId, playerId: playerSession.actor.fetchId(), turnId: turn.turnId },
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ botId: state.characterId, playerId: playerSession.actor.fetchId(), turnId: turn.turnId }) : null,
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             source: 'cold_chat',
             botId: state.characterId,
             playerId: playerSession.actor.fetchId(),
             turnId: turn.turnId,
             sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
-        },
+        }) : null,
         () => BotConversationService.recordBotReply({
             playerSession,
             botSession: state,
@@ -442,7 +443,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     }
                 };
                 const delivered = deliverReply(playerSession, state, reply.reply);
-                console.info(
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                     'BotParty :: remote join request player=%s speaker=%s party=%s result=%s applied=%s',
                     playerSession.actor.fetchName?.() || 'unknown',
                     state.name || state.characterId,
@@ -478,7 +479,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
         const rootPromise = LangfuseTracing.withRootObservation(
             'cold-bot.dialogue',
             payload,
-            {
+            (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                 event: 'cold_chat',
                 source: 'cold_chat',
                 botId: state.characterId,
@@ -486,9 +487,9 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 turnId: turn.turnId,
                 requestId: turn.turnId,
                 sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
-            },
+            }) : null,
             async () => {
-                const stageMetadata = {
+                const stageMetadata = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                     event: 'cold_chat',
                     source: 'cold_chat',
                     botId: state.characterId,
@@ -496,14 +497,14 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     turnId: turn.turnId,
                     requestId: turn.turnId,
                     sessionId: `cold-bot:${Number(state.characterId || 0)}:player:${playerSession.actor.fetchId()}`
-                };
+                }) : null;
                 await LangfuseTracing.withObservation(
                     'bot.context.assemble',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         event: 'cold_chat',
                         conversationTurns: payload.conversation?.recentTurns?.length || 0,
                         recentEvents: payload.recentEvents?.length || 0
-                    },
+                    }) : null,
                     stageMetadata,
                     async () => payload,
                     'chain'
@@ -511,11 +512,11 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
 
                 const deliver = (reply, extra = {}) => LangfuseTracing.withObservation(
                     'bot.reply.deliver',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         action: reply?.action || 'say',
                         reply: reply?.reply || null,
                         providerOutcome: reply?.providerOutcome || null
-                    },
+                    }) : null,
                     stageMetadata,
                     () => {
                         const delivered = deliverReply(playerSession, state, reply?.reply);
@@ -539,8 +540,8 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     if (llmReady && !grantedAdmission?.ok) {
                         await LangfuseTracing.withObservation(
                             'bot.inference.admission',
-                            { event: 'cold_chat', estimatedPromptTokens },
-                            { ...stageMetadata, reason: grantedAdmission.reason, retryAfterMs: grantedAdmission.retryAfterMs || 0 },
+                            (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ event: 'cold_chat', estimatedPromptTokens }) : null,
+                            (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ ...stageMetadata, reason: grantedAdmission.reason, retryAfterMs: grantedAdmission.retryAfterMs || 0 }) : null,
                             async () => ({ ok: false, reason: grantedAdmission.reason, retryAfterMs: grantedAdmission.retryAfterMs || 0 }),
                             'chain'
                         );
@@ -559,16 +560,16 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                 const providerResult = await requestLlmReply(payload, cfg, turn, state, playerSession);
                 const result = await LangfuseTracing.withObservation(
                     'bot.schema.validate',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         event: 'cold_chat',
                         providerOutcome: providerResult?.llmTelemetry?.outcome || providerResult?.providerOutcome || null
-                    },
+                    }) : null,
                     stageMetadata,
                     async () => validateLlmReply(providerResult),
                     'chain'
                 );
                 if (result?.providerFailure) {
-                    state.lastRemoteChatTelemetry = result.llmTelemetry || null;
+                    if (DiagnosticConfig.developerDiagnostics) state.lastRemoteChatTelemetry = result.llmTelemetry || null;
                     const failed = {
                         ...fallback,
                         providerOutcome: result.providerOutcome,

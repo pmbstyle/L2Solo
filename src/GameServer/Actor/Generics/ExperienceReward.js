@@ -53,7 +53,7 @@ function experienceReward(session, actor, exp, sp) {
         CharacterWriteQueue.karma(actor.fetchId(), actor.fetchPvp(), actor.fetchPk(), actor.fetchKarma());
     }
     if (session.accountId?.startsWith('bot_')) {
-        invoke('GameServer/Bot/BotSkillTraining').review(session).catch((error) => {
+        invoke('GameServer/Bot/BotSkillTraining').review(session, { onSpAward: true }).catch((error) => {
             utils.infoWarn('BotSkills', 'training after SP award failed for %d: %s', actor.fetchId(), error.message);
         });
     }

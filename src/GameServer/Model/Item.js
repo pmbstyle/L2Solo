@@ -20,7 +20,7 @@ class ItemModel {
             && binding.backpack.items === binding.items && binding.items.length === binding.count
             && binding.members.has(this)) {
             binding.backpack.inventoryRevision = Number(binding.backpack.inventoryRevision || 0) + 1;
-            binding.backpack.onInventoryChange?.();
+            binding.backpack.onInventoryChange?.(this.fetchSelfId());
         }
     }
 
@@ -41,7 +41,7 @@ class ItemModel {
             && binding.backpack.items === binding.items && binding.items.length === binding.count
             && binding.members.has(this)) {
             binding.backpack.inventoryRevision = Number(binding.backpack.inventoryRevision || 0) + 1;
-            binding.backpack.onInventoryChange?.();
+            binding.backpack.onInventoryChange?.(this.fetchSelfId());
         }
     }
 

@@ -126,6 +126,30 @@ try {
 const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40,
     density: 10, npcEntries: [{ selfId: template.selfId, count: 10 }], mob: { hp: 1, damage: 1 },
     rewards: { exp: 100, sp: 10, adenaMin: 10, adenaMax: 10 } };
+{
+    const resistantTarget = Cold.npcCombatStats(template);
+    let safeArcher = { ...archer, maxHp: 10000, pDef: 100 };
+    const ratio = Matchup.soloSurvival([safeArcher], resistantTarget).survivalRatio;
+    safeArcher = { ...safeArcher, maxHp: safeArcher.maxHp * 1.6 / ratio };
+    assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible);
+    assert(!Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: false }).eligible,
+        'party hunts retain the resistance gate');
+    assert.strictEqual(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher], soloSafety: true }).selfId,
+        template.selfId, 'cold solo picks the resisted mob it survives');
+    assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher] }).avoided);
+    const originalScan = World.fetchNpcsInRadius, originalSight = Geo.hasLineOfSight, originalScore = Scorer.score;
+    const checked = [];
+    try {
+        World.fetchNpcsInRadius = () => [hot];
+        Geo.hasLineOfSight = () => true;
+        Scorer.score = context => { checked.push(context.targetMatchup); return originalScore(context); };
+        Hunting.findPreferredMonster({ actor: hunter, plan: 'hunting' }, hunter, 2500);
+        assert(checked.length > 0 && checked.every(match => match.eligible),
+            'hot solo candidates use the same survival gate for resistant mobs');
+    } finally {
+        World.fetchNpcsInRadius = originalScan; Geo.hasLineOfSight = originalSight; Scorer.score = originalScore;
+    }
+}
 assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [archer] }).avoided);
 assert.strictEqual(Routes.bestSpot([immuneSpot], { level: 40 }, { matchupProfiles: [archer] }), null);
 assert(Routes.bestSpot([immuneSpot], { level: 40 }, { matchupProfiles: [archer, sword] }));
@@ -158,7 +182,7 @@ const state = { characterId: 98765, level: 40, activity: 'hunting', vitals: { hp
 const skipped = Resolver.resolveSolo({ state, spot: immuneSpot, elapsedMs: 60000, timestamp: Date.now(), rng: () => 0.5 });
 assert.strictEqual(skipped.materialize.exp, 0, 'no synthetic fallback reward after rejecting real targets');
 assert.strictEqual(skipped.debug.combatActions, 0);
-assert.strictEqual(skipped.patch.stats.lastReason, 'target_resistance');
+assert.strictEqual(skipped.patch.stats.lastReason, 'no_safe_solo_target');
 assert(Resolver.resolvePartyFight({ members: [state, { ...state, characterId: 98766 }], spot: immuneSpot, rng: () => 0.5 }).avoided);
 
 const summoned = Matchup.coldProfiles(mage, { stats: { coldCombat: { summon: {

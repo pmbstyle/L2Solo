@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const Episode = require('./ColdCompetitionEpisode');
 const TTL_MS = 10000;
 const COOLDOWN_MS = 2 * 60000;
@@ -10,7 +11,7 @@ const MAX_APPLIED = 4, MAX_ATTEMPTS = 8, BUDGET_MS = 75;
 // slots, so a busy scan of fights and invitations cannot starve departures.
 const MAX_LEAVES = 2, MAX_LEAVE_ATTEMPTS = 4;
 const leaving = e => e.action === 'avoid' || e.action === 'yield';
-const count = (map, key) => { map[key] = (map[key] || 0) + 1; };
+const count = (map, key) => { if (!DiagnosticConfig.developerDiagnostics) return; map[key] = (map[key] || 0) + 1; };
 const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
 
 function eligible(state, event, participant, now) {
@@ -62,14 +63,14 @@ class ColdCompetitionActions {
                 if (slots.applied >= slots.maxApplied || slots.attempted >= slots.maxAttempts) { skipped.push(event); continue; }
                 open = open && !this.stopping && this.canRun() && this.budgetNow() - started < BUDGET_MS;
                 if (!open) { skipped.push(event); continue; }
-                slots.attempted++; this.report.attempted++;
+                slots.attempted++; DiagnosticConfig.developerDiagnostics && (this.report.attempted++);
                 let result;
                 try { result = await this.apply(event); }
                 catch (error) { result = { ok: false, reason: 'action_error', error: error.message }; }
-                this.report[result.ok ? 'applied' : 'rejected']++;
+                if (DiagnosticConfig.developerDiagnostics) this.report[result.ok ? 'applied' : 'rejected']++;
                 if (result.ok) slots.applied++;
                 else count(this.report.rejectedReasons, result.detail || result.reason || 'unknown');
-                if (!result.ok && result.detail) {
+                if (DiagnosticConfig.developerDiagnostics && !result.ok && result.detail) {
                     this.report.rejectionExamples = [...this.report.rejectionExamples.filter(e => e.detail !== result.detail), {
                         at: this.now(), key: event.key, action: event.action, pvpIntent: !!event.pvpIntent,
                         spotId: event.spotId, reason: result.reason, detail: result.detail, ...result.rejectionContext
@@ -79,15 +80,15 @@ class ColdCompetitionActions {
                     if (!result.ok) count(this.report.pvpRejected, result.detail || result.reason || 'unknown');
                     else if (!result.pvp) count(this.report.pvpSuppressed, result.deescalated ? 'deescalated' : result.pvpReason || 'not_started');
                 }
-                if (result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'avoid' ? 'avoids' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
-                if (result.ok && result.pvp) {
-                    this.report.pvpFights++;
+                if (DiagnosticConfig.developerDiagnostics && result.ok) this.report[result.deescalated ? 'deescalated' : result.queued ? 'queued' : event.action === 'revenge' ? 'revenges' : event.action === 'contest' ? 'contests' : event.action === 'avoid' ? 'avoids' : event.action === 'yield' ? 'yields' : result.recruited ? 'recruits' : 'parties']++;
+                if (DiagnosticConfig.developerDiagnostics && result.ok && result.pvp) {
+                    DiagnosticConfig.developerDiagnostics && (this.report.pvpFights++);
                     const kills = result.combat.fighters.flatMap(f => f.kills);
-                    this.report.pvpDeaths += kills.length;
-                    this.report.pkKills += kills.filter(k => !k.pvp).length;
-                    if (!result.encounter) { this.report.pvpCompleted++; count(this.report.pvpOutcomes, result.outcome || 'finished'); }
+                    DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
+                    DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+                    if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
                 }
-                if (result.ok && event.spotId) {
+                if (DiagnosticConfig.developerDiagnostics && result.ok && event.spotId) {
                     const activity = this.spotActivity.get(event.spotId) || { spotId: event.spotId,
                         since: this.now(), applied: 0, contests: 0, pvpFights: 0, lastPvpAt: null };
                     activity.applied++;
@@ -103,10 +104,10 @@ class ColdCompetitionActions {
                         this.spotActivityEvicted++;
                     }
                 }
-                this.report.recent = [...this.report.recent, { key: event.key, at: this.now(), actorId: event.actor.id,
+                if (DiagnosticConfig.developerDiagnostics) this.report.recent = [...this.report.recent, { key: event.key, at: this.now(), actorId: event.actor.id,
                     peerId: event.peer.id, spotId: event.spotId, action: event.action, ...result }].slice(-12);
             }
-            this.report.budgetSkipped += skipped.length;
+            DiagnosticConfig.developerDiagnostics && (this.report.budgetSkipped += skipped.length);
             for (const event of skipped) count(this.report.skippedActions, event.pvpIntent ? 'pvp' : event.action);
             // A skipped forecast was never carried out: its pair re-decides on
             // the next scan instead of waiting out the cooldown. No backlog.
@@ -122,7 +123,7 @@ class ColdCompetitionActions {
             const current = require('./ColdConflictDecision').refresh(event, this, now);
             if (!current.event) return { ok: false, reason: current.reason, decision: current.decision };
             event = current.event;
-            if (current.refreshed) this.report.decisionRefreshes++;
+            if (current.refreshed) DiagnosticConfig.developerDiagnostics && (this.report.decisionRefreshes++);
         }
         const participants = [event.actor, event.peer];
         if (!participants.every(p => this.participantAllowed(p.id))) return { ok: false, reason: 'hot_handoff_fenced' };
@@ -217,17 +218,18 @@ class ColdCompetitionActions {
     }
     async stop() { this.stopping = true; if (this.running) await this.running; }
     recordPvpStep(result) {
+        if (!DiagnosticConfig.developerDiagnostics) return;
         if (result.ok && result.extensionMs > 0) {
-            this.report.pvpExtensions++;
-            this.report.pvpExtendedMs += result.extensionMs;
+            DiagnosticConfig.developerDiagnostics && (this.report.pvpExtensions++);
+            DiagnosticConfig.developerDiagnostics && (this.report.pvpExtendedMs += result.extensionMs);
         }
         const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
-        this.report.pvpDeaths += kills.length;
-        this.report.pkKills += kills.filter(k => !k.pvp).length;
-        if (!result.encounter) { this.report.pvpCompleted++; count(this.report.pvpOutcomes, result.outcome || 'finished'); }
-        this.report.lastPvpStep = { at: this.now(), ...result };
+        DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
+        DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+        if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
+        DiagnosticConfig.developerDiagnostics && (this.report.lastPvpStep = { at: this.now(), ...result });
     }
-    snapshot() { return { ...this.report, spotActivity: [...this.spotActivity.values()].map(row => ({ ...row })),
+    snapshot() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.report, spotActivity: [...this.spotActivity.values()].map(row => ({ ...row })),
         spotActivityEvicted: this.spotActivityEvicted,
         mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }

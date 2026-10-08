@@ -3,7 +3,9 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
+const nativeFixture = require('./helpers/isolatedSocialDatabase')('f1-spatial-test_n62_pvp_actor_lookup');
 require('../src/Global');
+nativeFixture.assertConfigured(options.default);
 const World = invoke('GameServer/World/World');
 const Actor = invoke('GameServer/Model/Actor');
 const Index = invoke('GameServer/Bot/AI/BotPvpIndex');
@@ -88,12 +90,14 @@ try {
     const partyA = register(), partyB = register(), forming = register();
     partyA.coldLifeState = partyB.coldLifeState = { party: { partyId: 'pvp_lookup_party' } };
     forming.coldLifeState = { party: { partyId: 'forming' } };
+    World.refreshPartyMemberships([companion, partyA, partyB, forming]);
     Index.invalidate();
     assert.deepEqual(Index.members(replacement), [replacement, companion]);
     assert.deepEqual(Index.members(companion), [companion, replacement]);
     assert.deepEqual(Index.members(partyA), [partyA, partyB]);
     assert.deepEqual(Index.members(forming), [forming]);
     companion.followPlayerSession = forming;
+    World.refreshPartyMemberships([companion]);
     now += Index.REFRESH_MS + 1;
     assert.deepEqual(Index.members(replacement), [replacement], 'existing party snapshot refresh still follows its TTL');
     assert.deepEqual(Index.members(forming), [forming, companion]);
@@ -132,4 +136,5 @@ try {
     Date.now = realNow;
     World.user = previousUser;
     Index.invalidate();
+    require('node:fs').rmSync(nativeFixture.directory, { recursive: true, force: true });
 }

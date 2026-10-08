@@ -1,0 +1,62 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { create, LIMITS } = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
+const off = create({ config: { developerDiagnostics: false, economyDiagnostics: true }, now() { throw Error('off clock'); } });
+const payload = new Proxy({}, { get() { throw Error('off payload'); } });
+assert.equal(off.push(payload), false); assert.equal(off.accept(payload), false);
+assert.equal(off.connect(() => { throw Error('off transport'); }), false);
+off.count(payload, payload, payload); off.duration(payload, payload);
+assert.deepEqual(off.metrics(), { enabled: false }); assert.deepEqual(off.stats(), { enabled: false });
+let clock = 100;
+const config = { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' };
+const collector = create({ config, capacity: 1, now: () => clock, thread: 'worker' });
+for (let i = 0; i < LIMITS.keys + 20; i++) { collector.count('context', 'miss', String(i)); collector.duration('context', i); }
+const metrics = collector.metrics();
+assert.equal(Object.keys(metrics.counts).length, LIMITS.keys);
+assert.equal(Object.values(metrics.counts).reduce((a, b) => a + b), LIMITS.keys + 20, 'overflow preserves unsampled quantity');
+assert.equal(metrics.durations.context.count, LIMITS.keys + 20); assert.equal(metrics.durations.context.samples.length, LIMITS.durationSamples);
+for (let i = 0; i < 40; i++) collector.duration('layer' + i, 1);
+assert.equal(Object.keys(collector.metrics().durations).length, LIMITS.layers);
+assert(collector.push({ owner: 64, commandId: 'first', sequence: 1, phase: 'native_purchase' }));
+assert.equal(collector.push({ owner: 64, commandId: 'second', sequence: 2, phase: 'native_purchase' }), false);
+assert.equal(collector.stats().drops.queue, 1);
+const original = JSON.stringify({ owner: 64, at: 20, thread: 'worker', phase: 'purchase', commandId: 'first', sequence: 3 });
+const forwarded = create({ config, now: () => clock }); const batches = [];
+forwarded.connect(batch => { batches.push(batch); return true; });
+assert.equal(forwarded.accept([original]), 1);
+const event = JSON.parse(batches[0].records[0]);
+assert.equal(event.at, 20); assert.equal(event.thread, 'worker'); assert.equal(event.sequence, 3);
+assert.equal(forwarded.accept(new Array(17).fill(original)), false);
+assert.equal(forwarded.stats().sentBytes, Buffer.byteLength(JSON.stringify(batches[0])), 'wire bytes exclude conservative budget reservation');
+assert.equal(forwarded.ack(batches[0].id, 0), true); assert.equal(forwarded.stats().drops.writer, 1);
+config.developerDiagnostics = false;
+assert.deepEqual(collector.metrics(), { enabled: false }); assert.equal(collector.enabled(64), false);
+collector.stop(); config.developerDiagnostics = true;
+assert.equal(collector.stats().queued, 0); assert.deepEqual(collector.metrics().counts, {});
+console.log('Developer diagnostics: master precedence, no off work, bounded unsampled aggregates/durations, drops, original time/thread and correlation passed');
+
+const workerWire = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' }, thread: 'worker' });
+let actualMessage; workerWire.connect(batch => { actualMessage = { type: 'economy_diagnostics', epoch: 'world', ...batch, dropped: 0 }; return Buffer.byteLength(JSON.stringify(actualMessage)); });
+workerWire.push({ owner: 64, phase: 'wire_test' });
+assert.equal(workerWire.stats().sentBytes, Buffer.byteLength(JSON.stringify(actualMessage)));
+workerWire.ack(actualMessage.id, 1); assert.equal(workerWire.stats().destination, 'main_admission');
+assert.equal(workerWire.stats().acceptedByMain, 1); assert.equal(workerWire.stats().written, undefined);
+
+const failedTransport = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' } });
+failedTransport.connect(() => false); failedTransport.push({ owner: 64, phase: 'transport_refused' });
+assert.equal(failedTransport.stats().attemptedBatches, 1); assert.equal(failedTransport.stats().batches, 0);
+assert.equal(failedTransport.stats().sent, 0); assert.equal(failedTransport.stats().sentBytes, 0);
+assert.equal(failedTransport.stats().drops.transport, 1);
+const rejectedByMain = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' }, thread: 'worker' });
+let rejectedId; rejectedByMain.connect(batch => { rejectedId = batch.id; return true; });
+rejectedByMain.push({ owner: 64, phase: 'main_refused' }); rejectedByMain.ack(rejectedId, 0);
+assert.equal(rejectedByMain.stats().drops.admission, 1); assert.equal(rejectedByMain.stats().drops.writer, 0);
+
+let queueClock = 0;
+const boundedWorker = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' },
+    thread: 'worker', capacity: LIMITS.mainRecords, now: () => queueClock });
+for (let i = 0; i < LIMITS.workerRecords; i++) assert(boundedWorker.push({ owner: 64, phase: 'queue_cap' }));
+queueClock += 1000;
+assert.equal(boundedWorker.push({ owner: 64, phase: 'queue_cap' }), false);
+assert.equal(boundedWorker.stats().queued, LIMITS.workerRecords, 'worker cap also applies to default/imported collectors');
+assert.equal(boundedWorker.stats().drops.queue, 1);

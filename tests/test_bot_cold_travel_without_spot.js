@@ -1,6 +1,8 @@
 const assert = require('assert');
 
 require('../src/Global');
+// Load native data before the first economic route or combat profile check.
+invoke('GameServer/DataCache').init();
 
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
@@ -253,7 +255,7 @@ async function run() {
         timing: { lastResolvedAt: Date.now() - 30000 },
         stats: {
             restUntil: Date.now() - 1,
-            lastWarehouseWithdrawal: { items: [{ selfId: 5220, amount: 5, reason: 'market' }], at: Date.now() }
+            lastWarehouseWithdrawal: { items: [[5220, 5, 1]], at: Date.now() }
         }
     };
     LifeState.applyResolve = () => Promise.resolve({

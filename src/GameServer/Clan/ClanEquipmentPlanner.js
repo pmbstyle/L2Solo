@@ -23,7 +23,7 @@ function plannerState(member) {
 // The clan's purchase budget for a member: what the member can pay itself
 // plus the clan's free money (options.clanShare).
 function clanBudget(state, options = {}) {
-    return PurchaseFunding.spendable(state) + Math.max(0, number(options.clanShare));
+    return PurchaseFunding.spendable(state, 0, { upperBound: true }) + Math.max(0, number(options.clanShare));
 }
 
 function existingPlanFor(member) {

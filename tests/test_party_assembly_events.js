@@ -75,6 +75,70 @@ async function main() {
     console.log('PASS addressed publication group performs real native membership commit without formation timers');
     }
 
+    // Member reads follow declared ids in the newest cache, with no query or publication.
+    const cacheParties = [];
+    for (let index = 0; index < 5; index++) {
+        const partyId = `cache-party-${index}`, members = [await seed(), await seed()];
+        for (const member of members) await Life.upsertState({ ...member, level: 11,
+            activity: 'grouped', party: { partyId, leaderId: members[0].characterId } }, 'cache_party_fixture');
+        cacheParties.push({ partyId, leaderId: members[0].characterId, memberIds: members.map(member => member.characterId),
+            status: 'active', spotId: 'event-fixture', stats: {} });
+    }
+    const freshId = cacheParties[0].memberIds[0];
+    await DB.execute(['UPDATE bot_life_state SET level=1 WHERE characterId=?', [freshId]]);
+    const originalExecute = DB.execute, originalActive = Parties.active;
+    let memberQueries = 0, publications = 0;
+    const unpublish = Life.subscribePublications(() => publications++);
+    DB.execute = function(statement) { if (/SELECT[\s\S]*bot_life_state/i.test(statement[0])) memberQueries++; return originalExecute.apply(this, arguments); };
+    Parties.active = () => cacheParties;
+    try {
+        const readStarted = performance.now();
+        for (let read = 0; read < 1000; read++) Life.cachedStatesForParties(cacheParties);
+        const memberReadMs = (performance.now() - readStarted) / 10000;
+        assert(memberReadMs <= 0.05, `cached member read ${memberReadMs}ms`);
+        console.log(`CACHE_READ_MS_PER_MEMBER ${memberReadMs.toFixed(6)}`);
+        const grouped = Life.cachedStatesForParties(cacheParties);
+        assert.equal(grouped.size, 5); assert.equal(grouped.get('cache-party-0')[0].level, 11);
+        await Population.recruitBackgroundMembers([]);
+        assert.equal(memberQueries, 0, 'five-party recruitment reads no member DB rows');
+        assert.equal(publications, 0, 'member reads publish nothing');
+        assert.equal(Life.cachedState(freshId).level, 11, 'a stale DB row cannot overwrite the newer cache');
+        Population.partyRequirementRefreshDue.clear();
+        await Population.reviewBackgroundPartyDemand([]);
+        assert.equal(Population.partyRequirementRefreshDue.size, 0, 'no required waiters marks no refresh');
+        await Population.reviewBackgroundPartyDemand([{ characterId: 999 }]);
+        assert.equal(Population.partyRequirementRefreshDue.size, Config.partyRequirementRefreshBatchSize);
+    } finally { DB.execute = originalExecute; Parties.active = originalActive; unpublish(); Population.partyRequirementRefreshDue?.clear(); }
+    console.log('PASS five-party cache reads, no publications, cache authority and addressed refresh marks');
+
+    const stampCache = new Cache(), stampTick = { now: Date.now() }, stampRegistry = registry(stampTick);
+    let stampPartyListener;
+    const stampLife = { cachedState: id => stampCache.get(id), subscribePublications: (...args) => stampCache.subscribePublications(...args) };
+    const stampService = new PartyAssemblyEvents({ registry: stampRegistry, life: stampLife,
+        parties: { subscribeChanges(fn) { stampPartyListener = fn; return () => {}; } },
+        classify: state => Population.partyAssemblyInput(state, stampTick.now), run: () => {}, now: () => stampTick.now });
+    for (const [id, spotId] of [[4001, 'A'], [4002, 'B']]) stampCache.set(id, { characterId: id, phase: 'cold',
+        level: 30, activity: 'hunting', spotId, inventory: {}, adena: 0, stats: { classId: 0 } });
+    stampService.start(); disposers.push(() => stampService.stop()); await flush(); stampService.dirty.clear();
+    const startEvents = stampService.metrics.events;
+    for (let loot = 0; loot < 100; loot++) {
+        const before = stampCache.get(4001);
+        stampCache.set(4001, { ...before, adena: before.adena + 900, inventory: { 1869: { amount: loot + 1 } } });
+    }
+    await flush();
+    assert.equal(stampService.metrics.events, startEvents); assert.equal(stampService.dirty.size, 0, '100 loots enqueue nothing');
+    const beforeRequest = stampCache.get(4001);
+    stampCache.set(4001, { ...beforeRequest, stats: { ...beforeRequest.stats,
+        partyRequest: { status: 'open', priority: 'required', spotId: 'A', requestedAt: stampTick.now } } });
+    await flush();
+    assert.equal(stampService.metrics.events, startEvents + 1); assert.deepEqual([...stampService.dirty], ['spot:A']);
+    assert.equal(stampService.records.get(4001).stamp.length, 8);
+    stampService.dirty.clear();
+    stampPartyListener({ partyId: 'dissolved-A', status: 'dissolved', spotId: 'A', memberIds: [] },
+        { status: 'active', spotId: 'A', memberIds: [] });
+    assert.deepEqual([...stampService.dirty], ['spot:A'], 'dissolve wakes only its hunting spot');
+    stampService.stop(); console.log('PASS eight-field stamp, 100 loot publications, request edge and one-spot dissolve');
+
     // Actual cache and common registry, controlled decision callback. Safety
     // uses pages of retained rows; no population iterator/planner is needed.
     const cache = new Cache(), tick = { now: 1000 }, queue = registry(tick);
@@ -92,7 +156,7 @@ async function main() {
     let partyListener, defer = false;
     const service = new PartyAssemblyEvents({ registry: queue, life, parties: { subscribeChanges(fn) { partyListener = fn; return () => { partyListener = null; }; } },
         now: () => tick.now, retryMs: 100,
-        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, stamp: `${state.level}:${state.stats.request}`, dueAt: state.deadline || 0 }),
+        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, stamp: [state.level, null, null, state.stats.request, state.stats.status || null, null, null, null], dueAt: state.deadline || 0 }),
         run(rows, timestamp, help) { attempts.push({ rows, help }); return { deferred: defer }; },
         expire(id) { expired.push(id); const current = cache.get(id); cache.set(id, { ...current, deadline: 0 }); },
         onRepair: () => repairs.push(1), onError: error => errors.push(error) });
@@ -108,7 +172,7 @@ async function main() {
     // Remove the other startup group edges to isolate address/retry controls.
     for (const group of service.groups.values()) { group.handled = group.revision; }
     service.dirty.clear();
-    const previous = cache.get(1); const changed = { ...previous, level: 11 };
+    const previous = cache.get(1); const changed = { ...previous, level: 11, stats: { ...previous.stats, status: 'open' } };
     defer = true; cache.set(1, changed); queue.tick(tick.now); await flush();
     assert(attempts.at(-1).rows.includes(changed), 'changed current source is in the addressed group');
     assert(service.deadlines.has(service.groups.get('pair')));
@@ -145,20 +209,9 @@ async function main() {
     cache.clear();
     console.log('PASS first 30min page/cursor, lost-edge repair exactly once, healthy pass and stop fencing');
 
-    const own = await seed({ classId: 56, playedHours: 2, production: { revenue: 200, profit: 40, crafts: 3, customers: 2 } });
-    const better = await seed({ classId: 56, playedHours: 2, production: { revenue: 400, crafts: 5, customers: 4 } });
-    const unknown = await seed({ classId: 56, playedHours: 0, production: { revenue: 99999 } });
-    const outsider = await seed({ classId: 56, playedHours: 1, production: { revenue: 1000000 } });
-    const status = Workshop.producerStatus(own, [better.characterId, unknown.characterId]);
-    assert.equal(status.incomePerHour, 120); assert.equal(status.rank, 2); assert.equal(status.knownCount, 3);
-    assert.equal(status.nextIncomePerHour, 200); assert.equal(status.crafts, 3); assert.equal(status.customers, 2);
-    assert.equal(Workshop.producerStatus(unknown, []).incomePerHour, null);
-    assert(!status.inputKey.includes(`${outsider.characterId}:`));
-    const updated = await Life.upsertState({ ...better, stats: { ...better.stats, production: { revenue: 600 } } }, 'producer_status_update');
-    assert(Workshop.producerStatus(own, [updated.characterId]).inputKey !== Workshop.producerStatus(own, []).inputKey);
-    assert.equal(Workshop.producerStatus(own, [updated.characterId]).nextIncomePerHour, 300);
+    assert.equal(Workshop.producerStatus, undefined);
     assert.equal(errors.length, 0, errors.map(error => error?.stack || String(error)).join('\n'));
-    console.log('PASS current known producer income/rank, unknown time, unrelated producer exclusion and status input invalidation');
+    console.log('PASS producer rank removed');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     for (const dispose of disposers.reverse()) dispose();

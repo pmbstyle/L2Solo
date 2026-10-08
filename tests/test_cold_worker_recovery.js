@@ -56,6 +56,9 @@ function wait(ms) {
         const results = Array.from({ length: 20 }, (_, index) => ({
             ok: true,
             characterId: index + 1,
+            inputToken: { characterId: index + 1, ownerId: 'cold_simulation_owner', revision: 1,
+                leaseId: `lease-${index + 1}`, leaseUntil: Date.now() + 30000 },
+            proposalId: `proposal-${index + 1}`,
             state: { characterId: index + 1, stats: { padding: 'x'.repeat(40000) } },
             context: {}
         }));

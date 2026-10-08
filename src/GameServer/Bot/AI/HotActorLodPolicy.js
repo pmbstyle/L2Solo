@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const ActorQueries = require('../../World/ActorSpatialQueries');
 const FULL_ENTER_RADIUS = 3500;
@@ -74,10 +76,11 @@ const telemetry = {
     last: {},
     tickDurations: [],
     statusDurations: [],
-    subsystems: new Map()
+    subsystems: new DiagnosticMetricMap()
 };
 
 function increment(name, count = 1) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     telemetry.counters[name] = Number(telemetry.counters[name] || 0) + Math.max(0, Number(count) || 0);
 }
 
@@ -187,6 +190,7 @@ function shouldRefreshStatus(session, context, now = Date.now()) {
 
 function recordStatusRefresh(session, durationMs, now = Date.now()) {
     stateFor(session).lastStatusAt = now;
+    if (!DiagnosticConfig.developerDiagnostics) return;
     increment('statusRefreshes');
     telemetry.statusDurations.push(Math.max(0, Number(durationMs) || 0));
     if (telemetry.statusDurations.length > 512) telemetry.statusDurations.shift();
@@ -199,12 +203,14 @@ function budgetExceeded(context, tickStartedAt, now = Date.now()) {
 function recordDeferral() { increment('deferrals'); }
 
 function recordTick(tier, durationMs) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     increment(tier === 'full' ? 'fullTicks' : tier === 'visible' ? 'visibleTicks' : 'preloadTicks');
     telemetry.tickDurations.push(Math.max(0, Number(durationMs) || 0));
     if (telemetry.tickDurations.length > 1024) telemetry.tickDurations.shift();
 }
 
 function recordPacketBroadcast(recipients, bytes) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     const count = Math.max(0, Number(recipients) || 0);
     if (!count) { increment('packetSkips'); return; }
     increment('packetBroadcasts');
@@ -213,6 +219,7 @@ function recordPacketBroadcast(recipients, bytes) {
 }
 
 function recordSubsystem(name, durationMs, items = 0) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     const key = String(name || 'unknown');
     const entry = telemetry.subsystems.get(key) || { durations: [], items: 0 };
     entry.durations.push(Math.max(0, Number(durationMs) || 0));
@@ -222,6 +229,7 @@ function recordSubsystem(name, durationMs, items = 0) {
 }
 
 function snapshot(sessions = []) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     const population = { full: 0, visible: 0, preload: 0 };
     (Array.isArray(sessions) ? sessions : []).forEach((session) => {
         if (!isBotSession(session) || !session.actor) return;
@@ -246,7 +254,7 @@ function snapshot(sessions = []) {
     };
     telemetry.tickDurations = [];
     telemetry.statusDurations = [];
-    telemetry.subsystems = new Map();
+    telemetry.subsystems = new DiagnosticMetricMap();
     return result;
 }
 

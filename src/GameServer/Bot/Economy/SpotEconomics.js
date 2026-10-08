@@ -1,7 +1,18 @@
 'use strict';
 // Shared table evaluation. It depends on native facts and own samples,
 // never on Context or pricing, so route and wish readers cannot recurse.
-function create(state, { timestamp = Date.now(), mode, occupancy, persona, deathHours } = {}) {
+function moneyWeight(state) {
+    const packet = state.stats?.money;
+    if (Array.isArray(packet)) {
+        const gapPrice = Number(packet[3]);
+        return Number.isFinite(gapPrice) && gapPrice > 0 ? 1 : 0;
+    }
+    const focus = state.stats?.wishFocus;
+    const price = Array.isArray(focus) ? Number(focus[2]) : 0;
+    return Number.isFinite(price) && price > Math.max(0, Number(state.adena) || 0) ? 1 : 0;
+}
+
+function create(state, { timestamp = Date.now(), mode, occupancy, persona, deathHours, moneyWeight: weight = moneyWeight(state) } = {}) {
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
@@ -12,6 +23,12 @@ function create(state, { timestamp = Date.now(), mode, occupancy, persona, death
     const role = state.party?.role || state.stats?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId || 0);
     const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
     const hunt = Hunt.huntIncome(state, timestamp, mode);
+    const packetHour = Number(state.stats?.money?.[0]);
+    const huntHour = Number(hunt.perHour);
+    const bestIncome = packetHour > 0 && Number.isFinite(packetHour) || huntHour > 0 && Number.isFinite(huntHour)
+        ? null : Table.best(tableRole, state.level, true, 'income');
+    const hourAdena = Math.max(1, Number.isFinite(packetHour) && packetHour > 0 ? packetHour
+        : Number.isFinite(huntHour) && huntHour > 0 ? huntHour : Number(bestIncome?.adena || 0) + Number(bestIncome?.loot || 0));
     deathHours ??= Valuation.deathHours(state, hunt);
     const riskWeight = Valuation.riskWeight(state, persona);
     const own = Hunt.sampledRows(state, timestamp, mode);
@@ -43,8 +60,9 @@ function create(state, { timestamp = Date.now(), mode, occupancy, persona, death
         const riskBias = 1 + incomeError * (2 * Tendency.roll('spot-danger', state.characterId, spot.id) - 1);
         row.deaths *= riskBias;
         row.riskHours = row.deaths * deathHours * riskWeight;
-        row.valueHours = row.exp / Math.max(1, hunt.expPerHour) - row.riskHours;
+        row.valueHours = row.exp / Math.max(1, hunt.expPerHour) * (1 - weight)
+            + (row.adena + row.loot) / hourAdena * weight - row.riskHours;
         return row;
     };
 }
-module.exports = { create };
+module.exports = { create, moneyWeight };

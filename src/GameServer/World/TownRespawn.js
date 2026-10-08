@@ -159,6 +159,11 @@ function restartCoords(actor) {
 
 module.exports = {
     towns: TOWNS,
+    // Immutable native regional rules for resumable worker route preparation.
+    regionIndex: Object.freeze({ cells: Object.freeze({ ...CELL_TO_GROUP }),
+        dungeons: Object.freeze(DUNGEON_REGION_OVERRIDES.map(row => Object.freeze({ ...row }))),
+        zones: Object.freeze(RESPAWN_ZONES.map(row => Object.freeze({ group: row.group,
+            points: Object.freeze(row.points.map(point => Object.freeze([...point]))) }))) }),
     getClosestTown,
     getRegionGroup,
     getRespawnCoords,

@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
@@ -27,7 +29,7 @@ const metrics = {
     supportClanJoins: 0,
     supportGuestsUsed: 0,
     budgetStops: 0,
-    reasonCounts: new Map()
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -36,7 +38,7 @@ function number(value, fallback = 0) {
 }
 
 function recordReason(code) {
-    if (code) metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
+    if (code) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
 }
 
 function parseIds(value) {
@@ -142,8 +144,8 @@ async function reclaimRequiredRoleParties(clan) {
         releasedMembers += number(released);
         reclaimedPartyIds.push(partyId);
     }
-    metrics.supportPartiesReclaimed += reclaimedPartyIds.length;
-    metrics.supportMembersReleased += releasedMembers;
+    DiagnosticConfig.developerDiagnostics && (metrics.supportPartiesReclaimed += reclaimedPartyIds.length);
+    DiagnosticConfig.developerDiagnostics && (metrics.supportMembersReleased += releasedMembers);
     return { reclaimedPartyIds, releasedMembers };
 }
 
@@ -168,8 +170,8 @@ async function reclaimPlayerOrderParties(clan, goal) {
         releasedMembers += number(released);
         reclaimedPartyIds.push(partyId);
     }
-    metrics.supportPartiesReclaimed += reclaimedPartyIds.length;
-    metrics.supportMembersReleased += releasedMembers;
+    DiagnosticConfig.developerDiagnostics && (metrics.supportPartiesReclaimed += reclaimedPartyIds.length);
+    DiagnosticConfig.developerDiagnostics && (metrics.supportMembersReleased += releasedMembers);
     return { reclaimedPartyIds, releasedMembers };
 }
 
@@ -239,7 +241,7 @@ async function prepareOperationRoster(clan, goal) {
     }
 
     if (joinedMemberIds.length) {
-        metrics.supportClanJoins += joinedMemberIds.length;
+        DiagnosticConfig.developerDiagnostics && (metrics.supportClanJoins += joinedMemberIds.length);
         if (typeof ClanService.reload === 'function') await ClanService.reload();
         const projected = await GoalService.clanProjectionById(currentClan.id);
         if (projected?.state?.goal) {
@@ -303,10 +305,10 @@ async function startOperation(clan, goal, roster = operationRoster(clan, goal)) 
     });
     if (result.ok && !result.idempotent) {
         metrics.operationsStarted += 1;
-        metrics.supportGuestsUsed += roster.guestMemberIds.length;
+        DiagnosticConfig.developerDiagnostics && (metrics.supportGuestsUsed += roster.guestMemberIds.length);
     }
     if (!result.ok && result.code === Contracts.REASON_CODES.PARTY_MEMBER_RESERVATION_CONFLICT) {
-        metrics.memberReservationConflicts += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.memberReservationConflicts += 1);
     }
     recordReason(result.code);
     return { ...result, memberIds: selected, guestMemberIds: roster.guestMemberIds };
@@ -496,7 +498,7 @@ const ClanPartyService = {
             for (const clan of clans.slice(0, Math.max(1, number(limit, Config.resolveBatchSize)))) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
                 const before = { ...metrics };
@@ -513,12 +515,13 @@ const ClanPartyService = {
                 summary.levelUps += Math.max(0, metrics.levelUps - number(before.levelUps));
                 summary.catastrophicFailures += Math.max(0, metrics.catastrophicFailures - number(before.catastrophicFailures));
             }
-            metrics.resolves += summary.attempted;
+            DiagnosticConfig.developerDiagnostics && (metrics.resolves += summary.attempted);
             return summary;
         });
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             operationsStarted: metrics.operationsStarted,

@@ -1,7 +1,6 @@
 'use strict';
 
 const { SPOT_CELL_SIZE } = require('./WorldConstants');
-const RawActorSpatialTree = require('./RawActorSpatialTree');
 const KINDS = new Set(['all', 'hot', 'cold', 'player']);
 const VIEWS = new Set(['actor', 'state']);
 
@@ -66,54 +65,6 @@ function createWorkerActorIndex() {
         gate.owner = owner;
     };
     return Object.freeze({ index, producerReads, installOwner });
-}
-
-const RAW_XY_SIZE = 6000;
-const RAW_XY_LIMIT = 2 ** 65;
-const neighborBits = new DataView(new ArrayBuffer(8));
-
-function adjacentNumber(value, direction) {
-    if (value === 0) return direction * Number.MIN_VALUE;
-    if (value === Infinity) return direction > 0 ? value : Number.MAX_VALUE;
-    if (value === -Infinity) return direction < 0 ? value : -Number.MAX_VALUE;
-    neighborBits.setFloat64(0, value);
-    const bits = neighborBits.getBigUint64(0);
-    neighborBits.setBigUint64(0, bits + ((value > 0) === (direction > 0) ? 1n : -1n));
-    return neighborBits.getFloat64(0);
-}
-
-const RAW_XY_OUTWARD_RADIUS = adjacentNumber(RAW_XY_SIZE, 1);
-
-function rawAxisKeys(value) {
-    if (Math.abs(value) > RAW_XY_LIMIT) return [Math.floor(value / RAW_XY_SIZE)];
-    const low = Math.floor(adjacentNumber(value - RAW_XY_OUTWARD_RADIUS, -1) / RAW_XY_SIZE);
-    const high = Math.floor(adjacentNumber(value + RAW_XY_OUTWARD_RADIUS, 1) / RAW_XY_SIZE);
-    const count = high - low + 1;
-    if (!Number.isSafeInteger(low) || !Number.isSafeInteger(high) || count < 1 || count > 9) {
-        throw new RangeError('invalid_character_facet_bounds');
-    }
-    return Array.from({ length: count }, (_, offset) => low + offset);
-}
-
-function rawPointOf(loc, current = null, read = null) {
-    read?.check();
-    const point = typeof loc === 'function' ? loc() : loc;
-    read?.check();
-    if (current && !current()) return null;
-    if (!point) return null;
-    const locX = point.locX;
-    read?.check();
-    if (current && !current()) return null;
-    const locY = point.locY;
-    read?.check();
-    if (current && !current()) return null;
-    return Number.isFinite(locX) && Number.isFinite(locY) ? { locX, locY } : null;
-}
-
-function validateRawFacet(view, facet, cellSize) {
-    if (view !== 'actor' || facet !== 'raw_xy' || cellSize !== RAW_XY_SIZE) {
-        throw new RangeError('invalid_character_facet');
-    }
 }
 
 function validateGroupQuery(view, family) {
@@ -195,7 +146,6 @@ class CharacterLocationIndex {
         this.cells = new Map();
         this.spots = new Map();
         this.groups = new Map();
-        this.rawSpatial = new RawActorSpatialTree();
         this.actorPresence = { human: new Set(), onlineHuman: new Set(), online: new Set(), targets: new Map() };
     }
 
@@ -223,7 +173,6 @@ class CharacterLocationIndex {
         if (view === 'actor' && entry && entry.record !== record) this.detachPresence(entry);
         if (entry && !sameSource(entry.source, source, legacy)) {
             this.detachPresence(entry);
-            this.detachRawXY(entry);
             this.detachCell(entry);
             this.detachSpot(entry);
             this.detachGroups(entry);
@@ -274,7 +223,6 @@ class CharacterLocationIndex {
         const row = this.records.get(id);
         const entry = row?.[view];
         if (!entry || !sameSource(entry.source, source, view === 'state' && this.legacyStateCache)) return false;
-        this.detachRawXY(entry);
         this.detachPresence(entry);
         this.detachCell(entry);
         this.detachSpot(entry);
@@ -319,45 +267,6 @@ class CharacterLocationIndex {
         return readIterator(read, sourceRecordEntries(this.sourceViews[view].entries()));
     }
 
-    updateFacet(id, view, expectedRecord, facet, payload) {
-        validateRawFacet(view, facet, this.cellSize);
-        if (!Number.isSafeInteger(id) || id <= 0) throw new RangeError('invalid_character_source');
-        const entry = this.records.get(id)?.[view];
-        if (!entry || entry.record !== expectedRecord) return false;
-        const previous = entry.rawXY;
-        const current = () => this.records.get(id)?.[view] === entry
-            && entry.record === expectedRecord && entry.rawXY === previous;
-        const enabled = payload?.enabled;
-        if (!current()) return false;
-        if (typeof enabled !== 'boolean') throw new TypeError('invalid_character_facet_mode');
-        if (!enabled) {
-            this.detachRawXY(entry);
-            return true;
-        }
-        const loc = payload.loc;
-        if (!current()) return false;
-        const point = rawPointOf(loc, current);
-        if (!current()) return false;
-        if (!point) throw new RangeError('invalid_character_facet_location');
-        const key = `${Math.floor(point.locX / RAW_XY_SIZE)}_${Math.floor(point.locY / RAW_XY_SIZE)}`;
-        if (previous?.key !== key) this.detachRawXY(entry);
-        const cell = this.cells.get(key) ?? {
-            x: Math.floor(point.locX / RAW_XY_SIZE), y: Math.floor(point.locY / RAW_XY_SIZE)
-        };
-        const members = cell.rawXY ?? new Set();
-        cell.rawXY = members;
-        members.add(entry);
-        this.cells.set(key, cell);
-        entry.rawXY = { key, record: expectedRecord, loc };
-        if (entry.presence?.record === expectedRecord && entry.presence.online && entry.presence.realPlayer) {
-            (cell.rawPlayers ??= new Set()).add(entry);
-        }
-        this.refreshRawSpatial(cell);
-        return true;
-    }
-
-    // Addressed publication metadata only: these Sets contain SAME canonical
-    // entries, including humans without a usable point. No actor fact book.
     updateActorPresence(id, expectedRecord, { online, realPlayer, targetId }) {
         const entry = this.records.get(id)?.actor;
         if (!entry || entry.record !== expectedRecord) return false;
@@ -367,10 +276,6 @@ class CharacterLocationIndex {
         const previous = entry.presence;
         if (previous && previous.online === online && previous.realPlayer === realPlayer && previous.targetId === targetId) {
             previous.record = expectedRecord;
-            const cell = this.cells.get(entry.rawXY?.key);
-            if (online && realPlayer && cell && entry.rawXY?.record === expectedRecord) {
-                (cell.rawPlayers ??= new Set()).add(entry); this.refreshRawSpatial(cell);
-            }
             return true;
         }
         this.detachPresence(entry);
@@ -383,8 +288,6 @@ class CharacterLocationIndex {
                 const members = this.actorPresence.targets.get(targetId) ?? new Set();
                 members.add(entry); this.actorPresence.targets.set(targetId, members);
             }
-            const cell = this.cells.get(entry.rawXY?.key);
-            if (cell) { (cell.rawPlayers ??= new Set()).add(entry); this.refreshRawSpatial(cell); }
         }
         return true;
     }
@@ -409,111 +312,6 @@ class CharacterLocationIndex {
         const read = actorRead(this, 'actor');
         if (!['human', 'onlineHuman', 'online'].includes(kind)) throw new TypeError('invalid_actor_presence_query');
         return readResult(read, this.actorPresence[kind].size);
-    }
-
-    nearestFacet(loc, { view = 'actor', facet = 'raw_xy', kind = 'all', accept = null } = {}) {
-        validateRawFacet(view, facet, this.cellSize);
-        if (!['all', 'player'].includes(kind) || (accept !== null && typeof accept !== 'function')) {
-            throw new TypeError('invalid_character_query_filter');
-        }
-        const read = actorRead(this, view);
-        const point = rawPointOf(loc, null, read);
-        if (!point) throw new RangeError('invalid_character_facet_location');
-        let found = null, best = Infinity;
-        const seen = new Set();
-        this.rawSpatial.nearest(point, kind === 'player', (cell) => {
-            for (const entry of (kind === 'player' ? cell.rawPlayers : cell.rawXY) ?? []) {
-                if (seen.has(entry)) continue;
-                seen.add(entry);
-                const record = entry.record, membership = entry.rawXY;
-                const current = () => this.records.get(entry.id)?.actor === entry && entry.record === record
-                    && entry.rawXY === membership && membership?.record === record
-                    && (kind !== 'player' || entry.presence?.record === record);
-                if (!current()) continue;
-                if (accept) {
-                    read?.check(); const accepted = accept(record); read?.check();
-                    if (!accepted || !current()) continue;
-                }
-                const candidate = rawPointOf(membership.loc, current, read);
-                if (!current() || !candidate) continue;
-                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
-                const distance = dx * dx + dy * dy;
-                const order = record.order ?? record.source.order ?? 0;
-                const previousOrder = found?.record.order ?? found?.record.source.order ?? Infinity;
-                if (distance < best || (distance === best && Number.isFinite(distance) && order < previousOrder)) {
-                    best = distance; found = { record, distance: Math.sqrt(distance) };
-                }
-            }
-            return best;
-        }, () => read?.check());
-        return readResult(read, found);
-    }
-
-    rangeFacet(loc, radius, { view = 'actor', facet = 'raw_xy', kind = 'all', accept = null } = {}) {
-        validateRawFacet(view, facet, this.cellSize);
-        if (!Number.isFinite(radius) || radius < 0 || !['all', 'player'].includes(kind)
-            || (accept !== null && typeof accept !== 'function')) throw new RangeError('invalid_character_facet_radius');
-        // The small-radius path retains its outward floating-point bounds.
-        if (radius <= RAW_XY_SIZE && kind === 'all') return this.nearFacet(loc, radius, { view, facet, accept });
-        const read = actorRead(this, view), point = rawPointOf(loc, null, read);
-        if (!point) throw new RangeError('invalid_character_facet_location');
-        const records = [], seen = new Set(), radiusSquared = radius * radius;
-        this.rawSpatial.nearest(point, kind === 'player', cell => {
-            for (const entry of (kind === 'player' ? cell.rawPlayers : cell.rawXY) ?? []) {
-                if (seen.has(entry)) continue;
-                seen.add(entry);
-                const record = entry.record, membership = entry.rawXY;
-                const current = () => this.records.get(entry.id)?.actor === entry && entry.record === record
-                    && entry.rawXY === membership && membership?.record === record;
-                if (!current()) continue;
-                if (accept) {
-                    read?.check(); const accepted = accept(record); read?.check();
-                    if (!accepted || !current()) continue;
-                }
-                const candidate = rawPointOf(membership.loc, current, read);
-                if (!current() || !candidate) continue;
-                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
-                if (dx * dx + dy * dy <= radiusSquared) records.push(record);
-            }
-            return radiusSquared;
-        }, () => read?.check());
-        return readResult(read, records);
-    }
-
-    nearFacet(loc, radius, { view = 'actor', facet = 'raw_xy', accept = null } = {}) {
-        validateRawFacet(view, facet, this.cellSize);
-        if (accept !== null && typeof accept !== 'function') throw new TypeError('invalid_character_query_filter');
-        if (!Number.isFinite(radius) || radius < 0 || radius > RAW_XY_SIZE) {
-            throw new RangeError('invalid_character_facet_radius');
-        }
-        const read = actorRead(this, view);
-        const point = rawPointOf(loc, null, read);
-        if (!point) throw new RangeError('invalid_character_facet_location');
-        const xs = rawAxisKeys(point.locX), ys = rawAxisKeys(point.locY);
-        const radiusSquared = radius * radius;
-        const found = [], seen = new Set();
-        for (const x of xs) for (const y of ys) {
-            for (const entry of this.cells.get(`${x}_${y}`)?.rawXY ?? []) {
-                if (seen.has(entry)) continue;
-                seen.add(entry);
-                const record = entry.record, membership = entry.rawXY;
-                const current = () => this.records.get(entry.id)?.actor === entry
-                    && entry.record === record && entry.rawXY === membership && membership?.record === record;
-                if (!current()) continue;
-                if (accept) {
-                    read?.check();
-                    const accepted = accept(record);
-                    read?.check();
-                    if (!accepted) continue;
-                }
-                if (!current()) continue;
-                const candidate = rawPointOf(membership.loc, current, read);
-                if (!current() || !candidate) continue;
-                const dx = candidate.locX - point.locX, dy = candidate.locY - point.locY;
-                if (dx * dx + dy * dy <= radiusSquared) found.push(record);
-            }
-        }
-        return readResult(read, found);
     }
 
     updateGroups(id, view, expectedRecord, family, keys, order) {
@@ -601,9 +399,10 @@ class CharacterLocationIndex {
                     read?.check();
                     if (!accepted) continue;
                 }
-                const current = pointOf(entry.record.loc, read);
-                const dx = queryAxis(current, 'locX', read) - queryAxis(point, 'locX', read);
-                const dy = queryAxis(current, 'locY', read) - queryAxis(point, 'locY', read);
+                const actor = view === 'actor' && !read && entry.record.actor;
+                const current = actor ? null : pointOf(entry.record.loc, read);
+                const dx = (actor ? Number(actor.fetchLocX?.() ?? 0) : queryAxis(current, 'locX', read)) - point.locX;
+                const dy = (actor ? Number(actor.fetchLocY?.() ?? 0) : queryAxis(current, 'locY', read)) - point.locY;
                 if (dx * dx + dy * dy <= radiusSquared) records.push(entry.record);
             }
         };
@@ -637,9 +436,7 @@ class CharacterLocationIndex {
     }
 
     clear() {
-        for (const entry of this.sourceViews.actor.values()) this.detachRawXY(entry);
         for (const entry of this.sourceViews.actor.values()) this.detachPresence(entry);
-        this.rawSpatial.clear();
         this.clearGroups();
         this.records.clear();
         this.sourceViews.actor.clear();
@@ -722,7 +519,7 @@ class CharacterLocationIndex {
         members[entry.phase].delete(entry);
         if (entry.realPlayer) members.player.delete(entry);
         if (!members.all.size) delete cell[entry.view];
-        if (!cell.actor && !cell.state && !cell.rawXY) this.cells.delete(entry.key);
+        if (!cell.actor && !cell.state) this.cells.delete(entry.key);
     }
 
     detachSpot(entry) {
@@ -734,29 +531,6 @@ class CharacterLocationIndex {
         if (!spot.actor && !spot.state) this.spots.delete(entry.spotId);
     }
 
-    detachRawXY(entry) {
-        const membership = entry.rawXY;
-        if (!membership) return;
-        const cell = this.cells.get(membership.key), members = cell?.rawXY;
-        if (members) {
-            members.delete(entry);
-            cell.rawPlayers?.delete(entry);
-            if (!cell.rawPlayers?.size) delete cell.rawPlayers;
-            if (!members.size) delete cell.rawXY;
-            this.refreshRawSpatial(cell);
-            if (!cell.actor && !cell.state && !cell.rawXY) this.cells.delete(membership.key);
-        }
-        entry.rawXY = null;
-    }
-
-    refreshRawSpatial(cell) {
-        const bounds = cell.rawXY?.size ? {
-            minX: adjacentNumber(cell.x * RAW_XY_SIZE, -1), minY: adjacentNumber(cell.y * RAW_XY_SIZE, -1),
-            maxX: adjacentNumber((cell.x + 1) * RAW_XY_SIZE, 1), maxY: adjacentNumber((cell.y + 1) * RAW_XY_SIZE, 1)
-        } : null;
-        this.rawSpatial.update(cell, bounds);
-    }
-
     detachPresence(entry) {
         const previous = entry.presence;
         if (!previous) return;
@@ -765,12 +539,6 @@ class CharacterLocationIndex {
         if (members) {
             members.delete(entry);
             if (!members.size) this.actorPresence.targets.delete(previous.targetId);
-        }
-        const cell = this.cells.get(entry.rawXY?.key);
-        if (cell) {
-            cell.rawPlayers?.delete(entry);
-            if (!cell.rawPlayers?.size) delete cell.rawPlayers;
-            this.refreshRawSpatial(cell);
         }
         entry.presence = null;
     }

@@ -50,7 +50,7 @@ function deliverReaction(source, text, topic, now) {
     nextGlobalAt = Math.max(now, nextGlobalAt) + Config.globalChatMinIntervalMs;
     recent.push({ id: actor.fetchId(), topic: `reply:${topic}`, at: now });
     if (recent.length > 128) recent.shift();
-    console.info('BotGlobalChat :: %s replied to %s: %s', actor.fetchName(), topic, text);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotGlobalChat :: %s replied to %s: %s', actor.fetchName(), topic, text);
     return true;
 }
 
@@ -75,7 +75,7 @@ function send(actor, topic, templates, now, source) {
     nextGlobalAt = now + Config.globalChatMinIntervalMs * (1 + Math.random() * 0.75);
     recent.push({ id, topic, at: now });
     if (recent.length > 128) recent.shift();
-    console.info('BotGlobalChat :: %s announced %s: %s', actor.fetchName(), topic, text);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotGlobalChat :: %s announced %s: %s', actor.fetchName(), topic, text);
     Reactions.openGlobal(source, topic, now);
     return true;
 }

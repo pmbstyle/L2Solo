@@ -3,7 +3,7 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
-const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const { isServiceCrafter, craftLevelFor, canCraft } = require('./CraftEligibility');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
 
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
@@ -96,44 +96,6 @@ const CraftStations = Object.freeze(STATION_LAYOUT.map(([grade, category, title,
         loc: Object.freeze({ ...(stationLocations.get(id) || GiranCraftStalls[index]) })
     });
 }));
-
-function isServiceCrafter(state = {}) {
-    return BotRoles.isCrafterClass(state);
-}
-
-// Craft level = the Create Item level the class line has learned by this
-// character level, read from the skill tree like a hot character's skills: a
-// Warsmith keeps the levels it learned as an Artisan. Kept per class, indexed
-// by character level.
-const CREATE_ITEM_SKILL_ID = 172;
-const craftLevelRows = new Map();
-let craftLevelsTree = null;
-let ColdCombatProfile = null;
-
-function craftLevelFor(state = {}) {
-    // A hot actor passes the level of the skill it has learned.
-    const learned = state.craftLevel ?? state.stats?.dwarvenCraftLevel;
-    if (learned !== undefined && learned !== null) return Number(learned) || 0;
-    const classId = Number(state.classId || state.stats?.classId || 0);
-    const level = Number(state.level || 1);
-    if (craftLevelsTree !== DataCache.skillTree) {
-        craftLevelRows.clear();
-        craftLevelsTree = DataCache.skillTree;
-    }
-    let row = craftLevelRows.get(classId);
-    if (!row) craftLevelRows.set(classId, row = []);
-    if (row[level] === undefined) {
-        ColdCombatProfile ||= invoke('GameServer/Bot/Population/ColdCombatProfile');
-        row[level] = ColdCombatProfile.treeSkillLevel(classId, level, CREATE_ITEM_SKILL_ID);
-    }
-    return row[level];
-}
-
-// Whether this character crafts the recipe: only crafter classes craft, even
-// when another dwarf has Create Item from its class line.
-function canCraft(state = {}, recipe = {}) {
-    return isServiceCrafter(state) && craftLevelFor(state) >= Number(recipe.level || 0);
-}
 
 function stationForSlot(slot) {
     const rawSlot = Math.abs(Number(slot) || 0);
@@ -331,7 +293,10 @@ function ensureRecipes(characterId, profile) {
     const recipeIds = [...new Set((profile?.entries || []).map((entry) => Number(entry.recipeId)).filter(Number.isSafeInteger))];
     return recipeIds.reduce((chain, recipeId) => (
         chain.then(() => Database.setCharacterRecipe(characterId, recipeId, 'dwarven'))
-    ), Promise.resolve()).then(() => profile);
+    ), Promise.resolve()).then(() => {
+        invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(characterId);
+        return profile;
+    });
 }
 
 module.exports = {

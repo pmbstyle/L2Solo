@@ -1,6 +1,11 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fixtureFs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fixtureFs.rmSync(fixture.directory, { recursive: true, force: true }));
 
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -41,6 +46,14 @@ const originals = {
 const calls = [];
 
 async function run() {
+    // ARCH-NOTE: native specialized saves cannot be intercepted by an execute spy.
+    Database.init();
+    const native = require('./helpers/nativeMarketFixture');
+    for (const [id, name] of [[88, 'ColdSeller'], [95, 'PreTradeCleanupSeller'], [87, 'BuyerRoutedSeller'], [86, 'RemoteBuyerSeller']]) {
+        await native.character(Database, id, name, 'seller' + id, { locX: 82698, locY: 148638, locZ: -3473 });
+    }
+    await Database.setItem(95, { selfId: 57, name: 'Adena', amount: 500 });
+    await Database.setItem(95, { selfId: spellbook.selfId, name: spellbook.template.name, amount: 1 });
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.execute = () => Promise.resolve([]);
@@ -139,13 +152,33 @@ async function run() {
             }
         }
     };
-    const preTradeCleanupResult = await ListingService.open(preTradeCleanup, {
-        now: 1000,
-        forcedCleanup: preTradeCleanup.stats.forcedMarketCleanup
-    });
+    // Use the real inventory writer for this physical pre-trade cleanup.
+    const preTradePhysicalBefore = await originals.fetchItems(95);
+    const preTradePrice = ItemDisposition.npcLiquidationCandidates(preTradeCleanup, { allowPreTradeCleanup: true })
+        .find(item => item.selfId === spellbook.selfId).npcPrice;
+    assert.strictEqual(native.amount(preTradePhysicalBefore, spellbook.selfId), 1);
+    assert.strictEqual(native.amount(preTradePhysicalBefore, 57), 500);
+    Database.syncInventorySummary = originals.syncInventorySummary;
+    let preTradeCleanupResult;
+    try {
+        preTradeCleanupResult = await ListingService.open(preTradeCleanup, {
+            now: 1000, forcedCleanup: preTradeCleanup.stats.forcedMarketCleanup
+        });
+    } finally {
+        Database.syncInventorySummary = (characterId, inventory) => {
+            calls.push({ type: 'inventory-sync', characterId, inventory }); return Promise.resolve();
+        };
+    }
+    const preTradePhysicalAfter = await originals.fetchItems(95);
+    assert.strictEqual(native.amount(preTradePhysicalAfter, spellbook.selfId), 0);
+    assert.strictEqual(native.amount(preTradePhysicalAfter, 57), 500 + preTradePrice);
+    console.log('Native pre-trade physical cleanup:', JSON.stringify({ before: { wallet: 500, book: 1 },
+        after: { wallet: native.amount(preTradePhysicalAfter, 57), book: native.amount(preTradePhysicalAfter, spellbook.selfId) }, price: preTradePrice }));
     assert.strictEqual(preTradeCleanupResult.listed, false, 'pre-trade cleanup must never open a private store');
     assert.strictEqual(preTradeCleanupResult.reason, 'pre_trade_npc_cleanup');
-    assert.strictEqual(preTradeCleanupResult.state.stats.lastNpcLiquidation.source, 'pre_trade_npc_cleanup');
+    // ARCH-NOTE: FX-M5 lastNpcLiquidation is a capped numeric tuple, the result carries the path reason.
+    assert.deepStrictEqual(preTradeCleanupResult.state.stats.lastNpcLiquidation.sold, [[spellbook.selfId, 1, preTradePrice]]);
+    assert.strictEqual(preTradeCleanupResult.state.stats.lastNpcLiquidation.payout, preTradePrice);
     assert.strictEqual(preTradeCleanupResult.state.stats.forcedMarketCleanup, null, 'pre-trade cleanup must consume forced intent');
 
     const starterMobLootState = {
@@ -207,7 +240,9 @@ async function run() {
     const buyerRouted = await ListingService.open(buyerRoutedState, { now: 1000, durationMs: 60000 });
     assert.strictEqual(buyerRouted.listed, false, 'materials accepted by a static buyer must not create a dead private store');
     assert.strictEqual(buyerRouted.reason, 'sold_to_static_buyer');
-    assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.source, 'static_buyer');
+    const staticPrice = invoke('GameServer/Bot/Economy/StaticBuyerService').candidatesFor(buyerRoutedState, 'Talking Island')[0].npcPrice;
+    assert.deepStrictEqual(buyerRouted.state.stats.lastNpcLiquidation.sold, [[1864, 10, staticPrice]]);
+    assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.payout, 10 * staticPrice);
     assert.strictEqual(
         buyerRouted.state.stats.marketSellRetryAfter,
         1000 + ListingService.SELL_RETRY_DELAY_MS,
@@ -223,7 +258,7 @@ async function run() {
 
     const remoteBuyerState = { ...buyerRoutedState, characterId: 86, currentRegion: 'Giran' };
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
-    assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation?.source, undefined, 'a bot must not sell to a buyer in another town before travelling there');
+    assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation, undefined, 'a bot must not sell to a buyer in another town before travelling there');
 
     const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
     const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -274,7 +309,7 @@ async function run() {
 run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
-}).finally(() => {
+}).finally(async () => {
     Database.reconcileBotClanMembership = originals.reconcileBotClanMembership;
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
     Database.execute = originals.execute;
@@ -291,4 +326,5 @@ run().catch((err) => {
     LifeState.allStates = originals.allStates;
     LifeState.upsertState = originals.upsertState;
     LifeState.reset?.();
+    await Database.close();
 });

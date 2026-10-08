@@ -159,13 +159,22 @@ function huntIncome(state, timestamp = Date.now(), mode) {
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
         spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId };
 }
+// Adena per hour of repeatable hunting, independent of wallet and wishes.
+function huntHour(hunt, state = {}) {
+    if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
+    const role = state.party?.role || state.stats?.role || Roles.inferRole(state.stats?.classId || state.classId || 0);
+    const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
+    const row = invoke('GameServer/Bot/AI/SpotValueTable').best(tableRole, levelOf(state), true, 'income');
+    return Math.max(1, Number(row?.adena || 0) + Number(row?.loot || 0));
+}
 function hourValue(state, timestamp = Date.now(), mode) {
-    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp, mode });
-    return { perHour: context.hourAdena, perKill: context.hunt.perKill,
-        expPerHour: context.hunt.expPerHour, source: 'wish_network' };
+    const hunt = huntIncome(state, timestamp, mode);
+    const packetHour = !mode && Number(state.stats?.money?.[0]);
+    return { perHour: packetHour > 0 ? packetHour : huntHour(hunt, state), perKill: hunt.perKill,
+        expPerHour: hunt.expPerHour, source: hunt.source };
 }
 // Kept as lifecycle adapters for callers which accepted earlier samples.
 function observe() {}
 function resetLevelBands() {}
 module.exports = { record, recordRound, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
-    resetLevelBands, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
+    resetLevelBands, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };

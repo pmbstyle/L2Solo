@@ -343,6 +343,15 @@ async function craft(state, random = Math.random) {
             error: String(error?.message || error)
         };
     }
+    // ARCH-NOTE: E3 physical craft fees must reach the returned wallet.
+    // Validate the existing exchange receipt before subsequent writers. Missing
+    // receipts retain the existing zero-fee and unit-facade behavior.
+    const cashReceipt = result?.customerAdena;
+    const committedAdena = cashReceipt == null ? undefined : cashReceipt.amount;
+    if (cashReceipt != null && (!Number.isSafeInteger(committedAdena) || committedAdena < 0)) {
+        throw new TypeError('Invalid customer craft cash receipt');
+    }
+    if (station.clan && learning) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(crafter.id);
     if (station.workshop) {
         LifeState.acceptLifecycleRow(result.crafterState);
         const committed = LifeState.acceptLifecycleRow(result.customerState);
@@ -353,6 +362,10 @@ async function craft(state, random = Math.random) {
         state = { ...committed, stats: { ...state.stats, clanInventoryRevision: committed.stats.clanInventoryRevision } };
         state.stats.equipmentPlan.craftProviders[recipe.recipeId].known = true;
     }
+    // Workshop/clan publication may replace state with a lifecycle row. Adopt
+    // the committed cash afterwards: refreshInventory preserves virtual income
+    // with Math.max and cannot reconcile a paid fee from an older balance.
+    if (cashReceipt != null) state = { ...state, adena: committedAdena };
     if (!station.clan && !station.workshop) await LifeState.upsertState({
         ...crafterState,
         vitals: { ...(crafterState.vitals || {}), mp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0) }

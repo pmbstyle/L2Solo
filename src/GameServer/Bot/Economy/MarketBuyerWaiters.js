@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const PurchaseFunding = require('./PurchaseFunding');
 
 function eligible(state) {
@@ -55,6 +56,7 @@ class MarketBuyerWaiters {
         this.stats = { inspected: 0, woken: 0 };
     }
     clear() { this.items.clear(); this.owners.clear(); }
+    size() { return { owners: this.owners.size, items: this.items.size }; }
     remove(ownerId) {
         for (const node of this.owners.get(ownerId) || []) {
             const heap = this.items.get(node.itemId);
@@ -120,7 +122,7 @@ class MarketBuyerWaiters {
                 if (!this.items.has(node.itemId)) this.items.set(node.itemId, new ItemWaiters());
                 this.items.get(node.itemId).add(node);
             }
-            this.stats.inspected += inspected; this.stats.woken += woken.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.inspected += inspected); DiagnosticConfig.developerDiagnostics && (this.stats.woken += woken.length);
         }
         return woken;
     }

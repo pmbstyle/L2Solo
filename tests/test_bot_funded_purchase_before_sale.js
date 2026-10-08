@@ -1,19 +1,17 @@
 const assert = require('assert');
-
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
+const NativeChoice = require('./helpers/nativeMarketChoice');
 
+(async () => {
 const DataCache = invoke('GameServer/DataCache');
-const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalPlanner = invoke('GameServer/Bot/Goals/GoalPlanner');
-
+const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 DataCache.init();
-
-// The author: "An affordable static-shop upgrade must outrank inventory
-// sales, otherwise the bot can keep opening sell stores while carrying enough
-// Adena". A wealth persona's sale (74 + 12 = 86) outranked its funded NPC
-// jewellery (78): the sale condition is nearly always true for a hunting bot,
-// so the jewellery was never bought. For a wealth persona, wealth is gear
-// value plus Adena (the author, 2026-10-02): the purchase comes first.
 const NECKLACE = 910; // Necklace of Devotion, sold by NPCs
 const necklace = DataCache.items.find((item) => Number(item.selfId) === NECKLACE);
 assert(necklace, 'fixture item');
@@ -31,60 +29,71 @@ const npcJewellery = { status: 'active', strategy: 'market', partyNeedReason: 'n
     market: { town: 'Gludio', price: 78980, reserve: 200000, sourceType: 'npc' } };
 const wealth = { primaryDrive: 'wealth', traits: {} };
 
-const needs = (state) => NeedsEvaluator.evaluate(state);
-const of = (candidates, type) => candidates.find((candidate) => candidate.type === type);
 
-const wealthNeeds = needs(bot(wealth, npcJewellery));
-const purchase = of(wealthNeeds, 'upgrade_gear');
-const sale = of(wealthNeeds, 'sell_inventory');
-assert.strictEqual(purchase?.plan?.requiredAdena, 0, 'fixture: the jewellery is funded');
-assert.strictEqual(purchase.priority, 78, 'the author\'s jewellery priority stays');
-assert(sale?.plan?.personaDrive === 'wealth', 'fixture: a wealth sale is on offer');
-assert(sale.priority < purchase.priority, 'a wealth sale waits for a funded purchase');
-assert.strictEqual(GoalPlanner.plan(wealthNeeds, Date.now()).type, 'upgrade_gear', 'the bot buys first');
+// ARCH-NOTE: FX-C1 reads one genuine worker choice; NeedsEvaluator maps
+// voluntary choices at priority50. The prior78/86/58/82 ladder is retired.
+async function choice(state, label) {
+    const result = await NativeChoice.capture(state, {}, label);
+    assert.strictEqual(result.goals.length, 1, 'one worker leaf, not simultaneous buy and sale alternatives');
+    const goal = result.goals[0], leaf = result.read.activity;
+    assert.strictEqual(goal.priority, 50);
+    assert.strictEqual(goal.plan.wishKey, leaf.rootKey);
+    assert.strictEqual(goal.plan.economyActivity, leaf.activity);
+    assert.deepStrictEqual(goal.blockers, []);
+    if (leaf.activity === 'shopping') {
+        assert.strictEqual(goal.target.itemId, leaf.itemId);
+        assert.strictEqual(goal.plan.estimatedCost, leaf.price);
+        assert.strictEqual(goal.plan.requiredAdena, 0);
+        assert.strictEqual(goal.type, Number(DataCache.items.find(row => Number(row.selfId) === leaf.itemId)?.etc?.slot || 0)
+            ? 'upgrade_gear' : 'buy_craft_material');
+        assert(Funding.spendable(result.state, 0, { itemId: leaf.itemId }) >= leaf.price,
+            'the selected purchase is funded by the same actual E3 packet');
+    } else if (leaf.activity === 'hunting') {
+        assert.strictEqual(goal.type, leaf.funding ? 'earn_adena' : 'progress_level');
+        assert.strictEqual(result.goals.find(row => row.type === 'sell_inventory'), undefined,
+            'the selected hunt does not manufacture a competing sale');
+    } else if (leaf.activity === 'selling') {
+        assert.strictEqual(goal.type, 'sell_inventory');
+        assert.deepStrictEqual(goal.target.itemIds, leaf.items || []);
+    }
+    assert.strictEqual(GoalPlanner.plan(result.goals, Date.now()).type, goal.type);
+    return result;
+}
+const wealthChoice = await choice(bot(wealth, npcJewellery), 'wealth_original_2m');
+assert.strictEqual(wealthChoice.read.activity.activity, 'shopping', 'the original wealthy wallet funds a native purchase');
+assert.strictEqual(wealthChoice.goals[0].type, 'upgrade_gear');
+assert.strictEqual(wealthChoice.goals.find(row => row.type === 'sell_inventory'), undefined,
+    'buying happens first without a parallel sale leaf');
 
-// Unfunded, the sale keeps the author's 86.
-const poorNeeds = needs(bot(wealth, npcJewellery, 50000));
-assert(of(poorNeeds, 'upgrade_gear').plan.requiredAdena > 0);
-assert.strictEqual(of(poorNeeds, 'sell_inventory').priority, 86, 'without the money the wealth sale keeps 86');
+const poorChoice = await choice(bot(wealth, npcJewellery, 50000), 'poor_original_50k');
+assert.strictEqual(poorChoice.read.activity.activity, 'hunting', 'the original poor wallet must earn its missing purchase value');
+assert(poorChoice.state.stats.money[3] > 0, 'a real unfunded gap remains');
+assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
+    'the old jewellery plan alone cannot authorize its debit');
 
-// G9: a funded purchase from another bot (58) also beats a normal sale (74).
 const botOffer = { ...npcJewellery, partyNeedReason: 'market_fallback', market: { ...npcJewellery.market, sourceType: 'afk_bot_store' } };
-const ordinaryNeeds = needs({ ...bot({ primaryDrive: 'progress', traits: {} }, botOffer), level: 40,
-    stats: { ...bot(null, botOffer).stats, build: { grade: 'c', classId: 1, level: 40 } } });
-const bought = of(ordinaryNeeds, 'upgrade_gear');
-assert.strictEqual(bought?.plan?.requiredAdena, 0, 'fixture: the purchase from a bot is funded');
-assert.strictEqual(bought.priority, 58, 'the author\'s funded market priority stays');
-assert(of(ordinaryNeeds, 'sell_inventory').priority < 58, 'a normal sale waits for a funded purchase from a bot');
+const ordinary = { ...bot({ primaryDrive: 'progress', traits: {} }, botOffer), level: 40,
+    stats: { ...bot(null, botOffer).stats, build: { grade: 'c', classId: 1, level: 40 } } };
+await choice(ordinary, 'ordinary_original_2m');
 
-// E9: a craft material the bot can already pay for (an offer within its
-// spendable adena and cheaper than farming it) is a funded purchase too; the
-// wealth sale (86) waited for nothing and outranked the material buy (82).
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
-const MATERIAL = 1864; // in the bag: 60 of the 100 the recipe needs
+const MATERIAL = 1864;
 const craftPlan = { status: 'active', strategy: 'craft', recipeId: 192, target: { selfId: 89, slot: 7 },
     materials: [{ selfId: MATERIAL, amount: 100, owned: 60, missing: 40, farmEffort: 5000 }] };
-const offers = AfkTrade.offers;
-AfkTrade.offers = (selfId) => Number(selfId) === MATERIAL
-    ? [{ selfId: MATERIAL, count: 40, price: 1000, town: 'Giran', sourceType: 'afk_bot_store', characterId: 9 }] : [];
 try {
-    const craftNeeds = needs(bot(wealth, craftPlan));
-    const material = of(craftNeeds, 'buy_craft_material');
-    assert.strictEqual(material?.priority, 82, 'fixture: the material is on offer and the author\'s priority stays');
-    assert.strictEqual(material.plan.priceSource, 'offer');
-    const craftSale = of(craftNeeds, 'sell_inventory');
-    assert(craftSale?.plan?.personaDrive === 'wealth', 'fixture: a wealth sale is on offer');
-    assert(craftSale.priority < material.priority, 'a wealth sale waits for a funded material purchase');
-    assert.strictEqual(GoalPlanner.plan(craftNeeds, Date.now()).type, 'buy_craft_material', 'the bot buys the material first');
-
-    // No offer the bot can take: no funded purchase, the sale keeps 86.
-    AfkTrade.offers = () => [];
-    const noOfferNeeds = needs(bot(wealth, craftPlan));
-    assert.strictEqual(of(noOfferNeeds, 'buy_craft_material'), undefined, 'fixture: nothing to buy');
-    assert.strictEqual(of(noOfferNeeds, 'sell_inventory').priority, 86, 'without a funded purchase the wealth sale keeps 86');
-} finally {
-    AfkTrade.offers = offers;
-}
-
+    // Publish the original40x1000 lot into the actual BoardIndex/table channel.
+    // An AfkTrade.offers spy cannot change what the genuine worker sees.
+    AfkTrade.refreshRecord({ id: 991192, ownerId: 9, ownerName: 'Owner9', ownerAccount: 'bot_9',
+        kind: 'sell_ad', storeType: AfkTrade.SELL, status: 'active', town: 'Giran', title: '', revision: 1,
+        expiresAt: 0, locX: 0, locY: 0, locZ: 0, appearance: {}, lines: [{ id: 991193, selfId: MATERIAL,
+            name: 'Stem', count: 40, price: 1000, enchant: 0 }] });
+    assert.strictEqual(AfkTrade.boardIndex().list(MATERIAL, AfkTrade.SELL)[0].count, 40);
+    assert.strictEqual(AfkTrade.boardIndex().list(MATERIAL, AfkTrade.SELL)[0].price, 1000);
+    await choice(bot(wealth, craftPlan), 'craft_original_with_40x1000');
+    AfkTrade._resetForTests();
+    const missing = await choice(bot(wealth, craftPlan), 'craft_original_no_offer');
+    assert.strictEqual(missing.goals.find(row => row.type === 'buy_craft_material'
+        && row.target.itemId === MATERIAL), undefined, 'the removed material offer is not a supplied shopping leaf');
+} finally { AfkTrade._resetForTests(); }
 console.log('Funded purchase before sale checks passed');
-process.exit(0);
+})().catch(error => { console.error(error); process.exitCode = 1; });

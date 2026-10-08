@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const ContextAssembler = invoke('GameServer/Clan/ClanContextAssembler');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
@@ -88,7 +89,7 @@ function prune(now = Date.now()) {
 }
 
 async function resolveDecision(entry, clan, snapshot, cfg) {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     let reservation = null;
     let settledUsage = null;
     try {
@@ -98,7 +99,7 @@ async function resolveDecision(entry, clan, snapshot, cfg) {
             messages: [systemPrompt(), snapshot.context],
             schema: responseSchema(memberIds)
         });
-        metrics.promptTokensEstimated += estimatedPromptTokens;
+        DiagnosticConfig.developerDiagnostics && (metrics.promptTokensEstimated += estimatedPromptTokens);
         const admission = BotInferenceBudget.reserveForBotId(clan.leaderId, {
             estimatedPromptTokens,
             maxCompletionTokens,
@@ -109,7 +110,7 @@ async function resolveDecision(entry, clan, snapshot, cfg) {
             priority: 'background'
         });
         if (!admission.ok) {
-            metrics.budgetDenied += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.budgetDenied += 1);
             return { ok: false, retryable: true, code: admission.reason, inferenceDenied: true };
         }
         reservation = admission.reservation;
@@ -132,14 +133,14 @@ async function resolveDecision(entry, clan, snapshot, cfg) {
         });
         settledUsage = result.usage || null;
         const usage = result.usage || result.telemetry?.usage || {};
-        metrics.promptTokensActual += number(usage.promptTokens);
-        metrics.completionTokens += number(usage.completionTokens);
-        metrics.cost += number(usage.cost);
+        DiagnosticConfig.developerDiagnostics && (metrics.promptTokensActual += number(usage.promptTokens));
+        DiagnosticConfig.developerDiagnostics && (metrics.completionTokens += number(usage.completionTokens));
+        DiagnosticConfig.developerDiagnostics && (metrics.cost += number(usage.cost));
         if (!result.ok) {
-            metrics.failed += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
             return { ok: false, retryable: true, code: result.reason || result.telemetry?.outcome || 'llm_failed' };
         }
-        metrics.selected += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.selected += 1);
         return {
             ok: true,
             source: 'llm',
@@ -149,13 +150,13 @@ async function resolveDecision(entry, clan, snapshot, cfg) {
             estimatedPromptTokens
         };
     } catch (error) {
-        metrics.failed += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
         return { ok: false, retryable: true, code: 'clan_title_brain_exception', error: error.message };
     } finally {
         BotInferenceBudget.settle(reservation, settledUsage);
-        const latency = Date.now() - startedAt;
-        metrics.latencyMs += latency;
-        metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency);
+        const latency = DiagnosticConfig.developerDiagnostics ? Date.now() - startedAt : null;
+        DiagnosticConfig.developerDiagnostics && (metrics.latencyMs += latency);
+        DiagnosticConfig.developerDiagnostics && (metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency));
     }
 }
 
@@ -164,12 +165,12 @@ function choose(clan, snapshot, options = {}) {
     const existing = decisions.get(snapshot.key);
     if (existing?.state === 'resolved') return existing.result;
     if (existing?.state === 'pending') {
-        metrics.pending += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.pending += 1);
         return { pending: true, key: snapshot.key, code: 'clan_title_llm_pending' };
     }
     const cfg = options.config || configured();
     if (!cfg) {
-        metrics.disabled += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.disabled += 1);
         return { pending: false, ok: false, retryable: false, code: 'llm_titles_not_configured' };
     }
     const entry = {
@@ -180,11 +181,11 @@ function choose(clan, snapshot, options = {}) {
         promise: null
     };
     decisions.set(snapshot.key, entry);
-    metrics.requested += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.requested += 1);
     entry.promise = resolveDecision(entry, clan, snapshot, cfg).then((result) => {
         entry.state = 'resolved';
         entry.result = result;
-        if (!result.ok) metrics.invalid += result.code === 'invalid_clan_titles' ? 1 : 0;
+        if (!result.ok) DiagnosticConfig.developerDiagnostics && (metrics.invalid += result.code === 'invalid_clan_titles' ? 1 : 0);
         return result;
     });
     return { pending: true, key: snapshot.key, code: 'clan_title_llm_pending' };
@@ -206,6 +207,7 @@ module.exports = {
         decisions.delete(String(key || ''));
     },
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             ...metrics,
             pendingEntries: [...decisions.values()].filter((entry) => entry.state === 'pending').length,

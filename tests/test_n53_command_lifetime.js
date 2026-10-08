@@ -41,7 +41,6 @@ function fixture({ hold = false, planHold = false, reject = false, send = true }
 const requests = h => h.messages.filter(m => m.type === 'command_request').flatMap(m => m.payload.requests);
 const receipt = (request, extra = {}) => ({ ok: true, characterId: request.characterId,
     commandId: request.commandId, commandCheckpoint: request.commandCheckpoint,
-    ...(request.kind === 'market_review' ? { marketCommandId: request.commandId } : {}),
     state: request.state, context: request.context, ...extra });
 async function issue(h, input = state(1)) {
     h.kernel.upsert({ state: input, context: { source: 'original' } });
@@ -56,7 +55,7 @@ async function check(name, body) {
     catch (error) { failures.push(name); console.error(`${name}: FAIL ${error.stack}`); }
 }
 
-async function workerControl(market = false) {
+async function workerControl() {
     const workerPath = path.join(moduleRoot, 'ColdSimulationWorker.js');
     const source = `
 const { parentPort, workerData } = require('node:worker_threads');
@@ -78,19 +77,16 @@ Queue.prototype.rearm = function(id, ...args) {
 };
 invoke('GameServer/Bot/AI/GearPlanSelection').selectAcquisitionPlan = () => ({
     acquisitionPlan: { status: 'active', strategy: 'farm', partyNeed: 'solo_ok', next: {} },
-    replanContext: {}, reusablePartyRequest: false, excludedSpotIds: new Set()
+    replanContext: {}, reusablePartyRequest: false, excludedSpotIds: new Set(),
+    economy: { statsPacket: {}, network: {} }
 });
 invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan = () => null;
 invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo = ({ timestamp }) => ({
     patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000
 });
-if (workerData.market) invoke('GameServer/Bot/Economy/MarketPricing').look = (state, lines) => ({
-    updates: [{ recordId: lines[0].recordId, lineId: lines[0].lineId, expectedRevision: 1,
-        previousPricing: lines[0].pricing, pricing: { ...lines[0].pricing, seenCounter: 1 } }],
-    reprices: [], withdrawals: []
-});`;
+`;
     const epoch = 'command-lifetime-native-worker';
-    const worker = new Worker(source, { eval: true, workerData: { workerPath, workerEpoch: epoch, market,
+    const worker = new Worker(source, { eval: true, workerData: { workerPath, workerEpoch: epoch,
         kernelPath: path.join(moduleRoot, 'ColdSimulationKernel'),
         queuePath: path.join(gameRoot, 'src/GameServer/Bot/Economy/BoardReviewEvents') } });
     const received = [];
@@ -114,23 +110,14 @@ if (workerData.market) invoke('GameServer/Bot/Economy/MarketPricing').look = (st
         await until(m => m.type === 'ready' && m.payload.phase === 'loaded');
         send('catalog_page', { catalog: 'spots', rows: [], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        if (market) send('table_page', { tables: [
-            { name: 'board', from: null, to: 0, full: true, removed: [], rows: [[7,
-                [7, 'shop', 1, 444, 'Giran', 1, [[11, 1864, 0, 100, 100,
-                    { price: 100, seenCounter: 0, seenItem: 0, rival: 0, worth: 0, seenFills: 0 }, 0]], 1]]] },
-            { name: 'market', from: null, to: 0, full: true, removed: [],
-                rows: [['c:material none', ['c:material none', 0, 1, Date.now(), 0, 0, null]]] }
-        ] });
         send('init', { config: { loopIntervalMs: 10 } });
         await until(m => m.type === 'ready' && m.payload.phase === 'running');
         const old = state(444);
-        old.activity = market ? 'hunting' : 'shopping';
-        old.timing.nextResolveAt = Date.now() + (market ? 60000 : -1000);
+        old.activity = 'shopping';
+        old.timing.nextResolveAt = Date.now() - 1000;
         send('snapshot_page', { ack: true, done: true, rows: [{ state: old, context: { source: 'old' } }] });
-        if (market) send('table_page', { tables: [{ name: 'market', from: 0, to: 1, full: false,
-            removed: [], rows: [['c:material none', ['c:material none', 1, 1, Date.now(), 0, 0, null]]] }] });
         const first = (await until(m => m.type === 'command_request')).payload.requests[0];
-        assert(market ? first.market : first.precomputedResult, 'actual current Worker source produces its own command');
+        assert(first.precomputedResult, 'actual current Worker source produces its own command');
         send('fence', { characterId: 444, deadlineAt: Date.now() + 1000 });
         await until(m => m.type === 'fence_ack');
         const fresh = { ...old, stats: { frame: 'fresh' }, simulation: { ...old.simulation, revision: 1 } };
@@ -146,8 +133,7 @@ if (workerData.market) invoke('GameServer/Bot/Economy/MarketPricing').look = (st
         assert.equal(effects.filter(m => m.trace === 'board_rearm').length, 0,
             'unadmitted old receipt has no board effects');
         const oldCompletion = effects.find(m => m.trace === 'completion');
-        if (market) assert.equal(oldCompletion, undefined, 'market marker is checked before Kernel mutation');
-        else {
+        {
             assert(oldCompletion, 'valid old wire is checked by the actual handler');
             assert.equal(oldCompletion.accepted, false);
             assert.equal(oldCompletion.busy, true);
@@ -155,10 +141,10 @@ if (workerData.market) invoke('GameServer/Bot/Economy/MarketPricing').look = (st
             assert.equal(oldCompletion.context.source, 'fresh');
         }
         const markerStart = received.length;
-        send('command_ack', { results: [receipt(second, { marketCommandId: 'wrong-alias' })] });
+        send('command_ack', { results: [receipt(second, { commandId: 'wrong-command-id' })] });
         await pause(60);
-        assert.equal(received.slice(markerStart).some(m => m.trace === 'board_rearm' || m.trace === 'completion'), false,
-            'wrong market alias or ordinary masquerade is refused before Kernel effects');
+        assert(received.slice(markerStart).filter(m => m.trace === 'completion').every(m => !m.accepted && m.busy),
+            'wrong lifecycle command id cannot consume the current command slot');
         send('command_ack', { results: [{ ...receipt(second), commandCheckpoint: {} },
             receipt(second, { state: state(99) }), receipt(second)] });
         const completed = await until(m => m.trace === 'completion' && m.id === second.commandId && m.accepted === true);
@@ -323,7 +309,10 @@ if (workerData.market) invoke('GameServer/Bot/Economy/MarketPricing').look = (st
         assert.equal(capacity.kernel.beginCommand(21), null, 'helper enforces existing aggregate capacity');
     });
     await check('actual Worker lifecycle stale and duplicate receipt have no board/context effects', () => workerControl());
-    await check('actual Worker market alias and receipt admission precede all effects', () => workerControl(true));
+    await check('retired board review command has no admission', () => {
+        const h = fixture(); h.kernel.upsert(state(14));
+        assert.equal(h.kernel.beginCommand(14, 'market_review'), null);
+    });
     if (failures.length) { console.error(`${failures.length} command lifetime groups failed`); process.exitCode = 1; }
     else console.log('N53 command lifetime: 15 groups passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

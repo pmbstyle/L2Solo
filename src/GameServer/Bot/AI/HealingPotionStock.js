@@ -65,7 +65,8 @@ function purchasePotionFor(value) {
 function operationalReserve(value) {
     const adena = Math.max(0, Number(value?.adena ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const level = Math.max(1, Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1);
-    return PurchaseFunding.operatingReserve({ adena, level });
+    return PurchaseFunding.operatingReserve(value?.backpack
+        ? invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(value, value.session) : value);
 }
 
 function inventoryRows(inventory = {}) {
@@ -143,7 +144,8 @@ function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
     // The budget needs the review; the same review gives the target.
-    const context = options.targetAmount === undefined ? Economy.forState(state) : null;
+    const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
+    const context = options.context || (coldMain || options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state));
     const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory
@@ -156,9 +158,11 @@ function restockPlan(value, options = {}) {
     const unitPrice = Math.max(0, Number(options.unitPrice ?? potion.price) || 0);
     const reserve = Math.max(0, Number(options.reserve ?? operationalReserve(value)) || 0);
     const desired = Math.max(0, targetAmount - stockAmount);
-    const allowance = options.targetAmount !== undefined ? Math.max(0, adena - reserve)
-        : context.purchaseBudget(potion.selfId);
-    const affordable = unitPrice > 0 ? Math.floor(Math.min(allowance, Math.max(0, adena - reserve)) / unitPrice) : 0;
+    const wish = context.network?.queue.find(row => Number(row.object?.itemId) === Number(potion.selfId));
+    const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
+    const allowance = PurchaseFunding.spendable(fundedState, 0, { itemId: potion.selfId,
+        ...(wish ? { r: PurchaseFunding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(potion.selfId, unitPrice) });
+    const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
         potion,

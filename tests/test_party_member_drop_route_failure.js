@@ -51,6 +51,7 @@ async function resolveTimes(state, owner, count, { target = npcId, defeated = [o
                 aggregate: true,
                 populationTelemetryOwner: owner,
                 targetNpcId: target,
+                targetOnSpot: 1,
                 defeatedNpcIds: defeated
             }
         }, { timestamp: at + index, persist: false, projectClassProgression: true });

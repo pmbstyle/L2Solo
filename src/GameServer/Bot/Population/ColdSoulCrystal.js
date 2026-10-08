@@ -32,7 +32,10 @@ function outcome(fighter, mob, roll, { boss = false, requiredMark = null, at = I
     const mark = requiredMark || fighter.soulCrystalMark;
     if (!boss && ( !mark || Number(mark.completeAt || 0) > at || mark.objectId !== item.id || mark.fromId !== item.selfId)) return null;
     const metadata = Native.catalog.crystals[item.selfId];
-    const result = Native.outcomeFor(rule, metadata.stage, mob.selfId, roll);
+    // Ineligible solo kills do not spend a draw from the reward stream.
+    // Numeric callers (including the existing shared party roll) keep their value.
+    const draw = typeof roll === 'function' ? roll() : roll;
+    const result = Native.outcomeFor(rule, metadata.stage, mob.selfId, draw);
     if (result === 'refused' || result === 'failed') return null;
     const toId = result === 'success' ? metadata.nextId : metadata.brokenId;
     const source = ItemIndex.find(invoke('GameServer/DataCache').items, toId);
@@ -43,7 +46,7 @@ function outcome(fighter, mob, roll, { boss = false, requiredMark = null, at = I
         instances: [{ id: item.id, amount: 1, equipped: false, slot: 0, enchant: 0 }] };
     fighter.state.inventory = inventory;
     const change = { ...mark, objectId: item.id, fromId: item.selfId, toId, npcId: mob.selfId,
-        roll, skillId: 2096, boss };
+        roll: draw, skillId: 2096, boss };
     fighter.soulCrystals ||= []; fighter.soulCrystals.push(change);
     return change;
 }

@@ -1,6 +1,9 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('gear-acquisition-goals');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -706,13 +709,17 @@ const affordableArmorPlan = GearAcquisitionPlanner.planFor(affordableArmorState)
 assert.strictEqual(affordableArmorPlan.target.selfId, 347,
     'Palus Knight must buy affordable Ring Mail instead of saving exclusively for an unfunded Saber');
 assert(affordableArmorPlan.market.price + affordableArmorPlan.market.reserve <= affordableArmorState.adena);
-const armorGoal = NeedsEvaluator.evaluate({
-    ...affordableArmorState,
-    stats: { ...affordableArmorState.stats, equipmentPlan: affordableArmorPlan }
-}).find((goal) => goal.type === 'upgrade_gear');
-assert.strictEqual(armorGoal.plan.expectedBenefit, 'market_search_for_gear',
-    'the affordable armour plan must produce a purchase goal, not an Adena farming goal');
-assert.strictEqual(armorGoal.priority, 87);
+// ARCH-NOTE: E3 funds the native queue, not the independent armour plan.
+// C1 defers cold voluntary goals until the worker supplies this state's leaf.
+const nativeGoalStates = [];
+const nativeArmorState = { ...affordableArmorState, characterId: 71001, phase: 'cold',
+    activity: 'hunting', updatedAt: 1000,
+    vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
+    stats: { ...affordableArmorState.stats, exp: DataCache.experience[24] + 1,
+        equipmentPlan: affordableArmorPlan } };
+assert.deepStrictEqual(NeedsEvaluator.evaluate(nativeArmorState, { now: 1000 }), [],
+    'an affordable isolated armour plan cannot invent a cold purchase without a worker decision');
+nativeGoalStates.push(nativeArmorState);
 assert.strictEqual(GearAcquisitionPlanner.planFor(palusWithBudget(1000000)).target.selfId, 123,
     'an affordable entry D weapon must retain its first-kit priority');
 assert.strictEqual(GearAcquisitionPlanner.planFor(palusWithBudget(10000)).target.selfId, 123,
@@ -1000,23 +1007,38 @@ const resourceState = {
         1872: { selfId: 1872, amount: 4 }
     }
 };
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1458), true, 'crystals must be supplemented only at the final manufacture step');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(2130), true, 'gemstones must be supplemented only at the final manufacture step');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1869), false, 'farmable craft resources must never be supplemented');
-assert.strictEqual(
-    ColdCraftingService.hasNonSupplementalMaterials([{ selfId: 1869, amount: 5 }], {
-        materials: [{ selfId: 1869, amount: 5 }, { selfId: 1458, amount: 99 }]
-    }),
-    true,
-    'missing supplements must not block a final manufacture'
-);
-assert.strictEqual(
-    ColdCraftingService.hasNonSupplementalMaterials([{ selfId: 1869, amount: 4 }], {
-        materials: [{ selfId: 1869, amount: 5 }, { selfId: 1458, amount: 99 }]
-    }),
-    false,
-    'supplements must not be granted when a real craft material is missing from the live inventory'
-);
+// ARCH-NOTE: Final manufacture consumes owned crystals and gemstones.
+// This bounded Iron5/Crystal99 recipe is a synthetic readiness contract, not
+// an authored C4 recipe. test_cold_craft_cash_receipt.js covers the published
+// recipe with authored quantities and a real customer transaction.
+assert.strictEqual(crystalSupplement.isSupplementalMaterial(1458), false,
+    'crystals must be acquired as physical recipe inputs');
+assert.strictEqual(crystalSupplement.isSupplementalMaterial(2130), false,
+    'gemstones must be acquired as physical recipe inputs');
+assert.strictEqual(crystalSupplement.isSupplementalMaterial(1869), false,
+    'farmable craft resources must never be supplemented');
+const boundedRecipe = {
+    materials: [{ selfId: 1869, amount: 5 }, { selfId: 1458, amount: 99 }]
+};
+const boundedCases = [
+    { label: 'missing all 99 crystals', iron: 5, crystals: 0, ready: false },
+    { label: 'one crystal short', iron: 5, crystals: 98, ready: false },
+    { label: 'one Iron short with no crystals', iron: 4, crystals: 0, ready: false },
+    { label: 'one Iron short with all crystals', iron: 4, crystals: 99, ready: false },
+    { label: 'all physical inputs', iron: 5, crystals: 99, ready: true }
+];
+for (const row of boundedCases) {
+    const items = [
+        { selfId: 1869, amount: row.iron },
+        ...(row.crystals ? [{ selfId: 1458, amount: row.crystals }] : [])
+    ];
+    const before = structuredClone(items);
+    assert.strictEqual(ColdCraftingService.hasNonSupplementalMaterials(items, boundedRecipe),
+        row.ready, row.label);
+    assert.strictEqual(ColdCraftingService.craftableBatchCount(items, boundedRecipe, 2),
+        row.ready ? 1 : 0, `${row.label}: no second batch or free crystal stock`);
+    assert.deepStrictEqual(items, before, `${row.label}: readiness cannot mutate ingredients`);
+}
 assert.strictEqual(
     ColdCraftingService.readyRecipeFor(resourceState, oriharkonRecipe).recipeId,
     syntheticCokesRecipe.recipeId,
@@ -1050,18 +1072,20 @@ const sellable = ItemDisposition.saleCandidates({
 });
 assert.strictEqual(sellable[0].count, 2, 'market listings must retain the material amount reserved for the active recipe');
 
-const materialGoal = NeedsEvaluator.evaluate({
-    level: 40,
-    adena: 100000,
-    inventory: {},
-    stats: {
-        equipmentPlan: {
-            status: 'active', strategy: 'craft', marketFallback: true, recipeId: target.recipe.recipeId,
-            next: { itemId: 1869 }, materials: [{ selfId: 1869, missing: 4 }]
-        }
-    }
-}, { now: 1000 }).find((goal) => goal.type === 'buy_craft_material');
-assert.strictEqual(materialGoal.target.itemId, 1869, 'a stalled material route must create a buy-material market goal');
+// ARCH-NOTE: E3/C1 require the selected native material path and its budget;
+// a persisted next-material hint alone cannot create a shopping goal.
+const nativeMaterialState = { ...structuredClone(mage), characterId: 71002, adena: 100000,
+    inventory: { 57: { selfId: 57, amount: 100000 } },
+    phase: 'cold', activity: 'hunting', updatedAt: 1000,
+    vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
+    stats: { ...mage.stats, exp: DataCache.experience[39] + 1, equipmentPlan: {
+        status: 'active', strategy: 'craft', marketFallback: true,
+        recipeId: target.recipe.recipeId, next: { itemId: 1869 },
+        materials: [{ selfId: 1869, missing: 4 }]
+    } } };
+assert.deepStrictEqual(NeedsEvaluator.evaluate(nativeMaterialState, { now: 1000 }), [],
+    'a material hint without an accepted worker decision must defer');
+nativeGoalStates.push(nativeMaterialState);
 
 const materialPlan = GearAcquisitionPlanner.planFor(mage, { spots: [stoneGolemSpot] });
 if (materialPlan.strategy === 'craft' && materialPlan.next) {
@@ -1353,3 +1377,51 @@ assert.strictEqual(outleveledRoute.id, 'd-grade-field', 'a completed no-grade pl
 SpotProfiles.reset();
 
 console.log('Bot gear acquisition checks passed');
+
+async function verifyWorkerSelectedGoals() {
+    const { ColdEconomyDecisions, compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const build = Economy.forState;
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => SpotProfiles.ensure());
+    try {
+        for (const input of nativeGoalStates) {
+            const native = await require('./helpers/workerEconomyDecision')(input, { timestamp: 1000 });
+            const state = { ...input, stats: { ...input.stats, ...native.statsPacket } };
+            const decisions = new ColdEconomyDecisions();
+            decisions.accept(state.characterId, native.decision);
+            const leaf = compact(native.decision).activity;
+            assert(leaf, 'the complete native state must produce a voluntary leaf');
+            assert(native.queue.some(row => row.key === leaf.rootKey)
+                || leaf.activity === 'hunting' && !leaf.funding && leaf.rootKey === `level:${state.level + 1}`,
+                'paid roots belong to the native queue; free level progress is an explicit network root');
+            assert(Number.isFinite(state.stats.money[0]) && state.stats.money[0] > 0,
+                'native planning supplies a positive hour value, without a synthetic money packet');
+            Economy.forState = () => { throw Error('cold goal reader rebuilt the wish network'); };
+            const goals = NeedsEvaluator.evaluate(state, { now: 1000, decisions });
+            assert.strictEqual(goals.length, leaf ? 1 : 0);
+            if (leaf) {
+                assert.strictEqual(goals[0].priority, 50);
+                assert.strictEqual(goals[0].plan.wishKey, leaf.rootKey);
+                assert.strictEqual(goals[0].plan.economyActivity, leaf.activity);
+                if (leaf.activity === 'shopping') {
+                    assert(Number.isFinite(leaf.price) && leaf.price > 0);
+                    assert(Funding.spendable(state, 0, { itemId: leaf.itemId }) >= leaf.price,
+                        'a selected purchase fits the actual packet and survival floor');
+                    assert.strictEqual(goals[0].target.itemId, leaf.itemId);
+                    assert.strictEqual(goals[0].target.amount, Math.max(1, Math.ceil(leaf.amount)));
+                } else if (leaf.activity === 'hunting') {
+                    assert.strictEqual(goals[0].type, leaf.funding ? 'earn_adena' : 'progress_level');
+                    if (leaf.funding) assert(goals[0].target.adena > 0);
+                    else assert.strictEqual(goals[0].target.level, state.level + 1);
+                }
+            }
+            assert.deepStrictEqual(NeedsEvaluator.evaluate({ ...state, updatedAt: 1001 },
+                { now: 1000, decisions }), [], 'a stale decision cannot drive an armour or material purchase');
+            decisions.forget(state.characterId);
+            Economy.forState = build;
+        }
+        console.log('Native worker armour/material goal checks passed');
+    } finally { Economy.forState = build; }
+}
+verifyWorkerSelectedGoals().catch(error => { console.error(error); process.exitCode = 1; });

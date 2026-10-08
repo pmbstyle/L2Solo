@@ -8,6 +8,7 @@ const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
     const enabled = Config.enabled;
     try {
         Config.enabled = true;
+        Config.developerDiagnostics = true;
         Metrics.startEventLoopMonitor();
         await new Promise(resolve => setTimeout(resolve, 80));
         const until = performance.now() + 65;

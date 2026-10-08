@@ -2,12 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { DatabaseSync } = require('node:sqlite');
-
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
-assert(!process.env.L2NODE_CONFIG_FILE && !process.env.L2NODE_SHARED_CONFIG_FILE, 'default config only');
+require(path.join(gameRoot, 'tests/helpers/databaseIsolation'));
+const isolated = require(path.join(gameRoot, 'tests/helpers/isolatedSocialDatabase'))('native-checkpoint-paid-profile', gameRoot);
+// Admission-only authoring explicitly uses native Knowledge OFF, before Global.
+fs.writeFileSync(isolated.ini, fs.readFileSync(isolated.ini, 'utf8')
+    .replace(/^knowledgeErrorsEnabled\s*=\s*true$/m, 'knowledgeErrorsEnabled = false'));
+const { DatabaseSync } = require('node:sqlite');
 assert(!fs.existsSync(path.join(process.cwd(), 'config/local.ini')), 'no local override');
 require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -15,6 +19,7 @@ const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Progression = invoke('GameServer/Bot/BotClassProgression');
 const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
 const Checkpoint = invoke('GameServer/Bot/Population/NativeWriteCheckpoint');
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const { WorkerCommandAdmissionRefusal } = invoke('GameServer/Bot/Population/WorkerCommandAdmission');
 const { ColdSimulationCoordinator } = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const realImmediate = setImmediate;
@@ -24,7 +29,7 @@ const tables = ['bot_life_state', 'characters', 'skills', 'items', 'warehouse_it
     'afk_trade_shops', 'afk_trade_lines', 'character_death_experience'];
 const targets = ['skill_insert', 'skill_update', 'class', 'row', 'experience', 'death', 'vitals', 'inventory', 'final'];
 const failures = [], outcomes = [], healthy = new Set();
-let directory, serial = 0, rowTemplate;
+let directory = isolated.directory, serial = 0, rowTemplate;
 
 async function wait(promise, label) {
     let timer;
@@ -49,6 +54,87 @@ const point = value => ({ characterId: value.characterId, phase: value.phase, ac
     simulationLeaseId: value.simulationLeaseId || null, activityStartedAt: Number(value.activityStartedAt || 0),
     nextResolveAt: Number(value.nextResolveAt || 0), lastResolvedAt: Number(value.lastResolvedAt || 0),
     lastHotAt: Number(value.lastHotAt || 0), updatedAt: Number(value.updatedAt || 0) });
+
+
+// ARCH-NOTE: FX-E6 retains native SP costs. With the declared 120 SP the
+// class0 prefix is two 50-SP ranks plus three free skills, not nine grants.
+const ancestorRanks = [[3, 2], [194, 1], [1320, 1], [1322, 1]];
+const firstProfessionRanks = [[3, 2], [194, 1], [239, 1], [1320, 2], [1322, 1]];
+const skillRows = (image, id) => image.skills.filter(skill => skill.characterId === id);
+const skillRanks = (image, id) => skillRows(image, id)
+    .map(skill => [skill.selfId, skill.level]).sort((a, b) => a[0] - b[0]);
+function assertAuthoredPaidPlan(targetClass = 0) {
+    const authoredRank = (classId, skillId, level) => Data.skillTree
+        .find(tree => Number(tree.classId) === classId)?.skills
+        .find(skill => Number(skill.selfId) === skillId)?.levels
+        .find(rank => Number(rank.level) === level);
+    for (const [skillId, levels, cost] of [[3, [1, 2, 3], 50], [194, [1], 0],
+        [1320, [1], 0], [1322, [1], 0]]) {
+        for (const level of levels) {
+            const rank = authoredRank(0, skillId, level);
+            assert(rank, 'the independently declared class0 rank must be authored');
+            assert.equal(Number(rank.sp), cost);
+            assert(Number(rank.pLevel) <= 7);
+            assert(Data.skills.find(skill => Number(skill.selfId) === skillId)?.levels
+                .some(defined => Number(defined.level) === level), 'native skill definition must exist');
+        }
+        assert.equal(invoke('GameServer/Skills/SkillBookCatalog').bookFor(skillId), null,
+            'these declared class0 skills have no authored book prerequisite');
+    }
+    if (targetClass !== 0) {
+        assert([1, 4, 7].includes(targetClass));
+        for (const [skillId, level] of [[239, 1], [1320, 2]]) {
+            const rank = authoredRank(targetClass, skillId, level);
+            assert(rank, 'the selected authored first-profession free rank must exist');
+            assert.equal(Number(rank.sp), 0);
+            assert.equal(Number(rank.pLevel), 20);
+            assert(Data.skills.find(skill => Number(skill.selfId) === skillId)?.levels
+                .some(defined => Number(defined.level) === level));
+        }
+    }
+}
+
+const preparedProfiles = new Map();
+async function prepareNativeProfile(id) {
+    const input = Life.snapshot(id), before = facts(id);
+    assert.equal(physical(before, id).level, 7);
+    assert.equal(physical(before, id).exp, input.exp);
+    assert.equal(physical(before, id).sp, 120);
+    assert.equal(input.sp, 120);
+    assert.deepEqual(skillRows(before, id), []);
+    assertAuthoredPaidPlan();
+    const beforeWrite = Database.createColdTrainingGuard(input, () => {
+        assert.equal(Life.cachedState(id), input);
+    });
+    const training = await Progression.reconcile({ characterId: id, classId: 0, level: 7, seed: id }, { beforeWrite });
+    assert.equal(training.spentSp, 100);
+    assert.equal(training.learnedCount, 5);
+    assert.deepEqual(training.consumedBooks, []);
+    assert.deepEqual(training.transitions, []);
+    const returned = await Database.publishColdTraining(id, training, { beforeWrite });
+    const accepted = Life.acceptNewerLifecycleRow(returned);
+    assert.equal(accepted, Life.cachedState(id));
+    assert.equal(accepted.level, 7);
+    assert.equal(accepted.exp, input.exp);
+    assert.equal(accepted.sp, 20);
+    assert.equal(accepted.stats.classId, 0);
+    assert.equal(invoke('GameServer/Skills/SkillBookCatalog').needsTraining(accepted), false);
+    const after = facts(id);
+    assert.deepEqual(skillRanks(after, id), ancestorRanks);
+    assert.equal(physical(after, id).sp, 20);
+    assert.equal(physical(after, id).exp, physical(before, id).exp);
+    assert.equal(physical(after, id).classId, 0);
+    assert.equal(accepted.adena, input.adena);
+    for (const table of ['items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines', 'character_death_experience']) {
+        assert.deepEqual(after[table], before[table], 'profile preparation conserves all physical inventory/trade/death facts');
+    }
+    assert(!Protocol.sameCommandCheckpoint(Protocol.commandCheckpoint(input), accepted),
+        'the tested command is authored from the native publication-returned checkpoint');
+    preparedProfiles.set(id, clone(skillRows(after, id)));
+    console.log('NATIVE_PRETRAIN', JSON.stringify({ id, allocatedSp: 120, training, physicalSp: accepted.sp,
+        skills: skillRows(after, id), checkpointBefore: Protocol.commandCheckpoint(input),
+        checkpointAfter: Protocol.commandCheckpoint(accepted) }));
+}
 
 async function seed(target) {
     const account = `bot_native_checkpoint_${++serial}`;
@@ -78,6 +164,16 @@ async function seed(target) {
             restUntil: time + 30000 } }, 'native_checkpoint_seed'));
     } finally { Database.saveBotLifeState = save; }
     assert.equal(physical(facts(id), id).exp, exp);
+    const initial = facts(id);
+    assert.equal(physical(initial, id).level, level);
+    assert.equal(physical(initial, id).sp, 120);
+    assert.equal(physical(initial, id).classId, 0);
+    assert.equal(initial.cache.sp, 120);
+    assert.equal(initial.cache.adena, 1000);
+    assert.deepEqual(skillRanks(initial, id), target === 'skill_update' ? [[3, 1]] : []);
+    // Class/learn targets must keep their own first writer inside the command.
+    // Only ROW/after-writer scenarios prepare a genuine paid profile outside it.
+    if (!profileMissing) await prepareNativeProfile(id);
     return id;
 }
 
@@ -111,12 +207,12 @@ function queueClaimCycle(id, image) {
     });
 }
 function methodOf(target) {
-    return { skill_insert: 'setSkill', skill_update: 'updateSkillLevel', class: 'updateCharacterClassId',
+    return { skill_insert: 'learnBotSkill', skill_update: 'learnBotSkill', class: 'updateCharacterClassId',
         row: 'saveBotLifeState', experience: 'updateCharacterExperience', death: 'applyCharacterDeathExperience',
         vitals: 'updateCharacterVitals', inventory: 'syncInventorySummary', final: 'syncInventorySummary' }[target];
 }
 function targetId(target, args) {
-    return target === 'skill_insert' ? args[1] : target === 'row' ? args[0]?.[1]?.[0]
+    return target === 'row' ? args[0]?.[1]?.[0]
         : target === 'death' ? args[0]?.characterId : args[0];
 }
 function probeValue(target, image, id) {
@@ -146,8 +242,8 @@ async function boundary(target, mode) {
     c.worker = { postMessage(message) { sent.push(clone(message)); }, terminate: async () => {} };
     const source = c.worker, epoch = c.workerEpoch;
     let admission, control, producer, targetEntered = false, held = false, armed = false, before, partial;
-    const method = methodOf(target), original = Database[method], writerCallbacks = [];
-    const optionAt = { setSkill: 2, updateSkillLevel: 3, updateCharacterClassId: 2, saveBotLifeState: 1,
+    const method = methodOf(target), original = Database[method], writerCallbacks = [], trainingReceipts = [];
+    const optionAt = { learnBotSkill: 3, setSkill: 2, updateSkillLevel: 3, updateCharacterClassId: 2, saveBotLifeState: 1,
         updateCharacterExperience: 4, applyCharacterDeathExperience: 1, updateCharacterVitals: 5,
         syncInventorySummary: 3, publishBotResolvedState: 1 };
     const observers = new Map();
@@ -158,10 +254,17 @@ async function boundary(target, mode) {
         writerCallbacks.push({ name, callback: args[optionAt[name]]?.beforeWrite });
         if (name === 'saveBotLifeState' && mode === 'current') rowTemplate = clone(args[0]);
     };
+    const observeReceipt = (name, args, pending) => {
+        if (name !== 'learnBotSkill' || args[0] !== id) return pending;
+        return pending.then(result => {
+            trainingReceipts.push({ skillId: args[1], level: args[2], result: clone(result) });
+            return result;
+        });
+    };
     for (const name of Object.keys(optionAt)) {
         if (name === method) continue;
         const native = Database[name]; observers.set(name, native);
-        Database[name] = function (...args) { observe(name, args); return native.apply(this, args); };
+        Database[name] = function (...args) { observe(name, args); return observeReceipt(name, args, native.apply(this, args)); };
     }
     const queueTarget = ['skill_insert', 'skill_update', 'row'].includes(target);
     c.population = { executeWorkerLifecycleCommand(...args) {
@@ -180,7 +283,11 @@ async function boundary(target, mode) {
     };
     Database[method] = function (...args) {
         observe(method, args);
-        if (targetId(target, args) !== id || held) return original.apply(this, args);
+        const paidTarget = !['skill_insert', 'skill_update'].includes(target)
+            || (args[1] === 3 && args[2] === (target === 'skill_insert' ? 1 : 2));
+        if (targetId(target, args) !== id || held || !paidTarget) {
+            return observeReceipt(method, args, original.apply(this, args));
+        }
         held = true; targetEntered = true; called.resolve();
         if (queueTarget) {
             const receiver = this;
@@ -193,7 +300,7 @@ async function boundary(target, mode) {
                     armed = true; const until = Date.now() + 2; while (Date.now() < until) { /* Existing cooperative slice. */ }
                 } }], 'native-point:queue-control');
                 control.catch(() => {});
-                return original.apply(receiver, args);
+                return observeReceipt(method, args, original.apply(receiver, args));
             }, 1);
         }
         if (target === 'final') {
@@ -205,7 +312,7 @@ async function boundary(target, mode) {
                 return original.apply(receiver, args);
             }, 1);
         }
-        return original.apply(this, args);
+        return observeReceipt(method, args, original.apply(this, args));
     };
     Database.registerCharacterWriteFlush(async currentId => {
         if (currentId !== id || !targetEntered || queueTarget || target === 'final') return;
@@ -224,7 +331,17 @@ async function boundary(target, mode) {
         assert.equal(physical(partial, id).hp, ['inventory', 'final'].includes(target) ? 90 : 85);
         if (queueTarget || target === 'class') assert.equal(row(partial, id).hp, 85);
         else assert.equal(row(partial, id).hp, target === 'death' ? 0 : 90, 'accepted own ROW is already durable');
-        if (target === 'class') assert.equal(partial.skills.filter(value => value.characterId === id).length, 9);
+        if (target === 'class') {
+            assertAuthoredPaidPlan(Progression.plan({ classId: 0, level: 20, seed: id }).classId);
+            assert.deepEqual(skillRanks(partial, id), ancestorRanks, 'native paid ancestor prefix completed BEFORE FIRST class SQL');
+            assert.equal(physical(partial, id).sp, 20);
+        }
+        if (preparedProfiles.has(id)) {
+            assert.deepEqual(skillRows(partial, id), preparedProfiles.get(id), 'no NEW skill write before held ROW/after writer');
+            assert.equal(physical(partial, id).sp, 20);
+        }
+        if (queueTarget && target !== 'row') assert.equal(physical(partial, id).sp, 120,
+            'the held first native learner has not debited physical SP');
         if (target === 'skill_insert') assert.equal(probeValue(target, partial, id), 0);
         if (target === 'skill_update') assert.equal(probeValue(target, partial, id), 1);
         if (target === 'death') assert.equal(partial.character_death_experience.find(value => value.characterId === id), undefined);
@@ -283,8 +400,34 @@ async function boundary(target, mode) {
             assert(writerCallbacks.some(value => value.name === 'saveBotLifeState'));
             assert(writerCallbacks.some(value => value.name === 'publishBotResolvedState'));
             assert(writerCallbacks.every(value => typeof value.callback === 'function'));
-            assert.equal(new Set(writerCallbacks.map(value => value.callback)).size, 1, 'ONE exact callback before skills/ROW/physical/FINAL');
-            console.log('SHARED_CALLBACK', JSON.stringify({ target, id, writers: writerCallbacks.map(value => value.name), exactFunctions: 1 }));
+            const trainingCallbacks = writerCallbacks.filter(value => ['learnBotSkill', 'updateCharacterClassId'].includes(value.name));
+            const afterCallbacks = writerCallbacks.filter(value => !['learnBotSkill', 'updateCharacterClassId'].includes(value.name));
+            assert.equal(new Set(afterCallbacks.map(value => value.callback)).size, 1,
+                'ROW/physical/FINAL retain ONE untagged advancing native callback');
+            if (['skill_insert', 'skill_update', 'class'].includes(target)) {
+                assert(trainingCallbacks.length > 0, 'the genuine paid prefix was observed');
+                assert.equal(new Set(trainingCallbacks.map(value => value.callback)).size, 1,
+                    'all paid skill/class writers share their private training callback');
+                assert.notEqual(trainingCallbacks[0].callback, afterCallbacks[0].callback,
+                    'private immutable training floors cannot leak into ROW/advance');
+            } else assert.deepEqual(trainingCallbacks, [], 'prepared ROW/after profile does not silently train inside this boundary');
+            const expectedRanks = target === 'class' ? firstProfessionRanks
+                : target === 'skill_update' ? [[3, 3], [194, 1], [1320, 1], [1322, 1]] : ancestorRanks;
+            assert.deepEqual(skillRanks(after, id), expectedRanks);
+            assert.equal(physical(after, id).sp, 20);
+            assert.equal(after.cache.sp, 20);
+            assert.equal(after.cache.adena, 1000);
+            assert.deepEqual(after.items.filter(item => item.characterId === id && item.selfId === 57),
+                before.items.filter(item => item.characterId === id && item.selfId === 57), 'paid skills never invent/debit currency');
+            if (preparedProfiles.has(id)) assert.deepEqual(skillRows(after, id), preparedProfiles.get(id),
+                'ROW/after targets preserve the exact pre-trained physical rows');
+            else {
+                const learned = trainingReceipts.filter(receipt => receipt.result.learned);
+                assert.equal(learned.length, target === 'class' ? 7 : 5);
+                assert.equal(learned.reduce((total, receipt) => total + receipt.result.spentSp, 0), 100);
+                assert.deepEqual(learned.flatMap(receipt => receipt.result.consumedBooks), []);
+            }
+            console.log('SHARED_CALLBACK', JSON.stringify({ target, id, writers: writerCallbacks.map(value => value.name), exactFunctions: new Set(writerCallbacks.map(value => value.callback)).size }));
         } else {
             assert.deepEqual(after, before, 'changed Native authority must conserve the exact accepted partial eight-table/cache image');
             assert.equal(publications.length, 0);
@@ -439,6 +582,7 @@ const directCases = [
         const stats = { ...JSON.parse(row(original, id).statsJson), clanInventoryRevision: 5,
             marketTrades: { material: { D: 7 } } };
         await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?', [JSON.stringify(stats), id]]);
+        await Database.execute(['INSERT INTO bot_market_counts(characterId,counter,deals) VALUES(?,?,7)', [id, 'gear d']]);
         const statement = boundStatement(id, callback, 94, { clanInventoryRevision: 4, marketTrades: { malicious: 999 } });
         const before = facts(id), rejected = await Database.saveBotLifeState(statement, { beforeWrite: callback });
         assert.equal(rejected.affectedRows, 0); assert.deepEqual(facts(id), before);
@@ -447,7 +591,8 @@ const directCases = [
         const accepted = await Database.saveBotLifeState(boundStatement(id, callback, 95, { clanInventoryRevision: 5,
             marketTrades: { malicious: 999 }, priceBeliefs: { legacy: 1 } }), { beforeWrite: callback });
         assert.equal(accepted.affectedRows, 1);
-        assert.deepEqual(JSON.parse(accepted.statsJson).marketTrades, stats.marketTrades);
+        assert.equal(JSON.parse(accepted.statsJson).marketTrades, undefined);
+        assert.equal((await Database.execute(['SELECT deals FROM bot_market_counts WHERE characterId=? AND counter=?', [id, 'gear d']]))[0].deals, 7);
         assert.equal(JSON.parse(accepted.statsJson).priceBeliefs, undefined);
         await Database.updateCharacterVitals(id, 95, 100, 75, 100, { beforeWrite: callback });
         assert.equal(physical(facts(id), id).hp, 95);
@@ -539,8 +684,8 @@ const directCases = [
 ];
 
 (async () => {
-    directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'native-checkpoint-baseline-'));
-    options.default.Database.path = path.join(directory, 'world.sqlite'); options.default.Database.historyPath = path.join(directory, 'history.sqlite');
+    assert.equal(Config.knowledgeErrorsEnabled, false);
+    isolated.assertConfigured(options.default);
     console.log('DISPOSABLE', JSON.stringify({ gameRoot, directory, world: options.default.Database.path, history: options.default.Database.historyPath }));
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init();
     const directFilter = process.argv.find(value => value.startsWith('--direct-case='))?.slice('--direct-case='.length);

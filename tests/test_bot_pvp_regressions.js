@@ -1,5 +1,13 @@
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_CONFIG_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+delete process.env.N53_GAME_ROOT;
+const fixture = require('./helpers/isolatedSocialDatabase')('late-pvp-membership');
+process.once('exit', () => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
 const assert = require('assert');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+invoke('GameServer/DataCache').init();
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
@@ -158,11 +166,13 @@ Potions.tryUseInCombat = () => false;
     const ally = session(actor(nextId++, { level: 80 }));
     own.coldLifeState = ally.coldLifeState = { party: { partyId: 'friendly' } };
     World.insertUser(ally);
+    World.refreshPartyMemberships([own]);
     const grouped = Risk.defenseDecision(own, [enemy]);
     assert(grouped.score > solo.score, 'nearby allies count toward expected success');
     const guard = session(actor(nextId++, { level: 80 }));
     attacker.coldLifeState = guard.coldLifeState = { party: { partyId: 'hostile' } };
     World.insertUser(guard);
+    World.refreshPartyMemberships([attacker]);
     assert(Risk.defenseDecision(own, [enemy]).score < grouped.score, 'a weak target is not evaluated separately from its party');
     bot.fetchCollectivePAtk = () => 200;
     const plain = Risk.combatStrength(bot).power;
@@ -214,7 +224,21 @@ Potions.tryUseInCombat = () => false;
         for (let i = 0; i < 500; i++) { Threats.members(own); Index.actor(own.actor.id); }
         assert.strictEqual(populationReads, 0, '500 lookups must not rescan 10,000 unrelated actors');
         now += Index.REFRESH_MS + 1; Threats.members(own);
-        assert(populationReads > 0, 'membership snapshots refresh on a bounded interval');
+        // ARCH-NOTE: native membership is published by its addressed writers;
+        // only the explicit legacy injected-world branch polls a snapshot.
+        assert.strictEqual(populationReads, 0, 'native membership does not rescan unrelated actors after the legacy interval');
+        const joined = session(actor(nextId++));
+        World.insertUser(joined);
+        own.coldLifeState = joined.coldLifeState = { party: { partyId: 'addressed_membership' } };
+        World.refreshPartyMemberships([own, joined]);
+        assert.deepStrictEqual(Threats.members(own), [own, joined], 'a published join is visible immediately in original registration order');
+        now += Index.REFRESH_MS + 1;
+        assert.deepStrictEqual(Threats.members(own), [own, joined], 'elapsed time preserves the published membership');
+        joined.coldLifeState = { party: { partyId: 'other_membership' } };
+        World.refreshPartyMemberships([joined]);
+        assert.deepStrictEqual(Threats.members(own), [own], 'a published leave removes the original session immediately');
+        assert.deepStrictEqual(Threats.members(joined), [joined], 'a published leave cannot inherit the old party');
+        assert.strictEqual(populationReads, 0, 'addressed join and leave never inspect the 10,000 unrelated actors');
     } finally { Date.now = clock; }
 }
 {
@@ -282,6 +306,7 @@ Potions.tryUseInCombat = () => false;
             own.partyCompanion = true; own.followPlayerSession = leader;
             const ally = session(actor(nextId++), { partyCompanion: true, followPlayerSession: leader });
             World.insertUser(leader); World.insertUser(ally);
+            World.refreshPartyMemberships([own]);
             Index.invalidate();
             bot.skills = [{ fetchSelfId: () => 1069, fetchSkillType: () => Rules.EFFECT,
                 fetchTargetKind: () => 'enemy', fetchSemantic: () => ({ effect, effectType: 'debuff', sourceTarget: 'one' }),
@@ -298,6 +323,7 @@ Potions.tryUseInCombat = () => false;
             assert(new Attack().blockedPvpDefense(ally, ally.actor, enemy), 'queued damage must respect the reservation');
             assert(!Threats.protectedTarget(ally, enemy, now + 8001), 'protection still expires');
             ally.followPlayerSession = session(actor(nextId++), { accountId: 'other_leader' });
+            World.refreshPartyMemberships([ally]);
             assert(!Threats.protectedTarget(ally, enemy, now), 'leaving the party drops its reservations immediately');
         }
     }

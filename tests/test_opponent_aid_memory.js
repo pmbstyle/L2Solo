@@ -1,13 +1,14 @@
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-opponent-aid');
 require('../src/Global');
+fixture.assertConfigured(options.default);
 const DB = invoke('Database'), Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Help = invoke('GameServer/Social/CombatHelpMemory');
 const P = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Aid = require('../src/GameServer/Social/OpponentAidPolicy');
 const Clan = require('../src/GameServer/Clan/ClanSocialPolicy');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-opponent-aid-'));
-options.default.Database.path = path.join(dir, 'test.sqlite');
+const dir = fixture.directory;
 function actor(id) {
     const a = { hp: 30, x: 0, fetchId: () => id, fetchClanId: () => id === 1 ? 10 : 20,
         fetchHp() { return this.hp; }, setHp(n) { this.hp = n; }, fetchMaxHp: () => 100,

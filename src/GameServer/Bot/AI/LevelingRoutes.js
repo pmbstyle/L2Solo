@@ -423,7 +423,7 @@ function decorateSpot(spot, match) {
 
 function rankedSpots(spots, state = {}, options = {}) {
     options = { ...options, matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) }),
-        spotEconomics: invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
+        spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
             { timestamp: options.timestamp, mode: modeForState(state, options), occupancy: options.occupancy }) };
     return (spots || [])
         .map((spot) => {

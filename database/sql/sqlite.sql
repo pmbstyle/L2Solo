@@ -469,6 +469,12 @@ CREATE TABLE IF NOT EXISTS bot_life_state (
 );
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_nextResolveAt ON bot_life_state(phase, nextResolveAt);
 CREATE INDEX IF NOT EXISTS bot_life_state_phase_partyId ON bot_life_state(phase, partyId);
+CREATE TABLE IF NOT EXISTS bot_market_counts (
+    characterId INTEGER NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    counter TEXT NOT NULL,
+    deals INTEGER NOT NULL,
+    PRIMARY KEY(characterId, counter)
+);
 CREATE INDEX IF NOT EXISTS bot_life_state_accountName ON bot_life_state(accountName);
 CREATE INDEX IF NOT EXISTS bot_life_state_characterName ON bot_life_state(characterName COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS bot_life_state_market_reconcile ON bot_life_state(phase, updatedAt, characterId);

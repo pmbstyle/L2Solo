@@ -24,7 +24,7 @@ function state(characterId, classId, spotId = 'test-spot') {
     return {
         characterId, name: `BuffTest${characterId}`, level: 55, phase: 'cold', activity: 'hunting',
         spotId, adena: 20000, party: { partyId: null },
-        stats: { classId, coldCombat: { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillRecordsFromTree(classId, 55), effects: [] } },
+        stats: { classId, money: [6000, 0, 0, 0], coldCombat: { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillRecordsFromTree(classId, 55), effects: [] } },
         vitals: { hp: 100, maxHp: 100, mp: 2000, maxMp: 2000 },
         inventory: { 57: { selfId: 57, name: 'Adena', amount: 20000 } },
         simulation: { ownerId: 'legacy_main', revision: 0, leaseId: null, leaseUntil: 0 }
@@ -92,16 +92,17 @@ async function persistState(current) {
     const tickBuyer = state(tickBuyerId, 9);
     await persistState(tickProvider);
     await persistState(tickBuyer);
-    const originalAllStates = LifeState.allStates;
+    const originalCachedState = LifeState.cachedState;
     const originalAccept = LifeState.acceptSimulationOwnership;
     const originalMarkDirty = Coordinator.markDirty;
     const dirtyReasons = [];
     try {
-        LifeState.allStates = () => [tickProvider, tickBuyer];
+        LifeState.cachedState = id => [tickProvider, tickBuyer].find(state => state.characterId === Number(id)) || null;
         LifeState.acceptSimulationOwnership = (_id, _revision, committed) => committed;
         Coordinator.markDirty = (_state, options) => { dirtyReasons.push(options.reason); return { ok: true }; };
-        const result = await Cold.tick();
-        assert.strictEqual(result.sales, 1, 'cold tick finds and settles a same-spot purchase');
+        const packet = invoke('GameServer/Bot/Economy/ColdBuffOffer').project(tickProvider, [tickProvider, tickBuyer], Date.now());
+        const result = await Cold.applyOffer(packet);
+        assert.strictEqual(result.ok, true, 'the provider proposal settles a same-spot purchase');
         assert.deepStrictEqual(dirtyReasons.sort(), ['buff_service_purchase', 'buff_service_sale']);
         const buyerRow = await Database.execute(['SELECT statsJson, adena FROM bot_life_state WHERE characterId = ?', [tickBuyerId]]);
         const sellerRow = await Database.execute(['SELECT adena, mp FROM bot_life_state WHERE characterId = ?', [tickProviderId]]);
@@ -109,7 +110,7 @@ async function persistState(current) {
         assert.strictEqual(Number(buyerRow[0].adena) + Number(sellerRow[0].adena), 40000);
         assert(Number(sellerRow[0].mp) < 2000);
     } finally {
-        LifeState.allStates = originalAllStates;
+        LifeState.cachedState = originalCachedState;
         LifeState.acceptSimulationOwnership = originalAccept;
         Coordinator.markDirty = originalMarkDirty;
     }
@@ -193,7 +194,9 @@ async function persistState(current) {
         assert.strictEqual(unaffordable.ok, false);
         assert.match(unaffordable.reason, /need .* Adena/);
         assert.strictEqual((await Database.fetchItems(hotProviderId)).find(item => item.selfId === 57).amount, 20000 + quote.price);
-        hotPlayer.backpack.fetchItemFromSelfId(57).setAmount(20000 - quote.price);
+        // The E1 native hour can price this package above a quarter of the old 20k fixture wallet.
+        await Database.execute(['UPDATE items SET amount=50000 WHERE characterId=? AND selfId=57', [playerId]]);
+        hotPlayer.backpack.fetchItemFromSelfId(57).setAmount(50000);
         Effects.execute = () => ({ effect: { key: 'shield' } });
         Policy.serviceClass = actor => actor === hotProvider;
         Manager.sessions = [providerSession, playerSession];

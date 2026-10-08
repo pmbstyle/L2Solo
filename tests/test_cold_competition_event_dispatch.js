@@ -1,17 +1,50 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
-const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
-const { ColdCompetitionMonitor, INTERVAL_MS, seeded } = require('../src/GameServer/Bot/Population/ColdCompetitionMonitor');
-const { decide } = require('../src/GameServer/Bot/Population/ColdCompetitionPolicy');
-const Memory = require('../src/GameServer/Social/InteractionMemory');
-const MemoryPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
-const Visible = require('../src/GameServer/Social/VisibleStrength');
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-const workerPath = path.resolve(__dirname, '../src/GameServer/Bot/Population/ColdSimulationWorker.js');
+const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+require(path.join(gameRoot, 'tests/helpers/databaseIsolation'));
+const isolated = require(path.join(gameRoot, 'tests/helpers/isolatedSocialDatabase'))('competition-event-native', gameRoot);
+// The event fixture explicitly requires native Knowledge OFF before Config loads.
+fs.writeFileSync(isolated.ini, fs.readFileSync(isolated.ini, 'utf8')
+    .replace(/^knowledgeErrorsEnabled\s*=\s*true$/m, 'knowledgeErrorsEnabled = false'));
+delete process.env.BOT_KNOWLEDGE_ERRORS_ENABLED;
+require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
+const Protocol = require(path.join(gameRoot, 'src/GameServer/Bot/Population/ColdSimulationProtocol'));
+const { ColdCompetitionMonitor, INTERVAL_MS, seeded } = require(path.join(gameRoot, 'src/GameServer/Bot/Population/ColdCompetitionMonitor'));
+const { decide } = require(path.join(gameRoot, 'src/GameServer/Bot/Population/ColdCompetitionPolicy'));
+const Memory = require(path.join(gameRoot, 'src/GameServer/Social/InteractionMemory'));
+const MemoryPolicy = require(path.join(gameRoot, 'src/GameServer/Social/InteractionMemoryPolicy'));
+const Visible = require(path.join(gameRoot, 'src/GameServer/Social/VisibleStrength'));
+const Config = require(path.join(gameRoot, 'src/GameServer/Bot/Population/PopulationConfig'));
+const workerPath = path.join(gameRoot, 'src/GameServer/Bot/Population/ColdSimulationWorker.js');
 const epoch = 'competition-event-dispatch-canonical';
+
+// ARCH-NOTE: FX-F4 admits an upper bound with twelve largest recent copies.
+// This positive case approaches that bound; the actual wire remains smaller.
+const sizingBaseReserve = 16 * 1024;
+const numericWidth = (_, value) => typeof value === 'number' ? 'x'.repeat(32) : value;
+const authoredRevengeEvent = (nameLength, at = 1111111111111) => ({
+    key: `revenge:${at}:201:202`, at, action: 'revenge', reason: 'personal_grievance',
+    spotId: 'frame-201', npcId: 0, contextVersion: 1, pvpIntent: true, revengeRoll: 0, chance: 1,
+    actor: { id: 201, name: 'x'.repeat(nameLength), partyId: null, size: 1, revision: 1, memoryRevision: 3 },
+    peer: { id: 202, name: 'x'.repeat(nameLength), partyId: null, size: 1, revision: 1, memoryRevision: 0 }
+});
+const authoredEventBytes = nameLength => Buffer.byteLength(JSON.stringify(authoredRevengeEvent(nameLength), numericWidth));
+// k=1, two frame copies plus twelve recent copies. Each ASCII name adds one
+// byte at fourteen positions, so both names account for28 bytes per character.
+const positiveNameLength = Math.floor((Protocol.MAX_MESSAGE_BYTES - sizingBaseReserve
+    - 14 * (authoredEventBytes(0) + 1)) / 28);
+assert(positiveNameLength > 0);
+assert.equal(authoredEventBytes(positiveNameLength), authoredEventBytes(0) + 2 * positiveNameLength);
+assert(14 * (authoredEventBytes(40000) + 1) > Protocol.MAX_MESSAGE_BYTES,
+    'the original40000 shape deliberately exceeds the new twelve-recent upper bound');
+assert(sizingBaseReserve + 14 * (authoredEventBytes(positiveNameLength) + 1) <= Protocol.MAX_MESSAGE_BYTES);
+assert(14 * (authoredEventBytes(positiveNameLength) + 1) > Protocol.MAX_MESSAGE_BYTES * 0.9,
+    'the independently authored admitted estimate is close to its limit');
 
 function sameCandidatePositive() {
     const spot = { id: 'event-baseline', npcEntries: [{ selfId: 10, count: 1 }] };
@@ -78,7 +111,12 @@ module.exports.sourceFacts = () => {
             memoryReady: kernel?.interactionMemory.views.get(id)?.ready === true };
     });
     const forbidden = Object.keys(require.cache).filter(file => /[\\/]src[\\/]Database\.js$|[\\/]World[\\/]World\.js$|[\\/](GeodataEngine|ActivationPlacement)\.js$/.test(file));
-    return { rows, forbidden, pendingActors: competitionCandidates?.pendingActors.size, pendingSpots: competitionCandidates?.pendingSpots.size,
+    const stressRows = [201,202].map(id => {
+        const packet = kernel?.states.get(id), record = kernel?.states.locationIndex.getSource(id,'state');
+        return { id, nameLength: packet?.state.name.length, original: !!packet && record?.source === packet.state,
+            memoryReady: kernel?.interactionMemory.views.get(id)?.ready === true };
+    });
+    return { rows, stressRows, forbidden, pendingActors: competitionCandidates?.pendingActors.size, pendingSpots: competitionCandidates?.pendingSpots.size,
         revengeCooling: [201,202].map(id => competition?.revenge.cooldowns.has('solo:'+id)), allowedTarget: competition?.isTargetAllowed(1),
         lastAt: competition?.lastAt, competitionReady, knowledgeEnabled: Config.knowledgeErrorsEnabled,
         paths: { world: options.default.Database.path, history: options.default.Database.historyPath } };
@@ -89,6 +127,15 @@ const { parentPort, workerData } = require('node:worker_threads');
 const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath;
 loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
+const scopedRequire = Module.createRequire(workerData.workerPath);
+const sizingModule = scopedRequire('./ColdCompetitionFrameSizer');
+const NativeSizer = sizingModule.ColdCompetitionFrameSizer;
+let latestSizing = null;
+sizingModule.ColdCompetitionFrameSizer = function observedNativeSizer(...args) {
+    const result = Reflect.construct(NativeSizer, args);
+    latestSizing = { at: args[0].payload.competition.frame.at, base: result.base, recentMax: result.maxEvent };
+    return result;
+};
 loaded._compile(fs.readFileSync(workerData.workerPath,'utf8') + '\n' + workerData.sourceObserver, workerData.workerPath);
 const post = parentPort.postMessage.bind(parentPort);
 let failed = false;
@@ -98,7 +145,7 @@ parentPort.postMessage = message => {
         throw Error('one generated transport backpressure');
     }
     post(message);
-    if (message.type === 'heartbeat') post({ sourceOracle: true, forMsgId: message.msgId, facts: loaded.exports.sourceFacts() });
+    if (message.type === 'heartbeat') post({ sourceOracle: true, forMsgId: message.msgId, facts: { ...loaded.exports.sourceFacts(), sizing: latestSizing } });
 };`;
 
 function row(id, now) {
@@ -114,8 +161,8 @@ function row(id, now) {
 }
 
 async function actualWorkerArrival() {
-    const directory = fs.mkdtempSync(path.resolve(__dirname, '../tmp/competition-event-native-'));
-    const dbPaths = { world: path.join(directory, 'world.sqlite'), history: path.join(directory, 'history.sqlite') };
+    const directory = isolated.directory;
+    const dbPaths = { world: isolated.world, history: isolated.history };
     const worker = new Worker(workerSource, { eval: true, workerData: { workerPath, workerEpoch: epoch, dbPaths, sourceObserver },
         resourceLimits: { maxOldGenerationSizeMb: 256 } });
     const messages = [], sent = []; let error, stopped = false, main, releaseLegacy, releaseAction;
@@ -148,7 +195,7 @@ async function actualWorkerArrival() {
     try {
         const loaded = await wait(message => message.type === 'ready' && message.payload.phase === 'loaded');
         assert.equal(loaded.payload.forbiddenDependencies, 0);
-        send('init', { config: { heartbeatMs: 250, loopIntervalMs: 20, pvpAggression: 1 } }, 'init');
+        send('init', { config: { developerDiagnostics: true, heartbeatMs: 250, loopIntervalMs: 20, pvpAggression: 1 } }, 'init');
         await wait(message => message.type === 'ready' && message.msgId === 'init');
         const now = Date.now();
         send('snapshot_page', { rows: [row(101, now), row(102, now)], initial: true, done: true }, 'initial');
@@ -219,11 +266,11 @@ async function actualWorkerArrival() {
 
         // Real Main constructor/scheduler/onMessage/Protocol, with held apply as
         // the task boundary. No native gameplay/SQL is invoked by this proof.
-        require('../src/Global');
+        require(path.join(gameRoot, 'src/Global'));
         options.default.Database.path = dbPaths.world; options.default.Database.historyPath = dbPaths.history;
         const Database = invoke('Database');
         assert.equal(Database.isReady(), false);
-        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const { ColdSimulationCoordinator } = require(path.join(gameRoot, 'src/GameServer/Bot/Population/ColdSimulationCoordinator'));
         main = new ColdSimulationCoordinator(); main.worker = worker; main.workerEpoch = epoch;
         main.ready = true; main.snapshotsLoaded = true;
         const MainConfig = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -278,15 +325,44 @@ async function actualWorkerArrival() {
         assert.deepEqual(byteFacts.facts.revengeCooling, [false, false], 'oversized forecast must have no committed cooldown');
         assert(byteHeartbeat.bytes <= Protocol.MAX_MESSAGE_BYTES);
         console.log('PASS actual Worker byte-bound input retained before forecast cooldown');
-        send('snapshot_page', { rows: frameRows(201, 202, 40000), ack: true }, 'frame-A-input');
+        // Retain the old40000 shape as a deliberate refusal control, not a positive.
+        const overflowInputBoundary = messages.length;
+        send('snapshot_page', { rows: frameRows(201, 202, 40000), ack: true }, 'old40000-overflow');
+        await wait(message => message.type === 'ready' && message.msgId === 'old40000-overflow');
+        const refused = await wait(message => messages.indexOf(message) >= overflowInputBoundary
+            && message.type === 'heartbeat' && message.payload.states === 5
+            && message.payload.competition.pendingActorKeys === 2
+            && message.payload.competition.revenge.overflow === true, 2000);
+        const refusedFacts = await wait(message => message.sourceOracle && message.forMsgId === refused.msgId);
+        assert.equal(Object.hasOwn(refused.payload.competition, 'frame'), false);
+        assert.deepEqual(refusedFacts.facts.revengeCooling, [false, false]);
+        assert(refusedFacts.facts.stressRows.every(row => row.nameLength === 40000 && row.original && row.memoryReady));
+        assert(refused.bytes <= Protocol.MAX_MESSAGE_BYTES);
+        console.log('PASS original40000 input deliberately requeued without forecast cooldown');
+        send('snapshot_page', { rows: frameRows(201, 202, positiveNameLength), ack: true }, 'frame-A-input');
         await wait(message => message.type === 'ready' && message.msgId === 'frame-A-input');
         const failed = await wait(message => message.failedHeartbeat, 2000);
         const firstFrame = await wait(message => message.type === 'heartbeat'
             && message.payload.competition.frame?.frameId === failed.frame.frameId, 2000);
         const frameA = firstFrame.payload.competition.frame;
         assert.deepEqual(frameA, failed.frame, 'failed send retains exact immutable origin/content');
-        assert(firstFrame.bytes > Protocol.MAX_MESSAGE_BYTES * 0.9 && firstFrame.bytes <= Protocol.MAX_MESSAGE_BYTES,
-            'near-limit real frame includes fractional telemetry and the newly armed cooldown head');
+        const admittedFacts = await wait(message => message.sourceOracle && message.forMsgId === firstFrame.msgId);
+        assert.equal(admittedFacts.facts.sizing.at, frameA.at);
+        assert(admittedFacts.facts.sizing.base <= sizingBaseReserve,
+            'the native whole-envelope header stays within the independently reserved16KiB');
+        assert.equal(frameA.events.length, 1);
+        const event = frameA.events[0];
+        assert.equal(String(event.at).length, 13, 'the authored key width covers the actual native clock');
+        assert.equal(event.actor.name.length, positiveNameLength);
+        assert.equal(event.peer.name.length, positiveNameLength);
+        const actualEventBytes = Buffer.byteLength(JSON.stringify(event, numericWidth));
+        assert.equal(actualEventBytes, authoredEventBytes(positiveNameLength));
+        assert(admittedFacts.facts.sizing.recentMax <= actualEventBytes);
+        const independentEstimate = admittedFacts.facts.sizing.base + 14 * (actualEventBytes + 1);
+        assert(independentEstimate > Protocol.MAX_MESSAGE_BYTES * 0.9 && independentEstimate <= Protocol.MAX_MESSAGE_BYTES,
+            'the task-defined conservative estimate is near its limit');
+        assert(firstFrame.bytes <= independentEstimate,
+            'the actual admitted frame including telemetry and armed cooldown stays under its independent bound');
         assert.equal(Protocol.validateEnvelope(firstFrame, 'worker', { workerEpoch: epoch }).ok, true);
         assert(frameA.events.some(event => event.action === 'revenge' && event.actor.id === 201));
         assert.equal(firstFrame.payload.competition.deliverySendFailures, 1);
@@ -356,4 +432,5 @@ async function actualWorkerArrival() {
     assert.equal(Config.knowledgeErrorsEnabled, false, 'fixture requires the actual OFF switch');
     sameCandidatePositive();
     await actualWorkerArrival();
-})().catch(error => { console.error(error.stack); process.exitCode = 1; });
+})().catch(error => { console.error(error.stack); process.exitCode = 1; })
+    .finally(() => fs.rmSync(isolated.directory, { recursive: true, force: true }));

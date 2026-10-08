@@ -1,3 +1,4 @@
+const { coldRestRegenPerTick, requiresManaRecovery, estimateRestMs } = require('./ColdRest');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdSoulCrystal = require('./ColdSoulCrystal');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
@@ -130,57 +131,10 @@ function settleCharges(fighter, semantic, at) {
     if (Number(semantic.chargeOnUse) > 0) addCharges(fighter, semantic.chargeOnUse, semantic.maxCharges, at);
 }
 
-function coldPassiveRegenAdd(state, skillId, stat) {
-    const classId = Number(state.stats?.classId ?? state.classId);
-    const skill = (DataCache.skillTree || []).find((tree) => Number(tree.classId) === classId)?.skills
-        ?.find((entry) => Number(entry.selfId) === skillId);
-    const level = Number(state.level || midpointBand(state.levelBand));
-    const skillLevel = (skill?.levels || [])
-        .filter((entry) => Number(entry.pLevel) <= level)
-        .reduce((highest, entry) => Math.max(highest, Number(entry.level) || 0), 0);
-    if (!skillLevel) return 0;
-
-    return Number(C4SkillRules.resolve({ selfId: skillId, level: skillLevel }).stats?.[stat]) || 0;
-}
-
-function coldRestRegenPerTick(state, options = {}) {
-    const level = Math.max(1, Number(state.level || midpointBand(state.levelBand)) || 1);
-    const classId = Number(state.stats?.classId ?? state.classId);
-    const template = (DataCache.classTemplates || []).find((entry) => Number(entry.classId) === classId) || {};
-    const baseStats = template.base || {};
-    const hpBase = Number(DataCache.revitalize?.hp?.[level]) || 0;
-    const mpBase = Number(DataCache.revitalize?.mp?.[level]) || 0;
-    const hp = ((hpBase * Formulas.calcLevelMod(level) * Formulas.calcBaseMod.CON(Number(baseStats.con) || 1))
-        + coldPassiveRegenAdd(state, 212, 'regHpAdd')) * 1.5;
-    const mp = ((mpBase * Formulas.calcLevelMod(level) * Formulas.calcBaseMod.MEN(Number(baseStats.men) || 1))
-        + coldPassiveRegenAdd(state, 229, 'regMpAdd')) * 1.5;
-
-    return { hp: Math.max(0, hp) * (options.hpMultiplier || 1), mp: Math.max(0, mp) * (options.mpMultiplier || 1) };
-}
-
-function requiresManaRecovery(state, options = {}) {
-    if (typeof options.requireMana === 'boolean') return options.requireMana;
-    return RestPolicy.restsForMana(state, options.party === true);
-}
-
 function needsRest(state, vitals, options = {}) {
     const hpRatio = Number(vitals?.hp ?? 0) / Math.max(1, Number(vitals?.maxHp ?? vitals?.hp ?? 1));
     const mpRatio = Number(vitals?.mp ?? 0) / Math.max(1, Number(vitals?.maxMp ?? vitals?.mp ?? 1));
     return RestPolicy.needsRest(state, hpRatio, mpRatio, { party: options.party === true });
-}
-
-function estimateRestMs(state, vitals, options = {}) {
-    const maxHp = Number(vitals.maxHp || vitals.hp || 1);
-    const maxMp = Number(vitals.maxMp || vitals.mp || 1);
-    const missingHp = Math.max(0, maxHp - Number(vitals.hp || 0));
-    const missingMp = Math.max(0, maxMp - Number(vitals.mp || 0));
-    const regen = coldRestRegenPerTick(state, options);
-    const hpSeconds = missingHp / Math.max(0.01, regen.hp / 3);
-    const mpSeconds = requiresManaRecovery(state, options)
-        ? missingMp / Math.max(0.01, regen.mp / 3)
-        : 0;
-
-    return Math.round(Math.max(hpSeconds, mpSeconds, 8) * 1000);
 }
 
 function applyStandingRegen(state, sourceVitals, elapsedMs, timestamp = Date.now()) {
@@ -759,11 +713,15 @@ function prepareRaidParty(members, timestamp = Date.now()) {
         estimateRestMs(fighter.state, fighter.vitals, { party: true, requireMana: true })
     )));
     const casts = buffCasts + musicCasts + summonCasts + chargeCasts;
+    // ARCH-NOTE: Native checkpoints require integer milliseconds. Keep the exact
+    // cast duration; ceil only the persisted deadline so preparation never ends early.
+    const nextResolveAt = restUntil || Math.ceil(timestamp + Math.max(3000, durationMs));
     const memberResults = fighters.map((fighter) => ({
         state: fighter.state,
         result: {
             patch: {
                 activity: ready ? 'grouped' : 'resting',
+                ...(fighter.summonUses > 0 ? { inventory: fighter.state.inventory } : {}),
                 vitals: { ...fighter.vitals },
                 stats: {
                     ...(fighter.state.stats || {}),
@@ -783,7 +741,7 @@ function prepareRaidParty(members, timestamp = Date.now()) {
             events: [],
             memoryEvents: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-            nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs),
+            nextResolveAt,
             debug: { reason: ready ? 'raid_prepared' : 'raid_preparing', buffCasts, musicCasts, summonCasts, chargeCasts }
         }
     }));
@@ -800,7 +758,7 @@ function prepareRaidParty(members, timestamp = Date.now()) {
         durationMs,
         restUntil,
         memberResults,
-        nextResolveAt: restUntil || timestamp + Math.max(3000, durationMs)
+        nextResolveAt
     };
 }
 
@@ -907,6 +865,8 @@ function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfi
         skillId: Number(skill.selfId),
         expiresAt: timestamp + totalLifeTime
     };
+    // Cold actors are bots: preserve the hot C4SkillEffects bot exemption
+    // from summon crystal costs. Authored skill ownership, MP and reuse still apply.
     setPersistedSummon(fighter, summon);
     fighter.summon = summon;
     fighter.summonUses = Number(fighter.summonUses || 0) + 1;
@@ -1266,7 +1226,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         };
     }
 
-    ColdSoulCrystal.outcome(soloFighter, mob, rng(), { at: timestamp + time });
+    ColdSoulCrystal.outcome(soloFighter, mob, rng, { at: timestamp + time });
     const rewards = ColdKillRewards.roll({
         spot,
         kills: [{ npcSelfId: mob.selfId, overhitContext }],
@@ -1957,6 +1917,7 @@ const BackgroundResolver = {
                 potionsUsed,
                 drunkPotions,
                 targetNpcId: Number(targetNpcId) || null,
+                targetOnSpot: ColdCombatProfile.spotSpawns(spot, targetNpcId) ? 1 : 0,
                 foughtNpcIds
             }
         };

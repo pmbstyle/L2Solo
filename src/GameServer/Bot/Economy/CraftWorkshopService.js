@@ -7,6 +7,8 @@ const owners = new Map();
 const inputOwners = new Map();
 const ownerInputs = new Map();
 const crafters = new Map();
+const knownRecipes = new Map();
+function recipesChanged(id) { knownRecipes.delete(Number(id)); }
 let inputIds = null;
 function watchedInputs() {
     if (!inputIds) {
@@ -21,7 +23,9 @@ function watchedInputs() {
 let unsubscribe = null;
 let unsubscribeOwnership = null;
 
-function remove(id) {
+function remove(id, { recipes: dropRecipes = true } = {}) {
+    require('./ShotMarketIndex').native().remove(id);
+    if (dropRecipes) recipesChanged(id);
     for (const recipeId of owners.get(Number(id)) || []) {
         const records = byRecipe.get(recipeId);
         records?.delete(Number(id));
@@ -38,8 +42,9 @@ function remove(id) {
 }
 function register(state) {
     const id = Number(state?.characterId);
-    remove(id);
+    remove(id, { recipes: state?.phase !== 'cold' });
     if (!state || state.phase !== 'cold') return;
+    require('./ShotMarketIndex').native().update(state);
     const items = new Set([...watchedInputs()].filter(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0));
     if (state.stats?.shotDemand?.itemId) items.add(Number(state.stats.shotDemand.itemId));
     if (state.stats?.shotRecipeDemand?.itemId) items.add(Number(state.stats.shotRecipeDemand.itemId));
@@ -49,6 +54,7 @@ function register(state) {
     }
     ownerInputs.set(id, items);
     if (invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) crafters.set(id, state);
+    else recipesChanged(id);
     const shop = state?.stats?.workshop;
     if (!shop || state.phase !== 'cold' || state.simulation?.ownerId !== 'legacy_main' || Number(state.vitals?.hp) <= 0
         || state.partyId || state.party?.partyId || ['dead', 'traveling'].includes(state.activity)) return;
@@ -137,6 +143,16 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null } = {
     if (result.customerState) life().acceptLifecycleRow(result.customerState);
     return result;
 }
+async function knownFor(id) {
+    id = Number(id);
+    let known = knownRecipes.get(id);
+    if (!known) {
+        known = (await invoke('Database').fetchCharacterRecipes(id)).map(row => Number(row.recipeId));
+        knownRecipes.set(id, known);
+    }
+    return known;
+}
+function cachedRecipes(id) { return knownRecipes.get(Number(id)) || []; }
 async function review(state) {
     init();
     const rules = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -144,14 +160,21 @@ async function review(state) {
         if (state) register(state);
         return state;
     }
-    const known = await invoke('Database').fetchCharacterRecipes(state.characterId);
+    const id = Number(state.characterId);
+    const known = await knownFor(id);
     const current = life().cachedState(state.characterId);
     if (current && current !== state) return current;
     const prior = new Map((state.stats?.workshop?.entries || []).map(entry => [Number(entry.recipeId), entry]));
-    const entries = known.map(row => recipes().resolveByRecipeId(row.recipeId)).filter(recipe => recipe
+    const entries = known.map(id => recipes().resolveByRecipeId(id)).filter(recipe => recipe
         && rules.canCraft(state, recipe)).slice(0, rules.MAX_PUBLIC_RECIPES).map(recipe => ({ recipeId: recipe.recipeId,
         ...servicePrice(recipe, prior.get(recipe.recipeId), state) }));
-    if (!entries.length) { remove(state.characterId); return state; }
+    const previous = state.stats?.workshop?.entries || [];
+    if (!entries.length && !previous.length) { remove(state.characterId, { recipes: false }); return state; }
+    if (entries.length === previous.length && entries.every((entry, i) =>
+        Number(entry.recipeId) === Number(previous[i].recipeId)
+        && ['price', 'firstPrice', 'earned', 'fills'].every(key => Number(entry[key] || 0) === Number(previous[i][key] || 0)))) {
+        register(state); return state;
+    }
     const next = { ...state, stats: { ...state.stats, workshop: { title: `${state.name}'s workshop`,
         entries, town: state.currentRegion, loc: state.loc } } };
     const saved = await life().upsertState(next, 'workshop_updated') || state;
@@ -160,6 +183,13 @@ async function review(state) {
 }
 function inputSources(itemId) {
     return [...(inputOwners.get(Number(itemId))?.values() || [])].filter(state => life().cachedState(state.characterId) === state);
+}
+function inputStateFor(ownerId) {
+    ownerId = Number(ownerId);
+    const crafter = crafters.get(ownerId);
+    if (crafter) return crafter;
+    const itemId = ownerInputs.get(ownerId)?.values().next().value;
+    return itemId === undefined ? null : inputOwners.get(itemId)?.get(ownerId) || null;
 }
 function crafterCandidates(limit = 16) {
     const result = [], count = Math.min(crafters.size, limit);
@@ -187,7 +217,6 @@ function boardRecords() {
     });
 }
 async function publishDemand(state, recipe, productPrice, context) {
-    const budget = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state);
     for (const material of recipe.materials || []) {
         const missing = Math.max(0, Number(material.amount) - Number(state.inventory?.[material.selfId]?.amount || 0));
         if (!missing) continue;
@@ -198,39 +227,20 @@ async function publishDemand(state, recipe, productPrice, context) {
             others += value * Number(other.amount);
         }
         const margin = Profit.margin(recipe, productPrice, others, context);
+        const input = Profit.inputValue(material.selfId, state, context);
+        const cash = missing * input;
+        const r = margin?.profit > 0 && cash > 0 ? margin.profit / context.hourAdena / cash : 0;
+        const budget = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state, 0, { r });
         const worth = margin && margin.profit / Number(material.amount);
         if (!(worth > 0)) continue;
         const price = Math.floor(Math.min(worth, budget / missing));
         if (price < 1) continue;
         const result = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(state, {
             type: 'buy_craft_material', status: 'active', target: { itemId: material.selfId, amount: missing,
-                adena: price }, plan: { estimatedCost: price, expectedBenefit: 'market_buy_craft_material', priceSource: 'recipe_margin' }
+                adena: price }, plan: { estimatedCost: price, valueRate: r, expectedBenefit: 'market_buy_craft_material', priceSource: 'recipe_margin' }
         });
         return result.state || state; // One owned money focus; the next input follows its fill event.
     }
     return state;
 }
-// Status compares only personally known dynamic producers. Unknown played
-// time remains unknown; stock value and a hypothetical sale are not income.
-function producerStatus(state, knownIds = []) {
-    const rules = invoke('GameServer/Bot/Economy/CraftShopService');
-    const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
-    const current = life().cachedState(state?.characterId) || state;
-    const ids = new Set([Number(state?.characterId), ...Array.from(knownIds, value => Number(value?.characterId ?? value?.id ?? value))]);
-    const rows = [];
-    for (const id of ids) {
-        const peer = id === Number(current?.characterId) ? current : life().cachedState(id);
-        if (!peer || Identity.isStaticService(peer) || !rules.isServiceCrafter(peer)) continue;
-        const stats = peer.stats?.production || {}, hours = Number(peer.stats?.playedHours || 0);
-        const earned = Number(stats.revenue || 0) + Number(stats.profit || 0);
-        rows.push({ id, income: hours > 0 && Number.isFinite(hours) && Number.isFinite(earned) ? earned / hours : null,
-            crafts: Number(stats.crafts || 0), customers: Number(stats.customers || 0), hours, earned });
-    }
-    const own = rows.find(row => row.id === Number(state?.characterId));
-    const higher = own?.income === null || !own ? [] : rows.filter(row => row.income !== null && row.income > own.income);
-    return { incomePerHour: own?.income ?? null, rank: own?.income === null || !own ? null : higher.length + 1,
-        knownCount: rows.length, nextIncomePerHour: higher.length ? Math.min(...higher.map(row => row.income)) : null,
-        customers: own?.customers || 0, crafts: own?.crafts || 0,
-        inputKey: rows.map(row => `${row.id}:${row.hours}:${row.earned}:${row.crafts}:${row.customers}`).join('|') };
-}
-module.exports = { init, register, remove, review, find, quote, discount, boardRecords, lookup, craft, inputSources, crafterCandidates, publishDemand, producerStatus };
+module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, review, find, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };

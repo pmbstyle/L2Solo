@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 require('../src/Global');
+// Load native data before the first economic route or combat profile check.
+invoke('GameServer/DataCache').init();
 
 // A bot's town trip is paid as a player pays it (N2, user 2026-10-04): one
 // Scroll of Escape from outside the town (without one it walks to the town),

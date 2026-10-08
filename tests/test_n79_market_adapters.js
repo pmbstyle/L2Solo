@@ -1,5 +1,9 @@
 const assert = require('assert');
+const fs = require('node:fs');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('market-adapter-worth');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
@@ -7,7 +11,7 @@ const Listings = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const BuyStore = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const BotMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+const { BoardIndex, SELL, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
 
 DataCache.init();
 const now = 1800000000000;
@@ -24,9 +28,14 @@ async function contract(name, work) {
 }
 
 (async () => {
-    await contract('sale producer sends line price/cursors without personal item book', () => {
-        const sale = Listings.evaluate(state, { now, board, persona: null, npcOffersFor: () => [], findSpot: () => null });
-        assert.strictEqual(sale.listings.length, 1, 'active demand yields a selected line');
+    await contract('sale producer sends line cursors only for a declared finite prepared opportunity', () => {
+        const unsupported = Listings.evaluate(state, { now, board, persona: null, npcOffersFor: () => [], findSpot: () => null });
+        assert.strictEqual(unsupported.listings.length, 0, 'kind-level historical deals alone do not create item exposure or lifetime');
+        const economy = { board, hourAdena: 10000, moneyPrice: .0001, gapHorizonHours: 1, worth: () => 0,
+            demandFor: () => ({ origin: 'prepared_applicability', authority: { observationId: 1 }, selfId: 1864,
+                applicableUnits: 100, delayHours: 0, availability: { from: now, until: now } }) };
+        const sale = Listings.evaluate(state, { now, board, economy, persona: null, npcOffersFor: () => [], findSpot: () => null });
+        assert.strictEqual(sale.listings.length, 1, 'declared finite evidence yields a selected line');
         const line = sale.listings[0];
         assert(line.pricing, 'selected quote carries its own pricing state');
         assert.strictEqual(line.pricing.price, line.price);
@@ -36,12 +45,40 @@ async function contract(name, work) {
         assert.strictEqual('book' in sale, false);
     });
     await contract('BUY producer carries authored worth and no personal book', () => {
+        // FX-E1/E3: a caller's requested4000 is not the bot's own worth.
+        // Independently combine the public observations and its personal error;
+        // never read the bid/pricing/context quote to manufacture the oracle.
+        const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
+        const Learning = invoke('GameServer/Bot/Economy/PriceLearning');
+        const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
+        const persona = invoke('GameServer/Bot/AI/BotPersona').of(state);
+        const key = Counters.counterOf(1864);
+        const first = Counters.firstPrice(1864, now);
+        const index = Counters.counter(key, now).index;
+        const demand = Belief.demandValue(1864, {});
+        assert.strictEqual(demand, null, 'unprepared owner craft willingness is unknown');
+        // The original board is empty and all60 authored deals are3000.
+        assert.strictEqual(board.list(1864, SELL).length, 0);
+        assert.strictEqual(board.list(1864, BUY).length, 0);
+        assert.deepStrictEqual(Counters.itemDeals(1864).prices, Array(21).fill(3000));
+        const observations = [[Math.log(3000), 10]];
+        if (first > 0 && index !== null) observations.push([Math.log(first) + index, .5]);
+        if (demand > 0) observations.push([Math.log(demand), .3]);
+        if (first > 0) observations.push([Math.log(first), .3]);
+        const weight = observations.reduce((sum, row) => sum + row[1], 0);
+        const centre = observations.reduce((sum, row) => sum + row[0] * row[1], 0) / weight;
+        const bias = Learning.knowledgeEnabled()
+            ? (2 * Tendency.roll('n45e', state.characterId, 1864) - 1)
+                * Learning.errorOf(persona?.understanding ?? .3, 0, key) : 0;
+        const ownWorth = Math.exp(centre + Math.log1p(bias));
+        assert(Number.isFinite(ownWorth) && ownWorth > 0);
         const bid = BuyStore.bidFor(state, { type: 'buy_craft_material', id: 99,
-            target: { itemId: 1864, amount: 20, adena: 4000 }, plan: { estimatedCost: 4000, priceSource: 'board' } });
+            target: { itemId: 1864, amount: 20, adena: 4000 }, plan: { estimatedCost: 4000, priceSource: 'board' } }, { now, board });
         assert(bid && bid.price > 0, 'the affordable bid exists');
         assert(bid.pricing, 'BUY quote carries pricing state');
         assert.strictEqual(bid.pricing.price, bid.price);
-        assert.strictEqual(bid.pricing.worth, 4000);
+        assert.strictEqual(bid.pricing.worth, ownWorth, 'BUY metadata preserves its own public/personal estimate');
+        assert(bid.price < ownWorth, 'the quoted bid retains positive gain below its own worth');
         assert.strictEqual('book' in bid, false);
     });
     await contract('metadata-only review reaches native adapter', async () => {
@@ -61,4 +98,4 @@ async function contract(name, work) {
         } finally { AfkTrade.repriceBotLines = original; }
     });
     if (failures) process.exitCode = 1;
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => fs.rmSync(isolated.directory, { recursive: true, force: true }));

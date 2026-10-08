@@ -11,6 +11,9 @@ const { Worker } = require('worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 const Statements = require('./DatabaseStatements');
 const HistoryStore = require('./HistoryStore');
+const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
+const PopulationConfig = require('./GameServer/Bot/Population/PopulationConfig');
+let worldToken = '';
 
 const FLUSH_TIMEOUT_MS = 10000;
 const STOP_TIMEOUT_MS = 20000;
@@ -19,6 +22,7 @@ let worker = null;
 let reader = null;
 let config = null;
 let stopping = false;
+let writerTelemetry = null;
 let restartTimer = null;
 let nextId = 0;
 const pending = new Map();
@@ -44,6 +48,7 @@ function setAside(historyPath) {
 // and moves an old world's history tables into it (HistoryStore.moveWorldTables).
 function prepare(world, historyPath) {
     const token = String(world.prepare("SELECT value FROM world_meta WHERE key = 'historyToken'").get()?.value || '');
+    worldToken = token;
     const outboxSeq = Number(world.prepare("SELECT seq FROM sqlite_sequence WHERE name = 'history_outbox'").get()?.seq || 0);
     let history = HistoryStore.open(historyPath);
     const owner = HistoryStore.meta(history, HistoryStore.WORLD_TOKEN_KEY);
@@ -88,19 +93,34 @@ function reportMoved(upTo) {
 function spawn() {
     if (!config || stopping || worker) return;
     const instance = new Worker(path.join(__dirname, 'HistoryWorker.js'), {
-        workerData: { worldPath: config.worldPath, historyPath: config.historyPath, transferMs: config.transferMs }
+        workerData: { worldPath: config.worldPath, historyPath: config.historyPath, transferMs: config.transferMs,
+            ...(config.diagnostics ? { developerDiagnostics: true, diagnostics: config.diagnostics } : {}) }
     });
     worker = instance;
-    counters.starts += 1;
+    if (config.diagnostics) Diagnostics.connect(batch => {
+        if (worker !== instance) return false;
+        const message = { type: 'economy_diagnostics', ...batch };
+        const wireBytes = Buffer.byteLength(JSON.stringify(message));
+        if (wireBytes > Diagnostics.LIMITS.batchBytes) return false;
+        instance.postMessage(message); return wireBytes;
+    });
+    if (PopulationConfig.developerDiagnostics) counters.starts += 1;
     instance.on('message', (message = {}) => {
         if (instance !== worker) return;
+        if (message.type === 'economy_diagnostics_ack') {
+            if (!config?.diagnostics || !PopulationConfig.developerDiagnostics) return;
+            Diagnostics.ack(message.id, message.written);
+            const report = message.writer;
+            if (report?.enabled === true) writerTelemetry = { enabled: true, batches: Number(report.batches || 0), records: Number(report.records || 0),
+                dropped: Number(report.dropped || 0), bytes: Number(report.bytes || 0), writeMs: Number(report.writeMs || 0), rotations: Number(report.rotations || 0), fileBytes: Number(report.fileBytes || 0) };
+            return; }
         if (message.type === 'moved' || message.type === 'flushed' || message.type === 'stopped') {
-            counters.moved += Number(message.moved || 0);
-            counters.failed += Number(message.failed || 0);
+            if (PopulationConfig.developerDiagnostics) counters.moved += Number(message.moved || 0);
+            if (PopulationConfig.developerDiagnostics) counters.failed += Number(message.failed || 0);
             reportMoved(Number(message.upTo || 0));
         }
         if (message.type === 'errors' || message.type === 'error') {
-            counters.errors += 1;
+            if (PopulationConfig.developerDiagnostics) counters.errors += 1;
             counters.lastError = message.error || (message.errors || []).join('; ');
             utils.infoWarn('DB', 'history transfer: %s', counters.lastError);
         }
@@ -111,9 +131,10 @@ function spawn() {
     const failed = (error) => {
         if (instance !== worker) return;
         worker = null;
+        if (config?.diagnostics) Diagnostics.disconnect();
         rejectPending(error);
         if (stopping || !config) return;
-        counters.restarts += 1;
+        if (PopulationConfig.developerDiagnostics) counters.restarts += 1;
         utils.infoWarn('DB', 'history thread stopped (%s); restarting', error.message);
         restartTimer = setTimeout(() => {
             restartTimer = null;
@@ -131,6 +152,23 @@ function spawn() {
 function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
     stopping = false;
     config = { worldPath, historyPath, onMoved, transferMs };
+    if (PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics) {
+        // No full config/path/account data in the developer header.
+        let build = 'unknown';
+        try {
+            let git = path.resolve(__dirname, '../.git');
+            if (fs.statSync(git).isFile()) git = path.resolve(path.dirname(git), fs.readFileSync(git, 'utf8').trim().replace(/^gitdir: /, ''));
+            const head = fs.readFileSync(path.join(git, 'HEAD'), 'utf8').trim();
+            const common = fs.existsSync(path.join(git, 'commondir'))
+                ? path.resolve(git, fs.readFileSync(path.join(git, 'commondir'), 'utf8').trim()) : git;
+            build = head.startsWith('ref: ') ? fs.readFileSync(path.join(common, head.slice(5)), 'utf8').trim() : head;
+        } catch { /* An exported build need not have Git metadata. */ }
+        config.diagnostics = { build: /^[0-9a-f]{40}$/.test(build) ? build : 'unknown',
+            world: worldToken.slice(0, 96), run: require('node:crypto').randomUUID(),
+            rate: String(process.env.L2NODE_PROGRESSION_RATE || 'config').slice(0, 16),
+            config: { population: PopulationConfig.maxPlayingPopulation, honestTravel: PopulationConfig.coldHonestTravel,
+                staticShotsDisabled: PopulationConfig.staticShotsDisabled, workerHeapMb: PopulationConfig.coldWorkerHeapMb } };
+    }
     counters.upTo = 0;
     reader = new DatabaseSync(historyPath, { readOnly: true, timeout: 5000 });
     spawn();
@@ -151,7 +189,7 @@ function request(type, timeoutMs) {
 // Resolves once every outbox row committed before the call is in the history
 // file. Readers call it first, so they see what the world already committed.
 function flush() {
-    counters.flushes += 1;
+    if (PopulationConfig.developerDiagnostics) counters.flushes += 1;
     return request('flush', FLUSH_TIMEOUT_MS);
 }
 
@@ -162,6 +200,13 @@ async function stop() {
     clearTimeout(restartTimer);
     restartTimer = null;
     stopping = true;
+    if (config.diagnostics) {
+        const deadline = Date.now() + 500;
+        while ((Diagnostics.stats().queued || Diagnostics.stats().inFlight) && Date.now() < deadline)
+            await new Promise(resolve => setTimeout(resolve, 10));
+        const left = Diagnostics.stats(); Diagnostics.stop();
+        if (left.queued || left.inFlight) utils.infoWarn('DB', 'economy diagnostics stop dropped %d pending records', left.queued + left.inFlight);
+    }
     let upTo = counters.upTo;
     if (worker) {
         try {
@@ -192,7 +237,9 @@ function one(sql, params = []) {
 }
 
 function stats() {
-    return { path: config?.historyPath || null, running: !!worker, ...counters };
+    if (!PopulationConfig.developerDiagnostics) return { path: config?.historyPath || null, running: !!worker, upTo: counters.upTo, diagnostics: { enabled: false } };
+    return { path: config?.historyPath || null, running: !!worker, ...counters,
+        ...(PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics ? { economyDiagnostics: { ...Diagnostics.stats(), writer: writerTelemetry } } : {}) };
 }
 
 module.exports = { all, flush, one, prepare, start, stats, stop };

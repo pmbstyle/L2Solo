@@ -1,13 +1,10 @@
 // A fresh price estimate from the indexed board, with a stable personal
 // error for (bot, item). There is no saved per-item price book: observations
 // belong to the author's open board line, and own experience to a counter.
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const TendencyRoll = require('../AI/TendencyRoll');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
-const DataCache = invoke('GameServer/DataCache');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
-const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 
 const S0 = 0.6;
 const K_MAX = 60;
@@ -28,84 +25,23 @@ function median(values) {
     return sorted[Math.floor(sorted.length / 2)];
 }
 
-function template(selfId) {
-    return ItemTemplateIndex.find(DataCache.items, Number(selfId)) || null;
-}
-
-// What a crafter could pay: for a material, the most one unit is worth in a
-// recipe that uses it (the margin with the other materials at their supply
-// cost, per unit of it); for a recipe, the margin of one craft. The author's
-// margin form (WealthCraftPolicy.craftMargin); kept an hour like the first
-// price. null when no recipe pays.
-let recipesByMaterial = null;
-const demandCache = new Map();
-const DEMAND_CACHE_MS = 60 * 60 * 1000;
-function demandValue(selfId, timestamp = Date.now()) {
-    const id = Number(selfId);
-    const kept = demandCache.get(id);
-    if (kept && timestamp - kept.at < DEMAND_CACHE_MS && timestamp >= kept.at) return kept.value;
-    const WealthCraftPolicy = invoke('GameServer/Bot/Economy/WealthCraftPolicy');
-    if (!recipesByMaterial) {
-        recipesByMaterial = new Map();
-        for (const recipe of Object.values(C4RecipeItems.loadRecipeItems())) {
-            if (recipe.type !== 'dwarven') continue;
-            for (const material of recipe.materials || []) {
-                const key = Number(material.selfId);
-                if (!recipesByMaterial.has(key)) recipesByMaterial.set(key, []);
-                recipesByMaterial.get(key).push(recipe);
-            }
-        }
-    }
-    const basketWithout = (recipe, skip) => {
-        let cost = 0;
-        for (const material of recipe.materials || []) {
-            if (Number(material.selfId) === skip) continue;
-            const unit = supplyCost(material.selfId, timestamp);
-            if (!(unit > 0)) return null;
-            cost += unit * Number(material.amount || 0);
-        }
-        return cost;
-    };
-    let value = null;
-    const ownRecipe = C4RecipeItems.resolve(id);
-    if (ownRecipe && ownRecipe.type === 'dwarven' && String(template(id)?.template?.kind || '').startsWith('Other.Recipe')) {
-        const product = productValue(ownRecipe.productId, timestamp);
-        const basket = basketWithout(ownRecipe, 0);
-        if (product > 0 && basket !== null) value = WealthCraftPolicy.craftMargin(ownRecipe, product, basket);
-    }
-    for (const recipe of recipesByMaterial.get(id) || []) {
-        const product = productValue(recipe.productId, timestamp);
-        const others = basketWithout(recipe, id);
-        const amount = (recipe.materials.find((material) => Number(material.selfId) === id)?.amount) || 0;
-        if (!(product > 0) || others === null || !(amount > 0)) continue;
-        const unit = WealthCraftPolicy.craftMargin(recipe, product, others) / amount;
-        if (value === null || unit > value) value = unit;
-    }
-    value = value > 0 ? value : null;
-    demandCache.set(id, { at: timestamp, value });
+// ARCH-NOTE: the previous one-hour, item-only cache inferred willingness
+// from every recipe with NPC/first-price inputs and no owner, finite exit,
+// labour, funding or source identity. A completed prepared owner calculation
+// may supply its scalar ceiling; absent preparation is unknown, not a second
+// recipe search or speculative prior. Derived usefulness is not a trade.
+function demandValue(selfId, context = {}) {
+    const source = context?.derivedDemandValue;
+    const prepared = typeof source === 'function' ? source(Number(selfId))
+        : source instanceof Map ? source.get(Number(selfId)) : source;
+    const declared = prepared && typeof prepared === 'object'
+        ? prepared.known === true && prepared.supported !== false
+        : context?.derivedDemandSupported === true;
+    const value = Number(prepared && typeof prepared === 'object' ? prepared.value : prepared);
+    if (!declared || !(value > 0) || !Number.isFinite(value)) return null;
+    if (prepared && typeof prepared === 'object' && prepared.ownerId !== undefined
+        && Number(prepared.ownerId) !== Number(context.characterId)) return null;
     return value;
-}
-
-function npcPrice(selfId) {
-    const price = invoke('GameServer/Bot/Economy/BotMarketPricing').npcPrice({ selfId });
-    return Number.isFinite(price) ? price : null;
-}
-
-// What an input costs a crafter: the NPC price, else its first price.
-function supplyCost(selfId, timestamp) {
-    return npcPrice(selfId) ?? MarketCounters.firstPrice(selfId, timestamp);
-}
-
-// What a product fetches: its deals, else the NPC price, else its first
-// price x its counter's index.
-function productValue(selfId, timestamp) {
-    const deals = MarketCounters.itemDeals(selfId).prices;
-    if (deals.length) return median(deals);
-    const npc = npcPrice(selfId);
-    if (npc !== null) return npc;
-    const first = MarketCounters.firstPrice(selfId, timestamp);
-    const index = counterIndex(selfId, timestamp);
-    return first > 0 ? first * Math.exp(index ?? 0) : null;
 }
 
 // Public source weights stay unchanged; every choice reads them again.
@@ -122,7 +58,7 @@ function prior(selfId, ctx) {
     const first = MarketCounters.firstPrice(id, ctx.timestamp);
     const index = counterIndex(id, ctx.timestamp);
     if (first > 0 && index !== null) observations.push([Math.log(first) + index, 0.5]);
-    const demand = demandValue(id, ctx.timestamp);
+    const demand = demandValue(id, ctx);
     if (demand > 0) observations.push([Math.log(demand), 0.3]);
     if (first > 0) observations.push([Math.log(first), 0.3]);
     if (!observations.length) return null;
@@ -179,8 +115,7 @@ function lineObservations(line, belief, ctx) {
 }
 
 function resetCaches() {
-    demandCache.clear();
-    recipesByMaterial = null;
+    // No retained owner-blind derived demand. Compatibility lifecycle hook.
 }
 
 module.exports = { S0, K_MAX, sigma, errorOf, prior, learn, lineObservations, demandValue, resetCaches };

@@ -139,7 +139,7 @@ function channels(profile, target) {
     const result = [];
     if (physical) result.push({ weight: 70 * positive(profile.pAtk) / positive(target.basePDef || target.pDef)
         * positive(profile.atkSpd || 300) / 500,
-    modifier: modifier(target, {}, false, kind) });
+    modifier: modifier(target, {}, false, kind), magic: false });
     for (const skill of profile.skills || []) {
         const semantic = skill.semantic || Rules.resolve(skill);
         const magic = skill.spell === true;
@@ -159,7 +159,7 @@ function channels(profile, target) {
         const hitDamage = magic
             ? 91 * Math.sqrt(positive(profile.mAtk)) * power / positive(target.baseMDef || target.mDef)
             : 70 * (positive(profile.pAtk) + power) / positive(target.basePDef || target.pDef);
-        result.push({ weight, modifier: modifier(target, semantic, magic, kind),
+        result.push({ weight, modifier: modifier(target, semantic, magic, kind), magic,
             survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
             damageBudget: number(skill.mp, 0) > 0
                 ? Math.floor(number(profile.maxMp, 0) / skill.mp) * hitDamage : Infinity });
@@ -197,6 +197,76 @@ function soloSurvival(profiles, target, minimum = 1.5) {
     const survivalRatio = damage / target.maxHp;
     return { eligible: survivalRatio >= minimum, survivalRatio,
         reason: survivalRatio >= minimum ? 'solo_survival_ready' : 'insufficient_survival_margin' };
+}
+
+function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {
+    const survival = soloSurvival(profiles, target);
+    if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
+        return { ...survival, eligible: false, reason: 'recovery_level' };
+    }
+    return survival.survivalRatio === null ? { ...evaluate(profiles, target), survivalRatio: null } : survival;
+}
+
+// An optimistic damage bound, not another survival gate. Compile skills once
+// against unit defenses and an undead target, then keep at most three numeric
+// attack envelopes per profile. Separate maxima for rate/budget and the best
+// vulnerability can only increase damage, so an exact-safe mob stays eligible.
+function soloSpotUpperBound(profiles) {
+    if (!profiles?.length || profiles.some(p => p.survivalKnown === false
+        || !Number.isFinite(p.maxHp) || !(p.maxHp > 0) || !Number.isFinite(p.pDef) || !(p.pDef > 0))) {
+        return () => true;
+    }
+    const lifetimeNumerator = Math.max(...profiles.map(p => p.maxHp * p.pDef)) * 500 / 70;
+    if (!Number.isFinite(lifetimeNumerator)) return () => true;
+    const neutral = { basePDef: 1, pDef: 1, baseMDef: 1, mDef: 1, undead: true };
+    const bounds = profiles.map(profile => {
+        const bound = { continuous: 0, physicalRate: 0, physicalBudget: 0, magicRate: 0, magicBudget: 0 };
+        for (const attack of channels(profile, neutral)) {
+            const rate = attack.survivalWeight ?? attack.weight;
+            const budget = attack.damageBudget ?? Infinity;
+            if (!attack.magic && budget === Infinity) bound.continuous = Math.max(bound.continuous, rate);
+            else {
+                const prefix = attack.magic ? 'magic' : 'physical';
+                bound[`${prefix}Rate`] = Math.max(bound[`${prefix}Rate`], rate);
+                bound[`${prefix}Budget`] = Math.max(bound[`${prefix}Budget`], budget);
+            }
+        }
+        return bound;
+    });
+    // Search-local, capped at 256 species (~8 KiB of pairs); never retained on
+    // a bot, a shared verdict fingerprint or a saved combat projection.
+    const seen = new Map();
+    function maybeSafe(selfId) {
+        if (seen.has(selfId)) return seen.get(selfId);
+        const npc = npcTemplate(selfId);
+        if (!npc || !huntingTargetPolicy().canHunt(npc)) return null;
+        const target = coldCombatProfile().npcCombatStats(npc);
+        if (!(target?.maxHp > 0) || !(target.pAtk > 0)
+            || !(target.basePDef > 0) || !(target.baseMDef > 0)) return true;
+        const seconds = lifetimeNumerator / (target.pAtk * positive(target.atkSpd || 253));
+        let vulnerability = 1;
+        for (const stat in target.vulnerabilities) {
+            vulnerability = Math.max(vulnerability, number(target.vulnerabilities[stat]));
+        }
+        const damage = bounds.reduce((sum, bound) => sum + Math.max(
+            bound.continuous * seconds / positive(target.pDef),
+            Math.min(bound.physicalRate * seconds, bound.physicalBudget) / positive(target.pDef),
+            Math.min(bound.magicRate * seconds, bound.magicBudget) / positive(target.mDef)) * vulnerability, 0);
+        const allowed = damage / target.maxHp >= 1.5;
+        if (seen.size < 256) seen.set(selfId, allowed);
+        return allowed;
+    }
+    return spot => {
+        let total = 0, safe = 0;
+        for (const entry of spot.npcEntries || []) {
+            const allowed = maybeSafe(Number(entry.selfId));
+            if (allowed === null) continue;
+            const weight = Math.max(1, number(entry.count));
+            total += weight;
+            if (allowed) safe += weight;
+        }
+        return !total || safe / total >= 0.6;
+    };
 }
 
 function stateProfiles(state, options = {}) {
@@ -300,9 +370,10 @@ function npcVerdict(verdicts, selfId, options) {
     if (npc && huntingTargetPolicy().canHunt(npc)) {
         const target = coldCombatProfile().npcCombatStats(npc);
         const match = evaluate(options.profiles, target);
-        const survival = options.soloSafety ? soloSurvival(options.profiles, target) : { eligible: true };
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = match.eligible && survival.eligible && withinRecoveryLevel;
+        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, target,
+            { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible
+            : match.eligible && withinRecoveryLevel;
         // Read-only verdicts are shared. Mixed-attack and party profiles give
         // continuous efficiencies, so the pool is cleared at a bound; verdicts
         // already handed out stay valid.
@@ -362,5 +433,5 @@ function spotMatchup(spot, profiles, options = {}) {
 }
 
 module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
-    profileStats, skillStats, evaluate, soloSurvival, stateProfiles, spotMatchup,
+    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup,
     sharedVerdictProfiles: () => sharedVerdicts.size, uniqueVerdictCount: () => uniqueVerdicts.size };

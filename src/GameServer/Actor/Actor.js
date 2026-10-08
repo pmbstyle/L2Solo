@@ -14,7 +14,10 @@ class Actor extends ActorModel {
         // Local
         this.skillset   = new Skillset();
         this.backpack   = new Backpack(data);
-        this.backpack.onInventoryChange = () => require('../Clan/ClanReviewEvents').changed(this.fetchClanId(), 'inventory');
+        this.backpack.onInventoryChange = selfId => {
+            const Events = require('../Clan/ClanReviewEvents'), clanId = this.fetchClanId();
+            if (Events.tracks(clanId, selfId)) Events.changed(clanId, 'member_item');
+        };
         this.attack     = new Attack();
         this.automation = new Automation();
         this.skillReuseUntil = new Map();

@@ -35,7 +35,7 @@ function checkpoint(message = {}) {
             mode: 'passive',
             beforeBytes,
             afterBytes: beforeBytes,
-            durationMs: 0,
+            ...(workerData?.developerDiagnostics ? { durationMs: 0 } : {}),
             busy: 0,
             logFrames: 0,
             checkpointedFrames: 0,
@@ -49,7 +49,7 @@ function checkpoint(message = {}) {
     if (resetMode) {
         connection.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.min(250, Number(message.busyTimeoutMs) || 50))};`);
     }
-    const startedAt = process.hrtime.bigint();
+    const startedAt = workerData?.developerDiagnostics ? process.hrtime.bigint() : null;
     try {
         const row = connection.prepare(`PRAGMA wal_checkpoint(${mode})`).get() || {};
         const logFrames = Math.max(0, Number(row.log || 0));
@@ -59,7 +59,7 @@ function checkpoint(message = {}) {
             mode: mode.toLowerCase(),
             beforeBytes,
             afterBytes: walBytes(),
-            durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6,
+            ...(workerData?.developerDiagnostics ? { durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6 } : {}),
             busy: Math.max(0, Number(row.busy || 0)),
             logFrames,
             checkpointedFrames: Math.max(0, Number(row.checkpointed || 0)),

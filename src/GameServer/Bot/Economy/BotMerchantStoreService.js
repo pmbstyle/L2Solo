@@ -1,4 +1,5 @@
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
+const { raiseDecision } = require('../AI/DecisionEvents');
 const World = invoke('GameServer/World/World');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PARTY_WITHDRAWAL_WAIT_MS = 10000;
@@ -118,6 +119,7 @@ async function withdrawForParty(session) {
     const broadcastWarning = safelyNotify('party withdrawal', () => notifyClosed(session, actor));
 
     session.plan = 'hunting';
+    raiseDecision(session, 'town');
     session.merchantStoreMutation = false;
 
     return {

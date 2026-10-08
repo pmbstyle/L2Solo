@@ -1,7 +1,8 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
+const { isMainThread } = require('node:worker_threads');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
-const WORKER_SAFETY_INTERVAL_MS = 30 * 60000;
 const BackgroundPartyLifecycle = require('./BackgroundPartyLifecycle');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdStateDelta = require('./ColdStateDelta');
@@ -269,8 +270,9 @@ function lifecycleKind(state = {}, context = {}) {
         const price = Math.max(0, Number(plan.market?.price || 0));
         const reserve = Math.max(0, Number(plan.market?.reserve || 0));
         if (state.activity !== 'hunting'
-            || (price > 0 && PurchaseFunding.shortfall(state, price, reserve,
-                PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow)) === 0)) return 'command';
+            || (price > 0 && (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow))
+                : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, context.buyOrderEscrow),
+                    { itemId: plan.target?.selfId })) >= price)) return 'command';
     }
     if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
@@ -338,7 +340,9 @@ function compactProposal(proposal = {}, includeInventory = true) {
         result: {
             events: Array.isArray(result.events) ? result.events : [],
             ...(result.memoryEvents ? { memoryEvents: result.memoryEvents } : {}),
-            debug: result.debug || {}
+            debug: result.debug || {},
+            ...(DiagnosticConfig.developerDiagnostics === true && result.consumptionDiagnostics
+                ? { consumptionDiagnostics: result.consumptionDiagnostics } : {})
         }
     };
 }
@@ -346,15 +350,22 @@ function compactProposal(proposal = {}, includeInventory = true) {
 // Stable membership of the same authoritative states, not another state
 // snapshot or due queue. Producer writes keep traversal O(1) under churn.
 class RetainedStateMap extends Map {
-    constructor(sources) {
+    // ARCH-NOTE: ALT: Authorized M6 sharing keeps only frozen exact primitive
+    // skill DTOs after native canonical publication. Per-owner mutable arrays
+    // and protocol fields remain unchanged; 4096 records bound the Worker pool.
+    // Delete/fence/clear synchronously retire captured acquired-slot ledgers.
+    // Scoped native 400/1000 saved-wire proof saves 6.432/7.647 KiB per owner,
+    // including pool/owner headers and backing; whole default 256 fit is separate.
+    #skillDtos;
+    #sharingFailures = 0;
+
+    constructor(sources, shotIndex = null) {
         super();
+        this.shotIndex = shotIndex;
+        this.#skillDtos = require('worker_threads').isMainThread ? null
+            : new (require('./SkillDtoInterner').SkillDtoInterner)();
         Object.defineProperty(this, 'locationIndex', { value: sources.index, enumerable: true });
         this.sources = sources;
-        this.safetyNodes = new Map();
-        this.safetyHead = null;
-        this.safetyTail = null;
-        this.safetySequence = 0;
-        this.safetyCursor = null;
     }
 
     get(id) { return this.sources.get(id); }
@@ -370,64 +381,64 @@ class RetainedStateMap extends Map {
     }
 
     set(id, entry) {
-        const present = this.has(id);
-        this.sources.publish(id, entry);
-        if (!present) {
-            const node = { id, sequence: ++this.safetySequence, previous: this.safetyTail, next: null };
-            if (this.safetyTail) this.safetyTail.next = node;
-            else this.safetyHead = node;
-            this.safetyTail = node;
-            this.safetyNodes.set(id, node);
+        const current = this.get(id);
+        if (current?.state !== entry.state && typeof invoke === 'function') {
+            invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'state_publication');
+        }
+        this.shotIndex?.update(entry.state);
+        try { this.sources.publish(id, entry); }
+        catch (error) {
+            // Preserve native publication/error semantics, including a publisher
+            // that throws after setting its input. Such an input is never interned.
+            if (this.#skillDtos) {
+                try { if (this.get(id)?.state !== current?.state) this.#skillDtos.remove(id); }
+                catch (sharingError) {
+                    this.#sharingFailures++;
+                    try { global.utils?.infoWarn?.('ColdWorker', 'skill sharing release failed for %s: %s', id,
+                        sharingError?.message || sharingError); } catch (_) { /* preserve native publication error */ }
+                }
+            }
+            throw error;
+        }
+        if (this.#skillDtos) {
+            let staged;
+            try {
+                const state = this.get(id)?.state;
+                staged = this.#skillDtos.prepare(id, state?.phase === 'cold' ? state.stats?.coldCombat?.skills : null);
+                this.#skillDtos.commit(staged);
+            } catch (error) {
+                this.#sharingFailures++;
+                let rollbackFailure;
+                try { if (staged) this.#skillDtos.rollback(staged); } catch (failure) { rollbackFailure = failure; }
+                try { if (this.get(id)?.state !== current?.state) this.#skillDtos.remove(id); }
+                catch (failure) { rollbackFailure ||= failure; }
+                try { global.utils?.infoWarn?.('ColdWorker', 'skill sharing skipped for %s: %s; rollback: %s', id,
+                    error?.message || error, rollbackFailure?.message || rollbackFailure || 'ok'); }
+                catch (_) { /* sharing does not change native publication success */ }
+            }
         }
         return this;
     }
-
     delete(id) {
+        this.#skillDtos?.remove(id);
         const current = this.get(id);
-        if (!current || !this.sources.remove(id, current.state)) return false;
-        const node = this.safetyNodes.get(id);
-        if (node) {
-            if (this.safetyCursor?.next === node) this.safetyCursor.next = node.next;
-            if (node.previous) node.previous.next = node.next;
-            else this.safetyHead = node.next;
-            if (node.next) node.next.previous = node.previous;
-            else this.safetyTail = node.previous;
-            this.safetyNodes.delete(id);
-            node.previous = null;
-            node.next = null;
-        }
-        return true;
+        if (!current) return false;
+        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
+        this.shotIndex?.remove(id);
+        return this.sources.remove(id, current.state);
     }
-
     clear() {
-        this.sources.clear();
-        this.safetyNodes.clear();
-        this.safetyHead = null;
-        this.safetyTail = null;
-        this.cancelSafetyCycle();
-    }
-
-    startSafetyCycle() {
-        this.safetyCursor = { next: this.safetyHead, through: this.safetyTail?.sequence || 0 };
-    }
-
-    cancelSafetyCycle() {
-        this.safetyCursor = null;
-    }
-
-    inspectSafetyPage(limit, visit) {
-        let inspected = 0;
-        while (this.safetyCursor?.next
-            && this.safetyCursor.next.sequence <= this.safetyCursor.through && inspected < limit) {
-            const node = this.safetyCursor.next;
-            this.safetyCursor.next = node.next;
-            inspected++;
-            visit(node.id);
+        this.#skillDtos?.clear();
+        for (const id of this.keys()) {
+            if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
+            this.shotIndex?.remove(id);
         }
-        const done = !this.safetyCursor?.next || this.safetyCursor.next.sequence > this.safetyCursor.through;
-        if (done) this.cancelSafetyCycle();
-        return { inspected, done };
+        this.sources.clear();
     }
+
+    skillDtoSize() { return { ...(this.#skillDtos?.size() || { owners: 0, unique: 0, buckets: 0, acquiredSlots: 0 }),
+        sharingFailures: this.#sharingFailures }; }
+
 }
 
 class ColdSimulationKernel {
@@ -435,6 +446,9 @@ class ColdSimulationKernel {
         if (typeof options.resolveSolo !== 'function') throw new Error('resolveSolo is required');
         this.resolveSolo = options.resolveSolo;
         this.resolveParty = typeof options.resolveParty === 'function' ? options.resolveParty : null;
+        this.planPartyRequirement = options.planPartyRequirement || null;
+        // Numeric member ids only, bounded by active party rosters (<=9 each); dropped at completion, release or dissolve.
+        this.partyRequirementProgress = new Map();
         this.planLifecycle = typeof options.planLifecycle === 'function' ? options.planLifecycle : null;
         this.requiresWeaponBridge = typeof options.requiresWeaponBridge === 'function'
             ? options.requiresWeaponBridge
@@ -459,7 +473,12 @@ class ColdSimulationKernel {
             this.partyMinSize,
             Math.min(this.maxBatch, Number(options.maxAtomicPartySize) || 5)
         );
-        this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()));
+        // ARCH-NOTE: M6: the matched 20m native snapshot attributes 78.590
+        // KiB/bot to canonical states (d05b2f66: 78.308; task estimate: 66).
+        // These are the original shared state objects. Shrinking their shape
+        // or the coldCombat packet requires a shared-state task, not another
+        // detached copy or an unmeasured fixed-memory subtraction.
+        this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()), options.shotIndex);
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
         this.interactionMemory.playingHours = id => this.states.get(id)?.state?.stats?.playedHours;
@@ -479,6 +498,9 @@ class ColdSimulationKernel {
         this.decisionEvents = null;
         this.buyerEvents = null;
         this.buyerWakeups = new Set();
+        // Own line observations: <=8 numeric {deals, at} rows per claimed bot.
+        // Release, hot handoff/remove and shutdown discard them; never saved.
+        this.lookSeen = new Map();
         this.nextAlarmToken = 1;
         this.inFlight = new Map();
         this.pendingReleases = new Map();
@@ -488,13 +510,6 @@ class ColdSimulationKernel {
         this.commanding = new Set();
         this.commandStartedAt = new Map();
         this.nextCommandRequest = 1;
-        this.lastOrphanSweepAt = 0;
-        this.orphanSweepIntervalMs = Math.max(WORKER_SAFETY_INTERVAL_MS,
-            Number.isSafeInteger(options.orphanSweepIntervalMs) ? options.orphanSweepIntervalMs : WORKER_SAFETY_INTERVAL_MS);
-        this.orphanRecoveryLimit = Math.max(1, Math.min(64, Math.trunc(Number(options.orphanRecoveryLimit)) || 64));
-        this.safetyStartedAt = null;
-        this.safetyAlarmToken = null;
-        this.safetyGeneration = 0;
         this.paused = false;
         this.stopping = false;
         this.resolveChain = Promise.resolve();
@@ -527,7 +542,6 @@ class ColdSimulationKernel {
             lastResolveMs: 0,
             maxResolveMs: 0
         };
-        this.armSafetyCycle(this.now() + this.orphanSweepIntervalMs);
     }
 
     upsert(entry = {}) {
@@ -536,6 +550,9 @@ class ColdSimulationKernel {
         if (!characterId) return false;
         const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
         const current = this.states.get(characterId);
+        if (entry.context?.requirementRefresh === false) {
+            this.partyRequirementProgress.delete(String(entry.context?.party?.partyId || current?.context?.party?.partyId || ''));
+        }
         let memoryChanged = false;
         if (entry.context?.interactionMemory) {
             if (entry.context.interactionMemory.ownerId !== characterId) throw new Error('interaction memory: wrong snapshot owner');
@@ -573,7 +590,7 @@ class ColdSimulationKernel {
             this.occupancy.update(state);
             this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
             if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
-            this.stats.snapshots += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
@@ -585,7 +602,7 @@ class ColdSimulationKernel {
         this.occupancy.update(state);
         this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
         if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
-        this.stats.snapshots += 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId);
@@ -600,15 +617,35 @@ class ColdSimulationKernel {
     remove(characterId) {
         const id = Number(characterId);
         this.pendingReleases.delete(id);
+        // Standalone kernels cannot have game economy entries before Global loads.
+        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
+        if (!isMainThread && typeof invoke === 'function') invoke('GameServer/Bot/AI/BotPersona').forget(id);
         const current = this.states.get(id);
+        const partyId = String(this.inFlight.get(id)?.partyId || this.claimAttempts.get(id)?.partyId
+            || current?.context?.party?.partyId || current?.state?.party?.partyId || '');
+        if (partyId && typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetGroup(partyId);
+        this.partyRequirementProgress.delete(partyId);
+        const run = this.partyRuns.get(partyId);
+        if (run?.purpose.memberIds.includes(id)) {
+            // Retire the captured party before any pending resolver continues.
+            // Its remaining native leases use the existing release/ACK path.
+            this.partyRuns.delete(partyId);
+            for (const memberId of run.purpose.memberIds) this.cancelClaimAttempt(memberId);
+            this.requestRelease([...run.grants.values()].filter(token => token.characterId !== id)
+                .map(token => ({ token, reason: 'party_member_removed' })));
+        }
+        this.inFlight.delete(id);
+        this.dirty.delete(id);
         const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id);
+        this.lookSeen.delete(id);
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.interactionMemory.forget(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
+        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         this.scheduleTokens.delete(id);
         this.cancelClaimAttempt(id);
         this.claiming.delete(id);
@@ -619,6 +656,9 @@ class ColdSimulationKernel {
 
     schedule(characterId, version, dueAt) {
         const id = Number(characterId);
+        // Replacing a token also removes its actual indexed node; otherwise a
+        // long future deadline keeps every superseded token until it is due.
+        this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         const token = this.nextScheduleToken++;
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Number(dueAt || this.now()), scheduleToken: token };
@@ -626,13 +666,29 @@ class ColdSimulationKernel {
         this.heap.push(heapEntry);
     }
 
+    storeSizes() {
+        const skillDtos = this.states.skillDtoSize();
+        return {
+            skillDtoOwners: skillDtos.owners, skillDtoRows: skillDtos.unique,
+            skillDtoAcquisitions: skillDtos.acquiredSlots, skillDtoSharingFailures: skillDtos.sharingFailures,
+            states: this.states.size, contexts: this.states.size,
+            locationStates: this.states.locationIndex.sourceSize('state'),
+            occupancy: this.occupancy.size().owners,
+            scheduleTokens: this.scheduleTokens.size, ownerHeapNodes: this.heap.size - this.alarms.size,
+            claiming: this.claiming.size, claimStartedAt: this.claimStartedAt.size, claimAttempts: this.claimAttempts.size,
+            inFlight: this.inFlight.size, dirty: this.dirty.size, pendingReleases: this.pendingReleases.size,
+            commanding: this.commanding.size, commandStartedAt: this.commandStartedAt.size,
+            partyRuns: this.partyRuns.size, partyRequirementProgress: this.partyRequirementProgress.size,
+            buyerWakeups: this.buyerWakeups.size, lookSeen: this.lookSeen.size
+        };
+    }
+
     armAlarm(kind, key, dueAt, options = {}) {
-        if (!['claim_ack', 'worker_safety'].includes(kind) || options.operational !== true) throw new Error('unsupported_alarm');
+        if (kind !== 'claim_ack' || options.operational !== true) throw new Error('unsupported_alarm');
         if (!Number.isSafeInteger(dueAt) || dueAt < 0) throw new RangeError('invalid_alarm_deadline');
         const id = Number(options.characterId);
         if (typeof options.stamp !== 'string' || !options.stamp || Number(key) !== id
-            || (kind === 'claim_ack' && (!Number.isSafeInteger(id) || id <= 0 || !this.claiming.has(id)))
-            || (kind === 'worker_safety' && (id !== 0 || this.stopping || this.safetyStartedAt !== null))) {
+            || (kind === 'claim_ack' && (!Number.isSafeInteger(id) || id <= 0 || !this.claiming.has(id)))) {
             throw new Error('invalid_alarm_owner');
         }
         const alarmKey = `${kind}:${id}`;
@@ -716,27 +772,11 @@ class ColdSimulationKernel {
         this.claimStartedAt.delete(id);
     }
 
-    armSafetyCycle(dueAt) {
-        if (this.stopping || this.safetyStartedAt !== null) return false;
-        this.safetyAlarmToken = this.armAlarm('worker_safety', 0, dueAt,
-            { stamp: `safety:${++this.safetyGeneration}`, characterId: 0, operational: true });
-        return this.safetyAlarmToken;
-    }
-
     drainOperationalAlarms(timestamp = this.now()) {
         let fired = 0;
         while (this.earliestOperationalAlarm && this.earliestOperationalAlarm.dueAt <= timestamp) {
             const entry = this.earliestOperationalAlarm;
             this.cancelAlarm(entry.alarmKind, entry.key, entry.alarmToken);
-            if (entry.alarmKind === 'worker_safety') {
-                if (this.stopping || this.safetyStartedAt !== null || entry.alarmToken !== this.safetyAlarmToken) continue;
-                this.safetyAlarmToken = null;
-                this.safetyStartedAt = timestamp;
-                this.lastOrphanSweepAt = timestamp;
-                this.states.startSafetyCycle();
-                fired++;
-                continue;
-            }
             const id = entry.characterId;
             if (this.claimAttempts.get(id)?.requestId !== entry.stamp || !this.claiming.has(id)) continue;
             const run = [...this.partyRuns.values()].find(party => party.purpose.memberIds.includes(id));
@@ -744,11 +784,11 @@ class ColdSimulationKernel {
                 run.purpose.memberIds.forEach(memberId => this.cancelClaimAttempt(memberId));
                 this.partyRuns.delete(String(run.purpose.partyId));
                 this.requeue(run.purpose.leaderId, timestamp + 1000);
-                this.stats.claimRecoveries += run.purpose.memberIds.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.claimRecoveries += run.purpose.memberIds.length);
             } else {
                 this.cancelClaimAttempt(id);
                 this.requeue(id, timestamp + 1000);
-                this.stats.claimRecoveries += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.claimRecoveries += 1);
             }
             fired++;
         }
@@ -920,7 +960,7 @@ class ColdSimulationKernel {
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     this.partyCapacityBlocked = true;
-                    this.stats.partyCapacityDeferrals += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.stats.partyCapacityDeferrals += 1);
                     if (candidateMemberIds.length <= this.maxAtomicPartySize) {
                         // Let current owners drain so the oldest valid party
                         // gets its bounded atomic turn even under player limits.
@@ -943,7 +983,7 @@ class ColdSimulationKernel {
                     this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
-                if (atomicCapacityBurst) this.stats.partyCapacityBursts += 1;
+                if (atomicCapacityBurst) DiagnosticConfig.developerDiagnostics && (this.stats.partyCapacityBursts += 1);
                 const purpose = {
                     kind: 'party',
                     partyId: party.partyId,
@@ -953,6 +993,7 @@ class ColdSimulationKernel {
                 };
                 this.partyRuns.set(String(party.partyId), {
                     purpose,
+                    requirementRefresh: current.context.requirementRefresh === true,
                     party,
                     members: partyMembers,
                     spot: current.context.spot,
@@ -977,7 +1018,7 @@ class ColdSimulationKernel {
                 const attempt = this.beginCommand(id);
                 if (!attempt) continue;
                 commandsSelected += 1;
-                this.stats.commands += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
                 this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id, attempt));
             }
         }
@@ -986,7 +1027,7 @@ class ColdSimulationKernel {
 
     beginCommand(characterId, kind = 'lifecycle') {
         const id = Number(characterId), current = this.states.get(id);
-        if (!Number.isSafeInteger(id) || id <= 0 || !['lifecycle', 'market_review'].includes(kind)
+        if (!Number.isSafeInteger(id) || id <= 0 || kind !== 'lifecycle'
             || this.stopping || !current || current.state.phase !== 'cold' || this.busy(id)
             || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return null;
         const checkpoint = Protocol.commandCheckpoint(current.state);
@@ -1047,13 +1088,14 @@ class ColdSimulationKernel {
                 state: resolveState,
                 spot: current.context.spot || null,
                 pressure: current.context.pressure || {},
-                targetNpcId: Number(current.context.targetNpcId || 0),
+                targetNpcId: Number(current.context.targetNpcId || lifecyclePlan?.targetNpcId ||
+                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0),
                 elapsedMs,
                 rng: deterministicRandom(current.state),
                 timestamp
             });
             if (!this.currentCommand(id, attempt)) return;
-            this.stats.resolved += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
             const sent = this.emit('command_request', {
                 requests: [{
@@ -1075,7 +1117,7 @@ class ColdSimulationKernel {
             }
         } catch (error) {
             if (!this.currentCommand(id, attempt)) return;
-            this.stats.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.cancelCommand(id, attempt);
             if (attempt.marketWakeup) this.buyerWakeups.add(id);
             this.requeue(id, this.now() + 5000);
@@ -1100,41 +1142,22 @@ class ColdSimulationKernel {
                 entry.context?.isPartyLeader && String(entry.context?.party?.partyId || '') === partyId
             ));
             if (leader) this.requeue(leader[0], timestamp + 1000);
-            this.stats.leaseRecoveries += members.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRecoveries += members.length);
         }
         expiredLeases.filter(([, active]) => !active.partyId).forEach(([id]) => {
             this.inFlight.delete(Number(id));
             this.dirty.delete(Number(id));
             this.requeue(Number(id), timestamp + 1000);
-            this.stats.leaseRecoveries += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRecoveries += 1);
         });
-    }
-
-    recoverOrphanedSchedules() {
-        if (this.stopping || this.safetyStartedAt === null) return 0;
-        let recovered = 0;
-        const page = this.states.inspectSafetyPage(this.orphanRecoveryLimit, id => {
-            if (this.stopping || this.busy(id) || this.hasNormalCoverage(id)) return;
-            if (this.ensureScheduled(id)) recovered++;
-        });
-        this.stats.orphanRecoveries += recovered;
-        if (page.done) {
-            const nextDue = this.safetyStartedAt + this.orphanSweepIntervalMs;
-            this.safetyStartedAt = null;
-            // At most one new cycle on the following tick if a long-running
-            // cycle passed this deadline; fresh actual start anchors it.
-            this.armSafetyCycle(nextDue);
-        }
-        return recovered;
     }
 
     tick() {
-        this.stats.loopRuns += 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.loopRuns += 1);
         this.stats.lastLoopAt = this.now();
         const decisionBudget = { remaining: 64 };
         this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
         this.recoverStalled(this.stats.lastLoopAt);
-        this.recoverOrphanedSchedules(this.stats.lastLoopAt);
         if (this.paused || this.stopping) return;
         const capacity = this.maxInFlight - this.claiming.size - this.inFlight.size - this.commanding.size;
         if (capacity <= 0) {
@@ -1147,7 +1170,7 @@ class ColdSimulationKernel {
         const candidates = this.dueCandidates(this.now(), capacity, decisionBudget);
         if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) return;
-        this.stats.selected += candidates.length;
+        DiagnosticConfig.developerDiagnostics && (this.stats.selected += candidates.length);
         const requestId = `claim:${this.nextClaimRequest++}`;
         for (const candidate of candidates) {
             const id = Number(candidate.characterId);
@@ -1205,7 +1228,7 @@ class ColdSimulationKernel {
             const entry = this.states.get(id);
             if (!entry) return;
             this.inFlight.set(id, { grant, state: entry.state, context: entry.context, startedAt: this.now(), claimRequestId: requestId });
-            this.stats.claimed += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.claimed += 1);
             const source = this.captureResolverSource(id);
             this.resolveChain = this.resolveChain.then(() => this.resolveGrant(id, source));
         });
@@ -1234,7 +1257,7 @@ class ColdSimulationKernel {
                     grant: run.grants.get(Number(id)), state, context: {}, startedAt: this.now(), partyId, claimRequestId: requestId
                 });
             });
-            this.stats.claimed += run.purpose.memberIds.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.claimed += run.purpose.memberIds.length);
             const source = this.capturePartyResolverSource(partyId);
             this.resolveChain = this.resolveChain.then(() => this.resolvePartyGrant(partyId, source));
         });
@@ -1297,7 +1320,7 @@ class ColdSimulationKernel {
             const active = this.inFlight.get(id);
             const grant = active?.grant || holder?.grants.get(id);
             if (!holder || !grant) {
-                this.stats.leaseRenewalMisses += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.leaseRenewalMisses += 1);
                 return;
             }
             const leaseUntil = Number(renewal.leaseUntil || 0);
@@ -1308,7 +1331,7 @@ class ColdSimulationKernel {
                 const partyGrant = run?.grants.get(id);
                 if (partyGrant) run.grants.set(id, { ...partyGrant, leaseUntil });
             }
-            this.stats.leaseRenewals += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRenewals += 1);
         });
     }
 
@@ -1378,7 +1401,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1405,7 +1428,7 @@ class ColdSimulationKernel {
                 }, 'party_session_review');
                 published = handled = true;
                 proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1429,7 +1452,7 @@ class ColdSimulationKernel {
                     );
                     published = handled = true;
                     proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                    this.stats.resolved += proposals.length;
+                    DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                     this.flush(null, true);
                     return;
                 }
@@ -1465,7 +1488,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1505,7 +1528,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1564,6 +1587,13 @@ class ColdSimulationKernel {
                     expectedRevision: Number(run.spot.raidAuthorityRevision || 0),
                     revision: Number(run.spot.raidAuthorityRevision || 0) + 1, snapshot };
             }
+            let requirementMs = 0, lastRequirementPlanMs = 0;
+            let requirementProgress = this.partyRequirementProgress.get(String(run.party.partyId));
+            if (run.requirementRefresh && !requirementProgress) {
+                requirementProgress = new Set();
+                this.partyRequirementProgress.set(String(run.party.partyId), requirementProgress);
+            }
+            const memberPlans = [];
             for (const { state, result } of resolution.memberResults || []) {
                 const id = Number(state.characterId);
                 const projection = this.projectResolve
@@ -1578,6 +1608,23 @@ class ColdSimulationKernel {
                         resolvedParty.stats?.partyBreakReason || 'party_dissolved',
                         resolvedParty.stats?.objective
                     );
+                }
+                if (run.requirementRefresh && this.planPartyRequirement && projectedState
+                    && resolvedParty.status !== 'dissolved' && !requirementProgress.has(id)
+                    && requirementMs + lastRequirementPlanMs < 20) {
+                    const planningStarted = performance.now();
+                    const selection = await this.planPartyRequirement({ state: projectedState,
+                        context: this.states.get(id)?.context || {}, timestamp: startedAt });
+                    lastRequirementPlanMs = performance.now() - planningStarted;
+                    requirementMs += lastRequirementPlanMs;
+                    const plan = selection?.acquisitionPlan;
+                    if (require('./PartyRequirementRefresh').acquisitionRequirementKey(state.stats?.equipmentPlan)
+                        !== require('./PartyRequirementRefresh').acquisitionRequirementKey(plan)) {
+                        memberPlans.push({ characterId: id, plan });
+                        if (selection.replanContext?.failure) result.events = [...(result.events || []),
+                            require('./PartyRequirementRefresh').acquisitionFallbackEvent(state, state.stats?.equipmentPlan, selection.replanContext.failure, plan)];
+                    }
+                    requirementProgress.add(id);
                 }
                 const proposal = {
                     proposalId: `${run.grants.get(id)?.leaseId}:${run.grants.get(id)?.revision}`,
@@ -1595,6 +1642,9 @@ class ColdSimulationKernel {
                     // made on its party state, so main decides on the solo one.
                     ...(projection?.economyDecision && resolvedParty.status !== 'dissolved'
                         ? { economyDecision: projection.economyDecision } : {}),
+                    economyEdges: resolvedParty.status === 'dissolved' ? 0 : Number(projection?.economyEdges || 0),
+                    ...(projection?.economyPlan && resolvedParty.status !== 'dissolved'
+                        ? { economyPlan: projection.economyPlan } : {}),
                     result: {
                         ...result,
                         events: [
@@ -1611,10 +1661,28 @@ class ColdSimulationKernel {
                 };
                 proposals.push(proposal);
             }
+            if (run.requirementRefresh) {
+                const leader = proposals.find(proposal => proposal.partyResolution);
+                if (leader) {
+                    leader.partyResolution.memberPlans = memberPlans;
+                    if (run.members.every(member => requirementProgress.has(Number(member.characterId)))) {
+                        leader.partyResolution.requirementRefreshedAt = startedAt;
+                        this.partyRequirementProgress.delete(String(run.party.partyId));
+                    }
+                }
+                if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
+                // Preserve the first-refresh key shape used for byte admission.
+                for (const key of ['partyRequirementRefreshes', 'partyRequirementRefreshMs', 'partyRequirementRefreshMaxMs']) {
+                    if (!Object.hasOwn(this.stats, key)) this.stats[key] = 0;
+                }
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshes = Number(this.stats.partyRequirementRefreshes || 0) + 1);
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMs = requirementMs);
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMaxMs = Math.max(Number(this.stats.partyRequirementRefreshMaxMs || 0), requirementMs));
+            }
             if (!current()) return;
             published = handled = true;
             proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-            this.stats.resolved += proposals.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
             this.flush(null, true);
         } catch (error) {
             if (raidStepId) require('./ColdRaidEncounter').abort(raidStepId);
@@ -1624,7 +1692,7 @@ class ColdSimulationKernel {
                 if (raidStepId && this.dirty.get(source.id)?.raidStepId === raidStepId) this.dirty.delete(source.id);
             }
             if (error?.message !== 'raid_step_pending') {
-                this.stats.errors += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
                 this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
             }
             this.requestRelease([...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' })));
@@ -1632,9 +1700,9 @@ class ColdSimulationKernel {
             if (raidStepId && !published) require('./ColdRaidEncounter').abort(raidStepId);
             if (this.partyRuns.get(String(partyId)) === run) this.partyRuns.delete(String(partyId));
             if (handled) {
-                const elapsed = this.now() - startedAt;
-                this.stats.lastResolveMs = elapsed;
-                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+                const elapsed = DiagnosticConfig.developerDiagnostics ? this.now() - startedAt : 0;
+                DiagnosticConfig.developerDiagnostics && (this.stats.lastResolveMs = elapsed);
+                DiagnosticConfig.developerDiagnostics && (this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed));
             }
         }
     }
@@ -1659,10 +1727,9 @@ class ColdSimulationKernel {
                 state: resolveState,
                 spot: resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || active.context.spot || null,
                 pressure: active.context.pressure || {},
-                targetNpcId: Number(lifecyclePlan?.targetNpcId
-                    ?? lifecyclePlan?.acquisitionPlan?.next?.npcId
-                    ?? active.context.targetNpcId
-                    ?? 0),
+                targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
+                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) ||
+                    active.context.targetNpcId || 0),
                 elapsedMs,
                 rng: deterministicRandom(active.state),
                 timestamp
@@ -1685,27 +1752,33 @@ class ColdSimulationKernel {
                 durable: projection?.durable || null,
                 ...(projection?.market ? { market: projection.market } : {}),
                 ...(projection?.economyDecision ? { economyDecision: projection.economyDecision } : {}),
+                economyEdges: Number(projection?.economyEdges || 0),
+                ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
+                // The projected state precedes claim; main commits one revision
+                // after this grant before consuming the offer.
+                ...(projection?.buffOffer ? { buffOffer: { ...projection.buffOffer,
+                    providerRevision: active.grant.revision } } : {}),
                 result,
                 options: { allowLifecycle: true }
             };
             handled = true;
             this.dirty.set(Number(characterId), proposal);
-            this.stats.resolved += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
                 this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
             }
         } catch (error) {
             if (!this.resolverSourceCurrent(source)) return;
             handled = true;
-            this.stats.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
             this.inFlight.delete(Number(characterId));
             this.requestRelease([{ token: active.grant, reason: error?.message || 'resolver_error' }]);
         } finally {
             if (handled) {
-                const elapsed = this.now() - startedAt;
-                this.stats.lastResolveMs = elapsed;
-                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+                const elapsed = DiagnosticConfig.developerDiagnostics ? this.now() - startedAt : 0;
+                DiagnosticConfig.developerDiagnostics && (this.stats.lastResolveMs = elapsed);
+                DiagnosticConfig.developerDiagnostics && (this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed));
             }
         }
     }
@@ -1736,8 +1809,12 @@ class ColdSimulationKernel {
             group.forEach(entry => visited.add(entry.characterId));
             let transportGroup = group;
             let transportSizes = proposalSizes(group);
+            if (DiagnosticConfig.developerDiagnostics === true && groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                group.forEach(entry => require('../Economy/ConsumptionDiagnostics').drop(entry));
+                transportSizes = proposalSizes(group);
+            }
             if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                this.stats.proposalOversize += group.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.proposalOversize += group.length);
                 transportGroup = group.map(entry => compactProposal(entry, true));
                 transportSizes = proposalSizes(transportGroup);
                 if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
@@ -1757,10 +1834,23 @@ class ColdSimulationKernel {
                     oversized.push(...group);
                     continue;
                 }
-                this.stats.proposalCompactions += group.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.proposalCompactions += group.length);
             }
-            const candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+            let candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
             const candidateCount = proposals.length + transportGroup.length;
+            if (DiagnosticConfig.developerDiagnostics === true && proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
+                const consumption = require('../Economy/ConsumptionDiagnostics');
+                let dropped = false;
+                for (const entry of proposals) dropped = consumption.drop(entry) || dropped;
+                for (const entry of transportGroup) dropped = consumption.drop(entry) || dropped;
+                if (dropped) {
+                    const priorSizes = proposalSizes(proposals);
+                    proposalBytes.splice(0, proposalBytes.length, ...priorSizes);
+                    itemBytes = priorSizes.reduce((sum, size) => sum + size, 0);
+                    transportSizes = proposalSizes(transportGroup);
+                    candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
+                }
+            }
             if (proposalPayloadBytes(candidateCount, candidateItemBytes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) break;
             proposals.push(...transportGroup);
             proposalBytes.push(...transportSizes);
@@ -1769,19 +1859,22 @@ class ColdSimulationKernel {
         oversized.forEach((proposal) => {
             if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
             this.dirty.delete(Number(proposal.characterId));
-            this.stats.proposalOversizeRejected += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.proposalOversizeRejected += 1);
             this.requestRelease([{ token: proposal.token, reason: 'proposal_too_large' }]);
             this.requeue(Number(proposal.characterId), timestamp + 5000);
         });
         if (!proposals.length) return 0;
         proposals.forEach((proposal) => this.dirty.delete(Number(proposal.characterId)));
-        this.stats.proposals += proposals.length;
-        this.stats.flushes += 1;
-        this.stats.flushRows += proposals.length;
-        this.stats.lastFlushRows = proposals.length;
-        this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.proposals += proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushes += 1);
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushRows += proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.lastFlushRows = proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length));
         const reason = String(options.reason || (force ? 'forced' : 'direct'));
-        this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
+        // Numeric key presence is operational: FrameSizer expands any value
+        // to 32 characters, so off need only preserve the original shape.
+        if (!Object.hasOwn(this.stats.flushReasons, reason)) this.stats.flushReasons[reason] = 0;
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1);
         // Sent proposals keep their ownership slots until the commit ACK.
         // Priority and party flushes can fill that window just like a timer flush.
         const capacityBlocked = this.partyCapacityBlocked === true
@@ -1870,7 +1963,8 @@ class ColdSimulationKernel {
             if (result.ok && result.state) {
                 this.upsert({ state: result.state, context: result.context || this.states.get(id)?.context || {} });
             } else {
-                if (String(result.reason || '').includes('stale')) this.stats.stale += 1;
+                this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
+                if (String(result.reason || '').includes('stale')) DiagnosticConfig.developerDiagnostics && (this.stats.stale += 1);
                 if (result.state) this.upsert({
                     state: {
                         ...result.state,
@@ -1902,6 +1996,8 @@ class ColdSimulationKernel {
                 || (!active && pending.version !== this.versions.get(id))
                 || Number(active?.grant.leaseUntil || pending.token.leaseUntil) <= this.now()) return;
             this.pendingReleases.delete(id);
+            this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || this.states.get(id)?.context?.party?.partyId || ''));
+            this.lookSeen.delete(id);
             this.inFlight.delete(id);
             if (result.state) this.upsert(result);
             else this.requeue(id, this.now() + 1000);
@@ -1916,8 +2012,6 @@ class ColdSimulationKernel {
         const id = identity.characterId, attempt = this.commandStartedAt.get(id), current = this.states.get(id);
         if (!attempt?.sent || !this.commanding.has(id) || current?.state.phase !== 'cold'
             || attempt.commandId !== identity.commandId
-            || (attempt.kind === 'market_review' ? payload.marketCommandId !== attempt.commandId
-                : payload.marketCommandId !== undefined)
             || !Protocol.sameCommandCheckpoint(attempt.checkpoint, identity.checkpoint)) return false;
         this.cancelCommand(id, attempt);
         let output = payload.state;
@@ -1961,12 +2055,8 @@ class ColdSimulationKernel {
 
     fence(characterId) {
         const id = Number(characterId);
-        this.claiming.delete(id);
-        this.commanding.delete(id);
         const proposal = this.dirty.get(id) || null;
-        if (proposal) this.dirty.delete(id);
         const active = this.inFlight.get(id) || null;
-        this.inFlight.delete(id);
         this.remove(id);
         return { characterId: id, proposal, token: active?.grant || proposal?.token || null };
     }
@@ -1986,14 +2076,13 @@ class ColdSimulationKernel {
 
     async shutdown() {
         this.stopping = true;
+        this.partyRequirementProgress.clear();
         this.buyerEvents?.clear();
         this.buyerWakeups.clear();
+        this.lookSeen.clear();
         this.pendingReleases.clear();
         this.commanding.clear();
         this.commandStartedAt.clear();
-        this.states.cancelSafetyCycle();
-        this.safetyStartedAt = null;
-        this.safetyAlarmToken = null;
         for (const id of this.claimAttempts.keys()) this.cancelClaimAttempt(id);
         for (const entry of this.alarms.values()) {
             if (entry.alarmKind === 'decision') this.cancelDecisionDeadline(entry.key, entry.alarmToken);
@@ -2004,7 +2093,7 @@ class ColdSimulationKernel {
         return this.heartbeatSnapshot();
     }
 
-    heartbeatSnapshot() {
+    heartbeatSnapshot(forSizing = false) {
         const now = this.now(), head = this.heap.peek();
         const scheduled = head && head.kind !== 'alarm' ? this.scheduleTokens.get(Number(head.characterId)) : null;
         const current = !!head && (head.kind === 'alarm'
@@ -2018,7 +2107,7 @@ class ColdSimulationKernel {
             Math.min(oldest, Number((typeof startedAt === 'object' ? startedAt.startedAt : startedAt) || now))
         ), now);
         return {
-            ...this.stats,
+            ...(forSizing || DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
             states: this.states.size,
             heap: this.heap.size,
             queueHead: {
@@ -2043,6 +2132,7 @@ class ColdSimulationKernel {
     }
 
     snapshot() {
+        if (!DiagnosticConfig.developerDiagnostics) return this.heartbeatSnapshot();
         const now = this.now();
         const due = [...this.states.values()].filter((entry) => (
             isSchedulableKind(lifecycleKind(entry.state, entry.context))
@@ -2067,7 +2157,7 @@ class ColdSimulationKernel {
             return counts;
         }, { scheduled: 0, claiming: 0, inFlight: 0, commanding: 0, orphaned: 0 });
         return {
-            ...this.stats,
+            ...(DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
             states: this.states.size,
             heap: this.heap.size,
             due: due.length,

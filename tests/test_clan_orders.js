@@ -3,12 +3,17 @@ const fs = require('fs');
 const http = require('http');
 const { once } = require('events');
 const path = require('path');
+const os = require('os');
 const { DatabaseSync } = require('node:sqlite');
 
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
 require('../src/Global');
 
 const rootDir = path.resolve(__dirname, '..');
-const databasePath = path.join(rootDir, 'tmp', 'test-clan-orders.sqlite');
+const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'clan-orders-'));
+const databasePath = path.join(scratch, 'world.sqlite');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const GoalService = invoke('GameServer/Clan/ClanGoalService');
@@ -56,8 +61,19 @@ async function projection() {
 }
 
 async function main() {
+    const Market = invoke('GameServer/Bot/Economy/MarketOpportunity'), originalOffer = Market.bestOffer;
+    const buyer = { characterId: 5300002, level: 30, adena: 900000, currentRegion: 'Giran',
+        stats: { classId: 0, money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463] } };
+    let memberBudget;
+    Market.bestOffer = (_itemId, options) => { memberBudget = options.budget; return null; };
+    try {
+        OrderService.memberOffer(buyer, 1419); assert.strictEqual(memberBudget, 0, 'clan orders use no money earmarked for a member wish');
+        buyer.stats.money[3] = 0;
+        OrderService.memberOffer(buyer, 1419); assert.strictEqual(memberBudget, 865000, 'only genuinely free money pays a clan order');
+    } finally { Market.bestOffer = originalOffer; }
     seedDatabase();
-    options.default.Database.path = path.relative(rootDir, databasePath);
+    options.default.Database.path = databasePath;
+    assert(path.isAbsolute(options.default.Database.path));
     Database.init();
     DataCache.init();
     await LifeState.init();
@@ -286,7 +302,13 @@ async function main() {
         assert.strictEqual(started.ok, true);
         assert.strictEqual(started.started, true,
             'a player order must supersede an earlier protected autonomous clan party');
-        assert.strictEqual(BackgroundPartyState.find('legacy-clan-party').status, 'dissolved');
+        assert.strictEqual(BackgroundPartyState.find('legacy-clan-party'), null,
+            'a dissolved party must leave the active party cache');
+        const [legacyHistory] = await Database.execute([
+            'SELECT status FROM bot_background_parties WHERE partyId = ?', ['legacy-clan-party']
+        ]);
+        assert.strictEqual(legacyHistory.status, 'dissolved',
+            'party history remains authoritative after releasing its cache entry');
         const attachedLegacyMembers = await Database.execute([
             "SELECT characterId FROM bot_life_state WHERE partyId = 'legacy-clan-party'",
             []
@@ -353,6 +375,7 @@ async function main() {
     } finally {
         await Database.close();
         removeDatabaseFiles();
+        fs.rmSync(scratch, { recursive: true, force: true });
     }
 }
 

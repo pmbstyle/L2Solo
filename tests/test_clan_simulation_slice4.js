@@ -1,14 +1,17 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const rootDir = path.resolve(__dirname, '..');
+const isolated = require('./helpers/isolatedSocialDatabase')('clan-simulation-slice4', rootDir);
+require('./helpers/databaseIsolation');
 const { DatabaseSync } = require('node:sqlite');
 
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
-const rootDir = path.resolve(__dirname, '..');
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
-const databasePath = path.join(rootDir, 'tmp', 'test-clan-simulation-slice4.sqlite');
+const databasePath = isolated.world;
 const Database = invoke('Database');
 const ClanGoalService = invoke('GameServer/Clan/ClanGoalService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -48,11 +51,11 @@ function seedDatabase() {
 }
 
 async function main() {
-    seedDatabase();
-    options.default.Database.path = path.relative(rootDir, databasePath);
-    Database.init();
-
     try {
+        seedDatabase();
+        isolated.assertConfigured(options.default);
+        Database.init();
+
         const created = await Database.createAutonomousClan({
             name: 'SliceFourClan',
             leaderId: 4400001,
@@ -151,7 +154,11 @@ async function main() {
 
         console.log('Clan simulation Slice 4 checks passed');
     } finally {
-        await Database.close();
+        try {
+            await Database.close();
+        } finally {
+            fs.rmSync(isolated.directory, { recursive: true, force: true });
+        }
     }
 }
 

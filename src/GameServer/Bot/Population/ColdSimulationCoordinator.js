@@ -1,7 +1,9 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
+const { performance } = require('perf_hooks');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -32,11 +34,13 @@ const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
+const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 
 const ColdTrip = require('./ColdTrip');
 // Private main-thread provenance survives the queue's shallow clone but is
 // excluded from JSON/wire sizing and cannot be supplied by a Worker message.
 const PROPOSAL_SOURCE = Symbol('cold-proposal-source');
+const CLAN_BEFORE = Symbol('cold-clan-before');
 const OWNERSHIP_REBASE_REASONS = new Set([
     'stale_revision',
     'cas_failed',
@@ -150,6 +154,7 @@ class ColdSimulationCoordinator {
                 const memory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshots.get(Number(state.characterId));
                 const pressure = Director.pressureForState(state);
                 const party = context.party ? BackgroundPartyState.find(context.party.partyId) : null;
+                const leaf = !party ? this.economyDecisions.activity(state) : null;
                 return {
                     catalog: SpotProfiles.cache, physicalCatalog: SpotService.spots,
                     partyGeneration: BackgroundPartyState.generation(), party,
@@ -158,7 +163,7 @@ class ColdSimulationCoordinator {
                     clanId: invoke('GameServer/Clan/ClanSocialRuntime').view.memberships.get(Number(state.characterId)) || 0,
                     escrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
                     targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
-                        : directDropTargetNpcId(state.stats?.equipmentPlan)
+                        : leaf?.activity === 'hunting' ? (leaf.npcId || null) : null
                 };
             }
         });
@@ -176,7 +181,6 @@ class ColdSimulationCoordinator {
         this.restartTimer = null;
         this.watchdogTimer = null;
         this.reconcileTimer = null;
-        this.buffServiceTimer = null;
         this.snapshotContinuationTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
@@ -186,6 +190,24 @@ class ColdSimulationCoordinator {
         this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.economyDecisions = new ColdEconomyDecisions();
+        this.economyRoutes = new (require('../Economy/EconomyRouteCache').EconomyRouteCache)({
+            send: payload => !this.stopping && this.ready && !!this.post('economy_route_request', payload),
+            prepared: (id, key) => {
+                const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+                Economy.forgetContext(id, 'state_publication');
+                const record = invoke('GameServer/World/World').registeredActorById(id);
+                const session = record?.session;
+                if (record && !record.retired && session?.actor === record.actor
+                    && require('../Economy/EconomicTrip').key(Economy.stateForActor(record.actor, session)) === key)
+                    require('../AI/DecisionEvents').prepared(session);
+            }
+        });
+        this.unsubscribeWishRemovals = LifeState.subscribePublications(packet => {
+            if (packet.kind !== 'remove') return;
+            this.economyDecisions.forget(packet.characterId);
+            this.economyRoutes.forget(packet.characterId);
+            invoke('GameServer/Bot/Economy/EconomyContext').forget(packet.characterId);
+        });
         this.seenOrder = [];
         this.waiters = new Map();
         this.commandTail = Promise.resolve();
@@ -225,7 +247,6 @@ class ColdSimulationCoordinator {
         });
         this.commandInflight = new Map();
         this.fencedBots = new Set();
-        this.economyBots = new Set();
         this.pauseReasons = new Set();
         this.snapshotQueue = new ColdSnapshotQueue({
             pageSize: Config.coldWorkerSnapshotPageSize || 48,
@@ -269,8 +290,13 @@ class ColdSimulationCoordinator {
             snapshotCriticalRuns: 0,
             snapshotYields: 0,
             snapshotDeferrals: 0,
-            routeCapacityRejects: 0
+            routeCapacityRejects: 0,
+            afterCommitStepErrors: { partyCache: 0, raidCache: 0, raidSettlement: 0, economyDecision: 0,
+                journal: 0, board: 0, equipment: 0, training: 0, improvement: 0, party: 0, metrics: 0, announce: 0,
+                economyPlan: 0, clanEvents: 0, partyPlans: 0, buff: 0 }
         };
+        this.economyPlanCount = 0;
+        this.economyPlanTimes = [];
         this.queue = new ColdCommitQueue({
             targetMs: Config.coldWorkerOrdinaryFlushMs || 2000,
             hardMs: Config.coldWorkerOrdinaryHardMaxMs || 5000,
@@ -282,10 +308,10 @@ class ColdSimulationCoordinator {
             commit: (entries) => ColdSimulationOwner.commitAndReleaseBatch(entries),
             afterCommit: (entry, result) => this.afterCommit(entry, result),
             onResults: (results) => {
-                const startedAt = Date.now();
+                const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 this.handleCommitResults(results)
                     .catch((error) => this.recordError(error))
-                    .finally(() => this.queue.recordStage('ackBuild', Date.now() - startedAt));
+                    .finally(() => { if (Config.developerDiagnostics) this.queue.recordStage('ackBuild', Date.now() - startedAt); });
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
@@ -329,6 +355,7 @@ class ColdSimulationCoordinator {
             await BackgroundPartyState.purgeHistory();
             await require('./ColdRaidAuthority').init();
             await invoke('GameServer/Clan/ClanSocialRuntime').refresh(true);
+            require('./ColdOccupationSources').initialise();
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
@@ -341,11 +368,6 @@ class ColdSimulationCoordinator {
                 this.tableChannel.flush();
                 this.sendSnapshots(false).catch((error) => this.recordError(error));
             }, Math.max(2000, Number(Config.coldWorkerSnapshotRefreshMs) || 10000));
-            this.buffServiceTimer = setInterval(() => {
-                if (this.stopping || !this.snapshotsLoaded) return;
-                invoke('GameServer/Bot/Economy/ColdBuffService').tick()
-                    .catch((error) => this.recordError(error));
-            }, 60000);
             this.recoveryTimer = setInterval(() => {
                 ColdSimulationOwner.recoverExpiredLeases().catch((error) => this.recordError(error));
             }, Math.max(1000, Number(Config.coldOwnerRecoveryIntervalMs) || 5000));
@@ -362,7 +384,6 @@ class ColdSimulationCoordinator {
             }, Math.max(30000, Number(Config.partyHistoryCleanupIntervalMs) || 60 * 60 * 1000));
             this.watchdogTimer.unref?.();
             this.reconcileTimer.unref?.();
-            this.buffServiceTimer.unref?.();
             this.recoveryTimer.unref?.();
             this.renewalTimer.unref?.();
             this.historyCleanupTimer.unref?.();
@@ -384,14 +405,14 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = Date.now();
         const worker = new this.WorkerClass(this.workerPath, {
-            workerData: { workerEpoch: this.workerEpoch },
+            workerData: { workerEpoch: this.workerEpoch, developerDiagnostics: Config.developerDiagnostics === true },
             name: 'l2node-cold-simulation',
             resourceLimits: { maxOldGenerationSizeMb: Math.max(128, Number(Config.coldWorkerHeapMb) || 256) }
         });
         this.worker = worker;
         Metrics.beginColdSafetyEpoch(this.workerEpoch);
         this.attachSafetyTransport();
-        this.counters.workersStarted += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workersStarted += 1);
         const epoch = this.workerEpoch;
         worker.on('message', (message) => { this.onMessage(message, worker, epoch); });
         worker.on('error', (error) => {
@@ -409,8 +430,8 @@ class ColdSimulationCoordinator {
     }
 
     recordInvalid(reason = 'unknown') {
-        this.counters.invalidMessages += 1;
-        this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.invalidMessages += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1);
     }
 
     post(type, payload = {}, msgId = null, bytes = null) {
@@ -419,7 +440,7 @@ class ColdSimulationCoordinator {
             : type === 'claim_ack' ? payload.rejected
                 : ['commit_ack', 'release_ack', 'command_ack'].includes(type) ? payload.results : [];
         for (const entry of entries || []) {
-            if (type !== 'command_ack' || entry.marketCommandId === undefined) this.projectionRetention.remember(entry);
+            this.projectionRetention.remember(entry);
         }
         const message = Protocol.envelope(type, this.workerEpoch, payload, msgId);
         const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch, bytes });
@@ -427,11 +448,26 @@ class ColdSimulationCoordinator {
             this.recordInvalid(`out_${type}_${valid.reason}`);
             return null;
         }
-        this.counters.messagesOut += 1;
-        this.counters.bytesOut += valid.bytes;
+        DiagnosticConfig.developerDiagnostics && (this.counters.messagesOut += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.bytesOut += valid.bytes);
         message.bytes = valid.bytes;
         this.worker.postMessage(message);
         return message.msgId;
+    }
+
+    routeRows(state) {
+        if (this.stopping || !this.ready) return null;
+        const Trip = require('../Economy/EconomicTrip');
+        return this.economyRoutes.read(state.characterId, Trip.key(state), Trip.frame(state));
+    }
+
+    requestEconomyLook(characterId) {
+        const id = Number(characterId);
+        if (this.stopping || !Number.isSafeInteger(id) || id <= 0
+            || LifeState.cachedState(id)?.phase !== 'hot') return false;
+        // A natural owner event requests its existing canonical worker row.
+        // Empty rows retain neither an owner copy nor a snapshot/ACK cursor.
+        return !!this.post('snapshot_page', { rows: [], economyOwnerId: id });
     }
 
     postCollections(type, collections = {}, msgId = null) {
@@ -493,6 +529,18 @@ class ColdSimulationCoordinator {
 
     async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        if (message?.type === 'economy_diagnostics' && Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch) {
+            if (!Number.isSafeInteger(message.id) || message.id <= 0) return;
+            const diagnostics = require('../Economy/EconomyDiagnostics');
+            const accepted = diagnostics.accept(message.records);
+            if (this.diagnosticEpoch !== epoch) { this.diagnosticEpoch = epoch; this.diagnosticDropped = 0; }
+            const dropped = Number(message.dropped);
+            if (Number.isSafeInteger(dropped) && dropped >= this.diagnosticDropped) {
+                diagnostics.noteDropped(dropped - this.diagnosticDropped); this.diagnosticDropped = dropped;
+            }
+            worker.postMessage({ type: 'economy_diagnostics_ack', epoch, id: message.id,
+                accepted: Number.isSafeInteger(accepted) ? accepted : 0 }); return;
+        }
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
@@ -501,13 +549,16 @@ class ColdSimulationCoordinator {
         // A restarted worker numbers its requests from 1 again (claim:1,
         // release:1): a duplicate is the same id from the same worker epoch.
         if (!this.remember(`${epoch}:${message.msgId}`)) {
-            this.counters.duplicateMessages += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.duplicateMessages += 1);
             return;
         }
-        this.counters.messagesIn += 1;
-        this.counters.bytesIn += valid.bytes;
+        DiagnosticConfig.developerDiagnostics && (this.counters.messagesIn += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.bytesIn += valid.bytes);
         const payload = message.payload || {};
         switch (message.type) {
+        case 'economy_route_result':
+            if (!this.stopping) this.economyRoutes.accept(payload);
+            break;
         case 'lease_renewal_candidates':
             await this.handleLeaseRenewalCandidates(message, worker, epoch);
             break;
@@ -515,6 +566,12 @@ class ColdSimulationCoordinator {
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
+                this.stopDiagnosticSelection?.();
+                this.stopDiagnosticSelection = Config.developerDiagnostics && Config.economyDiagnostics
+                    ? EconomyDiagnostics.followSelection(ownerIds => {
+                        if (!this.stopping && this.worker === worker && this.workerEpoch === epoch)
+                            worker.postMessage({ type: 'economy_diagnostics_selection', epoch, ownerIds });
+                    }) : null;
                 try {
                     this.attachTableChannel();
                 } catch (error) {
@@ -538,6 +595,19 @@ class ColdSimulationCoordinator {
                     this.waiters.delete(message.msgId);
                     waiter.resolve(payload);
                 }
+            } else if (payload.phase === 'economy_decided' && !this.stopping) {
+                const id = Number(payload.characterId), state = LifeState.cachedState(id);
+                const decision = payload.economyDecision ? require('./ColdEconomyDecision').compact(payload.economyDecision) : null;
+                // Same worker generation plus the exact captured owner facts
+                // fence hot publications; they never authorize native spending.
+                if (state?.phase === 'hot' && decision && decision.updatedAt === Number(state.updatedAt || 0)
+                    && decision.key === require('./ColdEconomyDecision').stateKey(state)) {
+                    this.economyDecisions.accept(id, decision);
+                    if (decision.feasibility) invoke('GameServer/Bot/Economy/HotBoardReviewService').preparedOwner(id);
+                }
+            } else if (payload.phase === 'economy_workshop_stale' && !this.stopping) {
+                this.economyDecisions.staleWorkshop(Number(payload.characterId),
+                    { updatedAt: Number(payload.updatedAt), key: payload.key });
             }
             break;
         case 'claim_request':
@@ -583,7 +653,7 @@ class ColdSimulationCoordinator {
             this.tableChannel.resync(this, message.workerEpoch, payload.names || []);
             break;
         case 'fault':
-            this.counters.workerErrors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
             utils.infoWarn('ColdWorker', 'worker fault: %s%s', payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
             break;
         default:
@@ -594,30 +664,22 @@ class ColdSimulationCoordinator {
     // A new worker epoch gets every table in full; later flushes send changes.
     attachTableChannel() {
         if (this.stopping) return;
-        // Production owns the shared channel. Injected channels keep their
-        // ordinary-table behavior and do not silently acquire native authority.
-        const nativeActors = this.tableChannel === TableChannel.shared;
-        if (nativeActors) {
-            const source = require('../../World/MainActorPublicationSource').native();
-            const existing = this.tableChannel.tables.get('actors');
-            if (existing && existing.streamed?.source !== source) {
-                throw new TypeError('foreign_native_actor_table');
-            }
-            if (!existing) this.tableChannel.register('actors', {
-                key: ref => ref.id, eventDriven: true, streamed: { source, recipient: 'cold' }
-            });
-        }
+        // ARCH-NOTE: no cold worker code reads hot actors. Keep its actor
+        // recipient detached until a concrete worker reader needs this stream.
         const worker = this.worker;
         const epoch = this.workerEpoch;
         this.tableChannel.attach(this, epoch, (payload, payloadBytes) => {
             if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return false;
             const bytes = Protocol.envelopeBytes(Protocol.envelope('table_page', epoch, {}), payloadBytes) + 256;
             return !!this.post('table_page', payload, null, bytes);
-        }, nativeActors ? { streamedTables: ['actors'] } : {});
+        });
     }
 
     workerConfig() {
         return {
+            developerDiagnostics: Config.developerDiagnostics === true,
+            ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: EconomyDiagnostics.ownerIds() } : {}),
+            coldHonestTravel: Config.coldHonestTravel,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
@@ -800,8 +862,7 @@ class ColdSimulationCoordinator {
         const unsafeSoloGround = !partyRoute && currentGround
             && !LevelingRoutes.isSpotAllowedForState(currentGround, state, soloOptions());
         const leaf = partyRoute ? null : index.wishLeaf !== undefined ? index.wishLeaf
-            : this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
-                .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp, memory: index.memory }));
+            : this.economyDecisions.activity(state);
         const wished = leaf?.activity === 'hunting' && leaf.spotId
             ? index.spots.get(String(leaf.spotId)) : null;
         const wishDestination = wished && wished.raidBoss !== true
@@ -912,6 +973,12 @@ class ColdSimulationCoordinator {
         };
     }
 
+    async ensureCraftRecipes(state) {
+        if (invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) {
+            await require('../Economy/CraftWorkshopService').knownFor(state.characterId);
+        }
+    }
+
     contextFor(state, index = this.contextIndex()) {
         let physical = null;
         try { physical = SpotService.findCurrentSpot(state.loc); } catch (_) { physical = null; }
@@ -935,14 +1002,20 @@ class ColdSimulationCoordinator {
                 return compact ? compactPartyMemberContext(member) : member;
             });
         const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
-        const leaf = !party ? this.economyDecisions.activity(state, () => invoke('GameServer/Bot/Economy/EconomyContext')
-            .forState(state, { spots: index.profiles, occupancy: index.occupancy, timestamp: index.timestamp, memory: interactionMemory })) : null;
+        const leaf = !party ? this.economyDecisions.activity(state) : null;
+        const workshop = this.economyDecisions.workshopFor(state);
         const context = {
+            // ARCH-NOTE: recipe DB rows are hydrated on main; the worker gets
+            // <=8 numbers, never saved state or an extra recipe store.
+            ...(invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)
+                ? { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(
+                    require('../Economy/CraftWorkshopService').cachedRecipes(state.characterId)) } : {}),
+            ...(state.stats?.workshop?.entries?.length ? { workshop } : {}),
             spot: invoke('GameServer/RaidBoss/RaidEncounterScope').decorateSpot(spot),
             interactionMemory,
-            productionStatus: state.stats?.production ? invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus(state, (interactionMemory.relations || []).map(row => row.targetId)) : null,
             clanHallServices: invoke('GameServer/ClanHall/ColdVisit').needed(state),
             pressure,
+            goalReviewAt: Number(invoke('GameServer/Bot/Goals/GoalService').snapshot(state.characterId)?.current?.nextReviewAt || 0),
             // The worker cannot see AFK shops: hand it the Adena the bot's own
             // buy order holds, which still counts as purchase budget.
             buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
@@ -951,6 +1024,7 @@ class ColdSimulationCoordinator {
             isPartyLeader: !!party,
             party,
             partyMembers,
+            requirementRefresh: !!party && this.population?.partyRequirementRefreshDue?.has(String(party.partyId)),
             route: this.routeFor(state, spot, party, fullPartyMembers, { ...index, memory: interactionMemory, wishLeaf: leaf })
         };
         this.projectionRetention.prepare(state, context, index.partyGeneration);
@@ -958,6 +1032,7 @@ class ColdSimulationCoordinator {
     }
 
     snapshotEntry(state, index = this.contextIndex()) {
+        if (Config.developerDiagnostics && Config.economyDiagnostics) EconomyDiagnostics.enabled(state.characterId);
         return { state, context: this.contextFor(state, index) };
     }
 
@@ -983,7 +1058,7 @@ class ColdSimulationCoordinator {
 
     safetyExcluded(characterId) {
         return !this.worker || !this.ready || !this.snapshotsLoaded || this.stopping || this.snapshotInFlightInitial
-            || this.fencedBots.has(characterId) || this.economyBots.has(characterId) || this.commandInflight.has(characterId)
+            || this.fencedBots.has(characterId) || this.commandInflight.has(characterId)
             || this.snapshotQueue.dirty.has(characterId);
     }
 
@@ -1018,7 +1093,7 @@ class ColdSimulationCoordinator {
         if (!this.worker || !this.ready || this.stopping || !this.snapshotsLoaded) {
             return { ok: false, reason: 'worker_not_ready' };
         }
-        if (this.fencedBots.has(characterId) || this.economyBots.has(characterId) || this.commandInflight.has(characterId)) {
+        if (this.fencedBots.has(characterId) || this.commandInflight.has(characterId)) {
             return { ok: false, reason: 'projection_owner_busy' };
         }
         return this.projectionRetention.get(characterId);
@@ -1037,7 +1112,6 @@ class ColdSimulationCoordinator {
 
     markDirty(state, options = {}) {
         this.projectionRetention.invalidate(state);
-        if (this.economyBots.has(Number(state?.characterId))) return { ok: false, reason: 'economy_in_progress' };
         if (!state?.characterId || !this.worker || !this.ready) {
             return { ok: false, reason: 'worker_not_ready' };
         }
@@ -1060,8 +1134,8 @@ class ColdSimulationCoordinator {
             ...(options.priority ? { priority: options.priority } : {})
         };
         if (!this.post('snapshot_page', payload, null, options.bytes)) return false;
-        this.counters.snapshotsSent += rows.length;
-        this.counters.snapshotPages += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotsSent += rows.length);
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotPages += 1);
         return true;
     }
 
@@ -1085,13 +1159,14 @@ class ColdSimulationCoordinator {
             if (!await this.sendSnapshotPage(rows, { initial: false, priority, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
-            this.counters.snapshotYields += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
             await yieldToLoop();
             return true;
         };
 
         for (const entry of entries) {
             if (rowsSent + page.length > 0 && Date.now() >= deadlineAt) break;
+            await this.ensureCraftRecipes(entry.state || entry);
             const row = this.snapshotEntry(entry.state || entry, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -1129,7 +1204,7 @@ class ColdSimulationCoordinator {
             if (!await this.sendSnapshotPage(rows, { done, initial: true, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
-            this.counters.snapshotYields += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
             await yieldToLoop();
             return true;
         };
@@ -1139,7 +1214,7 @@ class ColdSimulationCoordinator {
         let sliceStartedAt = Date.now();
         for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
             if (Date.now() - sliceStartedAt >= SNAPSHOT_SLICE_MS) {
-                this.counters.snapshotYields += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
                 await yieldToLoop();
                 sliceStartedAt = Date.now();
             }
@@ -1148,6 +1223,7 @@ class ColdSimulationCoordinator {
                     states.slice(stateIndex, stateIndex + pageSize).map(state => Number(state.characterId)));
             }
             const state = states[stateIndex];
+            await this.ensureCraftRecipes(state);
             const row = this.snapshotEntry(state, index);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
@@ -1206,7 +1282,7 @@ class ColdSimulationCoordinator {
                     party.partyId,
                     reason
                 );
-                console.info('ColdWorker :: dissolved invalid background party %s reason=%s declaredMembers=%d releasedMembers=%d',
+                Config.developerDiagnostics && console.info('ColdWorker :: dissolved invalid background party %s reason=%s declaredMembers=%d releasedMembers=%d',
                     party.partyId,
                     reason,
                     party.memberIds?.length || 0,
@@ -1217,12 +1293,12 @@ class ColdSimulationCoordinator {
     }
 
     startSnapshotJob(mode, work, pressure = {}) {
-        const startedAt = Date.now();
+        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
         this.snapshotInFlightInitial = mode === 'full';
         const job = (async () => {
             try {
                 const result = await work();
-                this.snapshotLast = {
+                if (Config.developerDiagnostics) this.snapshotLast = {
                     mode,
                     rows: Number(result?.rowsSent || 0),
                     pages: Number(result?.pagesSent || 0),
@@ -1234,7 +1310,7 @@ class ColdSimulationCoordinator {
                 };
                 return result;
             } catch (error) {
-                this.snapshotLast = {
+                if (Config.developerDiagnostics) this.snapshotLast = {
                     mode,
                     rows: 0,
                     pages: 0,
@@ -1275,7 +1351,7 @@ class ColdSimulationCoordinator {
                     break;
                 }
                 entries.forEach((entry) => this.snapshotQueue.complete(entry, true));
-                this.counters.snapshotCriticalRuns += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.snapshotCriticalRuns += 1);
             }
             return true;
         })();
@@ -1303,7 +1379,7 @@ class ColdSimulationCoordinator {
             return false;
         }
         if (initial) {
-            this.counters.snapshotFullRuns += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotFullRuns += 1);
             return this.startSnapshotJob('full', () => this.sendFullSnapshot());
         }
 
@@ -1311,8 +1387,8 @@ class ColdSimulationCoordinator {
         const pressure = this.snapshotPressure();
         const plan = this.snapshotQueue.takeNormal(pressure);
         if (plan.deferred) {
-            this.counters.snapshotDeferrals += 1;
-            this.snapshotLast = {
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotDeferrals += 1);
+            if (Config.developerDiagnostics) this.snapshotLast = {
                 mode: 'deferred',
                 rows: 0,
                 pages: 0,
@@ -1336,7 +1412,7 @@ class ColdSimulationCoordinator {
             lease = admission.lease;
         }
 
-        this.counters.snapshotDirtyRuns += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotDirtyRuns += 1);
         return this.startSnapshotJob('dirty', async () => {
             const startedAt = Date.now();
             try {
@@ -1353,7 +1429,6 @@ class ColdSimulationCoordinator {
 
     notifyState(state, options = {}) {
         if (!state) return { ok: false, reason: 'missing_state' };
-        if (this.economyBots.has(Number(state.characterId))) return { ok: false, reason: 'economy_in_progress' };
         this.fencedBots.delete(Number(state.characterId));
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
@@ -1361,6 +1436,7 @@ class ColdSimulationCoordinator {
     async acceptColdState(state, timeoutMs = 500) {
         if (!state || !this.worker || !this.ready) return { ok: false, reason: 'worker_not_ready' };
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
+        await this.ensureCraftRecipes(state);
         this.fencedBots.delete(Number(state.characterId));
         const msgId = this.post('snapshot_page', {
             rows: [this.snapshotEntry(state)],
@@ -1391,10 +1467,6 @@ class ColdSimulationCoordinator {
         for (const candidate of message.payload.candidates || []) {
             const purpose = candidate.purpose || null;
             purposes.set(Number(candidate.characterId), purpose);
-            if (this.economyBots.has(Number(candidate.characterId))) {
-                missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'economy_in_progress', retryAfterMs: 1000 });
-                continue;
-            }
             const state = LifeState.cachedState(candidate.characterId);
             if (!state) {
                 missing.push({ ok: false, characterId: Number(candidate.characterId), reason: 'missing_state' });
@@ -1543,6 +1615,7 @@ class ColdSimulationCoordinator {
         }
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
         if (!state) return null;
+        if (Number(state.stats?.clanId) > 0) proposal[CLAN_BEFORE] = { level: state.level, inventory: state.inventory };
         const partyId = String(state.party?.partyId || state.partyId || '');
         if ((partyId && invoke('GameServer/Bot/Population/HotPartyLifecycle').pending.has(partyId))
             || this.visibleToRealPlayer(state)) return null;
@@ -1602,104 +1675,158 @@ class ColdSimulationCoordinator {
             occupancy,
             Date.now()
         );
-        if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+        if (admission.checked && !admission.admitted) DiagnosticConfig.developerDiagnostics && (this.counters.routeCapacityRejects += 1);
         return admission.state;
     }
 
+    async step(name, characterId, work) {
+        try { return await work(); }
+        catch (error) {
+            DiagnosticConfig.developerDiagnostics && (this.counters.afterCommitStepErrors[name] += 1);
+            utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error?.message || error);
+            return undefined;
+        }
+    }
+
     async afterCommit(entry, committed = {}) {
-        const committedPartyRow = committed.partyRow || committed.raidPartyRow;
-        if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
-            < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
-        if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
-        if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
-            await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
-        }
-        let state = LifeState.cachedState(entry.nextState.characterId) || entry.nextState;
-        this.economyDecisions.accept(state.characterId, entry.proposal.economyDecision, committed);
-        await LifeEvents.recordMany(state.characterId, entry.proposal.result?.events || []);
-        // The bot looked at its board lines in the worker: its new asks.
-        if (entry.proposal.market) {
-            await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(state.characterId, entry.proposal.market)
-                .catch((error) => utils.infoWarn('BotMarket', 'board look failed for %s: %s',
-                    state.characterId, error?.message || error));
-        }
-        await LifeState.enqueueEquipmentGoalAdvanceForState(state)
-            .catch((error) => {
-                utils.infoWarn('BotGoals', 'equipment goal advance enqueue failed for %s: %s',
-                    state.characterId, error?.message || error);
+        if (Config.developerDiagnostics === true) require('../Economy/ConsumptionDiagnostics').publish(
+            entry.nextState.characterId, entry.proposal.result?.consumptionDiagnostics, {
+                source: 'cold_commit', commandId: entry.proposal.commandId, proposalId: entry.proposal.proposalId,
+                revision: committed.revision ?? committed.row?.simulationRevision ?? entry.proposal.token?.revision, sequence: entry.proposal.sequence
             });
+        const id = entry.nextState.characterId;
         const source = entry.proposal[PROPOSAL_SOURCE];
         const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
-        if (sourceCurrent()) {
-            const beforeWrite = () => {
-                if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
+        const beforeWrite = () => {
+            if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
+        };
+        const committedPartyRow = committed.partyRow || committed.raidPartyRow;
+        await this.step('partyCache', id, () => {
+            if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
+                < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
+        });
+        await this.step('raidCache', id, () => {
+            if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
+        });
+        await this.step('raidSettlement', id, async () => {
+            if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
+                await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
+            }
+        });
+        let state = LifeState.cachedState(id) || entry.nextState;
+        if (sourceCurrent()) await this.step('economyDecision', id,
+            () => this.economyDecisions.accept(id, entry.proposal.economyDecision, committed));
+        await this.step('journal', id, () => LifeEvents.recordMany(id, entry.proposal.result?.events || []));
+        if (sourceCurrent() && entry.proposal.market) {
+            // The resolve has already advanced native ownership. Capture its
+            // accepted authority after commit, never the worker's old revision.
+            const coldAuthority = { ownerId: state.simulation?.ownerId || 'legacy_main',
+                revision: Number(state.simulation?.revision || 0), leaseId: state.simulation?.leaseId || null };
+            const canCommitReview = () => {
+                const current = LifeState.cachedState(id), actual = current?.simulation || {};
+                return sourceCurrent() && current?.phase === 'cold'
+                    && (actual.ownerId || 'legacy_main') === coldAuthority.ownerId
+                    && Number(actual.revision || 0) === coldAuthority.revision
+                    && (actual.leaseId || null) === coldAuthority.leaseId;
             };
-            state = await this.reviewCommittedEconomy(state, beforeWrite);
+            await this.step('board', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService')
+                .applyReview(id, entry.proposal.market, { coldAuthority, canCommitReview }));
         }
-        if (entry.proposal.partyResolution?.party) {
-            const party = entry.proposal.partyResolution.party;
-            if (!committedPartyRow) await BackgroundPartyState.createOrUpdate(party);
-            if (!committedPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
-                await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
-                    .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
-                        party.partyId, error?.message || error));
-            }
-            if (party.stats?.raidEncounter?.status === 'failed') {
-                await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(party)
-                    .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
-                        party.partyId, error?.message || error));
-            }
-            if (entry.proposal.result?.debug?.activity === 'party_session_review') {
-                const review = party.stats?.sessionReview || {};
-                const decisions = review.decisions || [];
-                const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
-                this.partyReviews.committed += 1;
-                this.partyReviews.departed += departed;
-                this.partyReviews.dissolved += Number(party.status === 'dissolved');
-                for (const decision of decisions) {
-                    this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
-                }
-                this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
-                this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
-            }
-            if (party.status === 'dissolved') {
-                await LifeState.clearParty(
-                    party.partyId,
-                    party.stats?.partyBreakReason || 'party_dissolved'
-                );
-                Metrics.recordPartyDissolution();
-            } else {
-                Metrics.recordPartyResolve();
-                if (entry.proposal.partyResolution.reviewGoals
-                    && this.population?.reconcileWorkerPartyGoals) {
-                    await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
-                        .catch((error) => {
-                            utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
-                        });
-                }
+        await this.step('equipment', id, () => LifeState.enqueueEquipmentGoalAdvanceForState(state));
+        if (sourceCurrent() && entry.proposal.economyPlan) {
+            const started = Config.developerDiagnostics ? performance.now() : 0;
+            const decision = await this.step('improvement', id, () => this.economyDecisions.decided(state));
+            // Native moves publish a new timestamp. Hold the worker's one
+            // decision across this plan exactly as the town command does.
+            this.economyDecisions.hold(id, decision);
+            try {
+                state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite, decision || null)) || state;
+                const applied = await this.step('economyPlan', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService')
+                    .executePlan(state, entry.proposal.economyPlan,
+                        { beforeWrite, step: work => this.step('economyPlan', id, work) }));
+                state = LifeState.cachedState(id) || applied?.state || state;
+            } finally {
+                this.economyDecisions.release(id);
+                if (Config.developerDiagnostics) this.economyPlanCount++;
+                if (Config.developerDiagnostics) this.economyPlanTimes.push(performance.now() - started);
+                if (this.economyPlanTimes.length > 256) this.economyPlanTimes.shift();
             }
         }
-        Metrics.recordBackgroundResolve();
-        Metrics.recordCombat(entry.proposal.result?.debug);
-        Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
-        GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []);
+        await this.step('clanEvents', id, () => require('../../Clan/ClanReviewEvents').committedMember(entry.proposal[CLAN_BEFORE], state));
+        await this.step('party', id, async () => {
+            if (entry.proposal.partyResolution?.party) {
+                const party = entry.proposal.partyResolution.party;
+                if (!committedPartyRow) await BackgroundPartyState.createOrUpdate(party);
+                if (!committedPartyRow && party.stats?.raidEncounter?.status === 'defeated') {
+                    await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(party)
+                        .catch((error) => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s',
+                            party.partyId, error?.message || error));
+                }
+                if (party.stats?.raidEncounter?.status === 'failed') {
+                    await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(party)
+                        .catch((error) => utils.infoWarn('RaidBoss', 'raid failure planning failed for %s: %s',
+                            party.partyId, error?.message || error));
+                }
+                if (entry.proposal.result?.debug?.activity === 'party_session_review') {
+                    const review = party.stats?.sessionReview || {};
+                    const decisions = review.decisions || [];
+                    const departed = Math.max(0, decisions.length - (party.memberIds || []).length);
+                    this.partyReviews.committed += 1;
+                    this.partyReviews.departed += departed;
+                    this.partyReviews.dissolved += Number(party.status === 'dissolved');
+                    for (const decision of decisions) {
+                        this.partyReviews.reasons[decision.reason] = (this.partyReviews.reasons[decision.reason] || 0) + 1;
+                    }
+                    this.partyReviews.recent.unshift({ partyId: party.partyId, at: review.at, departed, status: party.status, decisions });
+                    this.partyReviews.recent.length = Math.min(12, this.partyReviews.recent.length);
+                }
+                if (party.status === 'dissolved') {
+                    await LifeState.clearParty(
+                        party.partyId,
+                        party.stats?.partyBreakReason || 'party_dissolved'
+                    );
+                    Metrics.recordPartyDissolution();
+                } else {
+                    Metrics.recordPartyResolve();
+                    if (entry.proposal.partyResolution.reviewGoals
+                        && this.population?.reconcileWorkerPartyGoals) {
+                        await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))
+                            .catch((error) => {
+                                utils.infoWarn('BotGoals', 'worker party goal reconcile failed for %s: %s', party.partyId, error?.message || error);
+                            });
+                    }
+                }
+            }
+        });
+        if (entry.proposal.partyResolution?.party && this.population?.applyWorkerPartyRequirements) {
+            await this.step('partyPlans', id, () => this.population.applyWorkerPartyRequirements(
+                BackgroundPartyState.find(entry.proposal.partyResolution.partyId) || entry.proposal.partyResolution.party,
+                entry.proposal.partyResolution));
+        }
+        if (entry.proposal.buffOffer) {
+            await this.step('buff', id, () => invoke('GameServer/Bot/Economy/ColdBuffService')
+                .applyOffer(entry.proposal.buffOffer, { beforeWrite }));
+        }
+        if (Config.developerDiagnostics) await this.step('metrics', id, () => {
+            Metrics.recordBackgroundResolve();
+            Metrics.recordCombat(entry.proposal.result?.debug);
+            Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
+        });
+        await this.step('announce', id, () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         return state;
     }
 
-    async reviewCommittedEconomy(state, beforeWrite) {
+    async reviewCommittedEconomy(state, beforeWrite, decisionOverride) {
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;
-        state = await LifeState.reviewTrainingAfterCommit(state, { beforeWrite }).catch(error => {
-            utils.infoWarn('BotSkills', 'postcommit training failed for %s: %s', state.characterId, error.message);
-            return LifeState.cachedState(state.characterId) || state;
-        });
-        const improved = await invoke('GameServer/Bot/Economy/BotImprovementService')
-            .reviewCold(state, { beforeWrite, decide: () => this.economyDecisions.decided(state) }).catch(error => {
-                utils.infoWarn('BotEquipment', 'postcommit improvement failed for %s: %s', state.characterId, error.message);
-                return { state: LifeState.cachedState(state.characterId) || state };
-            });
-        return improved.state || state;
+        const decision = decisionOverride === undefined
+            ? await this.step('improvement', state.characterId, () => this.economyDecisions.decided(state)) : decisionOverride;
+        state = await this.step('training', state.characterId, () => LifeState.reviewTrainingAfterCommit(state, { beforeWrite }))
+            || LifeState.cachedState(state.characterId) || state;
+        const improved = await this.step('improvement', state.characterId, () => invoke('GameServer/Bot/Economy/BotImprovementService')
+            .reviewCold(state, { beforeWrite, decide: () => decision }));
+        return improved?.state || LifeState.cachedState(state.characterId) || state;
     }
 
     async handleCommitResults(results = []) {
@@ -1719,6 +1846,14 @@ class ColdSimulationCoordinator {
             return;
         }
         const index = this.contextIndex({ compactPartyMembers: true });
+        for (const result of results) {
+            const state = LifeState.cachedState(result.characterId) || result.nextState;
+            if (state) await this.step('economyPlan', result.characterId, () => this.ensureCraftRecipes(state));
+        }
+        if (this.worker !== worker || this.workerEpoch !== epoch) {
+            this.tableChannel.flush();
+            return;
+        }
         const acknowledgements = results.flatMap((result) => {
             const inputToken = Protocol.leaseRenewalToken(result.proposal?.token);
             const proposalId = result.proposal?.proposalId;
@@ -1771,7 +1906,7 @@ class ColdSimulationCoordinator {
             const parsed = Protocol.commandIdentity(request);
             const identity = parsed && { characterId: parsed.characterId, commandId: parsed.commandId,
                 commandCheckpoint: parsed.checkpoint };
-            if (!identity || !['lifecycle', 'market_review'].includes(request.kind)
+            if (!identity || request.kind !== 'lifecycle'
                 || !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state)) return [];
             return [{ request, identity }];
         });
@@ -1780,28 +1915,23 @@ class ColdSimulationCoordinator {
             const results = [];
             for (const { request, identity } of requests) {
                 if (!sourceCurrent()) return;
-                const marketReview = request.kind === 'market_review';
-                this.counters.commands += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.commands += 1);
                 try {
                     const state = LifeState.cachedState(request.characterId);
                     const id = identity.characterId;
                     Metrics.recordColdOwnerLegacyDeferred(`command_${String(state?.activity || 'unknown')}`);
                     if (this.fencedBots.has(id) || state?.phase !== 'cold') {
                         results.push({ ...identity, ok: false, reason: 'hot_handoff_fenced',
-                            ...(marketReview ? { marketDeferred: true, marketCommandId: identity.commandId,
-                                context: request.context || {},
-                                ...(state ? { state } : {}) } : (state ? { state } : {})) });
+                            ...(state ? { state } : {}) });
                         continue;
                     }
-                    if (!marketReview && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
+                    if (!Protocol.sameCommandCheckpoint(identity.commandCheckpoint, state)) {
                         results.push({ ...identity, ok: false, reason: 'stale_command', retryAfterMs: 1000,
                             state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) });
                         continue;
                     }
                     let result;
-                    const operation = marketReview
-                        ? this.executeMarketReviewCommand(request, sourceCurrent)
-                        : this.executeLifecycleCommand(request, identity, sourceCurrent);
+                    const operation = this.executeLifecycleCommand(request, identity, sourceCurrent);
                     this.commandInflight.set(id, operation);
                     try { result = await operation; } finally {
                         if (this.commandInflight.get(id) === operation) this.commandInflight.delete(id);
@@ -1815,26 +1945,18 @@ class ColdSimulationCoordinator {
                         ...(result?.ok === false ? { retryAfterMs: Math.max(1000,
                             Number(result.retryAfterMs) || (result.reason === 'missing_spot' ? 30000 : 5000)) } : {}),
                         ...(nextState ? { state: nextState } : {}),
-                        ...(marketReview ? { marketDeferred: !!result?.marketDeferred, marketCommandId: identity.commandId } : {}),
-                        context: marketReview ? request.context || {}
-                            : nextState ? this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true })) : {}
+                        context: nextState ? this.contextFor(nextState, this.contextIndex({ compactPartyMembers: true })) : {}
                     });
                 } catch (error) {
                     if (!sourceCurrent()) return;
-                    this.counters.commandErrors += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.counters.commandErrors += 1);
                     const state = LifeState.cachedState(request.characterId);
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
-                        ...(marketReview ? { ...(state ? { state } : {}),
-                            context: request.context || {}, marketDeferred: true, marketCommandId: identity.commandId } : {}) });
+                        ...(state ? { state } : {}) });
                 }
                 await new Promise((resolve) => setImmediate(resolve));
             }
             if (!sourceCurrent()) return;
-            for (const result of results) {
-                if (result.marketCommandId === undefined) continue;
-                if (this.fencedBots.has(Number(result.characterId))) delete result.state;
-                else result.state = LifeState.cachedState(result.characterId) || result.state;
-            }
             this.postCollections('command_ack', { results }, message.msgId);
         }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
     }
@@ -1871,83 +1993,21 @@ class ColdSimulationCoordinator {
         const result = await this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
         if (result?.ok && sourceCurrent() && !this.stopping) {
             const current = LifeState.cachedState(identity.characterId);
-            if (current) result.state = await this.reviewCommittedEconomy(current, () => {
+            if (current) result.state = await this.step('improvement', identity.characterId, () => this.reviewCommittedEconomy(current, () => {
                 if (!sourceCurrent() || this.stopping) throw Error('cold_postcommit_source_retired');
-            });
+            })) || current;
         }
         return result;
     }
 
-    async executeMarketReviewCommand(request, sourceCurrent = () => true) {
-        const id = Number(request.characterId);
-        const state = LifeState.cachedState(id);
-        if (!state || state.phase !== 'cold' || this.fencedBots.has(id) || this.visibleToRealPlayer(state)) {
-            return { ok: false, state, reason: 'hot_handoff_fenced', marketDeferred: true };
-        }
-        const current = state.simulation || {};
-        const proposed = request.state?.simulation || {};
-        if (Number(request.state?.characterId) !== id || current.ownerId !== proposed.ownerId
-            || Number(current.revision || 0) !== Number(proposed.revision || 0)
-            || (current.leaseId || null) !== (proposed.leaseId || null)) {
-            return { ok: false, state, reason: 'stale_market_review', marketDeferred: true };
-        }
-        const market = request.market;
-        if (typeof request.commandId !== 'string' || !request.commandId || request.commandId.length > 160
-            || !market || !['updates', 'reprices', 'withdrawals'].every((key) =>
-            Array.isArray(market[key]) && market[key].length <= Protocol.MAX_BATCH)) {
-            return { ok: false, state, reason: 'invalid_market_review', marketDeferred: true };
-        }
-        const coldAuthority = { ownerId: current.ownerId, revision: Number(current.revision || 0),
-            leaseId: current.leaseId || null };
-        const canCommitReview = () => {
-            if (!sourceCurrent()) return false;
-            const latest = LifeState.cachedState(id);
-            const simulation = latest?.simulation || {};
-            return latest?.phase === 'cold' && !this.fencedBots.has(id) && !this.visibleToRealPlayer(latest)
-                && simulation.ownerId === coldAuthority.ownerId
-                && Number(simulation.revision || 0) === coldAuthority.revision
-                && (simulation.leaseId || null) === coldAuthority.leaseId;
-        };
-        let applied;
-        try {
-            applied = await invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(id, market,
-                { coldAuthority, canCommitReview });
-        } catch (error) {
-            if (!['stale_market_review', 'hot_handoff_fenced'].includes(error.message)) throw error;
-            return { ok: false, state: LifeState.cachedState(id) || state, reason: error.message, marketDeferred: true };
-        }
-        return { ok: true, state: LifeState.cachedState(id) || state, reason: 'market_reviewed',
-            marketDeferred: !(applied.updated || applied.changed) };
-    }
-
-    async withEconomyState(state, work) {
-        const id = Number(state.characterId);
-        if (this.economyBots.has(id) || this.commandInflight.has(id) || this.fencedBots.has(id)) {
-            return { state, reason: 'economy_busy' };
-        }
-        this.economyBots.add(id);
-        try {
-            const fence = await this.fenceBot(id, 1000, true);
-            if (!fence.ok) return { state, reason: fence.reason };
-            const latest = LifeState.snapshot(id) || state;
-            if (latest.phase !== 'cold') return { state: latest, reason: 'not_cold' };
-            const handoff = await ColdSimulationOwner.handoffToMain(latest, { allowParty: true, allowLifecycle: true });
-            if (!handoff.ok) return { state: latest, reason: handoff.reason };
-            return await work(LifeState.snapshot(id) || latest);
-        } finally {
-            this.economyBots.delete(id);
-            const latest = LifeState.snapshot(id);
-            if (latest) this.notifyState(latest, { critical: true, reason: 'economy_finished' });
-            else this.fencedBots.delete(id);
-        }
-    }
-
-    async fenceBot(characterId, timeoutMs = 500, economy = false) {
-        if (!economy && this.economyBots.has(Number(characterId))) return { ok: false, reason: 'economy_in_progress' };
-        if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
+    async fenceBot(characterId, timeoutMs = 500) {
         const id = Number(characterId);
+        this.economyDecisions.forget(id);
+        invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
+        if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
         this.fencedBots.add(id);
-        this.counters.fences += 1;
+        this.economyRoutes.forget(id);
+        DiagnosticConfig.developerDiagnostics && (this.counters.fences += 1);
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });
         if (!msgId) return { ok: false, reason: 'fence_send_failed' };
         let timer = null;
@@ -1965,7 +2025,7 @@ class ColdSimulationCoordinator {
             await this.queue.flushCharacter(id);
             return { ok: true, reason: 'fenced', ...fenced };
         } catch (error) {
-            this.counters.fenceTimeouts += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {
@@ -2042,7 +2102,7 @@ class ColdSimulationCoordinator {
 
     canRenewLease(round, token) {
         if (!this.currentLeaseRenewalRound(round) || this.fencedBots.has(token.characterId)
-            || this.economyBots.has(token.characterId) || this.commandInflight.has(token.characterId)) return false;
+            || this.commandInflight.has(token.characterId)) return false;
         const cached = LifeState.cachedState(token.characterId), current = cached?.simulation;
         return cached?.phase === 'cold' && current?.ownerId === token.ownerId
             && current.revision === token.revision && current.leaseId === token.leaseId;
@@ -2126,17 +2186,21 @@ class ColdSimulationCoordinator {
     }
 
     onWorkerError(error) {
-        this.counters.workerErrors += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
         this.recordError(error);
     }
 
     onWorkerExit(code, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        this.stopDiagnosticSelection?.();
+        this.stopDiagnosticSelection = null;
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         Metrics.clearColdSafetyEpoch(epoch);
         this.projectionRetention.reset();
-        this.counters.workerExits += 1;
+        this.economyDecisions.clear();
+        this.economyRoutes.clear();
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerExits += 1);
         this.tableChannel.detach(this);
         this.worker = null;
         this.workerMaxInFlight = null;
@@ -2150,7 +2214,7 @@ class ColdSimulationCoordinator {
         const delays = [1000, 2000, 5000, 10000, 30000];
         const restartDelay = delays[Math.min(this.restartCount, delays.length - 1)];
         this.restartCount += 1;
-        this.counters.workerRestarts += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerRestarts += 1);
         utils.infoWarn('ColdWorker', 'worker exited code=%d; restarting in %dms', Number(code || 0), restartDelay);
         this.restartTimer = setTimeout(() => this.startWorker(), restartDelay);
         this.restartTimer.unref?.();
@@ -2174,9 +2238,13 @@ class ColdSimulationCoordinator {
         // Fence posted continuations before cancellation, early returns or any
         // drain await. A stopped same-epoch recipient cannot be rearmed.
         this.tableChannel.stopActorRecipient?.(this, epoch);
+        this.stopDiagnosticSelection?.();
+        this.stopDiagnosticSelection = null;
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         this.projectionRetention.reset();
+        this.economyDecisions.clear();
+        this.economyRoutes.clear();
         if (!this.started) return { stopped: true };
         this.stopping = true;
         if (this.pvpEncounterTimer) clearInterval(this.pvpEncounterTimer);
@@ -2184,7 +2252,6 @@ class ColdSimulationCoordinator {
         await this.competitionActions.stop();
         if (this.watchdogTimer) clearInterval(this.watchdogTimer);
         if (this.reconcileTimer) clearInterval(this.reconcileTimer);
-        if (this.buffServiceTimer) clearInterval(this.buffServiceTimer);
         if (this.snapshotContinuationTimer) clearTimeout(this.snapshotContinuationTimer);
         if (this.recoveryTimer) clearInterval(this.recoveryTimer);
         if (this.renewalTimer) clearInterval(this.renewalTimer);
@@ -2192,7 +2259,6 @@ class ColdSimulationCoordinator {
         if (this.restartTimer) clearTimeout(this.restartTimer);
         this.watchdogTimer = null;
         this.reconcileTimer = null;
-        this.buffServiceTimer = null;
         this.snapshotContinuationTimer = null;
         this.recoveryTimer = null;
         this.renewalTimer = null;
@@ -2226,16 +2292,17 @@ class ColdSimulationCoordinator {
 
     snapshot() {
         return {
-            ...this.counters,
+            ...(Config.developerDiagnostics ? this.counters : { diagnosticsEnabled: false }),
             started: this.started,
             ready: this.ready,
             snapshotsLoaded: this.snapshotsLoaded,
             epoch: this.workerEpoch,
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
-            competitionActions: this.competitionActions.snapshot(),
-            economyDecisions: { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size },
-            partyReviews: this.partyReviews,
+            competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,
+            economyDecisions: Config.developerDiagnostics ? { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size } : null,
+            partyReviews: Config.developerDiagnostics ? this.partyReviews : null,
+            economyPlans: Config.developerDiagnostics ? { count: this.economyPlanCount, perCommit: this.economyPlanCount / Math.max(1, this.queue.snapshot().committed || 0), p95Ms: [...this.economyPlanTimes].sort((a, b) => a - b)[Math.max(0, Math.ceil(this.economyPlanTimes.length * .95) - 1)] || 0 } : null,
             queue: this.queue.snapshot(),
             snapshots: {
                 ...this.snapshotQueue.snapshot(),
@@ -2243,12 +2310,14 @@ class ColdSimulationCoordinator {
                 inFlightInitial: this.snapshotInFlightInitial,
                 refreshPending: this.snapshotRefreshPending,
                 criticalInFlight: !!this.criticalSnapshotInFlight,
+                ...(Config.developerDiagnostics ? {
                 last: { ...this.snapshotLast },
                 fullRuns: this.counters.snapshotFullRuns,
                 dirtyRuns: this.counters.snapshotDirtyRuns,
                 criticalRuns: this.counters.snapshotCriticalRuns,
                 yields: this.counters.snapshotYields,
                 deferrals: this.counters.snapshotDeferrals
+                } : {})
             }
         };
     }

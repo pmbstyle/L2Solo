@@ -74,10 +74,10 @@ const backingSize = value => Object.getOwnPropertyDescriptor(Map.prototype, 'siz
     assert.strictEqual(k.upsert({ state: stale, context: freshContext }), false);
     assert.strictEqual(k.states.get(1).state, first); assert.strictEqual(k.states.get(1).context, freshContext);
     assert.strictEqual(k.states.locationIndex.getSource(1, 'state').source, first);
-    const heapToken = k.scheduleTokens.get(1), node = k.states.safetyNodes.get(1);
+    const heapToken = k.scheduleTokens.get(1);
     const sameRevision = make(1, { adena: 31 }); k.upsert({ state: sameRevision, context: freshContext });
     assert.strictEqual(k.states.get(1).version, oldPacket.version);
-    assert.strictEqual(k.scheduleTokens.get(1), heapToken); assert.strictEqual(k.states.safetyNodes.get(1), node);
+    assert.strictEqual(k.scheduleTokens.get(1), heapToken);
     assert.strictEqual(oldPacket.state, first); assert.strictEqual(oldPacket.context, context);
     assert.strictEqual(k.states.locationIndex.getSource(1, 'state').source, sameRevision);
     for (const id of [-2, Infinity, 1e100]) {
@@ -111,11 +111,11 @@ const backingSize = value => Object.getOwnPropertyDescriptor(Map.prototype, 'siz
     assert.strictEqual(second.states.get(1).state.adena, 999);
 
     const ordered = kernel(); for (let id = 1; id <= 3; id++) ordered.upsert({ state: make(id), context: {} });
-    ordered.states.startSafetyCycle(); const seen = [];
-    assert.deepStrictEqual(ordered.states.inspectSafetyPage(1, id => seen.push(id)), { inspected: 1, done: false });
+    assert.equal(ordered.states.startSafetyCycle, undefined);
+    assert.equal(ordered.states.inspectSafetyPage, undefined);
+    assert.equal(ordered.states.safetyNodes, undefined);
     ordered.remove(2); ordered.upsert({ state: make(4), context: {} });
-    assert.deepStrictEqual(ordered.states.inspectSafetyPage(64, id => seen.push(id)), { inspected: 1, done: true });
-    assert.deepStrictEqual(seen, [1, 3]);
+    assert.deepEqual([...ordered.states.keys()], [1, 3, 4], 'original state order needs no second safety list');
     const calls = [], receiver = {};
     function collect(value, key, map) { calls.push([this, value, key, map]); }
     collect.call = () => { throw Error('own_call_used'); };

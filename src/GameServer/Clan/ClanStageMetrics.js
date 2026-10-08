@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const SAMPLE_LIMIT = 256;
 
 function number(value, fallback = 0) {
@@ -6,6 +7,7 @@ function number(value, fallback = 0) {
 }
 
 function record(samples, stage, durationMs) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     if (!(samples instanceof Map) || !stage) return;
     const values = samples.get(String(stage)) || [];
     values.push(Math.max(0, number(durationMs)));
@@ -32,6 +34,7 @@ function stats(values = []) {
 }
 
 function snapshot(samples) {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     if (!(samples instanceof Map)) return {};
     return Object.fromEntries([...samples.entries()].map(([stage, values]) => [stage, stats(values)]));
 }

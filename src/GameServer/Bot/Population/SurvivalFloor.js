@@ -82,6 +82,12 @@ function actorInventory(actor) {
     return bag;
 }
 
+function bagMarks(actor) {
+    const bag = actorInventory(actor);
+    return { weight: weightPenalty(bag.load, actor.fetchMaxLoad?.() || 0),
+        full: Number(bag.slots >= inventoryLimit(actor.fetchRace?.())) };
+}
+
 function forActor(actor) {
     if (!actor) return null;
     const Attack = invoke('GameServer/Actor/Attack');
@@ -101,4 +107,4 @@ function forActor(actor) {
         ...actorInventory(actor), slotLimit: inventoryLimit(actor.fetchRace?.()), maxLoad: actor.fetchMaxLoad?.() || 0 });
 }
 
-module.exports = { evaluate, forState, forActor, stateInventory, inventoryLimit, weightPenalty };
+module.exports = { evaluate, forState, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };

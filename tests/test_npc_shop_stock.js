@@ -1,6 +1,9 @@
 const assert = require('assert');
 
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('rule-c4-shop-stock');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 const BuyShop = invoke('GameServer/World/Generics/NpcBypasses/BuyShop');
@@ -42,18 +45,25 @@ for (let i = 0; i < rowCount; i++) {
     });
 }
 
-assert(!rows.has(1835), 'ordinary NPC shops must not sell Soulshots');
-assert(!rows.has(2509), 'ordinary NPC shops must not sell Spiritshots');
+// Authored Talking Island prices8/17/40 use the same published progression curve.
+const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
+for (const [selfId, basePrice] of [[1835, 8], [2509, 17], [3947, 40]]) {
+    const price = Math.round(basePrice * (1 + Math.log10(Math.max(1, rate))));
+    assert.deepStrictEqual(rows.get(selfId), { amount: 0, price }, 'C4 NG shots have unlimited authored NPC stock');
+    assert.strictEqual(session.activeNpcShop.prices.get(selfId), price, 'real purchase authorization uses the advertised NG price');
+}
+const gradedShots = [1463,1464,1465,1466,1467,2510,2511,2512,2513,2514,3948,3949,3950,3951,3952];
+assert(gradedShots.every(selfId => !rows.has(selfId)), 'D+ shots remain absent from ordinary NPCs');
 assert.strictEqual(rows.get(17).amount, 0, 'NPC arrow stock should be unlimited in BuyList');
 assert.strictEqual(rows.get(1060).amount, 0, 'NPC scroll stock should be unlimited in BuyList');
-assert.strictEqual(session.activeNpcShop.prices.has(1835), false, 'removed shots must not leave a purchasable price');
+assert(gradedShots.every(selfId => !session.activeNpcShop.prices.has(selfId)), 'D+ shots must not leave a purchasable price');
 
 const shopSpiritshots = (npcId) => NpcShopBuyLists.fetchForNpc(npcId)
     .map((entry) => entry.selfId)
     .filter((selfId) => selfId >= 2509 && selfId <= 2514);
 
 for (const npcId of [7004, 7137, 7150, 7519, 7561, 7063, 7254, 7315, 7081, 7180, 7301, 7834, 7839, 8256, 8300]) {
-    assert.deepStrictEqual(shopSpiritshots(npcId), [], `ordinary NPC merchant ${npcId} must leave shot supply to crafters and static traders`);
+    assert.deepStrictEqual(shopSpiritshots(npcId), [2509], `C4 grocer ${npcId} supplies NG spiritshots but no D+ shots`);
 }
 
 const shotStores = [
@@ -135,3 +145,5 @@ try {
     if (originalRateEnv === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
     else process.env.L2NODE_PROGRESSION_RATE = originalRateEnv;
 }
+
+require('node:fs').rmSync(isolated.directory, { recursive: true, force: true });

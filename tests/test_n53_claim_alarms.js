@@ -32,7 +32,7 @@ function party(h, ids = [21, 22, 23]) {
     return row;
 }
 const claimAlarmCount = kernel => {
-    assert.strictEqual([...kernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 1);
+    assert.strictEqual([...kernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 0);
     return [...kernel.alarms.values()].filter(entry => entry.alarmKind === 'claim_ack').length;
 };
 

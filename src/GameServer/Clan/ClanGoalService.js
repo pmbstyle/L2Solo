@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
@@ -28,8 +30,8 @@ const metrics = {
     catastrophicFailures: 0,
     levelUps: 0,
     budgetStops: 0,
-    planCounts: new Map(),
-    reasonCounts: new Map()
+    planCounts: new DiagnosticMetricMap(),
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -48,6 +50,7 @@ function parseJson(value, fallback = {}) {
 }
 
 function record(map, value) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     if (value) map.set(value, (map.get(value) || 0) + 1);
 }
 
@@ -181,7 +184,8 @@ async function contextFor(clan) {
         itemId: Config.bloodMarkItemId, itemName: 'Proof of Blood', members,
         marketOffer: true, marketOfferPrice: Number(offer.price), partyReady: false,
         economy, offer };
-    const latestDemand = null;
+    const demands = await Database.fetchClanMarketDemands({ clanId: clan.id, itemId: Config.bloodMarkItemId, status: 'open', limit: 4 });
+    const latestDemand = demands.sort((left, right) => number(right.updatedAt) - number(left.updatedAt))[0] || null;
     const sourceLevel = bloodMarkSourceLevel();
     const targetLevel = GoalPolicy.operationLevelThreshold(sourceLevel);
     const readyMembers = GoalPolicy.levelReadyMembers(members, sourceLevel);
@@ -299,7 +303,7 @@ async function resolveClanInternal(clan, options = {}) {
         const previous = automaticPrevious?.type === 'equipment' ? automaticPrevious : clan.state?.productionGoal || automaticPrevious;
         const candidateSnapshot = await ClanGoalCandidateService.snapshotFor(clan, previous, options);
         await ClanEquipmentService.validatePlanning(clan, candidateSnapshot.planning);
-        const brain = candidateSnapshot.planning.economy ? null : candidateSnapshot.decisionNeeded
+        const brain = candidateSnapshot.decisionNeeded
             ? ClanBrain.choose(clan, candidateSnapshot, options) : null;
         if (brain?.pending) {
             return {
@@ -320,7 +324,8 @@ async function resolveClanInternal(clan, options = {}) {
         const equipment = await ClanEquipmentService.resolveClan(clan, previous, {
             ...options,
             planning: candidateSnapshot.planning,
-            selectedCandidate: brain?.candidate || null
+            selectedCandidate: brain?.source === 'llm' ? brain.candidate : null,
+            candidateIds: candidateSnapshot.candidates.map(candidate => candidate.id)
         });
         if (equipment.skipped && !equipment.completed) {
             return {
@@ -356,8 +361,8 @@ async function resolveClanInternal(clan, options = {}) {
                 reasonCode: goal.plan?.reasonCode || ''
             });
             if (persisted.ok) {
-                if (!previous) metrics.goalsCreated += 1;
-                else metrics.goalsUpdated += 1;
+                if (!previous) DiagnosticConfig.developerDiagnostics && (metrics.goalsCreated += 1);
+                else DiagnosticConfig.developerDiagnostics && (metrics.goalsUpdated += 1);
             }
         }
         if (persisted.ok && brain?.source === 'llm') {
@@ -378,7 +383,7 @@ async function resolveClanInternal(clan, options = {}) {
             });
         }
         record(metrics.planCounts, goal.plan?.kind);
-        metrics.activeGoals += goal.status !== 'completed' ? 1 : 0;
+        DiagnosticConfig.developerDiagnostics && (metrics.activeGoals += goal.status !== 'completed' ? 1 : 0);
         return {
             ok: !!persisted.ok,
             clanId: clan.id,
@@ -412,8 +417,8 @@ async function resolveClanInternal(clan, options = {}) {
             requiredItemAmount: 1
         });
         if (advanced.ok) {
-            metrics.levelUps += 1;
-            metrics.goalsCompleted += previous?.status === 'completed' ? 0 : 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.levelUps += 1);
+            DiagnosticConfig.developerDiagnostics && (metrics.goalsCompleted += previous?.status === 'completed' ? 0 : 1);
             record(metrics.reasonCounts, Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
             await ClanCrestService.ensureAutonomousCrest(clan.id);
             if (typeof ClanService.reload === 'function') await ClanService.reload();
@@ -481,16 +486,16 @@ async function resolveClanInternal(clan, options = {}) {
             reasonCode: goal.plan?.reasonCode || ''
         });
         if (persisted.ok) {
-            if (!previous) metrics.goalsCreated += 1;
-            else metrics.goalsUpdated += 1;
-            if (goal.status === 'completed' && previous?.status !== 'completed') metrics.goalsCompleted += 1;
+            if (!previous) DiagnosticConfig.developerDiagnostics && (metrics.goalsCreated += 1);
+            else DiagnosticConfig.developerDiagnostics && (metrics.goalsUpdated += 1);
+            if (goal.status === 'completed' && previous?.status !== 'completed') DiagnosticConfig.developerDiagnostics && (metrics.goalsCompleted += 1);
         }
     }
     if (goal.status === 'completed') record(metrics.reasonCounts, Contracts.REASON_CODES.GOAL_COMPLETED);
     else record(metrics.reasonCounts, goal.plan?.reasonCode);
     record(metrics.planCounts, goal.plan?.kind);
-    if (goal.status === 'preparing') metrics.preparationCycles += 1;
-    if (goal.status !== 'completed') metrics.activeGoals += 1;
+    if (goal.status === 'preparing') DiagnosticConfig.developerDiagnostics && (metrics.preparationCycles += 1);
+    if (goal.status !== 'completed') DiagnosticConfig.developerDiagnostics && (metrics.activeGoals += 1);
     return {
         ok: !!persisted.ok,
         clanId: clan.id,
@@ -527,8 +532,8 @@ async function recordCatastrophicFailure(clanId, reasonCode = Contracts.REASON_C
         reasonCode
     });
     if (result.ok) {
-        metrics.catastrophicFailures += 1;
-        metrics.replans += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.catastrophicFailures += 1);
+        DiagnosticConfig.developerDiagnostics && (metrics.replans += 1);
         record(metrics.reasonCounts, Contracts.REASON_CODES.GOAL_REPLANNED);
     }
     return { ...result, goal: next };
@@ -550,7 +555,7 @@ const ClanGoalService = {
             for (const clan of clans.slice(0, Math.max(1, number(limit, Config.resolveBatchSize)))) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
                 const result = await resolveClan(clan, { deadlineAt });
@@ -558,12 +563,13 @@ const ClanGoalService = {
                 summary.changed += result.changed ? 1 : 0;
                 summary.completed += result.goal?.status === 'completed' ? 1 : 0;
             }
-            metrics.resolves += summary.attempted;
+            DiagnosticConfig.developerDiagnostics && (metrics.resolves += summary.attempted);
             return summary;
         });
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             goalsCreated: metrics.goalsCreated,

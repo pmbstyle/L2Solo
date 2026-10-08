@@ -5,15 +5,47 @@
 // solo or party, rolls its drop and spoil. The spoiler's
 // Spoil landing roll comes after exp, SP and adena, so only loot depends on it.
 const assert = require('assert');
+const fs = require('node:fs');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('cold-kill-rewards');
 
 process.env.L2NODE_PROGRESSION_RATE = 'x10';
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 
 const DataCache = invoke('GameServer/DataCache');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 
 DataCache.init();
+
+// Pure cold outcome controls use an already-owned original object id; this
+// does not manufacture inventory, award training or initialize a database.
+const ColdSoulCrystal = invoke('GameServer/Bot/Population/ColdSoulCrystal');
+const crystalFighter = () => ({ state: { stats: { soulCrystalQuest: true },
+    inventory: { 4629: { selfId: 4629, amount: 1, instances: [{ id: 778899, amount: 1 }] } } },
+    vitals: { hp: 100 }, soulCrystalMark: { objectId: 778899, fromId: 4629, completeAt: 1 } });
+let crystalDraws = 0;
+const crystalRoll = () => { crystalDraws++; return 0; };
+const noQuest = crystalFighter();
+noQuest.state.stats = {};
+assert.strictEqual(ColdSoulCrystal.outcome(noQuest, { selfId: 583 }, crystalRoll, { at: 1 }), null);
+assert.strictEqual(crystalDraws, 0, 'an ineligible quest does not consume the reward stream');
+const noMark = crystalFighter();
+noMark.soulCrystalMark = null;
+assert.strictEqual(ColdSoulCrystal.outcome(noMark, { selfId: 583 }, crystalRoll, { at: 1 }), null);
+assert.strictEqual(crystalDraws, 0, 'an unmarked kill does not consume the reward stream');
+const numericFighter = crystalFighter(), lazyFighter = crystalFighter();
+const numericChange = ColdSoulCrystal.outcome(numericFighter, { selfId: 583 }, 0, { at: 1 });
+const lazyChange = ColdSoulCrystal.outcome(lazyFighter, { selfId: 583 }, crystalRoll, { at: 1 });
+assert.strictEqual(crystalDraws, 1, 'one eligible marked outcome consumes exactly one draw');
+assert.deepStrictEqual(lazyChange, numericChange, 'lazy and existing numeric native outcomes are identical');
+assert.deepStrictEqual(lazyFighter.state.inventory, numericFighter.state.inventory);
+assert.strictEqual(lazyChange.objectId, 778899);
+assert.strictEqual(lazyChange.toId, 4630);
+assert.strictEqual(lazyFighter.state.inventory[4629], undefined);
+assert.strictEqual(lazyFighter.state.inventory[4630].amount, 1);
 
 function seeded(seed) {
     let state = seed >>> 0;
@@ -125,6 +157,33 @@ const PARTY = [
     ]]
 ];
 
+// The original EXP/SP goldens predate the C4 over-level kill penalty.
+// First reproduce them independently with the penalty disabled, then apply
+// the documented (5/6) exponent per killed NPC before party rounding. Loot,
+// Adena, members, seeds and five-fight windows remain the original goldens.
+function partyProgression(team, spot, ids, penalize) {
+    const levels = team.map(([, level]) => level);
+    const bonuses = [1, 1.30, 1.39, 1.50, 1.54, 1.58, 1.63, 1.67, 1.71];
+    const bonus = bonuses[levels.length - 1];
+    const weightSum = levels.reduce((sum, level) => sum + level ** 2, 0);
+    const cutoff = weightSum * (1 - 1 / (1 + bonus - bonuses[levels.length - 2]));
+    assert(levels.every(level => level ** 2 >= cutoff), 'all unchanged fixture members are eligible');
+    return levels.map(level => ids.reduce((total, npcId) => {
+        const npc = DataCache.npcs.find(row => Number(row.selfId) === Number(npcId));
+        const npcLevel = Number(npc?.template?.level || spot.avgLevel);
+        // The three authored Orc templates have no Strong Type HP bonus.
+        if (npc) assert(!npc.skills?.length, 'the pinned Orc reward requires no passive multiplier');
+        const exp = npc ? npcLevel ** 2 * npc.rewards.exp : spot.rewards.exp;
+        const sp = npc ? npc.rewards.sp : spot.rewards.sp;
+        const gap = Math.max(...levels) - npcLevel;
+        const factor = penalize && gap > 5 ? (5 / 6) ** (gap - 5) : 1;
+        const weight = level ** 2 / weightSum;
+        total[0] += Math.round(Math.round(exp * factor * bonus * weight) * 10);
+        total[1] += Math.round(Math.round(sp * factor * bonus * weight) * 10);
+        return total;
+    }, [0, 0]));
+}
+
 for (const [spotId, seed, team, expected] of PARTY) {
     const result = BackgroundPartyResolver.resolve({
         party: { partyId: 'pin', cohesion: 1, risk: 0, roleCoverage: {} },
@@ -138,8 +197,16 @@ for (const [spotId, seed, team, expected] of PARTY) {
     // fights once per window, the solo combat limit, instead of the former
     // cap of four fights per resolve.
     assert.strictEqual(result.debug.wins, 5, `party ${spotId} seed ${seed} must win five fights`);
-    assert.deepStrictEqual(result.memberResults.map((entry) => compact(entry.result.materialize)), expected,
-        `party kill rewards changed: ${spotId} seed ${seed}`);
+    const defeated = result.debug.defeatedNpcIds;
+    assert.strictEqual(defeated.length, spotId === 'pin_unknown' ? 0 : 5,
+        'authored NPCs are concrete; the unchanged unknown spot uses five fallback reward pools');
+    const killed = Array.from({ length: 5 }, (_, index) => defeated[index] || 0);
+    assert.deepStrictEqual(partyProgression(team, spots[spotId], killed, false), expected.map(row => row.slice(0, 2)),
+        `original no-gap reward goldens still describe the same kills: ${spotId} seed ${seed}`);
+    const progression = partyProgression(team, spots[spotId], killed, true);
+    const withGap = expected.map((row, index) => [...progression[index], ...row.slice(2)]);
+    assert.deepStrictEqual(result.memberResults.map((entry) => compact(entry.result.materialize)), withGap,
+        `C4 gap rewards and original loot goldens: ${spotId} seed ${seed}`);
 }
 
 // Fights per party resolve follow the solo window rule: a solo bot fights at

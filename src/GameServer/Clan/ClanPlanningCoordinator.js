@@ -1,6 +1,9 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const TableChannel = require('../Bot/Population/ColdTableChannel');
+const { SpotCatalogWriter } = require('./ClanSpotCatalog');
+const EMPTY_SPOTS = [];
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 
 class ClanPlanningCoordinator {
@@ -17,6 +20,10 @@ class ClanPlanningCoordinator {
         this.pending = new Map();
         this.sequence = 0;
         this.initializing = null;
+        this.spotInitializing = null;
+        this.spotWriter = null;
+        this.spotPublishedWorker = null;
+        this.spotGeneration = 0;
         this.retryAt = 0;
         this.closed = false;
         this.stats = { completed: 0, failures: 0, timeouts: 0, rejected: 0, restarts: 0, maxRunMs: 0 };
@@ -25,9 +32,11 @@ class ClanPlanningCoordinator {
     fail(worker, error) {
         if (this.worker !== worker) return;
         this.worker = null;
+        this.spotWriter = null;
+        this.spotPublishedWorker = null;
         this.tableChannel.detach(this);
         this.retryAt = Date.now() + this.restartDelayMs;
-        this.stats.failures++;
+        DiagnosticConfig.developerDiagnostics && (this.stats.failures++);
         for (const entry of this.pending.values()) {
             clearTimeout(entry.timer);
             entry.reject(error);
@@ -40,18 +49,22 @@ class ClanPlanningCoordinator {
         const worker = this.worker;
         if (!worker || this.closed) return Promise.reject(new Error('clan planning worker unavailable'));
         if (this.pending.size >= this.maxPending) {
-            this.stats.rejected++;
+            DiagnosticConfig.developerDiagnostics && (this.stats.rejected++);
             return Promise.reject(new Error('clan planning worker queue full'));
         }
         return new Promise((resolve, reject) => {
             const id = ++this.sequence;
             const timer = setTimeout(() => {
-                this.stats.timeouts++;
+                DiagnosticConfig.developerDiagnostics && (this.stats.timeouts++);
                 this.fail(worker, new Error('clan planning worker timed out'));
             }, this.timeoutMs);
             this.pending.set(id, { resolve, reject, timer });
             worker.ref();
             try {
+                // ARCH-NOTE: the native plan repeated 2,045 immutable spot
+                // profiles (3,276,455 serialized B). Publish bounded pages once
+                // per worker/catalog generation; preserve dynamic rows in each
+                // ordered request by original object identity, never by ID alone.
                 worker.postMessage({ id, type, ...payload });
             } catch (error) {
                 this.fail(worker, error);
@@ -64,10 +77,10 @@ class ClanPlanningCoordinator {
         if (this.initializing) return this.initializing;
         if (this.worker) return;
         if (Date.now() < this.retryAt) throw new Error('clan planning worker recovering');
-        const worker = new Worker(this.workerFile);
+        const worker = new Worker(this.workerFile, { workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true } });
         this.worker = worker;
         const epoch = ++this.epoch;
-        this.stats.restarts++;
+        DiagnosticConfig.developerDiagnostics && (this.stats.restarts++);
         worker.on('error', (error) => this.fail(worker, error));
         worker.on('exit', (code) => this.fail(worker, new Error(`clan planning worker exited: ${code}`)));
         worker.on('message', (message) => {
@@ -81,7 +94,7 @@ class ClanPlanningCoordinator {
             this.pending.delete(message.id);
             clearTimeout(entry.timer);
             if (message.error) {
-                this.stats.failures++;
+                DiagnosticConfig.developerDiagnostics && (this.stats.failures++);
                 entry.reject(new Error(message.error));
             }
             else entry.resolve(message.result);
@@ -89,8 +102,8 @@ class ClanPlanningCoordinator {
         });
         this.initializing = (async () => {
             // Bound serialization work on the game thread, including initial startup.
-            for (const name of ['items', 'npcs', 'npcRewards']) {
-                const rows = catalogs[name] || [];
+            for (const name of ['items', 'npcs', 'npcRewards', 'experience', 'skillTree', 'classTemplates', 'revitalize']) {
+                const rows = name === 'revitalize' ? [catalogs[name] || {}] : catalogs[name] || [];
                 for (let offset = 0; offset < rows.length; offset += 128) {
                     await this.send('catalog', { name, rows: rows.slice(offset, offset + 128) });
                     await yieldLoop();
@@ -115,13 +128,36 @@ class ClanPlanningCoordinator {
         }
     }
 
-    async plan(payload, catalogs) {
+    async ensureSpotCatalog(rows) {
+        // A refresh and startup share one ordered publication. A failed or
+        // incomplete generation cannot become a planning input.
+        while (this.spotInitializing) await this.spotInitializing;
+        if (this.spotWriter?.rows === rows && this.spotPublishedWorker === this.worker) return this.spotWriter;
+        const worker = this.worker;
+        const writer = new SpotCatalogWriter(++this.spotGeneration, rows);
+        const publication = (async () => {
+            for (const page of writer.pages()) {
+                await this.send('spot_catalog', { page });
+                await yieldLoop();
+            }
+            if (this.worker !== worker) throw new Error('clan planning worker unavailable');
+            this.spotWriter = writer;
+            this.spotPublishedWorker = worker;
+            return writer;
+        })();
+        this.spotInitializing = publication;
+        try { return await publication; }
+        finally { if (this.spotInitializing === publication) this.spotInitializing = null; }
+    }
+
+    async plan(payload, catalogs, spotCatalog = catalogs.spots || EMPTY_SPOTS) {
         await this.ready(catalogs);
+        const writer = await this.ensureSpotCatalog(spotCatalog);
         if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
-        const result = await this.send('plan', { payload });
-        this.stats.completed++;
-        this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs);
+        const result = await this.send('plan', { payload: writer.pack(payload) });
+        DiagnosticConfig.developerDiagnostics && (this.stats.completed++);
+        DiagnosticConfig.developerDiagnostics && (this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs));
         return result.plan;
     }
 
@@ -130,6 +166,8 @@ class ClanPlanningCoordinator {
         const worker = this.worker;
         if (worker) {
             this.worker = null;
+            this.spotWriter = null;
+            this.spotPublishedWorker = null;
             this.tableChannel.detach(this);
             for (const entry of this.pending.values()) {
                 clearTimeout(entry.timer);
@@ -140,7 +178,7 @@ class ClanPlanningCoordinator {
         }
     }
 
-    metrics() { return { ...this.stats, pending: this.pending.size, running: !!this.worker }; }
+    metrics() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, pending: this.pending.size, running: !!this.worker }; }
 }
 
 let coordinator = null;
@@ -178,10 +216,11 @@ async function context() {
     const fixedOffers = market.fixedStoreOffers().map(offerRow);
     const recipes = [...craft.publishedStationRecipes().recipes];
     const general = {};
-    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate']) {
+    for (const key of ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate', 'maxLevel']) {
         general[key] = global.options.default.General?.[key];
     }
-    return { ...staticMarkets.get(rate), fixedOffers, recipes, general, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
+    const progression = { contentCap: global.options.default.Progression?.contentCap };
+    return { ...staticMarkets.get(rate), fixedOffers, recipes, general, progression, progressionRate: process.env.L2NODE_PROGRESSION_RATE };
 }
 
 module.exports = {
@@ -189,7 +228,7 @@ module.exports = {
     start() { enabled = true; coordinator ||= new ClanPlanningCoordinator(); },
     enabled: () => enabled,
     context,
-    plan: (payload) => coordinator.plan(payload, invoke('GameServer/DataCache')),
+    plan: (payload) => coordinator.plan(payload, invoke('GameServer/DataCache'), invoke('GameServer/Bot/Population/SpotProfiles').ensure()),
     metrics: () => coordinator?.metrics() || { running: false, pending: 0 },
     shutdown: () => coordinator?.shutdown()
 };

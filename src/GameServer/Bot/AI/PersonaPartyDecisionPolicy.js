@@ -21,7 +21,7 @@ function evaluate(subject, memory = {}, options = {}) {
     const trust = Number(memory.trust || 0);
     const familiarity = Number(memory.familiarity || 0);
     const relationship = BotSocialMemory.relationship(memory);
-    const knownPartner = relationship === 'trusted' || relationship === 'friendly';
+    const knownPartner = (relationship === 'trusted' || relationship === 'friendly') && Number(memory.groupRuns || 0) >= 1;
     // The shared persona score (PersonaPartyPolicy.baseScore) plus what the
     // bot knows of this player.
     const score = Math.round(clamp(
@@ -34,11 +34,13 @@ function evaluate(subject, memory = {}, options = {}) {
     const Context = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = subject.actor ? Context.stateForActor(subject.actor, subject) : subject;
     const peer = options.peer?.actor ? Context.stateForActor(options.peer.actor, options.peer) : options.peer;
+    const roll = require('./TendencyRoll').roll('party_invite', state.characterId,
+        peer?.characterId || memory.playerId || 0, Number(memory.inviteAttempts || 0));
+    const bonus = knownPartner ? persona.traits.commitment / 4 : 0;
     const decision = peer ? require('../Population/PartyGoalPolicy').decide(state, [peer], { persona,
-        fee: options.fee || 0, roll: require('./TendencyRoll').roll('party_invite', state.characterId,
-            peer.characterId, memory.updatedAt || memory.lastInteractionAt || 0) }) : null;
-    const accept = decision ? decision.accept : require('./TendencyRoll').roll('party_invite', state.characterId,
-        memory.updatedAt || 0) < require('./TendencyRoll').chance(score / 100 + (knownPartner ? persona.traits.commitment / 4 : 0));
+        fee: options.fee || 0, roll, bonus }) : null;
+    const probability = decision?.probability ?? require('./TendencyRoll').chance(score / 100 + bonus);
+    const accept = roll < probability;
     const goal = require('../Population/PartyGoalPolicy').declaration(state);
 
     if (accept) {
@@ -47,7 +49,7 @@ function evaluate(subject, memory = {}, options = {}) {
             reason: 'available',
             reasonText: 'available',
             score,
-            persona, goal
+            persona, goal, probability, roll
         };
     }
 
@@ -56,7 +58,7 @@ function evaluate(subject, memory = {}, options = {}) {
         reason: 'prefers_solo',
         reasonText: 'prefers a solo run for now',
         score,
-        persona, goal
+        persona, goal, probability, roll
     };
 }
 
@@ -64,9 +66,8 @@ function reply(decision) {
     if (!decision?.accept) {
         return 'I am keeping this run focused for now. Let us get to know each other first.';
     }
-    const goal = decision.goal?.itemId ? ` I am working toward item ${decision.goal.itemId}.`
-        : decision.goal?.spotId ? ` My next goal is ${decision.goal.spotId}.` : '';
-    if (goal) return `I am in.${goal} Let us agree on the loot before we start.`;
+    const goal = require('../Population/PartyAgreement').describe(decision.goal, null);
+    if (goal) return `ok, ${goal}`;
     if (decision.persona?.primaryDrive === 'social') return 'Gladly. A steady party is better than going alone.';
     if (decision.persona?.primaryDrive === 'wealth') return 'I can make time for a familiar partner. Let us make the run count.';
     return 'A good party will help the next run. I am in.';

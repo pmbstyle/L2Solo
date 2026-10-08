@@ -225,7 +225,8 @@ function privateSession(name, id, selfId) {
                 fetchLocX: () => 83000, fetchLocY: () => 148000, fetchLocZ: () => -3400,
                 backpack: { fetchItems: () => [], fetchItemFromSelfId: () => ({ fetchAmount: () => 100000 }) } };
             try {
-                const errand = Shopping.planErrand({ actor: bot, coldLifeState: { stats: {} } }, bot, { name: 'Giran' });
+                // ARCH-NOTE: E3 keeps player-assigned errands; autonomous actors use their funded leaf.
+                const errand = Shopping.planErrand({ actor: bot, partyCompanion: true, coldLifeState: { stats: {} } }, bot, { name: 'Giran' });
                 assert(queried > 0 && errand?.itemId === 1);
             } finally { Market.bestOffer = originalBest; Market.hotOffers = originalHot; }
         });

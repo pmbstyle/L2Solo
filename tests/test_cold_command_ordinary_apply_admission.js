@@ -3,9 +3,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
-const { DatabaseSync } = require('node:sqlite');
 const gameRoot = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+require(path.join(gameRoot, 'tests/helpers/databaseIsolation'));
+const isolated = require(path.join(gameRoot, 'tests/helpers/isolatedSocialDatabase'))('command-ordinary-apply-admission-profile', gameRoot);
+// This admission-only scenario explicitly requires the native knowledge-OFF mode.
+fs.writeFileSync(isolated.ini, fs.readFileSync(isolated.ini, 'utf8')
+    .replace(/^knowledgeErrorsEnabled\s*=\s*true$/m, 'knowledgeErrorsEnabled = false'));
+const { DatabaseSync } = require('node:sqlite');
 require(path.join(gameRoot, 'src/Global'));
+isolated.assertConfigured(options.default);
 const Database = invoke('Database');
 const Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -18,7 +24,7 @@ const realImmediate = setImmediate;
 const clone = value => JSON.parse(JSON.stringify(value));
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; };
 const epoch = 'ordinary-apply-native-baseline';
-let directory, producer, producerError, joined = false, drained = false;
+let directory = isolated.directory, producer, producerError, joined = false, drained = false;
 const messages = [], observations = [], failures = [];
 const evidence = process.env.N53_EVIDENCE_DIR || null;
 async function wait(promise, label) {
@@ -55,6 +61,44 @@ function facts(id) {
         return out;
     } finally { db.close(); }
 }
+const preparedSkills = new Map();
+async function prepareNativeProfile(id) {
+    const input = Life.snapshot(id);
+    const before = facts(id);
+    assert.equal(before.characters.find(row => row.id === id).level, 7);
+    assert.equal(before.characters.find(row => row.id === id).exp, input.exp);
+    assert.equal(before.characters.find(row => row.id === id).sp, 120);
+    assert.equal(input.sp, 120);
+    const beforeWrite = Database.createColdTrainingGuard(input, () => {
+        assert.equal(Life.cachedState(id), input);
+    });
+    const training = await invoke('GameServer/Bot/BotClassProgression').reconcile({
+        characterId: id, classId: 0, level: 7, seed: id,
+    }, { beforeWrite });
+    // Authored class0 order: Power Strike ranks1/2 cost50 each; remaining20
+    // cannot buy rank3. Lucky/CommonCraft/CreateCommon each cost0 at level7.
+    assert.equal(training.spentSp, 100);
+    assert.equal(training.learnedCount, 5);
+    assert.deepEqual(training.consumedBooks, []);
+    assert.deepEqual(training.transitions, []);
+    const row = await Database.publishColdTraining(id, training, { beforeWrite });
+    const accepted = Life.acceptNewerLifecycleRow(row);
+    assert.equal(accepted, Life.cachedState(id));
+    assert.equal(accepted.level, 7); assert.equal(accepted.exp, input.exp);
+    assert.equal(accepted.sp, 20); assert.equal(accepted.stats.classId, 0);
+    assert.equal(invoke('GameServer/Skills/SkillBookCatalog').needsTraining(accepted), false);
+    const after = facts(id), skills = after.skills.filter(skill => skill.characterId === id);
+    assert.deepEqual(skills.map(skill => [skill.selfId, skill.level]).sort((a, b) => a[0] - b[0]),
+        [[3, 2], [194, 1], [1320, 1], [1322, 1]]);
+    assert.equal(after.characters.find(character => character.id === id).sp, accepted.sp);
+    for (const table of ['items', 'warehouse_items', 'afk_trade_shops', 'afk_trade_lines'])
+        assert.deepEqual(after[table], before[table], 'native profile preparation never changes physical items/trade');
+    assert(!Protocol.sameCommandCheckpoint(Protocol.commandCheckpoint(input), accepted), 'publishColdTraining legitimately rebases the checkpoint');
+    preparedSkills.set(id, clone(skills));
+    console.log('NATIVE_PRETRAIN', JSON.stringify({ id, allocatedSp: 120, training, physicalSp: accepted.sp,
+        skills, checkpointBefore: Protocol.commandCheckpoint(input), checkpointAfter: Protocol.commandCheckpoint(accepted) }));
+}
+
 async function seed(activity, number) {
     const account = `bot_ordinary_${number}`;
     await Database.createAccount(account, 'fixture');
@@ -72,6 +116,7 @@ async function seed(activity, number) {
         timing: { activityStartedAt: time - 45000, lastResolvedAt: time - 45000, nextResolveAt: time - 1000 },
         stats: { classId: 0, classProgressionLevel: level, classProgressionClassId: 0 }
     }, 'ordinary_apply_seed'));
+    await prepareNativeProfile(id);
     return { id, activity, state: Life.snapshot(id) };
 }
 async function queued(entry, requestMessage, retire) {
@@ -188,9 +233,6 @@ async function queued(entry, requestMessage, retire) {
     }
 }
 (async () => {
-    directory = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'ordinary-apply-native-'));
-    options.default.Database.path = path.join(directory, 'world.sqlite');
-    options.default.Database.historyPath = path.join(directory, 'history.sqlite');
     assert.equal(Config.knowledgeErrorsEnabled, false);
     Database.init(); assert(Database.isReady()); Data.init(); await Life.init();
     const entries = [];

@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Crafting = require('./ClanCraftingPolicy');
 const CraftShops = invoke('GameServer/Bot/Economy/CraftShopService');
 const Database = invoke('Database');
@@ -25,7 +27,7 @@ const metrics = {
     partyAssignments: 0,
     assignmentFailures: 0,
     noDebt: 0,
-    reasonCounts: new Map()
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -44,7 +46,7 @@ function parseJson(value, fallback = {}) {
 }
 
 function recordReason(reason) {
-    if (reason) metrics.reasonCounts.set(reason, (metrics.reasonCounts.get(reason) || 0) + 1);
+    if (reason) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(reason, (metrics.reasonCounts.get(reason) || 0) + 1);
 }
 
 function reservationOptionsForClan(clan) {
@@ -421,7 +423,7 @@ async function buyGoalCopy(memberId, plan, clan) {
     offer.equipSlot = number(plan.target?.slot) || undefined;
     const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
     if (blocker) return goalPurchaseFailed(blocker);
-    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state));
+    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state, 0, { itemId: plan.target.selfId }));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
         if (!paid.ok) return goalPurchaseFailed(paid.code, paid);
@@ -487,7 +489,7 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
         }
     }, 'clan_equipment_party_objective');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id };
-    metrics.partyAssignments += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.partyAssignments += 1);
     return { ok: true, changed: true, memberId: id };
 }
 
@@ -535,7 +537,7 @@ async function assignPlan(member, plan, clan, goal) {
     };
     const saved = await LifeState.upsertState(nextState, 'clan_equipment_goal');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id, handoff };
-    metrics.assignments += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.assignments += 1);
     const purchase = plan.strategy === 'market' ? await buyGoalItem(id, plan, clan) : null;
     return { ok: true, changed: true, memberId: id, handoff, purchase };
 }
@@ -803,11 +805,11 @@ async function recordRaidFailure(party, timestamp = Date.now()) {
     return { ok: false, code: 'ownership_conflict' };
 }
 
-function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null) {
+function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate = null, candidateIds = []) {
     const memberIdValue = number(selectedCandidate?.memberId);
     const itemId = number(selectedCandidate?.itemId);
     const slot = number(selectedCandidate?.slot);
-    if (!memberIdValue || planning.economy) return planning.selection;
+    if (!memberIdValue || (planning.economy && !candidateIds.includes(selectedCandidate?.id))) return planning.selection;
     const member = (clan.members || []).find((entry) => memberId(entry) === memberIdValue);
     const plan = planning.plans.get(memberIdValue);
     if (!member || !Policy.isAcquisitionPlan(plan)) return planning.selection;
@@ -823,7 +825,7 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
 }
 
 async function resolveClan(clan, previousGoal = null, options = {}) {
-    metrics.resolves += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.resolves += 1);
     if (!clan || !number(clan.id)) {
         return { ok: true, skipped: true, reason: 'equipment_level_unavailable' };
     }
@@ -840,7 +842,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     }
     const planning = options.planning || await planningForClan(clan, previousGoal, options);
     const { plans, previousFulfilled } = planning;
-    const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate);
+    const selection = selectedPlanningTarget(clan, previousGoal, planning, options.selectedCandidate, options.candidateIds);
     await validatePlanning(clan, planning, selection);
     const raidPartyAfterPlanning = activeRaidPartyForClan(clan.id);
     if (raidPartyAfterPlanning) {
@@ -854,7 +856,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         };
     }
     if (!selection) {
-        metrics.noDebt += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.noDebt += 1);
         recordReason('no_equipment_debt');
         // The beneficiary has its item and no member needs anything next: the
         // goal is closed, not left executing until the next debt appears.
@@ -927,7 +929,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     const partyReform = await releaseConflictingRosterParties([...new Set([...assignedMemberIds, ...craftMembers])], goal, expectedObjective);
     const assignment = await assignPlan(selection.member, selection.plan, clan, goal);
     if (!assignment.ok) {
-        metrics.assignmentFailures += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.assignmentFailures += 1);
         recordReason(assignment.code);
         return { ...assignment, goal, plans, selection };
     }
@@ -947,7 +949,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         [number(clan.id)]
     ]);
     const latestState = parseJson(latestStateRow?.stateJson, clan.state || {});
-    metrics.plans += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.plans += 1);
     recordReason(goal.plan.reasonCode);
     return {
         ok: true,
@@ -965,6 +967,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
 
 const ClanEquipmentService = {
     assignPlan,
+    selectedPlanningTarget,
     resolveClan,
     planningForClan,
     craftingOptions,
@@ -977,6 +980,7 @@ const ClanEquipmentService = {
     reserveGoalCapacity,
     releaseConflictingRosterParties,
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             plans: metrics.plans,

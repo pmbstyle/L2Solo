@@ -12,6 +12,7 @@ const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const ColdMarketListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const MarketBuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 
 DataCache.init();
 
@@ -32,7 +33,8 @@ const original = {
     learnCraftableRecipes: LifeState.learnCraftableRecipes,
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     refreshBuyerActivity: MarketBuyerActivity.refresh,
-    depositCold: BotWarehouse.depositCold
+    depositCold: BotWarehouse.depositCold,
+    admit: Commit.admit, finish: Commit.finish
 };
 
 async function run() {
@@ -93,20 +95,26 @@ async function run() {
 
     const learned = [];
     Database.fetchCharacterRecipes = () => Promise.resolve([]);
+    // This fixture checks selected-scroll routing only. Native admission,
+    // retry and physical conservation are covered by disposable DB fixtures.
+    Commit.admit = async (state, kind) => ({ state, command: ['97020995-80b8-4901-8438-e46329a7d004', kind, 0] });
+    Commit.finish = () => {};
     Database.learnColdRecipes = async (characterId, recipes, state) => {
         const inventory = structuredClone(state.inventory);
         for (const recipe of recipes) {
             learned.push({ characterId, recipeId: recipe.recipeId, type: recipe.type });
             inventory[recipe.recipeItemId].amount--;
         }
-        return { coldLifeRow: { ...state, inventory, stats: { ...state.stats,
+        return { learned: recipes, coldLifeRow: { ...state, inventory, stats: { ...state.stats,
             lastRecipeBookLearning: { learned: recipes } } } };
     };
     LifeState.acceptLifecycleRow = state => state;
     Database.syncInventorySummary = () => Promise.resolve();
     LifeState.upsertState = (state) => Promise.resolve(state);
 
-    const updated = await LifeState.learnCraftableRecipes(craftState);
+    assert.equal(await LifeState.learnCraftableRecipes(craftState), craftState,
+        'no accepted economic craft route leaves unselected scrolls intact');
+    const updated = await LifeState.learnCraftableRecipes(craftState, { recipeIds: [recipe.recipeId] });
     assert.deepStrictEqual(learned, [{ characterId: 7001, recipeId: recipe.recipeId, type: recipe.type }]);
     assert.strictEqual(updated.inventory[2298].amount, 1, 'learning must consume exactly one recipe item');
     assert.strictEqual(updated.inventory[2250].amount, 1, 'low-grade recipes must remain for NPC liquidation');
@@ -128,7 +136,7 @@ async function run() {
         leatherItem, []).action, 'npc', 'a Bounty Hunter has Create Item 1 but never crafts: it sells the recipe to the NPC');
     learned.length = 0;
     const materialCrafter = { ...craftState, characterId: 7002, inventory: { 1814: leatherItem } };
-    const learnedMaterial = await LifeState.learnCraftableRecipes(materialCrafter);
+    const learnedMaterial = await LifeState.learnCraftableRecipes(materialCrafter, { recipeIds: [leatherRecipe.recipeId] });
     assert.deepStrictEqual(learned, [{ characterId: 7002, recipeId: leatherRecipe.recipeId, type: 'dwarven' }]);
     assert.strictEqual(learnedMaterial.inventory[1814].amount, 0, 'learning must consume the material recipe');
 
@@ -167,5 +175,7 @@ run().catch((error) => {
     LifeState.applyNpcLiquidation = original.applyNpcLiquidation;
     MarketBuyerActivity.refresh = original.refreshBuyerActivity;
     BotWarehouse.depositCold = original.depositCold;
+    Commit.admit = original.admit;
+    Commit.finish = original.finish;
     LifeState.reset?.();
 });

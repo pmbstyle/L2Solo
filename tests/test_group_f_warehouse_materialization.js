@@ -66,7 +66,10 @@ async function duringMaterialization(characterId, hydrate) {
         assert.equal(selected.inventory[STEM].amount, hydrate ? 30 : 10);
         assert.equal(selected.simulation.revision, before.life.simulationRevision,
             'the old cache can share the newer SQL row revision');
-        const blocked = await Warehouse.releaseCold(selected);
+        // This fixture is already at Giran's service. Both attempts enter
+        // the town-only path so materialization/native bag fences, not the
+        // cheap out-of-town guard, must reject the first withdrawal.
+        const blocked = await Warehouse.releaseCold(selected, { inTown: true });
         const afterAttempt = await counts(characterId);
         assert.equal(blocked.released, false, 'warehouse waits for pending loot materialization');
         assert.deepEqual([afterAttempt.saved, afterAttempt.bag, afterAttempt.warehouse], [30, 10, 20]);
@@ -81,7 +84,7 @@ async function duringMaterialization(characterId, hydrate) {
         Database.syncInventorySummary = originals.sync;
         const materialized = await counts(characterId);
         assert.deepEqual([materialized.saved, materialized.bag, materialized.warehouse], [30, 30, 20]);
-        const released = await Warehouse.releaseCold(Life.cachedState(characterId));
+        const released = await Warehouse.releaseCold(Life.cachedState(characterId), { inTown: true });
         assert.equal(released.released, true, 'the bounded withdrawal can retry after materialization');
         assert.deepEqual(released.items.map(item => [item.selfId, item.amount, item.reason]), [[STEM, 20, 'market']]);
         const complete = await counts(characterId);

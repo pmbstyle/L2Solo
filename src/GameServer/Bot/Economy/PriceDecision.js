@@ -4,13 +4,12 @@
 // the bot's belief (PriceBelief), one roll among the near-best ones. One
 // module for the main thread and the cold worker.
 //
-// Selling at p: a buyer comes at the item's arrival rate, wants it at p with
-// the chance the belief gives (S), and takes it if p plus his trip looks best
-// to him among the offers he sees (the cheapest rivals of the board, the NPC
-// shop at its price plus his trip), through the buyers' perception width;
-// units of rivals cheaper than p sell first. The value of p is its utility
-// discounted by the expected wait at the value of money. The NPC buy-back now
-// is the outside option. Traits are parameters only: assertiveness is the
+// Selling at p uses a declared finite demand segment. The belief gives its
+// willingness at p; finite cheaper stock is deducted once before clipping
+// the physical owned stock. The NPC alternative retains perception width.
+// Receipts are discounted by the segment's known delay; unsold goods retain
+// their physical exit value. Missing demand evidence stays unknown. Traits
+// are parameters only: assertiveness is the
 // optimism of the centre, caution the loss aversion against the bot's own
 // value (a sale below it is a loss weighted 1 + caution; waiting is no loss,
 // only a delay), commitment the patience on the discount. Buying mirrors it.
@@ -28,14 +27,15 @@ const NEAR_BEST = 0.02;
 // How differently buyers see the same offers (e13: their understanding error).
 const PERCEPTION = 0.08;
 const RIVALS_SEEN = 20;
-// The shared network prices money in hours per Adena; multiplied by the
-// value of one hour it is a dimensionless urgency for an hour of waiting.
-function valueOfMoney(hour, moneyPrice) {
-    return Math.max(0, Number(hour) || 0) * Math.max(0, Number(moneyPrice) || 0);
+// Waiting costs the gap's urgency spread over that wish's own horizon (1/hour).
+// 76797 adena/hour * 3.235e-5 hours/adena / 59.1 hours = .042/hour.
+function waitRate({ hourAdena, moneyPrice, gapHorizonHours } = {}) {
+    return gapHorizonHours > 0 ? Math.max(0, Number(hourAdena) || 0)
+        * Math.max(0, Number(moneyPrice) || 0) / gapHorizonHours : 0;
 }
-function traderOf(persona, { hour, moneyPrice = 0 }) {
+function traderOf(persona, economy) {
     const traits = persona?.traits || {};
-    return { wait: valueOfMoney(hour, moneyPrice) * (1.5 - Number(traits.commitment ?? 0.5)),
+    return { wait: waitRate(economy) * (1.5 - Number(traits.commitment ?? 0.5)),
         assertiveness: Number(traits.assertiveness ?? 0.5), caution: Number(traits.caution ?? 0.5),
         understanding: Number(persona?.understanding ?? 0.3) };
 }
@@ -62,17 +62,20 @@ function buyback(selfId) {
     return NpcSellRules.npcBuyPrice(Number(item?.template?.price || 0));
 }
 
-// Buyers per open line of a counter with no deals yet: half the lowest of
-// its kind that has some (a later grade of the world, e8).
-function priorPerLine(key, board, timestamp) {
-    const kind = key.split(' ')[0];
-    let lowest = Infinity;
-    for (const other of MarketCounters.COUNTER_KEYS) {
-        if (!other.startsWith(`${kind} `) || other === key) continue;
-        const perHour = MarketCounters.counter(other, timestamp).perHour;
-        if (perHour > 0) lowest = Math.min(lowest, perHour / Math.max(1, board?.linesIn(other) || 0));
+function saleOutcome({ units, applicableUnits, willingUnits, cheaperUnits, price,
+    residualUnitValue = 0, delayHours = 0, discountRate = 0 } = {}) {
+    if (!Number.isSafeInteger(units) || units < 0 || !Number.isSafeInteger(cheaperUnits) || cheaperUnits < 0
+        || ![applicableUnits, willingUnits, price, residualUnitValue, delayHours, discountRate]
+            .every(value => Number.isFinite(value) && value >= 0)) {
+        return { known: false, sold: NaN, residual: NaN, receipts: NaN, residualValue: NaN };
     }
-    return Number.isFinite(lowest) ? lowest / 2 : 0;
+    const demand = Math.max(0, Math.min(applicableUnits, willingUnits) - cheaperUnits);
+    const sold = Math.min(units, demand), residual = units - sold;
+    const receipts = sold * price * Math.exp(-discountRate * delayHours);
+    const residualValue = residual * residualUnitValue;
+    return Number.isFinite(receipts) && Number.isFinite(residualValue)
+        ? { known: true, sold, residual, receipts, residualValue }
+        : { known: false, sold: NaN, residual: NaN, receipts: NaN, residualValue: NaN };
 }
 
 // What the seller of `units` of an item in `town` competes with: { buyback,
@@ -80,32 +83,47 @@ function priorPerLine(key, board, timestamp) {
 // tripCost(town): a buyer's trip there in Adena (OfferOrder.tripCost of the
 // trader); npcOffers: the NPC shops selling the item ({ price, town }).
 function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, tripCost = null,
-    npcOffers = [], timestamp = Date.now(), enchant = 0 } = {}) {
+    npcOffers = [], timestamp = Date.now(), enchant = 0, demand = null, ownUnits = null,
+    jointKnown = true } = {}) {
     const id = Number(selfId);
     const trip = (where) => (tripCost ? Math.min(Number(tripCost(where)) || 0, Number.MAX_SAFE_INTEGER) : 0);
-    const key = MarketCounters.counterOf(id);
-    const counter = MarketCounters.counter(key, timestamp);
-    let perLine = counter.perHour / Math.max(1, board?.linesIn(key) || 0);
-    if (!(perLine > 0)) perLine = priorPerLine(key, board, timestamp);
     const rivals = [];
-    let others = 0;
+    let truncated = false;
     for (const line of board ? board.list(id, SELL) : []) {
         if (line.ownerId === Number(ownerId) || Number(line.enchant || 0) !== Number(enchant)) continue;
-        others += 1;
-        if (rivals.length < RIVALS_SEEN) rivals.push({ landed: line.price + trip(line.town), units: line.count });
+        if (rivals.length < RIVALS_SEEN) rivals.push({ landed: line.price + trip(line.town), units: line.count,
+            origin: 'public_ask', authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },
+            selfId: id, enchant: Number(enchant), observedAt: timestamp, scope: 'board',
+            availability: { from: timestamp, until: timestamp } });
+        else truncated = true;
     }
     let npcLanded = Infinity;
     for (const offer of enchant > 0 ? [] : npcOffers || []) {
         if (offer?.price > 0) npcLanded = Math.min(npcLanded, Number(offer.price) + trip(offer.town));
     }
+    // ARCH-NOTE: the delivered counter tracks kind-level deals, not permitted
+    // item arrivals/exposure/lifetime. Dividing by listing count manufactured
+    // demand and made split own listings create buyers. No supported producer
+    // currently supplies those three item facts, so the external tail is unknown.
+    const supported = Boolean(jointKnown && demand && demand.known !== false && demand.origin && demand.authority
+        && Number(demand.selfId ?? id) === id && Number(demand.enchant ?? enchant) === Number(enchant)
+        && Number.isFinite(demand.applicableUnits) && demand.applicableUnits >= 0
+        && Number.isFinite(demand.availability?.from) && Number.isFinite(demand.availability?.until)
+        && demand.availability.from <= timestamp && demand.availability.until >= timestamp);
     return {
         buyback: buyback(id),
-        buyersPerHour: perLine * (others + 1),
+        known: supported && !truncated,
+        applicableUnits: supported ? demand.applicableUnits : NaN,
+        delayHours: supported ? Number(demand.delayHours ?? 0) : NaN,
+        buyersPerHour: supported && Number.isFinite(demand.arrivalsPerHour) ? demand.arrivalsPerHour : NaN,
         lot: Math.max(1, MarketCounters.itemDeals(id).units || 1),
-        units: Math.max(1, Number(units) || 1),
+        units: Math.max(1, Number(ownUnits ?? units) || 1),
         rivals,
         npcLanded,
-        ownTrip: trip(town)
+        ownTrip: trip(town),
+        sourceRevision: board?.itemRevision(id) ?? null,
+        demand: supported ? demand : null,
+        truncated
     };
 }
 
@@ -135,20 +153,33 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
     const width = PriceBelief.sigma(belief);
     const reference = Math.exp(belief.mu);
     const centre = belief.mu + (trader.assertiveness - 0.5) * width;
-    let alternative = market.npcLanded;
-    for (const rival of market.rivals) alternative = Math.min(alternative, rival.landed);
-    const deals = Math.ceil(market.units / market.lot);
+    const known = market.known !== false && Number.isFinite(market.applicableUnits)
+        && Number.isSafeInteger(market.units) && market.units >= 0 && Number.isFinite(market.delayHours)
+        && market.delayHours >= 0 && !market.truncated;
+    const npcValue = saleUtility(market.buyback, reference, trader.caution);
+    if (!known) {
+        // An unavailable forecast does not invalidate an already accepted line.
+        return current > market.buyback ? { price: current, value: NaN, money: NaN, npc: false, npcValue, known: false }
+            : { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue, known: false };
+    }
+    const alternative = market.npcLanded;
     const valueAt = (price) => {
         const wants = 1 - phi((Math.log(price) - centre) / width);
         const landed = price + market.ownTrip;
         const chosen = Number.isFinite(alternative) ? 1 - phi(Math.log(landed / alternative) / PERCEPTION) : 1;
-        const rate = market.buyersPerHour * wants * Math.max(0.01, chosen);
-        if (!(rate > 0)) return null;
         let ahead = 0;
         for (const rival of market.rivals) if (rival.landed < landed) ahead += rival.units;
-        const wait = (deals + 1) / 2 / rate + ahead / (market.lot * market.buyersPerHour);
-        const discount = Math.exp(-trader.wait * wait);
-        return { price, value: saleUtility(price, reference, trader.caution) * discount, money: price * discount };
+        // Finite rival stock occurs only in A. The infinite NPC alternative
+        // keeps the existing perception assessment, never a second rival share.
+        const outcome = saleOutcome({ units: market.units, applicableUnits: market.applicableUnits,
+            willingUnits: market.applicableUnits * wants * chosen, cheaperUnits: ahead, price,
+            residualUnitValue: market.buyback, delayHours: market.delayHours, discountRate: trader.wait });
+        if (!outcome.known) return null;
+        const discount = Math.exp(-trader.wait * market.delayHours);
+        return { price, value: market.units > 0 ? (outcome.sold * saleUtility(price, reference, trader.caution) * discount
+            + outcome.residual * npcValue) / market.units : 0,
+        money: market.units > 0 ? (outcome.receipts + outcome.residualValue) / market.units : 0,
+        sold: outcome.sold, residual: outcome.residual, known: true };
     };
     const candidates = [];
     for (const z of GRID) {
@@ -157,16 +188,15 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
         const candidate = valueAt(price);
         if (candidate) candidates.push(candidate);
     }
-    const npcValue = saleUtility(market.buyback, reference, trader.caution);
     let bestValue = -Infinity;
     for (const candidate of candidates) bestValue = Math.max(bestValue, candidate.value);
     if (!candidates.length || bestValue <= npcValue) {
-        return { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue };
+        return { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue, known: true };
     }
     const standing = current > market.buyback ? valueAt(current) : null;
     if (standing && standing.value >= bestValue - NEAR_BEST * Math.abs(bestValue)) return { ...standing, npc: false, npcValue };
     const best = nearBest(candidates, rollKey);
-    return { price: best.price, value: best.value, money: best.money, npc: false, npcValue };
+    return { ...best, npc: false, npcValue };
 }
 
 // The bid of a buy ad: { price, value } or null when no bid gains anything.
@@ -271,5 +301,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, valueOfMoney, traderOf, phi, saleUtility, purchaseCost, marketFor,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

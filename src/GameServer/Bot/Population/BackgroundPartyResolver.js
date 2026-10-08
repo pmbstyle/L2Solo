@@ -104,6 +104,7 @@ const BackgroundPartyResolver = {
                 debug: { reason: 'missing_party_members_or_spot' }
             };
         }
+        const targetOnSpot = ColdCombatProfile.spotSpawns(spot, targetNpcId) ? 1 : 0;
         const raidObjective = spot.raidBoss === true
             && party.stats?.objective?.sourceKind === 'raid'
             && Number(party.stats.objective.raidBossTemplateId || party.stats.objective.npcId)
@@ -491,6 +492,7 @@ const BackgroundPartyResolver = {
                         route: spot.route || null,
                         aggregate: true,
                         targetNpcId: Number(targetNpcId) || null,
+                        targetOnSpot,
                         defeatedNpcIds: [...defeatedNpcIds],
                         // A party resolve represents one shared encounter.  Its
                         // leader may be replaced or leave while the resulting
@@ -685,6 +687,7 @@ const BackgroundPartyResolver = {
                 summonActions,
                 potionsUsed,
                 targetNpcId: Number(targetNpcId) || null,
+                targetOnSpot,
                 raidBossTemplateId: raid ? Number(spot.raidBossTemplateId) : null,
                 raidDefeated: raidSnapshot?.status === 'defeated',
                 raidWinnerPartyId: raidSnapshot?.winnerPartyId || null,

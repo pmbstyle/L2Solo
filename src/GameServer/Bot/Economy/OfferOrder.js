@@ -2,10 +2,8 @@
 // thread and the planning workers, so it reads only static tables (the towns,
 // the gatekeeper routes) and the buyer's own state.
 const { towns } = require('../../World/TownRespawn');
-const ColdTrip = require('../Population/ColdTrip');
 
 const townByName = new Map(Object.values(towns).map((town) => [town.name, town]));
-const HOUR_MS = 60 * 60 * 1000;
 
 // Distance from the buyer to the offer's town; Infinity when either is unknown.
 function townDistance(offer, origin) {
@@ -49,32 +47,10 @@ function fromPlayer(offer) {
 // without a location (no trip to weigh). A town no route reaches, or one a
 // bot with karma may not enter, costs Infinity. Kept per state object and
 // origin: a plan weighs many items for one state.
-const tripCosts = new WeakMap();
 function tripCost(state, { origin = null, timestamp = Date.now() } = {}) {
-    const from = origin || state?.loc;
-    if (!state || typeof state !== 'object' || !from || (!Number(from.locX) && !Number(from.locY))) return null;
-    const key = `${Number(from.locX)}:${Number(from.locY)}`;
-    const cached = tripCosts.get(state);
-    if (cached?.key === key) return cached.cost;
-    const cost = townCosts(state, from, timestamp);
-    tripCosts.set(state, { key, cost });
-    return cost;
-}
-
-function townCosts(state, from, timestamp) {
-    const traveller = from === state.loc ? state : { ...state, loc: from };
-    const hour = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, timestamp).perHour;
-    const costs = new Map();
-    return (townName) => {
-        if (!townName) return 0;
-        if (!costs.has(townName)) {
-            const town = townByName.get(townName);
-            const plan = town ? ColdTrip.townPlan(traveller, town) : null;
-            const back = plan ? ColdTrip.spotTripMs({ ...traveller, loc: ColdTrip.point(town) }, from) : 0;
-            costs.set(townName, plan ? Math.round((plan.durationMs + back) / HOUR_MS * hour) + Number(plan.route.fee || 0) : Infinity);
-        }
-        return costs.get(townName);
-    };
+    if (!state || typeof state !== 'object') return null;
+    const hourAdena = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, timestamp).perHour;
+    return require('./EconomicTrip').reader(state, { origin, hourAdena });
 }
 
 // The price an offer costs the buyer: its price and the trip to its town.

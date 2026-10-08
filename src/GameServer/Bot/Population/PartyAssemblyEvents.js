@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
 
 const SAFETY_INTERVAL_MS = 30 * 60000;
@@ -42,7 +43,7 @@ class PartyAssemblyEvents {
             }
             // Freed capacity wakes already indexed waiting groups.
             if (previous && party.status === 'dissolved') {
-                for (const group of this.groups.values()) this.enqueue(group);
+                this.enqueue(this.groups.get(`spot:${party.spotId || previous.spotId}`));
             }
         });
         this.unsubscribeTick = this.registry.subscribeTicks(timestamp => this.pulse(timestamp));
@@ -79,8 +80,10 @@ class PartyAssemblyEvents {
         if (packet.state && packet.state !== state) return false;
         const input = state && this.classify(state, this.now());
         const previous = this.records.get(id);
-        const changed = previous?.key !== input?.key || previous?.stamp !== input?.stamp;
-        if (previous && (!input || changed)) {
+        const moved = previous?.key !== input?.key;
+        const changed = moved || !previous || !input || previous.stamp.some((field, index) => field !== input.stamp[index]);
+        const wake = moved || !previous || !input || previous.stamp[4] !== input.stamp[4];
+        if (previous && (!input || moved)) {
             const group = this.groups.get(previous.key);
             group?.members.delete(id);
             if (group) { group.revision++; this.enqueue(group); }
@@ -88,18 +91,19 @@ class PartyAssemblyEvents {
             this.records.delete(id);
         }
         if (!input) {
-            if (previous && repair) { this.metrics.repaired++; this.onRepair(); }
+            if (previous && repair) { DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair(); }
             return !!previous;
         }
-        const record = changed || !previous ? { id, key: input.key, stamp: input.stamp, state } : previous;
+        const record = previous && !moved ? previous : { id, key: input.key, stamp: input.stamp, state };
+        record.stamp = input.stamp;
         record.state = state;
         if (!this.groups.has(input.key)) this.groups.set(input.key, { key: input.key, members: new Map(), revision: 0, handled: 0 });
         const group = this.groups.get(input.key);
         group.members.set(id, record);
         this.records.set(id, record);
-        if (changed || !previous) {
-            group.revision++; this.enqueue(group); this.metrics.events++;
-            if (repair) { this.metrics.repaired++; this.onRepair(); }
+        if (wake) {
+            group.revision++; this.enqueue(group); DiagnosticConfig.developerDiagnostics && (this.metrics.events++);
+            if (repair) { DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair(); }
         }
         const dueAt = Number(input.dueAt || 0);
         if (record.dueAt !== dueAt) {
@@ -121,7 +125,7 @@ class PartyAssemblyEvents {
         }
         if (repair && group.handled < group.revision && !this.dirty.has(group.key)
             && !this.deadlines.has(group) && !this.running) {
-            this.enqueue(group); this.metrics.repaired++; this.onRepair();
+            this.enqueue(group); DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair();
         }
         return changed || !previous;
     }
@@ -146,7 +150,7 @@ class PartyAssemblyEvents {
                 for (let inspected = 0; inspected < 64 && cycle.remaining > 0; inspected++) {
                     const next = cycle.membership.next(); cycle.remaining--;
                     if (next.done) { cycle.remaining = 0; break; }
-                    const record = next.value; this.metrics.safetyInspected++;
+                    const record = next.value; DiagnosticConfig.developerDiagnostics && (this.metrics.safetyInspected++);
                     if (this.records.get(record.id) === record && !this.life.cachedState(record.id)) {
                         this.observe({ characterId: record.id }, true);
                     }
@@ -157,7 +161,7 @@ class PartyAssemblyEvents {
             const page = await this.life.safetyPage({ ...cycle.cursor, limit: 64 });
             if (!this.active || this.cycle !== cycle || this.generation !== cycle.generation) return;
             for (const row of page.rows) {
-                this.metrics.safetyInspected++;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.safetyInspected++);
                 this.observe({ characterId: row.characterId, state: this.life.cachedState(row.characterId) }, true);
             }
             cycle.cursor = page.cursor;
@@ -189,7 +193,7 @@ class PartyAssemblyEvents {
             group.remaining = Math.max(0, Number(group.remaining || count) - count);
         }
         const generation = this.generation, revision = group?.revision;
-        this.running = true; this.metrics.attempts++;
+        this.running = true; DiagnosticConfig.developerDiagnostics && (this.metrics.attempts++);
         Promise.resolve().then(() => this.active && generation === this.generation
             ? this.run(candidates, timestamp, key === null) : null).then(result => {
             if (!this.active || generation !== this.generation) return;

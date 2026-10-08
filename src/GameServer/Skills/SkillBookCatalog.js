@@ -8,6 +8,9 @@ let treeSource = null;
 let indexed = new Map();
 let definitionSource = null;
 let definedRanks = new Map();
+// Static first-rank attack ids only, bounded by the native spellbook catalogue
+// (275 ids). Replaced with the skill-definition source; no per-bot state.
+let valued = new Set();
 
 function ranksFor(skillId) {
     const definitions = invoke('GameServer/DataCache').skills || [];
@@ -15,6 +18,9 @@ function ranksFor(skillId) {
         definitionSource = definitions;
         definedRanks = new Map(definitions.map((skill) => [Number(skill.selfId),
             new Set((skill.levels || []).map((rank) => Number(rank.level)))]));
+        const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+        valued = new Set(Profile.skillSnapshotsFromRecords([...books.keys()].map(selfId => ({ selfId, level: 1 })))
+            .filter(Profile.isAttackSkill).map(skill => Number(skill.selfId)));
     }
     return definedRanks.get(Number(skillId));
 }
@@ -43,7 +49,8 @@ function nextTraining(classId, characterLevel, skillId, learnedLevel = 0) {
     const rank = entry?.levels.find((row) => Number(row.level) > Number(learnedLevel) && defined?.has(Number(row.level)));
     if (!rank || Number(rank.pLevel) > Number(characterLevel)) return null;
     return { skillId: Number(skillId), name: entry.name, level: Number(rank.level),
-        sp: Math.max(0, Number(rank.sp) || 0), bookId: Number(learnedLevel) === 0 ? books.get(Number(skillId)) || null : null };
+        sp: Math.max(0, Number(rank.sp) || 0), bookId: Number(learnedLevel) === 0 && valued.has(Number(skillId))
+            ? books.get(Number(skillId)) || null : null };
 }
 
 function learned(state) {
@@ -75,6 +82,18 @@ function needsTraining(state = {}) {
     });
 }
 
+function nextTrainingSp(state = {}) {
+    const known = learned(state), classId = Number(state.stats?.classId ?? state.classId);
+    let next = Infinity;
+    for (const entry of entries(classId)) {
+        const training = nextTraining(classId, state.level, entry.selfId, known.get(Number(entry.selfId)) || 0);
+        if (training && (training.bookId === null || Number(state.inventory?.[training.bookId]?.amount || 0) > 0)) {
+            next = Math.min(next, training.sp);
+        }
+    }
+    return next;
+}
+
 // Native training pays from the committed balance. Apply its exact delta to
 // an incoming cold resolve, which can also contain newly earned SP or books.
 function applyTraining(state, result = {}) {
@@ -103,5 +122,5 @@ function applyActor(session, result = {}) {
     invoke('GameServer/Item/Item').bindInventory(actor.backpack);
 }
 
-module.exports = { entries, nextTraining, requiredBooks, missingBooks, needsTraining, applyTraining, applyActor,
+module.exports = { entries, nextTraining, requiredBooks, missingBooks, needsTraining, nextTrainingSp, applyTraining, applyActor,
     bookFor: (skillId) => books.get(Number(skillId)) || null, isBook: (itemId) => bookIds.has(Number(itemId)) };

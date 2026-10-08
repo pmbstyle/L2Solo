@@ -3,7 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 // E33: a bot keeps its own shot up to the amount its restock buys it to
-// (ShotStock.PURCHASE_TARGET_AMOUNT). Inventory cleanup, the NPC sale and the
+// (the native stock target for its hunting hour). Inventory cleanup, the NPC sale and the
 // listings must not sell what the restock has just bought, or the bot buys at
 // the NPC price, sells back at the NPC buy-back and buys again. Shots of
 // another grade (left over from an older weapon) stay spare and are sold.
@@ -36,7 +36,14 @@ function stateWith(ownShots, extra = {}) {
 
 const counts = (lines) => new Map(lines.map((line) => [Number(line.selfId), Number(line.count)]));
 
-const full = stateWith(ShotStock.PURCHASE_TARGET_AMOUNT);
+// ARCH-NOTE: E5/E9 replaces 3000 with ceil(native use/h * bag-fill hours).
+// The absent own stack must reserve its future slot, so the real refill
+// cannot reduce its own target and immediately sell shots back to the NPC.
+const target = ShotStock.keptAmounts(stateWith(0))[D_SOULSHOT];
+assert(target > 0);
+const full = stateWith(target);
+assert.strictEqual(ShotStock.keptAmounts(full)[D_SOULSHOT], target,
+    'empty and physically filled own stack use the same planned bag interval');
 assert.strictEqual(ShotStock.planForState(full).selfId, D_SOULSHOT, 'a warrior with a D sword fires D soulshots');
 
 // Cold: the sale set (listings) and the NPC cleanup set (forced inventory
@@ -49,14 +56,14 @@ assert.strictEqual(npc.get(D_SOULSHOT), undefined, 'inventory cleanup does not s
 assert.strictEqual(npc.get(NG_SOULSHOT), 2000, 'inventory cleanup sells the old-grade shots to the NPC');
 
 // Above the restock target the own shot is spare too.
-assert.strictEqual(counts(ItemDisposition.saleCandidates(stateWith(3500), { unlimited: true })).get(D_SOULSHOT), 500,
+assert.strictEqual(counts(ItemDisposition.saleCandidates(stateWith(target + 500), { unlimited: true })).get(D_SOULSHOT), 500,
     'own shots above the restock target are spare');
 
-// Round trip: a restock from below 1,000 leaves nothing of the own shot to sell.
-const low = stateWith(999);
+// Round trip: a native restock from an empty stack leaves no own shot to sell.
+const low = stateWith(0);
 const restock = ShotStock.restockPlan(low, { unitPrice: 10, potionUnitPrice: 0, offers: [] });
-assert.strictEqual(restock.amount, ShotStock.PURCHASE_TARGET_AMOUNT - 999, 'the restock fills the own shot to its target');
-const restocked = stateWith(999 + restock.amount);
+assert.strictEqual(restock.amount, target, 'the restock fills the own shot to its target');
+const restocked = stateWith(restock.amount);
 assert.strictEqual(counts(ItemDisposition.saleCandidates(restocked, { unlimited: true })).get(D_SOULSHOT), undefined,
     'what the restock bought is not sold back');
 
@@ -69,7 +76,7 @@ const session = {
         fetchClassId: () => WARRIOR,
         backpack: { fetchItems: () => items }
     },
-    coldLifeState: { name: full.name, phase: 'hot', stats: {} }
+    coldLifeState: { ...full, phase: 'hot' }
 };
 const hotSale = counts(ItemDisposition.saleCandidates(MarketListingPolicy.actorState(session), { unlimited: true }));
 assert.strictEqual(hotSale.get(D_SOULSHOT), undefined, 'a hot bot does not offer its restocked own shot either');
@@ -78,9 +85,12 @@ assert.strictEqual(hotSale.get(NG_SOULSHOT), 2000, 'a hot bot offers its old-gra
 // A shot crafter's surplus of its own shot starts above the same target.
 const crafter = (amount) => stateWith(amount, { stats: { shotCraft: { productId: D_SOULSHOT } } });
 const crafterWithout = (state) => ({ ...state, inventory: { ...state.inventory, [NG_SOULSHOT]: undefined } });
-assert.strictEqual(ColdShotEconomyService.hasShotSurplus(crafterWithout(crafter(ShotStock.PURCHASE_TARGET_AMOUNT))), false,
+// Removing an old-grade stack increases native bag room; derive this
+// crafter's target from the same inventory used by the surplus decision.
+const crafterTarget = ShotStock.keptAmounts(crafterWithout(crafter(0)))[D_SOULSHOT];
+assert.strictEqual(ColdShotEconomyService.hasShotSurplus(crafterWithout(crafter(crafterTarget))), false,
     'a crafter holding its own shot up to the restock target has no surplus');
-assert.strictEqual(ColdShotEconomyService.hasShotSurplus(crafterWithout(crafter(ShotStock.PURCHASE_TARGET_AMOUNT + 1))), true,
+assert.strictEqual(ColdShotEconomyService.hasShotSurplus(crafterWithout(crafter(crafterTarget + 1))), true,
     'a crafter holding more than the restock target has a surplus');
 
 console.log('test_bot_own_shot_reserve: ok');

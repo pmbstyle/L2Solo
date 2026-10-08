@@ -67,25 +67,26 @@ hot = hunt({ ...hot, timing: { lastHotAt: start + 30 * MIN } }, start + 40 * MIN
 assert.deepStrictEqual([hot.stats.huntClock.onSpot, hot.stats.huntClock.total], [beforeHot.onSpot, beforeHot.total],
     'hot time is neutral for the on-spot share');
 
-// Band medians by situation: three solo hunters and two party members of the
-// same band; a bot without rows takes the median of its own situation.
-Efficiency.resetLevelBands();
+// ARCH-NOTE: the delivered private-income rule intentionally removed cohort medians;
+// other bots' rows cannot establish this bot's hour. Solo/party samples remain separate.
 const earner = (characterId, party, adena) => {
     let state = { ...base, characterId, party: party ? { partyId: 'p1' } : null };
     for (let i = 0; i < 4; i++) state = hunt(state, start + i * MIN, { adena });
     return state;
 };
-earner(11, false, 600); earner(12, false, 1200); earner(13, false, 1800);
-earner(21, true, 100); earner(22, true, 300);
 const later = start + 10 * MIN;
-assert.strictEqual(Efficiency.hourValue({ level: 33, stats: {} }, later).perHour, 72000, 'a solo bot: the solo band');
-assert.strictEqual(Efficiency.hourValue({ level: 33, stats: {}, party: { partyId: 'x' } }, later).perHour, 18000,
-    'a party member: the party band');
-assert.strictEqual(Efficiency.hourValue({ level: 33, stats: {} }, later, 'party').perHour, 18000, 'party planning: the party band');
-Efficiency.resetLevelBands();
-earner(11, false, 600);
-assert.strictEqual(Efficiency.hourValue({ level: 33, stats: {}, party: { partyId: 'x' } }, later).perHour, 36000,
-    'with no party measured at all a party member borrows the solo band');
+const unknown = { level: 33, stats: {} };
+const fallback = Efficiency.huntHour(Efficiency.huntIncome(unknown, later), unknown);
+earner(11, false, 600); earner(12, false, 1200); earner(21, true, 100);
+assert.strictEqual(Efficiency.hourValue(unknown, later).perHour, fallback);
+const ownSolo = earner(13, false, 1200);
+assert.strictEqual(Efficiency.hourValue(ownSolo, later).perHour, 72000);
+const packet = { ...ownSolo, stats: { ...ownSolo.stats, money: [90000, .001, 100] } };
+assert.strictEqual(Efficiency.hourValue(packet, later).perHour, 90000);
+assert.strictEqual(Efficiency.hourValue(packet, later, 'solo').perHour, 72000);
+const ownParty = earner(22, true, 300);
+assert.strictEqual(Efficiency.hourValue(ownParty, later, 'party').perHour, 18000);
+assert.strictEqual(Efficiency.hourValue({ ...ownParty, stats: { ...ownParty.stats, money: [90000] } }, later, 'party').perHour, 18000);
 
 // A party member records its own share of the party's round through the
 // lifecycle (prepareResolve), in the party situation; the solo death

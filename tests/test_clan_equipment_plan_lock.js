@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/DataCache').init();
 
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ClanEquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
@@ -42,7 +43,7 @@ async function main() {
     const originalMarketPlanForTarget = GearAcquisitionPlanner.marketPlanForTarget;
     const originalBestSourceForPlan = GearAcquisitionPlanner.bestSourceForPlan;
     const originalRetargetPlanSource = GearAcquisitionPlanner.retargetPlanSource;
-    const originalStatesForParties = LifeState.statesForParties;
+    const originalStatesForParties = LifeState.cachedStatesForParties;
     const originalReleaseDissolvedPartyMembers = LifeState.releaseDissolvedPartyMembers;
     const originalActiveParties = PartyState.active;
     const originalSetPartyStatus = PartyState.setStatus;
@@ -61,7 +62,7 @@ async function main() {
             clanGoal: undefined
         };
     };
-    LifeState.statesForParties = () => Promise.resolve(new Map([
+    LifeState.cachedStatesForParties = () => Promise.resolve(new Map([
         ['bgp-clan-lock', [{
             characterId: 1001,
             name: 'ClanMember',
@@ -260,15 +261,12 @@ async function main() {
         plannerCalls = 0;
         GearAcquisitionPlanner.marketPlanForTarget = originalMarketPlanForTarget;
 
-        const refreshed = await PopulationService.refreshBackgroundPartyRequirements([{
-            partyId: 'bgp-clan-lock',
-            leaderId: 1001,
-            memberIds: [1001],
-            spotId: 'clan-spot',
-            stats: { lastRequirementRefreshAt: 0, objective: { priority: 'required' } }
-        }]);
-
+        const refreshParty = { partyId: 'bgp-clan-lock', status: 'active', leaderId: 1001, memberIds: [1001],
+            spotId: 'clan-spot', stats: { lastRequirementRefreshAt: 0, objective: { priority: 'required' } } };
+        assert.deepStrictEqual(await PopulationService.refreshBackgroundPartyRequirements([refreshParty]), ['bgp-clan-lock']);
+        const refreshed = await PopulationService.applyWorkerPartyRequirements(refreshParty, { memberPlans: [], requirementRefreshedAt: Date.now() });
         assert.deepStrictEqual(refreshed, [], 'a locked plan needs no party refresh write');
+
         assert.strictEqual(plannerCalls, 0, 'party refresh must not invoke the generic planner for clan goals');
         assert(savedParty, 'party refresh should still publish its current party snapshot');
         assert.strictEqual(
@@ -528,7 +526,7 @@ async function main() {
         GearAcquisitionPlanner.marketPlanForTarget = originalMarketPlanForTarget;
         GearAcquisitionPlanner.bestSourceForPlan = originalBestSourceForPlan;
         GearAcquisitionPlanner.retargetPlanSource = originalRetargetPlanSource;
-        LifeState.statesForParties = originalStatesForParties;
+        LifeState.cachedStatesForParties = originalStatesForParties;
         LifeState.releaseDissolvedPartyMembers = originalReleaseDissolvedPartyMembers;
         PartyState.active = originalActiveParties;
         PartyState.setStatus = originalSetPartyStatus;

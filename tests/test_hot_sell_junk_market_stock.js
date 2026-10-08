@@ -56,9 +56,11 @@ const actor = (backpack, crafter = { classId: 0, level: 30 }) => ({ fetchId: () 
 async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     const adena = { ...item(1, 57, 0) };
     const learned = [];
+    const potionTarget = HealingPotionStock.targetAmountFor({ level: crafter?.level || 30,
+        spotId: '-10_30', stats: { classId: crafter?.classId || 0 } });
     const backpack = {
         items: [item(2, D_RECIPE, 1), item(3, CRYSTAL_D, 40), item(4, ANIMAL_BONE, 5),
-            item(5, HEALING_POTION, 30), item(6, MATERIAL_RECIPE, 1), item(7, WOODEN_ARROW, 500),
+            item(5, HEALING_POTION, potionTarget + 20), item(6, MATERIAL_RECIPE, 1), item(7, WOODEN_ARROW, 500),
             item(8, ESCAPE_SCROLL, 3), item(9, THIEF_KEY, 2), item(10, ANTIDOTE, 4), item(11, ENCHANT_ARMOR_D, 1), adena],
         stackableExists: () => Promise.resolve(adena),
         hasRecipe: (_actor, recipeId) => knownRecipeIds.includes(Number(recipeId)) || learned.includes(Number(recipeId)),
@@ -70,10 +72,11 @@ async function sellJunk(accountId, crafter, knownRecipeIds = []) {
         },
         fetchItems() { return this.items; }
     };
-    const session = { accountId, actor: actor(backpack, crafter), dataSendToMe() {} };
+    // ARCH-NOTE: pin a native potion-consuming spot, since the best-income fallback has zero potion use.
+    const session = { accountId, actor: actor(backpack, crafter), currentSpot: { id: '-10_30' }, coldLifeState: { phase: 'hot', spotId: '-10_30', stats: {} }, dataSendToMe() {} };
     await SellJunk(session, ['sell-junk']);
     await new Promise((resolve) => setImmediate(resolve));
-    return { left: backpack.items.map((entry) => [entry.fetchSelfId(), entry.fetchAmount()]), actor: session.actor, learned };
+    return { left: backpack.items.map((entry) => [entry.fetchSelfId(), entry.fetchAmount()]), actor: session.actor, learned, potionTarget };
 }
 
 const originals = {
@@ -105,8 +108,10 @@ async function run() {
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);
 
     const botSale = await sellJunk('bot_hot_hunter');
-    const keep = HealingPotionStock.targetAmountFor({ level: 30, stats: { classId: 0 } });
-    assert(keep > 0 && keep < 30, `the potion stock must be part of the stack: ${keep}`);
+    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0 } });
+    // ARCH-NOTE: E9 no-history T=24h at this native spot gives 82 potions,
+    // so sell an actual target+20 stack instead of assuming target<30.
+    assert(keep > 0 && botSale.potionTarget === keep, `the native potion stock must match the real sale: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),
         // Step 3.2 (H12 narrowed): the Scrolls of Escape a bot reads for town
         // trips are kept up to their restock target; the surplus is sold.

@@ -3,16 +3,25 @@ const fs = require('fs');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const root = process.env.N53_GAME_ROOT || path.resolve(__dirname, '..');
+const dir = path.join(require('node:os').tmpdir(), 'n53-ack-lifetime-' + require('node:crypto').randomUUID());
+fs.mkdirSync(dir);
+const databasePath = path.join(dir, 'world.sqlite');
+const historyPath = path.join(dir, 'history.sqlite');
+const fixtureConfig = path.join(dir, 'fixture.ini');
+const defaultConfig = fs.readFileSync(path.join(root, 'config/default.ini'), 'utf8');
+const laterSections = defaultConfig.indexOf('[AuthServer]'); assert(laterSections > 0);
+fs.writeFileSync(fixtureConfig, `[Database]\npath = ${databasePath}\nhistoryPath = ${historyPath}\n\n${defaultConfig.slice(laterSections)}`);
+process.env.L2NODE_CONFIG_FILE = fixtureConfig; delete process.env.L2NODE_SHARED_CONFIG_FILE;
 require(root + '/src/Global');
+assert.equal(options.default.Database.path, databasePath);
+assert.equal(options.default.Database.historyPath, historyPath);
+console.log('Isolated native paths:', databasePath, historyPath);
 const Database = invoke('Database');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Writes = invoke('GameServer/Persistence/CharacterWriteQueue');
 const Protocol = require(root + '/src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdSimulationKernel } = require(root + '/src/GameServer/Bot/Population/ColdSimulationKernel');
-const dir = fs.mkdtempSync(path.join(process.cwd(), 'tmp', 'n53-ack-lifetime-'));
-options.default.Database.path = path.join(dir, 'world.sqlite');
-options.default.Database.historyPath = path.join(dir, 'history.sqlite');
 let now = 1000000, sequence = 0;
 const failures = [];
 const tokenOf = token => ({ characterId: token.characterId, ownerId: token.ownerId,
@@ -250,14 +259,14 @@ const releaseAck = (result, request, token, state) => ({ ...result, characterId:
             assert(!Protocol.validateEnvelope(message, 'main', { workerEpoch: 'replacement' }).ok);
         }
     });
-    await check('actual Worker keeps stale ACK effects inert and rearms board only for current accepted ACK', async () => {
+    await check('actual Worker keeps stale ACK effects inert and publishes state only for current accepted ACK', async () => {
         const workerPath = root + '/src/GameServer/Bot/Population/ColdSimulationWorker.js', epoch = 'ack-lifetime-worker';
         const source = String.raw`
 const fs=require('fs'),path=require('path'),Module=require('module');
 const {parentPort,workerData}=require('worker_threads');
 const loaded=new Module(workerData.workerPath,module); loaded.filename=workerData.workerPath;
 loaded.paths=Module._nodeModulePaths(path.dirname(workerData.workerPath));
-loaded._compile(fs.readFileSync(workerData.workerPath,'utf8')+'\nlet rearmCount=0; const realRearm=marketEvents.rearm.bind(marketEvents); marketEvents.rearm=id=>{rearmCount++;return realRearm(id);}; module.exports.control=(op,state)=>{if(op==="seed"||op==="seedError"){kernel.planLifecycle=null;kernel.resolveSolo=()=>{if(op==="seedError")throw Error("worker_controlled_error");return {patch:{},events:[],materialize:{},nextResolveAt:Date.now()+60000};};kernel.upsert({state,context:{}});kernel.tick();}return {active:kernel.inFlight.size,phase:kernel.states.get(state.characterId)?.state.phase,revision:kernel.states.get(state.characterId)?.state.simulation?.revision,rearms:rearmCount};};',workerData.workerPath);
+loaded._compile(fs.readFileSync(workerData.workerPath,'utf8')+'\nlet publications=0,observedKernel=null; module.exports.control=(op,state)=>{if(kernel!==observedKernel){observedKernel=kernel;const realUpsert=kernel.upsert.bind(kernel);kernel.upsert=entry=>{const result=realUpsert(entry);if(result)publications++;return result;};}if(op==="seed"||op==="seedError"){kernel.planLifecycle=null;kernel.resolveSolo=()=>{if(op==="seedError")throw Error("worker_controlled_error");return {patch:{},events:[],materialize:{},nextResolveAt:Date.now()+60000};};kernel.upsert({state,context:{}});kernel.tick();}return {active:kernel.inFlight.size,phase:kernel.states.get(state.characterId)?.state.phase,revision:kernel.states.get(state.characterId)?.state.simulation?.revision,publications};};',workerData.workerPath);
 parentPort.on('message',m=>{if(m.control)parentPort.postMessage({controlAck:m.controlId,value:loaded.exports.control(m.control,m.state)});});`;
         const worker = new Worker(source, { eval: true, workerData: { workerPath, workerEpoch: epoch } });
         const messages = []; let fault, seq = 0;
@@ -297,7 +306,7 @@ parentPort.on('message',m=>{if(m.control)parentPort.postMessage({controlAck:m.co
                 simulation: { ownerId: 'legacy_main', revision: 2, leaseId: null, leaseUntil: 0 } });
             send('commit_ack', { results: [current] });
             const after = await control('inspect', state);
-            assert.equal(after.active, 0); assert.equal(after.revision, 2); assert.equal(after.rearms, before.rearms + 1);
+            assert.equal(after.active, 0); assert.equal(after.revision, 2); assert.equal(after.publications, before.publications + 1);
             send('commit_ack', { results: [current] }); assert.deepEqual(await control('inspect', state), after);
             const errorState = { ...state, characterId: 90002 };
             await control('seedError', errorState);
@@ -313,7 +322,7 @@ parentPort.on('message',m=>{if(m.control)parentPort.postMessage({controlAck:m.co
             assert.deepEqual(await control('inspect', errorState), errorBefore);
             send('release_ack', { results: [ack] });
             const errorAfter = await control('inspect', errorState);
-            assert.equal(errorAfter.revision, 2); assert.equal(errorAfter.rearms, errorBefore.rearms + 1);
+            assert.equal(errorAfter.revision, 2); assert.equal(errorAfter.publications, errorBefore.publications + 1);
             send('release_ack', { results: [ack] }); assert.deepEqual(await control('inspect', errorState), errorAfter);
         } finally { await worker.terminate(); }
     });

@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 

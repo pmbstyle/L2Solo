@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true';
 'use strict';
 const assert = require('node:assert/strict');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
@@ -5,7 +6,7 @@ const { ColdCompetitionMonitor, INTERVAL_MS, seeded } = require('../src/GameServ
 const Candidates = require('../src/GameServer/Bot/Population/ColdCompetitionCandidates');
 const P = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const base = 1800000000000;
-function setup(fitsFrame) {
+function setup(fitsFrame, frameSizing) {
     let time = base;
     const emitted = [];
     const kernel = new ColdSimulationKernel({ now: () => time, resolveSolo: () => { throw Error('unexpected resolve'); },
@@ -13,7 +14,7 @@ function setup(fitsFrame) {
     const monitor = new ColdCompetitionMonitor({ capacityForSpot: spot => spot.capacity, personaFor: () => ({ traits: {} }) });
     const candidates = new Candidates({ records: id => kernel.states.locationIndex.getSource(id, 'state'),
         packets: id => kernel.states.get(id), memory: kernel.interactionMemory, monitor, deadlines: kernel,
-        sequence: id => kernel.states.safetyNodes.get(id)?.sequence, fitsFrame });
+        fitsFrame, frameSizing });
     kernel.decisionEvents = candidates;
     return { kernel, monitor, candidates, emitted, at: value => { time = value; } };
 }
@@ -180,3 +181,48 @@ for (const fit of [() => false, () => { throw Error('generated quote failure'); 
     assert(candidates.pendingSpots.has('bytes')); assert.equal(candidates.frame, null);
 }
 console.log('PASS byte-omitted forecast leaves no policy cooldown and retains input');
+
+// A production-shaped heartbeat is measured once; single events are measured
+// once, with an upper bound for both frame copies and its twelve recent items.
+{
+    const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+    const { ColdCompetitionFrameSizer, numbersAs32Chars } = require('../src/GameServer/Bot/Population/ColdCompetitionFrameSizer');
+    const events = Array.from({ length: 160 }, (_, index) => ({ at: base, key: `sizing:${index}`,
+        action: index % 3 ? 'contest' : 'revenge', actor: { id: 1 }, peer: { id: index + 2 },
+        text: 'x'.repeat(20 + index % 90) }));
+    const message = (frame, list) => Protocol.envelope('heartbeat', 'sizing:test', { competition: {
+        frame: { ...frame, events: list }, events: list, recent: list.slice(-12), outcomes: Object.fromEntries([...new Set(list.filter(event => event.action !== 'revenge').map(event => event.action))].map(key => [key, 1]))
+    } }, 'sizing:message');
+    let sizing, baseBuilds = 0;
+    const fixture = setup(frame => {
+        baseBuilds++; return Protocol.byteLength(message(frame, frame.events)) <= Protocol.MAX_MESSAGE_BYTES;
+    }, frame => { baseBuilds++; return sizing = new ColdCompetitionFrameSizer(message(frame, [])); });
+    fixture.candidates.queueActor(1);
+    fixture.monitor.revenge.sampleActors = (...args) => {
+        const offer = args.at(-1); return events.filter(event => offer(event));
+    };
+    const oldStringify = JSON.stringify;
+    let stringifies = 0;
+    JSON.stringify = (...args) => { stringifies++; return oldStringify(...args); };
+    let frame;
+    try { frame = fixture.candidates.reviewBatch(base); }
+    finally { JSON.stringify = oldStringify; }
+    assert.equal(frame.events.length, 160);
+    assert.equal(baseBuilds, 1, 'a whole heartbeat is built once, not per event');
+    assert(stringifies <= events.length + 14, `stringify budget: ${stringifies}`);
+    const exact = Buffer.byteLength(JSON.stringify(message(frame, events), numbersAs32Chars));
+    assert(sizing.estimate >= exact);
+    assert(sizing.estimate - exact <= 12 * sizing.maxEvent + 64);
+    // At every accepted prefix the upper bound holds, including changed actions.
+    for (const limit of [1000, 5000, 20000, Protocol.MAX_MESSAGE_BYTES]) {
+        const probe = new ColdCompetitionFrameSizer(message(frame, []), [], limit), admitted = [];
+        for (const event of events) {
+            if (!probe.offer(event)) break;
+            admitted.push(event);
+            assert(probe.estimate >= Buffer.byteLength(JSON.stringify(message(frame, admitted), numbersAs32Chars)));
+        }
+        assert(Buffer.byteLength(JSON.stringify(message(frame, admitted), numbersAs32Chars)) <= limit);
+    }
+    assert.equal(sizing.offer(events[0]), false, 'the event cap stays 160');
+    console.log('PASS160 event frame sizing: one heartbeat build, bounded bytes and linear serializations');
+}

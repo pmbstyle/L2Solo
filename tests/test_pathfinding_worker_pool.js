@@ -1,7 +1,9 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 const { EventEmitter } = require('events');
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const PoolSingleton = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const { BoundedPathfindingWorkerPool } = PoolSingleton;

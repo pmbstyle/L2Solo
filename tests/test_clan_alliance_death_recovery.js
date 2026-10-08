@@ -1,9 +1,16 @@
+require('./helpers/databaseIsolation');
+delete process.env.L2NODE_CONFIG_FILE;
+delete process.env.L2NODE_SHARED_CONFIG_FILE;
+delete process.env.N53_GAME_ROOT;
+const fixture = require('./helpers/isolatedSocialDatabase')('late-alliance-publication');
+process.once('exit', () => require('node:fs').rmSync(fixture.directory, { recursive: true, force: true }));
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { createRequire } = require('module');
 require('../src/Global');
+fixture.assertConfigured(options.default);
 const BotAI = invoke('GameServer/Bot/BotAI');
 
 // Native death -> quest callback -> native revive/teleport. Only time,
@@ -45,9 +52,21 @@ const originalAssignment = courier.clanAllianceQuest;
 const state = { kind: 'player', stage: 'gathering', leaderId: 1,
     members: [{ id: 2, herb: true, blood: true, delivered: false }], bloodObtained: true };
 const stateBefore = JSON.stringify(state);
-const world = { user: { sessions: [leader, courier] } };
+const notifications = [];
+const world = {
+    user: { sessions: [leader, courier] },
+    notifyUserStateChanged(session) {
+        assert.strictEqual(session, courier, 'teleport publishes the original recovering courier');
+        assert.strictEqual(session.pendingActorTeleport, undefined, 'the current or invalidated teleport is cleared before publication');
+        notifications.push(session);
+        // This VM seam has no native registered actor grid to acknowledge.
+        // TeleportTo does not consume the notification's return value.
+        return false;
+    }
+};
 const mocks = {
     Database: {}, 'GameServer/World/World': world,
+    'GameServer/Bot/Population/BotLifeState': invoke('GameServer/Bot/Population/BotLifeState'),
     'GameServer/Bot/BotManager': { botPartySay: (s, message) => { lifecycle.push('report'); return true; } },
     'GameServer/Bot/BotAI': {
         clearTacticalState: BotAI.clearTacticalState,
@@ -129,6 +148,7 @@ assert(Math.hypot(town.locX - oldLanding.locX, town.locY - oldLanding.locY) > 10
 assert(questAI.tick(courier, courier.actor, {}, {}), 'AI waits for the town teleport to settle');
 assert.strictEqual(trips.length, 0);
 advance(1000);
+assert.deepStrictEqual(notifications, [courier], 'the stale landing cannot publish over the one current town completion');
 assert.strictEqual(courier.actor.x, town.locX, 'old landing cannot replace the town destination');
 assert.strictEqual(wakeups.length, 1, 'only the current teleport wakes the courier');
 assert.strictEqual(wakeups[0].options.urgent, true);

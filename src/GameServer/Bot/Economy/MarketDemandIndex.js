@@ -1,4 +1,4 @@
-const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const { SELL, BUY, offerFields } = require('../../AfkTrade/BoardIndex');
 
 const WANTED_TTL_MS = 30 * 60 * 1000;
 
@@ -33,6 +33,13 @@ function demandSignal(state, selfId, timestamp) {
     const economicWanted = recentShot ? shotWanted : recentRecipe ? recipeWanted : null;
     return {
         characterId: Number(state.characterId),
+        origin: 'own_need', scope: 'own', observedAt: timestamp,
+        authority: { ownerId: Number(state.characterId), updatedAt: Number(state.updatedAt || 0) },
+        selfId: Number(selfId), enchant: 0,
+        needId: economicWanted?.needId || `own:${state.characterId}:${recentShot ? 'charge'
+            : recentRecipe ? `recipe:${selfId}` : material ? `material:${selfId}` : `item:${selfId}`}`,
+        availability: { from: timestamp, until: recentShot ? Number(shotWanted.at) + WANTED_TTL_MS
+            : recentRecipe ? Number(recipeWanted.at) + WANTED_TTL_MS : recentWanted ? wantedAt + WANTED_TTL_MS : timestamp },
         name: state.name || null,
         town: state.currentRegion || null,
         amount: Math.max(1, Number(economicWanted?.amount || (recentWanted ? wanted?.amount : material?.missing) || 1)),
@@ -44,45 +51,26 @@ function demandSignal(state, selfId, timestamp) {
     };
 }
 
-function states(options = {}) {
-    return options.states || LifeState.allStates(5000);
-}
-
-// Every seller's listing review indexes the signals of every state, while
-// most states are unchanged between two reviews. States are replaced, never
-// edited in place, so a state's signals are kept with the object that
-// produced them until it is replaced or one of its timed wants expires.
-const stateSignals = new WeakMap();
-
-function signalsOfState(state, timestamp) {
-    const cached = stateSignals.get(state);
-    if (cached && timestamp >= cached.at && timestamp < cached.validUntil) return cached.entries;
-    const plan = state?.stats?.equipmentPlan;
-    const ids = new Set([
-        Number(state?.stats?.marketWanted?.itemId || 0),
-        Number(state?.stats?.shotDemand?.itemId || 0),
-        Number(state?.stats?.shotRecipeDemand?.itemId || 0),
-        Number(plan?.target?.selfId || 0),
-        ...(plan?.materials || []).map((material) => Number(material?.selfId || 0))
-    ]);
+// Private wants remain an own/group planning API. Seller projections never
+// call it on foreign states or read their wallets. No allStates fallback.
+function signalsOfState(state, timestamp = Date.now()) {
+    const ids = new Set([Number(state?.stats?.marketWanted?.itemId || 0),
+        Number(state?.stats?.shotDemand?.itemId || 0), Number(state?.stats?.shotRecipeDemand?.itemId || 0),
+        Number(state?.stats?.equipmentPlan?.target?.selfId || 0)]);
+    for (const row of state?.stats?.equipmentPlan?.materials || []) ids.add(Number(row.selfId));
     const entries = [];
-    ids.forEach((selfId) => {
-        if (selfId <= 0) return;
+    for (const selfId of ids) {
+        if (!(selfId > 0)) continue;
         const signal = demandSignal(state, selfId, timestamp);
         if (signal) entries.push([selfId, signal]);
-    });
-    const expiries = [timestampForWanted(state?.stats?.marketWanted), Number(state?.stats?.shotDemand?.at || 0),
-        Number(state?.stats?.shotRecipeDemand?.at || 0)]
-        .map((at) => at + WANTED_TTL_MS).filter((until) => until > timestamp);
-    if (state && typeof state === 'object') {
-        stateSignals.set(state, { entries, at: timestamp, validUntil: expiries.length ? Math.min(...expiries) : Infinity });
     }
     return entries;
 }
-
-function indexSignals(allStates, timestamp = Date.now()) {
+function indexSignals(ownStates, timestamp = Date.now(), { ownerId = 0, groupOwnerIds = [] } = {}) {
+    const allowed = new Set([Number(ownerId), ...groupOwnerIds.map(Number)]);
     const byItem = new Map();
-    for (const state of allStates || []) {
+    for (const state of ownStates || []) {
+        if (!allowed.has(Number(state?.characterId))) continue;
         for (const [selfId, signal] of signalsOfState(state, timestamp)) {
             if (!byItem.has(selfId)) byItem.set(selfId, []);
             byItem.get(selfId).push(signal);
@@ -91,78 +79,131 @@ function indexSignals(allStates, timestamp = Date.now()) {
     return byItem;
 }
 
+function* permittedQuotes(selfId, { board = null, ownerId = 0, excludeCharacterId = ownerId,
+    enchant = 0, timestamp = Date.now(), side = BUY, town = null } = {}) {
+    const rows = board ? board.list(Number(selfId), side, town)
+        : invoke('GameServer/AfkTrade/AfkTradeService').offers(selfId, side, { characterId: excludeCharacterId });
+    for (const source of rows || []) {
+        const owner = Number(source.ownerId ?? source.sourceId);
+        const units = Number(source.count), price = Number(source.price);
+        if (owner === Number(excludeCharacterId) || Number(source.enchant || 0) !== Number(enchant)
+            || !Number.isSafeInteger(units) || units < 1 || !(price > 0) || !Number.isFinite(price)) continue;
+        const line = source.storeType ? offerFields(source) : source;
+        const authority = { recordId: Number(line.recordId), lineId: Number(line.lineId),
+            revision: line.expectedRevision ?? source.revision ?? null };
+        yield { ...line, origin: side === BUY ? 'public_bid' : 'public_ask', authority,
+            needId: `bid:${authority.recordId}:${authority.lineId}`, characterId: owner, ownerId: owner,
+            selfId: Number(selfId), enchant: Number(enchant), units, amount: units, count: units,
+            maxPrice: price, price, observedAt: timestamp, sourceRevision: board?.itemRevision(selfId) ?? null,
+            scope: 'board', availability: { from: timestamp, until: timestamp },
+            // This is the public quote amount, never proof of funded escrow.
+            budget: units * price, quoted: true, exclusive: false, guaranteed: false };
+    }
+}
+
 function demandFor(selfId, options = {}) {
-    const timestamp = Number(options.now) || Date.now();
+    const timestamp = Number(options.now ?? options.timestamp) || Date.now();
     const unitPrice = Math.max(0, Number(options.unitPrice || 0));
-    const excludedCharacterId = Number(options.excludeCharacterId || 0);
-    const afkOrders = invoke('GameServer/AfkTrade/AfkTradeService').offers(selfId, 3, {
-        characterId: excludedCharacterId
-    }).filter((offer) => Number(offer.count) > 0 && Number(offer.price) > 0);
-    const afkOwners = new Set(afkOrders.map((offer) => Number(offer.sourceId)));
-    const signals = options.signals
-        ? options.signals.filter((signal) => Number(signal.characterId) !== excludedCharacterId
-            && !afkOwners.has(Number(signal.characterId)))
-        : states(options)
-            .filter((state) => Number(state.characterId) !== excludedCharacterId
-                && !afkOwners.has(Number(state.characterId)))
-            .map((state) => demandSignal(state, selfId, timestamp))
-            .filter(Boolean);
-    const afkOrderUnits = afkOrders.reduce((sum, offer) => sum + Number(offer.count), 0);
-    const fundedAfkUnits = afkOrders.reduce((sum, offer) => sum + (
-        unitPrice <= 0 || Number(offer.price) >= unitPrice ? Number(offer.count) : 0
-    ), 0);
-    const towns = signals.reduce((result, signal) => {
-        if (!signal.town) return result;
-        result[signal.town] = (result[signal.town] || 0) + signal.amount;
-        return result;
-    }, {});
-    afkOrders.forEach((offer) => {
-        if (offer.town) towns[offer.town] = (towns[offer.town] || 0) + Number(offer.count);
-    });
-    const readySignals = signals.filter((signal) => signal.ready);
-    const affordableUnits = (signal) => {
-        if (!signal.ready) return 0;
-        if (unitPrice <= 0) return signal.budget > 0 ? signal.amount : 0;
-        return Math.min(signal.amount, Math.floor(signal.budget / unitPrice));
-    };
-    return {
-        selfId: Number(selfId),
-        bots: signals.length,
-        readyBots: readySignals.length,
-        fundedBots: readySignals.filter((signal) => affordableUnits(signal) > 0).length,
-        afkOrders: afkOrders.length,
-        units: signals.reduce((sum, signal) => sum + signal.amount, 0) + afkOrderUnits,
-        readyUnits: readySignals.reduce((sum, signal) => sum + signal.amount, 0) + afkOrderUnits,
-        fundedUnits: signals.reduce((sum, signal) => sum + affordableUnits(signal), 0) + fundedAfkUnits,
-        unitPrice,
-        towns,
-        signals
-    };
+    const quotes = [], towns = {}, needs = new Set();
+    let units = 0, willingUnits = 0, count = 0, tail = false;
+    for (const quote of permittedQuotes(selfId, { ...options, timestamp,
+        ownerId: options.ownerId ?? options.excludeCharacterId })) {
+        if (needs.has(quote.needId)) continue;
+        if (quotes.length < 8) needs.add(quote.needId);
+        count++;
+        units += quote.units;
+        if (quote.price >= unitPrice) willingUnits += quote.units;
+        if (quote.town) towns[quote.town] = (towns[quote.town] || 0) + quote.units;
+        if (quotes.length < 8) quotes.push(quote); else tail = true;
+    }
+    // Several public bids need separate executable comparisons: neither their
+    // foreign preference overlap nor an exposure/lifetime is observed.
+    return { selfId: Number(selfId), known: count <= 1 && !tail, quoteKnown: !tail,
+        lifetimeKnown: false, horizonHours: NaN, applicableUnits: count <= 1 ? units : NaN,
+        willingUnits: count <= 1 ? willingUnits : NaN, bots: 0, readyBots: 0, fundedBots: 0,
+        afkOrders: count, units, readyUnits: units, fundedUnits: willingUnits, unitPrice, towns,
+        signals: [], quotes, unknownTail: tail, repeatable: false };
+}
+
+// An own physical row is one preparation unit. Equal physical authority is
+// counted once even when a bag/board/warehouse projection repeats it.
+function createOwnStock(ownerId, { timestamp = Date.now(), reserved = {} } = {}) {
+    return { ownerId: Number(ownerId), timestamp, reserved: { ...reserved }, groups: new Map(), physical: new Set(), known: true };
+}
+function knownNeeds(sources, { ownerId = 0, groupOwnerIds = [] } = {}) {
+    const allowed = new Set([Number(ownerId), ...groupOwnerIds.map(Number)]);
+    const needs = new Map();
+    let known = true, publicNeeds = 0;
+    for (const source of sources || []) {
+        const publicQuote = source.origin === 'public_bid' && source.authority?.recordId > 0 && source.authority?.lineId > 0;
+        if (!publicQuote && !allowed.has(Number(source.characterId ?? source.ownerId))) continue;
+        const units = Number(source.units ?? source.amount);
+        if (!source.needId || !Number.isFinite(units) || units < 0) { known = false; continue; }
+        const existing = needs.get(source.needId);
+        if (existing) existing.units = Math.max(existing.units, units);
+        else {
+            if (publicQuote && ++publicNeeds > 1) known = false;
+            needs.set(source.needId, { needId: source.needId, units, origin: source.origin });
+        }
+    }
+    return { known, needs };
+}
+function prepareStockRow(index, row, { origin = 'inventory', authority = null, availableAt = index.timestamp,
+    scope = 'own', free = false } = {}) {
+    if (!index.known || !row) return false;
+    const owner = Number(row.ownerId ?? row.characterId ?? index.ownerId);
+    if (owner !== index.ownerId || !['own', 'accepted_own', 'assigned_group'].includes(scope)) return false;
+    const selfId = Number(row.selfId), enchant = Number(row.enchant || 0);
+    const count = Number(row.count ?? row.amount ?? 0);
+    const key = `${selfId}:${enchant}`;
+    const physicalId = authority ?? row.physicalAuthority ?? (Number(row.id ?? row.objectId) > 0
+        ? `item:${Number(row.id ?? row.objectId)}` : origin === 'board'
+            ? `board:${row.recordId}:${row.lineId}` : `${origin}:${key}`);
+    if (index.physical.has(physicalId)) return true;
+    if (!Number.isSafeInteger(selfId) || selfId < 1 || !Number.isSafeInteger(enchant) || enchant < 0
+        || !Number.isSafeInteger(count) || count < 0 || !Number.isFinite(availableAt)) {
+        index.known = false; return false;
+    }
+    index.physical.add(physicalId);
+    if (selfId === 57 || availableAt > index.timestamp || row.acceptedCustomerMaterial || row.assignedElsewhere) return true;
+    const equipped = free ? 0 : Number(row.equippedCount ?? (row.equipped ? count : 0));
+    const protectedUnits = free ? 0 : Math.max(Number(row.protectedAmount || 0), Number(index.reserved[selfId] || 0));
+    if (!Number.isSafeInteger(equipped) || equipped < 0 || !Number.isSafeInteger(protectedUnits) || protectedUnits < 0) {
+        index.known = false; return false;
+    }
+    const keep = Math.min(count, equipped + protectedUnits);
+    if (!free) index.reserved[selfId] = Math.max(0, Number(index.reserved[selfId] || 0) - Math.max(0, keep - equipped));
+    const units = count - keep;
+    const group = index.groups.get(key) || { selfId, enchant, units: 0, listedUnits: 0,
+        prices: new Set(), scope: 'own', availability: { from: index.timestamp, until: index.timestamp } };
+    group.units += units;
+    if (!Number.isSafeInteger(group.units)) { index.known = false; return false; }
+    if (origin === 'board') { group.listedUnits += units; group.prices.add(Number(row.price)); }
+    index.groups.set(key, group);
+    return true;
+}
+function jointStock(state, { board = null, warehouse = [], incoming = [], reserved = {}, timestamp = Date.now() } = {}) {
+    const index = createOwnStock(state?.characterId, { timestamp, reserved: { ...reserved } });
+    const inventory = state?.physicalInventory ?? state?.inventory ?? {};
+    for (const row of Array.isArray(inventory) ? inventory : Object.values(inventory)) prepareStockRow(index, row);
+    for (const row of board?.ownerLines(state?.characterId) || []) {
+        if (row.storeType === SELL) prepareStockRow(index, row, { origin: 'board', free: true });
+    }
+    for (const row of warehouse || []) prepareStockRow(index, row, { origin: 'warehouse' });
+    for (const row of incoming || []) prepareStockRow(index, row, { origin: 'incoming', scope: 'accepted_own',
+        authority: row.physicalAuthority, availableAt: Number(row.availableAt) });
+    return index;
 }
 
 // The sellers of an item: the board's sell lines, and `options.supplyByItem`
 // (the supply a caller already has, by item) besides.
 function supplyFor(selfId, options = {}) {
-    const excludedCharacterId = Number(options.excludeCharacterId || 0);
-    const coldOffers = options.supplyByItem?.get(Number(selfId)) || [];
-    const offers = coldOffers.filter((offer) => Number(offer.characterId) !== excludedCharacterId)
-        .concat(invoke('GameServer/AfkTrade/AfkTradeService').offers(selfId, 1, {
-        characterId: excludedCharacterId
-    }).map((offer) => ({
-        characterId: Number(offer.sourceId),
-        town: offer.town,
-        count: Number(offer.count),
-        price: Number(offer.price)
-    })));
-    return {
-        selfId: Number(selfId),
-        sellers: offers.length,
-        units: offers.reduce((sum, offer) => sum + offer.count, 0),
-        minimumPrice: offers.reduce((minimum, offer) => (
-            offer.price > 0 ? Math.min(minimum, offer.price) : minimum
-        ), Infinity),
-        offers
-    };
+    const offers = [];
+    let units = 0, minimumPrice = Infinity;
+    for (const quote of permittedQuotes(selfId, { ...options, ownerId: options.excludeCharacterId, side: SELL })) {
+        offers.push(quote); units += quote.units; minimumPrice = Math.min(minimumPrice, quote.price);
+    }
+    return { selfId: Number(selfId), sellers: offers.length, units, minimumPrice, offers };
 }
 
 function snapshot(selfId, options = {}) {
@@ -173,4 +214,4 @@ function snapshot(selfId, options = {}) {
 }
 
 module.exports = { WANTED_TTL_MS, demandFor, demandSignal, indexSignals, signalsOfState,
-    snapshot, supplyFor, timestampForWanted };
+    snapshot, supplyFor, timestampForWanted, permittedQuotes, createOwnStock, prepareStockRow, jointStock, knownNeeds };

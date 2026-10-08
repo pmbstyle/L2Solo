@@ -2,15 +2,12 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-relations-pk-'));
 const previousConfig = process.env.L2NODE_CONFIG_FILE, previousShared = process.env.L2NODE_SHARED_CONFIG_FILE;
 const previousLearning = process.env.BOT_KNOWLEDGE_ERRORS_ENABLED;
-const ini = path.join(directory, 'test.ini');
-fs.writeFileSync(ini, fs.readFileSync(path.join(root, 'config/default.ini'), 'utf8').replace(
-    /^\[Database\]\r?\npath\s*=\s*[^\r\n]+/m,
-    `[Database]\npath = ${path.join(directory, 'world.sqlite')}\nhistoryPath = ${path.join(directory, 'history.sqlite')}`));
-process.env.L2NODE_CONFIG_FILE = ini; delete process.env.L2NODE_SHARED_CONFIG_FILE;
+const fixture = require('./helpers/isolatedSocialDatabase')('l2-relations-pk', root);
+const directory = fixture.directory;
 require('../src/Global');
+fixture.assertConfigured(options.default);
 const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');
 const Layers = require('../src/GameServer/Social/RelationshipLayers');
@@ -59,7 +56,7 @@ async function main() {
         done('ordered shared PK rolls, valuation, ten cap and protected items');
 
         let snapshot = Policy.apply(Policy.empty(1), event('contest:1'), at).snapshot;
-        assert.equal(snapshot.relations[0].hostility, 0, 'small resource loss no longer gives fixed +3 lasting hostility');
+        assert.equal(snapshot.relations[0].hostility, 3, 'resource theft keeps its shared lasting hostility alongside the grudge layer');
         const row = snapshot.relations[0];
         near(Layers.persistent(row, 4 + Layers.durations(row.traits).middle).grudge, 0.25);
         const fast = Layers.fast(null, event('contest:1'));
@@ -139,6 +136,21 @@ async function main() {
         done('actual legacy 57→58 init/reinit merges existing pair and player counters once');
         await Life.init();
         const red = Life.cachedState(1), white = Life.cachedState(2), ordinary = Life.cachedState(3);
+        // Non-dropping deaths must not consume the PK sequence or return a bag.
+        for (const [id, karma, pk] of [[4, 0, 6], [5, 100, 3]]) {
+            await createBot(id, pk);
+            await Database.execute(['UPDATE characters SET hp=0,karma=? WHERE id=?', [karma, id]]);
+            await Database.execute(["UPDATE bot_life_state SET activity='dead',deathCount=1 WHERE characterId=?", [id]]);
+            await Database.execute(['UPDATE items SET slot=0 WHERE characterId=? AND equipped=0', [id]]);
+            const bag = await Database.fetchItems(id);
+            const result = await Database.syncInventorySummary(id, Life.inventorySummaryFromItems(bag), 'resolve_death');
+            assert.deepEqual(result, { drops: [] });
+            assert.deepEqual(await Database.fetchItems(id), bag);
+            const [saved] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]);
+            assert.equal(JSON.parse(saved.statsJson).pkDropDeathSequence, undefined);
+        }
+        done('ineligible PK deaths return early without changing the bag or sequence');
+
         const repository = invoke('GameServer/Social/InteractionMemoryRepository');
         const memory = new Memory(repository); memory.playingHours = () => 4;
         const committed = await memory.recordBatch([event('durable:1')]);

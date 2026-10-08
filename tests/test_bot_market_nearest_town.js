@@ -1,9 +1,13 @@
 const assert = require('assert');
 
+const isolated = require('./helpers/isolatedSocialDatabase')('test_bot_market_nearest_town');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
+const Database = invoke('Database');
+Database.init();
 
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const OfferOrder = require('../src/GameServer/Bot/Economy/OfferOrder');
@@ -161,4 +165,4 @@ function selectionPlansFromHuntingSpot() {
     companionSupplyErrand();
     await clanWorkerPlanning();
     console.log('Bot market nearest town checks passed');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => { Database.close(); require('node:fs').rmSync(isolated.directory, { recursive: true, force: true }); });

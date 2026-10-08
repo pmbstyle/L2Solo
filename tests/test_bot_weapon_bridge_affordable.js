@@ -1,5 +1,10 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fixtureFs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fixtureFs.rmSync(fixture.directory, { recursive: true, force: true }));
 const Data = invoke('GameServer/DataCache');
 Data.init();
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -74,7 +79,8 @@ const nearlyBroke = archer(2300);
 assert(Gear.operationalAdenaReserve(nearlyBroke) > nearlyBroke.adena, 'fixture: the ordinary reserve (7,500 at level 30) exceeds the wallet');
 const cheapBridge = Gear.npcWeaponBridgePlan(nearlyBroke);
 assert.strictEqual(cheapBridge?.weaponBridge, true);
-assert.strictEqual(Number(cheapBridge.market.reserve), 500, 'the bridge keeps the minimum reserve only');
+// ARCH-NOTE: FX-E3 #12 gives a missing usable weapon the whole wallet; no minimum reserve.
+assert.strictEqual(Number(cheapBridge.market.reserve), 0, 'the survival bridge may spend the whole wallet');
 assert(Number(cheapBridge.market.price) + Number(cheapBridge.market.reserve) <= nearlyBroke.adena,
     'a bot with a little more than the cheapest usable weapon costs buys it now');
 assert.strictEqual(Gear.combatReadiness(armed(nearlyBroke, cheapBridge.target.selfId)).hasWeapon, true);

@@ -1,3 +1,5 @@
+const Database = invoke('Database');
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const DataCache = invoke('GameServer/DataCache');
 const EnchantRules = invoke('GameServer/Items/C4EnchantRules');
 
@@ -74,16 +76,39 @@ function inventoryScrolls(state = {}) {
     }, { weapon: 0, armor: 0 });
 }
 
-function warehouseRequests(state = {}, warehouseItems = []) {
-    const context = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
-    const missing = new Map(context.network.queue.flatMap(wish => (wish.object?.materials || []).map(material =>
-        [material.selfId, Math.max(0, material.amount - Number(state.inventory?.[material.selfId]?.amount || 0))])));
-    return warehouseItems.flatMap(item => {
-        const amount = Math.min(Number(item.amount || 0), missing.get(Number(item.selfId)) || 0);
-        if (!amount || !EnchantRules.resolveScroll(item.selfId)) return [];
-        missing.set(Number(item.selfId), (missing.get(Number(item.selfId)) || 0) - amount);
-        return [{selfId:Number(item.selfId), amount, reason:'enchant'}];
-    });
+function warehouseRequests(state = {}, warehouseItems = [], options = {}) {
+    if (state.phase === 'cold') {
+        const Decision = require('../Population/ColdEconomyDecision');
+        const economy = Decision.economyFor(state);
+        const materials = economy.materials || Decision.capture(economy, state).materials;
+        return materials.flatMap(([selfId, missing]) => {
+            const row = warehouseItems.find(item => Number(item.selfId) === selfId);
+            const amount = Math.min(missing, Math.max(0, Number(row?.amount || 0)));
+            // ARCH-NOTE: the captured worker materials use the existing town
+            // withdrawal reasons; enchant also triggers the physical safe batch.
+            const reason = EnchantRules.resolveScroll(selfId) ? 'enchant' : 'craft';
+            return amount > 0 ? [{ selfId, amount, reason }] : [];
+        });
+    }
+    const needs = targetNeeds(state, options);
+    const inventory = inventoryScrolls(state);
+    const missing = {
+        weapon: Math.max(0, needs.weapon - inventory.weapon),
+        armor: Math.max(0, needs.armor - inventory.armor)
+    };
+    const priority = { normal: 0, crystal: 1, blessed: 2 };
+    return (warehouseItems || []).map((item) => ({
+        ...item,
+        rule: EnchantRules.resolveScroll(item.selfId)
+    })).filter((item) => item.rule?.grade === 'D' && missing[item.rule.target] > 0 && Number(item.amount || 0) > 0)
+        .sort((left, right) => (
+            Number(priority[left.rule.scrollType] ?? 9) - Number(priority[right.rule.scrollType] ?? 9)
+            || Number(left.selfId) - Number(right.selfId)
+        )).flatMap((item) => {
+            const amount = Math.min(missing[item.rule.target], Math.max(0, Number(item.amount || 0)));
+            missing[item.rule.target] -= amount;
+            return amount > 0 ? [{ selfId: Number(item.selfId), amount, reason: 'enchant' }] : [];
+        });
 }
 
 function adapterFor(row) {
@@ -186,9 +211,59 @@ function summary(operations = []) {
     }, new Map()).values()];
 }
 
+// ARCH-NOTE: FX-F1 restores the authored guaranteed D-grade safe batch;
+// the delivered adapter discarded its operations and enchanted only one item.
+function consumedInventory(state = {}, operations = []) {
+    const consumed = operations.reduce((amounts, operation) => {
+        const selfId = Number(operation.scrollSelfId || 0);
+        if (selfId > 0) amounts.set(selfId, Number(amounts.get(selfId) || 0) + 1);
+        return amounts;
+    }, new Map());
+    const inventory = { ...(state.inventory || {}) };
+    consumed.forEach((amount, selfId) => {
+        const key = String(selfId);
+        const item = inventory[key];
+        if (!item) return;
+        const remaining = Math.max(0, Number(item.amount || 0) - amount);
+        if (remaining <= 0) delete inventory[key];
+        else inventory[key] = { ...item, amount: remaining };
+    });
+    return inventory;
+}
+
 async function enchantSafe(state, options = {}) {
-    const result = await invoke('GameServer/Bot/Economy/BotImprovementService').reviewCold(state, options);
-    return { ...result, enchanted: result.changed && result.result?.result !== 'henna' && result.result?.result !== 'sa', operations: [] };
+    if (!state || state.phase === 'hot' || !state.characterId || !hasPotential(state)) {
+        return { state, enchanted: false, operations: [] };
+    }
+    const rows = await Database.fetchItems(state.characterId);
+    const operations = plan(rows, options);
+    if (!operations.length) return { state, enchanted: false, operations: [] };
+
+    const persisted = await Database.enchantColdInventoryItems(state.characterId, operations);
+    const refreshed = await LifeState.refreshInventory({
+        ...state,
+        inventory: consumedInventory(state, persisted.operations)
+    });
+    const timestamp = Number(options.now) || Date.now();
+    const nextState = {
+        ...refreshed,
+        stats: {
+            ...(refreshed.stats || {}),
+            lastSafeEnchant: {
+                at: timestamp,
+                operations: persisted.operations.length,
+                items: summary(persisted.operations)
+            }
+        },
+        updatedAt: timestamp
+    };
+    const saved = await LifeState.upsertState(nextState, 'cold_safe_enchant');
+    return {
+        state: saved || nextState,
+        enchanted: true,
+        operations: persisted.operations,
+        items: nextState.stats.lastSafeEnchant.items
+    };
 }
 
 module.exports = {

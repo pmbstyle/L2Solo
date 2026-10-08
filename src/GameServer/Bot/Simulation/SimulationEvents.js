@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Contracts = invoke('GameServer/Bot/Simulation/SimulationContracts');
 
 const DEFAULT_MAX_QUEUE = 500;
@@ -15,7 +16,7 @@ const SimulationEvents = {
         const maxQueue = Math.max(1, Number(options.maxQueue) || DEFAULT_MAX_QUEUE);
         if (this.queue.length >= maxQueue) {
             this.queue.shift();
-            this.dropped += 1;
+            DiagnosticConfig.developerDiagnostics && (this.dropped += 1);
         }
         this.queue.push(normalized);
         return normalized;
@@ -32,9 +33,9 @@ const SimulationEvents = {
             try {
                 deliver(event);
                 delivered.push(event);
-                this.delivered += 1;
+                DiagnosticConfig.developerDiagnostics && (this.delivered += 1);
             } catch (err) {
-                this.failed += 1;
+                DiagnosticConfig.developerDiagnostics && (this.failed += 1);
                 utils.infoWarn('BotSim', 'event delivery failed type=%s source=%s: %s', event.type, event.source, err.message);
             }
         }
@@ -42,6 +43,7 @@ const SimulationEvents = {
     },
 
     snapshot() {
+        if (!DiagnosticConfig.developerDiagnostics) return { diagnosticsEnabled: false, queued: this.queue.length };
         return {
             queued: this.queue.length,
             dropped: this.dropped,

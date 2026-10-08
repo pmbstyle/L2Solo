@@ -23,7 +23,14 @@ assert.strictEqual(NpcShopBuyLists.fetchForNpc(7315).find((row) => row.selfId ==
     600, 'the taxed Gludio Soul Ore price should double at x10');
 
 const dwarf = { characterId: 100, classId: 57, level: 60, adena: 1000000,
+    phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
+    loc: { locX: 83396, locY: 147904, locZ: -3400 },
     stats: { classId: 57 }, inventory: {}, vitals: { mp: 1000 } };
+// A real own sample prices this fixture's labour; the x10 table fallback is
+// millions/hour and correctly refuses a low-yield D-grade craft.
+const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+dwarf.stats.huntEfficiency = [{ signature: Hunt.signature(dwarf), spotId: 'fixture',
+    at: Date.now(), samples: 3, cycleMs: 3600000, adena: 77000, loot: 0, exp: 100000, kills: 1 }];
 const dRecipeItem = { selfId: 1804, name: 'Recipe: Soulshot: D-Grade', amount: 1 };
 assert.strictEqual(ItemDisposition.canLearnRecipe(dwarf, dRecipeItem), true,
     'a high-level crafter should still learn a D-grade shot recipe');
@@ -65,14 +72,28 @@ assert(recipeItem, 'a non-crafter holding a shot recipe should be able to sell i
 assert.strictEqual(recipeItem.rank, 'c', 'C-grade shot recipes belong in Giran');
 assert.strictEqual(MarketListingPolicy.classify(recipeSeller, recipeItem).action, 'market');
 
+const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const index = {
+    // ARCH-NOTE: C2c supplies offer lookup with the immutable market view.
+    offersFor(id, type, exclude) {
+        if (type === 3 && this.shotDemand.has(Number(id))) return this.shotDemand.get(Number(id))
+            .map(row => ({ sourceId: row.characterId, count: row.amount, price: row.maxPrice, town: 'Giran' }))
+            .filter(row => Number(row.sourceId) !== Number(exclude));
+        if (type === 1 && Number(this.shotSupply.get(Number(id))) > 0) return [{ sourceId: 501,
+            count: Number(this.shotSupply.get(Number(id))), price: 1, town: 'Giran' }];
+        if (type === 1 && [1804, 1805].includes(Number(id))) return [{ sourceId: 201, count: 1, price: 1, town: 'Giran' }];
+        return Afk.offers(id, type).filter(offer => Number(offer.sourceId) !== Number(exclude));
+    },
+    context: { hourAdena: 77000, mpPerHour: 12000, price: () => 100 },
+    planPurchase(id, amount) { const price = Number(this.npcPrice.get(id)); return price > 0
+        ? { town: 'Giran', units: amount, whole: true, cost: amount * price, landed: amount * price, npc: amount } : null; },
     itemTemplates: new Map(DataCache.items.map((item) => [Number(item.selfId), item])),
     npcPrice: new Map([[1785, 550]]),
     gear: new Map([
         ['d', [{ selfId: 45, price: 22324, crystals: 56, source: 'afk', count: 1, ownerId: 201 }]],
         ['c', [{ selfId: 325, price: 100000, crystals: 1148, source: 'afk', count: 1, ownerId: 202 }]]
     ]),
-    shotDemand: new Map([[1463, [{ characterId: 200, amount: 1000, budget: 1000000 }]]]),
+    shotDemand: new Map([[1463, [{ characterId: 200, amount: 1000, budget: 1000000, maxPrice: 1000, origin: 'public_bid' }]]]),
     shotSupply: new Map()
 };
 const recipe = Recipes.resolveByRecipeId(20);
@@ -83,19 +104,18 @@ assert.strictEqual(ItemDisposition.priceFor({ ...dwarf, stats: {
 } }, { selfId: 1463, amount: recipe.productCount }, index.itemTemplates.get(1463)),
 candidate.salePrice, 'the published shot price must match the profitable route calculation');
 assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
-    shotDemand: new Map([[1464, [{ characterId: 200, amount: 1000, budget: 1000000 }]]]), shotSupply: new Map() })?.recipeItemId, 1805,
-    'a crafter should ask for a recipe that somebody actually holds');
+    shotDemand: new Map([[1464, [{ characterId: 200, amount: 1000, budget: 1000000, maxPrice: 1000, origin: 'public_bid' }]]]), shotSupply: new Map() })?.recipe.recipeItemId, 1805,
+    'a crafter should ask for a recipe with a finite public scroll offer and output bid');
 assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]),
     shotDemand: new Map(), shotSupply: new Map() }), null,
     'a crafter should not buy a recipe for a shot with no market demand');
-assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipeItemId,
-    1804, 'a viable D-grade route should create recipe demand even before somebody lists the recipe');
-assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipeItemId,
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) })?.recipe.recipeItemId,
+    1804, 'the finite D-grade route can repay a quoted one-Adena scroll');
+assert.strictEqual(Shots.recipeTarget(dwarf, { ...index, recipeStock: new Map([[1805, 1]]) }, [318])?.recipe.recipeItemId,
     1804, 'knowing a higher-grade recipe must not prevent a profitable D-grade route');
 assert.strictEqual(candidate.requiredCrystals, 1);
 assert.strictEqual(candidate.ore.selfId, 1785);
 assert(candidate.profit > 100);
-const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const originalOffers = Afk.offers;
 try {
     Afk.offers = id => Number(id) === 1458
@@ -132,10 +152,12 @@ try {
 const ownSupply = { ...dwarf, inventory: { '129': {
     selfId: 129, amount: 1, equipped: true, slot: 7
 }, '1463': { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT + 156, kind: 'Other.Shot' } } };
-assert(Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } } }),
+const ownShotTarget = invoke('GameServer/Bot/Economy/EconomyContext').basics(ownSupply).stock('shots').target;
+ownSupply.inventory['1463'].amount = ownShotTarget + 156;
+assert(Shots.hasShotSurplus({ ...ownSupply, stats: { ...ownSupply.stats, shotCraft: { productId: 1463 } } }),
     'leftover crafted shots must be admitted for a listing review');
-assert(!Shots.hasShotSurplus({ ...ownSupply, stats: { shotCraft: { productId: 1463 } },
-    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT } } }),
+assert(!Shots.hasShotSurplus({ ...ownSupply, stats: { ...ownSupply.stats, shotCraft: { productId: 1463 } },
+    inventory: { ...ownSupply.inventory, 1463: { selfId: 1463, amount: ownShotTarget } } }),
     'the personal reserve alone must not trigger a surplus listing review');
 assert.strictEqual(ItemDisposition.saleCandidates(ownSupply, { unlimited: true })
     .find((item) => item.selfId === 1463)?.count, 156,

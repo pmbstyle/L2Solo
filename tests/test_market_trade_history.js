@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 
 require('../src/Global');
+// Load native item data before the first counted market trade.
+invoke('GameServer/DataCache').init();
 
 const Database = invoke('Database');
 const MarketTradeOverviewReader = invoke('MarketTradeOverviewReader');

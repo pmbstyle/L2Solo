@@ -168,7 +168,9 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
     if (!step?.resuming && !fighters.some(f => f.attacks || f.preparations)) return { started: false, reason: 'no_hostile_action' };
     const ongoing = !!step && losingSide === null && step.until < step.expiresAt && actions < actionBudget;
     const durationMs = Math.min(MAX_DURATION_MS, Math.max(1000, time));
-    const until = timestamp + durationMs + FLAG_MS;
+    // ARCH-NOTE: Native command checkpoints use integer milliseconds. Keep combat
+    // duration exact; round only the persisted deadline up so recovery never begins early.
+    const until = Math.ceil(timestamp + durationMs + FLAG_MS);
     const updates = new Map(fighters.map(f => {
         const dead = f.vitals.hp <= 0;
         const enemies = [...(f.state.stats?.pvpEnemies || [])].map(e => ({ ...e }));

@@ -1,5 +1,8 @@
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('progression-native-leaf');
 require('../src/Global');
+isolated.assertConfigured(options.default);
 const Data = invoke('GameServer/DataCache');
 Data.init();
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -166,6 +169,53 @@ async function checkMissingSpotRecovery() {
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Events = invoke('GameServer/Bot/Population/BotLifeEvents');
     const Goals = invoke('GameServer/Bot/Goals/GoalService');
+    invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => Spots.ensure());
+    const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const { ColdEconomyDecisions, compact } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+    const nativeBuyer = { ...polearm, characterId: 100, phase: 'cold', activity: 'party_wait', updatedAt: at,
+        loc: provider.loc, vitals: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 1000 },
+        stats: { ...polearm.stats, exp: Data.experience[polearm.level - 1] + 1,
+            equipment: [{ selfId: 129, slot: 7, rank: 'd' }], equipmentPlan: Gear.npcWeaponBridgePlan(polearm) } };
+    // ARCH-NOTE: C1 defers a cold voluntary goal until the actual worker
+    // publishes its decision. E3's funded queue replaces the old weapon/MP
+    // priority ladder; the existing bridge and travel guards still apply.
+    assert.deepStrictEqual(Needs.evaluate(nativeBuyer, { now: at }), [],
+        'a retained weapon bridge cannot manufacture a voluntary goal without a worker decision');
+    const native = await require('./helpers/workerEconomyDecision')(nativeBuyer, { timestamp: at });
+    const buyer = { ...nativeBuyer, stats: { ...nativeBuyer.stats, ...native.statsPacket } };
+    const leaf = compact(native.decision).activity;
+    assert.strictEqual(leaf?.activity, 'shopping', 'the real funded buyer selects a native shopping leaf');
+    const decisions = new ColdEconomyDecisions();
+    decisions.accept(buyer.characterId, native.decision);
+    let selectedGoal;
+    const build = Economy.forState;
+    try {
+        Economy.forState = () => { throw Error('the cold buyer rebuilt its wish network on main'); };
+        const goals = Needs.evaluate(buyer, { now: at, decisions });
+        assert.strictEqual(goals.length, 1, 'one accepted native shopping leaf produces one voluntary goal');
+        selectedGoal = goals[0];
+        assert.strictEqual(selectedGoal.priority, 50);
+        assert.strictEqual(selectedGoal.plan.wishKey, leaf.rootKey);
+        assert.strictEqual(selectedGoal.plan.economyActivity, leaf.activity);
+        assert.strictEqual(selectedGoal.target.itemId, leaf.itemId);
+        assert.strictEqual(selectedGoal.target.amount, Math.max(1, Math.ceil(leaf.amount)));
+        assert(Number.isFinite(selectedGoal.plan.estimatedCost) && selectedGoal.plan.estimatedCost > 0);
+        const queuePosition = native.queue.findIndex(row => row.key === leaf.rootKey);
+        assert(queuePosition >= 0 && queuePosition < 8, 'the selected root has an exact native funded money triplet');
+        const ratio = native.statsPacket.money[4 + queuePosition * 3];
+        assert(Number.isFinite(ratio) && ratio >= native.statsPacket.money[1]);
+        assert(Funding.spendable(buyer, 0, { r: ratio }) >= selectedGoal.plan.estimatedCost,
+            'the material quote fits its actual parent wish budget after reserve and higher-valued wishes');
+        assert.deepStrictEqual(Needs.evaluate({ ...buyer, updatedAt: at + 1 }, { now: at, decisions }), [],
+            'an older decision cannot select a goal for a changed checkpoint');
+    } finally {
+        Economy.forState = build;
+        decisions.forget(buyer.characterId);
+    }
+    assert(Population.canResumeAffordableMarketPlan(buyer, at),
+        'the original funded compatible bridge remains eligible for a market review before another fight');
     const originals = { ensure: Spots.ensure, occupancy: Spots.currentOccupancy, find: Spots.findForState,
         save: Life.upsertState, cachedState: Life.cachedState };
     const state = { ...polearm, characterId: 100, phase: 'cold', activity: 'hunting', inventory: {},
@@ -202,29 +252,20 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(craftResult.state.stats.travel.reason, 'component_craft',
             'a stale worker hunt must not overwrite an executable component craft trip');
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);
-        Goals.review = async () => ({ current: { type: 'upgrade_gear', target: { itemId: 291 },
-            plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } } });
-        const buyer = { ...state, activity: 'party_wait', inventory: polearm.inventory, adena: polearm.adena,
-            loc: provider.loc, vitals: { hp: 1000, maxHp: 1000, mp: 100, maxMp: 1000 },
-            stats: { ...polearm.stats, equipment: [{ selfId: 129, slot: 7, rank: 'd' }],
-                equipmentPlan: Gear.npcWeaponBridgePlan(polearm) } };
-        const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
-        const bridgeGoal = Needs.evaluate(buyer).sort((left, right) => right.priority - left.priority)[0];
-        assert.strictEqual(bridgeGoal.plan.expectedBenefit, 'market_search_for_weapon',
-            'a funded weapon bridge must outrank ordinary MP recovery');
+        Goals.review = async () => ({ current: selectedGoal });
         const purchasedTrip = await Population.executeWorkerLifecycleCommand(buyer, {
             precomputedResult: { patch: { activity: 'resting' }, materialize: { exp: 100 } }
         });
         assert(purchasedTrip.ok);
         assert.strictEqual(savedReason, 'goal_market_travel_before_combat');
-        assert.strictEqual(purchasedTrip.state.stats.travel.reason, 'market_search_for_weapon',
-            'a funded two-handed weapon must leave stale party wait for market before a worker fight can exhaust the buyer again');
+        assert.strictEqual(purchasedTrip.state.stats.travel.reason, selectedGoal.plan.expectedBenefit,
+            'the funded buyer leaves stale party wait for its native chosen market goal before another worker fight');
         const savesBeforeStaleTrip = saves;
         let current = buyer;
         Life.cachedState = () => current;
         Goals.review = async () => {
             current = { ...buyer, inventory: { ...buyer.inventory, newlyAcquired: { amount: 1 } } };
-            return { current: { type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for_weapon' } } };
+            return { current: selectedGoal };
         };
         const staleTrip = await Population.executeWorkerLifecycleCommand(buyer, {
             precomputedResult: { patch: { activity: 'resting' } }
@@ -242,4 +283,5 @@ async function checkMissingSpotRecovery() {
     }
 }
 checkWorkerSafety().then(checkMissingSpotRecovery).then(() => console.log('Bot progression audit regressions passed'))
-    .catch(error => { console.error(error); process.exitCode = 1; });
+    .catch(error => { console.error(error); process.exitCode = 1; })
+    .finally(() => require('node:fs').rmSync(isolated.directory, { recursive: true, force: true }));

@@ -3,11 +3,10 @@ const BoardRules = require('../../AfkTrade/BoardRules');
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
-const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
-const BotWarehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 
 const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
 const NPC_SURPLUS_GEAR_MAX_BASE_PRICE = 50000;
@@ -66,11 +65,18 @@ function traderContext(state, options = {}) {
     return MarketPricing.traderContext(state, {
         timestamp: Number(options.now) || Date.now(),
         persona: options.persona ?? invoke('GameServer/Bot/AI/BotPersona').of(state),
-        board: options.board ?? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
+        board: Object.hasOwn(options, 'board') ? options.board : invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
         npcOffersFor: options.npcOffersFor
             || ((selfId) => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId)),
         findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId)),
-        knowledgeEnabled: options.knowledgeEnabled
+        economy: options.economy,
+        tripCost: options.tripCost,
+        knowledgeEnabled: options.knowledgeEnabled,
+        demandFor: options.demandFor,
+        ownStock: options.ownStock,
+        canSell: options.canSell,
+        derivedDemandValue: options.derivedDemandValue,
+        derivedDemandSupported: options.derivedDemandSupported
     });
 }
 
@@ -102,8 +108,10 @@ function evaluate(state, options = {}) {
         const hard = classify(state, item);
         // A lot too small to list still answers a buy ad that asks for it:
         // the lot rule is the board's, the ad's buyer chose the amount.
-        const smallLot = hard.reason === 'small_material_lot'
-            && (MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant })?.net || 0) > 0;
+        const smallLotAnswer = hard.reason === 'small_material_lot'
+            ? MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant }) : null;
+        const smallLot = Boolean(smallLotAnswer) && (Number.isFinite(smallLotAnswer.valueHours)
+            ? smallLotAnswer.valueHours : smallLotAnswer.net) > 0;
         if (hard.action !== 'market' && !smallLot) {
             decisions.push({ ...hard, item });
             continue;
@@ -115,7 +123,7 @@ function evaluate(state, options = {}) {
             keptLines += 1;
             continue;
         }
-        const town = MarketTownPolicy.targetTownForItems(state, [item]);
+        const town = MarketTownPolicy.targetTownForItems(state, [item], options);
         const chosen = MarketPricing.disposition(item, ctx, {
             town, room: roomFor(item, options.stored), smallLot,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
@@ -157,14 +165,14 @@ function evaluate(state, options = {}) {
 function roomFor(item, stored) {
     if (!isGear(item) || !stored) return 1;
     const kept = Number(stored.get?.(Number(item.selfId)) ?? stored[Number(item.selfId)] ?? 0);
-    return Math.max(0, Math.min(1, (BotWarehouse.MAX_GEAR_COPIES_PER_TYPE - kept) / Math.max(1, Number(item.count) || 1)));
+    return Math.max(0, Math.min(1, (MAX_GEAR_COPIES_PER_TYPE - kept) / Math.max(1, Number(item.count) || 1)));
 }
 
 // A bot in the world seen by the cold rules: its saved life state with the
 // live bag, level and class of the actor.
 function actorState(session) {
     const actor = session.actor;
-    const inventory = LifeState.inventorySummaryFromItems(actor.backpack.fetchItems());
+    const inventory = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(actor.backpack.fetchItems());
     return {
         ...(session.coldLifeState || {}),
         characterId: Number(actor.fetchId()),

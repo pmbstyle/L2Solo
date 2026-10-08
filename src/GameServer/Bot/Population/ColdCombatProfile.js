@@ -1,7 +1,8 @@
+const { fnv1a32 } = require('../Fnv1a');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
-const ClassProgression = invoke('GameServer/ClassProgression');
+const { skillTreeEntries, learnedTreeRow, treeSkillLevel } = require('./ColdSkillTree');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const SkillRequirements = invoke('GameServer/Skills/SkillRequirements');
 const GameTime = invoke('GameServer/World/GameTime');
@@ -126,7 +127,7 @@ function effectStats(effect = {}) {
 // Passives follow the hot rule (SkillRequirements). A cold fight is judged
 // once, at its start: the bot at full HP (HP-threshold passives off), not
 // moving or seated, night from the game clock at `timestamp`.
-function statSources(profile, timestamp) {
+function statSources(profile, timestamp, options = {}) {
     const equipment = profile.equipment || {};
     const gear = {
         weaponKind: equipment.weaponKind || '',
@@ -136,7 +137,7 @@ function statSources(profile, timestamp) {
     };
     const situation = {
         hp: 1, maxHp: 1, moving: false, walking: false, seated: false,
-        get night() { return GameTime.isNight(timestamp); }
+        get night() { options.onNightRead?.(); return options.night ?? GameTime.isNight(timestamp); }
     };
     const sources = activeEffects(profile.effects, timestamp).map(effectStats);
     for (const skill of profile.skills || []) {
@@ -254,38 +255,6 @@ function skillDefinition(selfId, level) {
     return definition ? { ...skill.template, ...skill.time, ...definition } : null;
 }
 
-const FIRST_CLASS_TO_BASE = new Map(
-    Object.entries(ClassProgression.firstProfMap)
-        .flatMap(([baseClassId, classIds]) => classIds.map((classId) => [number(classId), number(baseClassId)]))
-);
-const SECOND_CLASS_TO_FIRST = new Map(
-    Object.entries(ClassProgression.secondProfMap)
-        .flatMap(([firstClassId, classIds]) => classIds.map((classId) => [number(classId), number(firstClassId)]))
-);
-
-function parentClassId(classId) {
-    const normalized = number(classId);
-    const thirdParent = number(ClassProgression.getThirdClass(normalized)?.parentClassId, NaN);
-    if (Number.isFinite(thirdParent)) return thirdParent;
-    return SECOND_CLASS_TO_FIRST.get(normalized)
-        ?? FIRST_CLASS_TO_BASE.get(normalized)
-        ?? null;
-}
-
-function classProgressionIds(classId) {
-    const ids = [];
-    const seen = new Set();
-    let current = number(classId);
-    while (Number.isFinite(current) && current >= 0 && !seen.has(current)) {
-        seen.add(current);
-        ids.unshift(current);
-        const parent = parentClassId(current);
-        if (parent === null || parent === current) break;
-        current = parent;
-    }
-    return ids;
-}
-
 function summonFields(definition = {}) {
     return {
         itemId: number(definition.itemId),
@@ -324,37 +293,6 @@ function skillSnapshot(skill) {
         timeLostActive: number(skill.fetchSummonTimeLostActive?.()),
         isCubic: skill.fetchSummonIsCubic?.() === true
     };
-}
-
-function skillTreeEntries(classId) {
-    const entries = new Map();
-    classProgressionIds(classId).forEach((id) => {
-        const tree = (DataCache.skillTree || []).find((entry) => number(entry.classId) === id);
-        (tree?.skills || []).forEach((entry) => {
-            const selfId = number(entry.selfId);
-            const previous = entries.get(selfId);
-            if (!previous) {
-                entries.set(selfId, entry);
-                return;
-            }
-
-            const levels = new Map((previous.levels || []).map((row) => [number(row.level), row]));
-            (entry.levels || []).forEach((row) => levels.set(number(row.level), row));
-            entries.set(selfId, { ...previous, ...entry, levels: [...levels.values()] });
-        });
-    });
-    return [...entries.values()];
-}
-
-// The highest level row of a tree entry that a character of `level` has learned.
-function learnedTreeRow(entry, level) {
-    return (entry.levels || []).filter((row) => number(row.pLevel) <= level).at(-1);
-}
-
-// The level of one skill a class line knows at a character level, 0 if none.
-function treeSkillLevel(classId, level, skillId) {
-    const entry = skillTreeEntries(classId).find((candidate) => number(candidate.selfId) === number(skillId));
-    return entry ? number(learnedTreeRow(entry, number(level))?.level) : 0;
 }
 
 function skillsFromTree(classId, level) {
@@ -522,7 +460,7 @@ function needsDatabaseBackfill(snapshot = {}) {
         && (snapshot?.skillSource !== 'database' || number(snapshot?.version) < PROFILE_VERSION);
 }
 
-function profileFor(state = {}, timestamp = Date.now()) {
+function profileFor(state = {}, timestamp = Date.now(), options = {}) {
     const saved = state.stats?.coldCombat;
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
     const template = classTemplate(classId);
@@ -536,11 +474,10 @@ function profileFor(state = {}, timestamp = Date.now()) {
         capturedAt: number(saved?.capturedAt, timestamp),
         classId,
         base: { ...(template.base || {}), ...(template.stats || {}), ...(saved?.base || {}) },
-        // Inventory is authoritative for a cold bot too: a completed market
-        // purchase or craft must alter its next fight without waiting for a
-        // hot materialisation. The hot snapshot fills only legacy states that
-        // have no persisted equipped items yet.
-        equipment: state.inventory && typeof state.inventory === 'object'
+        // ARCH-NOTE: Restore snapshot gear for legacy bags with no equipped rows;
+        // selling the last weapon keeps that snapshot until the next hot capture.
+        // Equipped rows still override it immediately after purchases and crafts.
+        equipment: equipped.length
             ? { ...(saved?.equipment || {}), ...legacyEquipment }
             : { ...legacyEquipment, ...(saved?.equipment || {}) },
         effects: [...(saved?.effects || []).filter(effect => effect.category !== 'equipment_item_skill'),
@@ -557,7 +494,7 @@ function profileFor(state = {}, timestamp = Date.now()) {
     }
     // Resolve effects and passive requirements once for this calculation.
     // A later profile rebuild gets fresh sources after gear, skill or buff changes.
-    const sources = statSources(profile, timestamp);
+    const sources = statSources(profile, timestamp, options);
     const equipment = profile.equipment;
     const str = effectiveBase(profile, 'STR', timestamp, sources);
     const dex = effectiveBase(profile, 'DEX', timestamp, sources);
@@ -657,14 +594,21 @@ function partyMusicEffect(skill, timestamp = Date.now()) {
     };
 }
 
+const ATTACK_SKILL_TYPES = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK,
+    C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
+
+function isAttackSkill(skill = {}) {
+    if (skill.passive) return false;
+    const semantic = C4SkillRules.resolveCached(skill);
+    return semantic.target === 'enemy' && ATTACK_SKILL_TYPES.has(semantic.skillType) && !semantic.notUsedInC4;
+}
+
 function offensiveSkills(profile) {
-    const allowed = new Set([C4SkillRules.DAMAGE, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.DEATH_LINK, C4SkillRules.FATAL, C4SkillRules.DRAIN, C4SkillRules.BLOW, C4SkillRules.AGGRO_DAMAGE]);
     return (profile.skills || []).filter((skill) => {
-        if (skill.passive) return false;
-        const semantic = C4SkillRules.resolve(skill);
+        if (!isAttackSkill(skill)) return false;
+        const semantic = C4SkillRules.resolveCached(skill);
         const required = number(semantic.requires?.weaponsAllowed);
-        return semantic.target === 'enemy' && allowed.has(semantic.skillType) && !semantic.notUsedInC4
-            && (!required || (required & profile.weaponMask) !== 0);
+        return !required || (required & profile.weaponMask) !== 0;
     });
 }
 
@@ -709,6 +653,14 @@ function corpseSummonSkills(profile = {}) {
             || Number(b.level || 0) - Number(a.level || 0));
 }
 
+function spotSpawns(spot = {}, npcId) {
+    const id = Number(npcId);
+    if (!(id > 0)) return false;
+    return Array.isArray(spot.npcEntries) && spot.npcEntries.length
+        ? spot.npcEntries.some(entry => Number(entry.selfId) === id)
+        : (spot.npcSelfIds || []).some(selfId => Number(selfId) === id);
+}
+
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     let entries = rawEntries.filter((entry) => {
@@ -730,13 +682,14 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
             const match = Matchup.evaluate(options.matchupProfiles, target);
             if (!match.eligible) resisted += 1;
             if (options.soloSafety) {
-                match.eligible &&= Matchup.soloSurvival(options.matchupProfiles, target).eligible
-                    && (!options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel);
+                match.eligible = Matchup.soloCanHunt(options.matchupProfiles, target,
+                    { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible;
             }
             return { ...entry, match };
         }).filter(entry => entry.match.eligible);
         if (!entries.length) return { avoided: true,
-            reason: resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
+            reason: options.soloSafety ? 'no_safe_solo_target'
+                : resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
     }
     const pickEntry = (candidates) => {
         const weight = entry => Math.max(1, number(entry.count, 1)) * Math.min(1, entry.match?.efficiency ?? 1) ** 2;
@@ -800,26 +753,30 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     };
 }
 
-// The expensive layer of a wish review (design 16.5): how much power each
-// candidate (gear, enchant, henna, SA) adds to a build. It depends on the
-// build alone, so it is kept per build and shared by bots with the same
-// build; an ordinary fight (new adena and exp) reuses it. An entry holds the
-// build's own power numbers and two numbers per candidate the review
-// compared, never whole profiles (memory per bot is budgeted, design 16.26).
-// The build key holds everything profileFor reads for these numbers: class,
-// level, captured base, henna capture and saved equipment, worn items with
-// slot and enchant, the effects active at `timestamp` (by id and stats),
-// skills, hennas and night. Each bot owns the entry of its current build
-// (several bots share one); an entry dies with its last owner, so the store
-// holds about one entry per bot, and owners not seen for long leave first.
+// ARCH-NOTE: Float32 changed queue/focus for 15 of 300 saved builds.
+// Float64 preserves every nonzero and signed-zero result; exact +0/+0 uses
+// one slot marker. 256 Uint16 IDs share a buffer with 128 Float64 pairs.
+// Native 1,000-owner strong dominators: max entry 3,560 B including buffers,
+// plus amortized build/owner tables, key boxes and night markers 148.32 B.
+// The resulting 3,708.32 B remains below the 4 KB per-owner budget.
+// Shared candidate names are interned once; a build keeps only numeric hashes,
+// power numbers and packed gains. Owners release both variants and night markers.
 const buildGains = new Map();
 const ownerBuilds = new Map();
+const candidateIndex = new Map();
+const POWER_FIELDS = ['pAtk', 'mAtk', 'atkSpd', 'castSpd', 'pDef', 'mDef', 'maxHp'];
+const CANDIDATE_LIMIT = 65536, ENTRY_LIMIT = 256, NONZERO_LIMIT = 128;
 function ownerLimit() {
     return Math.ceil(1.25 * Math.max(256, Number(invoke('GameServer/Bot/Population/PopulationConfig').maxPlayingPopulation) || 0));
 }
 function releaseBuild(key) {
     const entry = buildGains.get(key);
-    if (entry && --entry.owners <= 0) buildGains.delete(key);
+    if (!entry) return;
+    if (--entry.owners <= 0) buildGains.delete(key);
+    if (entry.night === 1) {
+        const marker = buildGains.get(entry.baseKey);
+        if (marker && --marker.owners <= 0) buildGains.delete(entry.baseKey);
+    }
 }
 function powerKey(state = {}, timestamp = Date.now()) {
     const saved = state.stats?.coldCombat || {};
@@ -832,30 +789,62 @@ function powerKey(state = {}, timestamp = Date.now()) {
         .map((effect) => `${effect.id}/${effect.key}/${JSON.stringify(effectStats(effect))}`).sort().join(',');
     return [saved.classId, state.stats?.classId, state.classId, state.level, worn, (state.stats?.hennas || []).join(','),
         Array.isArray(saved.skills) ? `${saved.skillSource}:${saved.skills.map((skill) => `${skill.selfId}:${skill.level}`).join(',')}` : '',
-        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null]), effects,
-        GameTime.isNight(timestamp) ? 'n' : 'd'].join('|');
+        JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null]), effects].join('|');
 }
-function powerFor(state = {}, timestamp = Date.now()) {
-    const profile = profileFor(state, timestamp);
-    return { pAtk: profile.pAtk, mAtk: profile.mAtk, atkSpd: profile.atkSpd, castSpd: profile.castSpd,
-        pDef: profile.pDef, mDef: profile.mDef, maxHp: profile.maxHp };
+function buildHash(text) {
+    return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
 }
-// The build's entry: { power, gains }. `gainFor(entry, key, compute)` returns
-// the remembered [attack, defence] of one candidate or computes it once. A
-// state without a character id gets a fresh entry that is not kept.
+function powerFor(state = {}, timestamp = Date.now(), options = {}) {
+    const profile = profileFor(state, timestamp, options);
+    return Object.fromEntries(POWER_FIELDS.map(field => [field, profile[field]]));
+}
+// ARCH-NOTE: Existing callers need named numbers transiently; packed entries
+// never retain that object or a per-candidate string/array.
+function powerNumbers(entry) {
+    return Object.fromEntries(POWER_FIELDS.map((field, index) => [field, entry.power[index]]));
+}
+function buildOptions(entry, timestamp) {
+    return { night: entry.night === 0 ? false : GameTime.isNight(timestamp) };
+}
+function resizeGains(entry, idCapacity, gainCapacity) {
+    const buffer = new ArrayBuffer(idCapacity * 3 + gainCapacity * 16);
+    const ids = new Uint16Array(buffer, 0, idCapacity), slots = new Uint8Array(buffer, idCapacity * 2, idCapacity);
+    const gains = new Float64Array(buffer, idCapacity * 3, gainCapacity * 2);
+    if (entry.ids) { ids.set(entry.ids); slots.set(entry.slots); gains.set(entry.gains); }
+    entry.ids = ids; entry.slots = slots; entry.gains = gains;
+    return entry;
+}
+function newEntry(power, night, baseKey) {
+    return resizeGains({ power: Float64Array.from(POWER_FIELDS.map(field => power[field])),
+        size: 0, gainSize: 0, owners: 0, night, baseKey }, 32, 32);
+}
 function buildGainsFor(state = {}, timestamp = Date.now()) {
-    const key = powerKey(state, timestamp);
+    const text = powerKey(state, timestamp), baseKey = buildHash(text);
     const owner = Number(state.characterId) || 0;
-    let entry = buildGains.get(key);
+    let key = baseKey, entry = buildGains.get(baseKey);
     if (!entry) {
-        entry = { power: powerFor(state, timestamp), gains: new Map(), owners: 0 };
-        if (!owner) return entry;
-        buildGains.set(key, entry);
+        let readsNight = false;
+        const power = powerFor(state, timestamp, { onNightRead: () => { readsNight = true; } });
+        if (readsNight) {
+            entry = { night: 2, owners: 0 };
+            if (owner) buildGains.set(baseKey, entry);
+            key = buildHash(text + (GameTime.isNight(timestamp) ? '|n' : '|d'));
+            entry = newEntry(power, 1, baseKey);
+        } else entry = newEntry(power, 0, baseKey);
+        if (owner) buildGains.set(key, entry);
+    } else if (entry.night === 2) {
+        key = buildHash(text + (GameTime.isNight(timestamp) ? '|n' : '|d'));
+        entry = buildGains.get(key);
+        if (!entry) {
+            entry = newEntry(powerFor(state, timestamp), 1, baseKey);
+            if (owner) buildGains.set(key, entry);
+        }
     }
     if (!owner) return entry;
     const held = ownerBuilds.get(owner);
     if (held !== key) {
         entry.owners++;
+        if (entry.night === 1) buildGains.get(baseKey).owners++;
         if (held !== undefined) releaseBuild(held);
     }
     ownerBuilds.delete(owner);
@@ -874,18 +863,38 @@ function forgetBuild(characterId) {
     releaseBuild(key);
 }
 function gainFor(entry, key, compute) {
-    let gain = entry.gains.get(key);
-    if (!gain) {
-        const effect = compute();
-        gain = [effect.attack, effect.defence];
-        entry.gains.set(key, gain);
+    let id = candidateIndex.get(key);
+    if (id === undefined && candidateIndex.size < CANDIDATE_LIMIT) {
+        id = candidateIndex.size;
+        candidateIndex.set(key, id);
     }
-    return { attack: gain[0], defence: gain[1] };
+    for (let index = 0; id !== undefined && index < entry.size; index++) {
+        if (entry.ids[index] !== id) continue;
+        const slot = entry.slots[index];
+        return slot === 0 ? { attack: 0, defence: 0 }
+            : { attack: entry.gains[(slot - 1) * 2], defence: entry.gains[(slot - 1) * 2 + 1] };
+    }
+    const effect = compute();
+    const zero = Object.is(effect.attack, 0) && Object.is(effect.defence, 0);
+    if (id === undefined || entry.size >= ENTRY_LIMIT || (!zero && entry.gainSize >= NONZERO_LIMIT)) return effect;
+    const idCapacity = entry.size === entry.ids.length ? Math.min(ENTRY_LIMIT, entry.ids.length * 2) : entry.ids.length;
+    const gainCapacity = !zero && entry.gainSize * 2 === entry.gains.length
+        ? Math.min(NONZERO_LIMIT, entry.gains.length) : entry.gains.length / 2;
+    if (idCapacity !== entry.ids.length || gainCapacity * 2 !== entry.gains.length) resizeGains(entry, idCapacity, gainCapacity);
+    const index = entry.size++;
+    entry.ids[index] = id;
+    if (zero) { entry.slots[index] = 0; return { attack: 0, defence: 0 }; }
+    const slot = entry.gainSize++;
+    entry.slots[index] = slot + 1;
+    entry.gains[slot * 2] = effect.attack;
+    entry.gains[slot * 2 + 1] = effect.defence;
+    return { attack: entry.gains[slot * 2], defence: entry.gains[slot * 2 + 1] };
 }
+function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds.size, candidateIndex: candidateIndex.size }; }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild,
-    offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, size,
+    isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
+    spotSpawns, npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add
 };

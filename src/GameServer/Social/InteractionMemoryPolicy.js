@@ -4,6 +4,7 @@ const Help = require('./CombatHelpPolicy');
 const Aid = require('./OpponentAidPolicy');
 const Layers = require('./RelationshipLayers');
 const LIMITS = Object.freeze({ character: 32, clan: 8, alliance: 8 });
+const PROTECTED_LIMIT = 16;
 const RECENT_LIMIT = 128;
 const REASON_LIMIT = 3;
 const DAY = 86400000;
@@ -77,8 +78,8 @@ function validate(snapshot) {
             throw Error('interaction memory: invalid relation layers');
         }
         const key = `${row.kind}:${row.targetId}`;
-        counts[row.kind] = (counts[row.kind] || 0) + (protectedRelation(row) ? 0 : 1);
-        if (targets.has(key) || counts[row.kind] > LIMITS[row.kind]
+        counts[row.kind] = (counts[row.kind] || 0) + (row.player ? 0 : 1);
+        if (targets.has(key) || counts[row.kind] > LIMITS[row.kind] + PROTECTED_LIMIT
             || (row.order !== undefined && (!Number.isSafeInteger(row.order) || row.order < 0 || row.order > snapshot.revision))
             || (row.kind === 'character' && row.targetId === snapshot.ownerId)
             || FIELDS.some(field => !Number.isFinite(row[field]) || row[field] > 100
@@ -132,24 +133,39 @@ function decayed(relation, at, playedHours) {
     return Object.fromEntries(FIELDS.map(field => [field, relation[field] * factor]));
 }
 
-function strength(relation, at) {
-    const values = decayed(relation, at);
+function strength(relation, at, playedHours) {
+    const values = decayed(relation, at, playedHours);
     return Math.max(...FIELDS.filter(field => field !== 'familiarity').map(field => Math.abs(values[field])));
 }
 
-function protectedRelation(row) { return row.player === true || row.trust >= 10 || row.hostility >= 10; }
+function protectedRelation(row, at, playedHours) {
+    const values = decayed(row, at, playedHours);
+    return row.player === true || values.trust >= 10 || values.hostility >= 10;
+}
 
-function bound(relations, at) {
+function bound(relations, at, playedHours) {
     return Object.entries(LIMITS).flatMap(([kind, limit]) => {
-        const protectedRows = relations.filter(row => row.kind === kind && protectedRelation(row));
-        const candidates = relations.filter(row => row.kind === kind && !protectedRelation(row));
-        const strong = candidates.slice().sort((a, b) => strength(b, at) - strength(a, at)
-            || b.at - a.at || (b.order || 0) - (a.order || 0) || a.targetId - b.targetId).slice(0, limit / 2);
+        const ranked = (a, b) => strength(b, at, playedHours) - strength(a, at, playedHours)
+            || b.at - a.at || (b.order || 0) - (a.order || 0) || a.targetId - b.targetId;
+        const rows = relations.filter(row => row.kind === kind);
+        const players = rows.filter(row => row.player === true);
+        const protectedRows = rows.filter(row => !row.player && protectedRelation(row, at, playedHours))
+            .sort(ranked).slice(0, PROTECTED_LIMIT);
+        const protectedIds = new Set(protectedRows.map(row => row.targetId));
+        // ARCH-NOTE: strong overflow joins the ordinary pool without changing feelings;
+        // counting raw trust/hostility >= 10 therefore does not measure the protected-pool cap.
+        const candidates = rows.filter(row => !row.player && !protectedIds.has(row.targetId));
+        const strong = candidates.slice().sort(ranked).slice(0, limit / 2);
         const kept = new Set(strong.map(row => row.targetId));
         const recent = candidates.filter(row => !kept.has(row.targetId))
             .sort((a, b) => b.at - a.at || (b.order || 0) - (a.order || 0) || a.targetId - b.targetId).slice(0, limit - strong.length);
-        return [...protectedRows, ...strong, ...recent];
+        return [...players, ...protectedRows, ...strong, ...recent];
     });
+}
+
+function trim(snapshot, at, playedHours) {
+    time(at);
+    return { ...snapshot, relations: bound(snapshot.relations, at, playedHours) };
 }
 
 function apply(snapshot, input, now) {
@@ -173,7 +189,7 @@ function apply(snapshot, input, now) {
     const factor = halfLife(at - e.at, 7 * DAY);
     FIELDS.forEach((field, index) => {
         const min = ['hostility', 'fear', 'familiarity'].includes(field) ? 0 : -100;
-        values[field] = Math.max(min, Math.min(100, values[field] + (e.playedHours !== undefined && ['mob_contested', 'loot_taken'].includes(e.type) && field !== 'familiarity' ? 0 : EVENTS[e.type][index]) * factor));
+        values[field] = Math.max(min, Math.min(100, values[field] + EVENTS[e.type][index] * factor));
     });
     const reasons = [{ type: e.type, at: e.at }, ...(old?.reasons || [])]
         .sort((a, b) => b.at - a.at).slice(0, REASON_LIMIT);
@@ -189,7 +205,7 @@ function apply(snapshot, input, now) {
     if (Object.keys(helpClocks).length) relation.lastHelpAt = helpClocks;
     const aidAt = e.kind === 'character' && e.type === 'aided_opponent' ? e.at : Aid.lastAt(old);
     if (aidAt >= 0) relation.lastAidAt = aidAt;
-    const relations = bound([...snapshot.relations.filter(row => row !== old), relation], now);
+    const relations = bound([...snapshot.relations.filter(row => row !== old), relation], now, e.playedHours);
     const ordered = [...snapshot.recent, e].sort((a, b) => b.at - a.at || a.key.localeCompare(b.key));
     const removed = ordered.slice(RECENT_LIMIT);
     const replayFloor = Math.max(snapshot.replayFloor, now - ACCEPT_WINDOW_MS - 1, ...removed.map(row => row.at));
@@ -199,16 +215,17 @@ function apply(snapshot, input, now) {
     return { status: 'applied', snapshot: { ...snapshot, revision: snapshot.revision + 1, replayFloor, relations, recent } };
 }
 
-function view(snapshot, playingHours = () => undefined, fastLayers = null) {
-    const rows = new Map((snapshot?.relations || []).map(row => [`${row.kind}:${row.targetId}`, row]));
+function view(snapshot, playingHours = () => undefined, fastLayers = null, rowSource = null) {
+    const rows = rowSource ? null : new Map((snapshot?.relations || []).map(row => [`${row.kind}:${row.targetId}`, row]));
     return Object.freeze({
         ownerId: snapshot?.ownerId || null,
         revision: snapshot?.revision || 0,
         ready: !!snapshot,
-        characterIds: Object.freeze((snapshot?.relations || []).filter(row => row.kind === 'character').map(row => row.targetId)),
+        characterIds: Object.freeze(rowSource ? rowSource.characterIds
+            : (snapshot?.relations || []).filter(row => row.kind === 'character').map(row => row.targetId)),
         relation(kind, targetId, at) {
             time(at);
-            const row = rows.get(`${kind}:${targetId}`);
+            const row = rowSource ? rowSource.row(kind, targetId) : rows.get(`${kind}:${targetId}`);
             const gameAt = playingHours();
             return row ? { ...decayed(row, at, gameAt),
                 ...Layers.persistent(row, gameAt ?? row.gameAt ?? 0),
@@ -250,5 +267,5 @@ function assess(memory, source, target, context, now) {
         immediateThreat: context.attackingMe === true, reasons };
 }
 
-module.exports = { VERSION, LIMITS, RECENT_LIMIT, REASON_LIMIT, ACCEPT_WINDOW_MS, MAX_BATCH, HUNT_COOLDOWN_MS, FIELDS,
-    empty, event, apply, view, assess, id, validate, halfLife };
+module.exports = { VERSION, LIMITS, PROTECTED_LIMIT, RECENT_LIMIT, REASON_LIMIT, ACCEPT_WINDOW_MS, MAX_BATCH, HUNT_COOLDOWN_MS, FIELDS,
+    empty, event, apply, view, assess, id, validate, halfLife, trim, strength, protectedRelation };

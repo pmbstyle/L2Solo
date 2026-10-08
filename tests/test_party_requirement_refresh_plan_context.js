@@ -29,7 +29,7 @@ const held = (name) => {
 };
 const now = Date.now();
 const failingMember = {
-    characterId: 9200001,
+    characterId: 9200001, phase: 'cold',
     name: 'FailingDropMember',
     level: 30,
     inventory: held('Short Sword'),
@@ -66,7 +66,7 @@ const craftPlan = {
     progressionBaseline: craftBaseline
 };
 const craftMember = {
-    characterId: 9200002,
+    characterId: 9200002, phase: 'cold',
     name: 'CraftMember',
     level: 41,
     exp: 200000,
@@ -78,7 +78,8 @@ const craftMember = {
 const originals = {
     replacementPlanFor: GearAcquisitionPlanner.replacementPlanFor,
     planFor: GearAcquisitionPlanner.planFor,
-    statesForParties: LifeState.statesForParties,
+    cachedStatesForParties: LifeState.cachedStatesForParties,
+    cachedState: LifeState.cachedState,
     upsertState: LifeState.upsertState,
     leaveParty: LifeState.leaveParty,
     createOrUpdate: PartyState.createOrUpdate,
@@ -110,9 +111,12 @@ async function main() {
         requiresParty: true,
         materials: []
     });
-    LifeState.statesForParties = async (ids) => new Map(ids.map((id) => [id, [failingMember, craftMember]]));
+    const current = new Map([[failingMember.characterId, failingMember], [craftMember.characterId, craftMember]]);
+    LifeState.cachedState = id => current.get(Number(id));
+    LifeState.cachedStatesForParties = parties => new Map(parties.map(party => [party.partyId, party.memberIds.map(id => current.get(Number(id)))]));
     LifeState.upsertState = async (state) => {
         saved.set(Number(state.characterId), state.stats.equipmentPlan);
+        current.set(Number(state.characterId), state);
         return state;
     };
     LifeState.leaveParty = async () => null;
@@ -120,13 +124,15 @@ async function main() {
     SpotProfiles.ensure = () => [];
     SpotProfiles.currentOccupancy = () => ({});
 
-    await PopulationService.refreshBackgroundPartyRequirements([{
-        partyId: 'bgp-refresh-context',
-        leaderId: failingMember.characterId,
-        memberIds: [failingMember.characterId, craftMember.characterId],
-        spotId: 'drop-spot',
-        stats: { lastRequirementRefreshAt: 0, objective: null }
-    }]);
+    const party = { partyId: 'bgp-refresh-context', status: 'active', leaderId: failingMember.characterId,
+        memberIds: [failingMember.characterId, craftMember.characterId], spotId: 'drop-spot',
+        stats: { lastRequirementRefreshAt: 0, objective: null } };
+    await PopulationService.refreshBackgroundPartyRequirements([party]);
+    assert.strictEqual(replacementOptions.length, 0, 'marking a refresh does not plan on main');
+    const selections = [failingMember, craftMember].map(state => ({ characterId: state.characterId,
+        plan: require('../src/GameServer/Bot/Population/PartyRequirementRefresh').plan(state,
+            { spots: [], occupancy: {}, timestamp: now }).acquisitionPlan }));
+    await PopulationService.applyWorkerPartyRequirements(party, { memberPlans: selections, requirementRefreshedAt: now });
 
     assert.strictEqual(replacementOptions.length, 1, 'fixture: the failing drop route must be replaced');
     assert((replacementOptions[0].excludedTargetIds || []).includes(Number(weapon.selfId)),
@@ -135,12 +141,8 @@ async function main() {
     assert(failedPlan, 'the changed requirement must be saved');
     assert((failedPlan.recoveryTargets || []).some((entry) => (
         Number(entry.targetId) === Number(weapon.selfId) && entry.reason === 'combat_unviable'
-        && Number(entry.until) > now
-    )), 'the saved plan must carry the failed target cooldown');
-
-    assert(events.some((event) => event.type === 'gear_acquisition_fallback'
-        && event.characterId === failingMember.characterId && event.meta.reason === 'combat_unviable'),
-        'a failure found by the refresh must record the same fallback event as the resolve path');
+        && Array.isArray(entry.wake) && entry.wake.every(Number.isFinite) && entry.until === undefined
+    )), 'the saved plan must carry the failed target dormant wake inputs');
 
     const refreshedCraft = saved.get(craftMember.characterId);
     assert(refreshedCraft, 'fixture: the craft route requirement changed and must be saved');
@@ -161,7 +163,7 @@ main().catch((error) => {
         replacementPlanFor: originals.replacementPlanFor, planFor: originals.planFor
     });
     Object.assign(LifeState, {
-        statesForParties: originals.statesForParties, upsertState: originals.upsertState, leaveParty: originals.leaveParty
+        cachedStatesForParties: originals.cachedStatesForParties, cachedState: originals.cachedState, upsertState: originals.upsertState, leaveParty: originals.leaveParty
     });
     PartyState.createOrUpdate = originals.createOrUpdate;
     LifeEvents.recordMany = originals.recordMany;

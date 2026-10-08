@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
@@ -140,7 +141,7 @@ function onBossAttacked(world, boss, attacker, sourceSession) {
     });
     // `alerted > 0` is naturally edge-triggered: later hits see the same
     // minions already in combat, so one encounter produces one concise line.
-    if (alerted > 0 && isRaidBoss(boss)) {
+    if (DiagnosticConfig.developerDiagnostics && alerted > 0 && isRaidBoss(boss)) {
         const observedAt = Date.now();
         telemetry.engagements += 1;
         telemetry.minionsAlerted += alerted;
@@ -229,6 +230,7 @@ function removeMinions(world, boss, sourceSession) {
 }
 
 function stats() {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     return { ...telemetry };
 }
 

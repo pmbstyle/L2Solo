@@ -22,55 +22,18 @@ const observations = [];
 function check(name, body) { body(); observations.push(name); console.log('PASS ' + name); }
 
 try {
-    check('global nearest uses shared cells, live movement, original order and independent state', () => {
-        const index = new Index(), points = new Map();
-        const add = (id, x, player = true) => {
-            const loc = { locX: x, locY: 0 }, source = { id };
-            const record = { id, source, phase: 'hot', order: id, loc: () => loc };
-            index.setSource(id, 'actor', record, { indexed: false });
-            index.updateFacet(id, 'actor', record, 'raw_xy', { enabled: true, loc: () => loc });
-            index.updateActorPresence(id, record, { online: true, realPlayer: player, targetId: 0 });
-            points.set(id, loc); return record;
-        };
-        const first = add(1, 7000), tie = add(2, -7000);
-        let unrelated = 0;
-        for (let i = 3; i < 259; i++) {
-            const record = add(i, i * 12000, false);
-            index.updateFacet(i, 'actor', record, 'raw_xy', {
-                enabled: true, loc: () => { unrelated++; return points.get(i); }
-            });
-        }
-        unrelated = 0;
-        assert.equal(index.nearestFacet({ locX: 0, locY: 0 }, { kind: 'player' }).record, first);
-        assert.equal(unrelated, 0, 'distant nonhuman providers are never queried');
+    check('actor and state share one grid with exact live points', () => {
+        const index = new Index(), loc = { locX: 7000, locY: 0, locZ: 0 }, source = {};
+        const actor = { id: 1, source, phase: 'hot', order: 1, loc };
+        index.setSource(1, 'actor', actor);
         const state = { id: 1, source: {}, phase: 'cold', loc: { locX: 0, locY: 0, locZ: 0 } };
         index.setSource(1, 'state', state);
-        points.get(1).locX = 40000;
-        index.updateFacet(1, 'actor', first, 'raw_xy', { enabled: true, loc: () => points.get(1) });
-        assert.equal(index.nearestFacet({ locX: 0, locY: 0 }, { kind: 'player' }).record, tie);
-        assert.deepEqual(index.rangeFacet({ locX: 0, locY: 0 }, 8000, { kind: 'player' }), [tie]);
-        index.removeSource(2, 'actor', tie.source);
-        assert.equal(index.nearestFacet({ locX: 0, locY: 0 }, { kind: 'player' }).record, first);
-        assert.equal(index.getSource(1, 'state'), state);
+        loc.locX = 7001;
+        assert.deepEqual(index.nearSources({ locX: 7001, locY: 0, locZ: 0 }, 0, { view: 'actor' }), [actor]);
         index.clearSourceView('actor');
-        assert.equal(index.rawSpatial.root, null); assert.equal(index.presenceSize(), 0);
+        assert.equal(index.sourceSize('actor'), 0);
         assert.equal(index.getSource(1, 'state'), state);
-    });
-
-    check('nearest current descriptor guards reentry and preserves thrown values', () => {
-        const index = new Index(), source = {};
-        const record = { id: 1, source, phase: 'hot', order: 1, loc: { locX: 0, locY: 0, locZ: 0 } };
-        index.setSource(1, 'actor', record, { indexed: false });
-        index.updateFacet(1, 'actor', record, 'raw_xy', { enabled: true, loc: { locX: 1, locY: 0 } });
-        const nearest = index.nearestFacet({ locX: 0, locY: 0 }, { accept() {
-            index.updateFacet(1, 'actor', record, 'raw_xy', { enabled: false }); return true;
-        } });
-        assert.equal(nearest, null);
-        index.updateFacet(1, 'actor', record, 'raw_xy', { enabled: true, loc: { locX: 1, locY: 0 } });
-        let caught = false;
-        try { index.nearestFacet({ locX: 0, locY: 0 }, { accept() { throw 0; } }); }
-        catch (error) { caught = true; assert.equal(error, 0); }
-        assert.equal(caught, true);
+        assert.equal(index.rawSpatial, undefined);
     });
 
     require('../src/Global');
@@ -166,10 +129,10 @@ try {
         const source = Runtime.index.getSource(id, 'actor').source;
         World.retireUserActor(replacement, replacement.actor);
         assert.equal(Runtime.index.getSource(id, 'actor').source, source);
-        assert.equal(World.nearestRealPlayer({ locX: 0, locY: 0 }).session, replacement,
-            'raw terminal online actors retain the original LOD predicate');
+        assert.equal(World.nearestRealPlayer({ locX: 0, locY: 0 }).session, null,
+            'retired actors cannot remain nearby players');
         World.user = null;
-        assert.equal(Runtime.index.presenceSize(), 0); assert.equal(Runtime.index.rawSpatial.root, null);
+        assert.equal(Runtime.index.presenceSize(), 0); assert.equal(Runtime.index.rawSpatial, undefined);
         assert.equal(World.actorPresenceCount(), 0);
     });
 

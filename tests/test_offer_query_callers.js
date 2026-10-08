@@ -3,7 +3,15 @@
 // and source kinds it skips, and the line it takes. Board records live in
 // memory only (AfkTrade.refreshRecord); no database.
 const assert = require('assert');
+require('./helpers/databaseIsolation');
+const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
+const fs = require('node:fs');
 require('../src/Global');
+fixture.assertConfigured(options.default);
+process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
+const NativeChoice = require('./helpers/nativeMarketChoice');
+
+(async () => {
 
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
@@ -96,10 +104,28 @@ function picked(offer) {
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
         stats: { equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1,
             materials: [{ selfId: STEM, amount: 5, missing: 5, farmEffort: 50 }] } } };
-    const need = NeedsEvaluator.evaluate(state).find((candidate) => candidate.type === 'buy_craft_material');
-    assert.strictEqual(need?.plan.marketTown, 'Giran', 'C14: the larger lot saves more');
-    assert.strictEqual(need.plan.estimatedCost, 50);
+    // ARCH-NOTE: FX-C1/C2a do not turn an old craft plan into a shopping
+    // leaf. The real worker sees all three original lots and chooses a hunt.
+    const native = await NativeChoice.capture(state, {}, 'C14_original_3lots');
+    assert.strictEqual(native.read.activity.activity, 'hunting');
+    assert.strictEqual(native.goals.length, 1);
+    assert.strictEqual(native.goals[0].priority, 50);
+    assert.strictEqual(native.goals.find(candidate => candidate.type === 'buy_craft_material'
+        && candidate.target.itemId === STEM), undefined);
+    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(native.state, 0, { itemId: STEM }), 0);
+    // The same native BoardIndex still fills the requested5Stems in one
+    // town, excluding the original owner's cheap lot. This is the stack
+    // purchase query, not an invented funded wish or a completed SQL trade.
+    const query = invoke('GameServer/Bot/Economy/OfferQuery').cheapestTown(AfkTrade.boardIndex(), STEM,
+        { amount: 5, money: 200000, excludeOwner: 991401 });
+    assert.strictEqual(query.town, 'Giran', 'only the original Giran public lot fills all five');
+    assert.strictEqual(query.units, 5);
+    assert.strictEqual(query.cost, 5 * 50, 'all five original units are priced by that lot');
+    assert.strictEqual(query.landed, query.cost);
+    assert.deepStrictEqual(query.lines.map(row => [row.line.ownerId, row.count, row.price]), [[991403, 5, 50]]);
     AfkTrade._resetForTests();
 }
 
 console.log('Offer query callers: pinned');
+
+})().catch(error => { console.error(error); process.exitCode = 1; });

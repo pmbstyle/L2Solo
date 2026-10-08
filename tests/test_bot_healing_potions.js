@@ -46,14 +46,20 @@ const cautiousRestock = HealingPotionStock.restockPlan({
 }, { unitPrice: 330 });
 assert.strictEqual(cautiousRestock.amount, 0, 'restocking must not touch the operational wallet reserve');
 assert.strictEqual(cautiousRestock.cost, 0);
-assert.strictEqual(cautiousRestock.reserve, 5000, 'level-scaled reserves must protect progression money even when no potion is affordable');
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const cautiousState = { level: 20, adena: 2000, stats: { classId: 0 }, inventory: inventory([[57, 2000]]) };
+const basics = Economy.basics(cautiousState);
+const stock = basics.stock('potions');
+const shots = basics.stock('shots');
+assert.strictEqual(cautiousRestock.reserve, basics.price(736) + Math.max(0, stock.usePerHour - stock.current) * stock.unitPrice + Math.max(0, shots.usePerHour - shots.current) * shots.unitPrice);
 
 const affordableRestock = HealingPotionStock.restockPlan({
     level: 20,
     adena: 10000,
     stats: { classId: 0 },
     inventory: inventory([[57, 10000], [1061, 2]])
-}, { unitPrice: 330 });
+}, { unitPrice: 330, targetAmount: 8 });
+// ARCH-NOTE: explicit target isolates the original purchase/conservation fixture from the table-driven stock rule.
 assert.strictEqual(affordableRestock.amount, 6, 'melee restocking must stop at its small target stock');
 assert.strictEqual(affordableRestock.cost, 1980);
 assert(affordableRestock.adena - affordableRestock.cost >= affordableRestock.reserve);

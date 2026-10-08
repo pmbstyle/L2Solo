@@ -153,14 +153,14 @@ async function main() {
         assert(partyResult.memberResults.some(row=>row.result.soulCrystals?.length>0),'actual party resolver forwards own crystal outcomes');
         console.log('PASS actual party Drain Soul outcome aggregation');
 
-        state=await seed([{selfId:1152,name:'Spellbook: Heal',amount:1}],{classId:10,level:14});
+        state=await seed([{selfId:1049,name:'Spellbook: Ice Bolt',amount:1}],{classId:10,level:14});
         const paidToken=await Owner.claim(state,{allowLifecycle:true});assert(paidToken.ok);
         const current=Life.cachedState(state.characterId);
         const accepted=await Owner.commitAndReleaseBatch([{token:paidToken,nextState:{...current,sp:100000},proposal:{baseState:current,durable:{classId:10}},options:{allowLifecycle:true}}]);
         assert(accepted[0].ok);state=Life.cachedState(state.characterId);
         assert.equal((await DB.fetchSkills(state.characterId)).length,0,'accepted proposal cannot synthesize tree ranks');
         const paid=await Life.reviewTrainingAfterCommit(state);
-        assert((await DB.fetchSkill(state.characterId,1011))[0]?.level>0);assert(paid.sp<100000);assert(!paid.inventory[1152]);
+        assert((await DB.fetchSkill(state.characterId,1184))[0]?.level>0);assert(paid.sp<100000);assert(!paid.inventory[1049]);
         assert.equal(paid.stats.coldCombat.skillSource,'database');
         assert.deepEqual(paid.stats.coldCombat.skills.map(row=>[row.selfId,row.level]),
             Profile.skillSnapshotsFromRecords(await DB.fetchSkills(state.characterId)).map(row=>[row.selfId,row.level]));

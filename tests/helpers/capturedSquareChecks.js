@@ -11,9 +11,9 @@ const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const distance = (a, b) => Math.hypot(a.locX - b.locX, a.locY - b.locY);
 
 module.exports = function checkCapturedSquare(town, { useful, groundZ = null }) {
-    // The author recorded these squares for later market routing: bots do
-    // not open shops here until that routing is decided.
-    assert(!ShopPlaces.SHOP_TOWNS.includes(town), `${town} is not a bot shop town yet`);
+    // C4 market routing was approved for the five authored captured towns
+    // (handoff plan 3.3, user decision 2026-10-05). Geometry stays authored.
+    assert(ShopPlaces.SHOP_TOWNS.includes(town), `${town} is an enabled bot shop town`);
 
     ShopPlaces._resetForTests();
     const fixed = Object.values(MerchantStoreConfigs).filter((store) => store.town === town);
