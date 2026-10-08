@@ -2080,6 +2080,11 @@ function worldStatus() {
         runtime: memory ? {
             heapUsedMb: Math.round(memory.heapUsed / 1024 / 1024),
             rssMb: Math.round(memory.rss / 1024 / 1024),
+            developerDiagnostics: {
+                main: invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics(),
+                worker: invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot().worker?.developerDiagnostics || null,
+                transport: invoke('HistoryDatabase').stats().economyDiagnostics || { enabled: false }
+            },
             townNavigation: {
                 paths: invoke('GameServer/Bot/AI/TownNavigation').forPool(invoke('GameServer/Geodata/PathfindingWorkerPool')).stats(),
                 workers: invoke('GameServer/Geodata/PathfindingWorkerPool').stats(),

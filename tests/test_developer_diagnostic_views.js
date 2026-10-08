@@ -41,12 +41,15 @@ async function run() {
         BotManager.startStatusLogMonitor();
     } finally { global.setInterval = originalInterval; }
     const Observer = invoke('WorldObserver/WorldObserverServer');
+    const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+    const originalDiagnosticMetrics = Diagnostics.metrics;
+    Diagnostics.metrics = () => { throw Error('diagnostic aggregate read off'); };
     const originalMemory = process.memoryUsage;
     process.memoryUsage = () => { throw new Error('diagnostic memory query off'); };
     try {
         assert.strictEqual(Observer.worldStatus().runtime, null);
         assert.deepStrictEqual(Observer.snapshotCacheStats(), { enabled: false });
-    } finally { process.memoryUsage = originalMemory; }
+    } finally { process.memoryUsage = originalMemory; Diagnostics.metrics = originalDiagnosticMetrics; }
     const BotStatus = invoke('GameServer/Bot/AI/BotStatus');
     const World = invoke('GameServer/World/World');
     const oldNpcs = World.fetchNpcsInRadius;
@@ -64,6 +67,12 @@ async function run() {
     try { assert.deepStrictEqual(BotStatus.getStatus(statusSession).llm, { enabled: false }); }
     finally { World.fetchNpcsInRadius = oldNpcs; Tracing.status = oldTracingStatus; }
     Config.developerDiagnostics = true;
+    Diagnostics.count('status_probe', 'request');
+    const aggregateStatus = Observer.worldStatus().runtime.developerDiagnostics;
+    assert.strictEqual(aggregateStatus.main.thread, 'main');
+    assert.strictEqual(aggregateStatus.main.counts['status_probe:request:unknown'], 1);
+    assert.strictEqual(aggregateStatus.worker, null, 'unstarted worker has no fabricated aggregate values');
+    assert.deepStrictEqual(aggregateStatus.transport, { enabled: false }, 'disabled detail transport is explicit');
     assert.strictEqual(cancelSkill(42).__packetTrace, 'actor=42');
     const onRoute = TownPathfinder.routeWithSession({}, null, origin, target);
     assert.deepStrictEqual(onRoute.to, offRoute.to, 'diagnostics must preserve native route choice');
