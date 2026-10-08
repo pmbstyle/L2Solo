@@ -2,6 +2,7 @@
 
 const { trait, stageHours, resale } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
+const Diagnostics = require('./EconomyDiagnostics');
 let catalogSource = null;
 const kits = new Map();
 
@@ -96,7 +97,15 @@ function skillGain(state, book, before = null, beforeRate = null, timestamp = Da
 // A review judges the bot against every drop source of every candidate: its
 // combat readiness is computed once for the review (the planner's scope).
 function build(state, ctx, deps = {}) {
-    return invoke('GameServer/Bot/AI/GearAcquisitionPlanner').withReadiness(() => buildProjection(state, ctx, deps));
+    const diagnostic = Diagnostics.active();
+    if (diagnostic) Diagnostics.count('provider', 'request');
+    const started = diagnostic ? performance.now() : 0;
+    const result = invoke('GameServer/Bot/AI/GearAcquisitionPlanner').withReadiness(() => buildProjection(state, ctx, deps));
+    if (diagnostic) {
+        Diagnostics.count('provider', 'build', 'context_miss');
+        Diagnostics.duration('provider', performance.now() - started);
+    }
+    return result;
 }
 function buildProjection(state, ctx, deps) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -283,6 +292,14 @@ function buildProjection(state, ctx, deps) {
     }
     for (const kind of ['shots', 'potions']) {
         const stock = ctx.stock(kind);
+        if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+            caller: deps.caller || 'wish_provider', trigger: 'projection_build',
+            phase: 'wish_need', reason: !(stock?.missing > 0) ? 'target_satisfied' : !(stock.unitPrice > 0)
+                ? 'unknown_price' : !(stock.benefitHours > 0) ? 'no_expected_benefit' : 'stock_shortfall',
+            decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
+            wishKey: `stock:${kind}`, item: stock?.itemId, target: stock?.target,
+            owned: stock?.current, missing: stock?.missing, requested: stock?.missing,
+            unitPrice: stock?.unitPrice, valueHours: stock?.benefitHours, wallet: state.adena });
         if (!(stock?.missing > 0) || !(stock.unitPrice > 0) || !(stock.benefitHours > 0)) continue;
         const key = itemNode(stock.itemId);
         if (!key) continue;

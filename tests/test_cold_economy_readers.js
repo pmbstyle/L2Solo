@@ -1,6 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('../src/Global'); invoke('GameServer/DataCache').init();
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');

@@ -40,12 +40,14 @@ const invokeAdapter = name => { assert(name in adapters, name); return adapters[
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const tendency = { MIN: 0.02, roll: () => 0.5 };
 const network = load('WishNetwork.js', name => {
+    if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return tendency;
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };
     throw Error(name);
 });
 const provider = load('WishProviders.js', name => {
+    if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
     if (name === './BotImprovementPolicy') return { isCaster: () => false };

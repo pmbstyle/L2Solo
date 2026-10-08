@@ -9,6 +9,7 @@
 // bot; a missing or older entry waits for the next worker decision.
 const { isMainThread } = require('node:worker_threads');
 const { fnv1a32 } = require('../Fnv1a');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
 function kindFor(code) { return kinds[code]; }
@@ -253,7 +254,7 @@ function capture(economy, state, seen = state) {
         }
         clan = { horizonHours, huntPerHour: economy.hunt.perHour, plan: itemId ? { itemId, valueHours } : null };
     }
-    return compact({
+    const decision = compact({
         updatedAt: Number(state?.updatedAt || 0),
         key: stateKey(seen),
         riskWeight: Number(economy?.riskWeight) || 0,
@@ -266,6 +267,16 @@ function capture(economy, state, seen = state) {
         workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,
         feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
     });
+    if (Diagnostics.active()) Diagnostics.count('ready_card', 'build', 'decision_pack');
+    if (Diagnostics.active() && Diagnostics.enabled(state?.characterId)) Diagnostics.push({ owner: state.characterId,
+        caller: 'cold_decision_capture', trigger: 'decision_pack', phase: 'decision_preparation',
+        reason: 'prepared_card', inputHash: decision.inputHash, revision: state.simulation?.revision,
+        decisionSeq: economy?.network?.decisionSeq, activityLeaf: economy?.network?.activityLeaf,
+        wishKey: activity?.rootKey, item: activity?.itemId, planned: activity?.amount,
+        owned: activity?.heldAtDecision, quote: activity?.price, town: activity?.town,
+        source: activity?.sourceType || activity?.kind, npcId: activity?.npcId,
+        recipeId: activity?.recipeId });
+    return decision;
 }
 
 function view(state, decision, deps = {}) {
@@ -305,8 +316,8 @@ function economyFor(state, deps = {}) {
 class ColdEconomyDecisions {
     constructor() {
         this.byId = new Map();
-        this.hits = 0;
-        this.misses = 0;
+        this.hits = Diagnostics.active() ? 0 : null;
+        this.misses = Diagnostics.active() ? 0 : null;
     }
 
     // committed: the commit's result. A commit that merged board deals or PK
@@ -323,14 +334,20 @@ class ColdEconomyDecisions {
 
     // The worker's decision made on exactly this state, or held for a command.
     decided(state) {
+        const diagnostic = Diagnostics.active();
+        if (diagnostic) Diagnostics.count('ready_card', 'request');
         const id = Number(state?.characterId);
         const decision = this.byId.get(id);
         if (decision && (decision.held || !decision.stale && decision.updatedAt === Number(state?.updatedAt || 0)
             && decision.key === stateKey(state))) {
-            this.hits += 1;
+            if (diagnostic) { this.hits += 1; Diagnostics.count('ready_card', 'hit', decision.held ? 'held_command' : 'same_inputs'); }
             return decision;
         }
-        this.misses += 1;
+        if (diagnostic) {
+            this.misses += 1;
+            Diagnostics.count('ready_card', 'miss', !decision ? 'not_published' : decision.stale ? 'stale_card'
+                : decision.updatedAt !== Number(state?.updatedAt || 0) ? 'state_publication' : 'input_dependency_changed');
+        }
         return null;
     }
 
@@ -338,7 +355,9 @@ class ColdEconomyDecisions {
     activity(state) { return this.decided(state)?.activity || null; }
     hold(id, decision) { if (decision) this.byId.set(Number(id), compact({ ...compact(decision), held: true })); }
     release(id) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale = true; } }
-    forget(id) { this.byId.delete(Number(id)); }
+    forget(id) {
+        if (this.byId.delete(Number(id)) && Diagnostics.active()) Diagnostics.count('ready_card', 'eviction', 'owner_release');
+    }
     size() { return this.byId.size; }
     clanNumbers(id) {
         const entry = this.byId.get(Number(id)), clan = entry?.clan;
@@ -360,7 +379,10 @@ class ColdEconomyDecisions {
         const entry = this.byId.get(Number(id));
         if (entry && (!expected || entry.updatedAt === expected.updatedAt && entry.key === expected.key)) entry.workshopStale = true;
     }
-    clear() { this.byId.clear(); }
+    clear() {
+        if (Diagnostics.active() && this.byId.size) Diagnostics.count('ready_card', 'eviction', 'reset', this.byId.size);
+        this.byId.clear();
+    }
 }
 
 module.exports = { capture, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,

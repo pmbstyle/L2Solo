@@ -1,6 +1,7 @@
 const Tendency = require('../AI/TendencyRoll');
 const Valuation = require('./EconomicValuation');
 const { fnv1a32 } = require('../Fnv1a');
+const Diagnostics = require('./EconomyDiagnostics');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -55,15 +56,55 @@ function remember(map, key, value, limit = ACTOR_LIMIT) {
     if (map.size > limit) map.delete(map.keys().next().value);
     return value;
 }
+// Compare existing bounded results only; no retained diagnostic digest or bot
+// history. The input key is deliberately excluded: publication is not a
+// changed decision. This traversal is called only with diagnostics active.
+function equalValue(left, right, depth = 0) {
+    if (Object.is(left, right)) return true;
+    if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+    // Native wish data is bounded by four requirement levels. Opaque custom
+    // object metadata must never make diagnostics recurse without a limit.
+    if (depth > 16) return false;
+    if (left instanceof Map || right instanceof Map) {
+        if (!(left instanceof Map && right instanceof Map) || left.size !== right.size) return false;
+        for (const [key, value] of left) if (!right.has(key) || !equalValue(value, right.get(key), depth + 1)) return false;
+        return true;
+    }
+    if (Array.isArray(left) || Array.isArray(right)) {
+        if (!(Array.isArray(left) && Array.isArray(right)) || left.length !== right.length) return false;
+        for (let at = 0; at < left.length; at++) if (!equalValue(left[at], right[at], depth + 1)) return false;
+        return true;
+    }
+    for (const key in left) if (Object.hasOwn(left, key)
+        && (!Object.hasOwn(right, key) || !equalValue(left[key], right[key], depth + 1))) return false;
+    for (const key in right) if (Object.hasOwn(right, key) && !Object.hasOwn(left, key)) return false;
+    return true;
+}
+function sameResult(before, after) {
+    return before.moneyPrice === after.moneyPrice && before.available === after.available
+        && before.hourAdena === after.hourAdena && before.decisionSeq === after.decisionSeq
+        && before.activityLeaf === after.activityLeaf && equalValue(before.queue, after.queue)
+        && equalValue(before.focus, after.focus) && equalValue(before.dormant, after.dormant)
+        && equalValue(before.activity, after.activity) && equalValue(before.demands, after.demands)
+        && equalValue(before.plans, after.plans);
+}
 class WishNetwork {
     constructor() { this.cache = new Map(); }
-    forget(actorKey) { this.cache.delete(actorKey); }
-    clear() { this.cache.clear(); }
+    forget(actorKey, reason = 'owner_release') {
+        if (this.cache.delete(actorKey) && Diagnostics.active()) Diagnostics.count('network', 'eviction', reason);
+    }
+    clear() {
+        if (Diagnostics.active() && this.cache.size) Diagnostics.count('network', 'eviction', 'reset', this.cache.size);
+        this.cache.clear();
+    }
 
     // `remembered: false` builds without touching the per-actor cache (a
     // caller that holds the result itself, or a one-off proposal).
     build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, survivalReserve = 0,
-        playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true }) {
+        playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
+        caller = 'wish_network', trigger = 'request' }) {
+        const diagnostic = Diagnostics.active();
+        if (diagnostic) Diagnostics.count('network', 'request');
         if (typeof actorKey !== 'string' || !actorKey || typeof inputKey !== 'string'
             || !Array.isArray(nodes) || nodes.length > MAX_NODES || !Array.isArray(roots) || roots.length > MAX_ROOTS
             || new Set(roots).size !== roots.length) {
@@ -73,8 +114,15 @@ class WishNetwork {
         decisionSeq = Math.max(0, Math.trunc(Number(decisionSeq) || 0));
         activityLeaf = Number(activityLeaf) >>> 0;
         const cached = remembered ? this.cache.get(actorKey) : null;
-        if (cached?.inputKey === inputKey && cached.decisionSeq === decisionSeq && cached.activityLeaf === activityLeaf)
+        if (cached?.inputKey === inputKey && cached.decisionSeq === decisionSeq && cached.activityLeaf === activityLeaf) {
+            if (diagnostic) Diagnostics.count('network', 'hit', 'same_inputs');
             return remember(this.cache, actorKey, cached).result;
+        }
+        const started = diagnostic ? performance.now() : 0;
+        const detail = diagnostic && Diagnostics.enabled(characterId);
+        const trace = detail ? { owner: Number(characterId), caller, trigger,
+            inputHash: fnv1a32(inputKey), decisionSeq, activityLeaf } : null;
+        if (diagnostic) Diagnostics.count('network', 'miss', !remembered ? 'uncached_actor' : cached ? 'input_dependency_changed' : 'not_retained');
         // ARCH-NOTE: group and clan decisions retain their existing event-key seed.
         const roll = kind => individual ? Tendency.roll(characterId, decisionSeq, kind)
             : Tendency.roll(actorKey, inputKey, kind);
@@ -124,6 +172,7 @@ class WishNetwork {
             if (!node) throw new TypeError('missing_wish_requirement');
             if (depth > MAX_DEPTH) throw new RangeError('wish_network_depth');
             if (plans.has(key)) {
+                if (diagnostic) Diagnostics.count('network', 'node_hit', 'same_build');
                 const cachedPlan = plans.get(key);
                 if (depth + (cachedPlan?.height || 0) > MAX_DEPTH) throw new RangeError('wish_network_depth');
                 return cachedPlan;
@@ -132,12 +181,22 @@ class WishNetwork {
             const choices = [];
             const paths = node.paths?.length ? node.paths : [{ kind: 'owned', activity: null,
                 price: node.price, costHours: node.costHours, riskHours: node.riskHours }];
+            if (diagnostic) Diagnostics.count('network', 'path_request', 'known_input', paths.length);
             for (const path of paths) {
-                if (path.available === false) continue;
+                if (path.available === false) {
+                    if (diagnostic) Diagnostics.count('network', 'path_refused', 'source_unavailable');
+                    continue;
+                }
                 const successProbability = Number(path.successProbability ?? 1);
-                if (!Number.isFinite(successProbability) || successProbability < 0 || successProbability > 1) continue;
+                if (!Number.isFinite(successProbability) || successProbability < 0 || successProbability > 1) {
+                    if (diagnostic) Diagnostics.count('network', 'path_refused', 'invalid_probability');
+                    continue;
+                }
                 const valuation = path.outcomes ? Valuation.opportunity({ moneyPrice: adenaToHours, riskWeight }, path.outcomes) : null;
-                if (valuation && !valuation.known) continue;
+                if (valuation && !valuation.known) {
+                    if (diagnostic) Diagnostics.count('network', 'path_refused', 'unknown_outcome');
+                    continue;
+                }
                 let price = nonnegative(path.price), effort = priceOf(path), available = true, height = 0;
                 let executable = path.executable !== false;
                 const trip = path.quoted && trips.get(tripKey(path));
@@ -164,9 +223,21 @@ class WishNetwork {
                 price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries);
                 if (available) choices.push({ ...path, executable, quoted, tripEntries, successProbability,
                     basePrice, baseEffort, price, effort, requirements, height });
+                else if (diagnostic) Diagnostics.count('network', 'path_refused', 'missing_requirement');
             }
             choices.sort((a, b) => Number(b.executable) - Number(a.executable) || a.effort - b.effort || a.price - b.price);
             const best = choices[0] || null;
+            if (diagnostic) Diagnostics.count('network', 'path_evaluated', 'known_available', choices.length);
+            if (detail) for (const choice of choices) Diagnostics.push({ ...trace,
+                phase: 'wish_alternative', reason: choice === best ? 'selected_path' : 'evaluated_path',
+                wishKey: key, source: choice.sourceType || choice.kind || choice.activity || 'requirement',
+                town: choice.town, npcId: choice.npcId, item: choice.itemId,
+                recipeId: choice.recipeId, quote: choice.price, tripHours: choice.tripHours,
+                tripFees: choice.tripFees, requested: choice.amount });
+            if (detail && best?.kind === 'craft') for (const requirement of best.requirements) Diagnostics.push({ ...trace,
+                phase: 'craft_requirement', reason: 'selected_recipe_input', source: 'craft_input',
+                wishKey: requirement.key, recipeId: best.recipeId, requested: requirement.amount,
+                item: requirement.key.startsWith('item:') ? Number(requirement.key.slice(5)) : undefined });
             visiting.delete(key); plans.set(key, best);
             return best;
         };
@@ -198,6 +269,19 @@ class WishNetwork {
         const weighted = wishes.map(wish => ({ ...wish,
             valueHours: wish.valueHours * (wish === focused ? 1 : 1 - loyalty) }));
         const { queue, moneyPrice, available, gap } = moneyQueue(weighted, wallet, survivalReserve, hourAdena > 0 ? 1 / hourAdena : 0);
+        if (diagnostic) for (const wish of queue) {
+            const reason = wish.funded ? 'funded' : wish === gap ? 'first_funding_gap'
+                : wish.ratio < (hourAdena > 0 ? 1 / hourAdena : 0) ? 'below_money_floor' : 'priority_held';
+            Diagnostics.count('network', 'wish_funding', reason);
+        }
+        if (detail) for (const wish of queue) Diagnostics.push({ ...trace,
+            phase: 'wish_funding', reason: wish.funded ? 'funded' : wish === gap ? 'first_funding_gap'
+                : wish.ratio < (hourAdena > 0 ? 1 / hourAdena : 0) ? 'below_money_floor' : 'priority_held',
+            wishKey: wish.key, item: wish.object?.itemId, requested: wish.object?.amount,
+            quote: wish.price, valueHours: wish.valueHours, moneyPrice,
+            budget: wish.funded ? wish.price : undefined, planned: wish.funded ? wish.object?.amount : undefined,
+            reserve: survivalReserve, available, source: wish.plan?.sourceType || wish.plan?.kind,
+            recipeId: wish.plan?.recipeId });
         const demands = new Map(), leaves = new Map();
         const flow = (key, value, amount = 1, rootKey = key) => {
             const plan = plans.get(key);
@@ -244,8 +328,23 @@ class WishNetwork {
         const result = { inputKey, queue, moneyPrice, available, gap, hourAdena,
             focus, dormant, activity, demands, plans, decisionSeq,
             activityLeaf: individual && activity ? fnv1a32(activity.key) : 0 };
-        if (remembered) remember(this.cache, actorKey, { inputKey, decisionSeq: inputDecisionSeq,
-            activityLeaf: inputActivityLeaf, result });
+        if (diagnostic) {
+            Diagnostics.count('network', 'build');
+            Diagnostics.count('network', cached ? sameResult(cached.result, result) ? 'unchanged' : 'changed' : 'comparison_unavailable');
+            Diagnostics.duration('network', performance.now() - started);
+        }
+        if (detail) Diagnostics.push({ ...trace, decisionSeq: result.decisionSeq, activityLeaf: result.activityLeaf,
+            phase: 'wish_activity', reason: heldActivity ? 'held_activity' : activity ? 'selected_activity' : 'no_executable_activity',
+            wishKey: activity?.rootKey, source: activity?.sourceType || activity?.kind || activity?.activity,
+            item: activity?.itemId, planned: activity?.amount, quote: activity?.price,
+            npcId: activity?.npcId, town: activity?.town, recipeId: activity?.recipeId,
+            valueHours: activity?.valueHours, available, reserve: survivalReserve });
+        if (remembered) {
+            if (diagnostic && !this.cache.has(actorKey) && this.cache.size >= ACTOR_LIMIT)
+                Diagnostics.count('network', 'eviction', 'capacity');
+            remember(this.cache, actorKey, { inputKey, decisionSeq: inputDecisionSeq,
+                activityLeaf: inputActivityLeaf, result });
+        }
         return result;
     }
 }
