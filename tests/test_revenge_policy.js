@@ -18,6 +18,13 @@ memory.accept(P.empty(2));
 const assess = (when = at) => memory.assess({ id: 1 }, { id: 2 }, {}, when);
 const social = assess(), chance = Policy.evaluate(social, persona).chance;
 assert(chance > 0 && chance <= 0.35);
+for (const absent of [undefined, null, {}, { traits: null }]) {
+    assert.deepStrictEqual(Policy.evaluate(social, absent), Policy.evaluate(social, { traits: {} }),
+        'an absent persona uses the existing neutral traits without losing a loaded grievance');
+    assert.deepStrictEqual(Policy.evaluate({ ...social, ready: false }, absent), { chance: 0, reason: 'memory_unloaded' });
+}
+assert.deepStrictEqual(Policy.evaluate(social, persona), Policy.evaluate(social, JSON.parse(JSON.stringify(persona))),
+    'normal traits do not depend on persona object identity');
 assert.strictEqual(Policy.evaluate({ ...social, ready: false }, persona).chance, 0);
 assert.strictEqual(Policy.evaluate({ ...social, affiliation: 'own' }, persona).chance, 0);
 assert.strictEqual(Policy.evaluate({ ...social, personal: null, effective: social.personal }, persona).chance, 0,
@@ -41,6 +48,12 @@ assert.strictEqual(events.length, 1, 'independent revenge does not require the s
 assert.strictEqual(events[0].action, 'revenge');
 assert.strictEqual(events[0].actor.id, 1);
 assert.strictEqual(events[0].revengeRoll, 0);
+const neutralEvents = new ColdRevengeMonitor().sample(entries, memory, at, () => ({ traits: {} }), () => 0);
+assert.strictEqual(neutralEvents.length, 1, 'missing-persona test reaches a real revenge decision');
+for (const absent of [undefined, null, {}, { traits: null }]) {
+    assert.deepStrictEqual(new ColdRevengeMonitor().sample(entries, memory, at, () => absent, () => 0), neutralEvents,
+        'native worker revenge uses the same fallback and preserves the accepted encounter');
+}
 assert.strictEqual(monitor.sample(entries, memory, at + 30000, () => persona, () => 0).length, 0, 'no repeated attempt each scan');
 assert.strictEqual(JSON.stringify(entries), before, 'forecasts do not mutate physical state or memory');
 const fresh = input => new ColdRevengeMonitor().sample(input, memory, at, () => persona, () => 0);

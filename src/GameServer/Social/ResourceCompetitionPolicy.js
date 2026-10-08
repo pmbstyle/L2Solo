@@ -4,7 +4,7 @@ const { scaleChance, retreatChance } = require('./PvpAggression');
 const Visible = require('./VisibleStrength');
 const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, Number(value) || 0));
 function traits(persona = {}) {
-    const t = persona.traits || {};
+    const t = persona?.traits || {};
     return Object.fromEntries(['sociability', 'commitment', 'caution', 'ambition', 'assertiveness', 'empathy', 'resilience']
         .map(key => [key, clamp(t[key] ?? 0.5)]));
 }
