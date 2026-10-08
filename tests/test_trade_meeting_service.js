@@ -35,7 +35,9 @@ function request(n) {
         await assert.rejects(Service.prepareTrade(1, { shopId: 1 }, 1867, 1, { coldState: state }), /authority_changed/);
         assert.equal(Service.counters().preparations, 0, 'fresh native reads cannot authorize a stale caller');
         let id = Service.stage(request(0));
-        assert.throws(() => Service.stage(request(0)), /preparation_busy/);
+        assert.equal(Service.stage(request(0)), id, 'identical staging retry owns no additional pages');
+        assert.throws(() => Service.stage({ ...request(0), town: 'Dion' }), /consent_changed/);
+        assert.throws(() => Service.stage({ ...request(0), token: 'different' }), /preparation_busy/);
         revision = 1; lifeListener({ characterId: 1 });
         await assert.rejects(Service.accept(id), /preparation_missing/);
         revision = 0;
