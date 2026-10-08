@@ -416,11 +416,11 @@ const BotStatus = {
             trade: tradeSnapshot(session, bot),
             ambient,
             inference: BotInferenceBudget.snapshot(session),
-            llm: {
+            llm: invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true ? {
                 last: session.lastBrainTelemetry || null,
                 context: session.lastBrainContextTelemetry || null,
                 langfuse: LangfuseTracing.status()
-            },
+            } : { enabled: false },
             persona: personaSnapshot(session),
             policy: HotBotPolicyOverlay.status(session),
             social: session.socialSummary || null,

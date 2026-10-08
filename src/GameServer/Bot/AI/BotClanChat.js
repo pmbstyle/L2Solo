@@ -164,7 +164,7 @@ function flush(now = Date.now(), immediate = false) {
                     invoke('GameServer/Bot/Population/ClanPartyHelp').request(id(entry.source), clanId, now);
                 }
                 queue.nextAt = now + Number(Config.clanChatMinIntervalMs || 15000);
-                console.info('BotClanChat :: %s clan=%s topic=%s recipients=%s text=%s',
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotClanChat :: %s clan=%s topic=%s recipients=%s text=%s',
                     actor.fetchName(), clanId, entry.topic, delivered, JSON.stringify(text));
                 if (entry.join?.replies.length) {
                     if (entry.topic === 'joined') entry.at = now;

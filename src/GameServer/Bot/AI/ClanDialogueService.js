@@ -139,7 +139,7 @@ async function reply(playerSession, clanId, text, state) {
             source: 'clan_chat'
         });
         response = actionResult.reply;
-        console.info(
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
             'BotParty :: clan join request player=%s speaker=%s party=%s result=%s applied=%s',
             playerSession.actor.fetchName?.() || 'unknown',
             candidate.name,
