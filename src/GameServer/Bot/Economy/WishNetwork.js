@@ -88,6 +88,26 @@ class WishNetwork {
         }
         const plans = new Map(), visiting = new Set();
         const adenaToHours = hourAdena > 0 ? 1 / hourAdena : Infinity;
+        // One route per member and town for the basket. Scratch descriptions
+        // die with this build; plans retain bounded entry indices only. Group
+        // members visiting the same town do not share each other's paid trips.
+        const trips = new Map(), tripRows = [];
+        const tripKey = path => `${path.tripScope || ''}|${path.town}`;
+        for (const node of nodes) for (const path of node.paths || []) {
+            if (path.quoted && path.town && !trips.has(tripKey(path))) {
+                const row = { index: tripRows.length, fees: nonnegative(path.tripFees), hours: nonnegative(path.tripHours) };
+                trips.set(tripKey(path), row); tripRows.push(row);
+            }
+        }
+        const tripValue = (entries, field) => {
+            let total = 0;
+            for (const index of entries) total += tripRows[index][field];
+            return total;
+        };
+        const tripEffort = entries => {
+            const fees = tripValue(entries, 'fees');
+            return tripValue(entries, 'hours') + (fees > 0 ? fees * adenaToHours : 0);
+        };
         const priceOf = path => {
             if (!Number.isFinite(adenaToHours)) return nonnegative(path.price)
                 + nonnegative(path.ownInputOpportunityValue) + nonnegative(path.actualCashFees) > 0 ? Infinity
@@ -119,6 +139,10 @@ class WishNetwork {
                 const valuation = path.outcomes ? Valuation.opportunity({ moneyPrice: adenaToHours, riskWeight }, path.outcomes) : null;
                 if (valuation && !valuation.known) continue;
                 let price = nonnegative(path.price), effort = priceOf(path), available = true, height = 0;
+                let executable = path.executable !== false;
+                const trip = path.quoted && trips.get(tripKey(path));
+                const tripEntries = trip ? [trip.index] : [];
+                let quoted = !!path.quoted;
                 if (valuation) {
                     price = nonnegative(valuation.cashNow);
                     effort = Math.max(0, Number(path.ownBenefitHours || 0) - valuation.valueHours);
@@ -128,13 +152,20 @@ class WishNetwork {
                     const child = solve(requirement.key, depth + 1);
                     const amount = nonnegative(requirement.amount ?? 1);
                     if (!child || !amount) { available = false; break; }
-                    price += child.price * amount; effort += child.effort * amount;
+                    if (!child.executable || Number(child.availableUnits ?? Infinity) < amount) executable = false;
+                    price += child.basePrice * amount;
+                    effort += child.baseEffort * amount;
+                    for (const index of child.tripEntries) if (!tripEntries.includes(index)) tripEntries.push(index);
+                    quoted ||= child.quoted;
                     height = Math.max(height, 1 + child.height);
                     requirements.push({ key: requirement.key, amount });
                 }
-                if (available) choices.push({ ...path, successProbability, price, effort, requirements, height });
+                const basePrice = price, baseEffort = effort;
+                price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries);
+                if (available) choices.push({ ...path, executable, quoted, tripEntries, successProbability,
+                    basePrice, baseEffort, price, effort, requirements, height });
             }
-            choices.sort((a, b) => a.effort - b.effort || a.price - b.price);
+            choices.sort((a, b) => Number(b.executable) - Number(a.executable) || a.effort - b.effort || a.price - b.price);
             const best = choices[0] || null;
             visiting.delete(key); plans.set(key, best);
             return best;
@@ -146,7 +177,7 @@ class WishNetwork {
             const remaining = 1 - Math.min(1, nonnegative(node.progress));
             return { key, need: node.need, object: node.object, plan,
                 valueHours: nonnegative(node.valueHours) * remaining * Number(plan?.successProbability ?? 1),
-                price: plan ? nonnegative(node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
+                price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         }).filter(wish => wish.valueHours > 0 && wish.plan);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
@@ -173,11 +204,15 @@ class WishNetwork {
             if (!plan || !value) return;
             const node = byKey.get(key);
             demands.set(key, (demands.get(key) || 0) + value / amount);
-            if (plan.activity) {
+            const ready = plan.kind !== 'craft' || !plan.requirements.length;
+            const acquired = Math.min(amount, Number(plan.availableUnits ?? Infinity));
+            if (plan.activity && plan.executable && ready && acquired > 0) {
                 const leafKey = `${rootKey}:${key}:${plan.activity}`;
                 const leaf = leaves.get(leafKey) || { ...plan, key: leafKey, nodeKey: key, rootKey, activity: plan.activity,
-                    object: node.object, amount, price: plan.price * amount, effort: plan.effort * amount, valueHours: 0 };
-                leaf.valueHours += value;
+                    object: node.object, amount: acquired,
+                    price: plan.basePrice * acquired + tripValue(plan.tripEntries, 'fees'),
+                    effort: plan.baseEffort * acquired + tripEffort(plan.tripEntries), valueHours: 0 };
+                leaf.valueHours += value * acquired / amount;
                 leaves.set(leafKey, leaf);
             }
             const total = plan.requirements.reduce((sum, row) => sum + row.amount, 0);

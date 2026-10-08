@@ -142,7 +142,7 @@ function continueEquipmentShopping(session, bot, BotAI, errand) {
         Number(errand.purchaseCount || 0) + 1,
         excludedSlots
     );
-    if (!next) return false;
+    if (!next || next.pending) return false;
 
     session.companionShopping = next;
     session.shoppingTarget = next.target;
@@ -248,8 +248,9 @@ function prepareEquipmentMarketStop(session, bot, town, BotAI) {
 
     // One indexed lookup per town visit is enough. If the offer disappears,
     // the normal purchase failure cooldown handles the next attempt.
-    session.shoppingEquipmentPlanChecked = true;
     const errand = unseal || CompanionEquipmentShopping.planErrand(session, bot, town);
+    if (errand?.pending) return true;
+    session.shoppingEquipmentPlanChecked = true;
     if (!errand) return false;
     session.companionShopping = errand;
     session.shoppingTarget = errand.target;
@@ -315,7 +316,7 @@ module.exports = {
             session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
         }
 
-        prepareEquipmentMarketStop(session, bot, closestTown, BotAI);
+        if (prepareEquipmentMarketStop(session, bot, closestTown, BotAI) && !session.companionShopping) return;
         prepareWarehouseStop(session, bot, closestTown, BotAI);
 
         if (!session.shoppingTarget) {

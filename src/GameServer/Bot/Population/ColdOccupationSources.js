@@ -145,22 +145,30 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
     return [hash, blocked, lines.length];
 }
 
-const { regionalTown, details: tripDetails } = require('../Economy/EconomicTrip');
+const EconomicTrip = require('../Economy/EconomicTrip');
+const { regionalTown, details: tripDetails } = EconomicTrip;
 
-function* prepare(state, { board, timestamp, read = () => {}, stock = null } = {}) {
+function* prepare(state, { board, timestamp, read = () => {}, stock = null, economy = null,
+    routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
     if (!board || !Array.isArray(packet) || packet.length < 4 || !(packet[0] > 0) || !(packet[1] > 0)) return null;
     const reserved = yield* reservations(state);
     if (!reserved) return null;
     const preparedFeasibility = yield* feasibility(state, { board, read }, reserved);
     const ownStock = new Map(), routes = [];
+    const key = EconomicTrip.key(state);
+    const directRows = routeKey === key && Array.isArray(routeRows) && routeRows.length === EconomicTrip.towns.length
+        ? routeRows : null;
+    const readyRows = directRows || (economy?.routeKey === key ? economy.routeRows : null);
+    const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
+        ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(packet[0]) }) : null;
     const context = { timestamp, state, insideContext: true, hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
         survivalReserve: Number(packet[2]), mpPerHour: mpRates.get(Number(state.stats?.classId))?.[Number(state.level)],
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
         if (index === undefined) return { known: false, hours: NaN, fees: NaN };
-        if (!routes[index]) routes[index] = yield* tripDetails(state, town);
+        if (!routes[index]) routes[index] = readyTrip ? readyTrip.details(town) : yield* tripDetails(state, town);
         return routes[index];
     };
     const trip = town => {

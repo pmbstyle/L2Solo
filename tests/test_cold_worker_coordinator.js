@@ -20,6 +20,7 @@ function wait(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+let coordinator = null;
 (async () => {
     await Database.createAccount('worker_probe', 'secret');
     await Database.createCharacter('worker_probe', {
@@ -46,7 +47,7 @@ function wait(ms) {
     assert(initial, 'startup hydration must expose the copied cold row to the coordinator');
     assert.strictEqual(initial.simulation.ownerId, Owner.LEGACY_OWNER_ID);
 
-    const coordinator = new ColdSimulationCoordinator();
+    coordinator = new ColdSimulationCoordinator();
     await coordinator.start({
         executeWorkerLifecycleCommand() {
             throw new Error('main_resolver_must_not_run_for_simple_lifecycle');
@@ -83,15 +84,39 @@ function wait(ms) {
     assert.strictEqual(Number(row.simulationLeaseUntil), 0, 'successful commit must not leak a lease');
     const persistedStats = JSON.parse(row.statsJson || '{}');
     const equipmentPlan = persistedStats.equipmentPlan;
-    const plannedItem = DataCache.items.find((item) => Number(item.selfId) === Number(equipmentPlan?.target?.selfId));
-    // The probe can pay for a D weapon: an unarmed bot that cannot is bridged
-    // with the weapon it can afford (test_bot_weapon_bridge_affordable).
-    assert.strictEqual(equipmentPlan?.strategy, 'market',
-        'the real cold worker must replace an empty D-grade loadout with an NPC purchase plan');
-    assert.strictEqual(equipmentPlan?.market?.sourceType, 'npc');
-    assert.strictEqual(String(plannedItem?.etc?.rank), 'd');
-    assert.notStrictEqual(equipmentPlan?.market?.town, 'Talking Island',
-        'the worker must send a Talking Island D-grade bot to a city that sells its planned item');
+    if (equipmentPlan?.strategy === 'market') {
+        const targetId = Number(equipmentPlan.target?.selfId);
+        const plannedItem = DataCache.items.find(item => Number(item.selfId) === targetId);
+        assert.strictEqual(equipmentPlan.market?.sourceType, 'npc');
+        assert.strictEqual(String(plannedItem?.etc?.rank), 'd');
+        assert(invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(targetId)
+            .some(offer => offer.town === equipmentPlan.market.town), 'the native purchase names an actual NPC source');
+        assert.notStrictEqual(equipmentPlan.market.town, 'Talking Island');
+    } else {
+        // The gear metadata is selected before rest. The completed resolve
+        // emits a newer wish, and native goal execution reads that leaf directly.
+        assert.strictEqual(equipmentPlan?.strategy, 'none');
+        assert.strictEqual(equipmentPlan?.reason, 'wish_focus');
+    }
+    const current = LifeState.cachedState(characterId);
+    const decision = coordinator.economyDecisions.decided(current);
+    const activity = decision?.activity;
+    assert(activity, 'the completed resolve retains its actual worker decision');
+    if (activity.activity === 'shopping') {
+        const context = require('../src/GameServer/Bot/Population/ColdEconomyDecision').view(current, decision);
+        const [goal] = invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(current, { economy: context, errand: null });
+        const item = DataCache.items.find(row => Number(row.selfId) === Number(activity.itemId));
+        assert.strictEqual(goal?.type, item?.etc?.slot ? 'upgrade_gear' : 'buy_craft_material');
+        assert.strictEqual(goal.target.itemId, activity.itemId, 'native execution keeps the post-resolve item');
+        assert.strictEqual(goal.target.amount, activity.amount);
+        assert.strictEqual(goal.target.adena, activity.unitPrice);
+        assert.strictEqual(goal.plan.marketTown, activity.town);
+        assert.strictEqual(goal.plan.sourceType, activity.sourceType);
+        assert.strictEqual(goal.plan.estimatedCost, activity.price);
+        if (activity.sourceType === 'npc') assert(invoke('GameServer/Bot/Economy/MarketOpportunity')
+            .npcOffersAll(activity.itemId).some(offer => offer.town === activity.town && offer.price === activity.unitPrice),
+        'the selected purchase retains its actual NPC source, city and unit quote');
+    }
 
     assert.strictEqual(coordinator.withEconomyState, undefined);
     assert.strictEqual(coordinator.economyBots, undefined,
@@ -105,4 +130,7 @@ function wait(ms) {
 })().catch((error) => {
     console.error(error);
     process.exitCode = 1;
-}).finally(() => Database.close());
+}).finally(async () => {
+    if (coordinator?.started) await coordinator.stop();
+    Database.close();
+});

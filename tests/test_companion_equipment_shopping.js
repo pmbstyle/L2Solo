@@ -212,6 +212,17 @@ async function run() {
         } : null;
     };
     World.user = { sessions: [afkSellerSession] };
+    const preparedForState = economyModule.forState;
+    economyModule.forState = () => ({ ...preparedForState(), routePending: true });
+    const heldPlan = genericSession.coldLifeState.stats.equipmentPlan;
+    ShoppingState.tick(genericSession, genericBot, null, { getClosestTown: () => town, say() {} });
+    assert.strictEqual(genericSession.shoppingEquipmentPlanChecked, undefined,
+        'pending route is not a completed town visit check');
+    assert.strictEqual(genericSession.coldLifeState.stats.equipmentPlan, heldPlan,
+        'pending preparation preserves the accepted equipment plan');
+    assert.strictEqual(genericSession.plan, 'shopping', 'pending route does not end the visit');
+    assert.strictEqual(genericMarketLookups, 0);
+    economyModule.forState = preparedForState;
     ShoppingState.tick(genericSession, genericBot, null, {
         getClosestTown: () => town,
         say() {}

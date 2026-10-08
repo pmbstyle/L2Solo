@@ -9,6 +9,11 @@ const Karma = require('../../Karma');
 const townByName = new Map(Object.values(Towns.towns).map(town => [town.name, town]));
 const townKeys = new Map(Object.entries(Towns.towns).map(([key, town]) => [town, key]));
 const townOrdinal = new Map([...townByName.keys()].map((name, index) => [name, index]));
+const towns = Object.freeze([...townByName.keys()]);
+// Shared completed tables only: at most 64 own-route keys and 16 triples each.
+// No owner, inventory or native-state reference survives preparation. Money
+// is read by each consumer; eviction changes work cost, never route evidence.
+const preparedTables = new Map(), MAX_PREPARED_TABLES = 64;
 const readers = new WeakMap();
 const validPoint = loc => Number.isFinite(Number(loc?.locX)) && Number.isFinite(Number(loc?.locY))
     && (Number(loc.locX) !== 0 || Number(loc.locY) !== 0);
@@ -100,6 +105,51 @@ function read(state, town, options) {
     let step; do { step = iterator.next(); } while (!step.done);
     return step.value;
 }
+const point = loc => loc ? { locX: Number(loc.locX || 0), locY: Number(loc.locY || 0), locZ: Number(loc.locZ || 0) } : null;
+// Only own route inputs cross the existing worker boundary. The caller holds
+// the decision's location anchor; no inventory or market graph is copied.
+function frame(state) {
+    const travel = state?.stats?.travel;
+    return { activity: String(state?.activity || ''), currentRegion: state?.currentRegion == null ? null : String(state.currentRegion),
+        loc: point(state?.loc), inventory: { 736: { amount: Math.max(0, Number(state?.inventory?.[736]?.amount || 0)) } },
+        stats: { karma: Math.max(0, Number(state?.stats?.karma || 0)),
+            marketReturn: state?.stats?.marketReturn?.loc ? { loc: point(state.stats.marketReturn.loc) } : null,
+            travel: travel ? { townName: travel.townName == null ? null : String(travel.townName),
+                arrivalActivity: travel.arrivalActivity == null ? null : String(travel.arrivalActivity), to: point(travel.to) } : null } };
+}
+function key(state) { return JSON.stringify([Trip.honest(), frame(state)]); }
+function* prepare(state) {
+    const captured = frame(state), routeKey = key(captured), previous = preparedTables.get(routeKey);
+    if (previous) {
+        preparedTables.delete(routeKey); preparedTables.set(routeKey, previous);
+        return previous;
+    }
+    const rows = [];
+    for (const town of towns) {
+        const value = yield* details(captured, town);
+        rows.push(Object.freeze(value.known ? [true, value.hours, value.fees] : [false, null, null]));
+        yield 'trip';
+    }
+    Object.freeze(rows);
+    preparedTables.set(routeKey, rows);
+    if (preparedTables.size > MAX_PREPARED_TABLES) preparedTables.delete(preparedTables.keys().next().value);
+    return rows;
+}
+function preparedReader(rows, { hourAdena } = {}) {
+    const row = town => {
+        const index = townOrdinal.get(town), value = index === undefined ? null : rows?.[index];
+        return value?.[0] === true && Number.isFinite(value[1]) && value[1] >= 0
+            && Number.isFinite(value[2]) && value[2] >= 0
+            ? { known: true, hours: value[1], fees: value[2] } : unknown();
+    };
+    const cost = town => {
+        const value = row(town);
+        return value.known && Number.isFinite(hourAdena) && hourAdena >= 0
+            ? Math.round(value.hours * hourAdena) + value.fees : Infinity;
+    };
+    cost.details = row;
+    return cost;
+}
 function reader(state, { hourAdena, origin = null } = {}) {
     const pointKey = loc => [loc?.locX, loc?.locY, loc?.locZ];
     const key = JSON.stringify([hourAdena, Trip.honest(), state?.activity, state?.currentRegion,
@@ -130,4 +180,4 @@ function reader(state, { hourAdena, origin = null } = {}) {
     if (state && typeof state === 'object') readers.set(state, { key, cost });
     return cost;
 }
-module.exports = { details, read, reader, regionalTown };
+module.exports = { details, read, reader, regionalTown, towns, frame, key, prepare, preparedReader };

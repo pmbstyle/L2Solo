@@ -26,6 +26,7 @@ function decide(state, peers, options = {}) {
 
 function joint(party, members, { context = null } = {}) {
     const goals = members.map(declaration);
+    if (context?.routePending) return { objective: party.stats?.objective, memberGoals: goals };
     // The same wish engine merges members' actual wishes. Its selected leaf
     // carries a native route; a shopping/crafting leaf does not teleport a party.
     const activity = context?.network?.activity;

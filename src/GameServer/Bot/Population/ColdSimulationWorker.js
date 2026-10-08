@@ -86,6 +86,7 @@ const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const { ColdOccupationPlanner } = require('./ColdOccupationPlanner');
 const OccupationSources = require('./ColdOccupationSources');
+const EconomicTrip = require('../Economy/EconomicTrip');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
@@ -131,11 +132,17 @@ const buyerWaiters = new MarketBuyerWaiters({
 });
 const boardFollower = boardIndex.follower();
 let boardReplacing = false;
+const routeRequests = new Map();
+let nativeRouteSequence = 0;
 const occupationPlanner = new ColdOccupationPlanner({
     sourceToken: id => `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}`,
     sourceScope: id => MarketCounters.counterOf(id),
-    ownCurrent: (id, input) => !shuttingDown && kernel?.states.get(id)?.state === input.sourceState,
-    sameInput: (left, right) => left.state.updatedAt === right.state.updatedAt
+    ownCurrent: (id, input) => !shuttingDown && (id < 0 ? routeRequests.get(-id) === input
+        && (!input.native || kernel?.states.get(-id)?.state === input.sourceState)
+        : kernel?.states.get(id)?.state === input.sourceState),
+    sameInput: (left, right) => left.mode === 'wish' || right.mode === 'wish'
+        ? left.mode === right.mode && left.sourceState === right.sourceState && left.routeKey === right.routeKey
+        : left.state.updatedAt === right.state.updatedAt
         && ColdEconomyDecision.stateKey(left.state) === ColdEconomyDecision.stateKey(right.state)
         && left.state.simulation?.revision === right.state.simulation?.revision
         && left.state.simulation?.ownerId === right.state.simulation?.ownerId
@@ -144,15 +151,18 @@ const occupationPlanner = new ColdOccupationPlanner({
         && left.state.stats?.workshop?.entries === right.state.stats?.workshop?.entries
         && left.knownShotRecipes === right.knownShotRecipes && left.stock === right.stock
         && left.sourceReady === right.sourceReady
+        && left.routeKey === right.routeKey
         && left.mode === right.mode && left.buyOrderEscrow === right.buyOrderEscrow,
     onSlots: count => invoke('GameServer/Bot/Economy/EconomyContext').setPlanningContexts?.(count),
     capture: (id, input, read) => {
         return { state: input.state, board: boardReady(), timestamp: input.timestamp, read,
             knownRecipes: input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
             recipesKnown: Array.isArray(input.state.stats?.workshop?.entries),
-            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null, mode: input.mode || 'occupation' };
+            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
+            routeRows: input.routeRows || null, routeKey: input.routeKey, mode: input.mode || 'occupation' };
     },
     create: input => ({ iterator: (function* () {
+        if (input.mode === 'wish') return yield* EconomicTrip.prepare(input.state);
         if (input.mode === 'occupation') {
             const eligible = invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(input.state);
             if (!eligible || !input.recipesKnown || !input.knownRecipes.length) {
@@ -219,6 +229,15 @@ const occupationPlanner = new ColdOccupationPlanner({
     },
     result: work => work.value,
     publish: (id, input, workshop, meta = {}) => {
+        if (input.mode === 'wish') {
+            if (id < 0 && routeRequests.get(-id) === input) {
+                if (!shuttingDown && !input.native) send('economy_route_result', { characterId: -id, requestId: input.requestId,
+                    key: input.routeKey, rows: Array.isArray(workshop) ? workshop : [] });
+                routeRequests.delete(-id);
+                occupationPlanner.release(id);
+            }
+            return;
+        }
         // The action result is the existing compact native plan. Its derived
         // network is needed while preparing it, never by the completed cache.
         if (input.mode === 'action') input.economy = null;
@@ -235,9 +254,48 @@ const occupationPlanner = new ColdOccupationPlanner({
 function occupationFor(state, timestamp, context = {}, mode = 'occupation') {
     const id = Number(state.characterId), sourceState = kernel?.states.get(id)?.state;
     if (!sourceState || shuttingDown) return Promise.resolve(ColdEconomyDecision.unknownWorkshop());
+    const routeKey = EconomicTrip.key(state), economy = context.economy || null;
+    const directRows = context.routeKey === routeKey && Array.isArray(context.routeRows)
+        && context.routeRows.length === EconomicTrip.towns.length ? context.routeRows : null;
+    const routeRows = directRows || (economy?.routeKey === routeKey ? economy.routeRows
+        : invoke('GameServer/Bot/Economy/EconomyContext').preparedRouteRows?.(state));
+    if (mode === 'wish' && Array.isArray(routeRows) && routeRows.length === EconomicTrip.towns.length)
+        return Promise.resolve(routeRows);
+    if (mode === 'wish') {
+        const previous = routeRequests.get(id);
+        if (previous?.native && previous.sourceState === sourceState && previous.routeKey === routeKey)
+            return occupationPlanner.request(-id, previous);
+        if (!previous && routeRequests.size >= 64) return Promise.resolve([]);
+        cancelRoute(id);
+        const input = { state: EconomicTrip.frame(state), sourceState, timestamp, mode: 'wish', native: true,
+            routeKey, requestId: ++nativeRouteSequence };
+        routeRequests.set(id, input);
+        return occupationPlanner.request(-id, input);
+    }
     return occupationPlanner.request(id, { state, sourceState, timestamp, buyOrderEscrow: context.buyOrderEscrow || 0,
-        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null, economy: context.economy || null,
-        sourceReady: tables.ready('board') && tables.ready('market'), mode });
+        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null, economy,
+        sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
+}
+function cancelRoute(characterId) {
+    const id = Number(characterId);
+    routeRequests.delete(id);
+    occupationPlanner.cancel(-id);
+}
+function requestRoute(payload) {
+    if (shuttingDown) return;
+    const id = payload.characterId, previous = routeRequests.get(id);
+    if (previous && !previous.native && previous.requestId === payload.requestId && previous.routeKey === payload.key) return;
+    if (payload.key !== EconomicTrip.key(payload.frame)) {
+        send('economy_route_result', { characterId: id, requestId: payload.requestId, key: payload.key, rows: [] }); return;
+    }
+    if (!previous && routeRequests.size >= 64) {
+        send('economy_route_result', { characterId: id, requestId: payload.requestId, key: payload.key, rows: [] }); return;
+    }
+    cancelRoute(id);
+    const input = { state: payload.frame, sourceState: null, timestamp: Date.now(), mode: 'wish',
+        routeKey: payload.key, requestId: payload.requestId };
+    routeRequests.set(id, input);
+    occupationPlanner.request(-id, input, { awaitResult: false });
 }
 function occupationOwnerChanged(id) {
     const entry = kernel?.states.get(Number(id));
@@ -245,6 +303,7 @@ function occupationOwnerChanged(id) {
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state,
         timestamp: Date.now(), buyOrderEscrow: entry.context.buyOrderEscrow || 0,
         knownShotRecipes: entry.context.knownShotRecipes || [],
+        routeKey: EconomicTrip.key(entry.state),
         sourceReady: tables.ready('board') && tables.ready('market') }, { awaitResult: false });
 }
 function changedItems(previous, next) {
@@ -452,6 +511,7 @@ function stopTimers() {
 
 function startKernel(config = {}) {
     if (kernel) return;
+    if (typeof config.coldHonestTravel === 'boolean') Config.coldHonestTravel = config.coldHonestTravel;
     Config.economyDiagnostics = config.economyDiagnostics === true;
     Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
     if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
@@ -483,8 +543,13 @@ function startKernel(config = {}) {
                 timestamp,
                 projectClassProgression: true,
                 // Spot crowding, as main gave the same leaf before (L25).
-                economyDepsFor: async projected => ({ occupancy: currentPlanningOccupancy(timestamp),
-                    workshop: await occupationFor(projected, timestamp, kernel.states.get(Number(state.characterId))?.context || {}) }),
+                economyDepsFor: async projected => {
+                    const context = kernel.states.get(Number(state.characterId))?.context || {};
+                    const routeRows = await occupationFor(projected, timestamp, context, 'wish');
+                    const workshop = await occupationFor(projected, timestamp,
+                        { ...context, routeRows, routeKey: EconomicTrip.key(projected) });
+                    return { occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows };
+                },
                 onEconomy: (built, seen) => { economy = built; seenKey = ColdEconomyDecision.stateKey(seen); }
             });
             const projected = resolved;
@@ -530,13 +595,15 @@ function startKernel(config = {}) {
             const occupancy = currentPlanningOccupancy(timestamp);
             // GearPlanSelection uses EconomyContext's same prepared occupation
             // reader. No synchronous recipe scan can run through it.
-            const workshop = await occupationFor(state, timestamp, context);
+            const routeRows = await occupationFor(state, timestamp, context, 'wish');
+            const workshop = await occupationFor(state, timestamp,
+                { ...context, routeRows, routeKey: EconomicTrip.key(state) });
             const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-            Economy.forState(state, { spots, occupancy, timestamp, board: boardReady(),
-                buyOrderEscrow: context?.buyOrderEscrow, workshop });
+            const preparedEconomy = Economy.forState(state, { spots, occupancy, timestamp, board: boardReady(),
+                buyOrderEscrow: context?.buyOrderEscrow, workshop, routeRows });
             const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds, economy } = GearPlanSelection
                 .selectAcquisitionPlan(state, previousPlan, {
-                    spots, occupancy, timestamp,
+                    spots, occupancy, timestamp, preparedEconomy,
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
                 });
             const reservedSpot = acquisitionPlan?.next?.spotId
@@ -592,9 +659,14 @@ function startKernel(config = {}) {
         const previous = kernel.states.get(Number(id))?.state;
         const result = nativeSet(id, entry);
         if (previous !== entry.state) {
+            const route = routeRequests.get(Number(id));
+            if (route?.native && route.sourceState !== entry.state) cancelRoute(id);
             const held = occupationPlanner.slots.get(Number(id));
-            const incoming = held ? { ...held.input, state: entry.state, sourceState: entry.state } : null;
+            const routeKey = EconomicTrip.key(entry.state);
+            const incoming = held ? { ...held.input, state: entry.state, sourceState: entry.state, routeKey,
+                routeRows: held.input.routeKey === routeKey ? held.input.routeRows : null } : null;
             const acceptedPublication = held?.done && entry.context?.workshop?.known === true
+                && held.input.routeKey === routeKey
                 && held.input.state.updatedAt === entry.state.updatedAt
                 && ColdEconomyDecision.stateKey(held.input.state) === ColdEconomyDecision.stateKey(entry.state)
                 && Number(entry.state.simulation?.revision || 0) > Number(held.input.state.simulation?.revision || 0)
@@ -609,9 +681,10 @@ function startKernel(config = {}) {
         }
         return result;
     };
-    kernel.states.delete = id => { occupationPlanner.cancel(id); return nativeDelete(id); };
+    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); return nativeDelete(id); };
     kernel.states.clear = () => {
         for (const id of [...occupationPlanner.slots.keys(), ...occupationPlanner.waiting.keys()]) occupationPlanner.cancel(id);
+        routeRequests.clear();
         return nativeClear();
     };
     kernel.buyerEvents = buyerWaiters;
@@ -628,9 +701,12 @@ function startKernel(config = {}) {
     } });
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
+        npcOffersFor: OccupationSources.npcOffersFor,
         workshop: id => {
             const entry = kernel.states.get(Number(id));
-            return occupationPlanner.valueFor(id, entry?.state) || entry?.context?.workshop || ColdEconomyDecision.unknownWorkshop();
+            const held = occupationPlanner.slots.get(Number(id));
+            return (held?.input.mode === 'occupation' ? occupationPlanner.valueFor(id, entry?.state) : null)
+                || entry?.context?.workshop || ColdEconomyDecision.unknownWorkshop();
         },
         buyOrderEscrow: id => kernel.states.get(Number(id))?.context?.buyOrderEscrow || 0,
         spots: () => planningSpots,
@@ -760,6 +836,9 @@ async function handle(message) {
         if (tables.ready('board')) boardReplacing = false;
         break;
     }
+    case 'economy_route_request':
+        requestRoute(payload);
+        break;
     case 'clan_social_page':
         if (!kernel) break;
         for (const snapshot of payload.rows || []) {
@@ -838,6 +917,7 @@ async function handle(message) {
     }
     case 'fence': {
         occupationPlanner.cancel(payload.characterId);
+        cancelRoute(payload.characterId);
         const result = kernel?.fence(payload.characterId) || { characterId: Number(payload.characterId), proposal: null, token: null };
         send('fence_ack', result, message.msgId);
         break;
@@ -860,6 +940,7 @@ async function handle(message) {
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        routeRequests.clear();
         if (Config.economyDiagnostics) economyDiagnostics.stop();
         occupationPlanner.stop();
         competitionCandidates?.stop();

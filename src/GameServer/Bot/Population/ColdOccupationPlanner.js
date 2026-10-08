@@ -97,6 +97,7 @@ class ColdOccupationPlanner {
     scopeChanged(scope) { for (const id of this.scopes.get(scope) || []) this.sourceChanged(id); }
     resetSources() {
         for (const entry of this.slots.values()) {
+            if (entry.input.mode === 'wish') continue; // Route-only work has no board/market dependencies.
             if (entry.dirty) continue;
             entry.dirty = true; entry.cursor[14] = 2; this.stats.invalidations++;
             if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });

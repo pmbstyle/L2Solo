@@ -40,6 +40,7 @@ const state = {
 };
 const board = AfkTrade.boardIndex();
 const quoteIds = [94004010, 94004011];
+const gearQuoteIds = new Set();
 
 function close(actual, expected, message) {
     assert(Number.isFinite(actual) && Number.isFinite(expected), message);
@@ -130,13 +131,36 @@ function itemBudget(buyer, itemId) {
 // phase, and no supplied material wish is accepted as a native decision.
 function purchaseFor(buyer) {
     const before = structuredClone(buyer);
-    const economy = Economy.forState(buyer, { timestamp: 1000, spot: { id: 'field' } });
+    // Prices/funding are the subject here. Supply comes from the same
+    // authored catalog as execution, with an already prepared zero-cost visit.
+    const tripCost = () => 0;
+    tripCost.details = () => ({ known: true, hours: 0, fees: 0 });
+    const deps = { timestamp: 1000, spot: { id: 'field' }, npcOffersFor: () => [], tripCost };
+    // The pricing fixture originally supplied estimates only. Publish finite
+    // stock for its own native gear candidates; estimates no longer prove
+    // executable shopping. The henna catalog remains covered by npcPrice below.
+    const forecast = Economy.forState(buyer, deps);
+    for (const wish of forecast.network.queue) {
+        const id = Number(wish.object?.itemId);
+        if (!id || wish.object?.kind || !template(id)?.etc?.slot) continue;
+        if (board.first(id, AfkTrade.SELL, { excludeOwner: buyer.characterId, enchant: 0 })) continue;
+        const recordId = 95000000 + id;
+        gearQuoteIds.add(recordId);
+        board.put({ id: recordId, kind: 'shop', storeType: AfkTrade.SELL,
+            ownerId: 2004012, town: 'Giran', botOwned: true, revision: 1,
+            lines: [{ lineId: recordId, selfId: id, count: 1, price: Math.ceil(forecast.price(id)), enchant: 0 }] });
+    }
+    const economy = Economy.forState(buyer, deps);
     const goals = Needs.evaluate(buyer, { spot: { id: 'field' }, now: 1000, economy });
     const goal = goals.find((row) => row.type === 'upgrade_gear');
     assert(goal, 'the original funded hot gear profile must produce a genuine gear purchase');
     assert.strictEqual(economy.network.activity.activity, 'shopping');
     const id = goal.target.itemId;
-    const expectedPrice = publicPrice(id, buyer, economy);
+    publicPrice(id, buyer, economy); // Keep the independent native belief proof.
+    const quote = OfferQuery.bestSellOffer(board, id, { excludeOwner: buyer.characterId,
+        towns: [goal.plan.marketTown], cost: tripCost, others: Market.npcOffersAll(id) });
+    assert(quote, 'the selected purchase has an actual catalog/public quote');
+    const expectedPrice = Number(quote.price);
     close(goal.target.adena, expectedPrice, 'selected native leaf unit price');
     close(goal.plan.estimatedCost, expectedPrice * goal.target.amount, 'selected native purchase cost');
     assert.strictEqual(goal.target.amount, 1, 'this gear purchase needs one physical copy');
@@ -401,5 +425,6 @@ try {
     if (originalRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
     else process.env.L2NODE_PROGRESSION_RATE = originalRate;
     for (const id of quoteIds) board.remove(id);
+    for (const id of gearQuoteIds) board.remove(id);
     fs.rmSync(isolated.directory, { recursive: true, force: true });
 }

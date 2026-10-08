@@ -188,9 +188,22 @@ class ColdSimulationCoordinator {
         this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.economyDecisions = new ColdEconomyDecisions();
+        this.economyRoutes = new (require('../Economy/EconomyRouteCache').EconomyRouteCache)({
+            send: payload => !this.stopping && this.ready && !!this.post('economy_route_request', payload),
+            prepared: (id, key) => {
+                const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+                Economy.forgetContext(id);
+                const record = invoke('GameServer/World/World').registeredActorById(id);
+                const session = record?.session;
+                if (record && !record.retired && session?.actor === record.actor
+                    && require('../Economy/EconomicTrip').key(Economy.stateForActor(record.actor, session)) === key)
+                    require('../AI/DecisionEvents').prepared(session);
+            }
+        });
         this.unsubscribeWishRemovals = LifeState.subscribePublications(packet => {
             if (packet.kind !== 'remove') return;
             this.economyDecisions.forget(packet.characterId);
+            this.economyRoutes.forget(packet.characterId);
             invoke('GameServer/Bot/Economy/EconomyContext').forget(packet.characterId);
         });
         this.seenOrder = [];
@@ -340,6 +353,7 @@ class ColdSimulationCoordinator {
             await BackgroundPartyState.purgeHistory();
             await require('./ColdRaidAuthority').init();
             await invoke('GameServer/Clan/ClanSocialRuntime').refresh(true);
+            require('./ColdOccupationSources').initialise();
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
@@ -439,6 +453,12 @@ class ColdSimulationCoordinator {
         return message.msgId;
     }
 
+    routeRows(state) {
+        if (this.stopping || !this.ready) return null;
+        const Trip = require('../Economy/EconomicTrip');
+        return this.economyRoutes.read(state.characterId, Trip.key(state), Trip.frame(state));
+    }
+
     requestEconomyLook(characterId) {
         const id = Number(characterId);
         if (this.stopping || !Number.isSafeInteger(id) || id <= 0
@@ -534,6 +554,9 @@ class ColdSimulationCoordinator {
         this.counters.bytesIn += valid.bytes;
         const payload = message.payload || {};
         switch (message.type) {
+        case 'economy_route_result':
+            if (!this.stopping) this.economyRoutes.accept(payload);
+            break;
         case 'lease_renewal_candidates':
             await this.handleLeaseRenewalCandidates(message, worker, epoch);
             break;
@@ -647,6 +670,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             ...(Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: Config.economyDiagnosticsBotIds } : {}),
+            coldHonestTravel: Config.coldHonestTravel,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
@@ -1967,6 +1991,7 @@ class ColdSimulationCoordinator {
         invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
         if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
         this.fencedBots.add(id);
+        this.economyRoutes.forget(id);
         this.counters.fences += 1;
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });
         if (!msgId) return { ok: false, reason: 'fence_send_failed' };
@@ -2157,6 +2182,7 @@ class ColdSimulationCoordinator {
         Metrics.clearColdSafetyEpoch(epoch);
         this.projectionRetention.reset();
         this.economyDecisions.clear();
+        this.economyRoutes.clear();
         this.counters.workerExits += 1;
         this.tableChannel.detach(this);
         this.worker = null;
@@ -2199,6 +2225,7 @@ class ColdSimulationCoordinator {
         this.cancelSafety();
         this.projectionRetention.reset();
         this.economyDecisions.clear();
+        this.economyRoutes.clear();
         if (!this.started) return { stopped: true };
         this.stopping = true;
         if (this.pvpEncounterTimer) clearInterval(this.pvpEncounterTimer);

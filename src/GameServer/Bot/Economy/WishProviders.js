@@ -125,6 +125,7 @@ function buildProjection(state, ctx, deps) {
     const knownRecipes = new Set([...(state.stats?.recipes || state.recipes || []), ...(state.stats?.workshop?.entries || [])]
         .map(entry => Number(entry?.recipeId ?? entry)));
     const preparingItems = new Set();
+    const purchaseFor = require('./WishPurchaseEvidence').reader(state, ctx, deps);
     const sourcePath = id => {
         let best = null;
         for (const source of sourceIndex?.get(Number(id)) || []) {
@@ -149,8 +150,10 @@ function buildProjection(state, ctx, deps) {
         if (nodes.some(node => node.key === key)) return key;
         if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
         preparingItems.add(key);
+        const observed = purchaseFor(id);
         const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
-            available: price(id) > 0 }];
+            available: !!observed || price(id) > 0, executable: !!observed,
+            ...(observed || { availableUnits: 0 }) }];
         const drop = sourcePath(id);
         if (drop) paths.push(drop);
         const crystal = invoke('GameServer/Bot/Economy/BotImprovementPolicy').crystalPath(state, id, ctx, deps.spots || []);

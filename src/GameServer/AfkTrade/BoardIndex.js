@@ -391,13 +391,15 @@ class BoardIndex {
     // `excludeOwner`: in `towns`, with the records without a town, or in every
     // town. At most one line per town: O(T log n) for a buyer who weighs
     // every town.
-    heads(selfId, storeType, { towns = null, excludeOwner = 0, accept = null } = {}) {
+    heads(selfId, storeType, { towns = null, excludeOwner = 0, accept = null, maxInspected = Infinity } = {}) {
         const item = this.sides.get(Number(storeType))?.get(Number(selfId));
         if (!item) return [];
         const keys = towns ? [...new Set([...towns, null])] : [...item.towns.keys()];
         const heads = [];
+        let inspected = 0;
         for (const key of keys) {
             for (const line of item.towns.get(key) || EMPTY) {
+                if (inspected++ >= maxInspected) return heads;
                 if (excludeOwner && line.ownerId === Number(excludeOwner)) continue;
                 if (accept && !accept(line)) continue;
                 heads.push(line);

@@ -1,6 +1,7 @@
 const PROTOCOL_VERSION = 1;
 const MAX_BATCH = 64;
 const MAX_MESSAGE_BYTES = 256 * 1024;
+const ECONOMY_ROUTE_MAX_BYTES = 1536;
 
 const MAIN_TYPES = new Set([
     'init',
@@ -8,6 +9,7 @@ const MAIN_TYPES = new Set([
     'snapshot_page',
     'worker_presence_request',
     'worker_repair_request',
+    'economy_route_request',
     'clan_social_page',
     // ColdTableChannel pages: limited by size only, so no batch field below.
     'table_page',
@@ -32,6 +34,7 @@ const WORKER_TYPES = new Set([
     'ready',
     'worker_presence_ack',
     'worker_repair_ack',
+    'economy_route_result',
     'claim_request',
     'lease_renewal_candidates',
     'proposal_batch',
@@ -99,6 +102,41 @@ function competitionReceipt(value) {
         && ['accepted', 'deferred', 'observed', 'expired'].includes(value.status);
 }
 
+function exactObject(value, keys) {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+        && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+function routePoint(value) {
+    return value === null || exactObject(value, ['locX', 'locY', 'locZ'])
+        && ['locX', 'locY', 'locZ'].every(key => typeof value[key] === 'number' && Number.isFinite(value[key]));
+}
+function routeText(value) { return value === null || typeof value === 'string' && value.length <= 80; }
+function economyRouteFrame(value) {
+    return exactObject(value, ['activity', 'currentRegion', 'loc', 'inventory', 'stats'])
+        && typeof value.activity === 'string' && value.activity.length > 0 && value.activity.length <= 80
+        && routeText(value.currentRegion) && routePoint(value.loc)
+        && exactObject(value.inventory, ['736']) && exactObject(value.inventory[736], ['amount'])
+        && Number.isSafeInteger(value.inventory[736].amount) && value.inventory[736].amount >= 0
+        && exactObject(value.stats, ['karma', 'marketReturn', 'travel'])
+        && Number.isFinite(value.stats.karma) && value.stats.karma >= 0
+        && (value.stats.marketReturn === null || exactObject(value.stats.marketReturn, ['loc'])
+            && routePoint(value.stats.marketReturn.loc))
+        && (value.stats.travel === null || exactObject(value.stats.travel, ['townName', 'arrivalActivity', 'to'])
+            && routeText(value.stats.travel.townName) && routeText(value.stats.travel.arrivalActivity)
+            && routePoint(value.stats.travel.to));
+}
+function economyRoutePayload(payload, result = false) {
+    return exactObject(payload, ['characterId', 'requestId', 'key', result ? 'rows' : 'frame'])
+        && Number.isSafeInteger(payload.characterId) && payload.characterId > 0
+        && Number.isSafeInteger(payload.requestId) && payload.requestId > 0
+        && typeof payload.key === 'string' && payload.key.length > 0 && payload.key.length <= 600
+        && byteLength(payload) <= ECONOMY_ROUTE_MAX_BYTES
+        && (result ? Array.isArray(payload.rows) && (payload.rows.length === 0 || payload.rows.length === 16) && payload.rows.every(row =>
+            Array.isArray(row) && row.length === 3 && (row[0] === false ? row[1] === null && row[2] === null
+                : row[0] === true && Number.isFinite(row[1]) && row[1] >= 0 && Number.isFinite(row[2]) && row[2] >= 0))
+            : economyRouteFrame(payload.frame));
+}
+
 function validateEnvelope(message, direction, options = {}) {
     if (!message || typeof message !== 'object' || Array.isArray(message)) {
         return { ok: false, reason: 'invalid_envelope' };
@@ -117,6 +155,10 @@ function validateEnvelope(message, direction, options = {}) {
     }
     if (!message.payload || typeof message.payload !== 'object' || Array.isArray(message.payload)) {
         return { ok: false, reason: 'invalid_payload' };
+    }
+    if ((message.type === 'economy_route_request' || message.type === 'economy_route_result')
+        && !economyRoutePayload(message.payload, message.type === 'economy_route_result')) {
+        return { ok: false, reason: 'invalid_economy_route' };
     }
     // Serialising a page only to measure it costs as much as building it.
     // A sender that sized the page while building it passes that size, and
@@ -357,6 +399,9 @@ module.exports = {
     PROTOCOL_VERSION,
     MAX_BATCH,
     MAX_MESSAGE_BYTES,
+    ECONOMY_ROUTE_MAX_BYTES,
+    economyRouteFrame,
+    economyRoutePayload,
     envelope,
     envelopeBytes,
     validateEnvelope,

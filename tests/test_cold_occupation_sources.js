@@ -55,6 +55,20 @@ assert.equal(bounded.value.whole, false);
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
 assert(npc.whole && npc.npc === 1 && npc.repeatable && npc.town);
+const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
+const routeRows = drain(EconomicTrip.prepare(state)).value;
+const routeKey = EconomicTrip.key(state);
+const reusedSources = drain(Sources.prepare(state, { board, timestamp: 1000, economy: { routeKey, routeRows } })).value;
+const freshSources = drain(Sources.prepare(state, { board, timestamp: 1000 })).value;
+const reusedPurchase = drain(reusedSources.options.preparePurchase(state, 1864, 1, { npc: false }));
+const freshPurchase = drain(freshSources.options.preparePurchase(state, 1864, 1, { npc: false }));
+assert.deepEqual(reusedPurchase.value, freshPurchase.value, 'occupation/actions share the accepted wish route table');
+assert(freshPurchase.stages.includes('edge') && !reusedPurchase.stages.includes('edge'),
+    'the ready shared table removes repeated geometry, not source or spending revalidation');
+const staleSources = drain(Sources.prepare(state, { board, timestamp: 1000,
+    economy: { routeKey: 'obsolete', routeRows } })).value;
+assert(drain(staleSources.options.preparePurchase(state, 1864, 1, { npc: false })).stages.includes('edge'),
+    'a changed route key cannot suppress actual route preparation');
 const protectedState = { ...owner, stats: { ...owner.stats, equipmentPlan: { strategy: 'craft', status: 'active',
     target: { selfId: 3000 }, materials: [{ selfId: 1864, amount: 40 }] } } };
 assert.equal(drain(Sources.reservations(protectedState)).value[1864], 40);

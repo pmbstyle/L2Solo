@@ -23,6 +23,7 @@ function bestSellOffer(index, selfId, options = {}) {
     // so the trip decides only between towns.
     for (const line of index ? index.heads(selfId, SELL, {
         towns,
+        maxInspected: options.maxInspected,
         excludeOwner: options.excludeOwner,
         accept: (candidate) => candidate.price <= budget && (!accept || accept(offerFields(candidate, town)))
     }) : []) {

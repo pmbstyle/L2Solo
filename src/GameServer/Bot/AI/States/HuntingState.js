@@ -111,7 +111,7 @@ function isClaimedByOtherSoloBot(session, npc) {
     });
 }
 
-function startShopping(session, bot, BotAI, reason) {
+function startShopping(session, bot, BotAI, reason, townName = null) {
     if (isPartyCompanion(session)) {
         session.plan = 'following';
         session.shoppingTarget = undefined;
@@ -120,7 +120,11 @@ function startShopping(session, bot, BotAI, reason) {
         return false;
     }
 
-    return BotTownTravel.request(session, bot, BotAI, reason);
+    const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
+        .find(town => town.name === townName) : null;
+    return BotTownTravel.request(session, bot, BotAI, reason, destination ? {
+        destinationTown: { name: destination.name, x: destination.locX, y: destination.locY, z: destination.locZ }
+    } : {});
 }
 
 function claimedTargetIds(session, sessions = invoke('GameServer/Bot/BotManager').sessions || []) {
@@ -598,7 +602,7 @@ module.exports = {
                     .catch(error => utils.infoWarn('BotImprovement', '%s', error.message));
             }
             if (economy.network.activity?.activity === 'shopping') {
-                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.');
+                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', economy.network.activity.town);
                 if (trip !== 'deferred' && trip !== false) return;
             }
         }

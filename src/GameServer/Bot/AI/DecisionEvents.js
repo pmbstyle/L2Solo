@@ -32,13 +32,19 @@ function observe(session, actor) {
     }
     session.decisionMarks = marks;
 }
+function prepared(session) {
+    // Completing this same decision is not another personality roll.
+    delete session.heldEconomy; delete session.economySeq;
+}
 function hold(session, actor, context) {
+    if (context.routePending) return held(session) || { network: { activity: null },
+        statsPacket: statsFor(session), riskWeight: context.riskWeight };
     if (session.coldLifeState) Object.assign(statsFor(session), context.statsPacket);
     else Object.assign(statsFor(session), { decisionSeq: context.statsPacket.decisionSeq, activityLeaf: context.statsPacket.activityLeaf });
     session.economySeq = Number(statsFor(session).decisionSeq || 0);
     // Keep only the decision. Native actor state is read when executing an improvement.
     const leaf = context.network.activity;
-    const activity = leaf ? { key: leaf.key, activity: leaf.activity,
+    const activity = leaf ? { key: leaf.key, ...new (require('../Population/ColdEconomyDecision').CompactActivity)(leaf),
         ...(leaf.items ? { items: leaf.items } : {}), ...(leaf.improvement ? { improvement: leaf.improvement } : {}) } : null;
     session.heldEconomy = { network: { activity }, statsPacket: context.statsPacket,
         riskWeight: context.riskWeight };
@@ -56,4 +62,4 @@ function summary(hotHunters = 0, timestamp = Date.now()) {
     return { hotEconomyBuilds: builds, hotEconomyBuildsPerBotMinute: Math.round(perMinute * 100) / 100,
         total: hotEconomyBuilds, reasons: { ...reasons } };
 }
-module.exports = { statsFor, raiseDecision, observe, hold, held, summary };
+module.exports = { statsFor, raiseDecision, observe, hold, held, prepared, summary };

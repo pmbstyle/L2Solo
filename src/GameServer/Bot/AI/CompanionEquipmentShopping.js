@@ -68,15 +68,20 @@ function checkedPlan(session, state, town, options = {}) {
     // Autonomous hot bots buy the same funded leaf as cold actors. Player
     // companion requests retain their explicitly assigned native errands.
     if (session.partyCompanion !== true) {
-        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state);
+        const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+        const economy = Context.forState(Context.routeState({ ...state, activity: 'shopping' }, session));
+        if (economy.routePending) return { plan: state.stats?.equipmentPlan || null, offers: [], pending: true };
         const leaf = economy.network.activity;
         const selfId = Number(leaf?.itemId || 0);
-        if (leaf?.activity !== 'shopping' || !selfId) return { plan: null, offers: [] };
+        if (leaf?.activity !== 'shopping' || !selfId || leaf.town && leaf.town !== town.name) return { plan: null, offers: [] };
         const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, selfId);
         const amount = Math.max(1, Math.ceil(leaf.amount || 1));
-        const budget = Math.min(PurchaseFunding.spendable(state, 0, { itemId: selfId }) / amount, economy.worth(selfId) ?? Infinity);
-        const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget });
-        return { plan: offer ? { status: 'active', strategy: 'market',
+        const fundedState = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
+        const budget = Math.min(PurchaseFunding.spendable(fundedState, 0, { itemId: selfId }) / amount, economy.worth(selfId) ?? Infinity);
+        const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget,
+            ...(leaf.sourceType ? { accept: row => leaf.sourceType === 'npc' ? row.sourceType === 'npc'
+                : ['afk_player_store', 'afk_bot_store'].includes(row.sourceType) } : {}) });
+        return { statsPacket: economy.statsPacket, plan: offer ? { status: 'active', strategy: 'market',
             target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
             market: { sourceType: offer.sourceType } } : null, offers: offer ? [offer] : [] };
     }
@@ -137,10 +142,11 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
     const prepared = DualCraft.plan(session,bot,town,state);
     if (prepared.handled) return prepared.errand;
     const checked = checkedPlan(session, state, town, { excludedSlots });
+    if (checked.pending) return { pending: true };
     const plan = checked.plan;
     session.coldLifeState = {
         ...state,
-        stats: { ...(state.stats || {}), equipmentPlan: plan }
+        stats: { ...(state.stats || {}), ...checked.statsPacket, equipmentPlan: plan }
     };
     refreshPartyMemberships([session], invoke);
 

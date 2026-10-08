@@ -136,6 +136,13 @@ async function run() {
     const rich = { ...base, adena: 1e12 };
     const richContext = Economy.forState(rich);
     assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);
+    const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
+    assert.equal(richContext.network.gap, null);
+    assert(richContext.gapHorizonHours > 0, 'affordable useful wishes retain their own waiting horizon');
+    assert(PriceDecision.traderOf({ traits: { commitment: 0 } }, richContext).wait > 0);
+    assert(PriceDecision.traderOf({ traits: { commitment: 0 } }, richContext).wait
+        > PriceDecision.traderOf({ traits: { commitment: 1 } }, richContext).wait);
+
     assert.equal(richContext.hourAdena, context.hourAdena, 'wallet cannot change repeatable income');
     assert.notEqual(richContext, context, 'native wallet changes invalidate funding');
     console.log('PASS shared network hour / funding / input cache / bounded native gear');

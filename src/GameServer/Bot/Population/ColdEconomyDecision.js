@@ -17,8 +17,11 @@ class CompactActivity {
         this.activity = leaf.activity || null; this.spotId = leaf.spotId ?? null; this.npcId = leaf.npcId ?? null;
         this.itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
         this.amount = Number(leaf.amount || 0); this.price = Number(leaf.price || 0);
+        if (leaf.unitPrice !== undefined && leaf.unitPrice !== null) this.unitPrice = Number(leaf.unitPrice);
         if (leaf.heldAtDecision !== undefined && leaf.heldAtDecision !== null) this.heldAtDecision = Number(leaf.heldAtDecision);
         if (leaf.rootKey) this.rootKey = leaf.rootKey;
+        if (leaf.town) this.town = leaf.town;
+        if (leaf.sourceType) this.sourceType = leaf.sourceType;
         if (leaf.kind) this.kind = leaf.kind;
         if (leaf.recipeId) this.recipeId = leaf.recipeId;
         if (leaf.targetId) this.targetId = leaf.targetId;
@@ -34,6 +37,7 @@ const encoder = new TextEncoder(), decoder = new TextDecoder();
 const WORKSHOP = 16384;
 const SHOT = 32768;
 const FEASIBILITY = 65536;
+const URGENCY_STAGE = 1, URGENCY_SHOTS = 2, URGENCY_POTIONS = 3;
 const MAX_BYTES = 800, MAX_SHOT_BYTES = 128;
 const COMMAND_HEADER_BYTES = Buffer.byteLength(JSON.stringify(['00000000-0000-0000-0000-000000000000', 5, Number.MAX_SAFE_INTEGER]));
 const MAX_SHOT_PAYLOAD_BYTES = MAX_SHOT_BYTES - COMMAND_HEADER_BYTES;
@@ -62,7 +66,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -92,7 +96,14 @@ class CompactDecision {
         if (!(counts & 4096)) return null;
         const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12;
         const view = new DataView(this.data);
-        return [view.getUint8(at), view.getFloat64(at + 1, true), view.getFloat64(at + 9, true)];
+        const kind = view.getUint8(at) & 63;
+        return [kind === 63 ? 255 : kind, view.getFloat64(at + 1, true), view.getFloat64(at + 9, true)];
+    }
+    get urgency() {
+        const counts = this.counts;
+        if (!(counts & 4096)) return 0;
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12;
+        return new DataView(this.data).getUint8(at) >>> 6;
     }
     get clan() {
         const counts = this.counts;
@@ -142,7 +153,9 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
-        ...(leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
+        ...(leaf.town || leaf.sourceType || leaf.unitPrice !== undefined
+            ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null]
+            : leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
     const workshop = Object.hasOwn(record, 'workshop') ? workshopValues(record.workshop) : null;
     const feasibility = Array.isArray(record.feasibility) && record.feasibility[2] <= 14 ? record.feasibility : null;
@@ -187,7 +200,11 @@ function stateKey(state = {}) {
 // last changes); state: the projected state main will commit.
 function capture(economy, state, seen = state) {
     const leaf = economy?.network?.activity || null;
-    const wish = economy?.network?.queue?.find(row => row.key === leaf?.rootKey);
+    const queue = economy?.network?.queue || [];
+    const urgent = economy?.network?.gap || queue.find(row => row.key === economy?.network?.focus?.[0]) || queue[0];
+    const wish = queue.find(row => row.key === leaf?.rootKey) || urgent;
+    const urgency = !urgent ? 0 : urgent.key === 'stock:shots' ? URGENCY_SHOTS
+        : urgent.key === 'stock:potions' ? URGENCY_POTIONS : URGENCY_STAGE;
     const useful = new Map(economy?.projection?.values || []);
     for (const [key, value] of economy?.network?.demands || []) {
         if (key.startsWith('item:') && value > 0) useful.set(Number(key.slice(5)), value);
@@ -241,7 +258,9 @@ function capture(economy, state, seen = state) {
         key: stateKey(seen),
         riskWeight: Number(economy?.riskWeight) || 0,
         activity,
-        wish: wish ? [kindCode(wish.object?.kind), Number(wish.object?.amount || 0), Number(wish.price || 0)] : null,
+        // Upper two bits reuse the existing byte; amount and price remain exact.
+        wish: wish ? [(kindCode(wish.object?.kind) & 63) | (urgency << 6),
+            Number(wish.object?.amount || 0), Number(wish.price || 0)] : null,
         watch: (economy?.watchList || []).slice(0, 3).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
         workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,
@@ -266,9 +285,10 @@ function view(state, decision, deps = {}) {
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     return { ...base, state, hourAdena, moneyPrice, survivalReserve: valid ? Number(packet[2]) : base.survivalReserve,
-        gapHorizonHours: !valid || !(packet[3] > 0) ? 0 : ['shots', 'potions'].includes(wish?.object.kind)
-            ? base.stock(wish.object.kind).targetHours
-            : require('../Economy/EconomicValuation').stageHours(state, base.hunt.expPerHour, base.persona),
+        gapHorizonHours: !decision?.urgency ? 0 : decision.urgency === URGENCY_SHOTS
+            ? base.stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
+                ? base.stock('potions').targetHours
+                : require('../Economy/EconomicValuation').stageHours(state, base.hunt.expPerHour, base.persona),
         board: deps.board || invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
         network: { activity }, activity, wish,
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
@@ -343,5 +363,5 @@ class ColdEconomyDecisions {
     clear() { this.byId.clear(); }
 }
 
-module.exports = { capture, stateKey, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
+module.exports = { capture, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
     unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
