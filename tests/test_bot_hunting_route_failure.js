@@ -153,6 +153,49 @@ try {
     assert.strictEqual(red.session.spotRelocation?.method, 'walk', 'a bot with karma walks even to a far spot');
     assert.strictEqual(red.bot.moves, 1, 'a bot with karma starts walking at once');
 
+    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const Events = require('../src/GameServer/Bot/AI/DecisionEvents');
+    const TownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
+    const savedPurchase = { check: Market.canTravelForPurchase, state: Economy.stateForActor,
+        held: Events.held, travel: TownTravel.request };
+    const purchaseState = { characterId: 2002505, activity: 'hunting' };
+    const purchaseEconomy = { network: { activity: { activity: 'shopping', itemId: 1835,
+        amount: 8, town: 'Giran', valueHours: 0.002 } } };
+    let purchaseChecks = 0, purchaseTrips = 0, allowed = false;
+    try {
+        Events.held = () => purchaseEconomy;
+        Economy.stateForActor = () => purchaseState;
+        Market.canTravelForPurchase = (state, request, options) => {
+            purchaseChecks++;
+            assert.strictEqual(state, purchaseState);
+            assert.strictEqual(options.economy, purchaseEconomy, 'the hot guard reuses its existing decision');
+            assert.deepStrictEqual(request, { selfId: 1835, amount: 8, town: 'Giran', valueHours: 0.002 });
+            return allowed;
+        };
+        TownTravel.request = () => { purchaseTrips++; return 'escape'; };
+        const denied = fixture();
+        denied.session.spotRelocation = undefined;
+        denied.session.townRoutePlan = null;
+        denied.bot.automation = { abortAll() {} };
+        tick(denied);
+        assert.strictEqual(purchaseChecks, 1);
+        assert.strictEqual(purchaseTrips, 0, 'a tiny unprofitable purchase cannot initiate a visible town trip');
+        allowed = true;
+        const accepted = fixture();
+        accepted.session.spotRelocation = undefined;
+        accepted.session.townRoutePlan = null;
+        accepted.bot.automation = { abortAll() {} };
+        tick(accepted);
+        assert.strictEqual(purchaseChecks, 2);
+        assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
+    } finally {
+        Market.canTravelForPurchase = savedPurchase.check;
+        Economy.stateForActor = savedPurchase.state;
+        Events.held = savedPurchase.held;
+        TownTravel.request = savedPurchase.travel;
+    }
+
     console.log('Bot hunting route failure checks passed');
 } finally {
     Math.random = originalRandom;

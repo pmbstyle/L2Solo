@@ -40,6 +40,19 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
 
+    if (buyingGear || buyingMaterial || buyingErrand) {
+        const selfId = Number(goal.target?.itemId);
+        const errand = buyingErrand ? CombinedErrands.pending(state, timestamp)
+            .find(row => Number(row.selfId) === selfId && row.town === goal.plan.marketTown) : null;
+        const request = { ...(errand || {}), selfId, amount: Number(goal.target?.amount || 1),
+            town: goal.plan.marketTown, purpose: errand?.purpose || goal.plan?.purpose };
+        for (const field of ['valueHours', 'r', 'survivalCost']) {
+            if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
+        }
+        if (!invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
+            { timestamp })) return null;
+    }
+
     // A sale goes where its goal says (the town the shop opens in), else to
     // the sale town; a new decision of the shop town travels with the bot.
     const sale = sellingInventory && !goal.plan?.marketTown ? MarketTownPolicy.saleTown(state, timestamp) : null;

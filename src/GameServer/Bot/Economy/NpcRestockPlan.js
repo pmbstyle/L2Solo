@@ -106,8 +106,9 @@ function collect(state, options = {}) {
         const Scrolls = invoke('GameServer/Bot/Travel/ScrollStock');
         const offer = quoteFor(736, town, null, options.seller);
         if (offer) {
-            const plan = Scrolls.restockPlan(current, { unitPrice: offer.price });
-            add(736, plan.amount, offer);
+            const context = economics();
+            const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context });
+            add(736, plan.amount, offer, {}, { survivalCost: context.kitCost(736, offer.price) });
         }
     }
     for (const extra of (options.extras || []).slice(0, LIMIT)) {

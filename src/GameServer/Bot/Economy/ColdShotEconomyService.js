@@ -204,7 +204,7 @@ async function reviewDemand(state, now) {
     if (require('../Population/CombinedErrandPolicy').pending(state, now)
         .some(errand => errand.purpose === 'shots')) return state;
     const bought = await ColdMarket().acquire(state, stock.itemId, missing, {
-        money: maxSpend, purpose: 'shots', timestamp: now, survivalCost: basics.kitCost(stock.itemId)
+        purpose: 'shots', timestamp: now
     });
     if (bought.hot) return bought.state;
     if (!bought.bought) {

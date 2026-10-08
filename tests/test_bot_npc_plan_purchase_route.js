@@ -60,8 +60,7 @@ try {
         'a cheaper bot listing does not turn an NPC-shop plan into a WTB');
 } finally { MarketOpportunity.bestOffer = bestOffer; }
 const travel = GoalExecutor.beginMarketTravel(state, activeGoal, Date.now());
-assert.strictEqual(travel?.activity, 'traveling');
-assert.strictEqual(travel.stats.travel.townName, plan.market.town);
+assert.strictEqual(travel, null, 'an authored NPC route without a currently funded useful purchase cannot start a new trip');
 
 Database.init();
 await character(Database, 7, 'NpcBuyer', 'bot_7', base.loc);

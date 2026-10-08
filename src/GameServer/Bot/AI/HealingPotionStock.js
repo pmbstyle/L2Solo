@@ -156,9 +156,9 @@ function restockPlan(value, options = {}) {
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice ?? potion.price) || 0);
-    const reserve = Math.max(0, Number(options.reserve ?? operationalReserve(value)) || 0);
+    const reserve = Math.max(0, Number(options.reserve ?? context.survivalReserve) || 0);
     const desired = Math.max(0, targetAmount - stockAmount);
-    const wish = context.network?.queue.find(row => Number(row.object?.itemId) === Number(potion.selfId));
+    const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(potion.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
     const allowance = PurchaseFunding.spendable(fundedState, 0, { itemId: potion.selfId,
         ...(wish ? { r: PurchaseFunding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(potion.selfId, unitPrice) });

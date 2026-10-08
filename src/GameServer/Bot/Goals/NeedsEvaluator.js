@@ -73,6 +73,7 @@ function evaluate(state = {}, options = {}) {
                 adena: leaf.unitPrice ?? (leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price) },
             plan: { ...common.plan, expectedBenefit: slot ? 'market_search_for_gear' : 'market_buy_craft_material',
                 marketTown: town, sourceType: leaf.sourceType || (offer ? 'afk' : npc ? 'npc' : null),
+                valueHours: leaf.amount > 0 ? leaf.valueHours * amount / leaf.amount : leaf.valueHours,
                 purpose: wish?.object?.kind, requiredAdena: 0, reserve: Economy.survivalReserve(state) } }];
     }
     if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',

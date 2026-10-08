@@ -219,22 +219,52 @@ function foundation(state, deps, persona, timestamp, price) {
     const targetHours = hasBagForecast
         ? Math.min(Visits.targetHours(state.stats), Visits.targetHours({}, bagHours))
         : Visits.targetHours(state.stats);
+    // Price future carried scroll uses only if this review needs extra stock.
+    // Resolve the known hunt through the existing catalogue index; a merchant
+    // location during a town visit is never a future hunting origin.
+    let scrollHours;
+    const scrollUseHours = () => {
+        if (scrollHours !== undefined) return scrollHours;
+        scrollHours = 0;
+        if (invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return scrollHours;
+        const origin = invoke('GameServer/Bot/AI/SpotIndex').spotById(deps.spots, bestSpotId)?.center
+            || state.stats?.marketReturn?.loc || (state.activity === 'hunting' ? state.loc : null);
+        if (!origin || ![origin.locX, origin.locY, origin.locZ].every(Number.isFinite)
+            || origin.locX === 0 && origin.locY === 0) return scrollHours;
+        const Trip = require('../Population/ColdTrip'), Routes = require('../Travel/TravelRoutes');
+        const destination = Routes.landingTown(origin);
+        const routeState = { ...state, loc: origin, inventory: { 736: { amount: 0 } } };
+        const walking = Trip.townPlan(routeState, destination);
+        const recall = Trip.townPlan({ ...routeState, inventory: { 736: { amount: 1 } } }, destination);
+        if (walking && recall && recall.scroll) scrollHours = Math.max(0, walking.durationMs - recall.durationMs) / 3600000;
+        return scrollHours;
+    };
     const stock = kind => {
+        if (kind === 'scrolls') {
+            const current = positive(state.inventory?.[736]?.amount),
+                target = require('../Travel/ScrollStock').TARGET_AMOUNT, survivalTarget = 1;
+            const missing = Math.max(0, target - Math.max(current, survivalTarget));
+            const benefitPerUnit = current < target ? scrollUseHours() : 0;
+            return { itemId: 736, usePerHour: 0, current, hours: Infinity, targetHours, target,
+                survivalTarget, survivalMissing: Math.max(0, survivalTarget - current), missing,
+                unitPrice: price(736), benefitPerUnit, benefitHours: missing * benefitPerUnit, needed: current < target };
+        }
         const shots = kind === 'shots';
         const itemId = shots ? shotItemId : potionItemId;
         const use = shots ? shotUse : potionUse;
         const current = positive(state.inventory?.[itemId]?.amount);
-        const target = Math.ceil(use * targetHours);
+        const target = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
         // Forecast consumption may be fractional; both purchase tranches use
         // the same whole-unit survival stock so their sum remains executable.
         const survivalTarget = Math.ceil(use);
         const survivalMissing = Math.max(0, survivalTarget - current);
         const missing = Math.max(0, target - Math.max(current, survivalTarget));
-        const benefitHours = shots ? (use > 0 ? shotBenefit * targetHours : 0)
-            : positive(bestTable?.deaths) * deathHours * targetHours;
+        const benefitPerUnit = use > 0
+            ? (shots ? shotBenefit : positive(bestTable?.deaths) * deathHours) / use : 0;
+        const benefitHours = missing * benefitPerUnit;
         return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
-            targetHours, target, missing, survivalMissing, unitPrice: price(itemId), benefitHours,
-            needed: use > 0 && current < use };
+            targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId), benefitPerUnit, benefitHours,
+            needed: use > 0 && current < survivalTarget };
     };
     const kit = [stock('shots'), stock('potions')];
     const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats?.karma) ? 0
@@ -248,10 +278,10 @@ function foundation(state, deps, persona, timestamp, price) {
         if (Number(id) === 736) return quoted
             ? unitPrice * Math.max(0, 1 - positive(state.inventory?.[736]?.amount)) : escapeCost;
         return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
-            + Math.max(0, (quoted ? Math.ceil(row.usePerHour) : row.usePerHour) - row.current)
+            + row.survivalMissing
                 * (quoted ? unitPrice : row.unitPrice), 0);
     };
-    const reserve = escapeCost + kit.reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
+    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
     return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,
         riskWeight: Valuation.riskWeight(state, persona),

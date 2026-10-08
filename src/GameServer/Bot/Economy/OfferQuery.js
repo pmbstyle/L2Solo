@@ -89,8 +89,10 @@ function cheapestTown(index, selfId, options = {}) {
         const trip = options.cost ? Number(options.cost(town)) : 0;
         if (!Number.isFinite(trip)) continue;
         const price = npcPrice.get(town) || 0;
-        const filled = fill(index ? index.list(selfId, SELL, town) : [], amount, {
-            npcPrice: price, money: options.money ?? Infinity, maxPrice: options.maxPrice ?? Infinity,
+        const lines = index ? index.list(selfId, SELL, town) : [];
+        const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
+        const filled = fill(lines, amount, {
+            npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
             excludeOwner: options.excludeOwner
         });
         if (!filled.units) continue;
@@ -99,7 +101,7 @@ function cheapestTown(index, selfId, options = {}) {
         const better = !best || (whole !== best.whole ? whole
             : landed / filled.units < best.landed / best.units || (landed / filled.units === best.landed / best.units
                 && String(town).localeCompare(best.town) < 0));
-        if (better) best = { town, ...filled, npcPrice: price, trip, landed, whole };
+        if (better) best = { town, ...filled, npcPrice: price, trip, landed, whole, spendBudget: money };
     }
     return best;
 }

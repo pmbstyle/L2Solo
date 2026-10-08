@@ -6,6 +6,7 @@
 const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const TripPayment = require('./TripPayment');
+const Funding = require('../Economy/PurchaseFunding');
 
 // Temporary carried target (user, 2026-10-08), pending travel-based stock planning.
 const TARGET_AMOUNT = 10;
@@ -23,13 +24,21 @@ function keptAmounts(value) {
 }
 
 function restockPlan(value, options = {}) {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const state = value?.backpack ? Economy.stateForActor(value) : value;
+    const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
+    const context = options.context || (coldMain ? Economy.basics(state) : Economy.forState(state));
     const currentAmount = heldAmount(value, options.inventory || value?.inventory);
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice) || 0);
-    const reserve = Math.max(0, Number(options.reserve ?? HealingPotionStock.operationalReserve(value)) || 0);
+    const reserve = Math.max(0, Number(options.reserve ?? context.survivalReserve) || 0);
     const desired = Math.max(0, TARGET_AMOUNT - currentAmount);
-    const affordable = unitPrice > 0 ? Math.floor(Math.max(0, adena - reserve) / unitPrice) : 0;
+    const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(SCROLL.selfId));
+    const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
+    const allowance = Funding.spendable(fundedState, 0, { itemId: SCROLL.selfId,
+        ...(wish ? { r: Funding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(SCROLL.selfId, unitPrice) });
+    const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
         selfId: SCROLL.selfId,

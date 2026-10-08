@@ -10,6 +10,7 @@ const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 const Database = invoke('Database');
 const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
@@ -71,11 +72,11 @@ assert.strictEqual(sold(cold(TARGET + 3)), 3, 'a surplus is sold');
                 insertItem: (id, selfId, data) => rows.set(Number(selfId), { id, amount: data.amount })
             }
         };
-        const bought = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price });
+        const bought = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.basics(cold(0)) });
         assert.strictEqual(bought.ok, true);
         assert.strictEqual(rows.get(736).amount, TARGET, 'the hot bot holds the target');
         assert.strictEqual(rows.get(57).amount, 100000 - TARGET * price, 'and paid the NPC price');
-        const again = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price });
+        const again = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.basics(cold(0)) });
         assert.strictEqual(again.changed, false, 'a full hot stock buys nothing');
     } finally {
         Database.updateItemAmount = realUpdate;

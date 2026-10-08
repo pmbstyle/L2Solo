@@ -57,6 +57,19 @@ function opportunity(context, outcomes) {
     return finishOpportunity(acc);
 }
 
+// Value only the executable quantity. Route time is the additional journey
+// over the current activity, supplied by the shared EconomicTrip reader.
+function acquisition(context, plan, route) {
+    const units = Number(plan?.units), itemId = Number(plan?.selfId);
+    const usefulness = Number(context?.itemUsefulness?.(itemId));
+    return opportunity({ moneyPrice: context?.moneyPrice, riskWeight: context?.riskWeight,
+        known: route?.known === true && Number.isFinite(units) && units > 0
+            && Number.isFinite(usefulness) }, [{ probability: 1,
+        ownBenefitHours: usefulness * units, cashNow: Number(plan?.cost),
+        actualCashFees: Number(route?.fees), foregoneBenefitHours: Number(route?.hours),
+        cycleHours: Number(route?.hours) }]);
+}
+
 function riskWeight(state, persona) {
     return (1 + trait(persona, 'caution')) / (0.5 + trait(persona, 'resilience'))
         * (1 + positive(state.stats?.frustration));
@@ -107,4 +120,4 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
 module.exports = { riskWeight, stageHours, deathHours, karmaHours, pkDropValue, resale, progressStats, trait,
-    opportunity, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT };
+    opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT };

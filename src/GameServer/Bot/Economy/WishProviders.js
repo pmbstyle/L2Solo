@@ -347,7 +347,7 @@ function buildProjection(state, ctx, deps) {
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',
                 spotId: ctx.hunt.progressSpotId || ctx.bestSpotId, costHours: 1, riskHours: ctx.expectedDeathHours }] });
     }
-    for (const kind of ['shots', 'potions']) {
+    for (const kind of ['shots', 'potions', 'scrolls']) {
         const stock = ctx.stock(kind);
         if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
             caller: deps.caller || 'wish_provider', trigger: 'projection_build',
@@ -399,7 +399,7 @@ function buildProjection(state, ctx, deps) {
     for (const node of deps.nodes || []) { if (node.need) root(node); else add(node); }
     const moneyPaths = ctx.hunt.perHour > 0 ? [{ activity: 'hunting', kind: 'money',
         spotId: ctx.bestSpotId, incomePerHour: ctx.hunt.perHour, riskHours: ctx.expectedDeathHours }] : [];
-    const protectedIds = new Set([57, 5575, ctx.stock('shots').itemId, ctx.stock('potions').itemId]);
+    const protectedIds = new Set([57, 5575, ctx.stock('shots').itemId, ctx.stock('potions').itemId, 736]);
     const sale = rows(state).filter(row => !row.equipped && !row.equippedCount && !values.has(Number(row.selfId))
         && !protectedIds.has(Number(row.selfId)) && !/quest/i.test(String(row.kind || ''))
         && !row.starterMobLootAmount && Number(row.amount) > 0);

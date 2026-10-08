@@ -336,17 +336,17 @@ function restockPlan(value, options = {}) {
     const context = options.context || (coldMain ? Economy.basics(state) : Economy.forState(state));
     const stock = context.stock('shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
-    const reserve = PurchaseFunding.operatingReserve(state);
+    const reserve = context.survivalReserve;
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;
-    const wish = options.targetAmount === undefined ? context.network?.queue.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
+    const wish = options.targetAmount === undefined ? context.network?.queue?.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
     const fundedState = !coldMain && options.targetAmount === undefined && context.statsPacket
         ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
     const allowance = PurchaseFunding.spendable(fundedState, 0, { itemId: plan.selfId,
         ...(wish ? { r: PurchaseFunding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(plan.selfId, npcPrice) });
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
-    const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.usePerHour);
+    const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
     const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
     const money = Math.min(allowance, Math.max(0, adena - potionCost));

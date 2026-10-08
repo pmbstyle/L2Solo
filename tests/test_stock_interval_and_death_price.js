@@ -46,11 +46,12 @@ for (const commitment of [.1, .9]) {
     const state = { ...warrior, stats: { ...warrior.stats, persona: { traits: { commitment } } } };
     const own = Economy.basics(state, deps).stock('shots');
     assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
-    assert.equal(own.benefitHours, b * noHistoryT);
+    assert.equal(own.benefitHours, own.missing * own.benefitPerUnit);
+    assert.equal(own.benefitPerUnit, b / own.usePerHour);
 }
 for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], bagT], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
-    assert.equal(own.targetHours, hours); assert.equal(own.target, Math.ceil(use * hours));
+    assert.equal(own.targetHours, hours); assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * hours)));
 }
 const cached = Economy.forState(warrior, deps);
 const changed = Economy.forState({ ...warrior, stats: { ...warrior.stats, visitEvery: [22, 4] } }, deps);
@@ -70,7 +71,7 @@ async function coldVisits() {
         // This clock-only fixture has no unpaid stock need; actual merchant
         // payment/delivery is exercised by test_npc_purchase_consumers.
         inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: stock.target },
-            736: { selfId: 736, amount: 2 },
+            736: { selfId: 736, amount: 10 },
             [native.stock('potions').itemId]: { selfId: native.stock('potions').itemId,
                 amount: Math.ceil(native.stock('potions').usePerHour * 24) } },
         stats: { ...warrior.stats, playedHours: 10 } };

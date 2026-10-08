@@ -602,8 +602,15 @@ module.exports = {
                     .catch(error => utils.infoWarn('BotImprovement', '%s', error.message));
             }
             if (economy.network.activity?.activity === 'shopping') {
-                const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', economy.network.activity.town);
-                if (trip !== 'deferred' && trip !== false) return;
+                const leaf = economy.network.activity;
+                const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(bot, session);
+                if (invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
+                    { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
+                        amount: Number(leaf.amount || 1), town: leaf.town,
+                        valueHours: leaf.valueHours }, { economy })) {
+                    const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
+                    if (trip !== 'deferred' && trip !== false) return;
+                }
             }
         }
 

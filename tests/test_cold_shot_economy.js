@@ -218,12 +218,23 @@ async function images(ids) {
         const fieldBefore = await images([hunter.characterId]);purchases.length = 0;
         const traveling = await Shots.reviewDemand(hunter, now + 72000);
         assert.deepEqual(purchases, [], 'no remote field inventory purchase');
-        assert.equal(traveling.activity, 'traveling');assert.equal(traveling.stats.marketErrand.purpose, 'shots');
-        assert.equal(traveling.stats.travel.townName, traveling.stats.marketErrand.town);
+        const market = invoke('GameServer/Bot/Economy/ColdMarketService');
+        const stock = Economy.basics(hunter).stock('shots');
+        const quote = market.planPurchase(hunter, stock.itemId, stock.survivalMissing + stock.missing,
+            { purpose: 'shots', currentFunding: true, timestamp: now + 72000 });
+        assert(quote?.units > 0, 'a payable batch alone is not a reason to leave the field');
+        const route = invoke('GameServer/Bot/Economy/EconomicTrip').read(hunter, quote.town, { origin: fieldLoc });
+        assert.equal(route.known, true);
+        const context = invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(hunter);
+        const value = invoke('GameServer/Bot/Economy/EconomicValuation').acquisition(
+            { ...context, itemUsefulness: () => stock.benefitPerUnit }, quote, route);
+        assert(value.valueHours <= 0, 'the actual native batch cannot pay for this known journey');
+        assert.equal(traveling.activity, 'hunting');
+        assert(!traveling.stats.marketErrand, 'an unprofitable restock never creates a journey');
         const fieldAfter = await images([hunter.characterId]);
         assert.deepEqual(fieldAfter.map(row => row.items), fieldBefore.map(row => row.items));
         assert.deepEqual(fieldAfter.map(row => row.character), fieldBefore.map(row => row.character));
-        console.log('PASS native cheaper-shot/NPC refill, changed-line fallback and field travel conservation');
+        console.log('PASS native cheaper-shot/NPC refill, changed-line fallback and unprofitable field-trip conservation');
 
         // The scan/candidate timer was retired by C2a/C2c. Eligibility remains
         // the native class/recipe rule; named worker plans perform the work.

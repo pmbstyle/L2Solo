@@ -29,6 +29,7 @@ const BotGear = invoke('GameServer/Bot/AI/BotGear');
 DataCache.init();
 
 const originals = {
+    canTravelForPurchase: ColdMarketService.canTravelForPurchase,
     reconcileBotClanMembership: Database.reconcileBotClanMembership,
     execute: Database.execute,
     fetchItems: Database.fetchItems,
@@ -354,6 +355,9 @@ async function run() {
     // ARCH-NOTE: preserve this legacy journey's original bot77 account marker.
     // The new bot_77 receipt identity additionally admits remote-trade planning,
     // which is a different route consumer; these are raw gatekeeper assertions.
+    // This section verifies route payment after a declared approved departure;
+    // actual quantity/utility admission is tested in test_purchase_trip_admission.
+    ColdMarketService.canTravelForPurchase = () => true;
     const legacyJourneyState = { ...state, accountName: 'bot77' };
     const fundedInGiran = { ...legacyJourneyState, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
@@ -383,6 +387,7 @@ async function run() {
     assert(unknownTown.state.stats.marketRetryAfter > Date.now(),
         'an unavailable destination must back off instead of immediately repeating');
 
+    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     let blockedReserveCalls = 0;
     MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
     MarketOpportunity.reserve = () => {
@@ -696,6 +701,7 @@ run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
 }).finally(async () => {
+    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     Database.reconcileBotClanMembership = originals.reconcileBotClanMembership;
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
     Database.execute = originals.execute;

@@ -117,6 +117,11 @@ try {
             assert(Number.isSafeInteger(purchase), `${phase}: whole potion purchase with ${held} held`);
             const expected = Math.max(0, Math.max(3, Math.ceil(2.25 * hours)) - held);
             assert.equal(purchase, expected, `${phase}: fill the greater of outing stock and survival stock once`);
+            assert.equal(stock.survivalTarget, Math.min(3, stock.target));
+            assert.equal(stock.needed, held < stock.survivalTarget);
+            assert.equal(stock.benefitHours, stock.missing * stock.benefitPerUnit,
+                'only missing optional potion units receive wish utility');
+            assert(stock.benefitPerUnit > 0, 'survival-only units retain finite travel utility');
         }
     }
     console.log('test_stock_bag_fill_interval: ok');
