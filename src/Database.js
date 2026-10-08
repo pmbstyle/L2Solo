@@ -10202,7 +10202,7 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     }
 });
 function tradeMeetingPositionUnsafe(id) {
-    const session = (invoke('GameServer/World/World').user?.sessions || []).find(s => Number(s.actor?.fetchId?.()) === id);
+    const session = invoke('GameServer/World/World').registeredActorById(id)?.session;
     if (session) {
         const actor = session.actor;
         return { characterId: id, locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ(),
@@ -10214,6 +10214,12 @@ function tradeMeetingPositionUnsafe(id) {
     return { characterId: id, locX: row.locX, locY: row.locY, locZ: row.locZ,
         alive: Number(row.hp) > 0 && row.activity !== 'dead',
         available: !['traveling', 'fighting', 'dead'].includes(row.activity) };
+}
+function withTradeMeetingFlush(id, work, label) {
+    return inTransaction(() => TradeMeetings.meeting(Number(id)), `${label}:owners`).then(row => {
+        const apply = () => inTransaction(work, label);
+        return row ? withCharacterFlushes([row.actorA, row.actorB], apply) : apply();
+    });
 }
 Object.assign(Database, {
     migrateConditionalTradeAds(ownerId) {
@@ -10246,7 +10252,9 @@ Object.assign(Database, {
         return withCharacterFlush(id, () => inTransaction(() => {
             const slot = TradeMeetings.participant(Number(id)), row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
             return { sequence: slot.nextSequence, meetingId: slot.meetingId, revision: Number(row?.simulationRevision || 0),
-                phase: row?.phase || 'player', needRevision: Number(row?.simulationRevision || 0),
+                phase: row?.phase || 'player', ownerId: row?.simulationOwner || null,
+                leaseId: row?.simulationLeaseId || null, hotAt: Number(row?.lastHotAt || 0),
+                needRevision: Number(row?.simulationRevision || 0),
                 inventory: afkTradeInventoryUnsafe(id), position: tradeMeetingPositionUnsafe(Number(id)) };
         }, 'board:meeting-prepare'));
     },
@@ -10259,7 +10267,7 @@ Object.assign(Database, {
             return slot?.meetingId ? TradeMeetings.meeting(slot.meetingId) : null; }, 'board:meeting-owner');
     },
     payTradeMeetingLeg(id, side, sequence, legId, fee, scroll) {
-        return inTransaction(() => TradeMeetings.leg(Number(id), side, sequence, legId, fee, scroll), 'board:meeting-leg');
+        return withTradeMeetingFlush(id, () => TradeMeetings.leg(Number(id), side, sequence, legId, fee, scroll), 'board:meeting-leg');
     },
     acknowledgeTradeMeetingLeg(id, side, sequence) {
         return inTransaction(() => {
@@ -10272,11 +10280,11 @@ Object.assign(Database, {
         }, 'board:meeting-leg-ack');
     },
     arriveTradeMeeting(id) {
-        return inTransaction(() => { const row = TradeMeetings.meeting(Number(id));
+        return withTradeMeetingFlush(id, () => { const row = TradeMeetings.meeting(Number(id));
             return row ? TradeMeetings.present(row.id, [tradeMeetingPositionUnsafe(row.actorA), tradeMeetingPositionUnsafe(row.actorB)]) : null;
         }, 'board:meeting-arrival');
     },
-    cancelTradeMeeting(id, reason) { return inTransaction(() => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
+    cancelTradeMeeting(id, reason) { return withTradeMeetingFlush(id, () => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
     acknowledgeTradeMeeting(id, actor) { return withCharacterFlush(actor, () => inTransaction(() => TradeMeetings.acknowledge(Number(id), Number(actor)), 'board:meeting-ack')); },
     recoverTradeMeetings(afterId = 0) { return inTransaction(() => all('SELECT id,actorA,actorB,state FROM board_trade_meetings WHERE id>? ORDER BY id LIMIT 32', [afterId]), 'board:meeting-recover'); }
 });

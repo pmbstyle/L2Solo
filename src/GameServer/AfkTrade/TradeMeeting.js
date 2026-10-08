@@ -33,9 +33,12 @@ function canonical(request) {
         if (!route || !Number.isFinite(route.durationMs) || route.durationMs < 0
             || !safe(route.fee) || ![true, false].includes(route.scroll) || typeof route.method !== 'string'
             || Buffer.byteLength(JSON.stringify(route)) > 256) throw Error('trade_meeting_route');
-        if (!safe(party.revision) || !safe(party.sequence, true) || party.sequence !== (side ? seqB : seqA)) throw Error('trade_meeting_authority');
+        if (!safe(party.revision) || !safe(party.hotAt)
+            || !['hot', 'cold', 'player'].includes(party.phase)
+            || ![party.ownerId, party.leaseId].every(value => value === null || typeof value === 'string' && Buffer.byteLength(value) <= 80)
+            || !safe(party.sequence, true) || party.sequence !== (side ? seqB : seqA)) throw Error('trade_meeting_authority');
         return { revision: party.revision, sequence: party.sequence,
-            phase: party.phase, route: { fee: route.fee, scroll: route.scroll, method: route.method, durationMs: route.durationMs }, needRevision: requireSafe(party.needRevision) };
+            phase: party.phase, ownerId: party.ownerId, leaseId: party.leaseId, hotAt: party.hotAt, route: { fee: route.fee, scroll: route.scroll, method: route.method, durationMs: route.durationMs }, needRevision: requireSafe(party.needRevision) };
     });
     return { token, actorA, actorB, seqA, seqB, town, point: { locX: point.locX, locY: point.locY, locZ: point.locZ }, lines: basket, parties: sides };
 }
@@ -77,7 +80,9 @@ function create(io) {
             requireSafe(slot.nextSequence + 1, true);
             const party = request.parties[side];
             const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
-            if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase)) throw Error('trade_meeting_authority_changed');
+            if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
+                || (life.simulationOwner || null) !== party.ownerId || (life.simulationLeaseId || null) !== party.leaseId
+                || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
             if (!life) {
                 const position = io.position(id);
                 if (!position?.alive || !position.available || Math.hypot(position.locX - request.point.locX,

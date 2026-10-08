@@ -56,7 +56,26 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const difference = (after, before) => Object.fromEntries([...new Set([...Object.keys(after), ...Object.keys(before)])]
             .map(key => [key, Number(after[key] || 0) - Number(before[key] || 0)]).filter(row => row[1]));
         const holdings = await held(), journal = await flows();
-        const result = await Database.acceptTradeMeeting(request), id = result.meeting.id;
+        for (const changed of [{ ownerId: 'stale_owner' }, { leaseId: 'stale_lease' }, { hotAt: 1 }, { revision: parties[0].revision + 1 }]) {
+            const stale = { ...request, parties: request.parties.map((party, side) => side ? party : { ...party, ...changed }) };
+            await assert.rejects(Database.acceptTradeMeeting(stale), /authority_changed/);
+            assert.deepEqual(await held(), holdings, 'a stale owner moves no assets');
+        }
+        await Database.execute([`CREATE TRIGGER fail_meeting_reserve BEFORE INSERT ON board_trade_meeting_lines
+            BEGIN SELECT RAISE(ABORT, 'injected meeting reserve failure'); END`]);
+        try {
+            await assert.rejects(Database.acceptTradeMeeting(request), /injected meeting reserve failure/);
+            assert.deepEqual(await held(), holdings, 'mid-reservation failure rolls back custody and both wallets');
+            const slots = await Promise.all(ids.map(actor => Database.prepareTradeParticipant(actor)));
+            assert(slots.every(slot => slot.sequence === 1 && slot.meetingId === null), 'failed reserve claims neither actor');
+        } finally { await Database.execute(['DROP TRIGGER fail_meeting_reserve']); }
+        const attempts = await Promise.allSettled([
+            Database.acceptTradeMeeting(request), Database.acceptTradeMeeting({ ...request, token: 'concurrent-other' })
+        ]);
+        assert.equal(attempts.filter(attempt => attempt.status === 'fulfilled').length, 1, 'one consent reserves the pair');
+        assert.match(attempts.find(attempt => attempt.status === 'rejected').reason.message, /participant_changed/);
+        const result = attempts.find(attempt => attempt.status === 'fulfilled').value, id = result.meeting.id;
+
         assert(result.pending);
         assert.deepEqual(await held(), holdings, 'acceptance only moves custody');
         assert.equal((await Database.acceptTradeMeeting(request)).meeting.id, id);
