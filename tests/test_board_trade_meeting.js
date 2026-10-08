@@ -32,7 +32,7 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
             await Life.upsertState({ characterId: id, name: `Meeting${id}`, phase: 'cold', activity: 'shopping',
                 level: 30, adena: 120000, inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
                 loc: point, currentRegion: 'Giran', vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-                stats: { money: [100, 0, 1000, 0] }, timing: {} }, 'meeting_fixture');
+                stats: { money: [100, 0, 1000, 0], supplyErrand: { meetingToken: 'native-meeting-one' } }, timing: {} }, 'meeting_fixture');
         }
         const parties = await Promise.all(ids.map(id => Database.prepareTradeParticipant(id)));
         const source = parties[1].inventory.find(row => row.selfId === 1867);
@@ -56,6 +56,8 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const difference = (after, before) => Object.fromEntries([...new Set([...Object.keys(after), ...Object.keys(before)])]
             .map(key => [key, Number(after[key] || 0) - Number(before[key] || 0)]).filter(row => row[1]));
         const holdings = await held(), journal = await flows();
+        await assert.rejects(Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => false }), /preparation_changed/);
+        assert.deepEqual(await held(), holdings, 'worker source invalidation after native flush moves no assets');
         for (const changed of [{ ownerId: 'stale_owner' }, { leaseId: 'stale_lease' }, { hotAt: 1 }, { revision: parties[0].revision + 1 }]) {
             const stale = { ...request, parties: request.parties.map((party, side) => side ? party : { ...party, ...changed }) };
             await assert.rejects(Database.acceptTradeMeeting(stale), /authority_changed/);
@@ -83,7 +85,7 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal(Life.cachedState(ids[0]).acceptedIncoming[1867], 6);
         assert.equal((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming[1867], 6);
         assert.deepEqual(await held(), holdings, 'acceptance only moves custody');
-        assert.equal((await Database.acceptTradeMeeting(request)).meeting.id, id);
+        assert.equal((await Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => { throw Error('expired_worker'); } })).meeting.id, id, 'durable replay precedes expired worker preparation');
         await assert.rejects(Database.acceptTradeMeeting({ ...request, token: 'another' }), /participant_changed|authority_changed/);
         await assert.rejects(Database.acceptTradeMeeting({ ...request, lines: [{ ...request.lines[0], count: 5 }] }), /consent_changed/);
         const bag = async owner => Object.fromEntries((await Database.fetchItems(owner)).map(row => [row.selfId, row.amount]));
@@ -114,6 +116,8 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         await assert.rejects(Database.payTradeMeetingLeg(id, 0, 1, 'outbound', 20, true), /leg_changed/);
         await Database.cancelTradeMeeting(id, 'fixture');
         await Database.cancelTradeMeeting(id, 'fixture');
+        const releasedErrands = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (?,?)', ids]);
+        assert(releasedErrands.every(row => !JSON.parse(row.statsJson).supplyErrand), 'native terminal receipt releases orphan companion workflows after restart');
         for (const actor of ids) {
             await Database.settleBoardOwner(actor);
             await Database.acknowledgeTradeMeeting(id, actor);

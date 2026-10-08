@@ -19,6 +19,7 @@ const MAIN_TYPES = new Set([
     'commit_ack',
     'release_ack',
     'command_ack',
+    'command_request',
     'maintenance_ack',
     'party_formation_request',
     'fence',
@@ -40,6 +41,7 @@ const WORKER_TYPES = new Set([
     'proposal_batch',
     'release_request',
     'command_request',
+    'command_ack',
     'maintenance_request',
     'party_formation_proposal',
     'heartbeat',
@@ -159,6 +161,12 @@ function validateEnvelope(message, direction, options = {}) {
     if ((message.type === 'economy_route_request' || message.type === 'economy_route_result')
         && !economyRoutePayload(message.payload, message.type === 'economy_route_result')) {
         return { ok: false, reason: 'invalid_economy_route' };
+    }
+    const meeting = ['command_request', 'command_ack'].includes(message.type)
+        && (message.payload.requests || message.payload.results || []).some(row => row?.kind === 'meeting');
+    if (meeting && (byteLength(message) > 768
+        || !(message.payload.requests || message.payload.results).every(row => meetingIdentity(row)))) {
+        return { ok: false, reason: 'invalid_meeting_command' };
     }
     // Serialising a page only to measure it costs as much as building it.
     // A sender that sized the page while building it passes that size, and
@@ -346,7 +354,20 @@ function sameCommandCheckpoint(left, right) {
     return !!a && !!b && COMMAND_CHECKPOINT_FIELDS.every(key => a[key] === b[key]);
 }
 
+function meetingIdentity(value) {
+    if (!value || value.kind !== 'meeting' || !Number.isSafeInteger(value.characterId) || value.characterId <= 0
+        || typeof value.commandId !== 'string' || !value.commandId || value.commandId.length > 80) return null;
+    if (value.frame !== undefined) {
+        const frame = value.frame;
+        if (!Array.isArray(frame) || frame.length !== 5 || ![1, 2].includes(frame[0]) || frame[1] !== value.commandId
+            || !Number.isSafeInteger(frame[2]) || !Number.isSafeInteger(frame[3]) || frame[3] < 1 || frame[3] > 4
+            || frame[2] < 0 || frame[2] >= frame[3] || typeof frame[4] !== 'string') return null;
+    } else if (typeof value.ok !== 'boolean' || !Number.isSafeInteger(value.pageIndex)
+        || value.pageIndex < -1 || value.pageIndex > 3) return null;
+    return { characterId: value.characterId, commandId: value.commandId, kind: 'meeting' };
+}
 function commandIdentity(value) {
+    if (value?.kind === 'meeting') return meetingIdentity(value);
     if (!value || typeof value !== 'object' || Array.isArray(value)
         || !Number.isSafeInteger(value.characterId) || value.characterId <= 0
         || typeof value.commandId !== 'string' || !value.commandId || value.commandId.length > 160) return null;
@@ -413,6 +434,7 @@ module.exports = {
     commandCheckpoint,
     sameCommandCheckpoint,
     commandIdentity,
+    meetingIdentity,
     byteLength,
     competitionEvent
 };

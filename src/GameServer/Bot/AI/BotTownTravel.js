@@ -220,8 +220,8 @@ async function requestMeeting(session, bot, meeting, side) {
         const latest = await Database.fetchTradeMeeting(meeting.id);
         const held = JSON.parse(latest?.[`leg${suffix}`] || 'null');
         if (step.fee > Number(latest?.[`routeReserve${suffix}`]) && !held?.legId?.startsWith('gk:')) { finish(); return; }
-        const gatekeeper = invoke('GameServer/World/World').fetchNpcsInRadius(native.start.locX, native.start.locY, 1200)
-            .find(npc => Number(npc.fetchSelfId()) === step.npcId);
+        const gatekeeper = require('../World/NpcObjectIndex').nearTemplate(invoke('GameServer/World/World'),
+            step.npcId, native.start.locX, native.start.locY, 1200);
         if (!gatekeeper) throw Error('trade_meeting_gatekeeper_unavailable');
         const gate = { locX: gatekeeper.fetchLocX(), locY: gatekeeper.fetchLocY(), locZ: gatekeeper.fetchLocZ() };
         if (Math.hypot(bot.fetchLocX() - gate.locX, bot.fetchLocY() - gate.locY) > 200) {
@@ -270,7 +270,16 @@ async function requestMeeting(session, bot, meeting, side) {
                     await hop();
                 } });
         } else await hop();
-    } catch (error) { session.meetingTravel = undefined; throw error; }
+    } catch (error) {
+        session.meetingTravel = undefined;
+        if (error.message === 'trade_meeting_gatekeeper_unavailable') {
+            const cancelled = await Database.cancelTradeMeeting(meeting.id, 'route_unavailable');
+            for (const row of Object.values(cancelled?.coldLifeRows || {})) Life.acceptLifecycleRow(row);
+            require('../../AfkTrade/TradeMeetingService').wake(bot.fetchId());
+            return;
+        }
+        throw error;
+    }
 }
 
 module.exports = {

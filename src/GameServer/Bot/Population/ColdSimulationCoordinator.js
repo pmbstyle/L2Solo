@@ -446,15 +446,153 @@ class ColdSimulationCoordinator {
         }
         DiagnosticConfig.developerDiagnostics && (this.counters.messagesOut += 1);
         DiagnosticConfig.developerDiagnostics && (this.counters.bytesOut += valid.bytes);
-        message.bytes = valid.bytes;
+        if (!['command_request', 'command_ack'].includes(type)
+            || !(payload.requests || payload.results || []).some(row => row.kind === 'meeting')) message.bytes = valid.bytes;
         this.worker.postMessage(message);
         return message.msgId;
+    }
+
+    meetingTermsDigest(input) {
+        const request = require('../../AfkTrade/TradeMeeting').canonical(input);
+        const immutable = [request.token, request.actorA, request.actorB, request.seqA, request.seqB, request.town,
+            [request.point.locX, request.point.locY, request.point.locZ],
+            request.parties.map(party => [party.phase, party.ownerId, party.leaseId, party.hotAt, party.revision, party.sequence]),
+            request.lines.map(line => [line.payer, line.itemId, line.selfId, line.enchant, line.count, line.price, line.adId, line.adRevision])];
+        return require('node:crypto').createHash('sha256').update(JSON.stringify(immutable)).digest('hex');
+    }
+
+    requestMeetingPreparation(characterId, request) {
+        const id = Number(characterId), token = request?.token;
+        if (!this.worker || !this.ready || this.stopping || !request || ![request.actorA, request.actorB].includes(id))
+            return Promise.reject(Error('trade_meeting_worker_unavailable'));
+        const held = this.commandInflight.get(id);
+        if (held?.meetingToken === token) return held;
+        if (held?.meetingPending?.meetingToken === token) return held.meetingPending;
+        if (held?.meetingToken || held?.meetingPending) return Promise.reject(Error('trade_meeting_preparation_busy'));
+        const worker = this.worker, epoch = this.workerEpoch;
+        let resolve, reject;
+        const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+        Object.assign(promise, { meetingToken: token, epoch, worker, termsDigest: this.meetingTermsDigest(request), resolve, reject, frames: [], reservedPages: 0, reservedBytes: 0 });
+        if (held) held.meetingPending = promise; else this.commandInflight.set(id, promise);
+        // This call may originate inside a lifecycle command. Its ACK must
+        // release the worker owner before the read-only preparation starts.
+        this.commandTail.then(() => {
+            if (promise.settled) return;
+            if (!this.commandInflight.has(id)) this.commandInflight.set(id, promise);
+            if (this.commandInflight.get(id) !== promise || this.worker !== worker || this.workerEpoch !== epoch)
+                throw Error('trade_meeting_source_retired');
+            const state = LifeState.cachedState(id);
+            if (!state) throw Error('trade_meeting_missing_state');
+            this.postCollections('snapshot_page', { rows: [{ state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) }] });
+            const codec = require('../../AfkTrade/TradeMeetingCodec');
+            const msgId = `meeting:${id}:${token}`;
+            const envelope = frame => Protocol.envelope('command_request', epoch,
+                { requests: [{ kind: 'meeting', characterId: id, commandId: token, frame }] }, `${msgId}:3`);
+            const frames = codec.commandPages(request, envelope, null, { incoming: request.incoming || request.parties.map(party => party.acceptedIncoming || {}) });
+            const bytes = frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(envelope(frame))), 0);
+            // Reserve response headroom in the same global staging budget.
+            require('../../AfkTrade/TradeMeetingService').adjustTransportPages(4, Math.max(bytes, 4 * 768));
+            promise.reservedPages = 4; promise.reservedBytes = Math.max(bytes, 4 * 768);
+            for (const frame of frames) if (!this.post('command_request', { requests: [
+                { kind: 'meeting', characterId: id, commandId: token, frame }] }, `${msgId}:${frame[2]}`))
+                throw Error('trade_meeting_send_failed');
+        }).catch(error => this.finishMeetingPreparation(id, promise, null, error));
+        return promise;
+    }
+
+    finishMeetingPreparation(id, promise, proof, error) {
+        const held = this.commandInflight.get(Number(id));
+        if (promise.settled) return;
+        promise.settled = true;
+        if (held === promise) this.commandInflight.delete(Number(id)); else if (held?.meetingPending === promise) delete held.meetingPending;
+        if (promise.reservedPages) require('../../AfkTrade/TradeMeetingService')
+            .adjustTransportPages(-promise.reservedPages, -promise.reservedBytes);
+        promise.frames = null;
+        if (error) promise.reject(error); else promise.resolve(proof);
+    }
+
+    cancelMeetingPreparation(token) {
+        for (const [id, held] of this.commandInflight) {
+            const promise = held.meetingToken === token ? held : held.meetingPending?.meetingToken === token ? held.meetingPending : null;
+            if (!promise) continue;
+            this.post('command_ack', { results: [{ kind: 'meeting', characterId: id, commandId: token,
+                pageIndex: -1, ok: false, reason: 'preparation_discarded' }] });
+            this.finishMeetingPreparation(id, promise, null, Error('trade_meeting_preparation_discarded'));
+        }
+    }
+
+    meetingPreparationCurrent(proof, request) {
+        if (!proof || proof.epoch !== this.workerEpoch || proof.worker !== this.worker || this.stopping) return false;
+        const state = LifeState.cachedState(proof.characterId);
+        const authority = state && require('../Economy/EconomyCommit').authority(state), expected = proof.authority;
+        if (!authority || !expected || !['phase', 'ownerId', 'leaseId', 'hotAt', 'revision'].every(key => authority[key] === expected[key])) return false;
+        const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
+        const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+        const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+        if (!proof.dependencies?.every(([id, boardToken, marketToken, workshopToken]) => {
+            const scope = Counters.counterOf(id), grouped = boardToken.startsWith('g:');
+            return (grouped ? `g:${board.groupFingerprint(scope)}` : board.itemFingerprint(id)) === boardToken
+                && Counters.revisionOf(scope).split('.').slice(1).join('.') === marketToken
+                && (grouped ? `g:${Workshop.publicScopeDigest(scope)}` : String(Workshop.publicRecipeDigest(id))) === workshopToken;
+        })) return false;
+        return proof.sources.every(([recordId, revision]) => {
+            const rows = board.records.get(recordId);
+            return rows?.length && rows.every(row => row.revision === revision);
+        }) && proof.token === request.token;
+    }
+
+    handleMeetingRequest(message, worker, epoch) {
+        for (const request of message.payload.requests || []) {
+            const identity = Protocol.meetingIdentity(request);
+            if (!identity || !request.frame) continue;
+            const held = this.commandInflight.get(identity.characterId);
+            if (!held || held.meetingToken !== identity.commandId || held.worker !== worker || held.epoch !== epoch) {
+                this.post('command_ack', { results: [{ ...identity, pageIndex: request.frame[2], ok: true }] }, message.msgId);
+                continue;
+            }
+            let ok = true, error;
+            try {
+                const previous = held.frames[request.frame[2]];
+                if (previous && JSON.stringify(previous) !== JSON.stringify(request.frame)) throw Error('trade_meeting_consent_changed');
+                held.frames[request.frame[2]] = request.frame;
+                if (held.frames.filter(Boolean).length === request.frame[3]) {
+                    const result = require('../../AfkTrade/TradeMeetingCodec').fromPages(held.frames);
+                    if (this.meetingTermsDigest(result) !== held.termsDigest) throw Error('trade_meeting_consent_changed');
+                    const side = result.actorA === identity.characterId ? 0 : 1;
+                    const own = result.parties[side];
+                    const proof = { token: result.token, characterId: identity.characterId, sequence: own.sequence,
+                        authority: { phase: own.phase, ownerId: own.ownerId, leaseId: own.leaseId, hotAt: own.hotAt, revision: own.revision },
+                        route: own.route, certificates: result.lines.map(line => line.payer === side ? line.certificate : null),
+                        dependencies: result.dependencies || [], sources: result.lines.map(line => [line.adId, line.adRevision]), epoch, worker, approved: true };
+                    this.finishMeetingPreparation(identity.characterId, held, proof);
+                }
+            } catch (caught) { ok = false; error = caught; this.finishMeetingPreparation(identity.characterId, held, null, caught); }
+            this.post('command_ack', { results: [{ ...identity, pageIndex: request.frame[2], ok,
+                ...(error ? { reason: error.message } : {}) }] }, message.msgId);
+        }
     }
 
     routeRows(state) {
         if (this.stopping || !this.ready) return null;
         const Trip = require('../Economy/EconomicTrip');
         return this.economyRoutes.read(state.characterId, Trip.key(state), Trip.frame(state));
+    }
+
+    requestEconomyRefresh(characterId) {
+        const id = Number(characterId), state = LifeState.cachedState(id);
+        if (!state || this.stopping || !this.ready) return false;
+        const owned = this.commandInflight.get(id);
+        if (owned) {
+            if (!owned.meetingToken && !owned.economyRefreshPending) {
+                owned.economyRefreshPending = true;
+                this.commandTail.then(() => {
+                    if (this.commandInflight.get(id) !== owned) this.requestEconomyRefresh(id);
+                }).catch(error => this.recordError(error));
+            }
+            return true;
+        }
+        this.postCollections('snapshot_page', { rows: [{ state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) }] });
+        return !!this.post('snapshot_page', { rows: [], economyOwnerId: id, reconcile: true });
     }
 
     requestEconomyLook(characterId) {
@@ -546,12 +684,21 @@ class ColdSimulationCoordinator {
         // release:1): a duplicate is the same id from the same worker epoch.
         if (!this.remember(`${epoch}:${message.msgId}`)) {
             DiagnosticConfig.developerDiagnostics && (this.counters.duplicateMessages += 1);
+            if (message.type === 'command_request' && message.payload.requests?.some(row => row.kind === 'meeting'))
+                this.handleMeetingRequest(message, worker, epoch);
             return;
         }
         DiagnosticConfig.developerDiagnostics && (this.counters.messagesIn += 1);
         DiagnosticConfig.developerDiagnostics && (this.counters.bytesIn += valid.bytes);
         const payload = message.payload || {};
         switch (message.type) {
+        case 'command_ack':
+            for (const result of payload.results || []) {
+                const held = this.commandInflight.get(result.characterId);
+                if (held?.meetingToken === result.commandId && result.ok === false)
+                    this.finishMeetingPreparation(result.characterId, held, null, Error(result.reason || 'trade_meeting_preparation_refused'));
+            }
+            break;
         case 'economy_route_result':
             if (!this.stopping) this.economyRoutes.accept(payload);
             break;
@@ -590,6 +737,23 @@ class ColdSimulationCoordinator {
                 if (waiter) {
                     this.waiters.delete(message.msgId);
                     waiter.resolve(payload);
+                }
+            } else if (payload.phase === 'economy_plan_ready' && !this.stopping) {
+                const id = Number(payload.characterId), state = LifeState.cachedState(id);
+                const current = state && require('../Economy/EconomyCommit').authority(state);
+                if (current && payload.authority && Object.keys(current).every(key => current[key] === payload.authority[key])) {
+                    const beforeWrite = () => {
+                        if (this.worker !== worker || this.workerEpoch !== epoch) throw Error('economy_refresh_source_retired');
+                    };
+                    const decision = payload.economyDecision;
+                    if (!decision || decision.updatedAt !== Number(state.updatedAt || 0)
+                        || decision.key !== require('./ColdEconomyDecision').stateKey(state)) break;
+                    this.economyDecisions.hold(id, decision);
+                    try {
+                        const result = await invoke('GameServer/Bot/Economy/BotAfkMarketService').executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
+                            .catch(error => { this.recordError(error); return null; });
+                        if (result?.buyPending) this.requestEconomyRefresh(id);
+                    } finally { this.economyDecisions.release(id); }
                 }
             } else if (payload.phase === 'economy_decided' && !this.stopping) {
                 const id = Number(payload.characterId), state = LifeState.cachedState(id);
@@ -1743,6 +1907,7 @@ class ColdSimulationCoordinator {
                     .executePlan(state, entry.proposal.economyPlan,
                         { beforeWrite, preparedState, step: work => this.step('economyPlan', id, work) }));
                 state = LifeState.cachedState(id) || applied?.state || state;
+                if (applied?.buyPending) this.requestEconomyRefresh(id);
             } finally {
                 this.economyDecisions.release(id);
                 if (Config.developerDiagnostics) this.economyPlanCount++;
@@ -1899,6 +2064,9 @@ class ColdSimulationCoordinator {
     }
 
     handleCommandRequest(message, worker = this.worker, epoch = this.workerEpoch) {
+        if ((message.payload.requests || []).some(request => request.kind === 'meeting')) {
+            this.handleMeetingRequest(message, worker, epoch); return;
+        }
         const sourceCurrent = () => this.worker === worker && this.workerEpoch === epoch;
         const requests = (message.payload.requests || []).flatMap((request) => {
             const parsed = Protocol.commandIdentity(request);
@@ -2190,6 +2358,10 @@ class ColdSimulationCoordinator {
 
     onWorkerExit(code, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        for (const [id, held] of this.commandInflight) {
+            const preparation = held.meetingToken ? held : held.meetingPending;
+            if (preparation) this.finishMeetingPreparation(id, preparation, null, Error('trade_meeting_worker_exited'));
+        }
         this.stopDiagnosticSelection?.();
         this.stopDiagnosticSelection = null;
         this.cancelLeaseRenewalRound();

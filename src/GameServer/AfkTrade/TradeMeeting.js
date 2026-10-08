@@ -59,17 +59,22 @@ function create(io) {
         return states;
     }
     function result(row, coldLifeRows = {}) { return { meeting: row, pending: row.state === 'accepted', coldLifeRows }; }
-    function accept(input) {
+    function accept(input, preparation) {
         const request = canonical(input), terms = JSON.stringify(request);
         const replay = one('SELECT * FROM board_trade_meetings WHERE token=?', [request.token]);
         if (replay) {
             if (replay.terms !== terms) throw Error('trade_meeting_consent_changed');
             return result(replay);
         }
+        // Saved consent wins before transient epoch/source/owner validation.
+        const fresh = preparation?.freshPreparation === true && typeof preparation.validatePreparation === 'function';
+        if (fresh && preparation.validatePreparation(request) !== true) throw Error('trade_meeting_preparation_changed');
         const actors = [request.actorA, request.actorB], sequences = [request.seqA, request.seqB];
-        const totals = [0, 0], aggregate = new Map(), protectedTotals = new Map();
+        const totals = [0, 0], aggregate = new Map(), protectedTotals = new Map(), quoteTotals = new Map();
         for (const line of request.lines) {
             totals[line.payer] = sum(totals[line.payer], line.count * line.price);
+            const quoteKey = `${line.adId}:${line.selfId}:${line.enchant}`;
+            quoteTotals.set(quoteKey, sum(quoteTotals.get(quoteKey) || 0, line.count));
             const seller = 1 - line.payer, key = `${seller}:${line.itemId}`;
             aggregate.set(key, sum(aggregate.get(key) || 0, line.count));
             const protectedKey = `${seller}:${line.selfId}`;
@@ -84,13 +89,14 @@ function create(io) {
             if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || (life.simulationOwner || null) !== party.ownerId || (life.simulationLeaseId || null) !== party.leaseId
                 || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
+            if (life && party.phase === 'hot' && !io.position(id)?.alive) throw Error('trade_meeting_authority_changed');
             if (!life) {
                 const position = io.position(id);
                 if (!position?.alive || !position.available || Math.hypot(position.locX - request.point.locX,
                     position.locY - request.point.locY, position.locZ - request.point.locZ) > 200) throw Error('trade_meeting_player_at_point');
             }
             if (one('SELECT 1 FROM board_settlements WHERE ownerId=? LIMIT 1', [id])) throw Error('trade_meeting_delivery_pending');
-            if (life) for (const line of request.lines.filter(line => line.payer === side)) {
+            if (life && !fresh) for (const line of request.lines.filter(line => line.payer === side)) {
                 const adId = line.needAdId || line.adId;
                 const ad = adId && one('SELECT * FROM afk_trade_shops WHERE id=?', [adId]);
                 const need = ad && one('SELECT * FROM afk_trade_lines WHERE shopId=? AND selfId=? LIMIT 1', [adId, line.selfId]);
@@ -101,16 +107,17 @@ function create(io) {
                 if (JSON.stringify(original.slice(3)) !== JSON.stringify(line.certificate.slice(3))
                     || intent.amount > need.count || intent.price > need.price) throw Error('trade_meeting_need_changed');
             }
+            if (life && fresh && request.lines.some(line => line.payer === side && !line.certificate)) throw Error('trade_meeting_need_changed');
             const outgoing = sum(totals[side], party.route.fee);
             if (life) funding(id, { row: life }, outgoing, { r: Math.min(...request.lines.filter(line => line.payer === side)
                 .map(line => line.certificate ? Intent.decode(line.certificate).valueRate : Infinity)), free: totals[side] === 0 });
             // A public bid is evidence of the owner's need, not collateral.
             for (const line of request.lines.filter(line => line.payer === side && line.adId)) {
                 const ad = one('SELECT * FROM afk_trade_shops WHERE id=?', [line.adId]);
-                const adLine = ad && one('SELECT * FROM afk_trade_lines WHERE shopId=? LIMIT 1', [line.adId]);
+                const adLine = ad && one('SELECT * FROM afk_trade_lines WHERE shopId=? AND selfId=? AND enchant=? LIMIT 1', [line.adId, line.selfId, line.enchant]);
                 if (!ad || ad.ownerId !== (ad.storeType === 3 ? id : actors[1 - side]) || ad.custodyPolicy !== 1 || ad.revision !== line.adRevision
-                    || !adLine || adLine.selfId !== line.selfId || adLine.price !== line.price || adLine.count < line.count) throw Error('trade_meeting_quote_changed');
-                if (ad.storeType === 3 && (!line.certificate || adLine.intentJson !== JSON.stringify(line.certificate)
+                    || !adLine || adLine.selfId !== line.selfId || adLine.price !== line.price || adLine.count < quoteTotals.get(`${line.adId}:${line.selfId}:${line.enchant}`)) throw Error('trade_meeting_quote_changed');
+                if (!fresh && ad.storeType === 3 && (!line.certificate || adLine.intentJson !== JSON.stringify(line.certificate)
                     || adLine.intentRevision !== party.needRevision || party.needRevision !== party.revision)) throw Error('trade_meeting_need_changed');
             }
             debit(id, outgoing);

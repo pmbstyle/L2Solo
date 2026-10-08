@@ -76,7 +76,7 @@ class ColdOccupationPlanner {
     read(entry, id) {
         id = Number(id);
         if (!(id > 0) || entry.reads.has(id)) return;
-        entry.reads.set(id, this.sourceToken(id));
+        entry.reads.set(id, this.sourceToken(id, entry.input));
         let owners = this.dependencies.get(id);
         if (!owners) this.dependencies.set(id, owners = new Set());
         owners.add(entry.id);
@@ -90,10 +90,11 @@ class ColdOccupationPlanner {
     // Producer dispatch names an item; it never walks all owners or a board.
     sourceChanged(id) {
         id = Number(id);
-        const token = this.sourceToken(id);
         for (const owner of this.dependencies.get(id) || []) {
             const entry = this.slots.get(owner);
-            if (!entry || entry.reads.get(id) === token) continue;
+            if (!entry) continue;
+            const token = this.sourceToken(id, entry.input);
+            if (entry.reads.get(id) === token) continue;
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
             entry.reads.set(id, token); entry.dirty = true;
@@ -179,7 +180,7 @@ class ColdOccupationPlanner {
             if (!next.done) {
                 const [id, token, scope] = next.value;
                 entry.cursor[3]++;
-                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id)) !== token) {
+                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id, entry.input)) !== token) {
                     entry.dirty = true; entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
                 }
                 return;
@@ -213,7 +214,8 @@ class ColdOccupationPlanner {
                 if (units && this.now() - started >= SLICE_MS) break;
                 const unitStarted = DiagnosticConfig.developerDiagnostics ? this.now() : 0;
                 try { this.unit(entry); }
-                catch (error) { entry.error = String(error?.message || error); this.finish(entry, unknownWorkshop()); }
+                catch (error) { entry.error = String(error?.message || error); this.finish(entry, entry.input.mode === 'meeting'
+                    ? { refused: true, reason: entry.error } : unknownWorkshop()); }
                 const duration = DiagnosticConfig.developerDiagnostics ? this.now() - unitStarted : 0;
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
                 if (duration > SLICE_MS) DiagnosticConfig.developerDiagnostics && (this.stats.overBudgetUnits++);
