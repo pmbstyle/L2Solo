@@ -30,7 +30,7 @@ function publish(owner, rows, context = {}) {
         Diagnostics.count('consumption', 'items', reason, actual);
         if (Diagnostics.enabled(owner)) Diagnostics.push({ owner: Number(owner), phase: 'consumed', item,
             source: context.source || 'cold_commit', before, after, actual, reason,
-            commandId: context.commandId, revision: context.revision, sequence: context.sequence });
+            commandId: context.commandId, proposalId: context.proposalId, revision: context.revision, sequence: context.sequence });
     }
 }
 function drop(proposal) {

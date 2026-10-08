@@ -61,11 +61,12 @@ async function main() {
         for (const accepted of [false, true]) {
             const queue = new ColdCommitQueue({ now: () => 1000, prepare: async e => e.baseState,
                 commit: async entries => entries.map(() => ({ ok: accepted, characterId: 900 })),
-                afterCommit: async entry => Consumption.publish(900, entry.proposal.result.consumptionDiagnostics, { commandId: 'consume-900', revision: 1 }) });
+                afterCommit: async entry => Consumption.publish(900, entry.proposal.result.consumptionDiagnostics, { commandId: 'consume-900', proposalId: entry.proposal.proposalId, revision: 1 }) });
             queue.enqueue(p); await queue.flushCharacter(900);
             assert.strictEqual(facts.length, accepted ? 2 : 0, 'only an accepted durable commit publishes consumption');
         }
         assert.strictEqual(facts[0].commandId, 'consume-900');
+        assert.strictEqual(facts[0].proposalId, 'consume-900');
         assert(totals.some(row => row[0] === 'consumption' && row[1] === 'items' && row[2] === 'potion' && row[3] === 2));
         const f = fixture(); f.backpack.consumeSoulshot(f.session);
         assert.strictEqual(facts.at(-1).actual, 2);

@@ -51,12 +51,12 @@ async function run() {
     assert.equal(ack.retryAfterMs, undefined);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
     Consumption.publish = (...args) => consumptionRows.push(args);
-    const entry = { nextState: state, proposal: { proposalId: 'consume-proposal', token: { revision: 4 }, commandId: 'consume-command', sequence: 9, result: { events: [], consumptionDiagnostics: [[1539, 5, 3, 1]] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
+    const entry = { nextState: state, proposal: { proposalId: 'consume-proposal', token: { revision: 4 }, commandId: 'consume-command', proposalId: 'consume-proposal', sequence: 9, result: { events: [], consumptionDiagnostics: [[1539, 5, 3, 1]] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
         partyResolution: { party: { partyId: 2, status: 'active', memberIds: [1] } } } };
     logs.length = 0;
     await coordinator.afterCommit(entry, { revision: 5 });
     assert.equal(partyWrites, 1); assert.equal(resolves, 1); assert.equal(announcements, 1);
-    assert.deepEqual(consumptionRows[0], [1, [[1539, 5, 3, 1]], { source: 'cold_commit', commandId: 'consume-command', revision: 5, sequence: 9 }]);
+    assert.deepEqual(consumptionRows[0], [1, [[1539, 5, 3, 1]], { source: 'cold_commit', commandId: 'consume-command', proposalId: 'consume-proposal', revision: 5, sequence: 9 }]);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
     coordinator.economyDecisions.decided = () => null;
     stub(Events, 'recordMany', () => { throw Error('journal_probe'); });
@@ -79,6 +79,8 @@ async function run() {
     assert.equal(resolves, 4); assert.equal(announcements, 4);
     assert.equal(coordinator.counters.afterCommitStepErrors.clanEvents, 1);
     assert.equal(logs.filter(line => line.includes('postcommit clanEvents failed')).length, 1);
+    await coordinator.afterCommit(entry, { row: { simulationRevision: 6 } });
+    assert.equal(consumptionRows.at(-1)[2].revision, 6, 'row-form durable revision is also accepted authority');
     invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = false;
     Consumption.publish = () => { throw Error('consumption publisher called off'); };
     await coordinator.afterCommit(entry);
