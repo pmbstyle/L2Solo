@@ -76,7 +76,7 @@ function publicPrice(id, buyer, context) {
     const counter = Counters.counterOf(id);
     const index = Counters.counter(counter, 1000).index;
     if (first > 0 && index !== null) observations.push([Math.log(first) + index, 0.5]);
-    const demand = PriceBelief.demandValue(id, 1000);
+    const demand = PriceBelief.demandValue(id, context);
     if (demand > 0) observations.push([Math.log(demand), 0.3]);
     if (first > 0) observations.push([Math.log(first), 0.3]);
     assert(observations.length > 0, 'the selected item has a public price input');

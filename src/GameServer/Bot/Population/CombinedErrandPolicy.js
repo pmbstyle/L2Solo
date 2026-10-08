@@ -2,7 +2,10 @@
 
 const ERRAND_MS = 30 * 60 * 1000;
 
-function key(errand) { return `${errand.town}:${Number(errand.selfId)}:${errand.purpose || 'supply'}:${errand.tag || ''}`; }
+function key(errand) {
+    const routeTag = Array.isArray(errand.tag) && errand.tag.length === 1 && [5, -5, -1].includes(errand.tag[0]);
+    return `${errand.town}:${Number(errand.selfId)}:${errand.purpose || 'supply'}:${routeTag ? '' : errand.tag || ''}`;
+}
 
 function pending(state, timestamp = Date.now(), town = null) {
     const unique = new Map();

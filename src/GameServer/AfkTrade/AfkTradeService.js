@@ -565,7 +565,7 @@ async function syncColdCharacter(characterId, previousState, reason, rows = [], 
     // fenceAfkTradePartiesUnsafe): that row is the new state, and a save here
     // would be refused. The worker's retry starts from this cached row.
     const fenced = options.coldLifeRows?.[Number(characterId)];
-    if (fenced) return invoke('GameServer/Bot/Population/BotLifeState').acceptLifecycleRow(fenced);
+    if (fenced) return require('../Bot/Economy/EconomyCommit').acceptRow(fenced);
     if (!previousState) return null;
     // A hot row belongs to the actor in the world: syncOnlineInventory has
     // refreshed its backpack and markCold writes the row. A cold snapshot written here would flip it to cold and roll back
@@ -638,6 +638,12 @@ async function settleOwners(ownerIds = []) {
 
 async function finalizeTrade(result, kind, counterpartyId, previousState = null, options = {}) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    if (result.replayed) {
+        syncOnlineInventory(counterpartyId, result.counterpartyInventory);
+        const row = result.coldLifeRows?.[Number(counterpartyId)];
+        const coldState = row ? require('../Bot/Economy/EconomyCommit').acceptRow(row) : null;
+        return { ...result, coldState };
+    }
     for (const [id, counts] of Object.entries(result.marketTrades || {})) {
         LifeState.acceptMarketTrades(Number(id), counts);
         const session = onlineSession(Number(id));
@@ -916,38 +922,76 @@ async function activate(session, store) {
 async function buyFromShop(characterId, store, selfId, amount, options = {}) {
     const line = (store?.items || []).find((entry) => (
         Number(entry.selfId) === Number(selfId)
-        && Number(entry.count) > 0
+        && (Number(entry.count) > 0 || options.economyCommand)
         && (!options.lineId || Number(entry.afkTradeLineId) === Number(options.lineId))
     ));
-    if (!store?.afkTrade || Number(store.storeType) !== SELL || !line) throw new Error('afk_trade_stock_changed');
-    const result = await Database.buyFromAfkTradeShop(characterId, {
+    if (!store?.afkTrade || Number(store.storeType) !== SELL || (!line && !options.economyCommand)) throw new Error('afk_trade_stock_changed');
+    const admission = await admitBotTrade(characterId, require('../Bot/Economy/EconomyCommit').KINDS.afkBuy, options);
+    let result;
+    try { result = await Database.buyFromAfkTradeShop(characterId, {
         shopId: store.shopId,
         ownerId: store.ownerId,
-        lineId: line.afkTradeLineId,
+        lineId: options.lineId || line?.afkTradeLineId,
         amount,
-        expectedPrice: options.expectedPrice ?? line.price,
-        expectedRevision: options.expectedRevision
-    });
-    return finalizeTrade(result, 'sale', characterId, options.coldState, options);
+        expectedPrice: options.expectedPrice ?? line?.price,
+        expectedRevision: options.expectedRevision,
+        economyCommand: admission.command,
+        validate: admission.validate,
+        funding: options.funding
+    }); } finally { require('../Bot/Economy/EconomyCommit').finish(characterId, admission.command); }
+    return deliverTrade({ ...result, economyCommand: admission.command }, 'sale', characterId, admission.state || options.coldState, options);
 }
 
 async function sellToShop(characterId, store, selfId, amount, options = {}) {
     const line = (store?.items || []).find((entry) => (
         Number(entry.selfId) === Number(selfId)
-        && Number(entry.count) > 0
+        && (Number(entry.count) > 0 || options.economyCommand)
         && (!options.lineId || Number(entry.afkTradeLineId) === Number(options.lineId))
     ));
-    if (!store?.afkTrade || Number(store.storeType) !== BUY || !line) throw new Error('afk_trade_demand_changed');
-    const result = await Database.sellToAfkTradeShop(characterId, {
+    if (!store?.afkTrade || Number(store.storeType) !== BUY || (!line && !options.economyCommand)) throw new Error('afk_trade_demand_changed');
+    const admission = await admitBotTrade(characterId, require('../Bot/Economy/EconomyCommit').KINDS.afkSell, options);
+    let result;
+    try { result = await Database.sellToAfkTradeShop(characterId, {
         shopId: store.shopId,
         ownerId: store.ownerId,
-        lineId: line.afkTradeLineId,
+        lineId: options.lineId || line?.afkTradeLineId,
         objectId: options.objectId,
         amount,
-        expectedPrice: options.expectedPrice ?? line.price,
-        expectedRevision: options.expectedRevision
-    });
-    return finalizeTrade(result, 'purchase', characterId, options.coldState);
+        expectedPrice: options.expectedPrice ?? line?.price,
+        expectedRevision: options.expectedRevision,
+        economyCommand: admission.command,
+        validate: admission.validate
+    }); } finally { require('../Bot/Economy/EconomyCommit').finish(characterId, admission.command); }
+    return deliverTrade({ ...result, economyCommand: admission.command }, 'purchase', characterId, admission.state || options.coldState, options);
+}
+
+async function admitBotTrade(characterId, kind, options) {
+    const session = onlineSession(characterId);
+    if (!options.coldState && !isBotSession(session) && !options.economyCommand) return {};
+    const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+    const state = options.coldState || LifeState.cachedState(characterId);
+    if (!state) throw Error('economy_owner_missing');
+    const validate = session ? () => {
+        if (onlineSession(characterId) !== session || session.actor?.isDead?.()) throw Error('economy_session_changed');
+    } : null;
+    validate?.();
+    const admitted = await require('../Bot/Economy/EconomyCommit').admit(state, kind, options.economyCommand);
+    // The original is retained by the caller for an ordinary retry.
+    if (Object.isExtensible(options)) options.economyCommand = admitted.command;
+    return { ...admitted, validate };
+}
+
+async function deliverTrade(result, kind, characterId, state, options) {
+    try { return await finalizeTrade(result, kind, characterId, state, options); }
+    catch (error) {
+        // The physical transaction already committed. Auxiliary delivery may
+        // wait, but a counter/notification failure cannot become a new debit.
+        utils.infoWarn('AfkTrade', 'postcommit delivery waits for %d: %s', characterId, error.message || error);
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const row = result.coldLifeRows?.[Number(characterId)];
+        const coldState = row ? require('../Bot/Economy/EconomyCommit').acceptRow(row) : LifeState.cachedState(characterId);
+        return { ...result, coldState, deliveryPending: true };
+    }
 }
 
 function findProjection(objectId) {

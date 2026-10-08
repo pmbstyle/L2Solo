@@ -67,16 +67,14 @@ const now = 1800000000000;
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const options = (extra = {}) => ({ now, board, persona: null, npcOffersFor: () => [], findSpot: () => null, ...extra });
 MarketCounters.reset();
-// Nobody buys these anywhere: no board line. An item whose buy-back is close
-// to its own value goes to the NPC; one worth far more is kept rather than
-// sold at a loss (caution is loss aversion), while it has room.
+// No supported finite item demand exists. The public first price is not an
+// owner-blind recipe willingness or an observed listing lifetime.
 const withoutMarket = MarketListingPolicy.evaluate(state, options());
 assert.strictEqual(withoutMarket.listings.length, 0, 'nobody buys these: no board line');
-const atLoss = withoutMarket.decisions.filter((decision) => decision.priced.ask.npcValue < 0);
-const nearValue = withoutMarket.decisions.filter((decision) => decision.priced.ask.npcValue > 0);
-assert(atLoss.length && nearValue.length, 'fixtures of both kinds');
-assert(atLoss.filter((decision) => decision.action === 'warehouse').length >= atLoss.length - 1, 'kept rather than sold at a loss');
-assert(nearValue.filter((decision) => decision.action === 'npc').length >= nearValue.length - 1, 'sold to the NPC');
+assert(withoutMarket.decisions.every(decision => decision.priced.market.known === false
+    && decision.priced.ask.known === false), 'unknown forecasts stay explicit for the entire unchanged bag');
+assert(withoutMarket.decisions.every(decision => ['npc', 'warehouse'].includes(decision.action)),
+    'only immediate NPC liquidation or remaining physical goods have supported outcomes');
 // No room to keep (a third copy of a gear piece): the NPC.
 const gear = { characterId: 4243, level: 40, adena: 50000, stats: { generatedCold: true },
     inventory: { [lowGradeGear.selfId]: { selfId: Number(lowGradeGear.selfId), amount: 1, kind: lowGradeGear.template.kind } } };
@@ -86,7 +84,18 @@ assert.strictEqual(full.decisions[0].action, 'npc', 'no room to keep it and nobo
 for (let deal = 0; deal < 60; deal++) {
     for (const selfId of items) MarketCounters.deal(selfId, 3000, 20, now - (60 - deal) * 60000, 1);
 }
-const sale = MarketListingPolicy.evaluate(state, options());
+const unsupportedSale = MarketListingPolicy.evaluate(state, options());
+assert.strictEqual(unsupportedSale.listings.length, 0, 'sixty kind deals still do not prove finite listing demand');
+assert(unsupportedSale.decisions.every(decision => decision.priced.market.known === false));
+// Explicit pure conditional segment tests slots and rolls. It never claims
+// that the native counter produced arrival, exposure or lifetime evidence.
+// Wallet, bag and all recorded deal quotes remain the original values.
+const suppliedOptions = (extra = {}) => options({ ...extra, demandFor: selfId => ({
+    known: true, origin: 'fixture_finite_demand', authority: { fixture: 'listing_slots' },
+    selfId, applicableUnits: 1000, delayHours: 0,
+    availability: { from: extra.now ?? now, until: extra.now ?? now }
+}) });
+const sale = MarketListingPolicy.evaluate(state, suppliedOptions());
 assert.strictEqual(sale.listings.length, MarketListingPolicy.BOARD_SLOTS, 'eight board slots: 3 shop lines + 5 sell ads');
 assert.strictEqual(sale.decisions.filter((decision) => decision.reason === 'no_board_slot').length,
     items.length - MarketListingPolicy.BOARD_SLOTS, 'the rest is kept, not dumped');
@@ -94,10 +103,10 @@ for (const listing of sale.listings) {
     assert(listing.price > 0 && listing.marketReason === 'expected_value');
     assert.strictEqual(listing.count, 100, 'all units of the lot');
 }
-const again = MarketListingPolicy.evaluate(state, options());
+const again = MarketListingPolicy.evaluate(state, suppliedOptions());
 assert.deepStrictEqual(again.listings.map((item) => [item.selfId, item.price]), sale.listings.map((item) => [item.selfId, item.price]),
     'one decision point, one roll: the same answer when asked again');
-const other = MarketListingPolicy.evaluate(state, options({ now: now + 1 }));
+const other = MarketListingPolicy.evaluate(state, suppliedOptions({ now: now + 1 }));
 assert(other.listings.some((item, at) => item.selfId !== sale.listings[at]?.selfId || item.price !== sale.listings[at].price)
     || other.listings.length !== sale.listings.length, 'another decision point rolls anew');
 // Only selected lines carry their current quote and public event cursors.
@@ -112,14 +121,14 @@ for (const listing of sale.listings) {
 
 // A line the bot has keeps its slot and its price; the free slots go by the roll.
 const kept = new Map([[items[0], 4321], [items[1], 4322]]);
-const review = MarketListingPolicy.evaluate(state, options({ kept, slots: 3 }));
+const review = MarketListingPolicy.evaluate(state, suppliedOptions({ kept, slots: 3 }));
 assert.deepStrictEqual(review.listings.filter((item) => kept.has(item.selfId)).map((item) => [item.selfId, item.price])
     .sort((a, b) => a[0] - b[0]), [[items[0], 4321], [items[1], 4322]]);
 assert.strictEqual(review.listings.length, 3, 'one free slot left');
 
 // A recipe has no first place and no rule of its own: it competes by its gain.
 const recipeState = { ...state, inventory: { ...bag, 1804: { selfId: 1804, amount: 1, kind: 'Other.Recipe' } } };
-const recipeSale = MarketListingPolicy.evaluate(recipeState, options({ recipeFirst: true }));
+const recipeSale = MarketListingPolicy.evaluate(recipeState, suppliedOptions({ recipeFirst: true }));
 const recipeDecision = recipeSale.decisions.find((decision) => decision.item.selfId === 1804);
 assert.strictEqual(recipeDecision.reason === 'expected_value' || recipeDecision.reason === 'no_board_slot', true);
 MarketCounters.reset();

@@ -28,9 +28,14 @@ async function contract(name, work) {
 }
 
 (async () => {
-    await contract('sale producer sends line price/cursors without personal item book', () => {
-        const sale = Listings.evaluate(state, { now, board, persona: null, npcOffersFor: () => [], findSpot: () => null });
-        assert.strictEqual(sale.listings.length, 1, 'active demand yields a selected line');
+    await contract('sale producer sends line cursors only for a declared finite prepared opportunity', () => {
+        const unsupported = Listings.evaluate(state, { now, board, persona: null, npcOffersFor: () => [], findSpot: () => null });
+        assert.strictEqual(unsupported.listings.length, 0, 'kind-level historical deals alone do not create item exposure or lifetime');
+        const economy = { board, hourAdena: 10000, moneyPrice: .0001, gapHorizonHours: 1, worth: () => 0,
+            demandFor: () => ({ origin: 'prepared_applicability', authority: { observationId: 1 }, selfId: 1864,
+                applicableUnits: 100, delayHours: 0, availability: { from: now, until: now } }) };
+        const sale = Listings.evaluate(state, { now, board, economy, persona: null, npcOffersFor: () => [], findSpot: () => null });
+        assert.strictEqual(sale.listings.length, 1, 'declared finite evidence yields a selected line');
         const line = sale.listings[0];
         assert(line.pricing, 'selected quote carries its own pricing state');
         assert.strictEqual(line.pricing.price, line.price);
@@ -50,7 +55,8 @@ async function contract(name, work) {
         const key = Counters.counterOf(1864);
         const first = Counters.firstPrice(1864, now);
         const index = Counters.counter(key, now).index;
-        const demand = Belief.demandValue(1864, now);
+        const demand = Belief.demandValue(1864, {});
+        assert.strictEqual(demand, null, 'unprepared owner craft willingness is unknown');
         // The original board is empty and all60 authored deals are3000.
         assert.strictEqual(board.list(1864, SELL).length, 0);
         assert.strictEqual(board.list(1864, BUY).length, 0);

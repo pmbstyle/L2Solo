@@ -3,87 +3,10 @@
 const { offerFields } = require('../../AfkTrade/BoardIndex');
 const SHOT_RECIPES = Object.freeze([20, 21, 22, 23, 24, 317, 318, 319, 320, 321, 323, 324, 325, 326, 327]);
 const CRYSTALS = Object.freeze({ d: 1458, c: 1459, b: 1460, a: 1461, s: 1462 });
-const SLOT = Symbol('shot-demand-slot');
 const positive = value => Math.max(0, Number(value) || 0);
 
-// IDs are the only variable holder storage. A vector stores exact deltas from
-// its smallest ID; the native population's dense IDs need one or two bytes.
-class RecipeIds {
-    constructor() { this.bytes = new Uint8Array(0); this.width = 1; this.base = 0; }
-    get length() { return this.bytes.length / this.width; }
-    get(at) {
-        const offset = at * this.width;
-        if (this.width === 1) return this.base + this.bytes[offset];
-        if (this.width === 2) return this.base + this.bytes[offset] + this.bytes[offset + 1] * 256;
-        if (this.width === 3) return this.base + this.bytes[offset] + this.bytes[offset + 1] * 256 + this.bytes[offset + 2] * 65536;
-        const view = new DataView(this.bytes.buffer);
-        return this.base + (this.width === 4 ? view.getUint32(offset, true) : view.getFloat64(offset, true));
-    }
-    write(bytes, at, value, width = this.width) {
-        const offset = at * width;
-        if (width === 1) bytes[offset] = value;
-        else if (width === 2) { bytes[offset] = value % 256; bytes[offset + 1] = Math.floor(value / 256); }
-        else if (width === 3) {
-            bytes[offset] = value % 256; bytes[offset + 1] = Math.floor(value / 256) % 256;
-            bytes[offset + 2] = Math.floor(value / 65536);
-        } else {
-            const view = new DataView(bytes.buffer);
-            width === 4 ? view.setUint32(offset, value, true) : view.setFloat64(offset, value, true);
-        }
-    }
-    remove(ownerId) {
-        for (let at = 0; at < this.length; at++) if (this.get(at) === ownerId) {
-            const offset = at * this.width, bytes = new Uint8Array(this.bytes.length - this.width);
-            bytes.set(this.bytes.subarray(0, offset)); bytes.set(this.bytes.subarray(offset + this.width), offset);
-            this.bytes = bytes;
-            if (!bytes.length) { this.width = 1; this.base = 0; }
-            return true;
-        }
-        return false;
-    }
-    insert(at, ownerId) {
-        let base = ownerId, maximum = ownerId;
-        for (let old = 0; old < this.length; old++) { const id = this.get(old); base = Math.min(base, id); maximum = Math.max(maximum, id); }
-        const delta = maximum - base;
-        const width = delta <= 0xff ? 1 : delta <= 0xffff ? 2 : delta <= 0xffffff ? 3 : delta <= 0xffffffff ? 4 : 8;
-        const bytes = new Uint8Array((this.length + 1) * width);
-        for (let old = 0; old < this.length; old++) this.write(bytes, old < at ? old : old + 1, this.get(old) - base, width);
-        this.write(bytes, at, ownerId - base, width); this.width = width; this.base = base; this.bytes = bytes;
-    }
-}
-
-function holderView(rowFor, size) {
-    // ARCH-NOTE: preserve the native sorted-array reader contract without a
-    // second owner map or cached {characterId,price} rows. A read creates only
-    // its requested row from the canonical lifecycle object already retained
-    // elsewhere; taking a snapshot never walks holders.
-    // Dense IDs retain exact deltas; wider four/eight-byte fallbacks retain
-    // correctness for populations outside the native ID range.
-    return new Proxy([], {
-        get(target, key, receiver) {
-            if (key === 'length') return size();
-            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) {
-                const at = Number(key);
-                return at < size() ? rowFor(at) : undefined;
-            }
-            return Reflect.get(target, key, receiver);
-        },
-        has(target, key) {
-            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key)) return Number(key) < size();
-            return Reflect.has(target, key);
-        },
-        ownKeys() { return [...Array.from({ length: size() }, (_, at) => String(at)), 'length']; },
-        getOwnPropertyDescriptor(target, key) {
-            if (typeof key === 'string' && /^(0|[1-9]\d*)$/.test(key) && Number(key) < size()) {
-                return { configurable: true, enumerable: true, writable: false, value: rowFor(Number(key)) };
-            }
-            return Reflect.getOwnPropertyDescriptor(target, key);
-        },
-        set() { return false; },
-        deleteProperty() { return false; }
-    });
-}
-
+// Only public indexed lines enter a seller's view. Lifecycle updates need
+// no second foreign inventory/wish/level/wallet store or sorted holder vector.
 class ShotMarketIndex {
     constructor(options = {}) {
         this.itemTemplates = options.itemTemplates instanceof Map ? options.itemTemplates
@@ -93,253 +16,101 @@ class ShotMarketIndex {
         this.board = options.board || (() => null);
         this.npcOffers = options.npcOffers || (() => []);
         this.stockFor = options.stockFor || (() => ({}));
-        this.stateFor = options.stateFor || (() => null);
-        this.demandSignal = options.demandSignal || (() => null);
-        this.priceFor = options.priceFor || ((_state, _item, template) => positive(template?.template?.price));
-        this.keeps = new WeakMap();
-        this.keepers = 0;
-        this.demand = new Map(this.shotIds.map(id => [id, new RecipeIds()]));
-        this.recipeOwners = new Map(this.recipeIds.map(id => [id, new RecipeIds()]));
-        this.boardDemand = new Map(this.shotIds.map(id => [id, []]));
-        this.shotDemand = new Map(this.shotIds.map(id => {
-            const ids = this.demand.get(id);
-            return [id, holderView(at => at < ids.length ? this.signalFor(id, ids.get(at))
-                : this.boardDemand.get(id)[at - ids.length], () => ids.length + this.boardDemand.get(id).length)];
-        }));
-        this.recipeHolders = new Map(this.recipeIds.map(id => {
-            const ids = this.recipeOwners.get(id);
-            return [id, holderView(at => { const characterId = ids.get(at);
-                return { characterId, price: this.recipePrice(id, characterId) }; }, () => ids.length)];
-        }));
-        this.unlistedSupply = new Map(this.shotIds.map(id => [id, 0]));
-        this.recipeTotals = new Map(this.recipeIds.map(id => [id, 0]));
-        this.shotSupply = new Map();
-        this.shotMinPrice = new Map();
-        this.recipeStock = new Map();
-        this.npcPrice = new Map();
-        this.gear = new Map();
-        this.boardCache = new Map();
-        this.boardBuys = new Map();
-        this.boardBuyOwners = new Map();
-        this.npcSource = null;
-        this.activeBoard = null;
-        this.gearIds = [...this.itemTemplates].filter(([, item]) => CRYSTALS[String(item?.etc?.rank || '').toLowerCase()]
-            && Number(item?.etc?.cristals) > 0 && /^(Weapon|Armor)\./.test(String(item?.template?.kind || ''))).map(([id]) => id);
+        this.shotDemand = new Map(this.shotIds.map(id => [id, []]));
+        this.recipeHolders = new Map(this.recipeIds.map(id => [id, []]));
+        this.shotSupply = new Map(); this.shotMinPrice = new Map(); this.recipeStock = new Map();
+        this.npcPrice = new Map(); this.npcSources = new Map(); this.gear = new Map(); this.boardCache = new Map();
+        this.npcSource = null; this.activeBoard = null;
+        this.gearIds = [];
+        for (const [id, item] of this.itemTemplates) {
+            if (CRYSTALS[String(item?.etc?.rank || '').toLowerCase()] && Number(item?.etc?.cristals) > 0
+                && /^(Weapon|Armor)\./.test(String(item?.template?.kind || ''))) this.gearIds.push(id);
+        }
         this.gearSet = new Set(this.gearIds);
         this.watched = [...new Set([...this.gearIds, ...this.shotIds, ...this.recipeIds])];
     }
-
     configure(options = {}) {
         if (options.board) this.board = options.board;
-        if (options.stateFor) this.stateFor = options.stateFor;
         if (options.npcOffers) { this.npcOffers = options.npcOffers; this.npcSource = null; }
+        if (options.stockFor) this.stockFor = options.stockFor;
     }
-
-    cachedKeep(state, id) {
-        const value = state ? this.keeps.get(state) : undefined;
-        if (value === undefined) return 0;
-        if (typeof value === 'number') return this.shotIds[value % 16] === id ? Math.floor(value / 16) : 0;
-        return Number(value[0]) === id ? value[1] : 0;
-    }
-
-    keep(stock, id) {
-        return Number(stock?.itemId) === id ? positive(stock.target) : positive(stock?.[id]);
-    }
-
-    spareOf(state, id, keep) {
-        return state?.phase === 'cold' && state.stats?.shotCraft
-            ? Math.max(0, positive(state.inventory?.[id]?.amount) - keep) : 0;
-    }
-
-    recipeAmount(state, id) {
-        return state?.phase === 'cold' && state.activity !== 'merchant' ? positive(state.inventory?.[id]?.amount) : 0;
-    }
-
-    retireKeep(state) {
-        if (state && this.keeps.delete(state)) this.keepers--;
-    }
-
-    addSignal(id, signal) {
-        const rows = this.boardDemand.get(id);
-        Object.defineProperty(signal, SLOT, { value: rows.length, writable: true });
-        rows.push(signal);
-    }
-
-    dropSignal(id, signal) {
-        const rows = this.boardDemand.get(id), slot = signal[SLOT];
-        if (slot === undefined || rows[slot] !== signal) return;
-        const last = rows.pop();
-        if (slot < rows.length) { rows[slot] = last; last[SLOT] = slot; }
-        signal[SLOT] = -1;
-    }
-
-    setDemand(id, ownerId, signal) {
-        const owners = this.demand.get(id);
-        const previous = owners.remove(ownerId);
-        if (signal) {
-            owners.insert(owners.length, ownerId);
-            for (const boardSignal of this.boardBuyOwners.get(id)?.get(ownerId) || []) this.dropSignal(id, boardSignal);
-        } else if (previous) {
-            for (const boardSignal of this.boardBuyOwners.get(id)?.get(ownerId) || []) this.addSignal(id, boardSignal);
-        }
-    }
-
-    signalFor(id, ownerId) {
-        const state = this.stateFor(ownerId);
-        // ARCH-NOTE: funded membership and expiry are decided on update. The
-        // native shots signal's scalar fields stay on the immutable canonical
-        // state; reading its captured membership must not expire it a second
-        // time at a different snapshot clock, or shadow a board ad differently.
-        return state ? this.demandSignal(state, id, Number(state.stats?.shotDemand?.at || 0)) : null;
-    }
-
-    recipePrice(id, ownerId) {
-        const state = this.stateFor(ownerId);
-        return state ? this.priceFor(state, state.inventory?.[id], this.itemTemplates.get(id)) : 0;
-    }
-
-    setRecipe(id, ownerId, price) {
-        const owners = this.recipeOwners.get(id);
-        // As with the previous array splice, only the changed recipe's sorted
-        // vector moves on update. Readers retain one stable readonly array view.
-        owners.remove(ownerId);
-        if (price === null) return;
-        let low = 0, high = owners.length;
-        while (low < high) {
-            const mid = (low + high) >>> 1;
-            if (this.recipePrice(id, owners.get(mid)) <= price) low = mid + 1; else high = mid;
-        }
-        owners.insert(low, ownerId);
-    }
-
-    update(state, now = Date.now()) {
-        const ownerId = Number(state?.characterId);
-        if (!(ownerId > 0)) return;
-        if (state.phase !== 'cold') { this.remove(ownerId); return; }
-        const canonical = this.stateFor(ownerId);
-        const previous = canonical && this.keeps.has(canonical) ? canonical : null;
-        const stock = state.stats?.shotCraft ? this.stockFor(state, 'shots', now) : null;
-        for (const id of this.shotIds) {
-            this.unlistedSupply.set(id, this.unlistedSupply.get(id) + this.spareOf(state,id,this.keep(stock,id))
-                - this.spareOf(previous,id,this.cachedKeep(previous,id)));
-            const holds = positive(state.inventory?.[id]?.amount) > 0 || Number(state.stats?.shotDemand?.itemId) === id;
-            const signal = holds ? this.demandSignal(state, id, now) : null;
-            this.setDemand(id, ownerId, signal?.source === 'shots' && signal.budget > 0 ? signal : null);
-        }
-        this.retireKeep(previous);
-        if (stock && this.shotIds.some(id=>positive(state.inventory?.[id]?.amount)>0)
-            || this.recipeIds.some(id=>this.recipeAmount(state,id)>0)) {
-            const itemId=Number(stock?.itemId), at=this.shotIds.indexOf(itemId), target=positive(stock?.target);
-            // ARCH-NOTE: producers call update before canonical publication.
-            // The weak value records the exact keep computed at the prior
-            // price/time, never a retained state copy or fifteen owner maps.
-            // Native integral targets fit one scalar; exceptional targets
-            // retain an exact pair rather than rounding a keep amount.
-            const packed=target*16+at;
-            this.keeps.set(state,at<0 ? -1 : Number.isSafeInteger(packed) ? packed : [itemId,target]);
-            this.keepers++;
-        }
-        // ARCH-NOTE: the native catalogue contains fifteen shot products and
-        // fifteen recipe items (the task's four-id description was outdated).
-        // Only scalar quantities/signals are kept; no canonical state copy.
-        for (const id of this.recipeIds) {
-            const amount = this.recipeAmount(state,id);
-            this.recipeTotals.set(id,this.recipeTotals.get(id)+amount-this.recipeAmount(previous,id));
-            this.setRecipe(id, ownerId, amount > 0 && Number(state.level) >= 10
-                ? this.priceFor(state, state.inventory[id], this.itemTemplates.get(id)) : null);
-            const listed = this.boardCache.get(id)?.recipeAmount || 0;
-            this.recipeStock.set(id, (this.recipeTotals.get(id) || 0) + listed);
-        }
-    }
-
-    remove(ownerId) {
-        ownerId = Number(ownerId);
-        const canonical=this.stateFor(ownerId);
-        const previous=canonical && this.keeps.has(canonical) ? canonical : null;
-        for (const id of this.shotIds) {
-            this.unlistedSupply.set(id,this.unlistedSupply.get(id)-this.spareOf(previous,id,this.cachedKeep(previous,id)));
-            this.setDemand(id, ownerId, null);
-        }
-        for (const id of this.recipeIds) {
-            this.recipeTotals.set(id,this.recipeTotals.get(id)-this.recipeAmount(previous,id));
-            this.setRecipe(id, ownerId, null);
-            this.recipeStock.set(id, (this.recipeTotals.get(id) || 0) + (this.boardCache.get(id)?.recipeAmount || 0));
-        }
-        this.retireKeep(previous);
-    }
-
-    size() {
-        const sum = map => [...map.values()].reduce((total, rows) => total + rows.length, 0);
-        return { spare: this.keepers, demand: sum(this.demand), recipeStock: 0,
-            recipeHolders: [...this.recipeOwners.values()].reduce((total, rows) => total + rows.length, 0) };
-    }
-
+    update() {}
+    remove() {}
+    size() { return { spare: 0, demand: 0, recipeStock: 0, recipeHolders: 0 }; }
     refreshNpc() {
         const offers = this.npcOffers();
         if (offers === this.npcSource) return false;
-        this.npcSource = offers;
-        this.npcPrice.clear();
+        this.npcSource = offers; this.npcPrice.clear(); this.npcSources.clear();
         for (const row of offers || []) {
             const id = Number(row.selfId), price = Number(row.price ?? this.itemTemplates.get(id)?.template?.price);
-            if (price > 0 && Number.isFinite(price)) this.npcPrice.set(id, Math.min(this.npcPrice.get(id) || Infinity, price));
+            if (price > 0 && Number.isFinite(price) && price < (this.npcPrice.get(id) || Infinity)) {
+                this.npcPrice.set(id, price); this.npcSources.set(id, row);
+            }
         }
         return true;
     }
-
-    gearLine(id, price, source, count = 1, ownerId = 0, enchant = 0) {
+    gearLine(id, price, source, count = 1, ownerId = 0, enchant = 0, quote = null) {
         if (!(price > 0) || !Number.isFinite(price) || Number(enchant) > 0) return null;
-        const item = this.itemTemplates.get(id);
-        return { selfId: id, price, crystals: Number(item.etc.cristals), source, count, ownerId };
+        return { ...(quote || {}), selfId: id, price, crystals: Number(this.itemTemplates.get(id).etc.cristals),
+            source, count, ownerId, town: quote?.town || null,
+            authority: source === 'afk' ? { recordId: quote?.recordId, lineId: quote?.lineId,
+                revision: quote?.expectedRevision ?? null } : { npcId: quote?.npcId ?? quote?.sourceId ?? null,
+                shopId: quote?.shopId ?? quote?.listId ?? null } };
     }
-
-    refreshItem(id, board, token) {
-        const sells = board ? board.list(id, 1).map(line => offerFields(line)) : [];
+    refreshItem(id, board, token, now) {
         const gear = [];
         if (this.gearSet.has(id)) {
-            const npc = this.gearLine(id, Number(this.npcPrice.get(id)), 'npc');
+            const npc = this.gearLine(id, Number(this.npcPrice.get(id)), 'npc', 1, 0, 0, this.npcSources.get(id));
             if (npc) gear.push(npc);
-            for (const offer of sells) {
-                const row = this.gearLine(id, offer.price, 'afk', offer.count, offer.sourceId, offer.enchant);
+        }
+        const holders = [];
+        let amount = 0, minimum = Infinity;
+        for (const line of board?.list(id, 1) || []) {
+            amount += Number(line.count); minimum = Math.min(minimum, Number(line.price));
+            if (this.gearSet.has(id)) {
+                const row = this.gearLine(id, line.price, 'afk', line.count, line.ownerId, line.enchant, offerFields(line));
                 if (row) gear.push(row);
             }
+            if (this.recipeHolders.has(id)) holders.push({ ...offerFields(line), characterId: Number(line.ownerId),
+                amount: Number(line.count), origin: 'public_ask', observedAt: now,
+                authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },
+                availability: { from: now, until: now }, scope: 'board' });
         }
-        const recipeAmount = sells.reduce((sum, offer) => sum + Number(offer.count), 0);
-        this.boardCache.set(id, { token, gear, recipeAmount });
+        this.boardCache.set(id, { token, gear });
         if (this.shotDemand.has(id)) {
-            this.shotSupply.set(id, recipeAmount);
-            this.shotMinPrice.set(id, sells.reduce((price, offer) => Math.min(price, Number(offer.price)), Infinity));
-            for (const signal of this.boardBuys.get(id) || []) this.dropSignal(id, signal);
-            const rows = [], owners = new Map();
-            for (const offer of board ? board.list(id, 3).map(line => offerFields(line)) : []) {
-                const ownerId = Number(offer.sourceId);
-                const signal = { characterId: ownerId, amount: Number(offer.count),
-                    budget: Number(offer.count) * Number(offer.price), maxPrice: Number(offer.price) };
-                rows.push(signal);
-                const own = owners.get(ownerId) || []; own.push(signal); owners.set(ownerId, own);
-                const demandIds = this.demand.get(id);
-                let shadowed = false;
-                for (let at = 0; at < demandIds.length; at++) if (demandIds.get(at) === ownerId) { shadowed = true; break; }
-                if (!shadowed) this.addSignal(id, signal);
+            this.shotSupply.set(id, amount); this.shotMinPrice.set(id, minimum);
+            const rows = [];
+            for (const line of board?.list(id, 3) || []) {
+                if (Number(line.enchant || 0) || !(line.price > 0) || !Number.isSafeInteger(line.count)) continue;
+                rows.push({ ...offerFields(line), characterId: Number(line.ownerId), amount: Number(line.count),
+                    // Compatibility scalar: public quoted value, never a wallet/escrow observation.
+                    budget: Number(line.count) * Number(line.price), maxPrice: Number(line.price),
+                    origin: 'public_bid', needId: `bid:${line.recordId}:${line.lineId}`, observedAt: now,
+                    authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },
+                    sourceRevision: token, availability: { from: now, until: now }, scope: 'board',
+                    quoted: true, exclusive: false, guaranteed: false, repeatable: false });
             }
-            this.boardBuys.set(id, rows); this.boardBuyOwners.set(id, owners);
+            this.shotDemand.set(id, rows);
         }
-        if (this.recipeHolders.has(id)) this.recipeStock.set(id, (this.recipeTotals.get(id) || 0) + recipeAmount);
+        if (this.recipeHolders.has(id)) {
+            this.recipeStock.set(id, amount); this.recipeHolders.set(id, holders);
+        }
     }
-
     offersFor(itemId, side = 1, excludedOwner = 0) {
-        return (this.board()?.list(Number(itemId), Number(side)) || [])
-            .filter(line => !excludedOwner || Number(line.ownerId) !== Number(excludedOwner))
-            .map(line => offerFields(line));
+        const result = [];
+        for (const line of this.board()?.list(Number(itemId), Number(side)) || []) {
+            if (!excludedOwner || Number(line.ownerId) !== Number(excludedOwner)) result.push(offerFields(line));
+        }
+        return result;
     }
-
     marketSnapshot(now = Date.now(), projectedOwnState = null) {
-        const board = this.board(), npcChanged = this.refreshNpc();
-        let gearChanged = npcChanged || board !== this.activeBoard;
-        const newBoard = board !== this.activeBoard; this.activeBoard = board;
+        const board = this.board(), npcChanged = this.refreshNpc(), newBoard = board !== this.activeBoard;
+        let gearChanged = npcChanged || newBoard;
+        this.activeBoard = board;
         for (const id of this.watched) {
             const token = board?.itemRevision(id) ?? 'no-board';
             if (newBoard || npcChanged || this.boardCache.get(id)?.token !== token) {
-                this.refreshItem(id, board, token);
+                this.refreshItem(id, board, token, now);
                 if (this.gearSet.has(id)) gearChanged = true;
             }
         }
@@ -348,28 +119,29 @@ class ShotMarketIndex {
             for (const id of this.gearIds) {
                 const rank = String(this.itemTemplates.get(id).etc.rank).toLowerCase();
                 const rows = this.gear.get(rank) || [];
-                rows.push(...(this.boardCache.get(id)?.gear || []));
+                for (const row of this.boardCache.get(id)?.gear || []) rows.push(row);
                 if (rows.length) this.gear.set(rank, rows);
             }
-            for (const rows of this.gear.values()) rows.sort((a, b) => a.price / a.crystals - b.price / b.crystals || a.price - b.price);
         }
-        let unlistedSupply=this.unlistedSupply, recipeStock=this.recipeStock;
+        // ARCH-NOTE: former global unlisted supply and recipe-holder vectors
+        // revealed foreign bags/level/private pricing. Public quotes replace
+        // them. The optional claimed owner's own reserve is the sole private
+        // projection; there is no fallback foreign-state read.
+        const unlistedSupply = new Map(), ownRecipeStock = new Map();
         if (projectedOwnState) {
-            const canonical=this.stateFor(Number(projectedOwnState.characterId));
-            const previous=canonical && this.keeps.has(canonical) ? canonical : null;
-            const stock=projectedOwnState.stats?.shotCraft ? this.stockFor(projectedOwnState,'shots',now) : null;
-            // Forecast only this claimed owner's contribution. Publishing a
-            // speculative bag globally would double its delta on ACK/rejection
-            // and retain a second full state. Canonical publication owns totals.
-            unlistedSupply=new Map(this.unlistedSupply);recipeStock=new Map(this.recipeStock);
-            for(const id of this.shotIds)unlistedSupply.set(id,unlistedSupply.get(id)
-                +this.spareOf(projectedOwnState,id,this.keep(stock,id))-this.spareOf(previous,id,this.cachedKeep(previous,id)));
-            for(const id of this.recipeIds)recipeStock.set(id,recipeStock.get(id)
-                +this.recipeAmount(projectedOwnState,id)-this.recipeAmount(previous,id));
+            const stock = this.stockFor(projectedOwnState, 'shots', now);
+            for (const id of this.shotIds) {
+                const keep = Number(stock?.itemId) === id ? positive(stock.target) : positive(stock?.[id]);
+                unlistedSupply.set(id, Math.max(0, positive(projectedOwnState.inventory?.[id]?.amount) - keep
+                    - positive(projectedOwnState.stats?.clanMaterialDemand?.[id])));
+            }
+            for (const id of this.recipeIds) ownRecipeStock.set(id, positive(projectedOwnState.inventory?.[id]?.amount));
         }
-        return { at: now, itemTemplates: this.itemTemplates, npcPrice: this.npcPrice, gear: this.gear,
+        return { at: now, itemTemplates: this.itemTemplates, npcPrice: this.npcPrice, npcSources: this.npcSources, gear: this.gear,
             shotSupply: this.shotSupply, shotMinPrice: this.shotMinPrice, shotDemand: this.shotDemand,
-            recipeStock, recipeHolders: this.recipeHolders, unlistedSupply };
+            recipeStock: this.recipeStock, recipeHolders: this.recipeHolders, unlistedSupply, ownRecipeStock,
+            demandKnown: false, lifetimeKnown: false, repeatable: false,
+            offersFor: (id, side, ownerId) => this.offersFor(id, side, ownerId) };
     }
 }
 
@@ -393,9 +165,6 @@ function native() {
             return npcRows;
         },
         stockFor: (state, _kind, now) => invoke('GameServer/Bot/Economy/EconomyContext').basics(state,{timestamp:now}).stock('shots'),
-        stateFor: id => require('./CraftWorkshopService').inputStateFor(id),
-        demandSignal: (state, id, now) => require('./MarketDemandIndex').demandSignal(state, id, now),
-        priceFor: (state, item, template) => require('./ItemDisposition').priceFor(state, item, template),
         ...configured
     });
     return instance;

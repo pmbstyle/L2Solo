@@ -83,6 +83,16 @@ module.exports.publicationProbe = async stage => {
         assert.equal(Economy.size().groups,1);
         module.exports.previous = group.state;
         module.exports.buildOwners = Profile.size().ownerBuilds;
+        const hot = {...current,characterId:913,phase:'hot'};
+        kernel.upsert({state:hot,context:{route:null}});
+        const version = kernel.versions.get(913), size = kernel.states.size, nativeHot=kernel.states.get(913).state;
+        await handle(Protocol.envelope('snapshot_page', epoch, { rows: [], economyOwnerId: 913 }, 'natural-economy-probe'));
+        assert.strictEqual(kernel.states.get(913).state, nativeHot, 'a natural request does not resend or replace the canonical owner');
+        assert.equal(kernel.versions.get(913), version, 'an empty request does not advance the snapshot version');
+        assert.equal(kernel.states.size, size);
+        assert(occupationPlanner.slots.size <= 64);
+        assert(occupationPlanner.slots.has(913)||occupationPlanner.waiting.has(913),'a natural hot request uses the existing bounded pool');
+        kernel.states.delete(913);
         return {cloneBackstop:true,stateShared:group.state===Runtime.index.getSource(911,'state').source,groups:1};
     }
     if (stage === 'replaced') {
@@ -152,6 +162,7 @@ async function workerPublication() {
             initial: true, done: true, ack: true }, 'initial'));
         await wait(message => message.type === 'ready' && message.msgId === 'initial');
         await probe('prepare');
+        assert(!messages.some(message => message.msgId === 'natural-economy-probe'), 'a natural request has no snapshot ACK');
         const replacement = structuredClone(members[0]); replacement.updatedAt++;
         worker.postMessage(Protocol.envelope('snapshot_page', epoch, { rows: [{state:replacement,context:{route:null}}], ack: true }, 'replacement'));
         await wait(message => message.type === 'ready' && message.msgId === 'replacement');

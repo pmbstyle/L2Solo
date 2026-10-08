@@ -16,6 +16,13 @@ function registerProvider(key, provider) {
 }
 // actorKey -> { key, reads, context } of bots: bounded (WishNetwork.remember).
 const cache = new Map();
+let planningContexts = 0;
+function setPlanningContexts(count) {
+    planningContexts = Math.max(0, Math.min(64, Math.floor(Number(count) || 0)));
+    while (cache.size > 64 - planningContexts) {
+        const key = cache.keys().next().value; cache.delete(key); engine.forget(key);
+    }
+}
 // Groups apart, so a party composition that weighs many candidate groups
 // never evicts the bots' own reviews: `group:<partyId>` -> { key, members,
 // context }, removed when the party ends (forgetGroup) and bounded besides;
@@ -58,7 +65,8 @@ function inputKey(state, deps = {}) {
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
-        deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, positive(deps.buyOrderEscrow),
+        deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
+        Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
@@ -106,6 +114,7 @@ function resolved(state, deps) {
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
+    if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
     if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     return deps;
@@ -245,11 +254,14 @@ function forState(state = {}, deps = {}) {
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
     const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : isMainThread
         ? craftIncome(state, { hourAdena: base.hourAdena, worth: price, timestamp }) : null;
-    if (workshop?.incomePerHour > 0) {
+    context.workshop = workshop || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
+    if (workshop?.known !== false && workshop?.incomePerHour > 0 && Number.isFinite(workshop.incomePerHour)
+        && workshop.cycleHours > 0 && Number.isFinite(workshop.cycleHours)) {
         watch(workshop.productId);
         context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour);
         projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
-            object: workshop.productId, incomePerHour: workshop.incomePerHour });
+            object: workshop.productId, incomePerHour: workshop.incomePerHour,
+            cycleHours: workshop.cycleHours, repeatable: true });
     }
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
@@ -291,7 +303,7 @@ function forState(state = {}, deps = {}) {
     };
     building = false;
 
-    remember(cache, actorKey, { key, reads, context });
+    if (planningContexts < 64) remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
     return context;
 }
 function survivalReserve(state = {}) {
@@ -299,12 +311,14 @@ function survivalReserve(state = {}) {
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
 function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
-    if (!state.stats?.workshop?.entries?.length) return null;
-    const row = invoke('GameServer/Bot/Economy/ColdWealthCraftService').opportunities(state,
-        { hourAdena, worth, timestamp, insideContext: true })[0];
-    const incomePerHour = require('./CraftProfitPolicy').craftIncomePerHour(row?.margin);
-    return incomePerHour > 0 && Number.isFinite(incomePerHour) ? { recipeId: row.recipe.recipeId,
-        productId: row.recipe.productId, incomePerHour, marginHours: row.margin.hours } : null;
+    // The guarded worker publication is the only production income reader on
+    // main. A missing result leaves the independently supported hunt baseline.
+    if (isMainThread) {
+        const coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+        return coordinator.economyDecisions?.workshopFor?.(state)
+            || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
+    }
+    return { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
 }
 function forGroup(group, members, deps = {}) {
     const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
@@ -369,5 +383,5 @@ function forget(id) {
 function reset() { cache.clear(); groups.clear(); engine.clear(); }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { size, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { size, setPlanningContexts, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, inputKey, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome, summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };

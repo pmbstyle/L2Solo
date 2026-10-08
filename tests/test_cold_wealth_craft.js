@@ -187,9 +187,9 @@ async function run() {
     exitPrice = 500000;
     const lucrative = Policy.opportunityFor({ ...away, characterId: 9007 }, recipe, awayPlanFor,
         [{ ...exit, price: exitPrice, trip }], undefined, paid);
-    assert(lucrative && lucrative.expectedProfit === net(recipe, exitPrice, 25000 + 2 * trip, trip));
+    assert(lucrative && lucrative.expectedProfit === net(recipe, exitPrice, 25000 + trip, trip));
     assert.strictEqual(lucrative.basket.cashCost, 25000);
-    assert.strictEqual(lucrative.basket.cost, 25000 + 2 * trip, 'two original input trips enter landed basket cost');
+    assert.strictEqual(lucrative.basket.cost, 25000 + trip, 'one town trip supplies both original inputs');
     assert.strictEqual(Funding.spendable(away, 0, { r: lucrative.expectedProfit / paid.hourAdena / 25000 }), 0,
         'a remote unit margin still cannot invent native funding or a buying trip');
     exitPrice = 50000;
@@ -207,15 +207,15 @@ async function run() {
     assert.strictEqual(Policy.craftMargin(leather, 10000, 3000), 7000, 'original static-exit cash gain, not a native paid craft');
     assert.deepStrictEqual(Profit.materials([{ id: 12, selfId: 1867, amount: 6 }], leather), [{ id: 12, selfId: 1867, amount: 6 }]);
 
-    // ARCH-NOTE: C2c removed the old scan_cooldown timer. Main may review
-    // recipes each lifecycle while no paid, funded opportunity remains.
+    // Main waits for the exact guarded worker action; it does not rescan a
+    // learned recipe catalogue when no published opportunity is available.
     let emptyReads = 0;
     Database.fetchCharacterRecipes = async () => { emptyReads += 1; return []; };
     const idle = { ...state, characterId: 9005, name: 'WaitingCrafter' };
     for (const now of [1000000, 1000001, 1000000 + 5 * 60 * 1000]) {
         assert.strictEqual((await Service.tryCraft(idle, now)).reason, 'no_profit');
     }
-    assert(emptyReads >= 3, 'each actual lifecycle reads recipes; no retired scan suppression is asserted');
+    assert.strictEqual(emptyReads, 0, 'unpublished lifecycle does not scan the learned recipe catalogue');
     assert.strictEqual(purchases.length, 0);
     assert.strictEqual(crafted, false);
     assert.strictEqual(sold, false);

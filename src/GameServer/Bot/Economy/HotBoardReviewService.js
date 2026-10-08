@@ -59,13 +59,15 @@ class HotBoardReviewService {
         // token fences writes and keeps a restarted service from overlapping.
         this.inFlight = this.inFlight || null;
         this.unsubscribers = [];
+        this.lookOwners = new Map();
         try {
             this.unsubscribers.push(this.afk.subscribeBoardChanges(change => {
-                for (const id of change.ownerIds || []) this.ownerChanged(id);
+                for (const id of change.ownerIds || []) this.ownerChanged(id, 'line', change.revision ?? null);
             }));
-            this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id)));
-            this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id)));
-            this.unsubscribers.push(this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId))));
+            this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id, 'user')));
+            this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id, 'review')));
+            this.unsubscribers.push(this.life.subscribeChanges(state => this.ownerChanged(Number(state.characterId), 'life',
+                Number(state.simulation?.revision || 0))));
             return true;
         } catch (error) {
             this.stop();
@@ -75,20 +77,39 @@ class HotBoardReviewService {
 
     // ARCH-NOTE: no universal break-enter hook exists. Rest/shopping ticks
     // use this numeric session guard; BotAI clears it on any other state.
-    // It keeps no line observations or history on the main thread.
+    // Each actual hot owner keeps at most eight numeric observations on its
+    // native session; retirement/handoff releases them below.
     naturalBreak(session, kind) {
         if (!kind) { delete session.boardBreakKind; return false; }
         if (session.boardBreakKind === kind) return false;
         session.boardBreakKind = kind;
         if (!this.running) return false;
-        this.ownerChanged(Number(session.actor?.fetchId?.()));
+        const id = Number(session.actor?.fetchId?.());
+        invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyLook(id);
+        this.ownerChanged(id, 'natural');
         return true;
     }
 
-    ownerChanged(id) {
+    preparedOwner(id) {
+        if (!this.running) return false;
+        const record = this.world.registeredActorById(Number(id));
+        if (!usableOwner(record) || !record.session.boardBreakKind) return false;
+        this.ownerChanged(Number(id), 'prepared');
+        return true;
+    }
+
+    ownerChanged(id, reason = 'owner', revision = null) {
         if (!this.running) return;
-        this.events.ownerChanged(Number(id));
+        id = Number(id);
+        if (!this.life.hotRow(id) || !this.events.ownerStatus(id).priced) this.forgetLook(id);
+        this.events.ownerChanged(Number(id), reason, revision);
         this.pump();
+    }
+
+    forgetLook(id) {
+        const session = this.lookOwners?.get(Number(id));
+        if (session) delete session.boardLookSeen;
+        this.lookOwners?.delete(Number(id));
     }
 
     pump() {
@@ -119,15 +140,30 @@ class HotBoardReviewService {
             const record = this.world.registeredActorById(id);
             const hot = this.life.hotRow(id);
             if (!usableOwner(record) || !hot) { this.events.defer(id); return; }
-            const live = this.listings.actorState(record.session);
-            const state = { ...hot, characterId: id, level: live.level, adena: live.adena,
-                inventory: live.inventory, phase: 'hot',
+            const actor = record.actor;
+            const state = { ...hot, characterId: id,
+                level: Number(actor.fetchLevel?.() || hot.level || 1),
+                adena: Number(actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? hot.adena ?? 0),
+                inventory: hot.inventory, phase: 'hot',
                 activity: record.session.plan || hot.activity, loc: liveLocation(record.actor),
                 currentRegion: record.session.currentRegion || hot.currentRegion,
                 spotId: record.session.currentSpot?.id ?? hot.spotId,
-                marketTrades: hot.marketTrades || {}, stats: { ...hot.stats, classId: live.stats.classId } };
-            const ctx = this.listings.traderContext(state);
-            const review = this.pricing.lookOwn(state, this.board.ownerLines(id), ctx);
+                marketTrades: hot.marketTrades || {}, stats: { ...hot.stats, classId: Number(actor.fetchClassId?.() ?? hot.stats?.classId ?? 0) } };
+            const persona = invoke('GameServer/Bot/AI/BotPersona').of(state), packet = state.stats?.money;
+            // A natural look consumes accepted scalar prices of time/money.
+            // It cannot build a whole hunt/stock/recipe forecast on main.
+            const economy = { persona, hourAdena: Number(packet?.[0]), moneyPrice: Number(packet?.[1]),
+                gapHorizonHours: NaN };
+            const Look = require('./BoardLook'), lines = this.board.ownerLines(id);
+            const mask = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.feasibilityFor(state);
+            const ctx = this.pricing.traderContext(state, { economy, persona, board: this.board,
+                npcOffersFor: selfId => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId),
+                canSell: Look.feasibilityPredicate(state, lines, mask) });
+            // The cursor is attached to the native hot session, so >8 lines
+            // advance on successive natural breaks without a polling timer.
+            const seen = record.session.boardLookSeen || (record.session.boardLookSeen = new Look.SeenLines());
+            this.lookOwners.set(id, record.session);
+            const review = this.pricing.lookOwn(state, lines, ctx, seen);
             if (!review) { this.events.deferAfterCommand(id); return; }
             const hotAuthority = authorityOf(hot);
             const canCommitReview = () => {
@@ -163,6 +199,7 @@ class HotBoardReviewService {
         for (const unsubscribe of this.unsubscribers) unsubscribe();
         this.dispatcher.cancel(this.dispatchKey);
         this.events.clear();
+        for (const id of this.lookOwners.keys()) this.forgetLook(id);
         this.scheduled = false;
         return true;
     }

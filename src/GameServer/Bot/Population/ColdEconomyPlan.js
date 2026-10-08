@@ -1,7 +1,9 @@
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Funding = require('../Economy/PurchaseFunding');
-const MAX_BYTES = 614;
-const MAX_SHOT_BYTES = 32;
+const MAX_BYTES = 768;
+const MAX_SHOT_BYTES = 128;
+const { COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES } = require('./ColdEconomyDecision');
+const MAX_PLAN_PAYLOAD_BYTES = MAX_BYTES - COMMAND_HEADER_BYTES - 32 - 8;
 
 // A resolve observes only the six native edges; ordinary counts/XP/wallet
 // changes do not schedule main-thread economic work.
@@ -67,8 +69,8 @@ function decide(state, economy, options = {}) {
     const shot = decideShot(state, economy, { ...options, ownLines: own });
     if (shot) plan.shot = shot;
     // ARCH-NOTE: town names/large counts have variable JSON widths. Trim only
-    // lowest-priority optional lines to keep the fixed 0.6 KB wire budget.
-    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_BYTES + (plan.shot ? MAX_SHOT_BYTES : 0)) {
+    // lowest-priority optional lines to keep the entire 768 B wire budget.
+    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
         if (plan.sell.length) plan.sell.pop();
         else if (plan.buyAds.length) plan.buyAds.pop();
         else if (plan.withdraw.length) plan.withdraw.pop();
@@ -79,18 +81,17 @@ function decide(state, economy, options = {}) {
 function decideShot(state, economy, options = {}) {
     const Shots = require('../Economy/ShotCraftPolicy');
     if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return null;
-    const index = require('../Economy/ShotMarketIndex').native();
-    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
-    const context = { ...economy, mpPerHour: Number(regen.mp) * 1200 };
-    const market = { ...index.marketSnapshot(options.now, state), context, offersFor: (...args) => index.offersFor(...args) };
-    const known = Shots.unpackKnown(options.knownShotRecipes);
-    const shot = Shots.decide(state, market, known);
-    if (shot) return Shots.packStep(shot);
-    const Wealth = require('../Economy/WealthCraftDecision');
-    if (!Wealth.eligible(state, options)) return null;
-    const opportunity = Wealth.chooseOpportunity(state, (state.stats?.workshop?.entries || []).map(row => ({ recipeId: row.recipeId })),
-        context, { offersFor: market.offersFor, planPurchase: (buyer, id, amount, query) =>
-            require('../Economy/OfferQuery').cheapestTown(options.board, id, { ...query, amount, excludeOwner: buyer.characterId }) });
-    return opportunity ? Shots.packStep({ wealth: { recipeId: Number(opportunity.recipe.recipeId) } }) : null;
+    if (Object.hasOwn(options, 'preparedCraft')) {
+        // The worker has already streamed every recipe/input/exit/batch unit.
+        // Main receives only the native step; it rechecks current physical rows.
+        const selected = options.preparedCraft;
+        const step = selected?.craft || selected?.wealth || selected?.recipeTarget ? Shots.packStep(selected)
+            : selected?.recipeId > 0 ? Shots.packStep({ wealth: { ...selected,
+                recipeId: Number(selected.recipeId), batches: Number(selected.batches || 1) } }) : null;
+        return step && Buffer.byteLength(JSON.stringify(step)) > MAX_SHOT_PAYLOAD_BYTES ? { unknown: true } : step;
+    }
+    // Missing worker preparation is explicit unknown. No caller can trigger
+    // a recipe/gear/quote scan by falling through this publication adapter.
+    return { unknown: true };
 }
-module.exports = { edges, decide, decideShot, MAX_BYTES, MAX_SHOT_BYTES };
+module.exports = { edges, decide, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };

@@ -7,15 +7,22 @@ class BoardReviewEvents {
         this.pending = new Set();
         this.inFlight = new Set();
         this.changedWhileInFlight = new Set();
+        this.reasons = new Map();
+        this.retired = new Set();
     }
 
     clear() {
         this.ready.clear(); this.pending.clear(); this.inFlight.clear(); this.changedWhileInFlight.clear();
+        this.reasons.clear(); this.retired.clear();
     }
 
-    enqueue(ownerId) {
+    enqueue(ownerId, reason = 'owner', revision = null) {
         if (!Number.isSafeInteger(ownerId) || ownerId <= 0) return;
         this.pending.add(ownerId);
+        // New source facts replace the prior reason; durable native work stays
+        // under its original in-flight identity until acknowledgement.
+        this.reasons.set(ownerId, { reason, revision });
+        this.retired.delete(ownerId);
         if (this.inFlight.has(ownerId)) this.changedWhileInFlight.add(ownerId);
         else this.ready.add(ownerId);
     }
@@ -24,8 +31,8 @@ class BoardReviewEvents {
         return { priced: this.board.ownerLines(ownerId).some(line => line.botOwned && line.pricing && line.count > 0) };
     }
 
-    ownerChanged(ownerId) {
-        if (this.ownerStatus(ownerId).priced) this.enqueue(ownerId);
+    ownerChanged(ownerId, reason = 'owner', revision = null) {
+        if (this.ownerStatus(ownerId).priced) this.enqueue(ownerId, reason, revision);
         else this.forget(ownerId);
     }
 
@@ -44,6 +51,7 @@ class BoardReviewEvents {
 
     defer(ownerId) {
         this.ready.delete(ownerId); this.inFlight.delete(ownerId); this.changedWhileInFlight.delete(ownerId);
+        if (this.retired.delete(ownerId)) { this.pending.delete(ownerId); this.reasons.delete(ownerId); }
     }
 
     deferAfterCommand(ownerId) {
@@ -52,6 +60,7 @@ class BoardReviewEvents {
     }
 
     rearm(ownerId) {
+        if (this.retired.has(ownerId)) { this.defer(ownerId); return; }
         if (!this.pending.has(ownerId)) return;
         const changed = this.changedWhileInFlight.has(ownerId);
         this.inFlight.delete(ownerId); this.changedWhileInFlight.delete(ownerId);
@@ -61,7 +70,9 @@ class BoardReviewEvents {
 
     forget(ownerId) {
         this.ready.delete(ownerId); this.pending.delete(ownerId);
-        this.inFlight.delete(ownerId); this.changedWhileInFlight.delete(ownerId);
+        this.reasons.delete(ownerId); this.changedWhileInFlight.delete(ownerId);
+        if (this.inFlight.has(ownerId)) this.retired.add(ownerId);
+        else this.retired.delete(ownerId);
     }
 }
 

@@ -439,6 +439,15 @@ class ColdSimulationCoordinator {
         return message.msgId;
     }
 
+    requestEconomyLook(characterId) {
+        const id = Number(characterId);
+        if (this.stopping || !Number.isSafeInteger(id) || id <= 0
+            || LifeState.cachedState(id)?.phase !== 'hot') return false;
+        // A natural owner event requests its existing canonical worker row.
+        // Empty rows retain neither an owner copy nor a snapshot/ACK cursor.
+        return !!this.post('snapshot_page', { rows: [], economyOwnerId: id });
+    }
+
     postCollections(type, collections = {}, msgId = null) {
         const pages = collectionPagesWithBytes(type, this.workerEpoch, collections, msgId, (value) => {
             this.recordInvalid(`out_${type}_single_item_too_large`);
@@ -543,6 +552,19 @@ class ColdSimulationCoordinator {
                     this.waiters.delete(message.msgId);
                     waiter.resolve(payload);
                 }
+            } else if (payload.phase === 'economy_decided' && !this.stopping) {
+                const id = Number(payload.characterId), state = LifeState.cachedState(id);
+                const decision = payload.economyDecision ? require('./ColdEconomyDecision').compact(payload.economyDecision) : null;
+                // Same worker generation plus the exact captured owner facts
+                // fence hot publications; they never authorize native spending.
+                if (state?.phase === 'hot' && decision && decision.updatedAt === Number(state.updatedAt || 0)
+                    && decision.key === require('./ColdEconomyDecision').stateKey(state)) {
+                    this.economyDecisions.accept(id, decision);
+                    if (decision.feasibility) invoke('GameServer/Bot/Economy/HotBoardReviewService').preparedOwner(id);
+                }
+            } else if (payload.phase === 'economy_workshop_stale' && !this.stopping) {
+                this.economyDecisions.staleWorkshop(Number(payload.characterId),
+                    { updatedAt: Number(payload.updatedAt), key: payload.key });
             }
             break;
         case 'claim_request':
@@ -935,11 +957,7 @@ class ColdSimulationCoordinator {
             });
         const interactionMemory = invoke('GameServer/Social/InteractionMemoryRuntime').snapshot(Number(state.characterId));
         const leaf = !party ? this.economyDecisions.activity(state) : null;
-        const workshop = state.stats?.workshop?.entries?.length ? this.economyDecisions.workshopFor(state, () => {
-            const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-            const basics = Economy.basics(state, { timestamp: index.timestamp });
-            return Economy.craftIncome(state, { hourAdena: basics.hunt.perHour, worth: basics.price, timestamp: index.timestamp });
-        }) : null;
+        const workshop = this.economyDecisions.workshopFor(state);
         const context = {
             // ARCH-NOTE: recipe DB rows are hydrated on main; the worker gets
             // <=8 numbers, never saved state or an extra recipe store.
@@ -1625,6 +1643,11 @@ class ColdSimulationCoordinator {
 
     async afterCommit(entry, committed = {}) {
         const id = entry.nextState.characterId;
+        const source = entry.proposal[PROPOSAL_SOURCE];
+        const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
+        const beforeWrite = () => {
+            if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
+        };
         const committedPartyRow = committed.partyRow || committed.raidPartyRow;
         await this.step('partyCache', id, () => {
             if (committedPartyRow && Number(BackgroundPartyState.find(committedPartyRow.partyId)?.updatedAt || 0)
@@ -1639,17 +1662,25 @@ class ColdSimulationCoordinator {
             }
         });
         let state = LifeState.cachedState(id) || entry.nextState;
-        await this.step('economyDecision', id, () => this.economyDecisions.accept(id, entry.proposal.economyDecision, committed));
+        if (sourceCurrent()) await this.step('economyDecision', id,
+            () => this.economyDecisions.accept(id, entry.proposal.economyDecision, committed));
         await this.step('journal', id, () => LifeEvents.recordMany(id, entry.proposal.result?.events || []));
-        if (entry.proposal.market) {
-            await this.step('board', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService').applyReview(id, entry.proposal.market));
+        if (sourceCurrent() && entry.proposal.market) {
+            // The resolve has already advanced native ownership. Capture its
+            // accepted authority after commit, never the worker's old revision.
+            const coldAuthority = { ownerId: state.simulation?.ownerId || 'legacy_main',
+                revision: Number(state.simulation?.revision || 0), leaseId: state.simulation?.leaseId || null };
+            const canCommitReview = () => {
+                const current = LifeState.cachedState(id), actual = current?.simulation || {};
+                return sourceCurrent() && current?.phase === 'cold'
+                    && (actual.ownerId || 'legacy_main') === coldAuthority.ownerId
+                    && Number(actual.revision || 0) === coldAuthority.revision
+                    && (actual.leaseId || null) === coldAuthority.leaseId;
+            };
+            await this.step('board', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService')
+                .applyReview(id, entry.proposal.market, { coldAuthority, canCommitReview }));
         }
         await this.step('equipment', id, () => LifeState.enqueueEquipmentGoalAdvanceForState(state));
-        const source = entry.proposal[PROPOSAL_SOURCE];
-        const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
-        const beforeWrite = () => {
-            if (!sourceCurrent()) throw Error('cold_postcommit_source_retired');
-        };
         if (sourceCurrent() && entry.proposal.economyPlan) {
             const started = performance.now();
             const decision = await this.step('improvement', id, () => this.economyDecisions.decided(state));
@@ -2112,6 +2143,7 @@ class ColdSimulationCoordinator {
         this.cancelSafety();
         Metrics.clearColdSafetyEpoch(epoch);
         this.projectionRetention.reset();
+        this.economyDecisions.clear();
         this.counters.workerExits += 1;
         this.tableChannel.detach(this);
         this.worker = null;
@@ -2153,6 +2185,7 @@ class ColdSimulationCoordinator {
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         this.projectionRetention.reset();
+        this.economyDecisions.clear();
         if (!this.started) return { stopped: true };
         this.stopping = true;
         if (this.pvpEncounterTimer) clearInterval(this.pvpEncounterTimer);

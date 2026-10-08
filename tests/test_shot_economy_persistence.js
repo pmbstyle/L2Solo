@@ -199,11 +199,22 @@ async function run() {
         'an unprofitable policy route does not purchase or invent recipe knowledge');
     const beforeBook = noLearning.state;
     const sellerBeforeBook = await balances(seller.characterId);
-    const boughtBook = await Afk.buyFromShop(beforeBook.characterId, Afk.recordStore(scrollRecords.opened[0].id),
-        1804, 1, { coldState: beforeBook, expectedPrice: 30000 });
-    assert(boughtBook.coldState, 'the historical physical seller supplies the paid scroll');
-    assert.strictEqual(boughtBook.coldState.adena, beforeBook.adena - 30000);
-    const learned = await Life.learnCraftableRecipes(boughtBook.coldState);
+    // This historical transfer is an explicit raw SQL settlement fixture.
+    // The unchanged negative optional policy above did not publish funding
+    // for this purchase; no spending packet or optional admission is invented.
+    // Native receipt/eligibility selection is covered by cold-shot/commit tests.
+    const bookRecord = scrollRecords.opened[0], bookLine = bookRecord.lines.find(line => Number(line.selfId) === 1804);
+    const boughtBook = await DB.buyFromAfkTradeShop(beforeBook.characterId, {
+        shopId: bookRecord.id, ownerId: seller.characterId, lineId: bookLine.id,
+        amount: 1, expectedPrice: 30000, expectedRevision: bookRecord.revision
+    });
+    await Afk.settleOwners(boughtBook.settlementOwners);
+    const boughtState = await Life.syncExternalInventory(beforeBook.characterId, 'manual_book_settlement',
+        Life.cachedState(beforeBook.characterId));
+    assert(boughtState, 'the historical physical seller supplies the paid scroll');
+    assert.strictEqual(boughtState.adena, beforeBook.adena - 30000);
+    const learnedReceipt = await DB.learnColdRecipes(beforeBook.characterId, [recipe], boughtState);
+    const learned = invoke('GameServer/Bot/Economy/EconomyCommit').acceptRow(learnedReceipt.coldLifeRow);
     const buyerAfterBook = await balances(recipeBuyer.characterId);
     const sellerAfterBook = await balances(seller.characterId);
     assert.strictEqual(buyerAfterBook.life.adena, beforeBook.adena - 30000);

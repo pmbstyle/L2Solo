@@ -43,6 +43,23 @@ function spendable(state = {}, escrow = 0, options = {}) {
     }
     return Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
 }
+// Finite action utility supplies a funding ratio, never an extra purse.
+// Native writers still reread the current money packet and physical wallet.
+function forOpportunity(state, opportunity, escrow = 0) {
+    if (!opportunity?.known || !Number.isFinite(opportunity.valueHours) || opportunity.valueHours <= 0
+        || !Number.isFinite(opportunity.cashNow) || opportunity.cashNow < 0) return 0;
+    return spendable(state, escrow, { r: opportunity.cashNow > 0
+        ? opportunity.valueHours / opportunity.cashNow : Infinity });
+}
+function nativeTerms(options = {}, itemId = 0) {
+    const terms = { itemId: Math.max(0, Number(itemId) || 0) };
+    if (Number.isFinite(Number(options.r)) || options.r === Infinity) terms.r = Number(options.r);
+    if (options.valueHours !== undefined && Number.isFinite(Number(options.valueHours))) terms.valueHours = Math.max(0, Number(options.valueHours));
+    if (options.survivalCost !== undefined && Number.isFinite(Number(options.survivalCost))) terms.survivalCost = Math.max(0, Number(options.survivalCost));
+    if (options.free === true) terms.free = true;
+    if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
+    return terms;
+}
 // ARCH-NOTE: round value rates upward to three digits so a stored money floor
 // never falls below 1/hour; applying the same monotone rounding keeps funded ratios admissible.
 function significant(value) {
@@ -64,5 +81,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, tripEscrow, budgetFor, moneyReached, packetFor, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, moneyReached, packetFor, significant,
     summary: () => ({ moneyPacketMissing }), resetCounters: () => { moneyPacketMissing = 0; } };

@@ -1,8 +1,28 @@
 'use strict';
+const Valuation = require('./EconomicValuation');
+let townByName = null;
+
+function successProbability(recipe) {
+    const rate = Number(recipe?.successRate);
+    return Number.isFinite(rate) && rate >= 0 && rate <= 100 ? rate / 100 : NaN;
+}
+function craftOutcomes(recipe, { success = {}, failure = {}, batches = 1 } = {}) {
+    const probability = successProbability(recipe);
+    if (!Number.isFinite(probability) || !Number.isSafeInteger(batches) || batches < 0 || batches > 64) return [];
+    // craftSelf/craftInventoryItems make one draw for the whole native batch.
+    // Clip the successful physical output first; never clip its expectation.
+    return [{ ...success, probability }, { ...failure, probability: 1 - probability }];
+}
+function mpHours(recipe, batches = 1, { mpPerHour } = {}) {
+    const mp = Number(recipe?.mpCost ?? 0);
+    if (!Number.isFinite(mp) || mp < 0 || !Number.isSafeInteger(batches) || batches < 0 || batches > 64) return null;
+    if (!mp || !batches) return 0;
+    return Number.isFinite(mpPerHour) && mpPerHour > 0 ? mp * batches / mpPerHour : null;
+}
 
 function revenue(recipe, price) {
     return Number(price) * Number(recipe?.productCount || 0)
-        * Math.max(0, Math.min(100, Number(recipe?.successRate || 0))) / 100;
+        * successProbability(recipe);
 }
 // Materials retain their market opportunity value even when already owned.
 // A missing monetary hour or MP production rate is unknown labour, never free labour.
@@ -10,10 +30,17 @@ function margin(recipe, price, inputs, { hourAdena, hunt, mpPerHour, tripCost = 
     hourAdena = hunt?.perHour ?? hourAdena;
     const mp = Math.max(0, Number(recipe?.mpCost || 0));
     if (mp && (!(hourAdena >= 0) || !Number.isFinite(hourAdena) || !(mpPerHour > 0))) return null;
-    const hours = mp ? mp / mpPerHour : 0;
+    const hours = mpHours(recipe, 1, { mpPerHour });
+    if (hours === null) return null;
     const labour = hours * Number(hourAdena || 0);
-    const expectedRevenue = revenue(recipe, price);
-    const profit = expectedRevenue - Number(inputs) - labour - Math.max(0, Number(tripCost || 0));
+    const moneyPrice = hourAdena > 0 ? 1 / hourAdena : 1;
+    const common = { ownInputOpportunityValue: Number(inputs), actualCashFees: Math.max(0, Number(tripCost || 0)),
+        foregoneBenefitHours: hourAdena > 0 ? hours : 0, cycleHours: hours };
+    const value = Valuation.opportunity({ moneyPrice }, craftOutcomes(recipe, {
+        success: { ...common, receipts: Number(price) * Number(recipe?.productCount || 0) }, failure: common }));
+    if (!value.known) return null;
+    const expectedRevenue = value.expectedReceipts;
+    const profit = value.valueHours / moneyPrice;
     return Number.isFinite(profit) ? { expectedRevenue, inputs: Number(inputs), labour, hours, profit,
         perHour: hours > 0 ? profit / hours : profit } : null;
 }
@@ -28,22 +55,29 @@ function contextFor(state, timestamp = Date.now()) {
 }
 function tripFor(state, { hourAdena } = {}) {
     const Trip = require('../Population/ColdTrip');
-    const towns = require('../../World/TownRespawn').towns;
-    const byName = new Map(Object.values(towns).map(town => [town.name, town]));
+    if (!townByName) townByName = new Map(Object.values(require('../../World/TownRespawn').towns)
+        .map(town => [town.name, town]));
     const from = state.stats?.marketReturn?.loc || state.loc;
     const traveller = from === state.loc ? state : { ...state, loc: from };
     const costs = new Map();
-    return town => {
-        if (!town || state.activity === 'shopping' && town === state.currentRegion) return 0;
+    const details = town => {
+        if (!town || state.activity === 'shopping' && town === state.currentRegion) return { known: true, hours: 0, fees: 0 };
         if (!costs.has(town)) {
-            const destination = byName.get(town);
+            const destination = townByName.get(town);
             const plan = destination && Trip.townPlan(traveller, destination);
             const back = plan ? Trip.spotTripMs({ ...traveller, loc: Trip.point(destination) }, from) : 0;
-            costs.set(town, plan && Number.isFinite(hourAdena) ? Math.round((plan.durationMs + back) / 3600000 * hourAdena)
-                + Number(plan.route.fee || 0) : Infinity);
+            const hours = plan ? (plan.durationMs + back) / 3600000 : NaN;
+            const fees = plan ? Number(plan.route.fee || 0) : NaN;
+            costs.set(town, { known: Number.isFinite(hours) && hours >= 0 && Number.isFinite(fees) && fees >= 0, hours, fees });
         }
         return costs.get(town);
     };
+    const trip = town => {
+        const row = details(town);
+        return row.known && Number.isFinite(hourAdena) ? Math.round(row.hours * hourAdena) + row.fees : Infinity;
+    };
+    trip.details = details;
+    return trip;
 }
 function inputValue(id, state, context = {}) {
     const worth = context.worth?.(Number(id));
@@ -55,17 +89,31 @@ function inputValue(id, state, context = {}) {
         : invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id);
 }
 function materials(items, recipe, batches = 1) {
+    if (!Number.isSafeInteger(batches) || batches < 1 || batches > 64) return null;
     const required = new Map();
     for (const input of recipe.materials || []) {
         const id = Number(input.selfId);
-        required.set(id, Number(required.get(id) || 0) + Number(input.amount) * batches);
+        const amount = Number(input.amount) * batches;
+        if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(amount) || amount < 1) return null;
+        const total = Number(required.get(id) || 0) + amount;
+        if (!Number.isSafeInteger(total)) return null;
+        required.set(id, total);
+    }
+    const byItem = new Map(), physical = new Set();
+    for (const item of items || []) {
+        const id = Number(item.id), selfId = Number(item.selfId), amount = Number(item.amount);
+        if (item.equipped || item.protected || !required.has(selfId)) continue;
+        if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(amount) || amount < 0) return null;
+        if (physical.has(id)) continue;
+        physical.add(id);
+        if (!byItem.has(selfId)) byItem.set(selfId, []);
+        byItem.get(selfId).push(item);
     }
     const result = [];
     for (const [selfId, amount] of required) {
         let missing = amount;
-        for (const item of items || []) {
+        for (const item of byItem.get(selfId) || []) {
             if (missing <= 0) break;
-            if (Number(item.selfId) !== selfId || item.equipped) continue;
             const taken = Math.min(missing, Number(item.amount || 0));
             if (taken > 0) result.push({ id: Number(item.id), selfId, amount: taken });
             missing -= taken;
@@ -78,4 +126,5 @@ function materials(items, recipe, batches = 1) {
 function succeeds(recipe, random = Math.random) {
     return Number(recipe.successRate) >= 100 || Number(random()) * 100 < Number(recipe.successRate);
 }
-module.exports = { revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds };
+module.exports = { revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
+    mpHours, successProbability, craftOutcomes };

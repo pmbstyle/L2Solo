@@ -631,8 +631,7 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
         if (shot.wealth) {
             const Wealth = require('./ColdWealthCraftService');
             if (!Wealth.eligible(state)) return { state };
-            const known = await Database.fetchCharacterRecipes(ownerId);
-            const opportunity = Wealth.chooseOpportunity(state, known.filter(row => Number(row.recipeId) === Number(shot.wealth.recipeId)));
+            const opportunity = Wealth.recheck(state, shot.wealth);
             return opportunity ? Wealth.execute(state, opportunity) : { state };
         }
         return { state: await require('./ColdShotEconomyService').execute(state, shot) };
@@ -663,7 +662,7 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
             return { selfId: Number(selfId), count: Number(count), price: Number(price), enchant,
                 name: item?.template?.name || `Item ${selfId}`, kind: item?.template?.kind || '',
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
-                    { price: Number(price), storeType: AfkTrade.SELL, enchant }) };
+                    { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count) }) };
         });
         return listOnBoard(state, { planTowns: new Map(plan.sell.map(row => [Number(row[0]), row[3]])),
             decided: { listings, decisions: listings.map(item => ({ action: 'list', item })) } });
@@ -684,7 +683,7 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
             return { selfId, count, price, enchant: 0, name: item?.template?.name || `Item ${selfId}`,
                 slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
-                    { price, storeType: AfkTrade.BUY, enchant: 0 }) };
+                    { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
         });
         if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state };
         const town = buyAdTown(state, ads, wanted);

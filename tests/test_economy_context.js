@@ -50,7 +50,8 @@ async function run() {
                 return Number(id) === crafter.characterId ? crafter : peers.get(Number(id)); };
             Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 },
                 margin: { hours: 1, profit: 100000, labour: 0 } }];
-            const deps = { memory: { revision: 1, relations: [...peers.keys()].map(targetId => ({ targetId })) } };
+            const deps = { memory: { revision: 1, relations: [...peers.keys()].map(targetId => ({ targetId })) },
+                workshop: { recipeId: 1, productId: 1463, incomePerHour: 100000, cycleHours: 1 } };
             const context = Economy.forState(crafter, deps);
             assert.equal(peerReads, 0, 'a crafting review reads zero other crafters');
             assert(!context.projection.nodes.some(node => node.key === 'status:producer'));
@@ -113,10 +114,12 @@ async function run() {
     try {
         const crafter = { ...warrior, characterId: 1203, stats: { ...warrior.stats, workshop: { entries: [1] } } };
         Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: 0, profit: 1000, labour: 0 } }];
-        assert.equal(Economy.forState(crafter).hourAdena, warriorContext.hourAdena);
+        assert.equal(Economy.forState(crafter).hourAdena, warriorContext.hourAdena,
+            'main cannot turn an unsupported zero-clock opportunity into occupation income');
         Economy.forget(crafter.characterId);
         Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: .5, profit: 100000, labour: 38398.5 } }];
-        const context = Economy.forState(crafter);
+        const context = Economy.forState(crafter, { workshop: { recipeId: 1, productId: 1463,
+            incomePerHour: 276797, cycleHours: .5 } });
         assert.equal(context.hourAdena, 276797);
         assert.equal(context.projection.moneyPaths.find(row => row.kind === 'production').incomePerHour, context.hourAdena);
     } finally { Craft.opportunities = originalOpportunities; }

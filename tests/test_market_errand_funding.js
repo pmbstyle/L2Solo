@@ -91,7 +91,8 @@ async function noSpend(state, itemId, message) {
         assert.equal(JSON.parse(storedRate.statsJson).marketErrand.r, RATE, 'SQLite retains the exact original numeric rate');
         assert.equal(stale.stats.marketErrand.r, RATE, 'the original income rate survives native save and arrival');
 
-        const admissible = await arrive(await errand(await stateFor(), npc.selfId, 1, { maxPrice: npc.price }));
+        const admissible = await arrive(await errand(await stateFor(), npc.selfId, 1, { maxPrice: npc.price, quoteDepth: 5 }));
+        assert.deepEqual(admissible.stats.marketErrand.tag, [5], 'the bounded source query survives travel without new durable fields');
         const arrivedWallet = await wallet(admissible.characterId);
         assert(arrivedWallet < WALLET, 'the native journey has already paid its actual teleport cost');
         const bought = await Market.tryPurchase(admissible, { type: 'market_errand' });

@@ -59,7 +59,7 @@ async function run() {
     // The raw execution seams below do not claim a selected/funded shopping wish.
     Database.init();
     for (const id of [77, 777, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 91, 92]) {
-        await Native.character(Database, id, 'ColdBuyer' + id, 'bot' + id);
+        await Native.character(Database, id, 'ColdBuyer' + id, 'bot_' + id);
     }
     await Native.character(Database, 9001, 'RareSupplier', 'bot_raresupplier');
     await Native.character(Database, 9002, 'PlayerLowGradeSeller', 'player_low_grade_seller');
@@ -110,8 +110,28 @@ async function run() {
         const offer = MarketOpportunity.bestOffer(2, { town: 'Giran', buyerCharacterId: buyer.characterId });
         assert.strictEqual(offer.recordId, record.id);
         assert.deepStrictEqual([offer.selfId, offer.price, offer.count], [2, price, 1]);
-        const result = await ColdMarketService.buyOffer(buyer, { ...offer, buyerCharacterId: buyer.characterId, equipSlot: 7 });
-        assert.strictEqual(result.purchased, true);
+        const refused = await ColdMarketService.buyOffer(buyer, { ...offer, buyerCharacterId: buyer.characterId, equipSlot: 7 });
+        assert.strictEqual(refused.purchased, false, 'the unchanged raw input has no admitted funding packet');
+        assert.strictEqual(Native.amount(await Database.fetchItems(buyer.characterId), 57), value.adena,
+            'E2 refusal does not spend the declared wallet');
+        assert.strictEqual(Native.amount(await Database.fetchItems(buyer.characterId), 2), 0);
+        // ARCH-NOTE: this unmarked native transaction isolates the legacy
+        // physical SQL seam. It proves payment/stock conservation and item
+        // reconciliation only; no worker choice, funding packet or E2 receipt
+        // is supplied. Admitted replay-safe success has its own native fixture.
+        const physical = await Database.buyFromAfkTradeShop(buyer.characterId, {
+            shopId: record.id, ownerId: owner, lineId: offer.lineId, amount: 1,
+            expectedPrice: price, expectedRevision: record.revision
+        });
+        assert.strictEqual(physical.committed, true);
+        assert.strictEqual(physical.economyCommit, undefined, 'raw SQL seam does not invent an admitted receipt');
+        Afk.refreshRecord(physical.shop);
+        const captured = physical.coldLifeRows?.[buyer.characterId]
+            ? BotLifeState.acceptLifecycleRow(physical.coldLifeRows[buyer.characterId]) : refused.state || buyer;
+        const synced = await BotLifeState.syncExternalInventory(buyer.characterId, 'afk_trade_raw_fixture', captured);
+        assert(synced, 'committed physical holdings reconcile into the existing equipment owner');
+        MarketTelemetry.purchase(offer, 1, { buyerCharacterId: buyer.characterId, buyerName: buyer.name, town: buyer.currentRegion });
+        const result = { purchased: true, state: synced, offer, units: 1, spent: price, rawPhysicalBaseline: true };
         const afterBuyer = await Database.fetchItems(buyer.characterId), afterSeller = await Database.fetchItems(owner);
         // A full fill closes and deletes the shop and its lines. The
         // durable sale event is in history, read after its native flush.
@@ -157,7 +177,7 @@ async function run() {
 
     const state = {
         characterId: 77,
-        accountName: 'bot77',
+        accountName: 'bot_77',
         name: 'ColdBuyer',
         level: 40,
         adena: 1000,
@@ -239,10 +259,10 @@ async function run() {
     assert.strictEqual(playerTransactions.recentPlayerTrades.length, 0, 'retired configured supply has no transaction');
     assert.strictEqual(MarketTelemetry.current().peerPurchases, 2);
 
-    let lowTierMarketLookups = 0;
+    const lowTierMarketLookups = [];
     let lowTierBudget;
     MarketOpportunity.bestOffer = (_itemId, options) => {
-        lowTierMarketLookups += 1;
+        lowTierMarketLookups.push(options);
         lowTierBudget = options.budget;
         const offer = {
             selfId: 2,
@@ -260,7 +280,11 @@ async function run() {
     MarketOpportunity.reserve = () => true;
     const lowTierInput = { ...state, characterId: 88, level: 14 };
     const lowTierNative = await NativeChoice.capture(lowTierInput, {}, 'cold_purchase_original_level14');
-    const lowTierPlayerPurchase = await ColdMarketService.tryPurchase(await declaredState(lowTierNative.state, 'low_tier'), {
+    const lowTierState = await declaredState(lowTierNative.state, 'low_tier');
+    // The native bot also probes public offers while checking remote-trade
+    // eligibility. Count this consumer separately from capture/preparation.
+    lowTierMarketLookups.length = 0; lowTierBudget = undefined;
+    const lowTierPlayerPurchase = await ColdMarketService.tryPurchase(lowTierState, {
         type: 'upgrade_gear',
         status: 'active',
         target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none' },
@@ -272,7 +296,12 @@ async function run() {
     assert.strictEqual(lowTierPlayerPurchase.reason, 'low_tier_offer_missing');
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
-    assert.strictEqual(lowTierMarketLookups, 1, 'NG/D equipment should perform one indexed market lookup');
+    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 1,
+        'NG/D purchase consumer performs one indexed market lookup');
+    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost === 'function').length, 1,
+        'native bot remote-trade eligibility separately observes the same public quote');
+    assert(lowTierMarketLookups.every(lookup => lookup.budget === lowTierBudget),
+        'neither public lookup fabricates funding for the original quote');
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
     // Separate public counterpart keeps the low-tier seller id/name, 900
@@ -322,7 +351,11 @@ async function run() {
     assert.strictEqual(completedGoal.reason, 'no_purchase_goal', 'a completed market goal must not buy its item again during a batch visit');
     // Town trips are paid (N2, user 2026-10-04): the bot shopping in Giran walks
     // to the Giran gatekeeper and pays the hop to the requested town.
-    const fundedInGiran = { ...state, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
+    // ARCH-NOTE: preserve this legacy journey's original bot77 account marker.
+    // The new bot_77 receipt identity additionally admits remote-trade planning,
+    // which is a different route consumer; these are raw gatekeeper assertions.
+    const legacyJourneyState = { ...state, accountName: 'bot77' };
+    const fundedInGiran = { ...legacyJourneyState, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
     const otherTownGoal = await ColdMarketService.tryPurchase(await declaredState(fundedInGiran, 'giran_to_dion'), {
         ...goal,
@@ -343,7 +376,7 @@ async function run() {
     assert.strictEqual(corrected.state.stats.travel.townName, 'Goddard');
     assert.deepStrictEqual(corrected.state.stats.marketReturn, returnPoint,
         'correcting a persisted wrong-town journey must keep the original hunting return');
-    const unknownTown = await ColdMarketService.tryPurchase(await declaredState(state, 'unknown_town'), {
+    const unknownTown = await ColdMarketService.tryPurchase(await declaredState(legacyJourneyState, 'unknown_town'), {
         ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Unknown town' }
     });
     assert.strictEqual(unknownTown.reason, 'different_market_town');

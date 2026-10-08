@@ -1,4 +1,5 @@
 const Tendency = require('../AI/TendencyRoll');
+const Valuation = require('./EconomicValuation');
 const { fnv1a32 } = require('../Fnv1a');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
@@ -87,8 +88,16 @@ class WishNetwork {
         }
         const plans = new Map(), visiting = new Set();
         const adenaToHours = hourAdena > 0 ? 1 / hourAdena : Infinity;
-        const priceOf = path => nonnegative(path.costHours) + nonnegative(path.riskHours) * nonnegative(riskWeight)
-            + (nonnegative(path.price) > 0 ? nonnegative(path.price) * adenaToHours : 0);
+        const priceOf = path => {
+            if (!Number.isFinite(adenaToHours)) return nonnegative(path.price)
+                + nonnegative(path.ownInputOpportunityValue) + nonnegative(path.actualCashFees) > 0 ? Infinity
+                : nonnegative(path.costHours) + nonnegative(path.riskHours) * nonnegative(riskWeight);
+            const value = Valuation.opportunity({ moneyPrice: adenaToHours, riskWeight }, [{ probability: 1,
+                cashNow: nonnegative(path.price), foregoneBenefitHours: nonnegative(path.costHours),
+                ownInputOpportunityValue: nonnegative(path.ownInputOpportunityValue),
+                actualCashFees: nonnegative(path.actualCashFees), riskHours: nonnegative(path.riskHours) }]);
+            return value.known ? -value.valueHours : Infinity;
+        };
         const solve = (key, depth = 0) => {
             if (visiting.has(key)) throw new TypeError('cyclic_wish_network');
             const node = byKey.get(key);
@@ -105,7 +114,15 @@ class WishNetwork {
                 price: node.price, costHours: node.costHours, riskHours: node.riskHours }];
             for (const path of paths) {
                 if (path.available === false) continue;
+                const successProbability = Number(path.successProbability ?? 1);
+                if (!Number.isFinite(successProbability) || successProbability < 0 || successProbability > 1) continue;
+                const valuation = path.outcomes ? Valuation.opportunity({ moneyPrice: adenaToHours, riskWeight }, path.outcomes) : null;
+                if (valuation && !valuation.known) continue;
                 let price = nonnegative(path.price), effort = priceOf(path), available = true, height = 0;
+                if (valuation) {
+                    price = nonnegative(valuation.cashNow);
+                    effort = Math.max(0, Number(path.ownBenefitHours || 0) - valuation.valueHours);
+                }
                 const requirements = [];
                 for (const requirement of path.requirements || []) {
                     const child = solve(requirement.key, depth + 1);
@@ -115,7 +132,7 @@ class WishNetwork {
                     height = Math.max(height, 1 + child.height);
                     requirements.push({ key: requirement.key, amount });
                 }
-                if (available) choices.push({ ...path, price, effort, requirements, height });
+                if (available) choices.push({ ...path, successProbability, price, effort, requirements, height });
             }
             choices.sort((a, b) => a.effort - b.effort || a.price - b.price);
             const best = choices[0] || null;
@@ -128,7 +145,7 @@ class WishNetwork {
             const plan = solve(key);
             const remaining = 1 - Math.min(1, nonnegative(node.progress));
             return { key, need: node.need, object: node.object, plan,
-                valueHours: nonnegative(node.valueHours) * remaining,
+                valueHours: nonnegative(node.valueHours) * remaining * Number(plan?.successProbability ?? 1),
                 price: plan ? nonnegative(node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         }).filter(wish => wish.valueHours > 0 && wish.plan);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
@@ -172,7 +189,8 @@ class WishNetwork {
         const unfunded = gap;
         if (unfunded) for (const path of moneyPaths.slice(0, 3)) {
             const income = nonnegative(path.incomePerHour);
-            if (!(income > 0) || path.available === false) continue;
+            if (!(income > 0) || path.available === false || path.repeatable === false
+                || path.kind === 'production' && (!(path.cycleHours > 0) || path.repeatable !== true)) continue;
             const shortfall = Math.max(0, unfunded.price - available);
             const effort = shortfall / income + nonnegative(path.costHours)
                 + nonnegative(path.riskHours) * nonnegative(riskWeight);

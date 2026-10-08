@@ -48,9 +48,9 @@ assert.strictEqual(found.expectedProfit, 21000, 'the original basket also pays i
 // The trips of the purchases and of the sale are costs of the craft (group C item 7).
 trip = 2000;
 const landed = Policy.opportunityFor(state, recipe, planFor, [{ ...exit, trip: 3000 }], undefined, paid);
-assert.strictEqual(landed.basket.cost, 31000, 'two purchase trips');
+assert.strictEqual(landed.basket.cost, 29000, 'one shared town trip buys both materials');
 assert.strictEqual(landed.basket.cashCost, 27000, 'the wallet pays the goods');
-assert.strictEqual(landed.expectedProfit, netProfit(recipe, 50000, 31000, 3000), 'and the sale trip plus paid labour');
+assert.strictEqual(landed.expectedProfit, netProfit(recipe, 50000, 29000, 3000), 'and the sale trip plus paid labour');
 trip = 0;
 const partialStock = Policy.opportunityFor(state, recipe, planFor, [exit], (selfId) => (
     selfId === 1876 ? { count: 1, unitValue: 11000 } : null

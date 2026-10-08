@@ -836,7 +836,10 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
-            statsJson = json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
+            statsJson = CASE WHEN json_type(bot_life_state.statsJson, '$.economyCommit') IS NULL
+                THEN json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.economyCommit')
+                ELSE json_set(json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
+                    '$.economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')) END,
             updatedAt = excluded.updatedAt
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)
@@ -2368,7 +2371,7 @@ const BotLifeState = {
         });
     },
 
-    prepareResolve(state, result, options = {}) {
+    async prepareResolve(state, result, options = {}) {
         if (!state || !result) return Promise.resolve(null);
         if (workerProjectorRole && (options.persist !== false || options.projectClassProgression !== true)) {
             return Promise.reject(new TypeError('worker_projector_projection_required'));
@@ -2619,7 +2622,9 @@ const BotLifeState = {
             nextState.stats.activityLeaf = 0;
         }
         if (!isMainThread) {
-            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...(options.economyDeps || {}), timestamp });
+            const economyDeps = typeof options.economyDepsFor === 'function'
+                ? await options.economyDepsFor(nextState) : options.economyDeps || {};
+            const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, { ...economyDeps, timestamp });
             Object.assign(nextState.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
         } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
@@ -3503,8 +3508,13 @@ const BotLifeState = {
         return next;
     },
 
-    learnCraftableRecipes(state) {
+    learnCraftableRecipes(state, { recipeIds = null } = {}) {
         if (!state?.characterId) return Promise.resolve(state || null);
+        if (!recipeIds) {
+            const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state)?.activity;
+            recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+        }
+        if (!recipeIds.length) return Promise.resolve(state);
         const candidates = Object.values(state.inventory || {})
             .filter((item) => ItemDisposition.canLearnRecipe(state, item))
             .sort((left, right) => Number(left.selfId || 0) - Number(right.selfId || 0));
@@ -3514,13 +3524,23 @@ const BotLifeState = {
             const known = new Set((rows || []).map(row => Number(row.recipeId)));
             const recipes = candidates.filter(item => Number(item.amount || 0) > 0).flatMap(item => {
                 const decision = ItemDisposition.recipeDisposition(state, item, [...known]);
-                return decision?.action === 'learn' ? [{ ...decision.recipe, name: item.name }] : [];
+                return decision?.action === 'learn' && recipeIds.includes(Number(decision.recipe.recipeId))
+                    ? [{ ...decision.recipe, name: item.name }] : [];
             });
             if (!recipes.length) return state;
-            const learned = await Database.learnColdRecipes(state.characterId, recipes, state);
-            if (learned.learned?.length) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
-            if (!learned.coldLifeRow) return state;
-            const saved = this.acceptLifecycleRow(learned.coldLifeRow);
+            const Commit = require('../Economy/EconomyCommit');
+            let saved = state, changed = false;
+            for (const recipe of recipes) {
+                const admitted = await Commit.admit(saved, Commit.KINDS.learn);
+                let learned;
+                try { learned = await Database.learnColdRecipes(state.characterId, [recipe], admitted.state,
+                    { economyCommand: admitted.command }); }
+                finally { Commit.finish(state.characterId, admitted.command); }
+                if (learned.learned?.length) changed = true;
+                if (learned.coldLifeRow) saved = Commit.acceptRow(learned.coldLifeRow);
+                if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
+            }
+            if (changed) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(state.characterId);
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });
             return saved;
         }).catch(error => {

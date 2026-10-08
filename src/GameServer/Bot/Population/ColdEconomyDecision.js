@@ -31,6 +31,21 @@ class CompactActivity {
 // One binary record keeps exact watch/material numbers, leaf fields and Float32 usefulness;
 // the public tuple fields are decoded on demand and are never retained twice.
 const encoder = new TextEncoder(), decoder = new TextDecoder();
+const WORKSHOP = 16384;
+const SHOT = 32768;
+const FEASIBILITY = 65536;
+const MAX_BYTES = 800, MAX_SHOT_BYTES = 128;
+const COMMAND_HEADER_BYTES = Buffer.byteLength(JSON.stringify(['00000000-0000-0000-0000-000000000000', 5, Number.MAX_SAFE_INTEGER]));
+const MAX_SHOT_PAYLOAD_BYTES = MAX_SHOT_BYTES - COMMAND_HEADER_BYTES;
+function workshopValues(value) {
+    if (!value || value.known === false) return [0, 0, NaN, NaN];
+    const recipeId = Number(value.recipeId || 0), productId = Number(value.productId || 0);
+    if (!recipeId && !productId && value.known === true) return [0, 0, 0, 0];
+    const income = Number(value.incomePerHour), cycle = Number(value.cycleHours);
+    return recipeId > 0 && productId > 0 && income > 0 && cycle > 0
+        && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
+}
+function unknownWorkshop() { return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
 class CompactDecision {
     constructor(updatedAt, key, riskWeight, activity, data, flags) {
         this.key = key; this.data = data;
@@ -41,8 +56,9 @@ class CompactDecision {
     }
     get activity() {
         const counts = this.counts;
-        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
-            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
+        let at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
+            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & WORKSHOP ? 32 : 0) + (counts & FEASIBILITY ? 8 : 0);
+        if (counts & SHOT) at += 2 + new DataView(this.data).getUint16(at, true);
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
@@ -56,6 +72,8 @@ class CompactDecision {
     set stale(value) { this.flags = value ? this.flags | 1 : this.flags & ~1; }
     get held() { return !!(this.flags & 2); }
     set held(value) { this.flags = value ? this.flags | 2 : this.flags & ~2; }
+    get workshopStale() { return !!(this.flags & 4); }
+    set workshopStale(value) { this.flags = value ? this.flags | 4 : this.flags & ~4; }
     get counts() { return new DataView(this.data).getUint32(0, true); }
     get inputHash() { return new DataView(this.data).getUint32(4, true); }
     get usefulness() { return new Float32Array(this.data, 28, (this.counts & 63) * 2); }
@@ -84,24 +102,59 @@ class CompactDecision {
         return { horizonHours: view.getFloat64(at, true), huntPerHour: view.getFloat64(at + 8, true),
             plan: itemId ? { itemId, valueHours: view.getFloat64(at + 24, true) } : null };
     }
+    get workshop() {
+        const counts = this.counts;
+        if (!(counts & WORKSHOP) || this.workshopStale) return unknownWorkshop();
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
+            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0);
+        const view = new DataView(this.data);
+        const incomePerHour = view.getFloat64(at + 16, true), cycleHours = view.getFloat64(at + 24, true);
+        return { known: Number.isFinite(incomePerHour) && Number.isFinite(cycleHours),
+            recipeId: view.getFloat64(at, true), productId: view.getFloat64(at + 8, true), incomePerHour, cycleHours };
+    }
+    get shot() {
+        const counts = this.counts;
+        if (!(counts & SHOT) || this.workshopStale || this.stale || this.held) return null;
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
+            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & WORKSHOP ? 32 : 0) + (counts & FEASIBILITY ? 8 : 0);
+        const bytes = new DataView(this.data).getUint16(at, true);
+        return JSON.parse(decoder.decode(new Uint8Array(this.data, at + 2, bytes)));
+    }
+    get feasibility() {
+        const counts = this.counts;
+        if (!(counts & FEASIBILITY) || this.workshopStale || this.stale) return null;
+        const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12
+            + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0) + (counts & WORKSHOP ? 32 : 0);
+        const view = new DataView(this.data);
+        return [view.getUint32(at, true), view.getUint16(at + 4, true), view.getUint16(at + 6, true)];
+    }
 }
 function compact(record) {
     if (record.data instanceof ArrayBuffer) {
         const result = new CompactDecision(record.updatedAt, record.key, record.riskWeight, null, record.data, record.flags);
         if (Object.hasOwn(record, 'stale')) result.stale = record.stale;
         if (Object.hasOwn(record, 'held')) result.held = record.held;
-        for (const key of ['workshopToken', 'workshop']) if (Object.hasOwn(record, key)) result[key] = record[key];
+        if (Object.hasOwn(record, 'workshopStale')) result.workshopStale = record.workshopStale;
         return result;
     }
     const pairs = record.usefulness || [], watch = record.watch || [], materials = record.materials || [], wish = record.wish;
-    const n = Math.min(40, pairs.length / 2), w = Math.min(3, watch.length), m = Math.min(8, materials.length);
+    const w = Math.min(3, watch.length), m = Math.min(8, materials.length);
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
         ...(leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
-    const data = new ArrayBuffer(28 + n * 8 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0) + activity.length), view = new DataView(data);
-    view.setUint32(0, n | (w << 6) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0), true);
+    const workshop = Object.hasOwn(record, 'workshop') ? workshopValues(record.workshop) : null;
+    const feasibility = Array.isArray(record.feasibility) && record.feasibility[2] <= 14 ? record.feasibility : null;
+    let shot = record.shot ? encoder.encode(JSON.stringify(record.shot)) : null;
+    if (shot?.length > MAX_SHOT_PAYLOAD_BYTES) shot = encoder.encode(JSON.stringify({ unknown: true }));
+    const fixed = 28 + w * 21 + m * 12 + (wish ? 17 : 0) + (clan ? 32 : 0) + (workshop ? 32 : 0)
+        + (feasibility ? 8 : 0) + (shot ? shot.length + 2 : 0) + activity.length;
+    // The key and object/ArrayBuffer wire tags share this cap with the payload.
+    const wireRoom = MAX_BYTES - 48 - encoder.encode(String(record.key || '')).length;
+    const n = Math.min(40, Math.floor(pairs.length / 2), Math.max(0, Math.floor((wireRoom - fixed) / 8)));
+    const data = new ArrayBuffer(fixed + n * 8), view = new DataView(data);
+    view.setUint32(0, n | (w << 6) | (m << 8) | (wish ? 4096 : 0) | (clan ? 8192 : 0) | (workshop ? WORKSHOP : 0) | (shot ? SHOT : 0) | (feasibility ? FEASIBILITY : 0), true);
     view.setUint32(4, record.inputHash >>> 0, true);
     new Float32Array(data, 28, n * 2).set(pairs.subarray ? pairs.subarray(0, n * 2) : pairs.slice(0, n * 2));
     let at = 28 + n * 8;
@@ -111,6 +164,10 @@ function compact(record) {
     if (wish) { view.setUint8(at, wish[0]); view.setFloat64(at + 1, wish[1], true); view.setFloat64(at + 9, wish[2], true); at += 17; }
     if (clan) { view.setFloat64(at, clan.horizonHours, true); view.setFloat64(at + 8, clan.huntPerHour, true);
         view.setFloat64(at + 16, clan.plan?.itemId || 0, true); view.setFloat64(at + 24, clan.plan?.valueHours || 0, true); at += 32; }
+    if (workshop) { for (const value of workshop) { view.setFloat64(at, value, true); at += 8; } }
+    if (feasibility) { view.setUint32(at, feasibility[0], true); view.setUint16(at + 4, feasibility[1], true);
+        view.setUint16(at + 6, feasibility[2], true); at += 8; }
+    if (shot) { view.setUint16(at, shot.length, true); new Uint8Array(data, at + 2, shot.length).set(shot); at += shot.length + 2; }
     new Uint8Array(data, at).set(activity);
     return new CompactDecision(record.updatedAt, record.key, record.riskWeight, record.activity, data);
 }
@@ -122,7 +179,8 @@ function stateKey(state = {}) {
     const stats = state.stats || {};
     const plan = stats.equipmentPlan;
     return [Number(state.level || 0), Number(stats.classId || 0), state.activity || '', Number(stats.clanId || 0),
-        plan ? `${plan.status || ''}:${Number(plan.target?.selfId || 0)}:${plan.clanGoal ? 1 : 0}` : ''].join('|');
+        plan ? `${plan.status || ''}:${Number(plan.target?.selfId || 0)}:${plan.clanGoal ? 1 : 0}` : '',
+        Number(state.adena ?? state.inventory?.[57]?.amount ?? 0), Number(state.vitals?.mp ?? 0)].join('|');
 }
 
 // economy: the network built on `seen` (the state before the projection's
@@ -185,7 +243,9 @@ function capture(economy, state, seen = state) {
         activity,
         wish: wish ? [kindCode(wish.object?.kind), Number(wish.object?.amount || 0), Number(wish.price || 0)] : null,
         watch: (economy?.watchList || []).slice(0, 3).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
-        materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan
+        materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
+        workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,
+        feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
     });
 }
 
@@ -213,6 +273,7 @@ function view(state, decision, deps = {}) {
         network: { activity }, activity, wish,
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
+        workshop: decision?.workshop || unknownWorkshop(),
         itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : base.price(id) };
 }
 function economyFor(state, deps = {}) {
@@ -236,9 +297,7 @@ class ColdEconomyDecisions {
         if (!id) return;
         const incoming = decision ? compact(decision) : null;
         const bagChanged = !!committed?.settled || !!committed?.pkDrops?.length;
-        const previous = this.byId.get(id);
-        if (incoming && Number.isFinite(Number(incoming.updatedAt))) this.byId.set(id, compact({ ...incoming, stale: bagChanged,
-            ...(previous?.workshopToken !== undefined ? { workshopToken: previous.workshopToken, workshop: previous.workshop } : {}) }));
+        if (incoming && Number.isFinite(Number(incoming.updatedAt))) this.byId.set(id, compact({ ...incoming, stale: bagChanged }));
         else if (this.byId.has(id)) this.byId.get(id).stale = true;
     }
 
@@ -265,14 +324,24 @@ class ColdEconomyDecisions {
         const entry = this.byId.get(Number(id)), clan = entry?.clan;
         return clan ? { ...clan, updatedAt: entry.updatedAt } : null;
     }
-    workshopFor(state, build) {
-        const id = Number(state.characterId), entry = this.byId.get(id) || { stale: true };
-        const token = fnv1a32(JSON.stringify([state.stats?.workshop?.entries, state.stats?.recipes || state.recipes]));
-        // ARCH-NOTE: workshop income is computed only when its learned entries/recipes change.
-        // Keep these four numbers in the existing decision entry, with no second bot cache.
-        if (entry.workshopToken !== token) { entry.workshopToken = token; entry.workshop = build(); this.byId.set(id, entry); }
-        return entry.workshop;
+    workshopFor(state) {
+        // A held strategic decision may survive a physical command. Its earning
+        // estimate cannot: the accepted publication must still match this bag.
+        const entry = this.byId.get(Number(state?.characterId));
+        return entry && !entry.stale && entry.updatedAt === Number(state?.updatedAt || 0)
+            && entry.key === stateKey(state) ? entry.workshop : unknownWorkshop();
     }
+    feasibilityFor(state) {
+        const entry = this.byId.get(Number(state?.characterId));
+        return entry && !entry.stale && entry.updatedAt === Number(state?.updatedAt || 0)
+            && entry.key === stateKey(state) ? entry.feasibility : null;
+    }
+    staleWorkshop(id, expected) {
+        const entry = this.byId.get(Number(id));
+        if (entry && (!expected || entry.updatedAt === expected.updatedAt && entry.key === expected.key)) entry.workshopStale = true;
+    }
+    clear() { this.byId.clear(); }
 }
 
-module.exports = { capture, stateKey, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact };
+module.exports = { capture, stateKey, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
+    unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

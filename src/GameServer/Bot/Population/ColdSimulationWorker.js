@@ -84,6 +84,8 @@ const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
+const { ColdOccupationPlanner } = require('./ColdOccupationPlanner');
+const OccupationSources = require('./ColdOccupationSources');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
@@ -128,24 +130,145 @@ const buyerWaiters = new MarketBuyerWaiters({
 });
 const boardFollower = boardIndex.follower();
 let boardReplacing = false;
+const occupationPlanner = new ColdOccupationPlanner({
+    sourceToken: id => `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}`,
+    sourceScope: id => MarketCounters.counterOf(id),
+    ownCurrent: (id, input) => !shuttingDown && kernel?.states.get(id)?.state === input.sourceState,
+    sameInput: (left, right) => left.state.updatedAt === right.state.updatedAt
+        && ColdEconomyDecision.stateKey(left.state) === ColdEconomyDecision.stateKey(right.state)
+        && left.state.simulation?.revision === right.state.simulation?.revision
+        && left.state.simulation?.ownerId === right.state.simulation?.ownerId
+        && left.state.simulation?.leaseId === right.state.simulation?.leaseId
+        && left.state.inventory === right.state.inventory
+        && left.state.stats?.workshop?.entries === right.state.stats?.workshop?.entries
+        && left.knownShotRecipes === right.knownShotRecipes && left.stock === right.stock
+        && left.sourceReady === right.sourceReady
+        && left.mode === right.mode && left.buyOrderEscrow === right.buyOrderEscrow,
+    onSlots: count => invoke('GameServer/Bot/Economy/EconomyContext').setPlanningContexts?.(count),
+    capture: (id, input, read) => {
+        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read,
+            knownRecipes: input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
+            recipesKnown: Array.isArray(input.state.stats?.workshop?.entries),
+            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, mode: input.mode || 'occupation' };
+    },
+    create: input => ({ iterator: (function* () {
+        if (input.mode === 'occupation') {
+            const eligible = invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(input.state);
+            if (!eligible || !input.recipesKnown || !input.knownRecipes.length) {
+                const mask = input.board?.ownerLines(input.state.characterId)?.length
+                    ? yield* OccupationSources.feasibility(input.state, input) : null;
+                return eligible && !input.recipesKnown ? { ...ColdEconomyDecision.unknownWorkshop(), feasibility: mask }
+                    : { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: mask };
+            }
+        }
+        const prepared = yield* OccupationSources.prepare(input.state, input);
+        if (!prepared) return input.mode === 'action' ? null : ColdEconomyDecision.unknownWorkshop();
+        const Wealth = require('../Economy/WealthCraftDecision');
+        const action = input.mode === 'action';
+        const options = { ...prepared.options, knownShotRecipes: input.knownShotRecipes, stock: input.stock,
+            buyOrderEscrow: input.buyOrderEscrow, now: input.timestamp };
+        if (!action) {
+            const cursor = Wealth.createOccupation(input.state, input.knownRecipes, prepared.context, options);
+            while (!Wealth.stepOccupation(cursor)) yield cursor.stage;
+            return { ...Wealth.resultOccupation(cursor), feasibility: prepared.feasibility };
+        }
+        let selected = null, selectedValue = 0;
+        if (Wealth.eligible(input.state, options)) {
+            const cursor = Wealth.createAction(input.state, input.knownRecipes, prepared.context, options);
+            while (!Wealth.stepAction(cursor)) yield cursor.stage;
+            const value = Wealth.resultAction(cursor);
+            if (value && cursor.selectedValueHours > 0) {
+                const offer = value.exit?.offer;
+                const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
+                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0] : null;
+                selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
+                    ...(exit?.every(Number.isFinite) ? { exit } : {}),
+                    ...(Number(input.stock?.itemId) === Number(value.recipe.productId)
+                        ? { ownReserve: Number(input.stock?.target || 0) } : {}) } };
+                selectedValue = cursor.selectedValueHours;
+            }
+        }
+        const Shots = require('../Economy/ShotCraftPolicy');
+        if (Shots.eligible(input.state, input.timestamp)) {
+            const cursor = Shots.createShot(input.state, input.knownRecipes, prepared.context, options);
+            while (!Shots.stepShot(cursor)) yield cursor.stage;
+            const value = Shots.resultShot(cursor);
+            if (value && cursor.selectedValueHours > selectedValue) selected = value;
+        }
+        return selected;
+    })(), done: false, value: null, stage: 0, units: 0 }),
+    step: work => {
+        const next = work.iterator.next(); work.units++;
+        work.stage = typeof next.value === 'number' ? next.value
+            : ['stock', 'recipe', 'ingredient', 'owned', 'quote', 'trip', 'exit', 'without', 'success', 'utility', 'candidate', 'funding', 'edge'].indexOf(next.value) + 1;
+        if (next.done) { work.done = true; work.value = next.value; work.iterator = null; }
+        return work.done;
+    },
+    result: work => work.value,
+    publish: (id, input, workshop, meta = {}) => {
+        if (shuttingDown || kernel?.states.get(id)?.state !== input.sourceState) return;
+        if (meta.stale) {
+            send('ready', { phase: 'economy_workshop_stale', characterId: id,
+                updatedAt: Number(input.state.updatedAt || 0), key: ColdEconomyDecision.stateKey(input.state) });
+        } else if (input.mode !== 'action' && input.state.phase === 'hot') {
+            const decision = ColdEconomyDecision.capture({ workshop }, input.state);
+            send('ready', { phase: 'economy_decided', characterId: id, economyDecision: decision });
+        }
+    }
+});
+function occupationFor(state, timestamp, context = {}, mode = 'occupation') {
+    const id = Number(state.characterId), sourceState = kernel?.states.get(id)?.state;
+    if (!sourceState || shuttingDown) return Promise.resolve(ColdEconomyDecision.unknownWorkshop());
+    return occupationPlanner.request(id, { state, sourceState, timestamp, buyOrderEscrow: context.buyOrderEscrow || 0,
+        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null,
+        sourceReady: tables.ready('board') && tables.ready('market'), mode });
+}
+function occupationOwnerChanged(id) {
+    const entry = kernel?.states.get(Number(id));
+    if (!entry || entry.state.phase !== 'hot') return;
+    occupationPlanner.request(id, { state: entry.state, sourceState: entry.state,
+        timestamp: Date.now(), buyOrderEscrow: entry.context.buyOrderEscrow || 0,
+        knownShotRecipes: entry.context.knownShotRecipes || [],
+        sourceReady: tables.ready('board') && tables.ready('market') }, { awaitResult: false });
+}
+function changedItems(previous, next) {
+    const ids = new Set();
+    for (const row of previous || []) ids.add(Number(row.selfId));
+    for (const row of next || []) ids.add(Number(row.selfId));
+    for (const id of ids) occupationPlanner.sourceChanged(id);
+}
 tables.watch('board', {
-    reset: () => { boardReplacing = true; boardFollower.reset(); kernel?.lookSeen.clear(); },
+    reset: () => { boardReplacing = true; boardFollower.reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
     put: (key, row) => {
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
+        changedItems(previous, boardIndex.records.get(Number(key)));
         pruneLookSeen(recordOf(row).ownerId);
         if (previous[0]?.ownerId !== recordOf(row).ownerId) pruneLookSeen(previous[0]?.ownerId);
         if (!boardReplacing && tables.ready('board')) buyerWaiters.recordChanged(recordOf(row), previous);
     },
     remove: (key) => {
-        const ownerId = boardIndex.records.get(Number(key))?.[0]?.ownerId;
+        const previous = boardIndex.records.get(Number(key)) || [];
+        const ownerId = previous[0]?.ownerId;
         boardFollower.remove(key);
+        changedItems(previous, []);
         if (ownerId) pruneLookSeen(ownerId);
     }
 });
 // The market counters come from the main thread's 'market' table.
 MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);
+tables.watch('market', {
+    reset: () => occupationPlanner.resetSources(),
+    put: key => {
+        if (String(key).startsWith('i:')) occupationPlanner.sourceChanged(Number(String(key).slice(2)));
+        else if (String(key).startsWith('c:')) occupationPlanner.scopeChanged(String(key).slice(2));
+    },
+    remove: key => {
+        if (String(key).startsWith('i:')) occupationPlanner.sourceChanged(Number(String(key).slice(2)));
+        else if (String(key).startsWith('c:')) occupationPlanner.scopeChanged(String(key).slice(2));
+    }
+});
 function boardReady() {
     return tables.ready('board') ? boardIndex : null;
 }
@@ -252,7 +375,8 @@ function reviewMarket(state, timestamp, economy) {
     const ctx = MarketPricing.traderContext(state, {
         timestamp, board, economy, persona: BotPersona.of(state),
         npcOffersFor: (selfId) => planningNpcCatalog.offersFor(selfId),
-        findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId)
+        findSpot: (spotId) => SpotIndex.spotById(planningSpots, spotId),
+        canSell: require('../Economy/BoardLook').feasibilityPredicate(state, lines, economy?.workshop?.feasibility)
     });
     const id = Number(state.characterId);
     let seen = kernel.lookSeen.get(id);
@@ -337,7 +461,8 @@ function startKernel(config = {}) {
                 timestamp,
                 projectClassProgression: true,
                 // Spot crowding, as main gave the same leaf before (L25).
-                economyDeps: { occupancy: currentPlanningOccupancy(timestamp) },
+                economyDepsFor: async projected => ({ occupancy: currentPlanningOccupancy(timestamp),
+                    workshop: await occupationFor(projected, timestamp, kernel.states.get(Number(state.characterId))?.context || {}) }),
                 onEconomy: (built, seen) => { economy = built; seenKey = ColdEconomyDecision.stateKey(seen); }
             });
             const projected = resolved;
@@ -354,8 +479,11 @@ function startKernel(config = {}) {
             const context = kernel.states.get(Number(state.characterId))?.context || {};
             const planner = require('./ColdEconomyPlan');
             const economyEdges = planner.edges(state, projected, context, timestamp);
+            const preparedCraft = economyEdges && economy ? await occupationFor(projected, timestamp,
+                { ...context, stock: economy.stock('shots') }, 'action') : null;
             const economyPlan = economyEdges && economy ? planner.decide(projected, economy, {
                 now: timestamp, board: boardReady(), persona: BotPersona.of(projected),
+                preparedCraft,
                 npcOffersFor: planningNpcCatalog.offersFor,
                 findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)), buyOrderEscrow: context.buyOrderEscrow, knownShotRecipes: context.knownShotRecipes
             }) : null;
@@ -369,19 +497,26 @@ function startKernel(config = {}) {
                 buffOffer: require('../Economy/ColdBuffOffer').project(projected,
                     kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
                 // Main reads this instead of building the network again.
-                ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture(economy, projected), key: seenKey } } : {})
+                ...(economy && projected ? { economyDecision: { ...ColdEconomyDecision.capture({ ...economy,
+                    shot: economyPlan?.shot || null }, projected), key: seenKey } } : {})
             };
         },
         planPartyRequirement: ({ state, context, timestamp }) => require('./PartyRequirementRefresh').plan(state, {
             spots: planningSpots, occupancy: currentPlanningOccupancy(timestamp), timestamp,
             planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: context?.buyOrderEscrow }
         }),
-        planLifecycle: ({ state, context, timestamp }) => {
+        planLifecycle: async ({ state, context, timestamp }) => {
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
             if (karmaPlan) return karmaPlan;
             const previousPlan = state.stats?.equipmentPlan || null;
             const spots = planningSpots;
             const occupancy = currentPlanningOccupancy(timestamp);
+            // GearPlanSelection uses EconomyContext's same prepared occupation
+            // reader. No synchronous recipe scan can run through it.
+            const workshop = await occupationFor(state, timestamp, context);
+            const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+            Economy.forState(state, { spots, occupancy, timestamp, board: boardReady(),
+                buyOrderEscrow: context?.buyOrderEscrow, workshop });
             const { acquisitionPlan, replanContext, reusablePartyRequest, excludedSpotIds, economy } = GearPlanSelection
                 .selectAcquisitionPlan(state, previousPlan, {
                     spots, occupancy, timestamp,
@@ -415,7 +550,7 @@ function startKernel(config = {}) {
                 statsPacket: economy.statsPacket,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
                     spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
-                economyDecision: ColdEconomyDecision.capture(economy, routedState),
+                economyDecision: ColdEconomyDecision.capture({ ...economy, workshop }, routedState),
                 previousPlan,
                 acquisitionPlan,
                 partyRequest,
@@ -432,6 +567,36 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
+    // Keep dependencies tied to the kernel's native lifetime. In-flight
+    // scratch is cancelled on a newer canonical owner; it is never LRU-evicted.
+    const nativeSet = kernel.states.set.bind(kernel.states), nativeDelete = kernel.states.delete.bind(kernel.states);
+    const nativeClear = kernel.states.clear.bind(kernel.states);
+    kernel.states.set = (id, entry) => {
+        const previous = kernel.states.get(Number(id))?.state;
+        const result = nativeSet(id, entry);
+        if (previous !== entry.state) {
+            const held = occupationPlanner.slots.get(Number(id));
+            const incoming = held ? { ...held.input, state: entry.state, sourceState: entry.state } : null;
+            const acceptedPublication = held?.done && entry.context?.workshop?.known === true
+                && held.input.state.updatedAt === entry.state.updatedAt
+                && ColdEconomyDecision.stateKey(held.input.state) === ColdEconomyDecision.stateKey(entry.state)
+                && Number(entry.state.simulation?.revision || 0) > Number(held.input.state.simulation?.revision || 0)
+                && held.input.state.simulation?.ownerId === entry.state.simulation?.ownerId
+                && held.input.state.simulation?.leaseId === entry.state.simulation?.leaseId;
+            if (held?.done && (acceptedPublication || held.input.state === entry.state || occupationPlanner.sameInput(held.input, incoming))) {
+                held.input = incoming;
+            } else {
+                occupationPlanner.cancel(id);
+                occupationOwnerChanged(id);
+            }
+        }
+        return result;
+    };
+    kernel.states.delete = id => { occupationPlanner.cancel(id); return nativeDelete(id); };
+    kernel.states.clear = () => {
+        for (const id of [...occupationPlanner.slots.keys(), ...occupationPlanner.waiting.keys()]) occupationPlanner.cancel(id);
+        return nativeClear();
+    };
     kernel.buyerEvents = buyerWaiters;
     // Craft input shops are authored data, separate from gear planning rows.
     // This pure catalogue needs neither World actors nor a new IPC table.
@@ -446,11 +611,15 @@ function startKernel(config = {}) {
     } });
     invoke('GameServer/Bot/Economy/EconomyContext').configure({
         board: boardReady,
-        workshop: id => kernel.states.get(Number(id))?.context?.workshop ?? null,
+        workshop: id => {
+            const entry = kernel.states.get(Number(id));
+            return occupationPlanner.valueFor(id, entry?.state) || entry?.context?.workshop || ColdEconomyDecision.unknownWorkshop();
+        },
         buyOrderEscrow: id => kernel.states.get(Number(id))?.context?.buyOrderEscrow || 0,
         spots: () => planningSpots,
         memory: (characterId) => kernel.interactionMemory.snapshot(characterId)
     });
+    OccupationSources.initialise();
     loopTimer = setInterval(() => {
         if (leaseProbe && (shuttingDown || Date.now() >= leaseProbe.replyBy)) leaseProbe = null;
         kernel.tick();
@@ -506,6 +675,7 @@ function startKernel(config = {}) {
         previousElu = performance.eventLoopUtilization();
         const heartbeat = {
             ...kernel.heartbeatSnapshot(),
+            occupationPlanning: occupationPlanner.snapshot(),
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
             tables: tables.summary(),
@@ -588,6 +758,11 @@ async function handle(message) {
         break;
     case 'snapshot_page':
         if (!kernel) throw new Error('kernel_not_initialized');
+        if (payload.economyOwnerId !== undefined) {
+            if (Number.isSafeInteger(payload.economyOwnerId) && payload.economyOwnerId > 0
+                && Array.isArray(payload.rows) && !payload.rows.length) occupationOwnerChanged(payload.economyOwnerId);
+            break;
+        }
         kernel.upsertMany(payload.rows || []);
         if (payload.initial === true && payload.done === true) safetyStateReady = true;
         if (payload.ack) {
@@ -645,6 +820,7 @@ async function handle(message) {
         break;
     }
     case 'fence': {
+        occupationPlanner.cancel(payload.characterId);
         const result = kernel?.fence(payload.characterId) || { characterId: Number(payload.characterId), proposal: null, token: null };
         send('fence_ack', result, message.msgId);
         break;
@@ -667,6 +843,7 @@ async function handle(message) {
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        occupationPlanner.stop();
         competitionCandidates?.stop();
         stopTimers();
         eventLoopDelay.disable();

@@ -72,11 +72,17 @@ function overflowCandidate(item, count) {
     };
 }
 
-async function learnActorRecipes(actor, state = null, session = null) {
+async function learnActorRecipes(actor, state = null, session = null, { recipeIds = null } = {}) {
     const backpack = actor?.backpack;
     if (!session || !backpack?.fetchItems || !backpack.deleteItem || !backpack.registerRecipe || !backpack.hasRecipe) return [];
     const craftLevel = Number(backpack.fetchDwarvenCraftLevel?.(actor) || 0);
     if (craftLevel <= 0) return [];
+    const accepted = LifeState.cachedState(Number(actor.fetchId())) || state;
+    if (!recipeIds) {
+        const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(accepted)?.activity;
+        recipeIds = leaf?.activity === 'crafting' && Number(leaf.recipeId) > 0 ? [Number(leaf.recipeId)] : [];
+    }
+    if (!recipeIds.length) return [];
 
     const craftState = {
         ...(state || {}),
@@ -89,18 +95,34 @@ async function learnActorRecipes(actor, state = null, session = null) {
     for (const source of backpack.fetchItems().slice()) {
         const item = itemData(source);
         const info = ItemDisposition.recipeInfo(item);
-        if (!info || backpack.hasRecipe(actor, info.recipe.recipeId)) continue;
+        if (!info || !recipeIds.includes(Number(info.recipe.recipeId)) || backpack.hasRecipe(actor, info.recipe.recipeId)) continue;
         const decision = ItemDisposition.recipeDisposition(craftState, item, []);
         if (decision?.action !== 'learn') continue;
         if (actor.isDead?.()) continue;
 
-        const registered = await new Promise((resolve) => {
-            backpack.deleteItem(session, source.fetchId?.() || source.id, 1, () => {
-                backpack.registerRecipe(actor, info.recipe);
-                resolve(true);
-            });
-        });
-        if (registered) learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
+        const Commit = require('./EconomyCommit');
+        const current = LifeState.cachedState(Number(actor.fetchId())) || state;
+        if (!current || current.phase !== 'hot') continue;
+        const admitted = await Commit.admit(current, Commit.KINDS.learn);
+        let registered;
+        try { registered = await Database.learnColdRecipes(actor.fetchId(), [info.recipe], null, {
+            economyCommand: admitted.command, validate: () => {
+                const registered = invoke('GameServer/World/World').registeredActorById(Number(actor.fetchId()));
+                if (registered?.session !== session || registered?.actor !== actor || session.actor !== actor || actor.isDead?.()
+                    || Number(backpack.fetchDwarvenCraftLevel?.(actor) || 0) < Number(info.recipe.level)) throw Error('recipe_actor_changed');
+            }
+        }); } finally { Commit.finish(actor.fetchId(), admitted.command); }
+        if (registered.coldLifeRow) Commit.acceptRow(registered.coldLifeRow);
+        if (registered.learned?.length) {
+            const book = backpack.fetchRecipeBook?.(actor, info.recipe.type);
+            if (book && !book.some(entry => Number(entry.recipeId) === Number(info.recipe.recipeId))) book.push(Object.fromEntries(
+                ['recipeId', 'recipeItemId', 'level', 'productId', 'productCount', 'successRate', 'mpCost'].map(key => [key, info.recipe[key]])));
+            const remaining = Number(source.fetchAmount?.() || item.amount) - 1;
+            if (remaining > 0) source.setAmount?.(remaining);
+            else backpack.items = backpack.fetchItems().filter(entry => entry !== source);
+            invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(actor.fetchId());
+            learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
+        }
     }
     return learned;
 }

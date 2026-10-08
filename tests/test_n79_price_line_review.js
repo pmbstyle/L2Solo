@@ -129,23 +129,53 @@ try {
         assert(seenBeliefs.every((belief) => belief.worth === 5000.375));
         assert(lines.every(line => line.pricing.worth === 5000.375));
     });
-    contract('passed buyers lower a standing quote through the actual decision', () => {
+    contract('unknown SELL forecast retains its standing quote despite passed buyers', () => {
         const stubAsk = PriceDecision.chooseAsk;
         PriceDecision.chooseAsk = original.chooseAsk;
         try {
             const { state, lines, ctx } = fixture(SELL, [{ count: 1 }]);
+            const before = structuredClone(lines[0]);
+            const fresh = MarketPricing.priceForSale(ITEM, ctx, { town: 'Giran', units: 1, rollKey: ['unknown'] });
+            assert.strictEqual(fresh.market.known, false, 'kind deals do not supply finite demand/exposure');
+            assert.strictEqual(fresh.ask.known, false);
+            counterDeals += 20;
+            assert.strictEqual(MarketPricing.look(state, lines, ctx), null);
+            assert.deepStrictEqual(lines[0], before, 'unknown review cannot replace the accepted commitment');
+        }
+        finally { PriceDecision.chooseAsk = stubAsk; }
+    });
+    contract('declared finite demand evaluates passed buyers through the actual decision', () => {
+        const stubAsk = PriceDecision.chooseAsk;
+        PriceDecision.chooseAsk = original.chooseAsk;
+        try {
+            const { state, lines, ctx } = fixture(SELL, [{ count: 1 }]);
+            // Pure conditional forecast contract, not a native item-arrival or
+            // lifetime producer. The original owner, stock and quote stay fixed.
+            ctx.demandFor = selfId => ({ known: true, origin: 'fixture_finite_demand',
+                authority: { fixture: 'line_review' }, selfId, applicableUnits: 100,
+                availability: { from: now, until: now }, delayHours: 0 });
             counterPerHour = 1;
             ctx.trader.wait = 0.105;
             ctx.board.put({ id: 99, ownerId: 44, storeType: SELL, town: 'Giran',
                 lines: [{ lineId: 99, selfId: ITEM, count: 1, price: 1000 }] });
             const first = MarketPricing.priceForSale(ITEM, ctx, { town: 'Giran', units: 1, rollKey: ['initial'] });
+            assert.strictEqual(first.ask.known, true, 'only the explicit conditional fixture supplies this forecast');
             lines[0].price = first.ask.price;
             lines[0].pricing = MarketPricing.lineState(ITEM, ctx, { price: first.ask.price });
             counterDeals += 20;
+            const prior = PriceBelief.prior(ITEM, ctx);
+            const observations = PriceBelief.lineObservations(lines[0], prior, ctx);
+            assert(observations.every(row => row[0] < Math.log(first.ask.price)),
+                'passed buyers are below the standing ask; the fresh public centre can still be lower');
+            PriceBelief.learn(prior, observations);
+            const expected = original.chooseAsk(prior, first.market, ctx.trader,
+                ['ask', ctx.characterId, lines[0].lineId, ITEM, counterDeals, 0], first.ask.price);
             const reviewed = MarketPricing.look(state, lines, ctx);
-            assert.strictEqual(reviewed.reprices.length, 1, JSON.stringify({ first, reviewed }));
-            assert(reviewed.reprices[0].price < first.ask.price,
-                `twenty passed buyers lower ${first.ask.price} to ${reviewed.reprices[0].price}`);
+            if (expected.npc) assert.strictEqual(reviewed.withdrawals.length, 1);
+            else if (expected.price === first.ask.price) assert.strictEqual(reviewed, null);
+            else assert.strictEqual(reviewed.reprices[0].price, expected.price,
+                'review feeds the actual finite outcome grid and deterministic roll');
+            assert.strictEqual(lines[0].price, first.ask.price, 'proposal never mutates the accepted quote');
         }
         finally { PriceDecision.chooseAsk = stubAsk; }
     });

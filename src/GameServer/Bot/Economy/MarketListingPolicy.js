@@ -70,7 +70,12 @@ function traderContext(state, options = {}) {
             || ((selfId) => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId)),
         findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId)),
         economy: options.economy,
-        knowledgeEnabled: options.knowledgeEnabled
+        knowledgeEnabled: options.knowledgeEnabled,
+        demandFor: options.demandFor,
+        ownStock: options.ownStock,
+        canSell: options.canSell,
+        derivedDemandValue: options.derivedDemandValue,
+        derivedDemandSupported: options.derivedDemandSupported
     });
 }
 
@@ -102,8 +107,10 @@ function evaluate(state, options = {}) {
         const hard = classify(state, item);
         // A lot too small to list still answers a buy ad that asks for it:
         // the lot rule is the board's, the ad's buyer chose the amount.
-        const smallLot = hard.reason === 'small_material_lot'
-            && (MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant })?.net || 0) > 0;
+        const smallLotAnswer = hard.reason === 'small_material_lot'
+            ? MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant }) : null;
+        const smallLot = Boolean(smallLotAnswer) && (Number.isFinite(smallLotAnswer.valueHours)
+            ? smallLotAnswer.valueHours : smallLotAnswer.net) > 0;
         if (hard.action !== 'market' && !smallLot) {
             decisions.push({ ...hard, item });
             continue;

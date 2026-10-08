@@ -122,6 +122,9 @@ function buildProjection(state, ctx, deps) {
     // This local map dies at return: ~468 KB transient per measured build,
     // zero ArrayBuffers and zero maps retained after return + GC; no owner store.
     const sourceValues = new Map();
+    const knownRecipes = new Set([...(state.stats?.recipes || state.recipes || []), ...(state.stats?.workshop?.entries || [])]
+        .map(entry => Number(entry?.recipeId ?? entry)));
+    const preparingItems = new Set();
     const sourcePath = id => {
         let best = null;
         for (const source of sourceIndex?.get(Number(id)) || []) {
@@ -144,7 +147,8 @@ function buildProjection(state, ctx, deps) {
     const itemNode = (id, depth = 0) => {
         const key = `item:${id}`;
         if (nodes.some(node => node.key === key)) return key;
-        if (depth >= 3 || nodes.length >= 36) return null;
+        if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
+        preparingItems.add(key);
         const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
             available: price(id) > 0 }];
         const drop = sourcePath(id);
@@ -156,16 +160,44 @@ function buildProjection(state, ctx, deps) {
         if (recipe && (recipe.kind === 'dual_sword_combine'
             || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe))
             && nodes.length + recipe.materials.length < 36) {
-            const requirements = recipe.materials.map(material => ({ material, amount: Math.max(0,
-                material.amount / Math.max(0.01, recipe.productCount * (Number(recipe.successRate ?? 100) / 100)) - positive(state.inventory?.[material.selfId]?.amount)) }))
-                .filter(row => row.amount > 0)
-                .map(row => ({ key: itemNode(row.material.selfId, depth + 1), amount: row.amount }));
-            if (requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
+            const combined = new Map();
+            for (const material of recipe.materials) combined.set(Number(material.selfId),
+                (combined.get(Number(material.selfId)) || 0) + Number(material.amount));
+            const freeAmount = require('./WealthCraftDecision').freeAmount;
+            const requirements = [];
+            let ownInputOpportunityValue = 0;
+            for (const [selfId, amount] of combined) {
+                const owned = Math.min(amount, freeAmount(state, state.inventory?.[selfId] || {}));
+                ownInputOpportunityValue += owned * positive(price(selfId));
+                const missing = amount - owned;
+                if (missing > 0) requirements.push({ key: itemNode(selfId, depth + 1), amount: missing });
+            }
+            const learned = recipe.kind === 'dual_sword_combine' || knownRecipes.has(Number(recipe.recipeId));
+            const ownedScroll = freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
+            if (!learned && ownedScroll) ownInputOpportunityValue += positive(price(recipe.recipeItemId));
+            let scrollAvailable = learned || ownedScroll;
+            if (!scrollAvailable && deps.board) {
+                for (const line of deps.board.list(recipe.recipeItemId, 1)) {
+                    if (Number(line.ownerId) !== Number(state.characterId) && Number(line.count) > 0 && Number(line.price) > 0) {
+                        scrollAvailable = true; break;
+                    }
+                }
+            }
+            if (!learned && !ownedScroll && scrollAvailable) requirements.push({ key: itemNode(recipe.recipeItemId, depth + 1), amount: 1 });
+            // A physical attempt consumes one whole batch, including failure.
+            // Its chance reduces the finite root benefit once; inputs are not
+            // divided by expected yield. No imagined commissioned service.
+            const regen = Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp);
+            const recoveryHours = positive(recipe.mpCost) > 0 && regen > 0 ? positive(recipe.mpCost) / regen * 3 / 3600 : NaN;
+            const cycleHours = recipe.kind === 'dual_sword_combine' ? Number(recipe.costHours || 1 / 3600) : recoveryHours;
+            if (scrollAvailable && Number.isFinite(cycleHours) && cycleHours > 0 && requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
                 itemId: Number(id), recipeId: recipe.recipeId,
-                costHours: positive(recipe.mpCost) / Math.max(1, invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp || 0) * 3 / 3600,
+                requiresRecipeLearning: !learned, successProbability: Number(recipe.successRate ?? 100) / 100,
+                ownInputOpportunityValue, costHours: cycleHours,
                 requirements });
         }
         add({ key, object: Number(id), price: price(id), paths: paths.slice(0, 3) });
+        preparingItems.delete(key);
         return key;
     };
     // Paid enchant, SA and henna are objects of the same power queue.

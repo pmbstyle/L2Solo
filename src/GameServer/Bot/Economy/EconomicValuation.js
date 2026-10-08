@@ -3,6 +3,60 @@
 const positive = value => Math.max(0, Number(value) || 0);
 const trait = (persona, key) => Math.max(0, Math.min(1, Number(persona?.traits?.[key] ?? 0.5)));
 
+const OUTCOME_LIMIT = 8;
+function unknownOpportunity() {
+    return { known: false, valueHours: NaN, expectedReceipts: NaN, expectedResidual: NaN,
+        cashNow: NaN, cycleHours: NaN };
+}
+// One scalar physical outcome is one planner unit. No source reads, rolls,
+// goods allocation or demand clipping are hidden in this accumulator.
+function createOpportunity(context = {}) {
+    const moneyPrice = Number(context.moneyPrice);
+    const discountRate = Number(context.discountRate ?? context.wait ?? 0);
+    const risk = Number(context.riskWeight ?? 1);
+    return { known: context.known !== false && Number.isFinite(moneyPrice) && moneyPrice >= 0
+        && Number.isFinite(discountRate) && discountRate >= 0 && Number.isFinite(risk) && risk >= 0,
+    moneyPrice, discountRate, risk, probability: 0, count: 0, valueHours: 0,
+    expectedReceipts: 0, expectedResidual: 0, cashNow: 0, cycleHours: 0 };
+}
+function addOutcome(acc, outcome = {}) {
+    if (!acc?.known) return false;
+    const probability = Number(outcome.probability);
+    const fields = ['ownBenefitHours', 'receipts', 'monetaryResidual', 'ownInputOpportunityValue',
+        'cashNow', 'actualCashFees', 'foregoneBenefitHours', 'riskHours', 'delayHours', 'cycleHours'];
+    const values = fields.map(field => Number(outcome[field] ?? 0));
+    const rate = Number(outcome.discountRate ?? acc.discountRate);
+    if (outcome.known === false || !Number.isFinite(probability) || probability < 0 || probability > 1
+        || !Number.isFinite(rate) || rate < 0 || values.some((value, at) => !Number.isFinite(value)
+            || value < 0 && at !== 0 && at !== 2)
+        || ++acc.count > OUTCOME_LIMIT) { acc.known = false; return false; }
+    const [ownBenefit, receipts, residual, inputValue, cash, fees, foregone, risk, delay, cycle] = values;
+    const discounted = receipts * Math.exp(-rate * delay);
+    // Residual own use belongs in ownBenefitHours, monetary residual in the
+    // independent remaining-goods exit. A caller never counts both for one unit.
+    const value = ownBenefit + acc.moneyPrice * (discounted + residual - cash - inputValue - fees)
+        - foregone - acc.risk * risk;
+    acc.probability += probability;
+    acc.valueHours += probability * value;
+    acc.expectedReceipts += probability * discounted;
+    acc.expectedResidual += probability * residual;
+    acc.cashNow += probability * (cash + fees);
+    acc.cycleHours += probability * cycle;
+    if (![acc.valueHours, acc.expectedReceipts, acc.expectedResidual, acc.cashNow, acc.cycleHours]
+        .every(Number.isFinite)) acc.known = false;
+    return acc.known;
+}
+function finishOpportunity(acc) {
+    if (!acc?.known || !acc.count || Math.abs(acc.probability - 1) > 1e-9) return unknownOpportunity();
+    return { known: true, valueHours: acc.valueHours, expectedReceipts: acc.expectedReceipts,
+        expectedResidual: acc.expectedResidual, cashNow: acc.cashNow, cycleHours: acc.cycleHours };
+}
+function opportunity(context, outcomes) {
+    const acc = createOpportunity(context);
+    for (const outcome of outcomes || []) if (!addOutcome(acc, outcome)) break;
+    return finishOpportunity(acc);
+}
+
 function riskWeight(state, persona) {
     return (1 + trait(persona, 'caution')) / (0.5 + trait(persona, 'resilience'))
         * (1 + positive(state.stats?.frustration));
@@ -52,4 +106,5 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         frustration: Math.max(0, frustration - positive(kills) / Math.max(1, positive(stats.lifelongKills) + positive(kills))),
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
-module.exports = { riskWeight, stageHours, deathHours, karmaHours, pkDropValue, resale, progressStats, trait };
+module.exports = { riskWeight, stageHours, deathHours, karmaHours, pkDropValue, resale, progressStats, trait,
+    opportunity, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT };
