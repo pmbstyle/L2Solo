@@ -123,8 +123,8 @@ assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: m
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), party: { partyId: 5 } }, { now }), null,
 'a party member sells from the field: no half-full trip');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), level: 9,
-    stats: { generatedCold: true } }, { now }), null,
-'a generated bot below level 10 makes no half-full trip');
+    stats: { generatedCold: true } }, { now })?.reason, 'inventory_half_full',
+'a young bot uses the same stock-based cleanup decision');
 const unsellableBag = (slots) => Object.fromEntries(Array.from({ length: slots }, (_, index) => {
     const selfId = 990000 + index;
     // Quest items: no sale rule takes them (potions are NPC junk for a bot since H12).
@@ -432,15 +432,15 @@ const preTradeNpcState = {
         instances: [{ id: 9150000 + index, amount: 1, equipped: false, slot: 0 }]
     }]))
 };
-assert.strictEqual(
+assert.deepStrictEqual(
     ItemDisposition.inventoryCleanupNeed(preTradeNpcState, { now }),
-    null,
-    'pre-trade NPC-only inventory must not create a standalone market trip'
+    ItemDisposition.inventoryCleanupNeed({ ...preTradeNpcState, level: 10 }, { now }),
+    'young characters use the same item-based cleanup rule as older ones'
 );
 assert.strictEqual(
     ItemDisposition.npcLiquidationCandidates(preTradeNpcState).length,
-    0,
-    'ordinary NPC liquidation must retain the pre-trade market boundary'
+    3,
+    'ordinary NPC liquidation no longer has a character-level boundary'
 );
 assert.strictEqual(
     ItemDisposition.npcLiquidationCandidates(preTradeNpcState, { allowPreTradeCleanup: true }).length,

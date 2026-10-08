@@ -117,7 +117,7 @@ function open(state, options = {}) {
     options = { ...options, stored, now: timestamp };
     state = preparedState || state;
     const forcedCleanup = options.forcedCleanup || null;
-    if (forcedCleanup && !ItemDisposition.isTradeEligible(state)) {
+    if (forcedCleanup?.cleanupReason === 'npc_only_inventory') {
         return preTradeNpcCleanup(state, forcedCleanup, timestamp);
     }
     const initialItems = ItemDisposition.saleCandidates(state, options);

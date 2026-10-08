@@ -12,7 +12,6 @@ const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material', 'Other.Shot'];
 const NPC_ONLY_KINDS = ['Other.Recipe', 'Other.Spellbook'];
 const NPC_LIQUIDATION_MAX_UNIT_PRICE = 1000;
 const WAREHOUSE_GEAR_MIN_BASE_PRICE = 1000;
-const TRADE_MIN_LEVEL = 10;
 const INVENTORY_SLOT_LIMIT = 80;
 // A forced trip to town starts at 20 slots of either kind (the author: 3 junk, 6
 // gear): a gear replacement or a purchase leaves the old piece in the bag, and
@@ -234,7 +233,7 @@ function skillBookSlotCount(state = {}, candidates) {
 }
 
 function soloSaleSlotLimit(state = {}, timestamp = Date.now()) {
-    return isTradeEligible(state) && !(state.party?.partyId || state.partyId)
+    return !(state.party?.partyId || state.partyId)
         && !(Number(state.stats?.marketSellRetryAfter || 0) > timestamp)
         ? HALF_FULL_CLEANUP_SLOTS : null;
 }
@@ -247,9 +246,8 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     const npcOnlySlots = npcOnlySlotCount(state, candidates);
     const skillBookSlots = skillBookSlotCount(state, candidates);
     const overCapacity = slots > INVENTORY_SLOT_LIMIT;
-    const accumulatedNpcOnly = isTradeEligible(state)
-        && (skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS);
-    const surplusGearSlots = isTradeEligible(state) && slots >= NPC_SURPLUS_GEAR_MIN_SLOTS
+    const accumulatedNpcOnly = skillBookSlots > 0 || npcOnlySlots >= NPC_ONLY_CLEANUP_MIN_SLOTS;
+    const surplusGearSlots = slots >= NPC_SURPLUS_GEAR_MIN_SLOTS
         ? candidates.reduce((total, item) => {
             const lowGradeGear = (String(item.kind || '').startsWith('Weapon.')
                 || String(item.kind || '').startsWith('Armor.'))
@@ -265,9 +263,8 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     const halfFull = soloLimit !== null && slots >= soloLimit && candidates.length > 0;
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
-    // generated character reaches its trading phase. Before that point they
-    // are deferred instead of creating a market trip that cannot execute.
-    // A genuinely full inventory remains actionable at every level.
+    // character has enough to clean up. A genuinely full inventory remains
+    // actionable regardless of level.
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
         && !overCapacity
         && !accumulatedNpcOnly) return null;
@@ -421,19 +418,10 @@ function unreservedActorItems(state, items = []) {
     });
 }
 
-function isTradeEligible(state = {}) {
-    // Purpose-built static merchant/craft services are not adventurers and
-    // retain their normal storefronts. Generated characters start selling
-    // only once their first leveling/gear loop has had time to produce useful
-    // surplus.
-    if (!state.stats?.generatedCold) return true;
-    return Number(state.level || 1) >= TRADE_MIN_LEVEL;
-}
-
 function protectedStarterLootAmount(item, kind) {
     const kindName = String(kind || '');
     // Low-level resources and surplus NG/D gear remain sellable once the
-    // character reaches the trading phase. Market policy later admits the
+    // market evaluates the sale. Market policy later admits the
     // gear only for exact funded demand on the supported rate presets.
     if (kindName.startsWith('Other.Material')
         || ((kindName.startsWith('Weapon.') || kindName.startsWith('Armor.'))
@@ -442,7 +430,6 @@ function protectedStarterLootAmount(item, kind) {
 }
 
 function saleCandidates(state, options = {}) {
-    if (!isTradeEligible(state) && !options.allowPreTradeCleanup) return options.presenceOnly ? false : [];
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
@@ -601,13 +588,11 @@ module.exports = {
     NPC_LIQUIDATION_MAX_UNIT_PRICE,
     NPC_ONLY_KINDS,
     CLAN_PROGRESSION_ITEM_IDS,
-    TRADE_MIN_LEVEL,
     WAREHOUSE_GEAR_MIN_BASE_PRICE,
     basePrice,
     canLearnRecipe,
     craftLevelFor: CraftShopService.craftLevelFor,
     gradeIndex,
-    isTradeEligible,
     isBelowCGrade,
     isClanProgressionItem,
     isNpcOnlyItem,

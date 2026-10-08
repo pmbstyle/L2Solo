@@ -36,7 +36,8 @@ assert.strictEqual(due(hunter(40, { session: { partyCompanion: true, followPlaye
     'a party companion never goes');
 assert.strictEqual(due(hunter(40, { session: { hotBackgroundPartyId: 'party' } })), null,
     'a party member makes no half-full trip');
-assert.strictEqual(due(hunter(40, { level: 9 })), null, 'below level 10 no half-full trip');
+assert.strictEqual(due(hunter(40, { level: 9 }))?.reason, 'inventory_half_full', 'young bots use the same stock-based sale trigger');
+assert.strictEqual(due(hunter(3, { level: 5 })), null, 'lifting the level gate creates no small-bag town trip');
 const paused = hunter(40, { stats: { marketSellRetryAfter: now + 60000 } });
 assert.strictEqual(due(paused), null, 'the sell pause is respected');
 assert.strictEqual(due(paused, now + 60000)?.reason, 'inventory_half_full', 'the trip comes when the pause ends');

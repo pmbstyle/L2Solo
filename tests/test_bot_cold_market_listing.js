@@ -119,9 +119,10 @@ async function run() {
         level: 9,
         stats: { ...state.stats, generatedCold: true }
     };
-    assert.deepStrictEqual(ItemDisposition.saleCandidates(preTradeState), [], 'generated bots must not sell before level ten');
-    const preTradeListing = await ListingService.open(preTradeState, { now: 1000 });
-    assert.strictEqual(preTradeListing.reason, 'nothing_to_sell', 'pre-ten generated bots must never open a private store');
+    assert.deepStrictEqual(ItemDisposition.saleCandidates(preTradeState).map(item => item.selfId), [marketItem.selfId],
+        'young generated bots enter the same sale evaluation');
+    const preTradeListing = await ListingService.open({ ...preTradeState, inventory: { 57: state.inventory[57] } }, { now: 1000 });
+    assert.strictEqual(preTradeListing.reason, 'nothing_to_sell', 'a young bot with no goods opens no store');
     assert.strictEqual(
         preTradeListing.state.stats.marketSellRetryAfter,
         1000 + ListingService.SELL_RETRY_DELAY_MS,
