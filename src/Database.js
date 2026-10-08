@@ -3287,7 +3287,7 @@ function validBoardRecord(kind, storeType, rows) {
 // and one per item. `expectedRevision` names the shop it replaces. No kind
 // has a deadline (expiresAt 0): records close by events (user, 2026-10-05).
 // Returns { shop, changedIds }.
-function openBoardRecordUnsafe(characterId, config, rows) {
+function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = {}) {
     const kind = config.kind;
     const storeType = BoardRules.storeTypeFor(kind, config.storeType);
     const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
@@ -3325,8 +3325,10 @@ function openBoardRecordUnsafe(characterId, config, rows) {
                 || !Number.isSafeInteger(sum + count * price)) throw new Error('invalid_afk_trade_line');
             return sum + count * price;
         }, 0);
-        afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
-        changedIds.push(57);
+        if (!prepaid) {
+            afkTradeDebitAdenaUnsafe(characterId, escrowAdena);
+            changedIds.push(57);
+        }
     }
 
     const shopId = Number(write(`INSERT INTO afk_trade_shops(
@@ -3413,6 +3415,83 @@ function openBoardRecordUnsafe(characterId, config, rows) {
         ]);
     });
     return { shop: afkTradeShopUnsafe(shopId), changedIds };
+}
+
+// A bot's at-most-five buy ads are one reserved obligation. Retain native
+// identities and pricing cursors; money moves once by the net remaining
+// reserve, including additions/removals. The caller already checked the
+// complete expected set inside this same transaction.
+function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {
+    if (configs.length > BoardRules.BOT_RECORDS.buy_ad) throw Error('board_cap_reached');
+    const key = (town, line) => `${town || ''}:${Number(line.selfId)}:${Number(line.enchant || 0)}`;
+    const current = new Map(held.map(shop => [key(shop.town, shop.lines[0]), shop]));
+    const identities = new Set(), wanted = configs.map(config => {
+        const line = config.lines[0], selfId = Number(line.selfId), count = Number(line.count);
+        const enchant = Number(line.enchant || 0), identity = `${selfId}:${enchant}`;
+        if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+            || !Number.isSafeInteger(count) || count <= 0 || !Number.isSafeInteger(enchant) || enchant < 0
+            || !Number.isSafeInteger(Number(line.price)) || Number(line.price) <= 0) throw Error('invalid_afk_trade_line');
+        if (identities.has(identity)) throw Error('board_ad_exists');
+        identities.add(identity);
+        const previous = current.get(key(config.town, line));
+        // A retained line's price belongs to MarketPricing.look, not the
+        // newly prepared opening price. A quantity review preserves it.
+        const price = previous ? Number(previous.lines[0].price) : Number(line.price);
+        const reserve = count * price;
+        if (!Number.isSafeInteger(reserve)) throw Error('invalid_afk_trade_budget');
+        if (!previous && line.pricing) pricingValues(line.pricing);
+        return { config, line, previous, count, price, reserve };
+    });
+    const oldReserve = held.reduce((sum, shop) => sum + Number(shop.escrowAdena), 0);
+    const newReserve = wanted.reduce((sum, row) => sum + row.reserve, 0);
+    if (!Number.isSafeInteger(oldReserve) || !Number.isSafeInteger(newReserve)) throw Error('invalid_afk_trade_budget');
+    const difference = newReserve - oldReserve;
+    // Existing reservations may shrink or remain without another admission.
+    // Growth must fit today's native wallet and protected money queue; no
+    // other kind's escrow or settlement enters this allowance.
+    const additions = wanted.filter(row => !row.previous || row.count > Number(row.previous.lines[0].count));
+    if (additions.length) {
+        const life = one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
+        const stats = jsonObject(life?.statsJson);
+        if (Array.isArray(stats.money)) {
+            const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
+            const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
+            for (const row of additions) {
+                if (newReserve > Funding.spendable({ adena: wallet, stats }, oldReserve, { itemId: Number(row.line.selfId) })) {
+                    throw Error('economy_funding_changed');
+                }
+            }
+        }
+    }
+    if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
+    else if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
+    const kept = new Set(wanted.filter(row => row.previous).map(row => row.previous.id));
+    const removed = held.filter(shop => !kept.has(shop.id));
+    removed.forEach(shop => deleteBoardRecordUnsafe(shop.id, timestamp));
+    const retained = [], opened = [], changed = [];
+    for (const row of wanted) {
+        const { previous, config, count, reserve } = row;
+        if (!previous) {
+            const created = openBoardRecordUnsafe(characterId, { ...config, kind: 'buy_ad' }, config.lines, { prepaid: true }).shop;
+            opened.push(created); changed.push(created);
+            continue;
+        }
+        const line = previous.lines[0], title = String(config.title || '').slice(0, 52);
+        const countChanged = Number(line.count) !== count;
+        const metadataChanged = String(previous.title || '') !== title;
+        if (countChanged) {
+            write('UPDATE afk_trade_lines SET count = ?, updatedAt = ? WHERE id = ?', [count, timestamp, line.id]);
+        }
+        if (countChanged || metadataChanged) {
+            write(`UPDATE afk_trade_shops SET title = ?, escrowAdena = ?, revision = revision + 1,
+                updatedAt = ? WHERE id = ?`, [title, reserve, timestamp, previous.id]);
+            const updated = afkTradeShopUnsafe(previous.id);
+            retained.push(updated); changed.push(updated);
+        } else retained.push(previous);
+    }
+    return { closed: removed.map(shop => closedRecord(shop, 'closed')), opened, retained, changed,
+        ownerInventory: difference ? afkTradeInventoryUnsafe(characterId) : null,
+        coldLifeRows: difference ? fenceAfkTradePartiesUnsafe([characterId], [57]) : {} };
 }
 
 // Merges a bot's settlements into its bag; its cold row follows: the summary
@@ -4074,6 +4153,10 @@ const Database = {
                         || Number(expected[shop.id]) < 1) throw new Error('afk_trade_shop_changed');
                     checkRecordRevisionUnsafe(shop, expected[shop.id]);
                 });
+            }
+            if (kind === 'buy_ad' && isBotOwnerUnsafe(characterId)) {
+                if (!expected) throw Error('afk_trade_shop_changed');
+                return reconcileBotBuyAdsUnsafe(characterId, closed, list, timestamp);
             }
             const changedIds = [57];
             closed.forEach((shop) => changedIds.push(...closeBoardRecordUnsafe(shop, { ownMove: true, at: timestamp })));

@@ -740,8 +740,8 @@ async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     const characterId = Number(ownerId);
     const result = await Database.replaceBoardRecords(characterId, kind, configs, options);
     result.closed.forEach(refreshRecord);
-    result.opened.forEach(refreshRecord);
-    await syncOwnerAfterMove(characterId, result, 'bot_board_records_replaced');
+    (result.changed || result.opened).forEach(refreshRecord);
+    if (result.ownerInventory) await syncOwnerAfterMove(characterId, result, 'bot_board_records_replaced');
     return result;
 }
 

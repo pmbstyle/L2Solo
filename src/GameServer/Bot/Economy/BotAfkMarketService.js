@@ -301,8 +301,9 @@ function buyLines(state, goal, options = {}) {
 // bot's own look's (MarketPricing.look), as a kept sell line's ask is.
 function sameBuyOrder(stock, lines) {
     if (Number(stock?.storeType) !== AfkTrade.BUY || stock.lines.length !== lines.length) return false;
-    return stock.lines.every((line, index) => Number(line.selfId) === Number(lines[index].selfId)
-        && Number(line.count) === Number(lines[index].count));
+    return stock.lines.every(line => lines.some(wanted => Number(line.selfId) === Number(wanted.selfId)
+        && Number(line.enchant || 0) === Number(wanted.enchant || 0)
+        && Number(line.count) === Number(wanted.count)));
 }
 
 // The shop offers the same items, counts and enchants; prices may differ.
@@ -397,7 +398,7 @@ async function publishBuyAds(ownerId, ads, lines, town) {
         locX: center.locX, locY: center.locY, locZ: center.locZ,
         lines: [line]
     })), { expected: Object.fromEntries(ads.map((ad) => [ad.id, ad.revision])) });
-    return result.opened[0] || null;
+    return result.retained?.[0] || result.opened[0] || null;
 }
 
 // A bot asks in the town chosen by the shop opening roll: its buy ad replaces
