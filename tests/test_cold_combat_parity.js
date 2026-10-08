@@ -78,6 +78,7 @@ function fighter(id, classId, level, gear, extra = {}) {
         const selfId = ShotStock.planForState(state).selfId;
         inventory[selfId] = { selfId, amount: extra.shots };
     }
+    state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TS);
     const profile = ColdCombatProfile.profileFor(state, TS);
     const hp = extra.hpRatio ? Math.round(profile.maxHp * extra.hpRatio) : profile.maxHp;
     return { ...state, vitals: { hp, mp: profile.maxMp } };

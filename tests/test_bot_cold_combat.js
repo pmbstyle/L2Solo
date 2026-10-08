@@ -1,9 +1,14 @@
 const assert = require('assert');
 
 require('../src/Global');
+// This file checks developer telemetry as well as combat.
+options.default.BotPopulation.developerDiagnostics = true;
 
 const DataCache = invoke('GameServer/DataCache');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+// Combat fixtures explicitly own their authored ranks; eligibility alone is not learning.
+const learnedKit = (classId, level) => ColdCombatProfile.legacySnapshot({ level, stats: { classId } },
+    ColdCombatProfile.skillRecordsFromTree(classId, level));
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropResolver');
@@ -238,7 +243,7 @@ assert.strictEqual(coldGigant.vulnerabilities.darkVuln, 1.2, 'cold combat must r
 assert(ColdCombatProfile.summonSkills(ColdCombatProfile.profileFor({
     ...fighter,
     level: 40,
-    stats: { classId: 14 },
+    stats: { classId: 14, coldCombat: learnedKit(14, 40) },
     inventory: { 1459: { selfId: 1459, amount: 100 } }
 }, timestamp)).some((skill) => skill.selfId === 1276), 'cold profiles must retain a learned servitor summon');
 const class14SkillIds = new Set(ColdCombatProfile.skillRecordsFromTree(14, 40).map((skill) => skill.selfId));
@@ -256,7 +261,7 @@ const coldSummoner = {
     level: 40,
     vitals: { hp: 3000, maxHp: 3000, mp: 2500, maxMp: 2500 },
     inventory: {},
-    stats: { ...fighter.stats, classId: 14, role: 'mage', coldCombat: undefined },
+    stats: { ...fighter.stats, classId: 14, role: 'mage', coldCombat: learnedKit(14, 40) },
     party: { role: 'mage' }
 };
 const coldSummonerResult = BackgroundResolver.resolveSolo({
@@ -292,7 +297,7 @@ const coldNecromancer = {
     name: 'ColdNecromancer',
     level: 40,
     vitals: { hp: 3000, maxHp: 3000, mp: 2500, maxMp: 2500 },
-    stats: { ...coldSummoner.stats, classId: 13, role: 'mage', coldCombat: undefined },
+    stats: { ...coldSummoner.stats, classId: 13, role: 'mage', coldCombat: learnedKit(13, 40) },
     party: { role: 'mage' }
 };
 const coldNecromancerResult = BackgroundResolver.resolveSolo({
@@ -314,7 +319,7 @@ const highLevelNecromancer = {
     characterId: 908,
     level: 64,
     vitals: { hp: 4000, maxHp: 4000, mp: 3500, maxMp: 3500 },
-    stats: { ...coldNecromancer.stats, coldCombat: undefined }
+    stats: { ...coldNecromancer.stats, coldCombat: learnedKit(13, 64) }
 };
 const highLevelNecromancerResult = BackgroundResolver.resolveSolo({
     state: highLevelNecromancer,

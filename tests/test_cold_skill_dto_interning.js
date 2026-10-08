@@ -27,7 +27,8 @@ function native(id, classId, level, clock) {
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(20); assert(recipe);
     state.inventory[recipe.recipeItemId] = { selfId: recipe.recipeItemId, amount: 1 };
     if (classId === 57) state.stats.shotCraft = { recipeId: 20 };
-    state.stats.coldCombat = invoke('GameServer/Bot/Population/ColdCombatProfile').treeSnapshot(state, clock);
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    state.stats.coldCombat = Profile.legacySnapshot(state, Profile.skillRecordsFromTree(classId, level), clock);
     assert(state.stats.coldCombat.skills.length, 'native authored class skills'); return state;
 }
 async function inspect(kernel, Life, request) {
@@ -77,8 +78,9 @@ async function inspect(kernel, Life, request) {
         for (const mode of ['setSource', 'updateSource', 'ownerMutation', 'firstSource', 'shotUpdate']) {
             const id = mode === 'firstSource' ? 990001 : mode === 'setSource' ? 3 : 1;
             const prior = kernel.states.get(id), record = index.getSource(id, 'state'), before = counters();
-            const sourceCount = kernel.states.size, shotCounts = kernel.states.shotIndex.size();
-            assert(shotCounts.spare > 0 && shotCounts.recipeHolders > 0, 'nonempty native shot/recipe holder state');
+            const sourceCount = kernel.states.size;
+            // The public market index no longer counts foreign private bags.
+            // Failure parity below still compares its exact native state.
             const incoming = mode === 'updateSource' ? prior.state : structuredClone(prior?.state || state(1));
             incoming.characterId = id;
             if (mode !== 'updateSource') {

@@ -97,7 +97,7 @@ try {
     Spots.cache = previousSpots;
 }
 
-const learned = Profile.treeSnapshot({ level: 40, stats: { classId: 28 } }, now);
+const learned = Profile.legacySnapshot({ level: 40, stats: { classId: 28 } }, Profile.skillRecordsFromTree(28, 40), now);
 assert.strictEqual(learned.skills.find(skill => skill.selfId === 239).level, 2);
 const regrown = Profile.treeSnapshot({ level: 30, stats: { classId: 28, coldCombat: learned } }, now + 1);
 for (const skill of learned.skills) {

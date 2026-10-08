@@ -16,7 +16,9 @@ async function run() {
     const needs = Books.needsTraining, execute = Database.execute;
     try {
         for (const [index, id] of ids.entries()) {
-            const snapshot = Profile.treeSnapshot({ level: 10, stats: { classId: 0 } }, 1e12);
+            const records = Profile.skillRecordsFromTree(0, 10);
+            for (const skill of records) await Database.setSkill(skill, id);
+            const snapshot = { ...Profile.legacySnapshot({ level: 10, stats: { classId: 0 } }, records, 1e12), skillSource: 'tree' };
             const stats = { classId: 0, classProgressionLevel: index < 7 ? 0 : 10,
                 classProgressionClassId: 0, coldCombat: snapshot };
             await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,phase,activity,

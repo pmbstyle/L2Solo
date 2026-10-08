@@ -901,18 +901,34 @@ function hydrateCache() {
     return Database.execute([
         `SELECT states.*, (SELECT json_group_array(json_object('slot', slot, 'symbolId', symbolId))
             FROM character_hennas WHERE characterId = states.characterId) AS nativeHennas,
-            EXISTS(SELECT 1 FROM character_quests WHERE characterId = states.characterId AND questId = 350 AND state = 'started') AS nativeCrystalQuest
+            EXISTS(SELECT 1 FROM character_quests WHERE characterId = states.characterId AND questId = 350 AND state = 'started') AS nativeCrystalQuest,
+            CASE WHEN COALESCE(json_extract(states.statsJson, '$.coldCombat.skillSource'), '') NOT IN ('hot', 'database')
+                OR (json_extract(states.statsJson, '$.coldCombat.skillSource') = 'database'
+                    AND COALESCE(json_extract(states.statsJson, '$.coldCombat.version'), 0) < ${ColdCombatProfile.PROFILE_VERSION})
+                THEN (SELECT json_group_array(json_object('selfId', selfId, 'level', level))
+                    FROM skills WHERE characterId = states.characterId) END AS nativeLearnedSkills
             FROM ${TABLE} states`,
         []
-    ]).then((rows) => {
-        rows.forEach((row) => {
-            const state = normalize(row);
+    ]).then(async (rows) => {
+        for (const row of rows) {
+            let state = normalize(row);
+            if (row.nativeLearnedSkills != null) {
+                state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, parseJson(row.nativeLearnedSkills, []), now());
+                // Startup repair precedes cache publication and worker reads.
+                // Use the existing guarded save; do not learn/spend here.
+                if (state.phase === 'cold' && state.simulation?.ownerId === 'legacy_main') {
+                    const repaired = rowFromState(state);
+                    await save(repaired);
+                    state = normalize(repaired);
+                }
+            }
+            delete row.nativeLearnedSkills;
             state.stats.hennas = [null,null,null];
             for (const symbol of parseJson(row.nativeHennas, [])) state.stats.hennas[symbol.slot - 1] = symbol.symbolId;
             state.stats.soulCrystalQuest = !!row.nativeCrystalQuest;
             cache.set(state.characterId, state);
             invoke('GameServer/Bot/Economy/CraftWorkshopService').register(state);
-        });
+        }
         const ordered = [...classMigrationCandidates].sort((a, b) => a[1] - b[1]);
         classMigrationCandidates.clear();
         for (const [id, at] of ordered) classMigrationCandidates.set(id, at);

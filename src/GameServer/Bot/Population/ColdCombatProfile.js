@@ -370,19 +370,18 @@ function treeSnapshot(state = {}, timestamp = Date.now()) {
     const classId = number(state.stats?.classId, number(state.classId));
     // Learning at a lower level after a death must not erase previously
     // learned skills or lower their ranks (including Expertise).
-    const skills = new Map((existing.skills || []).map((skill) => [number(skill.selfId), skill]));
     const authoritative = existing.skillSource === 'database' || existing.skillSource === 'hot';
-    for (const skill of authoritative ? [] : skillsFromTree(classId, Math.max(1, number(state.level, 1)))) {
-        if (number(skills.get(skill.selfId)?.level) < number(skill.level)) skills.set(skill.selfId, skill);
-    }
+    // Eligibility is not learning. Legacy tree kits are hydrated from the
+    // learned rows before startup readiness; a projector cannot pay for ranks.
+    const skills = authoritative ? existing.skills || [] : [];
     return {
         ...existing,
         version: PROFILE_VERSION,
-        skillSource: authoritative ? existing.skillSource : 'tree',
+        skillSource: authoritative ? existing.skillSource : 'unresolved',
         capturedAt: timestamp,
         classId,
         effects: existing.effects || [],
-        skills: [...skills.values()]
+        skills: [...skills]
     };
 }
 
@@ -495,8 +494,10 @@ function profileFor(state = {}, timestamp = Date.now(), options = {}) {
         effects: [...(saved?.effects || []).filter(effect => !capturedEquipmentEffect(effect, state)),
             ...C4ArmorSets.effectsForEquippedIds(new Set(equipped.map(item => Number(item.selfId)))),
             ...equipped.map(item => item.equipmentEffect).filter(Boolean)],
-        skills: Array.isArray(saved?.skills) && (saved.skills.length || ['database', 'hot'].includes(saved.skillSource))
-            ? saved.skills : skillsFromTree(classId, level)
+        // An empty saved kit is still empty. Only class-only hypothetical
+        // estimates (without a character owner) may use the eligibility tree.
+        skills: Array.isArray(saved?.skills) && saved.skillSource !== 'tree' && saved.skillSource !== 'unresolved' ? saved.skills
+            : state.characterId || saved ? [] : skillsFromTree(classId, level)
     };
     const henna = invoke('GameServer/Henna/HennaRules').totals(state.stats?.hennas || []);
     // Captured hot base stats already include the same paid symbols. Only
