@@ -79,6 +79,10 @@ Database.init();
     assert(preparedMembers.every((entry) => Number(entry.snapshot.timing.nextResolveAt) === firstPartyDue),
         'atomic party assignment must align member scheduling with the durable party row');
 
+    const staleAssignment = preparedMembers.map(entry => ({ ...entry, expectedSimulationRevision: 999,
+        expectedSimulationLeaseId: '' }));
+    assert.equal((await Database.commitBackgroundPartyMembership({ party: preparedParty.row,
+        members: staleAssignment })).reason, 'membership_conflict', 'first goal cannot create a party after a version change');
     const committed = await Database.commitBackgroundPartyMembership({
         party: preparedParty.row,
         members: preparedMembers,
@@ -118,6 +122,38 @@ Database.init();
         createdAt: 500,
         metaJson: '{"partyId":"bgp_atomic_success","memberIds":[3200001,3200002]}'
     });
+
+    const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
+    const goalMembers = await LifeState.statesForParty('bgp_atomic_success');
+    const [goalParty] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', ['bgp_atomic_success']]);
+    const goalInput = { partyId: goalParty.partyId, expectedUpdatedAt: goalParty.updatedAt,
+        leaderId: goalParty.leaderId, memberIds: JSON.parse(goalParty.memberIdsJson),
+        sources: Calculation.sources(goalMembers), updatedAt: goalParty.updatedAt + 1,
+        statsJson: JSON.stringify({ objective: { spotId: 'cruma', objectiveKey: 'joint:cruma:0' } }) };
+    for (const field of ['updatedAt', 'revision', 'ownerId', 'leaseId']) {
+        const changed = structuredClone(goalInput);
+        changed.sources[0][field] = typeof changed.sources[0][field] === 'number'
+            ? changed.sources[0][field] + 1 : changed.sources[0][field] + ':changed';
+        assert.equal((await Database.commitBackgroundPartyGoals(changed)).reason, 'party_goal_member_changed', field);
+    }
+    for (const [column, value, original] of [['phase', 'hot', 'cold'], ['partyId', 'other-party', goalParty.partyId]]) {
+        await Database.execute([`UPDATE bot_life_state SET ${column}=? WHERE characterId=?`, [value, goalInput.memberIds[0]]]);
+        assert.equal((await Database.commitBackgroundPartyGoals(goalInput)).reason, 'party_goal_member_changed', column);
+        await Database.execute([`UPDATE bot_life_state SET ${column}=? WHERE characterId=?`, [original, goalInput.memberIds[0]]]);
+    }
+    assert.equal((await Database.commitBackgroundPartyGoals({ ...goalInput,
+        expectedUpdatedAt: goalInput.expectedUpdatedAt - 1 })).reason, 'party_goals_changed');
+    assert.equal((await Database.commitBackgroundPartyGoals({ ...goalInput,
+        leaderId: goalInput.memberIds[1] })).reason, 'party_goals_changed');
+    const lifeBeforeGoal = await Database.execute(['SELECT * FROM bot_life_state WHERE partyId=? ORDER BY characterId', [goalParty.partyId]]);
+    const goalCommitted = await Database.commitBackgroundPartyGoals(goalInput);
+    assert.equal(goalCommitted.ok, true);
+    assert.equal(goalCommitted.partyRow.statsJson, goalInput.statsJson);
+    assert.equal(goalCommitted.partyRow.updatedAt, goalInput.updatedAt);
+    assert.deepEqual(await Database.execute(['SELECT * FROM bot_life_state WHERE partyId=? ORDER BY characterId', [goalParty.partyId]]),
+        lifeBeforeGoal, 'joint goal publication never rewrites members or their leases');
+    assert.equal((await Database.commitBackgroundPartyGoals(goalInput)).reason, 'party_goals_changed', 'duplicate result rejected');
+    console.log('PASS conditional joint goals: member/party/lease fences, duplicate rejection, no member writes');
 
     const conflictMembers = await LifeState.statesByIds([3200003, 3200004], {
         ownerId: 'legacy_main',

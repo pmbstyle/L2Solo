@@ -457,12 +457,22 @@ function requiresClanEquipmentParty(state) {
         && Number(objective?.clanId || 0) > 0;
 }
 
+async function jointPartyGoals(party, members, timestamp, options = {}) {
+    const Policy = require('./PartyGoalPolicy');
+    if (!members.some(member => member.phase === 'cold'))
+        return Policy.joint(party, members, { context: Policy.groupContext(party, members, { timestamp }) });
+    const result = await ColdSimulationCoordinator.requestPartyGoals(party, members, { timestamp,
+        onWorkerWait: ms => { options.workerWaitMs = Number(options.workerWaitMs || 0) + ms; } });
+    return result.ok && require('./PartyGoalCalculation').matches(members, result.sources) ? result.joint : null;
+}
+
 async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
     if (!party?.partyId || party.status === 'dissolved') {
         return { party, reviewed: 0, departed: null };
     }
 
     party = BackgroundPartyState.find(party.partyId) || party;
+    if (party.status !== 'active') return { party, reviewed: 0, departed: null };
     const members = (party.memberIds || [])
         .map((characterId) => LifeState.cachedState(characterId))
         .filter((member) => member && String(member.party?.partyId || member.partyId || '') === String(party.partyId));
@@ -511,11 +521,11 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
 
     if (!departed) {
         const currentMembers = members.map(member => LifeState.cachedState(member.characterId) || member);
-        const joint = require('./PartyGoalPolicy').joint(party, currentMembers,
-            { context: require('./PartyGoalPolicy').groupContext(party, currentMembers) });
+        const joint = await jointPartyGoals(party, currentMembers, timestamp);
+        if (!joint) return { party, reviewed, departed: null };
         if (JSON.stringify(party.stats?.memberGoals) !== JSON.stringify(joint.memberGoals)
             || JSON.stringify(party.stats?.objective) !== JSON.stringify(joint.objective)) {
-            const saved = await BackgroundPartyState.createOrUpdate({ ...party, stats: { ...party.stats, ...joint } });
+            const saved = await BackgroundPartyState.commitGoals(party, currentMembers, joint);
             party = saved || party;
         }
         return { party, reviewed, departed: null };
@@ -684,11 +694,17 @@ async function commitPartyReview(party, members, timestamp) {
         personaFor: BotPersona.of,
         assessRelationship: invoke('GameServer/Social/InteractionMemoryRuntime').assess.bind(invoke('GameServer/Social/InteractionMemoryRuntime'))
     });
-    if (review.party.status === 'active') review.party.stats = { ...review.party.stats,
-        ...require('./PartyGoalPolicy').joint(review.party, review.states.filter(state => state.party?.partyId),
-            { context: require('./PartyGoalPolicy').groupContext(review.party, review.states.filter(state => state.party?.partyId)) }) };
+    if (review.party.status === 'active') {
+        const joint = await jointPartyGoals(review.party, review.states.filter(state => state.party?.partyId), timestamp);
+        if (!joint) return { ok: false, reason: 'party_goal_unavailable' };
+        review.party.stats = { ...review.party.stats, ...joint };
+    }
     const preparedParty = BackgroundPartyState.prepareCommit(review.party);
-    const preparedMembers = review.states.map((state, i) => LifeState.preparePartyReview(members[i], state));
+    const preparedMembers = review.states.map((state, i) => {
+        const prepared = LifeState.preparePartyReview(members[i], state);
+        return prepared && { ...prepared, expectedSimulationRevision: Number(members[i].simulation?.revision || 0),
+            expectedSimulationLeaseId: String(members[i].simulation?.leaseId || '') };
+    });
     if (!preparedParty || preparedMembers.some(entry => !entry)) return { ok: false, reason: 'party_review_invalid' };
     const result = await Database.commitBackgroundPartyMembership({ party: preparedParty.row, members: preparedMembers,
         review: true, expectedPartyUpdatedAt: party.updatedAt,
@@ -726,13 +742,17 @@ function commitPartyMembership(party, members = [], event = null) {
 
     const preparedParty = BackgroundPartyState.prepareCommit(party);
     if (!preparedParty) return Promise.resolve({ party: null, assigned: [], failed: selected });
-    const preparedMembers = selected.map((member) => LifeState.preparePartyAssignment(
-        member,
-        preparedParty.snapshot.partyId,
-        PartyComposition.roleForState(member),
-        preparedParty.snapshot.leaderId,
-        preparedParty.snapshot.nextResolveAt
-    )).filter(Boolean);
+    const preparedMembers = selected.map((member) => {
+        const prepared = LifeState.preparePartyAssignment(
+            member,
+            preparedParty.snapshot.partyId,
+            PartyComposition.roleForState(member),
+            preparedParty.snapshot.leaderId,
+            preparedParty.snapshot.nextResolveAt
+        );
+        return prepared && { ...prepared, expectedSimulationRevision: Number(member.simulation?.revision || 0),
+            expectedSimulationLeaseId: String(member.simulation?.leaseId || '') };
+    }).filter(Boolean);
     if (preparedMembers.length !== selected.length) {
         return Promise.resolve({ party: null, assigned: [], failed: selected });
     }
@@ -782,7 +802,7 @@ async function releaseForClanHelp(state) {
     return LifeState.cachedState(state.characterId) || released;
 }
 
-async function createAndCommitBackgroundParty(members = [], objectiveOverride = null) {
+async function createAndCommitBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const Capacity = require('./ClanPartyCapacity');
     const objective = objectiveOverride || members.map(partyObjectiveForState).find(Capacity.required);
     const safety = require('./ClanEquipmentPartyPolicy');
@@ -800,11 +820,11 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
         if (reclaimed) release = partyAdmission.reserve(BackgroundPartyState.admitted(), Config);
     }
     if (!release) return null;
-    try { return await createBackgroundParty(members, objectiveOverride); }
+    try { return await createBackgroundParty(members, objectiveOverride, options); }
     finally { release(); }
 }
 
-function createBackgroundParty(members = [], objectiveOverride = null) {
+async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
     if (!requested?.clanGoalKey && requested?.sourceKind !== 'raid') {
         members = require('./PartyGoalPolicy').formingMembers(members, requested);
@@ -847,8 +867,9 @@ function createBackgroundParty(members = [], objectiveOverride = null) {
                 : null
         }
     };
-    party.stats = { ...party.stats, ...require('./PartyGoalPolicy').joint(party, members,
-        { context: require('./PartyGoalPolicy').groupContext(party, members) }),
+    const joint = await jointPartyGoals(party, members, timestamp, options);
+    if (!joint) return null;
+    party.stats = { ...party.stats, ...joint,
         agreement: require('./PartyAgreement').propose(leader, members, objective,
             { persona: BotPersona.of(leader), rng: require('../AI/TendencyRoll').seeded(`agreement:${partyId}`) }) };
     const partyEvent = {
@@ -2179,9 +2200,10 @@ const PopulationService = {
                 }
                 const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required') || selected[0];
                 const commitStartedAt = Date.now();
-                return createAndCommitBackgroundParty(selected, partyObjectiveForState(objectiveMember)).then((party) => {
+                const commitTiming = { workerWaitMs: 0 };
+                return createAndCommitBackgroundParty(selected, partyObjectiveForState(objectiveMember), commitTiming).then((party) => {
                     if (!party) failed = true;
-                    if (Date.now() - commitStartedAt > mainBudgetMs) failed = true;
+                    if (Date.now() - commitStartedAt - commitTiming.workerWaitMs > mainBudgetMs) failed = true;
                     return party ? [party] : [];
                 });
             });

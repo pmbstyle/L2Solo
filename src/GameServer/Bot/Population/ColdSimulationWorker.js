@@ -496,6 +496,99 @@ function currentPlanningOccupancy(timestamp = Date.now()) {
 
 // payloadBytes: the payload's JSON size when the caller already counted it
 // (the kernel's proposal batches); the 256 KB limit is checked against it.
+let partyGoalJobs = 0;
+let partyGoalTail = Promise.resolve();
+const partyGoalPages = new Map();
+const partyGoalSeen = new Map();
+
+function admitPartyGoalPages(payload, msgId) {
+    for (const [id, until] of partyGoalSeen) if (until <= Date.now()) partyGoalSeen.delete(id);
+    let entry = partyGoalPages.get(msgId);
+    const fail = reason => {
+        if (entry) { clearTimeout(entry.timer); partyGoalPages.delete(msgId); partyGoalJobs--; }
+        send('party_goal_result', { ok: false, reason }, msgId);
+    };
+    if (!entry) {
+        if (partyGoalSeen.has(msgId)) return fail('party_goal_duplicate');
+        if (payload.pageIndex !== 0) return fail('party_goal_page_order');
+        if (partyGoalJobs >= 2) return fail('party_goal_busy');
+        if (Date.now() >= payload.replyBy || shuttingDown) return fail('party_goal_expired');
+        partyGoalJobs++;
+        while (partyGoalSeen.size >= 16) partyGoalSeen.delete(partyGoalSeen.keys().next().value);
+        partyGoalSeen.set(msgId, payload.replyBy);
+        entry = { party: payload.party, members: [], escrows: [],
+            timestamp: payload.timestamp, replyBy: payload.replyBy, pageCount: payload.pageCount, nextPage: 0 };
+        partyGoalPages.set(msgId, entry);
+        entry.timer = setTimeout(() => fail('party_goal_expired'), Math.max(1, entry.replyBy - Date.now()));
+    }
+    if (entry.nextPage !== payload.pageIndex || entry.pageCount !== payload.pageCount
+        || entry.timestamp !== payload.timestamp || entry.replyBy !== payload.replyBy
+        || payload.pageIndex > 0 && entry.party.partyId !== payload.partyId) return fail('party_goal_page_changed');
+    entry.members.push(payload.members[0]); entry.escrows.push(payload.escrows[0]); entry.nextPage++;
+    if (entry.nextPage !== entry.pageCount) return;
+    clearTimeout(entry.timer); partyGoalPages.delete(msgId);
+    if (!require('./PartyGoalCalculation').validMembers(entry.party, entry.members)) {
+        partyGoalJobs--; send('party_goal_result', { ok: false, reason: 'party_goal_roster_changed' }, msgId); return;
+    }
+    requestPartyGoals(entry, msgId, true);
+}
+
+function requestPartyGoals(payload, msgId, admitted = false) {
+    if (!kernel || shuttingDown || kernel.stopping || !safetyStateReady || Date.now() >= payload.replyBy) {
+        if (admitted) partyGoalJobs--;
+        send('party_goal_result', { ok: false, reason: 'worker_not_ready' }, msgId);
+        return;
+    }
+    if (!admitted && partyGoalJobs >= 2) {
+        send('party_goal_result', { ok: false, reason: 'party_goal_busy' }, msgId);
+        return;
+    }
+    if (!admitted) {
+        for (const [id, until] of partyGoalSeen) if (until <= Date.now()) partyGoalSeen.delete(id);
+        if (partyGoalSeen.has(msgId)) {
+            send('party_goal_result', { ok: false, reason: 'party_goal_duplicate' }, msgId); return;
+        }
+        while (partyGoalSeen.size >= 16) partyGoalSeen.delete(partyGoalSeen.keys().next().value);
+        partyGoalSeen.set(msgId, payload.replyBy);
+        partyGoalJobs++;
+    }
+    let preparedMembers = [];
+    partyGoalTail = partyGoalTail.then(async () => {
+        if (shuttingDown || kernel.stopping || Date.now() >= payload.replyBy) return;
+        const Calculation = require('./PartyGoalCalculation');
+        // Equal native snapshots keep their worker-owned identity and caches.
+        // A freshly committed main snapshot is complete input, never merged
+        // with an older worker wallet, inventory or equipment plan.
+        const members = payload.members.map(member => {
+            const native = kernel.states.get(member.characterId)?.state;
+            return native && JSON.stringify(native) === JSON.stringify(member) ? native : member;
+        });
+        preparedMembers = members;
+        const joint = await Calculation.calculate(payload.party, members, async (member, timestamp) => {
+            const context = { ...(kernel.states.get(member.characterId)?.context || {}),
+                buyOrderEscrow: payload.escrows[members.indexOf(member)] };
+            const routeRows = await occupationFor(member, timestamp, context, 'wish');
+            const workshop = await occupationFor(member, timestamp,
+                { ...context, routeRows, routeKey: EconomicTrip.key(member) });
+            return invoke('GameServer/Bot/Economy/EconomyContext').forState(member, {
+                timestamp, spots: planningSpots, board: boardReady(),
+                occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows,
+                buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal' });
+        }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy);
+        if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
+            send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);
+    }).catch(error => {
+        send('party_goal_result', { ok: false, reason: error.message || 'party_goal_failed' }, msgId);
+    }).finally(() => {
+        // Advice on a not-yet-published main snapshot must not retain a second
+        // complete actor state in the worker's per-actor context cache.
+        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+        for (const member of preparedMembers) if (kernel?.states.get(member.characterId)?.state !== member)
+            Economy.forgetContext(member.characterId, 'party_query_release', member);
+        partyGoalJobs--;
+    });
+}
+
 function send(type, payload = {}, msgId = null, payloadBytes = null) {
     const message = Protocol.envelope(type, epoch, payload, msgId);
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
@@ -949,6 +1042,10 @@ async function handle(message) {
         send('party_formation_proposal', RequiredPartyFormation.proposalFromStates(states, payload), message.msgId);
         break;
     }
+    case 'party_goal_request':
+        if (payload.pageIndex !== undefined) admitPartyGoalPages(payload, message.msgId);
+        else requestPartyGoals(payload, message.msgId);
+        break;
     case 'fence': {
         occupationPlanner.cancel(payload.characterId);
         cancelRoute(payload.characterId);
@@ -974,6 +1071,8 @@ async function handle(message) {
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        for (const entry of partyGoalPages.values()) { clearTimeout(entry.timer); partyGoalJobs--; }
+        partyGoalPages.clear(); partyGoalSeen.clear();
         routeRequests.clear();
         if (Config.economyDiagnostics) economyDiagnostics.stop();
         occupationPlanner.stop();

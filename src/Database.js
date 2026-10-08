@@ -4898,6 +4898,41 @@ const Database = {
         }, 'bot-party:save-agreement');
     },
 
+    commitBackgroundPartyGoals({ partyId, expectedUpdatedAt, leaderId, memberIds, sources, statsJson, updatedAt } = {}) {
+        const ids = Array.isArray(memberIds) ? memberIds : [];
+        if (!partyId || ids.length < 1 || ids.length > 9 || new Set(ids).size !== ids.length
+            || !ids.every(id => Number.isSafeInteger(id) && id > 0) || !ids.includes(leaderId)
+            || !Array.isArray(sources) || sources.length !== ids.length
+            || new Set(sources.map(source => source.characterId)).size !== ids.length
+            || sources.some(source => !ids.includes(source.characterId) || source.phase !== 'cold'
+                || source.partyId !== partyId || !Number.isSafeInteger(source.updatedAt)
+                || !Number.isSafeInteger(source.revision) || source.revision < 0)
+            || !Number.isSafeInteger(expectedUpdatedAt) || !Number.isSafeInteger(updatedAt)
+            || updatedAt <= expectedUpdatedAt || typeof statsJson !== 'string')
+            return Promise.resolve({ ok: false, reason: 'invalid_party_goals' });
+        return inTransaction(() => {
+            const party = one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]);
+            if (party?.status !== 'active' || Number(party.updatedAt) !== expectedUpdatedAt
+                || Number(party.leaderId) !== leaderId || party.memberIdsJson !== JSON.stringify(ids))
+                return { ok: false, reason: 'party_goals_changed' };
+            const rows = all(`SELECT characterId, phase, partyId, updatedAt, simulationOwner,
+                simulationRevision, simulationLeaseId FROM bot_life_state
+                WHERE characterId IN (${ids.map(() => '?').join(',')})`, ids);
+            const byId = new Map(rows.map(row => [Number(row.characterId), row]));
+            if (sources.some(source => {
+                const row = byId.get(source.characterId);
+                return !row || row.phase !== source.phase || row.partyId !== source.partyId
+                    || Number(row.updatedAt) !== source.updatedAt
+                    || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== source.ownerId
+                    || Number(row.simulationRevision || 0) !== source.revision
+                    || String(row.simulationLeaseId || '') !== source.leaseId;
+            })) return { ok: false, reason: 'party_goal_member_changed' };
+            write('UPDATE bot_background_parties SET statsJson = ?, updatedAt = ? WHERE partyId = ?',
+                [statsJson, updatedAt, partyId]);
+            return { ok: true, partyRow: one('SELECT * FROM bot_background_parties WHERE partyId = ?', [partyId]) };
+        });
+    },
+
     commitBackgroundPartyMembership({ party, members = [], event = null, review = false, expectedPartyUpdatedAt = null,
         expectedPhase = 'cold', canCommitHot = null, preserveClanOperations = false } = {}) {
         const batch = Array.isArray(members) ? members.slice(0, 40) : [];
@@ -4937,7 +4972,7 @@ const Database = {
                 }
             }
             const placeholders = characterIds.map(() => '?').join(', ');
-            const currentRows = all(`SELECT characterId, phase, simulationOwner, partyId, updatedAt
+            const currentRows = all(`SELECT characterId, phase, simulationOwner, simulationRevision, simulationLeaseId, partyId, updatedAt
                 FROM bot_life_state WHERE characterId IN (${placeholders})`, characterIds);
             const currentById = new Map(currentRows.map((row) => [Number(row.characterId), row]));
             const conflicts = batch.filter((entry) => {
@@ -4947,7 +4982,11 @@ const Database = {
                     || current.phase !== expectedPhase
                     || String(current.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
                     || String(current.partyId || '') !== String(entry.expectedPartyId || '')
-                    || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0);
+                    || Number(current.updatedAt || 0) !== Number(entry.expectedUpdatedAt || 0)
+                    || entry.expectedSimulationRevision !== undefined
+                        && Number(current.simulationRevision || 0) !== entry.expectedSimulationRevision
+                    || entry.expectedSimulationLeaseId !== undefined
+                        && String(current.simulationLeaseId || '') !== entry.expectedSimulationLeaseId;
             }).map((entry) => Number(entry.row.characterId));
             if (conflicts.length) return { ok: false, reason: 'membership_conflict', conflicts };
 

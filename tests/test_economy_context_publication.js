@@ -79,6 +79,10 @@ module.exports.publicationProbe = async stage => {
         assert.strictEqual(fresh.state,clone);
         assert.deepEqual(fresh.statsPacket,first.statsPacket);
         assert.deepEqual(fresh.network.activity,first.network.activity);
+        Economy.forgetContext(current.characterId,'party_query_release',current);
+        assert.strictEqual(Economy.forState(clone,options),fresh,'old query cleanup cannot evict a newer state');
+        Economy.forgetContext(clone.characterId,'party_query_release',clone);
+        assert.equal(Economy.size().context,0,'a private query snapshot releases its context and graph');
         const group = Economy.forGroup({id:'worker-publication',adena:200},members,options);
         assert.equal(Economy.size().groups,1);
         module.exports.previous = group.state;

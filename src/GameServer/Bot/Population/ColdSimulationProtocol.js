@@ -21,6 +21,7 @@ const MAIN_TYPES = new Set([
     'command_ack',
     'maintenance_ack',
     'party_formation_request',
+    'party_goal_request',
     'fence',
     'fence_ack',
     'pause',
@@ -42,6 +43,7 @@ const WORKER_TYPES = new Set([
     'command_request',
     'maintenance_request',
     'party_formation_proposal',
+    'party_goal_result',
     'heartbeat',
     'fence_ack',
     'drained',
@@ -159,6 +161,33 @@ function validateEnvelope(message, direction, options = {}) {
     if ((message.type === 'economy_route_request' || message.type === 'economy_route_result')
         && !economyRoutePayload(message.payload, message.type === 'economy_route_result')) {
         return { ok: false, reason: 'invalid_economy_route' };
+    }
+    if (message.type === 'party_goal_request') {
+        const payload = message.payload;
+        const paged = payload.pageIndex !== undefined || payload.pageCount !== undefined;
+        const party = paged && payload.pageIndex > 0
+            ? { partyId: payload.partyId, memberIds: payload.members?.map(state => state?.characterId),
+                leaderId: payload.members?.[0]?.characterId } : payload.party;
+        if (!require('./PartyGoalCalculation').validMembers(party, payload.members, paged)
+            || paged && (!Number.isSafeInteger(payload.pageIndex) || !Number.isSafeInteger(payload.pageCount)
+                || payload.pageCount < 1 || payload.pageCount > 9 || payload.pageIndex < 0
+                || payload.pageIndex >= payload.pageCount || payload.members.length !== 1
+                || payload.pageIndex === 0 && payload.pageCount !== payload.party.memberIds.length
+                || payload.pageIndex > 0 && payload.party !== undefined)
+            || !Array.isArray(payload.escrows) || payload.escrows.length !== payload.members.length
+            || payload.escrows.some(value => typeof value !== 'number' || !Number.isFinite(value) || value < 0)
+            || !Number.isSafeInteger(payload.timestamp) || payload.timestamp <= 0
+            || !Number.isSafeInteger(payload.replyBy) || payload.replyBy < payload.timestamp)
+            return { ok: false, reason: 'invalid_party_goal_request' };
+    }
+    if (message.type === 'party_goal_result') {
+        const payload = message.payload;
+        if (typeof payload.ok !== 'boolean' || (payload.ok
+            ? !Array.isArray(payload.sources) || payload.sources.length < 1 || payload.sources.length > 9
+                || !payload.joint || typeof payload.joint !== 'object' || Array.isArray(payload.joint)
+                || !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
+                || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes'].includes(key))
+            : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
     }
     // Serialising a page only to measure it costs as much as building it.
     // A sender that sized the page while building it passes that size, and

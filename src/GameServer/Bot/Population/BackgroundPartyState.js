@@ -262,6 +262,18 @@ const BackgroundPartyState = {
         });
     },
 
+    async commitGoals(party, members, joint) {
+        const next = { ...party, stats: { ...party.stats, ...joint },
+            updatedAt: Math.max(Date.now(), Number(party.updatedAt || 0) + 1) };
+        if (!Database.isReady()) return this.createOrUpdate(next);
+        const result = await Database.commitBackgroundPartyGoals({
+            partyId: party.partyId, expectedUpdatedAt: Number(party.updatedAt || 0),
+            leaderId: Number(party.leaderId), memberIds: party.memberIds,
+            sources: require('./PartyGoalCalculation').sources(members),
+            statsJson: safeJson(next.stats), updatedAt: next.updatedAt });
+        return result.ok ? this.acceptRow(result.partyRow) : null;
+    },
+
     prepareCommit(party) {
         const membership = normalizeMembership(party);
         const status = party?.status || 'active';

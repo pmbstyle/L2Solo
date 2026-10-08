@@ -12,9 +12,9 @@ function declaration(state) {
         need: request?.reason || (plan?.status === 'active' ? 'gear_acquisition' : 'progression') };
 }
 
-function groupContext(party, members) {
+function groupContext(party, members, deps = {}) {
     return invoke('GameServer/Bot/Economy/EconomyContext').forGroup({ ...party,
-        adena: members.reduce((sum, member) => sum + positive(member.adena), 0) }, members);
+        adena: members.reduce((sum, member) => sum + positive(member.adena), 0) }, members, deps);
 }
 
 function decide(state, peers, options = {}) {

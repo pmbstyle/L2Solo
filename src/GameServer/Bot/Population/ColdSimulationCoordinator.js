@@ -206,6 +206,7 @@ class ColdSimulationCoordinator {
         });
         this.seenOrder = [];
         this.waiters = new Map();
+        this.partyGoalRequests = 0;
         this.commandTail = Promise.resolve();
         this.competitionFrameAdmission = null;
         this.competitionActions = new (require('./ColdCompetitionActions').ColdCompetitionActions)({
@@ -616,9 +617,10 @@ class ColdSimulationCoordinator {
         case 'proposal_batch':
             this.handleProposalBatch(message, worker, epoch);
             break;
+        case 'party_goal_result':
         case 'party_formation_proposal': {
             const waiter = this.waiters.get(message.msgId);
-            if (waiter) {
+            if (waiter && (!waiter.expectedType || waiter.expectedType === message.type)) {
                 this.waiters.delete(message.msgId);
                 waiter.resolve(payload);
             }
@@ -720,6 +722,56 @@ class ColdSimulationCoordinator {
             return { ok: false, reason: error.message, candidates: [] };
         } finally {
             clearTimeout(timer);
+        }
+    }
+
+    async requestPartyGoals(party, members, options = {}) {
+        const Calculation = require('./PartyGoalCalculation');
+        if (!Calculation.validMembers(party, members)) return { ok: false, reason: 'invalid_party_members' };
+        if (!this.worker || !this.ready || !this.snapshotsLoaded || this.stopping)
+            return { ok: false, reason: 'worker_not_ready' };
+        if (this.partyGoalRequests >= 2) return { ok: false, reason: 'party_goal_busy' };
+        const worker = this.worker, epoch = this.workerEpoch;
+        const timestamp = Number(options.timestamp || Date.now());
+        const replyBy = Date.now() + Math.max(50, Math.min(5000, Number(options.timeoutMs) || 5000));
+        const expected = Calculation.sources(members);
+        const escrowFor = member => invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(member.characterId);
+        const escrows = members.map(escrowFor);
+        const msgId = randomUUID();
+        let timer, waitStarted;
+        this.partyGoalRequests++;
+        try {
+            const result = await new Promise((resolve, reject) => {
+                this.waiters.set(msgId, { resolve, reject, expectedType: 'party_goal_result' });
+                timer = setTimeout(() => reject(new Error('party_goal_timeout')), Math.max(1, replyBy - Date.now()));
+                const payload = { party, members, escrows, timestamp, replyBy };
+                const bytes = Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, payload, msgId));
+                const pages = bytes <= Protocol.MAX_MESSAGE_BYTES ? [{ payload, bytes }]
+                    : members.map((member, pageIndex) => {
+                        const page = { ...(pageIndex === 0 ? { party } : { partyId: party.partyId }),
+                            members: [member], escrows: [escrows[pageIndex]], timestamp, replyBy,
+                            pageIndex, pageCount: members.length };
+                        return { payload: page, bytes: Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, page, msgId)) };
+                    });
+                if (pages.some(page => page.bytes > Protocol.MAX_MESSAGE_BYTES)
+                    || pages.some(page => !this.post('party_goal_request', page.payload, msgId, page.bytes)))
+                    reject(new Error('party_goal_send_failed'));
+                waitStarted = performance.now();
+            });
+            if (options.onWorkerWait && waitStarted !== undefined) options.onWorkerWait(performance.now() - waitStarted);
+            if (this.worker !== worker || this.workerEpoch !== epoch || this.stopping || Date.now() >= replyBy)
+                return { ok: false, reason: 'party_goal_stale_worker' };
+            if (!result.ok) return result;
+            if (JSON.stringify(result.sources) !== JSON.stringify(expected)
+                || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
+                return { ok: false, reason: 'party_goal_source_changed' };
+            return result;
+        } catch (error) {
+            return { ok: false, reason: error.message };
+        } finally {
+            clearTimeout(timer);
+            this.waiters.delete(msgId);
+            this.partyGoalRequests--;
         }
     }
 

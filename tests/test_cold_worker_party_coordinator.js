@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional resolved/compaction counters.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -160,6 +161,22 @@ let coordinator = null;
         [...requiredIds].sort((a, b) => a - b),
         'worker proposal must contain the compatible unassigned required requests'
     );
+    const goalMembers = await LifeState.statesByIds(requiredIds, { ownerId: 'legacy_main', unassigned: true });
+    const goalParty = { partyId: 'worker-first-goal', memberIds: goalMembers.map(member => member.characterId),
+        leaderId: goalMembers[0].characterId, stats: { objective: { sourceKind: 'raid', spotId: spot.id } } };
+    const goalResult = await coordinator.requestPartyGoals(goalParty, goalMembers);
+    assert.equal(goalResult.ok, true, goalResult.reason);
+    assert.deepStrictEqual(goalResult.joint.objective, goalParty.stats.objective, 'native worker keeps protected raid goal');
+    assert.equal(goalResult.joint.memberGoals.length, goalMembers.length);
+    assert.deepStrictEqual(goalResult.sources,
+        require('../src/GameServer/Bot/Population/PartyGoalCalculation').sources(goalMembers));
+    assert.equal(coordinator.partyGoalRequests, 0, 'native response releases the admission slot');
+    const largeMembers = await LifeState.statesForParty('worker-party');
+    assert(require('../src/GameServer/Bot/Population/ColdSimulationProtocol').byteLength({ members: largeMembers }) > 256 * 1024,
+        'fixture requires multiple complete-input pages');
+    const largeGoals = await coordinator.requestPartyGoals(PartyState.find('worker-party'), largeMembers);
+    assert.equal(largeGoals.ok, true, largeGoals.reason);
+    assert.equal(largeGoals.joint.memberGoals.length, 2, 'oversize roster is computed without truncation');
     assert.strictEqual(mainCommands, 0, 'party combat must never execute on the main lifecycle command bridge');
     assert(Number(snapshot.worker.resolved || 0) >= 2, 'worker must resolve every claimed party member');
     assert(Number(snapshot.queue.committed || 0) >= 2, 'main DB gateway must commit every party member');

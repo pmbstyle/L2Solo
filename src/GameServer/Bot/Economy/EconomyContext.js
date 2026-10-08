@@ -441,14 +441,19 @@ function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
 function forGroup(group, members, deps = {}) {
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('context_group', 'request');
-    const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
+    const selected = (members || []).slice(0, 9);
+    const prepared = deps.memberContexts;
+    if (prepared !== undefined && (!Array.isArray(prepared) || prepared.length !== selected.length
+        || prepared.some((context, i) => !context?.projection || context.state !== selected[i])))
+        throw new Error('party_member_context_mismatch');
+    const contexts = prepared || selected.map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
     if (!first) {
         if (diagnostic) Diagnostics.count('context_group', 'miss', 'empty_group');
         return null;
     }
     const actorKey = `group:${group.id || group.partyId}`;
-    const proposal = String(group.id || group.partyId || '').startsWith('proposal:');
+    const proposal = deps.rememberGroup === false || String(group.id || group.partyId || '').startsWith('proposal:');
     const wallet = positive(group.adena ?? group.wallet);
     const key = [wallet, ...contexts.map(context => context.inputKey)].join('|');
     const held = proposal ? null : groups.get(actorKey);
@@ -511,9 +516,10 @@ function preparedRouteRows(state) {
 function forgetGroup(partyId) {
     if (groups.delete(`group:${partyId}`) && Diagnostics.active()) Diagnostics.count('context_group', 'eviction', 'group_release');
 }
-function forgetContext(id, reason = 'explicit_invalidation') {
+function forgetContext(id, reason = 'explicit_invalidation', expectedState = null) {
     id = Number(id);
     const key = `character:${id}`;
+    if (expectedState && cache.get(key)?.context.state !== expectedState) return;
     if (cache.delete(key) && Diagnostics.active()) Diagnostics.count('context', 'eviction', reason);
     engine.forget(key, reason);
     for (const [groupKey, held] of groups) {
