@@ -14,7 +14,6 @@ Date.now = () => clock;
 require('../src/Global'); fixture.assertConfigured(options.default);
 const DB = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState'), Goals = invoke('GameServer/Bot/Goals/GoalState');
-const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Basket = require('../src/GameServer/Bot/Economy/NpcPurchaseBasket');
 const Restock = require('../src/GameServer/Bot/Economy/NpcRestockPlan');
 const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
@@ -193,5 +192,5 @@ async function scenarios() {
         assert.deepEqual(probe(true), probe(false), 'master off/on preserves exact physical rows, life packet, goal, result and RNG use');
         console.log('NPC basket diagnostics: actual quantities, seller, protected wallet, goal CAS, errand partial, replay omission, rollback and exact off/on data/RNG passed');
     }
-})().catch(async error => { console.error(error); try { await DB.close(); } catch {} process.exitCode = 1; })
+})().catch(async error => { console.error(error); try { await DB.close(); } catch { /* Keep the original test failure. */ } process.exitCode = 1; })
 .finally(() => { Date.now = nativeDate; Math.random = nativeRandom; crypto.randomUUID = uuid; fs.rmSync(fixture.directory, { recursive: true, force: true }); });
