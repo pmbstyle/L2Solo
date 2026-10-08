@@ -16,6 +16,7 @@ const DB = invoke('Database'), Data = invoke('GameServer/DataCache');
 const Life = invoke('GameServer/Bot/Population/BotLifeState'), Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Basket = require('../src/GameServer/Bot/Economy/NpcPurchaseBasket');
+const Restock = require('../src/GameServer/Bot/Economy/NpcRestockPlan');
 const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const Native = require('./helpers/nativeMarketFixture');
@@ -49,7 +50,11 @@ async function parity(on) {
         hooks[key] = Diagnostics[key]; Diagnostics[key] = () => { throw Error('disabled hook ' + key); };
     }
     let result;
-    try { result = await Basket.purchase(state, { seller, lines: chosen }); }
+    try {
+        const plan = Restock.collect(state, { potions: false, shots: false, scrolls: false, extras: [{
+            ...chosen[0], offer: { ...seller, price: 18 } }] })[0];
+        result = await Basket.purchase(state, plan);
+    }
     finally { Object.assign(Diagnostics, hooks); }
     const digest = { randomCalls, items: await read('SELECT * FROM items WHERE characterId=9600 ORDER BY id'),
         life: await read('SELECT * FROM bot_life_state WHERE characterId=9600'),
@@ -139,6 +144,26 @@ async function scenarios() {
         && row.actual === 0 && row.receiptUnits === 102 && row.npcId === undefined));
     assert.equal(await amount(9605, 57), 2984);
     assert(Diagnostics.metrics().durations.npc_basket.count >= 5);
+    const poor = await seed(9606, 180);
+    const poorPlans = Restock.collect(poor, { shots: false, potions: false, scrolls: false,
+        extras: [{ selfId: 2509, amount: 120, offer: { ...seller, price: 18 } }] });
+    assert.equal(poorPlans[0].lines[0].amount, 10);
+    const poorPlan = rows.find(row => row.owner === 9606 && row.phase === 'npc_plan');
+    assert.equal(poorPlan.requested, 120); assert.equal(poorPlan.planned, 10); assert.equal(poorPlan.budget, 180);
+    assert.equal(poorPlan.reason, 'partial'); assert.equal(poorPlan.npcId, seller.sourceId);
+    const poorReceipt = await Basket.purchase(poor, poorPlans[0]);
+    assert.equal(poorReceipt.units, 10); assert.equal(poorReceipt.spent, 180);
+    const rich = await seed(9607);
+    const richPlans = Restock.collect(rich, { shots: false, potions: false, scrolls: false,
+        extras: [{ selfId: 2509, amount: 120, offer: { ...seller, price: 18 } }] });
+    assert.equal(richPlans[0].lines[0].amount, 120);
+    assert(rows.some(row => row.owner === 9607 && row.phase === 'npc_plan' && row.requested === 120 && row.planned === 120 && row.reason === 'funded'));
+    const merged = Restock.collect(rich, { shots: false, potions: false, scrolls: false, extras: [
+        { selfId: 2509, amount: 120, offer: { ...seller, price: 18 } },
+        { selfId: 2509, amount: 120, offer: { ...seller, price: 19 } }] });
+    assert.equal(merged[0].lines[0].amount, 120);
+    assert(rows.some(row => row.owner === 9607 && row.phase === 'npc_plan' && row.reason === 'line_changed' && row.planned === 0));
+    assert(Diagnostics.metrics().durations.npc_plan.count >= 2);
     assert.equal(DB.stats().pending, 0);
 }
 (async () => {
