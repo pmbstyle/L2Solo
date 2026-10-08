@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Crafting = require('./ClanCraftingPolicy');
 const CraftShops = invoke('GameServer/Bot/Economy/CraftShopService');
 const Database = invoke('Database');
@@ -25,7 +27,7 @@ const metrics = {
     partyAssignments: 0,
     assignmentFailures: 0,
     noDebt: 0,
-    reasonCounts: new Map()
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -44,7 +46,7 @@ function parseJson(value, fallback = {}) {
 }
 
 function recordReason(reason) {
-    if (reason) metrics.reasonCounts.set(reason, (metrics.reasonCounts.get(reason) || 0) + 1);
+    if (reason) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(reason, (metrics.reasonCounts.get(reason) || 0) + 1);
 }
 
 function reservationOptionsForClan(clan) {
@@ -487,7 +489,7 @@ async function assignPartyObjective(member, clan, goal, plan, priority = 'prefer
         }
     }, 'clan_equipment_party_objective');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id };
-    metrics.partyAssignments += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.partyAssignments += 1);
     return { ok: true, changed: true, memberId: id };
 }
 
@@ -535,7 +537,7 @@ async function assignPlan(member, plan, clan, goal) {
     };
     const saved = await LifeState.upsertState(nextState, 'clan_equipment_goal');
     if (!saved) return { ok: false, code: 'member_state_write_failed', memberId: id, handoff };
-    metrics.assignments += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.assignments += 1);
     const purchase = plan.strategy === 'market' ? await buyGoalItem(id, plan, clan) : null;
     return { ok: true, changed: true, memberId: id, handoff, purchase };
 }
@@ -823,7 +825,7 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
 }
 
 async function resolveClan(clan, previousGoal = null, options = {}) {
-    metrics.resolves += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.resolves += 1);
     if (!clan || !number(clan.id)) {
         return { ok: true, skipped: true, reason: 'equipment_level_unavailable' };
     }
@@ -854,7 +856,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         };
     }
     if (!selection) {
-        metrics.noDebt += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.noDebt += 1);
         recordReason('no_equipment_debt');
         // The beneficiary has its item and no member needs anything next: the
         // goal is closed, not left executing until the next debt appears.
@@ -927,7 +929,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
     const partyReform = await releaseConflictingRosterParties([...new Set([...assignedMemberIds, ...craftMembers])], goal, expectedObjective);
     const assignment = await assignPlan(selection.member, selection.plan, clan, goal);
     if (!assignment.ok) {
-        metrics.assignmentFailures += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.assignmentFailures += 1);
         recordReason(assignment.code);
         return { ...assignment, goal, plans, selection };
     }
@@ -947,7 +949,7 @@ async function resolveClan(clan, previousGoal = null, options = {}) {
         [number(clan.id)]
     ]);
     const latestState = parseJson(latestStateRow?.stateJson, clan.state || {});
-    metrics.plans += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.plans += 1);
     recordReason(goal.plan.reasonCode);
     return {
         ok: true,
@@ -978,6 +980,7 @@ const ClanEquipmentService = {
     reserveGoalCapacity,
     releaseConflictingRosterParties,
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             plans: metrics.plans,

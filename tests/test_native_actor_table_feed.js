@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
@@ -38,7 +39,7 @@ parentPort.on('message', message => { if(message.type !== 'worker_presence_reque
     const send = (type,payload) => worker.postMessage(Protocol.envelope(type,epoch,payload));
     try {
         await until(message => message.type==='ready' && message.payload.phase==='loaded');
-        send('init',{}); await until(message => message.type==='ready' && message.payload.phase==='running');
+        send('init',{config:{developerDiagnostics:true}}); await until(message => message.type==='ready' && message.payload.phase==='running');
         send('worker_presence_request',{rows:[]});
         const trace = await until(message => message.trace==='no-actor-reader');
         assert.equal(trace.unknown,true); assert.equal(trace.actorFacts,0);

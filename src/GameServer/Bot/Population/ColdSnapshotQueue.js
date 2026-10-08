@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 class ColdSnapshotQueue {
     constructor(options = {}) {
         this.now = options.now || (() => Date.now());
@@ -35,9 +36,9 @@ class ColdSnapshotQueue {
         };
         this.dirty.set(characterId, entry);
         if (critical) this.critical.set(characterId, entry);
-        this.counters.marked += 1;
-        if (previous) this.counters.coalesced += 1;
-        if (critical) this.counters.critical += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.marked += 1);
+        if (previous) DiagnosticConfig.developerDiagnostics && (this.counters.coalesced += 1);
+        if (critical) DiagnosticConfig.developerDiagnostics && (this.counters.critical += 1);
         return { ok: true, entry, coalesced: !!previous };
     }
 
@@ -70,7 +71,7 @@ class ColdSnapshotQueue {
         const player = pressure.player === true;
         const forced = this.oldestAgeMs() >= this.maxDeferralMs;
         if (lagMs >= this.lagAbortMs && !forced) {
-            this.counters.deferred += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.deferred += 1);
             return { entries: [], deferred: true, pageSize: this.playerPageSize };
         }
 
@@ -88,7 +89,7 @@ class ColdSnapshotQueue {
         if (current?.version !== entry.version) return false;
         this.dirty.delete(entry.characterId);
         this.critical.delete(entry.characterId);
-        if (delivered) this.counters.delivered += 1;
+        if (delivered) DiagnosticConfig.developerDiagnostics && (this.counters.delivered += 1);
         return true;
     }
 
@@ -110,7 +111,7 @@ class ColdSnapshotQueue {
             maxDeferralMs: this.maxDeferralMs,
             lagThrottleMs: this.lagThrottleMs,
             lagAbortMs: this.lagAbortMs,
-            ...this.counters
+            ...(DiagnosticConfig.developerDiagnostics ? this.counters : { diagnosticsEnabled: false })
         };
     }
 }

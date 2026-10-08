@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 
@@ -234,7 +235,7 @@ function fitContext(context, budget, hardMax) {
 }
 
 async function assemble(clan, candidateSnapshot, options = {}) {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     const events = await meaningfulEvents(clan.id, options.eventLimit);
     const goalHistory = historyFromEvents(events, clan.state?.goal || null);
     const base = {
@@ -255,12 +256,12 @@ async function assemble(clan, candidateSnapshot, options = {}) {
         Math.max(800, number(options.tokenBudget, DEFAULT_TOKEN_BUDGET)),
         Math.max(DEFAULT_TOKEN_BUDGET, number(options.hardMaxTokens, HARD_MAX_TOKENS))
     );
-    const durationMs = Date.now() - startedAt;
-    metrics.builds += 1;
-    metrics.buildMs += durationMs;
-    metrics.buildMaxMs = Math.max(metrics.buildMaxMs, durationMs);
-    metrics.estimatedTokens += fitted.estimatedTokens;
-    if (fitted.truncated) metrics.truncated += 1;
+    const durationMs = DiagnosticConfig.developerDiagnostics ? Date.now() - startedAt : null;
+    DiagnosticConfig.developerDiagnostics && (metrics.builds += 1);
+    DiagnosticConfig.developerDiagnostics && (metrics.buildMs += durationMs);
+    DiagnosticConfig.developerDiagnostics && (metrics.buildMaxMs = Math.max(metrics.buildMaxMs, durationMs));
+    DiagnosticConfig.developerDiagnostics && (metrics.estimatedTokens += fitted.estimatedTokens);
+    if (fitted.truncated) DiagnosticConfig.developerDiagnostics && (metrics.truncated += 1);
     return {
         ...fitted,
         buildMs: durationMs,
@@ -279,6 +280,7 @@ module.exports = {
     learnedConstraints,
     assemble,
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             ...metrics,
             buildAvgMs: metrics.builds ? metrics.buildMs / metrics.builds : 0,

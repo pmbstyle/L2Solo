@@ -417,7 +417,7 @@ async function activate(partyId, reason = 'near_player', options = {}) {
         ({ party, states } = await transition(Parties.find(partyId), states, prepared, 'hot', reason));
         publish(sessions, states, party);
         for (const state of states) invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation();
-        console.info('BotPopulation :: activated party %s members=%d reason=%s', partyId, states.length, reason);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: activated party %s members=%d reason=%s', partyId, states.length, reason);
         if (raidObjective(party) && options.raidFanout !== false) {
             const bossTemplateId = Number(raidObjective(party).raidBossTemplateId || raidObjective(party).npcId);
             const competitors = Parties.active().filter((candidate) => candidate.partyId !== party.partyId
@@ -510,7 +510,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
         }
         result.states.forEach(state => Coordinator.notifyState(state));
         for (const state of result.states) invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown();
-        console.info('BotPopulation :: cooled party %s members=%d reason=%s', partyId, next.length, reason);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: cooled party %s members=%d reason=%s', partyId, next.length, reason);
         return { ok: true, ...result, count: next.length };
     } catch (error) {
         if (stopped && !committed) sessions.filter(s => s?.actor).forEach(s => {

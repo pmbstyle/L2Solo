@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';

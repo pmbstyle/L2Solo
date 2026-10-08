@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Crafting = require('./ClanCraftingPolicy');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const cursors = new Map();
@@ -29,7 +31,7 @@ const metrics = {
     reservationConflicts: 0,
     gearOffered: 0,
     budgetStops: 0,
-    reasonCounts: new Map()
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -38,7 +40,7 @@ function number(value, fallback = 0) {
 }
 
 function recordReason(code) {
-    if (code) metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
+    if (code) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
 }
 
 async function depositHot(member, clan, rows, demand, limit, goalKey) {
@@ -175,7 +177,7 @@ async function offerSpareGear(clan, member, warehouseRows, warehouseRevision) {
         member.simulationRevision = number(moved.simulationRevision, member.simulationRevision);
         handled.add(offer.selfId);
         deposited += 1;
-        metrics.gearOffered += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.gearOffered += 1);
         // The need is met for this hour: the cache sees the item as worn.
         worn.get(best.mateId).push({ id: -row.id, selfId: offer.selfId, amount: 1, enchant: 0, equipped: true, slot: best.slot });
     }
@@ -218,7 +220,7 @@ async function resolveClan(clan, options = {}) {
     for (const member of members) {
         if (Date.now() >= deadlineAt || attempted >= batchSize) {
             budgetStopped = Date.now() >= deadlineAt;
-            if (budgetStopped) metrics.budgetStops += 1;
+            if (budgetStopped) DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
             break;
         }
         cursors.set(number(clan.id), number(member.characterId));
@@ -250,7 +252,7 @@ async function resolveClan(clan, options = {}) {
         for (const candidate of candidates) {
             if (Date.now() >= deadlineAt || attempted >= batchSize) {
                 budgetStopped = Date.now() >= deadlineAt;
-                if (budgetStopped) metrics.budgetStops += 1;
+                if (budgetStopped) DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                 break;
             }
             attempted += 1;
@@ -280,13 +282,13 @@ async function resolveClan(clan, options = {}) {
                     enchant: candidate.enchant || 0,
                     reservedAmount: 0
                 });
-                if (candidate.reason === 'recipe') metrics.recipes += 1;
-                else if (candidate.reason === 'progression_item') metrics.progressionItems += 1;
-                else metrics.materials += 1;
+                if (candidate.reason === 'recipe') DiagnosticConfig.developerDiagnostics && (metrics.recipes += 1);
+                else if (candidate.reason === 'progression_item') DiagnosticConfig.developerDiagnostics && (metrics.progressionItems += 1);
+                else DiagnosticConfig.developerDiagnostics && (metrics.materials += 1);
                 recordReason(result.code);
             } else {
                 blocked += 1;
-                if (result.code === 'warehouse_item_reserved' || result.code === 'ownership_conflict') metrics.reservationConflicts += 1;
+                if (result.code === 'warehouse_item_reserved' || result.code === 'ownership_conflict') DiagnosticConfig.developerDiagnostics && (metrics.reservationConflicts += 1);
                 recordReason(result.code);
             }
         }
@@ -300,9 +302,9 @@ async function resolveClan(clan, options = {}) {
         await Database.execute([`UPDATE clan_actions SET availableAt = MIN(availableAt, ?)
             WHERE clanId = ? AND actionType IN ('goal_plan', 'production') AND status = 'pending'`, [Date.now(), clan.id]], 'clan-supplies:ready');
     }
-    metrics.resolves += 1;
-    metrics.depositsApplied += deposited;
-    metrics.depositsBlocked += blocked;
+    DiagnosticConfig.developerDiagnostics && (metrics.resolves += 1);
+    DiagnosticConfig.developerDiagnostics && (metrics.depositsApplied += deposited);
+    DiagnosticConfig.developerDiagnostics && (metrics.depositsBlocked += blocked);
     return {
         ok: true,
         clanId: number(clan.id),
@@ -329,7 +331,7 @@ const ClanWarehouseService = {
             for (const clan of entries || []) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
                 const result = await resolveClan(clan, {
@@ -347,6 +349,7 @@ const ClanWarehouseService = {
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             depositsApplied: metrics.depositsApplied,

@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('node:assert/strict');
 require('../src/Global');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');

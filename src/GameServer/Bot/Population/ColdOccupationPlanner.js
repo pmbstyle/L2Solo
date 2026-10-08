@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
 
 const { performance } = require('node:perf_hooks');
@@ -27,7 +28,7 @@ class ColdOccupationPlanner {
         if (!id || this.stopped) return Promise.resolve(unknownWorkshop());
         const existing = this.slots.get(id) || this.waiting.get(id);
         if (existing && this.sameInput(existing.input, input) && !existing.dirty) {
-            if (existing.done) { existing.input = input; this.stats.unchanged++; return Promise.resolve(existing.value); }
+            if (existing.done) { existing.input = input; DiagnosticConfig.developerDiagnostics && (this.stats.unchanged++); return Promise.resolve(existing.value); }
             return awaitResult ? existing.promise : null;
         }
         if (existing && !existing.done) this.cancel(id, 'owner_replaced');
@@ -88,7 +89,7 @@ class ColdOccupationPlanner {
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
             entry.reads.set(id, token); entry.dirty = true;
-            entry.cursor[14] = 1; this.stats.invalidations++;
+            entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
             else this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
         }
@@ -99,7 +100,7 @@ class ColdOccupationPlanner {
         for (const entry of this.slots.values()) {
             if (entry.input.mode === 'wish') continue; // Route-only work has no board/market dependencies.
             if (entry.dirty) continue;
-            entry.dirty = true; entry.cursor[14] = 2; this.stats.invalidations++;
+            entry.dirty = true; entry.cursor[14] = 2; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
         }
     }
@@ -111,7 +112,7 @@ class ColdOccupationPlanner {
             if (this.slots.size >= MAX_CONTEXTS) {
                 let victim;
                 for (const held of this.slots.values()) if (held.done) { victim = held.id; break; }
-                if (victim === undefined) { this.stats.capacityDeferrals++; break; }
+                if (victim === undefined) { DiagnosticConfig.developerDiagnostics && (this.stats.capacityDeferrals++); break; }
                 this.release(victim);
             }
             this.waiting.delete(id); this.slots.set(id, entry); this.ready.add(id);
@@ -138,7 +139,7 @@ class ColdOccupationPlanner {
 
     unit(entry) {
         if (!this.ownCurrent(entry.id, entry.input)) {
-            this.stats.staleOwners++; this.cancel(entry.id, 'owner_stale'); return;
+            DiagnosticConfig.developerDiagnostics && (this.stats.staleOwners++); this.cancel(entry.id, 'owner_stale'); return;
         }
         if (!entry.work || entry.dirty) { this.initialise(entry); return; }
         if (entry.validation) {
@@ -147,7 +148,7 @@ class ColdOccupationPlanner {
                 const [id, token] = next.value;
                 entry.cursor[3]++;
                 if (this.sourceToken(id) !== token) {
-                    entry.dirty = true; entry.cursor[14] = 1; this.stats.invalidations++;
+                    entry.dirty = true; entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
                 }
                 return;
             }
@@ -175,20 +176,20 @@ class ColdOccupationPlanner {
             owners++;
             for (let count = 0; count < OWNER_UNITS && units < MAX_UNITS; count++) {
                 if (units && this.now() - started >= SLICE_MS) break;
-                const unitStarted = this.now();
+                const unitStarted = DiagnosticConfig.developerDiagnostics ? this.now() : 0;
                 try { this.unit(entry); }
                 catch (error) { entry.error = String(error?.message || error); this.finish(entry, unknownWorkshop()); }
-                const duration = this.now() - unitStarted;
-                this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration);
-                if (duration > SLICE_MS) this.stats.overBudgetUnits++;
-                units++; this.stats.units++;
+                const duration = DiagnosticConfig.developerDiagnostics ? this.now() - unitStarted : 0;
+                DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
+                if (duration > SLICE_MS) DiagnosticConfig.developerDiagnostics && (this.stats.overBudgetUnits++);
+                units++; DiagnosticConfig.developerDiagnostics && (this.stats.units++);
                 if (entry.done || !this.slots.has(id)) break;
             }
             if (!entry.done && this.slots.has(id)) this.ready.add(id);
             if (units >= MAX_UNITS || this.now() - started >= SLICE_MS) break;
         }
-        this.stats.portions++; this.stats.maxPortionUnits = Math.max(this.stats.maxPortionUnits, units);
-        if (this.ready.size || this.waiting.size) { this.stats.yields++; this.kick(); }
+        DiagnosticConfig.developerDiagnostics && (this.stats.portions++); DiagnosticConfig.developerDiagnostics && (this.stats.maxPortionUnits = Math.max(this.stats.maxPortionUnits, units));
+        if (this.ready.size || this.waiting.size) { DiagnosticConfig.developerDiagnostics && (this.stats.yields++); this.kick(); }
         return { units, owners, deferred: !units && !!this.waiting.size };
     }
 
@@ -211,7 +212,7 @@ class ColdOccupationPlanner {
         for (const id of [...this.slots.keys(), ...this.waiting.keys()]) this.cancel(id);
         this.ready.clear(); this.dependencies.clear(); this.scopes.clear();
     }
-    snapshot() { return { ...this.stats, contexts: this.slots.size, pending: this.waiting.size,
+    snapshot() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, contexts: this.slots.size, pending: this.waiting.size,
         active: this.ready.size, dependencies: this.dependencies.size, cursorBytes: (this.slots.size + this.waiting.size) * 128 }; }
 }
 

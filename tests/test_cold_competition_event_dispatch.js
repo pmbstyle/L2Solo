@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');

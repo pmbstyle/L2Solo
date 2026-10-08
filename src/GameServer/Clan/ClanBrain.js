@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const ContextAssembler = invoke('GameServer/Clan/ClanContextAssembler');
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
@@ -73,7 +74,7 @@ function fallback(candidateSnapshot, reason = 'deterministic_fallback', extra = 
     const candidate = candidateSnapshot.candidates.find((entry) => (
         entry.id === candidateSnapshot.deterministicCandidateId
     )) || candidateSnapshot.candidates[0] || null;
-    metrics.fallback += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.fallback += 1);
     return {
         pending: false,
         source: 'deterministic',
@@ -125,13 +126,13 @@ function configured() {
 
 function recordUsage(result, estimatedPromptTokens, startedAt) {
     const usage = result?.usage || result?.telemetry?.usage || {};
-    metrics.promptTokensEstimated += number(estimatedPromptTokens);
-    metrics.promptTokensActual += number(usage.promptTokens);
-    metrics.completionTokens += number(usage.completionTokens);
-    metrics.cost += number(usage.cost);
-    const latency = Date.now() - startedAt;
-    metrics.latencyMs += latency;
-    metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency);
+    DiagnosticConfig.developerDiagnostics && (metrics.promptTokensEstimated += number(estimatedPromptTokens));
+    DiagnosticConfig.developerDiagnostics && (metrics.promptTokensActual += number(usage.promptTokens));
+    DiagnosticConfig.developerDiagnostics && (metrics.completionTokens += number(usage.completionTokens));
+    DiagnosticConfig.developerDiagnostics && (metrics.cost += number(usage.cost));
+    const latency = DiagnosticConfig.developerDiagnostics ? Date.now() - startedAt : null;
+    DiagnosticConfig.developerDiagnostics && (metrics.latencyMs += latency);
+    DiagnosticConfig.developerDiagnostics && (metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency));
 }
 
 function contextTelemetry(assembled = {}) {
@@ -144,7 +145,7 @@ function contextTelemetry(assembled = {}) {
 }
 
 async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}) {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     let reservation = null;
     let settledUsage = null;
     try {
@@ -164,7 +165,7 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
             priority: 'background'
         });
         if (!admission.ok) {
-            metrics.budgetDenied += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.budgetDenied += 1);
             return fallback(candidateSnapshot, admission.reason, {
                 contextTelemetry: contextTelemetry(assembled),
                 inferenceDenied: true
@@ -191,7 +192,7 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
         settledUsage = result.usage || null;
         recordUsage(result, estimatedPromptTokens, startedAt);
         if (!result.ok) {
-            metrics.failed += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
             return fallback(candidateSnapshot, result.reason || result.telemetry?.outcome || 'llm_failed', {
                 llmTelemetry: result.telemetry || null,
                 contextTelemetry: contextTelemetry(assembled)
@@ -199,13 +200,13 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
         }
         const selected = candidateSnapshot.candidates.find((candidate) => candidate.id === result.data?.candidateId);
         if (!selected || String(selected.route?.kind || '') !== String(result.data?.route || '')) {
-            metrics.invalid += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.invalid += 1);
             return fallback(candidateSnapshot, 'invalid_llm_selection', {
                 llmTelemetry: result.telemetry || null,
                 contextTelemetry: contextTelemetry(assembled)
             });
         }
-        metrics.selected += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.selected += 1);
         return {
             pending: false,
             source: 'llm',
@@ -218,12 +219,12 @@ async function resolveDecision(entry, clan, candidateSnapshot, cfg, options = {}
             contextTelemetry: contextTelemetry(assembled)
         };
     } catch (error) {
-        metrics.failed += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
         return fallback(candidateSnapshot, 'clan_brain_exception', { error: error.message });
     } finally {
         BotInferenceBudget.settle(reservation, settledUsage);
-        const latency = Date.now() - startedAt;
-        metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency);
+        const latency = DiagnosticConfig.developerDiagnostics ? Date.now() - startedAt : null;
+        DiagnosticConfig.developerDiagnostics && (metrics.latencyMaxMs = Math.max(metrics.latencyMaxMs, latency));
     }
 }
 
@@ -234,12 +235,12 @@ function choose(clan, candidateSnapshot, options = {}) {
     const existing = decisions.get(key);
     if (existing?.state === 'resolved') return reuseResolved(existing, candidateSnapshot);
     if (existing?.state === 'pending') {
-        metrics.pending += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.pending += 1);
         return { pending: true, key, reasonCode: 'clan_llm_pending' };
     }
     const cfg = options.config || configured();
     if (!cfg || !candidateSnapshot.decisionNeeded) {
-        if (!cfg) metrics.disabled += 1;
+        if (!cfg) DiagnosticConfig.developerDiagnostics && (metrics.disabled += 1);
         return fallback(candidateSnapshot, candidateSnapshot.decisionNeeded ? 'llm_not_configured' : 'decision_not_needed');
     }
 
@@ -252,7 +253,7 @@ function choose(clan, candidateSnapshot, options = {}) {
         promise: null
     };
     decisions.set(key, entry);
-    metrics.requested += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.requested += 1);
     entry.promise = resolveDecision(entry, clan, candidateSnapshot, cfg, options).then((result) => {
         entry.state = 'resolved';
         entry.result = result;
@@ -275,6 +276,7 @@ module.exports = {
         return entry.promise ? entry.promise : entry.result;
     },
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             ...metrics,
             pendingEntries: [...decisions.values()].filter((entry) => entry.state === 'pending').length,

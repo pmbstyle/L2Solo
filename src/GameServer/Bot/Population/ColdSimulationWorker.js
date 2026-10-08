@@ -1,10 +1,12 @@
 const { parentPort, workerData } = require('worker_threads');
 const epoch = String(workerData?.workerEpoch || 'cold-worker');
+// Resolve the master before loading planning modules; inherited env cannot bypass Main's config.
+process.env.BOT_DEVELOPER_DIAGNOSTICS = workerData?.developerDiagnostics === true ? 'true' : 'false';
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
 const workerProjectorRole = CharacterLocationRuntime.beginWorkerProjectorRole(epoch);
 const path = require('path');
 const { performance, monitorEventLoopDelay } = require('perf_hooks');
-const heapTelemetry = require('./WorkerHeapTelemetry').observe();
+let heapTelemetry = null;
 
 const srcRoot = path.resolve(__dirname, '../../..');
 require(path.join(srcRoot, 'Global'));
@@ -117,7 +119,7 @@ let safetyStateReady = false;
 let leaseProbe = null;
 let safetyStateRepairs = 0;
 let safetyOrphanRepairs = 0;
-let previousElu = performance.eventLoopUtilization();
+let previousElu = null;
 let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
@@ -437,8 +439,7 @@ let planningOccupancyCachedAt = 0;
 // Personas come from the main thread's 'personas' table (BotPersona.loadAll).
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId));
-const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
-eventLoopDelay.enable();
+let eventLoopDelay = null;
 
 // The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -512,11 +513,20 @@ function stopTimers() {
 function startKernel(config = {}) {
     if (kernel) return;
     if (typeof config.coldHonestTravel === 'boolean') Config.coldHonestTravel = config.coldHonestTravel;
-    Config.economyDiagnostics = config.economyDiagnostics === true;
+    Config.developerDiagnostics = config.developerDiagnostics === true;
+    Config.economyDiagnostics = Config.developerDiagnostics && config.economyDiagnostics === true;
+    if (Config.developerDiagnostics) {
+        heapTelemetry = require('./WorkerHeapTelemetry').observe();
+        if (Config.developerDiagnostics) previousElu = performance.eventLoopUtilization();
+        eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+        eventLoopDelay.enable();
+    }
     Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
     if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
         if (shuttingDown) return false;
-        parentPort.postMessage({ type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped }); return true;
+        const message = { type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped };
+        parentPort.postMessage(message);
+        return Buffer.byteLength(JSON.stringify(message));
     });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
@@ -732,6 +742,9 @@ function startKernel(config = {}) {
             packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
             monitor: competition, deadlines: kernel,
             frameSizing: frame => {
+                // ARCH-NOTE: these retained fields determine the existing byte admission.
+                // Keep identical conservative capacity on/off; Candidates.snapshot hides
+                // their optional publication. Removing this coupling needs a protocol task.
                 const report = competition.snapshot();
                 const large = Number.MAX_SAFE_INTEGER;
                 const outcomes = Object.fromEntries(Object.keys(report.outcomes).map(key => [key, large]));
@@ -760,35 +773,38 @@ function startKernel(config = {}) {
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
         if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
-            const started = performance.now();
+            const started = Config.developerDiagnostics ? performance.now() : 0;
             competitionCandidates.reviewBatch(Date.now());
-            competition.report.lastSampleMs = performance.now() - started;
+            if (Config.developerDiagnostics) competition.report.lastSampleMs = performance.now() - started;
         }
-        const elu = performance.eventLoopUtilization(previousElu);
-        previousElu = performance.eventLoopUtilization();
+        const elu = Config.developerDiagnostics ? performance.eventLoopUtilization(previousElu) : null;
+        if (Config.developerDiagnostics) previousElu = performance.eventLoopUtilization();
         const heartbeat = {
             ...kernel.heartbeatSnapshot(),
-            occupationPlanning: occupationPlanner.snapshot(),
+            ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
+            ...(Config.developerDiagnostics ? {
             tables: tables.summary(),
+            developerDiagnostics: economyDiagnostics.metrics(),
             ...heapTelemetry.snapshot(),
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopUtilization: elu.utilization,
             eventLoopLagP95Ms: Number(eventLoopDelay.percentile(95) / 1e6) || 0,
             eventLoopLagMaxMs: Number(eventLoopDelay.max / 1e6) || 0
+            } : {})
         };
         try {
             if (!send('heartbeat', heartbeat) && competition) {
-                competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+                if (Config.developerDiagnostics) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
             }
         } catch {
             // Main has not admitted this frame. Its exact origin/content stay
             // owned here for the next existing heartbeat, including backpressure.
-            if (competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+            if (Config.developerDiagnostics && competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
         }
-        eventLoopDelay.reset();
+        eventLoopDelay?.reset();
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
     flushTimer.unref?.();
@@ -945,7 +961,8 @@ async function handle(message) {
         occupationPlanner.stop();
         competitionCandidates?.stop();
         stopTimers();
-        eventLoopDelay.disable();
+        eventLoopDelay?.disable();
+        heapTelemetry?.close();
         send('drained', await kernel?.shutdown() || {}, message.msgId);
         parentPort.close();
         break;

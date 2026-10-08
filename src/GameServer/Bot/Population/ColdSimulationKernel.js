@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const { isMainThread } = require('node:worker_threads');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
@@ -380,7 +381,7 @@ class RetainedStateMap extends Map {
     set(id, entry) {
         const current = this.get(id);
         if (current?.state !== entry.state && typeof invoke === 'function') {
-            invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
+            invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'state_publication');
         }
         this.shotIndex?.update(entry.state);
         try { this.sources.publish(id, entry); }
@@ -420,14 +421,14 @@ class RetainedStateMap extends Map {
         this.#skillDtos?.remove(id);
         const current = this.get(id);
         if (!current) return false;
-        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
+        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
         this.shotIndex?.remove(id);
         return this.sources.remove(id, current.state);
     }
     clear() {
         this.#skillDtos?.clear();
         for (const id of this.keys()) {
-            if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id);
+            if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
             this.shotIndex?.remove(id);
         }
         this.sources.clear();
@@ -587,7 +588,7 @@ class ColdSimulationKernel {
             this.occupancy.update(state);
             this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
             if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
-            this.stats.snapshots += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
@@ -599,7 +600,7 @@ class ColdSimulationKernel {
         this.occupancy.update(state);
         this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
         if (memoryChanged) this.decisionEvents?.memoryChanged(characterId);
-        this.stats.snapshots += 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId);
@@ -781,11 +782,11 @@ class ColdSimulationKernel {
                 run.purpose.memberIds.forEach(memberId => this.cancelClaimAttempt(memberId));
                 this.partyRuns.delete(String(run.purpose.partyId));
                 this.requeue(run.purpose.leaderId, timestamp + 1000);
-                this.stats.claimRecoveries += run.purpose.memberIds.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.claimRecoveries += run.purpose.memberIds.length);
             } else {
                 this.cancelClaimAttempt(id);
                 this.requeue(id, timestamp + 1000);
-                this.stats.claimRecoveries += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.claimRecoveries += 1);
             }
             fired++;
         }
@@ -957,7 +958,7 @@ class ColdSimulationKernel {
                     && occupiedOwnership === 0;
                 if (candidateMemberIds.length > this.maxInFlight && !atomicCapacityBurst) {
                     this.partyCapacityBlocked = true;
-                    this.stats.partyCapacityDeferrals += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.stats.partyCapacityDeferrals += 1);
                     if (candidateMemberIds.length <= this.maxAtomicPartySize) {
                         // Let current owners drain so the oldest valid party
                         // gets its bounded atomic turn even under player limits.
@@ -980,7 +981,7 @@ class ColdSimulationKernel {
                     this.schedule(id, current.version, entry.dueAt);
                     break;
                 }
-                if (atomicCapacityBurst) this.stats.partyCapacityBursts += 1;
+                if (atomicCapacityBurst) DiagnosticConfig.developerDiagnostics && (this.stats.partyCapacityBursts += 1);
                 const purpose = {
                     kind: 'party',
                     partyId: party.partyId,
@@ -1015,7 +1016,7 @@ class ColdSimulationKernel {
                 const attempt = this.beginCommand(id);
                 if (!attempt) continue;
                 commandsSelected += 1;
-                this.stats.commands += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
                 this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id, attempt));
             }
         }
@@ -1092,7 +1093,7 @@ class ColdSimulationKernel {
                 timestamp
             });
             if (!this.currentCommand(id, attempt)) return;
-            this.stats.resolved += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
             const sent = this.emit('command_request', {
                 requests: [{
@@ -1114,7 +1115,7 @@ class ColdSimulationKernel {
             }
         } catch (error) {
             if (!this.currentCommand(id, attempt)) return;
-            this.stats.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.cancelCommand(id, attempt);
             if (attempt.marketWakeup) this.buyerWakeups.add(id);
             this.requeue(id, this.now() + 5000);
@@ -1139,18 +1140,18 @@ class ColdSimulationKernel {
                 entry.context?.isPartyLeader && String(entry.context?.party?.partyId || '') === partyId
             ));
             if (leader) this.requeue(leader[0], timestamp + 1000);
-            this.stats.leaseRecoveries += members.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRecoveries += members.length);
         }
         expiredLeases.filter(([, active]) => !active.partyId).forEach(([id]) => {
             this.inFlight.delete(Number(id));
             this.dirty.delete(Number(id));
             this.requeue(Number(id), timestamp + 1000);
-            this.stats.leaseRecoveries += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRecoveries += 1);
         });
     }
 
     tick() {
-        this.stats.loopRuns += 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.loopRuns += 1);
         this.stats.lastLoopAt = this.now();
         const decisionBudget = { remaining: 64 };
         this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
@@ -1167,7 +1168,7 @@ class ColdSimulationKernel {
         const candidates = this.dueCandidates(this.now(), capacity, decisionBudget);
         if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) return;
-        this.stats.selected += candidates.length;
+        DiagnosticConfig.developerDiagnostics && (this.stats.selected += candidates.length);
         const requestId = `claim:${this.nextClaimRequest++}`;
         for (const candidate of candidates) {
             const id = Number(candidate.characterId);
@@ -1225,7 +1226,7 @@ class ColdSimulationKernel {
             const entry = this.states.get(id);
             if (!entry) return;
             this.inFlight.set(id, { grant, state: entry.state, context: entry.context, startedAt: this.now(), claimRequestId: requestId });
-            this.stats.claimed += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.claimed += 1);
             const source = this.captureResolverSource(id);
             this.resolveChain = this.resolveChain.then(() => this.resolveGrant(id, source));
         });
@@ -1254,7 +1255,7 @@ class ColdSimulationKernel {
                     grant: run.grants.get(Number(id)), state, context: {}, startedAt: this.now(), partyId, claimRequestId: requestId
                 });
             });
-            this.stats.claimed += run.purpose.memberIds.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.claimed += run.purpose.memberIds.length);
             const source = this.capturePartyResolverSource(partyId);
             this.resolveChain = this.resolveChain.then(() => this.resolvePartyGrant(partyId, source));
         });
@@ -1317,7 +1318,7 @@ class ColdSimulationKernel {
             const active = this.inFlight.get(id);
             const grant = active?.grant || holder?.grants.get(id);
             if (!holder || !grant) {
-                this.stats.leaseRenewalMisses += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.leaseRenewalMisses += 1);
                 return;
             }
             const leaseUntil = Number(renewal.leaseUntil || 0);
@@ -1328,7 +1329,7 @@ class ColdSimulationKernel {
                 const partyGrant = run?.grants.get(id);
                 if (partyGrant) run.grants.set(id, { ...partyGrant, leaseUntil });
             }
-            this.stats.leaseRenewals += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.leaseRenewals += 1);
         });
     }
 
@@ -1398,7 +1399,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1425,7 +1426,7 @@ class ColdSimulationKernel {
                 }, 'party_session_review');
                 published = handled = true;
                 proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1449,7 +1450,7 @@ class ColdSimulationKernel {
                     );
                     published = handled = true;
                     proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                    this.stats.resolved += proposals.length;
+                    DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                     this.flush(null, true);
                     return;
                 }
@@ -1485,7 +1486,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1525,7 +1526,7 @@ class ColdSimulationKernel {
                 );
                 published = handled = true;
                 proposals.forEach((proposal) => this.dirty.set(proposal.characterId, proposal));
-                this.stats.resolved += proposals.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
                 this.flush(null, true);
                 return;
             }
@@ -1668,14 +1669,14 @@ class ColdSimulationKernel {
                     }
                 }
                 if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
-                this.stats.partyRequirementRefreshes = Number(this.stats.partyRequirementRefreshes || 0) + 1;
-                this.stats.partyRequirementRefreshMs = requirementMs;
-                this.stats.partyRequirementRefreshMaxMs = Math.max(Number(this.stats.partyRequirementRefreshMaxMs || 0), requirementMs);
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshes = Number(this.stats.partyRequirementRefreshes || 0) + 1);
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMs = requirementMs);
+                DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMaxMs = Math.max(Number(this.stats.partyRequirementRefreshMaxMs || 0), requirementMs));
             }
             if (!current()) return;
             published = handled = true;
             proposals.forEach(proposal => this.dirty.set(proposal.characterId, proposal));
-            this.stats.resolved += proposals.length;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += proposals.length);
             this.flush(null, true);
         } catch (error) {
             if (raidStepId) require('./ColdRaidEncounter').abort(raidStepId);
@@ -1685,7 +1686,7 @@ class ColdSimulationKernel {
                 if (raidStepId && this.dirty.get(source.id)?.raidStepId === raidStepId) this.dirty.delete(source.id);
             }
             if (error?.message !== 'raid_step_pending') {
-                this.stats.errors += 1;
+                DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
                 this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
             }
             this.requestRelease([...run.grants.values()].map((token) => ({ token, reason: error?.message || 'party_resolver_error' })));
@@ -1693,9 +1694,9 @@ class ColdSimulationKernel {
             if (raidStepId && !published) require('./ColdRaidEncounter').abort(raidStepId);
             if (this.partyRuns.get(String(partyId)) === run) this.partyRuns.delete(String(partyId));
             if (handled) {
-                const elapsed = this.now() - startedAt;
-                this.stats.lastResolveMs = elapsed;
-                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+                const elapsed = DiagnosticConfig.developerDiagnostics ? this.now() - startedAt : 0;
+                DiagnosticConfig.developerDiagnostics && (this.stats.lastResolveMs = elapsed);
+                DiagnosticConfig.developerDiagnostics && (this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed));
             }
         }
     }
@@ -1756,22 +1757,22 @@ class ColdSimulationKernel {
             };
             handled = true;
             this.dirty.set(Number(characterId), proposal);
-            this.stats.resolved += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
                 this.flush(priority, false, { reason: priority !== 'P2' ? 'priority' : 'batch' });
             }
         } catch (error) {
             if (!this.resolverSourceCurrent(source)) return;
             handled = true;
-            this.stats.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
             this.inFlight.delete(Number(characterId));
             this.requestRelease([{ token: active.grant, reason: error?.message || 'resolver_error' }]);
         } finally {
             if (handled) {
-                const elapsed = this.now() - startedAt;
-                this.stats.lastResolveMs = elapsed;
-                this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed);
+                const elapsed = DiagnosticConfig.developerDiagnostics ? this.now() - startedAt : 0;
+                DiagnosticConfig.developerDiagnostics && (this.stats.lastResolveMs = elapsed);
+                DiagnosticConfig.developerDiagnostics && (this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed));
             }
         }
     }
@@ -1803,7 +1804,7 @@ class ColdSimulationKernel {
             let transportGroup = group;
             let transportSizes = proposalSizes(group);
             if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
-                this.stats.proposalOversize += group.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.proposalOversize += group.length);
                 transportGroup = group.map(entry => compactProposal(entry, true));
                 transportSizes = proposalSizes(transportGroup);
                 if (groupPayloadBytes(transportSizes) > PROPOSAL_PAYLOAD_LIMIT_BYTES) {
@@ -1823,7 +1824,7 @@ class ColdSimulationKernel {
                     oversized.push(...group);
                     continue;
                 }
-                this.stats.proposalCompactions += group.length;
+                DiagnosticConfig.developerDiagnostics && (this.stats.proposalCompactions += group.length);
             }
             const candidateItemBytes = transportSizes.reduce((sum, size) => sum + size, itemBytes);
             const candidateCount = proposals.length + transportGroup.length;
@@ -1835,19 +1836,19 @@ class ColdSimulationKernel {
         oversized.forEach((proposal) => {
             if (proposal.raidStepId) require('./ColdRaidEncounter').abort(proposal.raidStepId);
             this.dirty.delete(Number(proposal.characterId));
-            this.stats.proposalOversizeRejected += 1;
+            DiagnosticConfig.developerDiagnostics && (this.stats.proposalOversizeRejected += 1);
             this.requestRelease([{ token: proposal.token, reason: 'proposal_too_large' }]);
             this.requeue(Number(proposal.characterId), timestamp + 5000);
         });
         if (!proposals.length) return 0;
         proposals.forEach((proposal) => this.dirty.delete(Number(proposal.characterId)));
-        this.stats.proposals += proposals.length;
-        this.stats.flushes += 1;
-        this.stats.flushRows += proposals.length;
-        this.stats.lastFlushRows = proposals.length;
-        this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.proposals += proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushes += 1);
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushRows += proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.lastFlushRows = proposals.length);
+        DiagnosticConfig.developerDiagnostics && (this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length));
         const reason = String(options.reason || (force ? 'forced' : 'direct'));
-        this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1;
+        DiagnosticConfig.developerDiagnostics && (this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1);
         // Sent proposals keep their ownership slots until the commit ACK.
         // Priority and party flushes can fill that window just like a timer flush.
         const capacityBlocked = this.partyCapacityBlocked === true
@@ -1937,7 +1938,7 @@ class ColdSimulationKernel {
                 this.upsert({ state: result.state, context: result.context || this.states.get(id)?.context || {} });
             } else {
                 this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
-                if (String(result.reason || '').includes('stale')) this.stats.stale += 1;
+                if (String(result.reason || '').includes('stale')) DiagnosticConfig.developerDiagnostics && (this.stats.stale += 1);
                 if (result.state) this.upsert({
                     state: {
                         ...result.state,
@@ -2080,7 +2081,7 @@ class ColdSimulationKernel {
             Math.min(oldest, Number((typeof startedAt === 'object' ? startedAt.startedAt : startedAt) || now))
         ), now);
         return {
-            ...this.stats,
+            ...(DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
             states: this.states.size,
             heap: this.heap.size,
             queueHead: {
@@ -2105,6 +2106,7 @@ class ColdSimulationKernel {
     }
 
     snapshot() {
+        if (!DiagnosticConfig.developerDiagnostics) return this.heartbeatSnapshot();
         const now = this.now();
         const due = [...this.states.values()].filter((entry) => (
             isSchedulableKind(lifecycleKind(entry.state, entry.context))
@@ -2129,7 +2131,7 @@ class ColdSimulationKernel {
             return counts;
         }, { scheduled: 0, claiming: 0, inFlight: 0, commanding: 0, orphaned: 0 });
         return {
-            ...this.stats,
+            ...(DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
             states: this.states.size,
             heap: this.heap.size,
             due: due.length,

@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 const { DatabaseSync } = require('node:sqlite');
 delete process.env.L2NODE_SHARED_CONFIG_FILE;

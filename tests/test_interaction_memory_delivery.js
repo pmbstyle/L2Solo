@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('assert');
 const Memory = require('../src/GameServer/Social/InteractionMemory');
 const Policy = require('../src/GameServer/Social/InteractionMemoryPolicy');

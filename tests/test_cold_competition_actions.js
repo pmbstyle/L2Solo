@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
 const assert = require('assert');
 const fs = require('fs'), os = require('os'), path = require('path');
 require('../src/Global');

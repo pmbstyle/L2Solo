@@ -1,3 +1,4 @@
+const { DiagnosticMetricMap } = require('./DiagnosticMetricMap');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const { monitorEventLoopDelay } = require('perf_hooks');
 
@@ -127,23 +128,23 @@ const PopulationMetrics = {
         schedulerDurationsMs: [],
         schedulerSliceDurationsMs: [],
         partyFormationDurationsMs: [],
-        partyFormationStageDurationsMs: new Map(),
+        partyFormationStageDurationsMs: new DiagnosticMetricMap(),
         actorPathDurationsMs: [],
         companionPathDurationsMs: [],
         activationFloorDurationsMs: [],
-        activationFloorReasons: new Map(),
-        skippedResolveReasons: new Map(),
+        activationFloorReasons: new DiagnosticMetricMap(),
+        skippedResolveReasons: new DiagnosticMetricMap(),
         coldOwnerClaimDurationsMs: [],
         coldOwnerCommitDurationsMs: [],
-        coldOwnerLegacyReasons: new Map(),
-        coldOwnerRejectReasons: new Map(),
-        coldOwnerStaleRevisionGaps: new Map(),
-        coldOwnerStaleOwners: new Map(),
+        coldOwnerLegacyReasons: new DiagnosticMetricMap(),
+        coldOwnerRejectReasons: new DiagnosticMetricMap(),
+        coldOwnerStaleRevisionGaps: new DiagnosticMetricMap(),
+        coldOwnerStaleOwners: new DiagnosticMetricMap(),
         warehouseCleanupDurationsMs: [],
-        warehouseCleanupDeferralReasons: new Map(),
+        warehouseCleanupDeferralReasons: new DiagnosticMetricMap(),
         stateRetentionDurationsMs: [],
-        stateRetentionDeferralReasons: new Map(),
-        stateRetentionPolicyRows: new Map()
+        stateRetentionDeferralReasons: new DiagnosticMetricMap(),
+        stateRetentionPolicyRows: new DiagnosticMetricMap()
     },
     timer: null,
     coldSafetySource: null,
@@ -151,12 +152,14 @@ const PopulationMetrics = {
     delayWindowStartedAt: 0,
 
     init() {
+        if (!Config.developerDiagnostics) return;
         if (!this.startedAt) {
             this.startedAt = now();
         }
     },
 
     beginColdSafetyEpoch(epoch) {
+        if (!Config.developerDiagnostics) return false;
         if (typeof epoch !== 'string' || !epoch || epoch.length > 160) return false;
         if (this.coldSafetySource?.epoch !== epoch) {
             this.coldSafetySource = { epoch, stateRepairs: 0, coverageRepairs: 0, orphanRepairs: 0 };
@@ -173,6 +176,7 @@ const PopulationMetrics = {
     // Worker-owned cumulative accepted transitions survive a lost direct ACK.
     // The caller establishes an epoch on creation, never from an incoming report.
     recordColdSafetyTotals(epoch, totals) {
+        if (!Config.developerDiagnostics) return 0;
         const source = this.coldSafetySource;
         if (!source || source.epoch !== epoch || !totals || typeof totals !== 'object' || Array.isArray(totals)) return 0;
         const fields = ['stateRepairs', 'coverageRepairs', 'orphanRepairs'];
@@ -191,9 +195,11 @@ const PopulationMetrics = {
     startEventLoopMonitor() {
         if (this.timer || Config.enabled === false) return;
 
-        this.delayHistogram = monitorEventLoopDelay({ resolution: 20 });
-        this.delayHistogram.enable();
-        this.delayWindowStartedAt = now();
+        if (Config.developerDiagnostics) {
+            this.delayHistogram = monitorEventLoopDelay({ resolution: 20 });
+            this.delayHistogram.enable();
+            this.delayWindowStartedAt = now();
+        }
 
         let expectedAt = now() + Config.eventLoopSampleMs;
         this.timer = setInterval(() => {
@@ -201,12 +207,14 @@ const PopulationMetrics = {
             const lag = Math.max(0, measuredAt - expectedAt);
 
             this.eventLoop.lagMs = lag;
+            if (Config.developerDiagnostics) {
             this.eventLoop.maxLagMs = Math.max(this.eventLoop.maxLagMs, lag);
             this.eventLoop.samples += 1;
             if (lag >= Config.slowEventLoopLagMs) {
                 this.eventLoop.slowSamples += 1;
             }
 
+            }
             expectedAt = measuredAt + Config.eventLoopSampleMs;
         }, Config.eventLoopSampleMs);
 
@@ -224,64 +232,78 @@ const PopulationMetrics = {
     },
 
     recordHotTick() {
+        if (!Config.developerDiagnostics) return;
         this.counters.hotTicks += 1;
     },
 
     recordBackgroundResolve() {
+        if (!Config.developerDiagnostics) return;
         this.counters.backgroundResolves += 1;
     },
 
     recordPartyResolve() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyResolves += 1;
     },
 
     recordCombat(debug = {}) {
+        if (!Config.developerDiagnostics) return;
         this.counters.combatActions += Math.max(0, Number(debug.combatActions) || 0);
         this.counters.skillUses += Math.max(0, Number(debug.skillUses) || 0);
         this.counters.heals += Math.max(0, Number(debug.heals) || 0);
     },
 
     recordSkippedResolve(reason = 'unknown') {
+        if (!Config.developerDiagnostics) return;
         this.counters.skippedResolves += 1;
         const key = String(reason || 'unknown');
         this.interval.skippedResolveReasons.set(key, Number(this.interval.skippedResolveReasons.get(key) || 0) + 1);
     },
 
     recordActivation() {
+        if (!Config.developerDiagnostics) return;
         this.counters.activations += 1;
     },
 
     recordCooldown() {
+        if (!Config.developerDiagnostics) return;
         this.counters.cooldowns += 1;
     },
 
     recordPartySafetyRepair() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partySafetyRepairs++;
         this.counters.missedEventsRecovered++;
     },
 
     recordEconomySafetyRepair() {
+        if (!Config.developerDiagnostics) return;
         this.counters.economySafetyRepairs++;
         this.counters.missedEventsRecovered++;
     },
 
     recordPartyFormation() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyFormations += 1;
     },
 
     recordPartyRecruit(count = 1) {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyRecruits += Math.max(1, Number(count) || 1);
     },
 
     recordPartyDissolution() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyDissolutions += 1;
     },
 
     recordDbFlush() {
+        if (!Config.developerDiagnostics) return;
         this.counters.dbFlushes += 1;
     },
 
     recordResolveDuration(ms) {
+        if (!Config.developerDiagnostics) return;
         const value = Math.max(0, Number(ms) || 0);
         this.interval.resolveDurationsMs.push(value);
         if (this.interval.resolveDurationsMs.length > Config.resolveSampleLimit) {
@@ -293,6 +315,7 @@ const PopulationMetrics = {
     },
 
     recordSchedulerRun(ms) {
+        if (!Config.developerDiagnostics) return;
         const value = Math.max(0, Number(ms) || 0);
         this.counters.schedulerRuns += 1;
         this.interval.schedulerDurationsMs.push(value);
@@ -305,6 +328,7 @@ const PopulationMetrics = {
     },
 
     recordSchedulerYield(sliceMs) {
+        if (!Config.developerDiagnostics) return;
         const value = Math.max(0, Number(sliceMs) || 0);
         this.counters.schedulerYields += 1;
         this.interval.schedulerSliceDurationsMs.push(value);
@@ -314,22 +338,27 @@ const PopulationMetrics = {
     },
 
     recordSchedulerSkip() {
+        if (!Config.developerDiagnostics) return;
         this.counters.schedulerSkips += 1;
     },
 
     recordSchedulerBudgetStop() {
+        if (!Config.developerDiagnostics) return;
         this.counters.schedulerBudgetStops += 1;
     },
 
     recordBackgroundDeferral() {
+        if (!Config.developerDiagnostics) return;
         this.counters.backgroundDeferrals += 1;
     },
 
     recordColdOwnerSelected() {
+        if (!Config.developerDiagnostics) return;
         this.counters.coldOwnerSelected += 1;
     },
 
     recordColdOwnerClaim(result = {}, durationMs = 0) {
+        if (!Config.developerDiagnostics) return;
         this.interval.coldOwnerClaimDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerClaimDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerClaimDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerClaimed += 1;
@@ -337,10 +366,12 @@ const PopulationMetrics = {
     },
 
     recordColdOwnerResolved() {
+        if (!Config.developerDiagnostics) return;
         this.counters.coldOwnerResolved += 1;
     },
 
     recordColdOwnerCommit(result = {}, durationMs = 0) {
+        if (!Config.developerDiagnostics) return;
         this.interval.coldOwnerCommitDurationsMs.push(Math.max(0, Number(durationMs) || 0));
         if (this.interval.coldOwnerCommitDurationsMs.length > Config.resolveSampleLimit) this.interval.coldOwnerCommitDurationsMs.shift();
         if (result.ok) this.counters.coldOwnerCommitted += 1;
@@ -348,11 +379,13 @@ const PopulationMetrics = {
     },
 
     recordColdOwnerRelease(result = {}) {
+        if (!Config.developerDiagnostics) return;
         if (result.ok) this.counters.coldOwnerReleased += 1;
         else this.recordColdOwnerRejected(result.reason, result);
     },
 
     recordColdOwnerRejected(reason = 'unknown', result = {}) {
+        if (!Config.developerDiagnostics) return;
         const key = String(reason || 'unknown');
         this.counters.coldOwnerRejected += 1;
         if (['stale_revision', 'cas_failed', 'owner_changed', 'lease_changed', 'lease_expired'].includes(key)) {
@@ -372,41 +405,49 @@ const PopulationMetrics = {
     },
 
     recordColdOwnerRecovery(count = 0, startup = false) {
+        if (!Config.developerDiagnostics) return;
         const recovered = Math.max(0, Number(count) || 0);
         this.counters.coldOwnerLeaseRecoveries += recovered;
         if (!startup) this.counters.coldOwnerLeaseExpiries += recovered;
     },
 
     recordColdOwnerTimeout() {
+        if (!Config.developerDiagnostics) return;
         this.counters.coldOwnerTimeouts += 1;
     },
 
     recordColdOwnerError(error = null) {
+        if (!Config.developerDiagnostics) return;
         this.counters.coldOwnerErrors += 1;
         const message = String(error?.message || error || '');
         if (/SQLITE_BUSY|database is locked/i.test(message)) this.counters.coldOwnerDbBusy += 1;
     },
 
     recordColdOwnerLegacyDeferred(reason = 'unknown') {
+        if (!Config.developerDiagnostics) return;
         const key = String(reason || 'unknown');
         this.counters.coldOwnerLegacyDeferred += 1;
         this.interval.coldOwnerLegacyReasons.set(key, Number(this.interval.coldOwnerLegacyReasons.get(key) || 0) + 1);
     },
 
     recordColdOwnerDbRetry() {
+        if (!Config.developerDiagnostics) return;
         this.counters.coldOwnerDbRetries += 1;
     },
 
     recordColdOwnerHandoff(result = {}) {
+        if (!Config.developerDiagnostics) return;
         if (result.ok && result.reason === 'hot_handoff') this.counters.coldOwnerHandoffs += 1;
         else if (!result.ok) this.recordColdOwnerRejected(result.reason);
     },
 
     recordLegacyOwnershipConflict() {
+        if (!Config.developerDiagnostics) return;
         this.counters.legacyOwnershipConflicts += 1;
     },
 
     recordWarehouseCleanup(result = {}, durationMs = 0) {
+        if (!Config.developerDiagnostics) return;
         this.counters.warehouseCleanupRuns += 1;
         this.counters.warehouseCleanupOwners += Math.max(0, Number(result.ownersScanned || 0));
         this.counters.warehouseCleanupCompacted += Math.max(0, Number(result.ownersCompacted || 0));
@@ -427,6 +468,7 @@ const PopulationMetrics = {
     },
 
     recordWarehouseCleanupDeferral(reason = 'unknown') {
+        if (!Config.developerDiagnostics) return;
         const key = String(reason || 'unknown');
         this.counters.warehouseCleanupDeferrals += 1;
         this.interval.warehouseCleanupDeferralReasons.set(
@@ -436,6 +478,7 @@ const PopulationMetrics = {
     },
 
     recordStateRetention(result = {}, durationMs = 0, overBudget = false) {
+        if (!Config.developerDiagnostics) return;
         const rows = Math.max(0, Number(result.rowsRemoved || 0));
         const policy = String(result.policy || 'unknown');
         this.counters.stateRetentionRuns += 1;
@@ -460,6 +503,7 @@ const PopulationMetrics = {
     },
 
     recordStateRetentionDeferral(reason = 'unknown') {
+        if (!Config.developerDiagnostics) return;
         const key = String(reason || 'unknown');
         this.counters.stateRetentionDeferrals += 1;
         this.interval.stateRetentionDeferralReasons.set(
@@ -469,6 +513,7 @@ const PopulationMetrics = {
     },
 
     recordActivationFloorScan(scan = {}) {
+        if (!Config.developerDiagnostics) return;
         const candidates = Math.max(0, Number(scan.candidates) || 0);
         const accepted = Math.max(0, Number(scan.accepted) || 0);
         const rejected = Math.max(0, Number(scan.rejected) || 0);
@@ -487,6 +532,7 @@ const PopulationMetrics = {
     },
 
     recordPartyFormationDeferral() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyFormationDeferrals += 1;
     },
 
@@ -515,10 +561,12 @@ const PopulationMetrics = {
     },
 
     recordPartyFormationBudgetStop() {
+        if (!Config.developerDiagnostics) return;
         this.counters.partyFormationBudgetStops += 1;
     },
 
     recordPartyFormationDuration(ms) {
+        if (!Config.developerDiagnostics) return;
         const value = Math.max(0, Number(ms) || 0);
         this.interval.partyFormationDurationsMs.push(value);
         if (this.interval.partyFormationDurationsMs.length > Config.resolveSampleLimit) {
@@ -527,6 +575,7 @@ const PopulationMetrics = {
     },
 
     recordPartyFormationStage(stage, ms) {
+        if (!Config.developerDiagnostics) return;
         const key = String(stage || 'unknown');
         const values = this.interval.partyFormationStageDurationsMs.get(key) || [];
         values.push(Math.max(0, Number(ms) || 0));
@@ -535,6 +584,7 @@ const PopulationMetrics = {
     },
 
     recordPathfindingDuration(kind, ms) {
+        if (!Config.developerDiagnostics) return;
         const key = kind === 'companion' ? 'companionPathDurationsMs' : 'actorPathDurationsMs';
         const values = this.interval[key];
         values.push(Math.max(0, Number(ms) || 0));
@@ -546,6 +596,7 @@ const PopulationMetrics = {
     },
 
     snapshot() {
+        if (!Config.developerDiagnostics) return { enabled: false };
         const elapsedMs = Math.max(1, now() - (this.startedAt || now()));
         const histogram = this.delayHistogram;
         const delay = {
@@ -596,18 +647,18 @@ const PopulationMetrics = {
         this.interval.activationFloorDurationsMs = [];
         this.interval.coldOwnerClaimDurationsMs = [];
         this.interval.coldOwnerCommitDurationsMs = [];
-        this.interval.activationFloorReasons = new Map();
-        this.interval.coldOwnerLegacyReasons = new Map();
-        this.interval.coldOwnerRejectReasons = new Map();
-        this.interval.coldOwnerStaleRevisionGaps = new Map();
-        this.interval.coldOwnerStaleOwners = new Map();
+        this.interval.activationFloorReasons = new DiagnosticMetricMap();
+        this.interval.coldOwnerLegacyReasons = new DiagnosticMetricMap();
+        this.interval.coldOwnerRejectReasons = new DiagnosticMetricMap();
+        this.interval.coldOwnerStaleRevisionGaps = new DiagnosticMetricMap();
+        this.interval.coldOwnerStaleOwners = new DiagnosticMetricMap();
         this.interval.warehouseCleanupDurationsMs = [];
-        this.interval.warehouseCleanupDeferralReasons = new Map();
+        this.interval.warehouseCleanupDeferralReasons = new DiagnosticMetricMap();
         this.interval.stateRetentionDurationsMs = [];
-        this.interval.stateRetentionDeferralReasons = new Map();
-        this.interval.stateRetentionPolicyRows = new Map();
-        this.interval.partyFormationStageDurationsMs = new Map();
-        this.interval.skippedResolveReasons = new Map();
+        this.interval.stateRetentionDeferralReasons = new DiagnosticMetricMap();
+        this.interval.stateRetentionPolicyRows = new DiagnosticMetricMap();
+        this.interval.partyFormationStageDurationsMs = new DiagnosticMetricMap();
+        this.interval.skippedResolveReasons = new DiagnosticMetricMap();
 
         return {
             uptimeMs: elapsedMs,

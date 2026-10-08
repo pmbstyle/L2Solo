@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const TableChannel = require('../Bot/Population/ColdTableChannel');
@@ -35,7 +36,7 @@ class ClanPlanningCoordinator {
         this.spotPublishedWorker = null;
         this.tableChannel.detach(this);
         this.retryAt = Date.now() + this.restartDelayMs;
-        this.stats.failures++;
+        DiagnosticConfig.developerDiagnostics && (this.stats.failures++);
         for (const entry of this.pending.values()) {
             clearTimeout(entry.timer);
             entry.reject(error);
@@ -48,13 +49,13 @@ class ClanPlanningCoordinator {
         const worker = this.worker;
         if (!worker || this.closed) return Promise.reject(new Error('clan planning worker unavailable'));
         if (this.pending.size >= this.maxPending) {
-            this.stats.rejected++;
+            DiagnosticConfig.developerDiagnostics && (this.stats.rejected++);
             return Promise.reject(new Error('clan planning worker queue full'));
         }
         return new Promise((resolve, reject) => {
             const id = ++this.sequence;
             const timer = setTimeout(() => {
-                this.stats.timeouts++;
+                DiagnosticConfig.developerDiagnostics && (this.stats.timeouts++);
                 this.fail(worker, new Error('clan planning worker timed out'));
             }, this.timeoutMs);
             this.pending.set(id, { resolve, reject, timer });
@@ -76,10 +77,10 @@ class ClanPlanningCoordinator {
         if (this.initializing) return this.initializing;
         if (this.worker) return;
         if (Date.now() < this.retryAt) throw new Error('clan planning worker recovering');
-        const worker = new Worker(this.workerFile);
+        const worker = new Worker(this.workerFile, { workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true } });
         this.worker = worker;
         const epoch = ++this.epoch;
-        this.stats.restarts++;
+        DiagnosticConfig.developerDiagnostics && (this.stats.restarts++);
         worker.on('error', (error) => this.fail(worker, error));
         worker.on('exit', (code) => this.fail(worker, new Error(`clan planning worker exited: ${code}`)));
         worker.on('message', (message) => {
@@ -93,7 +94,7 @@ class ClanPlanningCoordinator {
             this.pending.delete(message.id);
             clearTimeout(entry.timer);
             if (message.error) {
-                this.stats.failures++;
+                DiagnosticConfig.developerDiagnostics && (this.stats.failures++);
                 entry.reject(new Error(message.error));
             }
             else entry.resolve(message.result);
@@ -155,8 +156,8 @@ class ClanPlanningCoordinator {
         if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
         const result = await this.send('plan', { payload: writer.pack(payload) });
-        this.stats.completed++;
-        this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs);
+        DiagnosticConfig.developerDiagnostics && (this.stats.completed++);
+        DiagnosticConfig.developerDiagnostics && (this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs));
         return result.plan;
     }
 
@@ -177,7 +178,7 @@ class ClanPlanningCoordinator {
         }
     }
 
-    metrics() { return { ...this.stats, pending: this.pending.size, running: !!this.worker }; }
+    metrics() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, pending: this.pending.size, running: !!this.worker }; }
 }
 
 let coordinator = null;

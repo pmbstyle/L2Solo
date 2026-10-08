@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const { performance } = require('perf_hooks');
 const { randomUUID } = require('crypto');
 const Protocol = require('./ColdSimulationProtocol');
@@ -94,7 +95,7 @@ class LifecycleSafetySweep {
         this.inFlight = token;
         Promise.resolve().then(() => this.step(cycle, started + this.budgetMs)).catch(error => {
             if (this.current(cycle)) {
-                this.metrics.errors++;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.errors++);
                 cycle.retryAt = this.now() + this.retryMs;
                 this.onError(error);
             }
@@ -113,15 +114,15 @@ class LifecycleSafetySweep {
                 || typeof page.done !== 'boolean') throw new Error('invalid lifecycle safety page');
             cycle.page = page;
             cycle.phase = 'probe';
-            this.metrics.pages++;
-            this.metrics.inspected += page.rows.length;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.pages++);
+            DiagnosticConfig.developerDiagnostics && (this.metrics.inspected += page.rows.length);
             return;
         }
         if (cycle.phase === 'probe') {
             const rows = [];
             for (const native of cycle.page.rows) {
                 const checkpoint = this.eligible(native);
-                if (!checkpoint) { this.metrics.deferred++; continue; }
+                if (!checkpoint) { DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++); continue; }
                 if (checkpoint.phase === 'cold') rows.push(checkpoint);
             }
             cycle.coldRows = rows;
@@ -159,9 +160,9 @@ class LifecycleSafetySweep {
                         kind: 'orphan', checkpoint, expectedWorkerVersion: receipt.workerVersion });
                 }
                 if (receipt.normal?.status === 'uncovered' && receipt.normal.reason === 'missing_state') {
-                    if (!this.cold.canRepair(checkpoint)) { this.metrics.deferred++; continue; }
+                    if (!this.cold.canRepair(checkpoint)) { DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++); continue; }
                     const projected = this.cold.projection(checkpoint.characterId, checkpoint);
-                    if (!projected?.entry) { this.metrics.deferred++; continue; }
+                    if (!projected?.entry) { DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++); continue; }
                     this.appendEdge(cycle, { edgeId: this.edgeIdentity(cycle, 'state', checkpoint, receipt), kind: 'state', checkpoint,
                         expectedWorkerVersion: receipt.workerVersion, entry: projected.entry });
                 }
@@ -182,11 +183,11 @@ class LifecycleSafetySweep {
             const native = await this.readCurrent(edge.checkpoint);
             if (!this.current(cycle) || !this.workerCurrent(cycle.worker)) return;
             if (!Protocol.sameSafetyCheckpoint(edge.checkpoint, Protocol.safetyCheckpoint(native)) || !this.edgeCurrent(edge)) {
-                this.metrics.deferred++;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++);
                 cycle.repairIndex++;
                 return;
             }
-            if (edge.kind === 'state') this.metrics.stateRepairAttempts++;
+            if (edge.kind === 'state') DiagnosticConfig.developerDiagnostics && (this.metrics.stateRepairAttempts++);
             this.request(cycle, 'repair', [edge], cycle.worker, () => { cycle.repairIndex++; });
         }
     }
@@ -211,7 +212,7 @@ class LifecycleSafetySweep {
         // Count each own full projection once while the review loop can yield.
         // An oversized entry is deferred intact, never replaced by context{}.
         const size = Protocol.byteLength([edge]) - 2;
-        if (!Number.isFinite(size) || cycle.baseBytes + size > PAGE_BYTES) { this.metrics.deferred++; return; }
+        if (!Number.isFinite(size) || cycle.baseBytes + size > PAGE_BYTES) { DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++); return; }
         cycle.edges.push(edge);
     }
 
@@ -239,7 +240,7 @@ class LifecycleSafetySweep {
             if (!this.current(cycle)) return;
             cycle.phase = 'probe';
             cycle.retryAt = this.now() + this.retryMs;
-            this.metrics.errors++;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.errors++);
             this.onError(error);
         }).finally(() => {
             if (this.current(cycle)) cycle.waiting = false;
@@ -250,7 +251,7 @@ class LifecycleSafetySweep {
         if (!this.current(cycle)) return;
         cycle.cursor = { ...cycle.page.cursor };
         if (cycle.page.done) {
-            this.metrics.completedCycles++;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.completedCycles++);
             const totals = this.repairTotals?.() || [0, 0, 0];
             this.onFinished?.(totals.map((value, i) => Math.max(0, value - cycle.totalsAtStart[i])));
             this.nextAt = cycle.startedAt + INTERVAL_MS;
@@ -267,7 +268,7 @@ class LifecycleSafetySweep {
     snapshot() {
         return { running: this.running, nextAt: this.nextAt,
             cursor: this.cycle ? { ...this.cycle.cursor } : null,
-            phase: this.cycle?.phase || null, waiting: this.cycle?.waiting || false, ...this.metrics };
+            phase: this.cycle?.phase || null, waiting: this.cycle?.waiting || false, ...(DiagnosticConfig.developerDiagnostics ? this.metrics : { diagnosticsEnabled: false }) };
     }
 }
 

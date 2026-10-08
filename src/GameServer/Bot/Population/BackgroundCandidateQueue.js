@@ -1,4 +1,5 @@
 'use strict';
+const Config = require('./PopulationConfig');
 
 // Keep a bounded selection across governor windows. Always refresh a candidate
 // before work: ownership, party membership and inventory can change meanwhile.
@@ -20,12 +21,12 @@ class BackgroundCandidateQueue {
         let sliceStartedAt = Date.now();
         try {
             if (!this.pending.length && Date.now() < deadlineAt) {
-                const startedAt = Date.now();
+                const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 const selected = await select();
                 this.pending = (selected || []).slice(0, limit);
                 selectedCount = this.pending.length;
                 this.selectionFull = (selected || []).length >= limit;
-                onStage('projection', Date.now() - startedAt);
+                if (Config.developerDiagnostics) onStage('projection', Date.now() - startedAt);
             }
             while (this.pending.length && Date.now() < deadlineAt) {
                 const original = this.pending[0];
@@ -36,7 +37,7 @@ class BackgroundCandidateQueue {
                     skipped += 1;
                     continue;
                 }
-                const startedAt = Date.now();
+                const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 let result;
                 try {
                     result = await work(current);
@@ -45,7 +46,7 @@ class BackgroundCandidateQueue {
                     // later windows. Normal selection may retry it later.
                     this.pending.shift();
                 }
-                onStage('review', Date.now() - startedAt);
+                if (Config.developerDiagnostics) onStage('review', Date.now() - startedAt);
                 processed += 1;
                 if (result) results.push(result);
                 if (this.pending.length && Date.now() - sliceStartedAt >= sliceMs) {
@@ -57,7 +58,7 @@ class BackgroundCandidateQueue {
                 continuation: this.selectionFull || this.pending.length > 0 };
         } finally {
             this.running = false;
-            onProgress({ selected: selectedCount, processed, skipped, resumed: Number(resumed),
+            if (Config.developerDiagnostics) onProgress({ selected: selectedCount, processed, skipped, resumed: Number(resumed),
                 pending: this.pending.length, deadlineStops: Number(this.pending.length > 0 && Date.now() >= deadlineAt) });
         }
     }

@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -12,7 +14,7 @@ const metrics = {
     contributionsBlocked: 0,
     levelUps: 0,
     budgetStops: 0,
-    reasonCounts: new Map()
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 function number(value, fallback = 0) {
@@ -32,7 +34,7 @@ function parseJson(value, fallback = {}) {
 }
 
 function recordReason(code) {
-    if (code) metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
+    if (code) DiagnosticConfig.developerDiagnostics && metrics.reasonCounts.set(code, (metrics.reasonCounts.get(code) || 0) + 1);
 }
 
 async function clanProjection() {
@@ -92,7 +94,7 @@ async function resolveClan(clan, options = {}) {
     }
     if (number(clan.level) === 3) {
         const result = await Database.resolveBotClanAlliance(clan.id);
-        if (result.advanced?.ok) { metrics.levelUps += 1; await ClanService.reload(); }
+        if (result.advanced?.ok) { DiagnosticConfig.developerDiagnostics && (metrics.levelUps += 1); await ClanService.reload(); }
         return result;
     }
     const targetLevel = number(clan.level);
@@ -109,11 +111,11 @@ async function resolveClan(clan, options = {}) {
             requiredAmount
         });
         if (advanced.ok) {
-            metrics.levelUps += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.levelUps += 1);
             await ClanCrestService.ensureAutonomousCrest(clan.id);
             recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
         } else {
-            metrics.contributionsBlocked += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.contributionsBlocked += 1);
             recordReason(advanced.code);
         }
     }
@@ -151,7 +153,7 @@ const ClanEconomyService = {
             const summary = { attempted: 0, levelUps: 0, contributions: 0, blocked: 0, budgetStopped: false };
             for (const clan of clans.slice(0, Math.max(1, number(limit, Config.resolveBatchSize)))) {
                 if (Date.now() >= deadlineAt) {
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     summary.budgetStopped = true;
                     break;
                 }
@@ -162,12 +164,13 @@ const ClanEconomyService = {
                 summary.blocked += result.warehouse?.blocked || 0;
             }
             if (summary.levelUps > 0) await ClanService.reload();
-            metrics.resolves += summary.attempted;
+            DiagnosticConfig.developerDiagnostics && (metrics.resolves += summary.attempted);
             return summary;
         });
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             resolves: metrics.resolves,
             contributionsBlocked: metrics.contributionsBlocked,

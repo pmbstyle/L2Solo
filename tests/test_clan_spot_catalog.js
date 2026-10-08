@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 
 const assert = require('node:assert/strict'), fs = require('node:fs'), v8 = require('node:v8');
 require('./helpers/databaseIsolation');

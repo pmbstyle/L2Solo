@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
 const Trip = require('../Population/ColdTrip');
 const Routes = require('../Travel/TravelRoutes');
@@ -11,7 +12,7 @@ function table(spots) {
     // +155192 fixed bytes. Warm 80 reads: 549 -> 0.28 ms, no replans.
     const cached = catalogs.get(spots);
     if (cached) { source = spots; entries = cached; return entries; }
-    const started = performance.now(), next = new Map();
+    const started = DiagnosticConfig.developerDiagnostics ? performance.now() : 0, next = new Map();
     for (const spot of spots || []) {
         if (!spot?.id || !spot.center) continue;
         const from = Routes.landingTown(spot.center);
@@ -21,18 +22,19 @@ function table(spots) {
             from, to: spot.center });
     }
     if (spots && (typeof spots === 'object' || typeof spots === 'function')) catalogs.set(spots, next);
-    source = spots; entries = next; builds++; buildMs = performance.now() - started;
-    utils.infoSuccess('WalkBack', 'cached %d return routes in %d ms', entries.size, Math.round(buildMs));
+    source = spots; entries = next;
+    if (DiagnosticConfig.developerDiagnostics) { builds++; buildMs = performance.now() - started; }
+    if (DiagnosticConfig.developerDiagnostics) utils.infoSuccess('WalkBack', 'cached %d return routes in %d ms', entries.size, Math.round(buildMs));
     return entries;
 }
 function hours(spotId, state = {}, spots = invoke('GameServer/Bot/AI/SpotService').spots) {
     if (!spotId) return 0;
     const entry = table(spots).get(String(spotId));
-    if (!entry) { missing++; return 0; }
+    if (!entry) { if (DiagnosticConfig.developerDiagnostics) missing++; return 0; }
     if (require('../../Karma').closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
     // ARCH-NOTE: the default world uses the authored 25-second trip; price
     // the actual downtime rather than charging a walk it does not perform.
     return (Trip.honest() ? entry.ms : Trip.AUTHOR_TRIP_MS) / 3600000;
 }
 module.exports = { hours, reset: () => { source = undefined; entries = new Map(); catalogs = new WeakMap(); builds = missing = buildMs = 0; },
-    summary: () => ({ size: entries.size, builds, missing, buildMs }) };
+    summary: () => DiagnosticConfig.developerDiagnostics ? ({ size: entries.size, builds, missing, buildMs }) : { enabled: false } };

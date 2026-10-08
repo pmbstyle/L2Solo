@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
 const Policy = require('./BotImprovementPolicy');
 const pendingCold = new Map(), pendingHot = new WeakMap();
@@ -20,7 +21,7 @@ async function reviewCold(state, options = {}) {
     const { decide, ...writeOptions } = options;
     const decision = typeof decide === 'function' ? decide()
         : invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state);
-    if (!decision) { improvementDeferred++; return { state, changed: false }; }
+    if (!decision) { if (DiagnosticConfig.developerDiagnostics) improvementDeferred++; return { state, changed: false }; }
     const context = decision
         ? { network: { activity: decision.activity }, riskWeight: decision.riskWeight }
         : null;
@@ -105,4 +106,4 @@ function stationTarget(actor, improvement) {
         locX:npc.fetchLocX(),locY:npc.fetchLocY(),locZ:npc.fetchLocZ(),head:npc.fetchHead?.() } : null;
 }
 module.exports = { reviewCold, reviewHot, chosen, inTown, Policy, stationTarget,
-    summary: () => ({ improvementDeferred }) };
+    summary: () => DiagnosticConfig.developerDiagnostics ? ({ improvementDeferred }) : { enabled: false } };
