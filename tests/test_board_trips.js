@@ -85,8 +85,6 @@ Config.coldHonestTravel = false;
     // Buyers of 'gear d': three in Giran for each one in Gludio.
     for (let deal = 0; deal < 40; deal++) MarketCounters.deal(SABER, 50000, 1, 1000 + deal, 7, deal % 4 ? 'Giran' : 'Gludio');
     const rolled = tally([{ selfId: SABER, price: 50000, count: 1 }]);
-    const giran = rolled.get('Giran') || 0;
-    const gludio = rolled.get('Gludio') || 0;
     assert.strictEqual(rolled.get(seed), 400, 'category history cannot replace an unsupported item/town forecast');
     // A trip that costs more than the shop would see there leaves it nothing.
     const farGiran = MarketTownPolicy.shopTown(hunter(), [{ selfId: SABER, price: 50000, count: 1 }],
