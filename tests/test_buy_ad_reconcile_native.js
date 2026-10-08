@@ -74,6 +74,13 @@ async function run() {
         phase: 'cold', activity: 'hunting', level: 40, adena: await wallet(), currentRegion: 'Dion',
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(9201)),
         loc: { locX: 19000, locY: 145000, locZ: -3100 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {},
+        stats: {} }, 'missing_native_funding_fixture');
+    await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 80)], { expected: expected(before) }), /economy_funding_missing/);
+    assert.deepEqual(await records(), before, 'unknown native funding cannot grow reservations');
+    await Life.upsertState({ characterId: 9201, accountName: 'bot_retained_buyer', name: 'RetainedBuyer',
+        phase: 'cold', activity: 'hunting', level: 40, adena: await wallet(), currentRegion: 'Dion',
+        inventory: Life.inventorySummaryFromItems(await Database.fetchItems(9201)),
+        loc: { locX: 19000, locY: 145000, locZ: -3100 }, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {},
         stats: { money: [36000, 0.001, 9000, 0, 0.001, 400, 1864] } }, 'native_funding_fixture');
     await assert.rejects(Afk.replaceBotRecords(9201, 'buy_ad', [config(1864, 80)], { expected: expected(before) }), /economy_funding_changed/);
     assert.deepEqual(await records(), before);

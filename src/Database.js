@@ -3483,6 +3483,7 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {
     if (additions.length) {
         const life = one('SELECT statsJson FROM bot_life_state WHERE characterId = ?', [characterId]);
         const stats = jsonObject(life?.statsJson);
+        if (life && (!Array.isArray(stats.money) || stats.money.length < 4)) throw Error('economy_funding_missing');
         if (Array.isArray(stats.money)) {
             const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
             const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
