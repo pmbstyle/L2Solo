@@ -283,7 +283,9 @@ const originalScrollDisposition = MarketListingPolicy.evaluate(scrollState, { no
 assert.deepStrictEqual(MarketListingPolicy.classify(scrollState, originalScrollDisposition.candidates[0]),
     { action: 'market', reason: 'market' }, 'an enchant scroll never inherits the NPC-only hard rule');
 assert.strictEqual(originalScrollDisposition.decisions[0].reason, 'expected_value');
-assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.buyersPerHour, 0);
+assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.known, false,
+    'absent supported item demand remains unknown rather than proving there are no buyers');
+assert(Number.isNaN(originalScrollDisposition.decisions[0].priced.market.buyersPerHour));
 assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.buyback, npcPrice);
 assert.strictEqual(originalScrollDisposition.warehouse[0]?.selfId, dEnchantScroll.selfId,
     'the original native choice retains the valuable enchant scroll');
