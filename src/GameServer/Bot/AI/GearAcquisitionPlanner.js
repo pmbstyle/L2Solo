@@ -1827,16 +1827,29 @@ function sourceIndexFor(spots = []) {
 
     const spotByNpc = new Map();
     const spotByName = new Map();
+    // Counts belong to the immutable source atlas, not to each bot review.
+    // This scratch index dies after construction; records retain two numbers.
+    const spotCounts = new Map();
     const appendSpot = (index, key, spot) => {
         if (!key || !spot) return;
         const existing = index.get(key) || [];
         if (!existing.some((candidate) => candidate.id === spot.id)) existing.push(spot);
         index.set(key, existing);
     };
-    (spots || []).forEach((spot) => (spot.npcEntries || []).forEach((entry) => {
-        if (entry.selfId) appendSpot(spotByNpc, Number(entry.selfId), spot);
-        if (entry.name) appendSpot(spotByName, String(entry.name).trim().toLowerCase(), spot);
-    }));
+    (spots || []).forEach((spot) => {
+        let total = 0;
+        const byNpc = new Map();
+        for (const entry of spot.npcEntries || []) {
+            if (entry.selfId) appendSpot(spotByNpc, Number(entry.selfId), spot);
+            if (entry.name) appendSpot(spotByName, String(entry.name).trim().toLowerCase(), spot);
+            const count = Math.max(1, Number(entry.count || 1));
+            const npcId = Number(entry.selfId);
+            total += count;
+            // Number(NaN) never matched the previous equality-based scan.
+            if (!Number.isNaN(npcId)) byNpc.set(npcId, (byNpc.has(npcId) ? byNpc.get(npcId) : 0) + count);
+        }
+        spotCounts.set(spot, { total, byNpc });
+    });
 
     const byItemId = new Map();
     rewards.forEach((reward) => {
@@ -1870,7 +1883,9 @@ function sourceIndexFor(spots = []) {
                 if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id && entry.kind === kind)) {
                     let record = records.get(kind);
                     if (!record) {
-                        record = { reward, spot, kind, npcLevel };
+                        const counts = spotCounts.get(spot);
+                        record = { reward, spot, kind, npcLevel, totalCount: counts.total,
+                            sourceCount: counts.byNpc.get(Number(reward.selfId)) ?? 0 };
                         records.set(kind, record);
                     }
                     entries.push(record);
@@ -1896,8 +1911,7 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
         sourceCache?.set(cacheKey, []);
         return [];
     }
-    const rates = ProgressionRates.profile();
-    const ratesKey = `${rates.drop}:${rates.spoil}:${rates.adena}`;
+    const ratesKey = sourceYieldRatesKey();
     const resolvedKey = `${cacheKey}:${ratesKey}`;
     const entries = sourceIndex.get(Number(itemId)) || [];
     const materialize = ({ reward, spot, kind, npcLevel }) => {
@@ -1953,6 +1967,19 @@ function sourceCacheSize() {
     return { resolved: sourceIndexCache.resolved.size,
         packedBytes: [...sourceIndexCache.resolved.values()].reduce((bytes, row) => bytes + row.byteLength, 0),
         yields: sourceIndexCache.yields.size };
+}
+
+function sourceYieldRatesKey() {
+    const rates = ProgressionRates.profile();
+    return `${rates.drop}:${rates.spoil}:${rates.adena}`;
+}
+
+// One synchronous projection reads one rate profile. Reuse the planner's
+// bounded yield pairs without its route sorting or NPC-level fallback.
+function sourceYieldReaderFor(killerLevel) {
+    const ratesKey = sourceYieldRatesKey();
+    return (source, itemId) => dropYieldFor(source.reward, itemId, source.kind,
+        source.npcLevel, killerLevel, ratesKey);
 }
 
 // A drop yield depends only on the reward, the item and the deep-blue level
@@ -2367,6 +2394,7 @@ function withReadiness(fn) {
 }
 module.exports.withReadiness = withReadiness;
 module.exports.sourceCacheSize = sourceCacheSize;
+module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',

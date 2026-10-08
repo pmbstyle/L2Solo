@@ -981,6 +981,7 @@ const tests = [
     'tests/test_cold_persona_cache.js',
     'tests/test_wish_gain_zero_cache.js',
     'tests/test_wish_spot_value_memo.js',
+    'tests/test_wish_source_yields.js',
     'tests/test_cold_competition_owner_storage.js',
     'tests/test_stock_bag_fill_interval.js',
     'tests/test_stock_refill_preservation.js',

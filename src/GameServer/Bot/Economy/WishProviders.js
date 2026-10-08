@@ -172,6 +172,11 @@ function buildProjection(state, ctx, deps) {
     // This local map dies at return: ~468 KB transient per measured build,
     // zero ArrayBuffers and zero maps retained after return + GC; no owner store.
     const sourceValues = new Map();
+    // ARCH-NOTE: PERF: native same-input provider replay (60 builds/variant)
+    // 124.56 -> 27.28 ms; nine complete projections byte-equal. Reuse the
+    // existing 16,384-entry yield bound and atlas counts, no per-bot retention.
+    // Shared-host offline result only; not a live throughput/budget claim.
+    const sourceYield = sourceIndex ? Planner.sourceYieldReaderFor(state.level) : null;
     const knownRecipes = new Set([...(state.stats?.recipes || state.recipes || []), ...(state.stats?.workshop?.entries || [])]
         .map(entry => Number(entry?.recipeId ?? entry)));
     const preparingItems = new Set();
@@ -186,14 +191,10 @@ function buildProjection(state, ctx, deps) {
         for (const source of sourceIndex?.get(Number(id)) || []) {
             if (source.spot.raidBoss || (source.kind === 'spoil' && !invoke('GameServer/Bot/AI/BotRoles').isSpoiler(state))) continue;
             if (!Planner.soloSafeForSource(state, source)) continue;
-            const counts = source.spot.npcEntries || [];
-            const total = counts.reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0);
-            const own = counts.filter(npc => Number(npc.selfId) === Number(source.reward.selfId))
-                .reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0);
+            const total = source.totalCount, own = source.sourceCount;
             if (!sourceValues.has(source.spot)) sourceValues.set(source.spot, ctx.spotValue(source.spot));
             const rate = sourceValues.get(source.spot);
-            const yieldPerKill = Planner.itemDropYield(source.reward, id, source.kind,
-                { npcLevel: source.npcLevel, killerLevel: state.level }).expectedYield;
+            const yieldPerKill = sourceYield(source, id).expectedYield;
             const perHour = positive(rate?.kills) * positive(yieldPerKill) * own / Math.max(1, total);
             if (perHour > 0 && (!best || perHour > best.perHour)) best = { source, perHour };
         }
