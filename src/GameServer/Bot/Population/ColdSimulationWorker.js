@@ -149,7 +149,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         return { state: input.state, board: boardReady(), timestamp: input.timestamp, read,
             knownRecipes: input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
             recipesKnown: Array.isArray(input.state.stats?.workshop?.entries),
-            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, mode: input.mode || 'occupation' };
+            buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null, mode: input.mode || 'occupation' };
     },
     create: input => ({ iterator: (function* () {
         if (input.mode === 'occupation') {
@@ -195,7 +195,14 @@ const occupationPlanner = new ColdOccupationPlanner({
             const value = Shots.resultShot(cursor);
             if (value && cursor.selectedValueHours > selectedValue) selected = value;
         }
-        return selected;
+        const economyPlan = input.economy ? yield* require('./ColdEconomyPlan').prepare(input.state, input.economy, {
+            ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
+            tripCost: prepared.context.trip, preparedCraft: selected,
+            npcOffersFor: OccupationSources.npcOffersFor,
+            findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)),
+            buyOrderEscrow: input.buyOrderEscrow, knownShotRecipes: input.knownShotRecipes
+        }) : null;
+        return { selected, economyPlan };
     })(), done: false, value: null, stage: 0, units: 0 }),
     step: work => {
         const next = work.iterator.next(); work.units++;
@@ -206,6 +213,9 @@ const occupationPlanner = new ColdOccupationPlanner({
     },
     result: work => work.value,
     publish: (id, input, workshop, meta = {}) => {
+        // The action result is the existing compact native plan. Its derived
+        // network is needed while preparing it, never by the completed cache.
+        if (input.mode === 'action') input.economy = null;
         if (shuttingDown || kernel?.states.get(id)?.state !== input.sourceState) return;
         if (meta.stale) {
             send('ready', { phase: 'economy_workshop_stale', characterId: id,
@@ -220,7 +230,7 @@ function occupationFor(state, timestamp, context = {}, mode = 'occupation') {
     const id = Number(state.characterId), sourceState = kernel?.states.get(id)?.state;
     if (!sourceState || shuttingDown) return Promise.resolve(ColdEconomyDecision.unknownWorkshop());
     return occupationPlanner.request(id, { state, sourceState, timestamp, buyOrderEscrow: context.buyOrderEscrow || 0,
-        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null,
+        knownShotRecipes: context.knownShotRecipes || [], stock: context.stock || null, economy: context.economy || null,
         sourceReady: tables.ready('board') && tables.ready('market'), mode });
 }
 function occupationOwnerChanged(id) {
@@ -479,14 +489,9 @@ function startKernel(config = {}) {
             const context = kernel.states.get(Number(state.characterId))?.context || {};
             const planner = require('./ColdEconomyPlan');
             const economyEdges = planner.edges(state, projected, context, timestamp);
-            const preparedCraft = economyEdges && economy ? await occupationFor(projected, timestamp,
-                { ...context, stock: economy.stock('shots') }, 'action') : null;
-            const economyPlan = economyEdges && economy ? planner.decide(projected, economy, {
-                now: timestamp, board: boardReady(), persona: BotPersona.of(projected),
-                preparedCraft,
-                npcOffersFor: planningNpcCatalog.offersFor,
-                findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)), buyOrderEscrow: context.buyOrderEscrow, knownShotRecipes: context.knownShotRecipes
-            }) : null;
+            const preparedAction = economyEdges && economy ? await occupationFor(projected, timestamp,
+                { ...context, stock: economy.stock('shots'), economy }, 'action') : null;
+            const economyPlan = preparedAction?.economyPlan || null;
             const market = reviewMarket(projected, timestamp, economy);
             return {
                 state: projected,

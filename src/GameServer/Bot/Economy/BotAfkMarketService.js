@@ -51,7 +51,7 @@ function buyAdTown(state, ads, wanted) {
     const standing = ads.find((ad) => (ad.lines || []).some((line) =>
         wanted.some((item) => Number(item.selfId) === Number(line.selfId))));
     return standing && Karma.townFor(state.stats?.karma, standing.town) === standing.town
-        ? standing.town : MarketTownPolicy.shopTown(state, wanted);
+        ? standing.town : MarketTownPolicy.targetTownForItems(state, wanted);
 }
 
 function linesOf(records) {

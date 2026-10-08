@@ -33,7 +33,7 @@ function edges(before, after, context = {}, timestamp = Date.now(), options = {}
 
 // Same native sale/bid policies as a town/remote review, with the worker's
 // mirrors supplied explicitly. No warehouse or life-state/database reader.
-function decide(state, economy, options = {}) {
+function* prepare(state, economy, options = {}) {
     const Listing = require('../Economy/MarketListingPolicy');
     const own = options.board?.ownerLines(Number(state.characterId)) || [];
     const kept = new Map(own.filter(line => line.storeType === SELL)
@@ -49,12 +49,18 @@ function decide(state, economy, options = {}) {
     const sale = Listing.evaluate(saleState, { ...options, economy, slots: Listing.BOARD_SLOTS, kept, stored: new Map() });
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });
-    const townOptions = { tripCost: ctx.tripCost || (() => 0), timestamp: options.now, findSpot: options.findSpot };
-    const shopTown = own.find(line => line.kind === 'shop' && line.storeType === SELL)?.town
-        || state.stats?.shopTown?.town || Town.shopTown(state, sale.listings.slice(0, 3), townOptions);
-    const sell = sale.listings.slice(0, 8).map((row, at) => [Number(row.selfId), Number(row.count), Number(row.price),
-        own.find(line => line.storeType === SELL && line.selfId === row.selfId)?.town
-            || (at < 3 ? shopTown : Town.shopTown(state, [row], townOptions))]);
+    const townOptions = { context: ctx, tripCost: options.tripCost || ctx.tripCost, timestamp: options.now,
+        prepareTrip: options.prepareTrip, findSpot: options.findSpot };
+    const heldTown = own.find(line => line.kind === 'shop' && line.storeType === SELL)?.town || state.stats?.shopTown?.town;
+    const shopTown = heldTown || (yield* Town.chooseTown(state, sale.listings.slice(0, 3), townOptions)).town;
+    const sell = [];
+    for (let at = 0; at < Math.min(8, sale.listings.length); at++) {
+        const row = sale.listings[at];
+        const town = own.find(line => line.storeType === SELL && line.selfId === row.selfId)?.town
+            || (at < 3 ? shopTown : (yield* Town.chooseTown(state, [row], townOptions)).town);
+        if (town) sell.push([Number(row.selfId), Number(row.count), Number(row.price), town]);
+        yield 'stock';
+    }
     const listed = new Set(sale.listings.map(row => `${row.selfId}:${row.enchant || 0}`));
     const withdraw = own.filter(line => line.storeType === SELL && !listed.has(`${line.selfId}:${line.enchant || 0}`))
         .slice(0, 8).map(line => line.lineId);
@@ -78,6 +84,11 @@ function decide(state, economy, options = {}) {
     }
     return plan;
 }
+function decide(state, economy, options = {}) {
+    const iterator = prepare(state, economy, options);
+    let next; do { next = iterator.next(); } while (!next.done);
+    return next.value;
+}
 function decideShot(state, economy, options = {}) {
     const Shots = require('../Economy/ShotCraftPolicy');
     if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return null;
@@ -94,4 +105,4 @@ function decideShot(state, economy, options = {}) {
     // a recipe/gear/quote scan by falling through this publication adapter.
     return { unknown: true };
 }
-module.exports = { edges, decide, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { edges, decide, prepare, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };

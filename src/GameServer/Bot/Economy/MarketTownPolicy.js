@@ -72,40 +72,104 @@ function targetTownForItems(state, items = [], options = {}) {
     return 'Giran';
 }
 
-// Where a bot opens its shop (б7, Q6, user 2026-10-05): one weighted roll
-// (PriceDecision.chooseByWeight) at the decision to open, over the towns
-// where bots open shops (ShopPlaces.SHOP_TOWNS), by the value
-// the shop would see there less the trip: each item's listed value (price x
-// count) times the share of its counter's buyers in that town
-// (MarketCounters.townDemand), minus the bot's round trip to the town. A
-// counter with no deals yet takes the author's grade table
-// (targetTownForItems) as its whole share: the seed of a young world. A bot
-// with karma opens in Floran. O(items x towns), at an opening only.
-function shopTown(state, items = [], { tripCost = null, timestamp = Date.now(), rollKey = null, findSpot = null } = {}) {
-    if (Karma.closesTowns(state?.stats?.karma)) return Karma.TOWN_NAME;
-    const towns = ShopPlaces.SHOP_TOWNS;
-    const values = new Map(towns.map((town) => [town, 0]));
-    for (const item of items) {
-        const worth = Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.count) || 1);
-        if (!(worth > 0)) continue;
-        const demand = MarketCounters.townDemand(MarketCounters.counterOf(item.selfId), timestamp);
-        let total = 0;
-        for (const entry of demand) total += entry.perHour;
-        if (!(total > 0)) {
-            const seed = targetTownForItems(state, [item], { findSpot });
-            if (values.has(seed)) values.set(seed, values.get(seed) + worth);
-            continue;
-        }
-        for (const entry of demand) {
-            if (values.has(entry.town)) values.set(entry.town, values.get(entry.town) + worth * entry.perHour / total);
+// One bounded town choice over the actual offered stock. Category counters
+// are not item demand. Unsupported forecasts retain the grade prior; they
+// cannot multiply the lot's asking value into imaginary receipts.
+function* chooseTown(state, items = [], options = {}) {
+    const { context: ctx = null, timestamp = Date.now(), rollKey = null, findSpot = null,
+        prepareTrip = null, canOpenTown = () => true } = options;
+    const towns = ShopPlaces.SHOP_TOWNS, groups = new Map();
+    for (const item of items.slice(0, 8)) {
+        const id = Number(item.selfId), enchant = Number(item.enchant || 0), count = Number(item.count), price = Number(item.price);
+        if (!Number.isSafeInteger(count) || count <= 0 || !(price > 0) || !Number.isFinite(price)) continue;
+        const key = `${id}:${enchant}`, previous = groups.get(key);
+        if (previous) { previous.units += count; previous.joint &&= previous.price === price; }
+        else groups.set(key, { id, enchant, units: count, price, joint: true });
+        yield 'stock';
+    }
+    const seed = targetTownForItems(state, items, { findSpot });
+    const trip = options.tripCost || ctx?.travel || invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
+    const candidates = [], outcomes = [];
+    const Price = invoke('GameServer/Bot/Economy/PriceDecision');
+    const Valuation = require('./EconomicValuation');
+    if (!Karma.closesTowns(state?.stats?.karma) && ctx?.demandFor && groups.size && ctx.ownStock?.known !== false) {
+        for (const town of towns) {
+            if (!canOpenTown(town)) continue;
+            let known = true, receipts = 0, residual = 0, input = 0;
+            for (const row of groups.values()) {
+                const demand = ctx.demandFor(row.id, row.enchant, town);
+                const held = ctx.ownStock?.groups?.get(`${row.id}:${row.enchant}`);
+                if (!row.joint || held?.prices?.size > 1 || demand?.known === false || !demand?.origin
+                    || demand.origin === 'public_bid' || !demand.authority || demand.town !== town
+                    || Number(demand.selfId) !== row.id || Number(demand.enchant || 0) !== row.enchant
+                    || !(demand.availability?.from <= timestamp && demand.availability?.until >= timestamp)
+                    || !Number.isFinite(demand.applicableUnits) || !Number.isFinite(demand.willingUnits)
+                    || !Number.isFinite(demand.delayHours)) { known = false; break; }
+                let cheaper = 0, seen = 0;
+                const lines = ctx.board?.lines?.(row.id, 1, town) || ctx.board?.list(row.id, 1, town) || [];
+                for (const line of lines) {
+                    if (++seen > 20) { known = false; break; }
+                    if (!line.town) { known = false; break; }
+                    if (Number(line.ownerId) !== Number(state.characterId) && Number(line.enchant || 0) === row.enchant
+                        && Number(line.price) < row.price) cheaper += Number(line.count);
+                    yield 'quote';
+                }
+                if (!known) break;
+                const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, row.id);
+                const npc = invoke('GameServer/Items/NpcSellRules').npcBuyPrice(Number(template?.template?.price || 0));
+                const units = Math.min(row.units, held?.units ?? row.units);
+                const outcome = Price.saleOutcome({ units, applicableUnits: demand.applicableUnits,
+                    willingUnits: demand.willingUnits, cheaperUnits: cheaper, price: row.price, residualUnitValue: npc,
+                    delayHours: demand.delayHours, discountRate: Number(ctx.trader?.wait || 0) });
+                if (!outcome.known) { known = false; break; }
+                receipts += outcome.receipts; residual += outcome.residualValue; input += units * npc;
+                yield 'utility';
+            }
+            if (!known) continue;
+            if (prepareTrip) yield* prepareTrip(town);
+            const route = ctx.travelDetails?.(town);
+            if (!route?.known || route.fees > require('./PurchaseFunding').budget(state)) continue;
+            const value = Valuation.opportunity({ moneyPrice: ctx.moneyPrice }, [{ probability: 1,
+                receipts, monetaryResidual: residual, ownInputOpportunityValue: input,
+                actualCashFees: route.fees, foregoneBenefitHours: route.hours, cycleHours: route.hours }]);
+            if (value.known) {
+                outcomes.push({ action: town, value: value.valueHours });
+                if (value.valueHours > 0) candidates.push({ action: town, value: value.valueHours });
+            }
+            yield 'candidate';
         }
     }
-    // The bot's round trip there (none to the town it is shopping in).
-    const trip = tripCost || invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
-    const options = towns.map((town) => ({ action: town, value: values.get(town) - trip(town) }));
-    const chosen = invoke('GameServer/Bot/Economy/PriceDecision').chooseByWeight(options,
-        rollKey || ['shop_town', Number(state?.characterId || 0), timestamp]);
-    return chosen?.action || targetTownForItems(state, items, { findSpot });
+    const key = rollKey || ['shop_town', Number(state?.characterId || 0), timestamp];
+    let town = candidates.length ? Price.chooseByWeight(candidates, key)?.action : null;
+    let reason = town ? 'supported_item_forecast' : 'grade_fallback';
+    if (!town) {
+        // A known losing opportunity does not become a grade-based sale.
+        if (outcomes.some(row => row.action === seed && row.value <= 0)) reason = 'known_town_loss';
+        else if (canOpenTown(seed)) {
+            if (prepareTrip) yield* prepareTrip(seed);
+            const route = ctx?.travelDetails?.(seed) || trip.details?.(seed);
+            if (Number.isFinite(trip(seed)) && (!route || route.known
+                && route.fees <= require('./PurchaseFunding').budget(state))) town = seed;
+        } else {
+            const alternatives = [];
+            for (const candidate of towns) {
+                if (!canOpenTown(candidate) || Karma.closesTowns(state?.stats?.karma) && candidate !== Karma.TOWN_NAME) continue;
+                if (prepareTrip) yield* prepareTrip(candidate);
+                const cost = trip(candidate);
+                if (Number.isFinite(cost)) alternatives.push({ action: candidate, value: -cost });
+                yield 'candidate';
+            }
+            town = Price.chooseByWeight(alternatives, key)?.action || null;
+            reason = 'observed_plaza_full';
+        }
+    }
+    options.onDecision?.({ town, reason, candidates: outcomes });
+    return { town, reason };
+}
+function shopTown(state, items = [], options = {}) {
+    const iterator = chooseTown(state, items, options);
+    let next; do { next = iterator.next(); } while (!next.done);
+    return next.value.town;
 }
 
 // The town a bot without a shop opens one in: the decision it already made
@@ -144,6 +208,7 @@ module.exports = {
     openingTown,
     saleTown,
     shopTown,
+    chooseTown,
     targetTownForItems,
     targetTownForSale
 };

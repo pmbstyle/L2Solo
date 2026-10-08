@@ -301,6 +301,20 @@ class BoardIndex {
         return merged;
     }
 
+    // Merge the existing sorted town/unplaced views lazily. A bounded reader
+    // must not allocate and sort the entire item book to inspect its head.
+    *lines(selfId, storeType, town = null) {
+        const item = this.sides.get(Number(storeType))?.get(Number(selfId));
+        if (!item) return;
+        if (!town) { yield* item.all; return; }
+        const left = item.towns.get(town) || EMPTY, right = item.towns.get(null) || EMPTY;
+        let a = 0, b = 0;
+        while (a < left.length || b < right.length) {
+            if (b >= right.length || a < left.length && compareLines(left[a], right[b]) <= 0) yield left[a++];
+            else yield right[b++];
+        }
+    }
+
     *itemIds(storeType, town = null, start = 0, reverse = false) {
         const towns = this.townItems.get(Number(storeType));
         const left = towns?.get(town || '*') || EMPTY;

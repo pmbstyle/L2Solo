@@ -87,8 +87,7 @@ Config.coldHonestTravel = false;
     const rolled = tally([{ selfId: SABER, price: 50000, count: 1 }]);
     const giran = rolled.get('Giran') || 0;
     const gludio = rolled.get('Gludio') || 0;
-    assert(giran > 2 * gludio && gludio > 50, `in proportion to the buyers: Giran ${giran}, Gludio ${gludio}`);
-    assert(400 - giran - gludio < 30, 'a town without buyers keeps only a small chance');
+    assert.strictEqual(rolled.get(seed), 400, 'category history cannot replace an unsupported item/town forecast');
     // A trip that costs more than the shop would see there leaves it nothing.
     const farGiran = MarketTownPolicy.shopTown(hunter(), [{ selfId: SABER, price: 50000, count: 1 }],
         { tripCost: (name) => (name === 'Giran' ? 1e9 : 0), timestamp: 5000, rollKey: ['far'] });

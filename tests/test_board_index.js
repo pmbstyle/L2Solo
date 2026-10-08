@@ -35,6 +35,9 @@ index.put(record(6, { storeType: BUY, town: null }, [{ selfId: 7, price: 30 }]))
 index.put(record(9, { storeType: BUY, town: 'Dion' }, [{ selfId: 7, price: 99 }]));
 assert.deepStrictEqual(ids(index.list(7, BUY)), ['9/900', '6/600', '5/500']);
 assert.deepStrictEqual(ids(index.list(7, BUY, 'Giran')), ['6/600', '5/500']);
+assert.deepStrictEqual(ids([...index.lines(7, BUY, 'Giran')]), ids(index.list(7, BUY, 'Giran')), 'lazy town cursor merges unplaced lines in the same price order');
+assert.deepStrictEqual(ids([...index.lines(7, SELL)]), ids(index.list(7, SELL)), 'lazy global cursor uses the same index');
+assert.equal(index.lines(7, BUY, 'Giran').next().value.recordId, 6, 'bounded consumers can stop after the first indexed quote');
 assert.deepStrictEqual(index.towns(7, BUY).sort(), ['Dion', 'Giran', null].sort());
 
 // The table row of a main-thread store and back.
