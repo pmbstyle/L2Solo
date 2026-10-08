@@ -93,7 +93,7 @@ function spawn() {
     if (!config || stopping || worker) return;
     const instance = new Worker(path.join(__dirname, 'HistoryWorker.js'), {
         workerData: { worldPath: config.worldPath, historyPath: config.historyPath, transferMs: config.transferMs,
-            ...(config.diagnostics ? { diagnostics: config.diagnostics } : {}) }
+            ...(config.diagnostics ? { developerDiagnostics: true, diagnostics: config.diagnostics } : {}) }
     });
     worker = instance;
     if (config.diagnostics) Diagnostics.connect(batch => {
@@ -142,7 +142,7 @@ function spawn() {
 function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
     stopping = false;
     config = { worldPath, historyPath, onMoved, transferMs };
-    if (PopulationConfig.economyDiagnostics) {
+    if (PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics) {
         // No full config/path/account data in the developer header.
         let build = 'unknown';
         try {
@@ -228,7 +228,7 @@ function one(sql, params = []) {
 
 function stats() {
     return { path: config?.historyPath || null, running: !!worker, ...counters,
-        ...(PopulationConfig.economyDiagnostics ? { economyDiagnostics: Diagnostics.stats() } : {}) };
+        ...(PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics ? { economyDiagnostics: Diagnostics.stats() } : {}) };
 }
 
 module.exports = { all, flush, one, prepare, start, stats, stop };
