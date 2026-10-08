@@ -24,7 +24,7 @@ const adapters = {
     'GameServer/Progression/ProgressionCap': { effectiveLevelCap: () => 40 },
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/GearAcquisitionPlanner': { roleFor: () => 'melee', gradeForLevel: () => 'c',
-        suitable: () => true, itemScore: () => 1, withReadiness: fn => fn() },
+        suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn() },
     'GameServer/Bot/Population/ColdCombatProfile': { buildGainsFor: () => ({}),
         gainFor: (build, key, fn) => fn(), powerNumbers: () => ({ pAtk: 100, pDef: 100, mDef: 100 }),
         powerFor: () => ({ pAtk: 200, pDef: 100, mDef: 100 }), buildOptions: () => ({}) },

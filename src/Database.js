@@ -2120,15 +2120,16 @@ function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = n
 
 // Preserve the pre-native-receipt cold auto-equip rule inside the purchase.
 // Only physical flags move; no predicted cold items are materialized here.
-function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip) {
+function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip, heldItemIds = []) {
     if (!step || step.row.phase !== 'cold' || autoEquip === false) return null;
     const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(itemId));
     if (template?.etc?.stackable || !(Number(template?.etc?.slot) > 0)) return null;
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = all('SELECT * FROM items WHERE characterId=? AND amount>0', [characterId]);
     const stats = jsonObject(step.row.statsJson);
+    const held = new Set(heldItemIds);
     const reconciled = Life.reconcileEquipmentInventory({ characterId, level: Number(step.row.level), phase: 'cold', stats,
-        inventory: Life.inventorySummaryFromItems(physical) });
+        inventory: Life.inventorySummaryFromItems(physical.filter(row => Number(row.equipped) || !held.has(Number(row.selfId)))) });
     const ids = new Set([Number(itemId)]);
     for (const row of physical) {
         const instance = reconciled.inventory[row.selfId]?.instances?.find(item => Number(item.id) === Number(row.id));
@@ -2150,33 +2151,20 @@ function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip) {
     return { ids: [...ids], patch };
 }
 
-function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}) {
+function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
-    const stats = jsonObject(step.row.statsJson), packet = stats.money;
+    const stats = jsonObject(step.row.statsJson), packet = packetOverride || stats.money;
     if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
-    const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
-    let rate = Number(funding.r ?? 0);
-    if (funding.r === undefined && funding.itemId) {
-        for (let index = 4; index + 2 < packet.length; index += 3) {
-            if (packet[index + 2] === Number(funding.itemId)) { rate = Number(packet[index]); break; }
-        }
-    }
-    const fundingPolicy = require('./GameServer/Bot/Economy/PurchaseFunding');
-    const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
-    // ClanMarketService credits this part before acquisition. Keep it out of
-    // personal free money, then add its remaining actual-wallet allowance.
-    const clanPart = funding.free === true ? Math.min(wallet, Math.max(0, Number(funding.clanPart || 0))) : 0;
-    let budget = funding.free === true ? clanPart + (Number(packet[3]) === 0
-        ? fundingPolicy.budgetFor(packet, wallet - clanPart, 0, -Infinity, fundingCapture) : 0)
-        : rate >= Number(packet[1]) ? fundingPolicy.budgetFor(packet, wallet, 0, rate, fundingCapture) : 0;
-    if (funding.valueHours !== undefined) budget = Math.min(Number(packet[1]) > 0
-        ? Math.max(0, Number(funding.valueHours)) / Number(packet[1]) : Infinity,
-    require('./GameServer/Bot/Economy/PurchaseFunding').budgetFor(packet, wallet, 0, Number(packet[1]), fundingCapture));
-    budget = Math.min(wallet, budget + Math.max(0, Number(funding.survivalCost || 0)));
+    const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
+    const { r, itemId, valueHours, survivalCost, clanPart } = funding;
+    const budget = require('./GameServer/Bot/Economy/PurchaseFunding').spendable({
+        adena: wallet, stats: { money: packet }
+    }, 0, { r, itemId, valueHours, survivalCost, clanPart, free: funding.free === true });
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
-            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
+            moneyPrice: Number(packet[1]), escrow: 0,
             decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
+
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
 }
 
@@ -6975,42 +6963,157 @@ const Database = {
         }, 'recipe:cold-learn'));
     },
 
-    purchaseNpcInventoryItem(characterId, { selfId, name, amount, unitPrice, stackable = true, slot = 0, coldState = null,
-        economyCommand = null, validate = null, funding = {}, autoEquip = true }) {
-        const count = Number(amount), price = Number(unitPrice), itemId = Number(selfId);
-        if (!Number.isSafeInteger(count) || count <= 0 || count > 10000
-            || !Number.isSafeInteger(price) || price <= 0
-            || !Number.isSafeInteger(itemId) || itemId <= 0
-            || !Number.isSafeInteger(count * price)) return Promise.reject(new Error('invalid npc purchase'));
+    purchaseNpcInventoryItem(characterId, details) {
+        return this.purchaseNpcInventoryBasket(characterId, { ...details,
+            lines: [{ stackable: true, slot: 0, ...details }] });
+    },
+
+    // A bounded purchase from one real NPC. The legacy scalar adapter retains
+    // its direct-call contract; autonomous baskets supply a seller and command.
+    purchaseNpcInventoryBasket(characterId, details = {}) {
+        if (Array.isArray(details.lines) && details.lines.length > 12) return Promise.reject(Error('invalid npc basket'));
+        if (details.lines?.some(line => line.fundingParts?.length > 12 || line.errands?.length > 8)) return Promise.reject(Error('invalid npc basket attribution'));
+        const { economyCommand = null, coldState = null, validate = null } = details;
+        const seller = details.seller ? { ...details.seller } : null;
+        const captured = Array.isArray(details.lines) ? details.lines.map(line => ({ ...line,
+            funding: { ...line.funding }, fundingParts: line.fundingParts?.map(part => ({ ...part, funding: { ...part.funding } })),
+            errands: (line.errands || []).map(entry => ({ ...entry,
+                errand: JSON.parse(JSON.stringify(entry.errand)) })),
+            goal: line.goal ? JSON.parse(JSON.stringify(line.goal)) : null })) : [];
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const step = economyStepUnsafe(characterId, economyCommand, EconomyCommit.KINDS.npcBuy);
-            if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_requested',
-                { item: itemId, requested: count, unitPrice: price, cost: count * price });
-            if (step?.replay) return { ...step.replay, ok: step.replay.success };
+            const goalRow = () => normalizeRow(one('SELECT * FROM bot_goal_state WHERE characterId=?', [characterId]));
+            if (step?.replay) return { ...step.replay, ok: step.replay.success, goalRow: goalRow() };
+            if (!captured.length || captured.length > 12) throw Error('invalid npc basket');
+            const Shop = invoke('GameServer/World/Generics/NpcShopBuyLists');
+            const Index = require('./GameServer/Item/ItemTemplateIndex');
+            const Data = invoke('GameServer/DataCache');
+            if (seller) {
+                const found = invoke('GameServer/Bot/Economy/TownNpcCatalog').rowsForTown(seller.town).some(row =>
+                    Number(row.npcSelfId) === Number(seller.sourceId) && ['locX', 'locY', 'locZ'].every(key =>
+                        Number.isFinite(Number(seller[key])) && Number(row[key]) === Number(seller[key])));
+                if (!found || step && seller.town !== step.row.currentRegion) throw Error('npc_seller_changed');
+            }
+
             validate?.();
-            checkEconomyFundingUnsafe(characterId, step, count * price, { ...funding, itemId });
-            if (step) {
-                const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
-                if (!template || !!stackable !== !!template.etc?.stackable || Number(slot) !== Number(template.etc?.slot || 0)) throw Error('npc_item_template_changed');
+            const seen = new Set(), lines = [];
+            let total = 0, units = 0, errandCount = 0;
+            for (const line of captured) {
+                const itemId = Number(line.selfId), count = Number(line.amount), price = Number(line.unitPrice);
+                if (!Number.isSafeInteger(itemId) || itemId <= 0 || seen.has(itemId)
+                    || !Number.isSafeInteger(count) || count <= 0 || count > 10000
+                    || !Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(count * price)) throw Error('invalid npc purchase');
+                seen.add(itemId);
+                const template = Index.find(Data.items, itemId);
+                if (seller) {
+                    const quote = Shop.rowForNpc(Number(seller.sourceId), itemId);
+                    if (!quote || Number(quote.price) !== price
+                        || !require('./GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId)) throw Error('npc_quote_changed');
+                }
+                const stackable = line.stackable === undefined ? !!template?.etc?.stackable : !!line.stackable;
+                const slot = line.slot === undefined ? Number(template?.etc?.slot || 0) : Number(line.slot);
+                if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
+                    || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
+                if (seller && step && slot > 0) {
+                    const blocker = invoke('GameServer/Bot/Population/BotLifeState').marketPurchaseBlocker({
+                        stats: jsonObject(step.row.statsJson), inventory: jsonObject(step.row.inventorySummary)
+                    }, { selfId: itemId }, count);
+                    if (blocker) throw Error(blocker);
+                }
+                let attributed = 0, attributedCost = 0;
+                for (const entry of line.errands) {
+                    if (!entry.errand || Number(entry.errand.selfId) !== itemId || seller && entry.errand.town !== seller.town
+                        || !Number.isSafeInteger(entry.units) || entry.units <= 0
+                        || entry.units > Number(entry.errand.amount)
+                        || !Number.isSafeInteger(entry.spent) || entry.spent < 0 || entry.spent !== entry.units * price) throw Error('invalid npc errand attribution');
+                    attributed += entry.units; attributedCost += entry.spent;
+                    if (++errandCount > 8) throw Error('invalid npc errand attribution');
+                }
+                if (attributed > count || attributedCost > count * price) throw Error('invalid npc errand attribution');
+                total += count * price; units += count;
+                if (!Number.isSafeInteger(total) || !Number.isSafeInteger(units)) throw Error('invalid npc basket total');
+                lines.push({ ...line, selfId: itemId, amount: count, unitPrice: price, stackable, slot,
+                    name: line.name || template?.template?.name || `Item ${itemId}` });
             }
-            const wallet = one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [characterId]);
-            if (!wallet || Number(wallet.amount) < count * price) {
-                const coldLifeRow = completeEconomyStepUnsafe(characterId, step, { success: false, nativeId: itemId }, []);
-                return { ok: false, reason: 'insufficient_adena', ...(coldLifeRow ? { coldLifeRow } : {}) };
+            const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
+            let remainingWallet = Number(wallet?.amount || 0);
+            const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
+            let remainingPacket = step ? jsonObject(step.row.statsJson).money : null;
+            const parts = [];
+            for (const [index, line] of lines.entries()) {
+                const fundingParts = line.fundingParts || [{ amount: line.amount, funding: line.funding, order: index }];
+                let count = 0;
+                for (const part of fundingParts) {
+                    if (!Number.isSafeInteger(part.amount) || part.amount <= 0
+                        || !Number.isSafeInteger(part.order) || part.order < 0 || part.order >= 12) throw Error('invalid npc funding part');
+                    count += part.amount;
+                    parts.push({ ...part, selfId: line.selfId, unitPrice: line.unitPrice });
+                }
+                if (count !== line.amount) throw Error('invalid npc funding part');
             }
-            write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(wallet.amount) - count * price, wallet.id, characterId]);
-            const existing = stackable ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [characterId, itemId]) : null;
-            if (existing) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(existing.amount) + count, existing.id, characterId]);
-            else for (let index = 0; index < (stackable ? 1 : count); index += 1) {
-                write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
-                    [itemId, name || `Item ${itemId}`, stackable ? count : 1, Number(slot) || 0, characterId]);
+            if (parts.length > 12 || new Set(parts.map(part => part.order)).size !== parts.length) throw Error('invalid npc funding parts');
+            parts.sort((left, right) => left.order - right.order);
+            for (const part of parts) {
+                const spent = part.amount * part.unitPrice, funding = { ...part.funding, itemId: part.selfId };
+                checkEconomyFundingUnsafe(characterId, step, spent, funding, remainingWallet, remainingPacket);
+                remainingWallet -= spent;
+                remainingPacket = Funding.packetAfterPurchase(remainingPacket, spent, funding);
             }
-            const equipped = equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip);
-            const coldLifeRow = step ? completeEconomyStepUnsafe(characterId, step,
-                { units: count, spent: count * price, nativeId: itemId }, equipped?.ids || [itemId], null, null, equipped?.patch)
-                : syncEconomySnapshotUnsafe(characterId, coldState, [itemId]);
-            return { ok: true, committed: true, spent: count * price, amount: count, units: count,
-                ...(coldLifeRow ? { coldLifeRow, economyCommit: jsonObject(coldLifeRow.statsJson).economyCommit } : {}) };
+            if (!wallet || remainingWallet < 0) {
+                const row = completeEconomyStepUnsafe(characterId, step, { success: false,
+                    nativeId: Number(seller?.sourceId || lines[0].selfId) }, []);
+                return { ok: false, reason: 'insufficient_adena', ...(row ? { coldLifeRow: row } : {}) };
+            }
+            write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [remainingWallet, wallet.id, characterId]);
+            for (const line of lines) {
+                const existing = line.stackable ? one('SELECT id,amount FROM items WHERE characterId=? AND selfId=? ORDER BY id LIMIT 1', [characterId, line.selfId]) : null;
+                if (existing) write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [Number(existing.amount) + line.amount, existing.id, characterId]);
+                else for (let index = 0; index < (line.stackable ? 1 : line.amount); index++) {
+                    write('INSERT INTO items(selfId,name,amount,equipped,slot,characterId) VALUES(?,?,?,0,?,?)',
+                        [line.selfId, line.name, line.stackable ? line.amount : 1, line.slot, characterId]);
+                }
+            }
+            const changed = new Set(lines.map(line => line.selfId)), patch = {};
+            if (step) patch.money = remainingPacket;
+            // Reconcile the complete purchased bag once, not once per line.
+            const gear = lines.find(line => !line.stackable && line.slot > 0
+                && (line.autoEquip ?? details.autoEquip) !== false);
+            const heldIds = lines.filter(line => (line.autoEquip ?? details.autoEquip) === false).map(line => line.selfId);
+            const equipped = gear ? equipColdPurchaseUnsafe(characterId, step, gear.selfId, true, heldIds) : null;
+            for (const id of equipped?.ids || []) changed.add(id);
+            Object.assign(patch, equipped?.patch);
+            if (step && lines.some(line => line.errands.length)) {
+                const Errands = require('./GameServer/Bot/Population/CombinedErrandPolicy');
+                const stats = jsonObject(step.row.statsJson);
+                let errands = Errands.pending({ stats });
+                for (const line of lines) for (const entry of line.errands) {
+                    const index = errands.findIndex(other => Errands.key(other) === Errands.key(entry.errand)
+                        && Number(other.at) === Number(entry.errand.at) && Number(other.amount) === Number(entry.errand.amount));
+                    if (index < 0) continue;
+                    const old = errands[index], rest = Math.max(0, Number(old.amount) - entry.units);
+                    if (!rest) errands.splice(index, 1);
+                    else errands[index] = { ...old, amount: rest,
+                        ...(Number.isFinite(old.money) ? { money: Math.max(0, old.money - entry.spent) } : {}),
+                        ...(old.purpose === 'clan' ? { tag: { ...old.tag, clanPart: Math.max(0, Number(old.tag?.clanPart || 0) - entry.spent) } } : {}) };
+                    patch.lastErrand = { purpose: old.purpose, selfId: old.selfId, units: entry.units, tag: old.tag || null, at: now() };
+                }
+                Object.assign(patch, { marketErrands: errands, marketErrand: errands[0] || null });
+            }
+            const Goals = invoke('GameServer/Bot/Goals/GoalState');
+            for (const line of lines) if (line.goal) {
+                const { expectedGoal, updatedAt } = line.goal;
+                const count = Number(line.goal.units ?? line.amount);
+                if (!Number.isSafeInteger(count) || count <= 0 || count > line.amount
+                    || Number(expectedGoal?.target?.itemId) !== line.selfId) throw Error('invalid npc goal attribution');
+                const timestamp = now(), next = Goals.purchasePatch(expectedGoal, count, timestamp);
+                if (next) write('UPDATE bot_goal_state SET goalJson=?,updatedAt=? WHERE characterId=? AND updatedAt=? AND goalJson=?',
+                    [JSON.stringify(next), timestamp, characterId, updatedAt, JSON.stringify(expectedGoal)]);
+            }
+            const receipt = { units, spent: total, nativeId: Number(seller?.sourceId || lines[0].selfId) };
+            const row = step ? completeEconomyStepUnsafe(characterId, step, receipt, [...changed], null, null, patch)
+                : syncEconomySnapshotUnsafe(characterId, coldState, [...changed]);
+            return { ok: true, committed: true, ...receipt, amount: units, lines,
+                goalRow: goalRow(), ...(row ? { coldLifeRow: row, economyCommit: jsonObject(row.statsJson).economyCommit } : {}) };
         }, 'bot:npc-purchase'));
     },
 

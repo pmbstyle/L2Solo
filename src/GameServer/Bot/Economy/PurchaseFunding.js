@@ -26,6 +26,37 @@ function budgetFor(packet, wallet, escrow, r, capture = null) {
     if (capture) capture.priorityReserve = nonnegative(prior);
     return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(packet[2]) - prior);
 }
+// A paid funded contribution no longer needs cash protection. Keep the same
+// bounded packet and priority rule; crafting inputs can name their admitted
+// root ratio even when the funded root item is the eventual product.
+function packetAfterPurchase(packet, spent, funding = {}) {
+    if (!Array.isArray(packet) || packet.length < 4 || !(spent > 0)
+        || !Number.isFinite(spent) || funding.free === true) return packet;
+    let rate = null, itemIndex = -1;
+    if (funding.r !== undefined) {
+        if (!(Number(funding.r) > 0) || !Number.isFinite(Number(funding.r))) return packet;
+        rate = significant(Number(funding.r));
+    } else if (funding.valueHours === undefined && Number(funding.itemId) > 0) {
+        for (let index = 4; index + 2 < packet.length; index += 3) {
+            if (Number(packet[index + 2]) === Number(funding.itemId)) { itemIndex = index; break; }
+        }
+        if (itemIndex < 0) return packet;
+    } else return packet;
+    const next = packet.slice();
+    let previous = 0, cumulative = 0, remaining = spent, changed = false;
+    for (let index = 4; index + 2 < packet.length; index += 3) {
+        const original = nonnegative(packet[index + 1]);
+        let contribution = Math.max(0, original - previous);
+        previous = original;
+        if (index === itemIndex || rate !== null && Number(packet[index]) === rate) {
+            const paid = Math.min(remaining, contribution);
+            contribution -= paid; remaining -= paid; changed ||= paid > 0;
+        }
+        cumulative += contribution;
+        next[index + 1] = cumulative;
+    }
+    return changed ? next : packet;
+}
 function spendable(state = {}, escrow = 0, options = {}) {
     const wallet = budget(state, escrow), packet = state.stats?.money;
     const capture = Diagnostics.active() && Diagnostics.enabled(state.characterId) ? {} : null;
@@ -35,15 +66,25 @@ function spendable(state = {}, escrow = 0, options = {}) {
         reason = 'money_packet_missing';
         queueBudget = Math.max(0, wallet - operatingReserve(state));
     } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - packet[2]); }
-    else if (options.free) { reason = packet[3] === 0 ? 'free_money' : 'funding_gap'; queueBudget = packet[3] === 0 ? budgetFor(packet, wallet, 0, -Infinity, capture) : 0; }
+    else if (options.free === true) {
+        // Already credited treasury money belongs to this physical wallet.
+        // Exclude it from personal free cash before adding its actual remainder.
+        const clanPart = Math.min(wallet, nonnegative(options.clanPart));
+        reason = packet[3] === 0 ? 'free_money' : 'funding_gap';
+        queueBudget = clanPart + (packet[3] === 0 ? budgetFor(packet, wallet - clanPart, 0, -Infinity, capture) : 0);
+    }
     else {
         let r = Number(options.r ?? 0);
         if (options.itemId && options.r === undefined) {
             for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i + 2] === Number(options.itemId)) { r = packet[i]; break; }
         }
-        if (options.valueHours !== undefined) { reason = 'finite_value'; queueBudget = Math.min(packet[1] > 0 ? nonnegative(options.valueHours) / packet[1] : Infinity,
-            budgetFor(packet, wallet, 0, packet[1], capture)); }
-        else if (r >= packet[1]) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
+        if (r >= packet[1]) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
+    }
+    // Native utility terms take precedence over a free/clan allowance too.
+    if (Array.isArray(packet) && packet.length >= 4 && !options.upperBound && options.valueHours !== undefined) {
+        reason = 'finite_value';
+        queueBudget = Math.min(packet[1] > 0 ? nonnegative(options.valueHours) / packet[1] : Infinity,
+            budgetFor(packet, wallet, 0, packet[1], capture));
     }
     const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
@@ -93,5 +134,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, moneyReached, packetFor, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, significant,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

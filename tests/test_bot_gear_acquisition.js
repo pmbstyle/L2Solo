@@ -1392,8 +1392,9 @@ async function verifyWorkerSelectedGoals() {
             decisions.accept(state.characterId, native.decision);
             const leaf = compact(native.decision).activity;
             assert(leaf, 'the complete native state must produce a voluntary leaf');
-            assert(native.queue.some(row => row.key === leaf.rootKey),
-                'the selected root must come from the actual worker queue');
+            assert(native.queue.some(row => row.key === leaf.rootKey)
+                || leaf.activity === 'hunting' && !leaf.funding && leaf.rootKey === `level:${state.level + 1}`,
+                'paid roots belong to the native queue; free level progress is an explicit network root');
             assert(Number.isFinite(state.stats.money[0]) && state.stats.money[0] > 0,
                 'native planning supplies a positive hour value, without a synthetic money packet');
             Economy.forState = () => { throw Error('cold goal reader rebuilt the wish network'); };

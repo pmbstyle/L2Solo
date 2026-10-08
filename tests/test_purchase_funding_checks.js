@@ -20,6 +20,19 @@ assert.equal(Funding.spendable(saving, 0, { itemId: 123 }), 0);
 assert.equal(Funding.spendable(saving, 0, { r: 2e-5 }), 865000, 'the live gap ratio receives only money above earlier wishes');
 assert.equal(Funding.spendable({ ...saving, adena: 10000 }, 0, { survivalCost: 15552 }), 10000);
 assert.equal(Funding.spendable({ ...saving, adena: 10000 }, 0, { r: 4e-5 }), 0);
+assert.equal(Funding.spendable(saving, 0, { free: true, clanPart: 10000 }), 10000,
+    'the actual treasury credit can pay while personal free cash is unavailable');
+assert.equal(Funding.spendable({ ...dwarf, adena: 36000 }, 0, { free: true, clanPart: 10000 }), 10000,
+    'the same treasury credit is excluded from personal cash before protection');
+assert.equal(Funding.spendable({ ...saving, adena: 5000 }, 0, { free: true, clanPart: 10000 }), 5000,
+    'a credited allowance never adds an independent purse beyond the physical wallet');
+const nativeClanPacket = [1000, .001, 100, 2000, .002, 700, 999];
+const nativeClanState = { adena: 1000, stats: { money: nativeClanPacket } };
+assert.equal(Funding.spendable(nativeClanState, 0, { free: true, clanPart: 300, survivalCost: 200 }), 500,
+    'the former native clan rule adds the survival allowance within the one physical wallet');
+assert.equal(Funding.spendable(nativeClanState, 0, { free: true, clanPart: 300, survivalCost: 5000 }), 1000);
+assert.equal(Funding.spendable(nativeClanState, 0, { free: true, clanPart: 300, valueHours: .8, survivalCost: 150 }), 350,
+    'native value-hours terms override the clan allowance before adding survival');
 const before = Funding.summary().moneyPacketMissing;
 assert.equal(Funding.spendable({ adena: 10000, stats: { money: [77000, 1e-5, 1000] } }, 500), 9500);
 assert.equal(Funding.summary().moneyPacketMissing, before + 1);
@@ -34,6 +47,31 @@ for (let i = 4; i < merged.length; i += 3) {
     assert(Funding.spendable({ adena: 10000, stats: { money: merged } }, 0, { r: merged[i] }) >= 100);
 }
 assert(Buffer.byteLength(JSON.stringify(merged)) <= 240);
+// Native basket bookkeeping retains the actual unpaid funded contribution.
+const originalPacket = [1000, .001, 0, 0, .1, 100, 2509, .05, 200, 1060];
+const paidA = Funding.packetAfterPurchase(originalPacket, 100, { r: .1, itemId: 2509 });
+assert.deepEqual(paidA, [1000, .001, 0, 0, .1, 0, 2509, .05, 100, 1060]);
+assert.equal(Funding.spendable({ adena: 100, stats: { money: paidA } }, 0, { r: .05 }), 100,
+    'a lower funded wish does not protect already paid cash a second time');
+const partialA = Funding.packetAfterPurchase(originalPacket, 40, { r: .1 });
+assert.equal(Funding.spendable({ adena: 160, stats: { money: partialA } }, 0, { r: .05 }), 100);
+assert.deepEqual(Funding.packetAfterPurchase(partialA, 100, { r: .05 }).slice(4), [.1, 60, 2509, .05, 60, 1060]);
+assert.deepEqual(originalPacket, [1000, .001, 0, 0, .1, 100, 2509, .05, 200, 1060], 'input packet is immutable');
+for (const terms of [{ r: .2 }, { r: 0, itemId: 2509 }, { r: .1, free: true }, { valueHours: 10 }, { itemId: 999 }]) {
+    assert.equal(Funding.packetAfterPurchase(originalPacket, 100, terms), originalPacket, 'an unmatched expense cannot release another wish');
+}
+const inputs = Funding.packetAfterPurchase(originalPacket, 25, { r: .1, itemId: 1785 });
+assert.equal(inputs[5], 75, 'paid craft input consumes the same admitted priority bucket as its different final root item');
+assert.equal(Funding.packetAfterPurchase(inputs, 75, { r: .1, itemId: 2508 })[5], 0);
+assert.equal(Funding.packetAfterPurchase(paidA, 100, { r: .1 })[8], 100, 'exhausted bucket cannot consume the lower wish');
+const equal = [1000, .001, 10, 77, .1, 100, 1, .1, 200, 2, .05, 250, 3];
+const equalPaid = Funding.packetAfterPurchase(equal, 150, { r: .1 });
+assert.deepEqual(equalPaid, [1000, .001, 10, 77, .1, 0, 1, .1, 50, 2, .05, 100, 3]);
+assert.equal(Funding.packetAfterPurchase(equal, 150, { itemId: 1 })[8], 100, 'known item payment cannot consume its different equal-priority neighbour');
+const protectedPacket = [1000, .001, 10, 77, .2, 80, 999, .1, 180, 2509, .05, 280, 1060];
+const protectedPaid = Funding.packetAfterPurchase(protectedPacket, 100, { r: .1 });
+assert.deepEqual(protectedPaid, [1000, .001, 10, 77, .2, 80, 999, .1, 80, 2509, .05, 180, 1060]);
+
 // ARCH-NOTE: the previous fixture pinned removed percentage reserves and a removed
 // priority ladder. The packet now proves planner/shop agreement on the real shared gate.
 const Population = invoke('GameServer/Bot/Population/PopulationService');
