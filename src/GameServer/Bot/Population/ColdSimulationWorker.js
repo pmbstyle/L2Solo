@@ -645,8 +645,11 @@ let partyGoalTail = Promise.resolve();
 const partyGoalPages = new Map();
 const partyGoalSeen = new Map();
 function partyMembersAvailable(members) {
-    return members.every(member => kernel.commandStartedAt.get(member.characterId)?.kind !== 'meeting'
-        && (occupationPlanner.slots.get(member.characterId) || occupationPlanner.waiting.get(member.characterId))?.input.mode !== 'meeting');
+    return members.every(member => {
+        const held = occupationPlanner.slots.get(member.characterId) || occupationPlanner.waiting.get(member.characterId);
+        return kernel.commandStartedAt.get(member.characterId)?.kind !== 'meeting'
+            && (!held || held.done || !['meeting', 'refresh', 'action'].includes(held.input.mode));
+    });
 }
 
 function admitPartyGoalPages(payload, msgId) {

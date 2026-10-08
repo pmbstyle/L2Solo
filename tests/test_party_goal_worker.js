@@ -17,12 +17,12 @@ const observer = String.raw`
 const assert=require('node:assert/strict');
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
-    if(message.queryProbe==='hold-meeting') {
-        const held={input:{mode:'meeting',state:kernel.states.get(701).state}};
+    if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-refresh') {
+        const held={input:{mode:message.queryProbe==='hold-meeting'?'meeting':'refresh',state:kernel.states.get(701).state}};
         occupationPlanner.waiting.set(701,held);
         module.exports.heldMeeting=held;
     }
-    if(message.queryProbe==='release-meeting') {
+    if(message.queryProbe==='release-meeting'||message.queryProbe==='release-refresh') {
         assert.strictEqual(occupationPlanner.waiting.get(701),module.exports.heldMeeting);
         occupationPlanner.waiting.delete(701);
     }
@@ -95,6 +95,13 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(blocked.payload.reason,'party_goal_member_busy','party advice cannot cancel native trade preparation');
     worker.postMessage({queryProbe:'release-meeting'});
     await wait(message=>message.probe==='release-meeting');
+    worker.postMessage({queryProbe:'hold-refresh'});
+    await wait(message=>message.probe==='hold-refresh');
+    post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-refresh');
+    const refresh=await wait(message=>message.type==='party_goal_result'&&message.msgId==='during-refresh');
+    assert.equal(refresh.payload.reason,'party_goal_member_busy','party advice cannot drop pending economic refresh');
+    worker.postMessage({queryProbe:'release-refresh'});
+    await wait(message=>message.probe==='release-refresh');
     worker.postMessage({queryProbe:'hold-lifecycle'});
     await wait(message=>message.probe==='hold-lifecycle');
     post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-lifecycle');
