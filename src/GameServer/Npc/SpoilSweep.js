@@ -220,7 +220,7 @@ const SpoilSweep = {
             });
             for (const npc of spoiled) invoke('GameServer/Quest/QuestService').onSkillSee(session, npc, skill, actor)
                 .catch(error => utils.infoWarn('Quest', 'skill callback failed: %s', error.message));
-            console.info('SpoilSweep :: %s spoiled %d of %d targets with %s', actor.fetchName(), landed, spoiled.length, skill.fetchName());
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('SpoilSweep :: %s spoiled %d of %d targets with %s', actor.fetchName(), landed, spoiled.length, skill.fetchName());
             if (landed > 0) ConsoleText.transmit(session, ConsoleText.caption.spoilActivated);
         });
     },
@@ -266,7 +266,7 @@ const SpoilSweep = {
                     item.amount > 1
                         ? ConsoleText.transmit(recipientSession, ConsoleText.caption.pickupAmountOf, [textName, textAmount])
                         : ConsoleText.transmit(recipientSession, ConsoleText.caption.pickup, [textName]);
-                    console.info('SpoilSweep :: %s swept %d %s from %s', actor.fetchName(), item.amount, item.name, npc.fetchName());
+                    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('SpoilSweep :: %s swept %d %s from %s', actor.fetchName(), item.amount, item.name, npc.fetchName());
                 });
             }
 

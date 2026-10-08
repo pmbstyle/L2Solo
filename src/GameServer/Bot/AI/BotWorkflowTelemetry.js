@@ -1,12 +1,15 @@
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
-const activeWorkflows = new Map();
+let activeWorkflows = null;
 
 function text(value, max = 160) {
     return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 function recordSupply(workflowId, phase, payload = {}, outcome = 'completed', reason = null, options = {}) {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) { activeWorkflows?.clear(); activeWorkflows = null; return null; }
     if (!workflowId) return null;
+    activeWorkflows ||= new Map();
+    payload = typeof payload === 'function' ? payload() : payload;
     const safePayload = {
         workflowId: text(workflowId, 128),
         phase: text(phase, 64),
@@ -25,10 +28,15 @@ function recordSupply(workflowId, phase, payload = {}, outcome = 'completed', re
         const root = LangfuseTracing.startObservation(
             'bot.workflow.supply',
             safePayload,
-            { ...metadata, workflowPhase: 'root' },
+            (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ ...metadata, workflowPhase: 'root' }) : null,
             'chain'
         );
         workflow = { root, startedAt: Date.now() };
+        if (activeWorkflows.size >= 64) {
+            const oldest = activeWorkflows.keys().next().value;
+            activeWorkflows.get(oldest)?.root?.end({ outcome: 'diagnostic_capacity_eviction' });
+            activeWorkflows.delete(oldest);
+        }
         activeWorkflows.set(safePayload.workflowId, workflow);
     }
 

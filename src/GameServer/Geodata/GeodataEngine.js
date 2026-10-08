@@ -72,7 +72,7 @@ const GeodataEngine = {
 
     init() {
         this.navigationRevision = Number(this.navigationRevision || 0) + 1;
-        console.info("GeodataEngine :: Initializing...");
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("GeodataEngine :: Initializing...");
         VirtualObstacles.init();
         // Preload active regions on startup
         // L2J geodata file names follow client map regions, e.g. T_22_19.
@@ -141,7 +141,7 @@ const GeodataEngine = {
                 const offsetIndex = this.buildOffsetIndex(buffer);
                 this[`index_${key}`] = offsetIndex;
 
-                utils.infoSuccess("GeodataEngine", "Loaded region geodata: %s (Size: %s MB)", key, (buffer.length / (1024 * 1024)).toFixed(2));
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) utils.infoSuccess("GeodataEngine", "Loaded region geodata: %s (Size: %s MB)", key, (buffer.length / (1024 * 1024)).toFixed(2));
                 return true;
             } catch (err) {
                 console.error(`GeodataEngine :: Failed to load region ${key}:`, err);
@@ -583,7 +583,7 @@ const GeodataEngine = {
             }
         }
         
-        if (options.debug !== false) {
+        if ((invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && options.debug !== false) {
             console.log(`findPath :: nodesExpanded = ${nodesExpanded}, targetNodeFound = ${!!targetNode}`);
         }
 

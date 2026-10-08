@@ -129,12 +129,12 @@ function audit(context, outcome, reason, meta = {}) {
     delete argumentsForTrace.llmTelemetry;
     const observation = LangfuseTracing.startObservation(
         `bot.tool.${text(context.decision?.action || 'unknown', 64)}`,
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             action: context.decision?.action || null,
             arguments: argumentsForTrace,
             expectedWorldRevision: context.expectedWorldRevision || null
-        },
-        {
+        }) : null,
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             botId: actorId(context.session),
             playerId: playerId(context),
             turnId: turnId(context),
@@ -142,7 +142,7 @@ function audit(context, outcome, reason, meta = {}) {
             outcome,
             reason,
             phase: outcome === 'requested' ? 'request' : 'result'
-        },
+        }) : null,
         'tool'
     );
     const status = outcome === 'rejected'

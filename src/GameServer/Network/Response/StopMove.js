@@ -11,7 +11,7 @@ function stopMove(id, data) {
         .writeD(data.head);
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${id}:at=${data.locX},${data.locY},${data.locZ}:head=${data.head}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${id}:at=${data.locX},${data.locY},${data.locZ}:head=${data.head}`;
     return buffer;
 }
 

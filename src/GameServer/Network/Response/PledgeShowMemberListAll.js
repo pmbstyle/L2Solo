@@ -37,7 +37,7 @@ function pledgeShowMemberListAll(clan, activeActor) {
     });
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `clan=${clan.id}:${clan.name}:members=${members.length}:visible=${visibleMembers.length}:active=${activeId}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `clan=${clan.id}:${clan.name}:members=${members.length}:visible=${visibleMembers.length}:active=${activeId}`;
     return buffer;
 }
 

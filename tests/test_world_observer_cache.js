@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const World = invoke('GameServer/World/World');
 const Observer = invoke('WorldObserver/WorldObserverServer');

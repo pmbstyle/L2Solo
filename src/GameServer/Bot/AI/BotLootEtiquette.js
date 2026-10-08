@@ -216,9 +216,9 @@ function expireRequest(request) {
                 'ignored_loot_request',
                 `${request.amount} ${request.itemName}`
             );
-            console.info("BotLoot :: %s ignored %s request from %s", actorName(request.playerSession), request.itemName, actorName(request.botSession));
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotLoot :: %s ignored %s request from %s", actorName(request.playerSession), request.itemName, actorName(request.botSession));
         } else {
-            console.info("BotLoot :: %s request for %s expired without social penalty", actorName(request.botSession), request.itemName);
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotLoot :: %s request for %s expired without social penalty", actorName(request.botSession), request.itemName);
         }
     }, REQUEST_TTL_MS);
 }
@@ -284,7 +284,7 @@ const BotLootEtiquette = {
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             BotManager.botTell(botSession, playerSession, `If you don't need ${info.name}, could you trade it to me? I can use it for ${request.reason}.`);
-            console.info("BotLoot :: %s requested %d %s from %s (%s, score %d)", actorName(botSession), amount, info.name, actorName(playerSession), request.reason, demand.score);
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotLoot :: %s requested %d %s from %s (%s, score %d)", actorName(botSession), amount, info.name, actorName(playerSession), request.reason, demand.score);
             expireRequest(request);
         });
     },
@@ -317,7 +317,7 @@ const BotLootEtiquette = {
             coalesceWindowMs: 30000,
             meta: { itemId: request.selfId, amount: request.amount }
         })).catch(() => {});
-        console.info("BotLoot :: %s fulfilled %s request from %s", actorName(playerSession), request.itemName, actorName(botSession));
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotLoot :: %s fulfilled %s request from %s", actorName(playerSession), request.itemName, actorName(botSession));
         return request;
     }
 };

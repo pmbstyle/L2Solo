@@ -124,6 +124,7 @@ global.utils = {
     },
 
     totalMemUsed() {
+        if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
         console.info('NodeL2     :: Total Mem Used -> %f MB', Math.round(process.memoryUsage().heapTotal / 1024 / 1024 * 100) / 100);
     },
 

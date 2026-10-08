@@ -91,6 +91,7 @@ function pullState(leaderSession) {
 }
 
 function traceEncounter(leaderSession, event, details = {}) {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
     const state = pullState(leaderSession);
     const fields = Object.entries({
         leader: leaderSession?.actor?.fetchName?.() || leaderSession?.actor?.fetchId?.(),
@@ -139,7 +140,7 @@ function beginTarget(leaderSession, puller, target, source, selection = null) {
         selectionScore: selection?.score ?? null,
         selectionReasons: selection?.reasons || []
     };
-    traceEncounter(leaderSession, selection?.event || 'selected', {
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, selection?.event || 'selected', {
         source,
         score: selection?.score,
         reasons: selection?.reasons || []
@@ -157,7 +158,7 @@ function beginRaid(leaderSession, raid) {
     leaderSession.partyPullState = { raidBossId: raid.bossId, targetId: raid.bossId,
         pullerId: raid.mainTankId, type: 'raid', phase: raid.phase,
         origin: raid.pullOrigin, startedAt: raid.selectedAt };
-    traceEncounter(leaderSession, 'raid_pull');
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, 'raid_pull');
 }
 
 function observeLeaderTarget(leaderSession, settings, targetId) {
@@ -511,7 +512,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         bot.state?.setHits?.(false);
         clearPullMove(state);
         state.phase = 'return';
-        traceEncounter(leaderSession, 'aggro_confirmed');
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, 'aggro_confirmed');
     }
 
     // Recovery/add pauses may cancel an approach or an unconfirmed opening
@@ -609,7 +610,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         // very hit that is supposed to put the mob into combat.
         state.phase = 'aggro';
         state.aggroRequestedAt = Date.now();
-        traceEncounter(leaderSession, 'aggro_requested');
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, 'aggro_requested');
         if (!state.announced) {
             state.announced = true;
             BotPartyChat.announce(session, {
@@ -638,7 +639,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
             return { handled: true, puller, action: 'retry_aggro', target };
         }
         state.phase = 'return';
-        traceEncounter(leaderSession, 'aggro_confirmed');
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, 'aggro_confirmed');
     }
 
     if (state.phase === 'return' && distance(point(bot), point(leaderSession.actor)) > PULL_RETURN_DISTANCE) {
@@ -652,7 +653,7 @@ function tickBotPuller(session, bot, leaderSession, settings, Generics, BotAI, s
         // attack radius; normal assist movement can finish the engagement.
         clearPullMove(state);
         state.phase = 'engage';
-        traceEncounter(leaderSession, 'delivered', {
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) traceEncounter(leaderSession, 'delivered', {
             durationMs: Date.now() - Number(state.startedAt || Date.now())
         });
         return { handled: false, puller, target };

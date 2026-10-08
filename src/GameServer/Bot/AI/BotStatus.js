@@ -380,13 +380,13 @@ const BotStatus = {
                         : 1,
                     walking: bot.state.fetchWalkin?.() === true
                 },
-                trace: Array.isArray(session.movementTrace) ? session.movementTrace.slice(-24) : [],
+                trace: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && Array.isArray(session.movementTrace) ? session.movementTrace.slice(-24) : null,
                 stuckTicks: session.stuckTicks || 0,
                 followTarget: session.lastFollowMoveTarget || null,
                 followHeldAt: session.lastFollowMoveHeldAt || null,
                 townRoute: session.townRoutePlan || null,
                 pathfinding: session.lastPathfinding || null,
-                pathSummary: TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute),
+                pathSummary: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? TownPathfinder.describeDiagnostics(session.lastPathfinding?.townRoute) : null,
                 retreat: session.lastRetreatPlan ? {
                     threatId: session.lastRetreatPlan.threatId,
                     to: session.lastRetreatPlan.to,

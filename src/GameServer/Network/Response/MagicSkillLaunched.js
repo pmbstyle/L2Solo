@@ -15,7 +15,7 @@ function magicSkillLaunched(actor, skill, targets = []) {
     });
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${actor.fetchId()}:skill=${skill.fetchSelfId()}:level=${skill.fetchLevel?.() ?? 1}:targets=${visibleTargets.map(target => target?.fetchId?.() ?? 0).join(',')}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${actor.fetchId()}:skill=${skill.fetchSelfId()}:level=${skill.fetchLevel?.() ?? 1}:targets=${visibleTargets.map(target => target?.fetchId?.() ?? 0).join(',')}`;
     return buffer;
 }
 

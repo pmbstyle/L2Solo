@@ -201,7 +201,7 @@ async function perform(playerSession, target, source) {
 
     const Social = invoke('GameServer/Bot/AI/BotSocialMemory');
     sessions.forEach((session) => Social.recordEvent(playerSession, session, 'party_formed', source));
-    console.info('BotParty :: player %s took over party %s members=%d source=%s',
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotParty :: player %s took over party %s members=%d source=%s',
         playerSession.actor.fetchName?.() || actorId(playerSession), partyId, sessions.length, source);
     return {
         ok: true,
@@ -271,7 +271,7 @@ async function restoreAutonomousParty({ partyId, playerId, companionSessions = [
         }
     });
     refreshPartyMemberships(changedSessions, invoke);
-    console.info('BotParty :: restored autonomous party %s members=%d source=%s',
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotParty :: restored autonomous party %s members=%d source=%s',
         party.partyId, party.memberIds.length, source);
     return { ok: true, reason: 'autonomous_party_restored', party, states };
 }

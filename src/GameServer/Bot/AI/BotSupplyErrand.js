@@ -167,7 +167,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
             }
         }).catch(() => {});
     }
-    WorkflowTelemetry.recordSupply(session.companionShopping.workflowId, 'requested', {
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(session.companionShopping.workflowId, 'requested', {
         botId: bot.fetchId(),
         playerId: player.fetchId(),
         itemSelfId: selfId,
@@ -220,11 +220,11 @@ async function purchaseAtDestination(bot, errand) {
         const line = MarketOpportunity.fixedStoreOffers(errand.itemId)
             .find((offer) => offer.sourceName === errand.sourceName);
         if (!line) {
-            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'configured_store_unavailable');
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'configured_store_unavailable');
             return { ok: false, reason: 'configured_store_unavailable' };
         }
         if (Number(line.price) !== Number(errand.unitPrice)) {
-            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, price: Number(line.price) }, 'rejected', 'configured_store_price_changed');
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount, price: Number(line.price) }, 'rejected', 'configured_store_price_changed');
             return { ok: false, reason: 'configured_store_price_changed', price: Number(line.price) };
         }
     }
@@ -262,7 +262,7 @@ async function purchaseAtDestination(bot, errand) {
         }
         const bought = boardSource ? { qty: trade.amount, totalAdena: trade.totalPrice } : trade;
         if (Number(bought.qty) !== Number(errand.amount)) {
-            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
                 botId: bot.fetchId(),
                 itemSelfId: errand.itemId,
                 amount: Number(bought.qty || 0),
@@ -272,10 +272,10 @@ async function purchaseAtDestination(bot, errand) {
         }
         const item = bot.backpack?.fetchItemFromSelfId?.(Number(errand.itemId));
         if (!item) {
-            WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'purchase_inventory_sync_failed');
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', 'purchase_inventory_sync_failed');
             return { ok: false, reason: 'purchase_inventory_sync_failed' };
         }
-        WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', {
             botId: bot.fetchId(),
             itemSelfId: errand.itemId,
             amount: Number(bought.qty),
@@ -289,7 +289,7 @@ async function purchaseAtDestination(bot, errand) {
         };
     } catch (error) {
         const message = String(error?.message || error || 'purchase_failed');
-        WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', /not enough adena/i.test(message) ? 'not_enough_adena' : message);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(errand.workflowId, 'purchase', { botId: bot.fetchId(), itemSelfId: errand.itemId, amount: errand.amount }, 'failed', /not enough adena/i.test(message) ? 'not_enough_adena' : message);
         return { ok: false, reason: /not enough adena/i.test(message) ? 'not_enough_adena' : message };
     }
 }

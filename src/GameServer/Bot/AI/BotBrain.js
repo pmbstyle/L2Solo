@@ -633,12 +633,12 @@ function queueConversationWrite(session, work, metadata = {}) {
     const previous = session.lastConversationWrite || Promise.resolve();
     const persist = () => LangfuseTracing.withObservation(
         'bot.conversation.persist',
-        { botId: session?.actor?.fetchId?.() || session?.accountId || null },
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ botId: session?.actor?.fetchId?.() || session?.accountId || null }) : null,
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             botId: session?.actor?.fetchId?.() || session?.accountId || null,
             source: 'hot_dialogue',
             ...metadata
-        },
+        }) : null,
         work,
         'chain'
     );
@@ -790,16 +790,16 @@ function tracePreProviderFallback(session, requestContext, outcome, playerMessag
 
     return LangfuseTracing.withRootObservation(
         'hot-bot.dialogue',
-        {
+        (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
             event: 'player_chat',
             playerMessage: playerMessage || '',
             conversation: requestContext?.conversation || null
-        },
+        }) : null,
         metadata,
         async () => {
             const delivery = await LangfuseTracing.withObservation(
                 'bot.reply.deliver',
-                { action: 'fallback', reason: outcome || 'pre_provider_error' },
+                (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ action: 'fallback', reason: outcome || 'pre_provider_error' }) : null,
                 metadata,
                 async () => {
                     const reply = fallbackReply(session, requestContext, outcome, metadata);
@@ -813,7 +813,7 @@ function tracePreProviderFallback(session, requestContext, outcome, playerMessag
                 ok: delivery?.delivered === true,
                 applied: false,
                 reason: outcome || 'pre_provider_error',
-                traceOutput: {
+                traceOutput: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                     providerOutcome: outcome || 'pre_provider_error',
                     requestedAction: null,
                     toolOutcome: null,
@@ -821,7 +821,7 @@ function tracePreProviderFallback(session, requestContext, outcome, playerMessag
                     playerVisibleReply: delivery?.reply || null,
                     replyDelivered: delivery?.delivered === true,
                     error: failure?.message || null
-                }
+                }) : null
             };
         },
         'agent'
@@ -903,8 +903,8 @@ const BotBrain = {
         if (!admission.ok) {
             LangfuseTracing.withObservation(
                 'bot.inference.admission',
-                { event, estimatedPromptTokens },
-                {
+                (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ event, estimatedPromptTokens }) : null,
+                (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                     event,
                     source: requestContext?.source || event,
                     botId: bot.fetchId?.(),
@@ -912,7 +912,7 @@ const BotBrain = {
                     turnId: requestContext?.conversationTurn?.turnId || requestContext?.requestId || null,
                     reason: admission.reason,
                     retryAfterMs: admission.retryAfterMs || 0
-                },
+                }) : null,
                 async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
                 'chain'
             ).catch(() => {});
@@ -1085,7 +1085,7 @@ const BotBrain = {
                     };
                     return providerResult;
                 }
-                const stageMetadata = {
+                const stageMetadata = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                     event,
                     source: requestContext?.source || event,
                     channel: requestContext?.channel || null,
@@ -1094,15 +1094,15 @@ const BotBrain = {
                     turnId,
                     requestId: requestContext?.requestId || turnId,
                     sessionId: conversationSessionId(session, requestContext)
-                };
+                }) : null;
                 await LangfuseTracing.withObservation(
                     'bot.context.assemble',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         event,
                         playerMessage: text || '',
                         fragments: requestContext?.assembledContext?.telemetry?.included || [],
                         estimatedTokens: requestContext?.assembledContext?.estimatedTokens || null
-                    },
+                    }) : null,
                     stageMetadata,
                     async () => requestContext?.assembledContext || null,
                     'chain'
@@ -1110,7 +1110,7 @@ const BotBrain = {
                 const providerDecision = await requestDecision(payload, cfg, session, requestContext, visiblePlayers);
                 providerResult = await LangfuseTracing.withObservation(
                     'bot.schema.validate',
-                    { event, providerOutcome: providerDecision?.telemetry?.outcome || providerDecision?.llmTelemetry?.outcome || null },
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ event, providerOutcome: providerDecision?.telemetry?.outcome || providerDecision?.llmTelemetry?.outcome || null }) : null,
                     stageMetadata,
                     async () => validateDecisionResult(providerDecision, session),
                     'chain'
@@ -1122,13 +1122,13 @@ const BotBrain = {
                     providerResult = {
                         ...providerResult,
                         applied: false,
-                        traceOutput: {
+                        traceOutput: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                             providerOutcome: providerResult.reason || providerResult.telemetry?.outcome || 'provider_error',
                             requestedAction: null,
                             toolOutcome: null,
                             applied: false,
                             playerVisibleReply: playerVisibleReply || null
-                        }
+                        }) : null
                     };
                     return providerResult;
                 }
@@ -1136,11 +1136,11 @@ const BotBrain = {
                 recordInferenceEvent(session, event, providerResult, requestContext);
                 const actionResult = await LangfuseTracing.withObservation(
                     'bot.tool.execute',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         action: providerResult.action || null,
                         confidence: providerResult.confidence || null,
                         worldRevision: requestContext?.preparedWorldRevision || null
-                    },
+                    }) : null,
                     stageMetadata,
                     async () => applyDecision(session, providerResult, visiblePlayers, requestContext),
                     'tool'
@@ -1150,12 +1150,12 @@ const BotBrain = {
                     (!actionResult.applied ? BotAgentTools.rejectionReply(actionResult) : null);
                 await LangfuseTracing.withObservation(
                     'bot.reply.deliver',
-                    {
+                    (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         action: providerResult.action || null,
                         reply: playerVisibleReply,
                         applied: actionResult.applied === true,
                         delivered: actionResult.replyDelivered === true
-                    },
+                    }) : null,
                     stageMetadata,
                     async () => playerVisibleReply,
                     'chain'
@@ -1165,7 +1165,7 @@ const BotBrain = {
                     applied: actionResult.applied === true && actionResult.outcome !== 'pending',
                     toolApplied: actionResult.applied === true,
                     actionResult: compactActionResult(actionResult),
-                    traceOutput: {
+                    traceOutput: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                         providerOutcome: providerResult.llmTelemetry?.outcome || providerResult.telemetry?.outcome || 'success',
                         requestedAction: providerResult.action || null,
                         toolOutcome: compactActionResult(actionResult),
@@ -1173,7 +1173,7 @@ const BotBrain = {
                         toolApplied: actionResult.applied === true,
                         playerVisibleReply,
                         replyDelivered: actionResult.replyDelivered === true
-                    }
+                    }) : null
                 };
                 return providerResult;
             } catch (err) {
@@ -1185,13 +1185,13 @@ const BotBrain = {
                 recordInferenceEvent(session, event, providerResult, requestContext);
                 utils.infoWarn('BotBrain', 'decision request failed for %s: %s', bot.fetchName(), err.message);
                 const playerVisibleReply = fallbackReply(session, requestContext, 'provider_error');
-                providerResult.traceOutput = {
+                providerResult.traceOutput = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                     providerOutcome: 'provider_error',
                     requestedAction: null,
                     toolOutcome: null,
                     applied: false,
                     playerVisibleReply: playerVisibleReply || null
-                };
+                }) : null;
                 return providerResult;
             } finally {
                 finishTurn();
@@ -1200,7 +1200,7 @@ const BotBrain = {
         LangfuseTracing.withRootObservation(
             'hot-bot.dialogue',
             payload,
-            {
+            (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
                 event,
                 botId: bot.fetchId?.(),
                 playerId: requestContext?.playerSession?.actor?.fetchId?.() || requestContext?.playerId || null,
@@ -1211,7 +1211,7 @@ const BotBrain = {
                 queueWaitMs: requestContext?.enqueuedAt
                     ? Math.max(0, Date.now() - requestContext.enqueuedAt)
                     : 0
-            },
+            }) : null,
             runTurn,
             'agent'
         ).catch((error) => {

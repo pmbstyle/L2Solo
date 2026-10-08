@@ -9,7 +9,7 @@ function pledgeInfo(clan) {
         .writeS(String(clan?.allyName || ''));
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `clan=${Number(clan?.id || 0)}:${String(clan?.name || '')}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `clan=${Number(clan?.id || 0)}:${String(clan?.name || '')}`;
     return buffer;
 }
 

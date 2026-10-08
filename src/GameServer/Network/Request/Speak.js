@@ -18,7 +18,7 @@ function expandBotCommandAlias(text) {
 }
 
 function logPlayerChat(session, data) {
-    if (PopulationConfig.devLogPlayerChat === false) return;
+    if (PopulationConfig.developerDiagnostics !== true || PopulationConfig.devLogPlayerChat === false) return;
     if (!session?.actor || String(session.accountId || '').startsWith('bot_')) return;
 
     const name = session.actor.fetchName ? session.actor.fetchName() : session.accountId || 'unknown';

@@ -13,7 +13,7 @@ function moveToLocation(actorId, coords) {
         .writeD(coords.from.locZ);
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${actorId}:from=${coords.from.locX},${coords.from.locY},${coords.from.locZ}:to=${coords.to.locX},${coords.to.locY},${coords.to.locZ}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${actorId}:from=${coords.from.locX},${coords.from.locY},${coords.from.locZ}:to=${coords.to.locX},${coords.to.locY},${coords.to.locZ}`;
     return buffer;
 }
 

@@ -10,7 +10,7 @@ function pledgeCrest(crestId, data) {
         .writeB(bytes);
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `crest=${Number(crestId) || 0}:bytes=${bytes.length}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `crest=${Number(crestId) || 0}:bytes=${bytes.length}`;
     return buffer;
 }
 

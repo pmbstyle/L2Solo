@@ -143,7 +143,7 @@ function config(overrides = {}) {
             optn.maxConcurrentRequests,
             DEFAULTS.maxConcurrentRequests
         ))),
-        debug: bool(optn.debug, DEFAULTS.debug)
+        debug: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && bool(optn.debug, DEFAULTS.debug)
     };
 
     return {
@@ -186,7 +186,7 @@ function config(overrides = {}) {
             num(overrides.circuitBreakerFailureThreshold, source.circuitBreakerFailureThreshold)
         ),
         circuitBreakerOpenMs: Math.max(0, num(overrides.circuitBreakerOpenMs, source.circuitBreakerOpenMs)),
-        debug: bool(overrides.debug, source.debug)
+        debug: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && bool(overrides.debug, source.debug)
     };
 }
 
@@ -672,13 +672,13 @@ async function requestUntraced(spec = {}) {
 }
 
 async function request(spec = {}) {
-    const input = {
+    const input = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? {
         messages: spec.messages || [],
         responseSchema: spec.responseSchema?.name || null,
         model: spec.config?.model || config().model,
         interactive: spec.interactive === true
-    };
-    const metadata = {
+    } : null;
+    const metadata = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? {
         requestId: spec.requestId || null,
         sessionId: spec.sessionId || null,
         circuitKey: spec.circuitKey || null,
@@ -687,7 +687,7 @@ async function request(spec = {}) {
         botId: spec.botId || null,
         playerId: spec.playerId || null,
         turnId: spec.turnId || null
-    };
+    } : null;
     return LangfuseTracing.withObservation(
         'openrouter.generation',
         input,
