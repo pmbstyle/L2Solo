@@ -24,6 +24,14 @@ function stationForRecipe(recipeId, state = null) {
     const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);
     if (combination) return combination.station;
     const provider = state?.stats?.equipmentPlan?.craftProviders?.[recipeId];
+    if (provider?.workshop) {
+        const selected = Workshops.lookup(provider.characterId, recipeId, state);
+        if (!selected || Number(selected.state.simulation?.revision || 0) !== Number(provider.revision)
+            || Number(selected.price) !== Number(provider.price)) return null;
+        return { id: `workshop_${provider.characterId}`, characterId: provider.characterId,
+            loc: selected.state.loc, townName: selected.state.currentRegion, workshop: true,
+            recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice, revision: provider.revision };
+    }
     if (provider && state.stats.equipmentPlan.clanGoal?.clanId
         && (!Production.buyersDisabled() || state.stats.equipmentPlan.clanGoal.orderId)) return {
         id: `clan_crafter_${provider.characterId}`, characterId: provider.characterId,
@@ -45,7 +53,7 @@ function componentFor(state, selfId) {
 
 function recipeForState(state, recipe) {
     const provider = state?.stats?.equipmentPlan?.craftProviders?.[recipe?.recipeId];
-    if (!recipe || !provider || provider.known) return recipe;
+    if (!recipe || !provider || provider.known || provider.workshop) return recipe;
     const materials = recipe.materials.map(row => ({ ...row }));
     const scroll = materials.find(row => Number(row.selfId) === Number(recipe.recipeItemId));
     if (scroll) scroll.amount += 1;
@@ -125,10 +133,7 @@ function materialRows(items, recipe, multiplier = 1) {
 }
 
 function hasNonSupplementalMaterials(items, recipe, multiplier = 1) {
-    return (recipe?.materials || []).every((material) => {
-        const row = (items || []).find((item) => Number(item.selfId) === Number(material.selfId));
-        return Number(row?.amount || 0) >= Number(material.amount || 0) * Number(multiplier || 1);
-    });
+    return Profit.craftableBatches(items, recipe, multiplier) >= multiplier;
 }
 
 async function supplementMaterials(characterId, items) {
@@ -145,16 +150,14 @@ function refreshPhysicalInventory(state) {
 }
 
 function craftableBatchCount(items, recipe, requested = 1) {
-    return (recipe?.materials || []).reduce((count, material) => {
-        const owned = Number((items || []).find((item) => Number(item.selfId) === Number(material.selfId))?.amount || 0);
-        return Math.min(count, Math.floor(owned / Math.max(1, Number(material.amount || 1))));
-    }, Math.max(1, Number(requested || 1)));
+    return Profit.craftableBatches(items, recipe, requested);
 }
 
 function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, visited = new Set()) {
     if (!finalRecipe || !recipe || visited.has(Number(finalRecipe.recipeId))) return 1;
-    const desired = requestedOutput === null ? Math.max(1, Number(finalRecipe.productCount || 1)) : Math.max(0, Number(requestedOutput || 0));
-    const crafts = Math.ceil(desired / Math.max(1, Number(finalRecipe.productCount || 1)));
+    const desired = requestedOutput === null ? Math.max(1, Number(state?.stats?.equipmentPlan?.outputAmount || finalRecipe.productCount || 1)) : Math.max(0, Number(requestedOutput || 0));
+    const crafts = Profit.batchesFor(finalRecipe, desired);
+    if (crafts === null) return 0;
     if (Number(finalRecipe.recipeId) === Number(recipe.recipeId)) return Math.max(1, crafts);
     const nextVisited = new Set(visited).add(Number(finalRecipe.recipeId));
     for (const material of finalRecipe.materials || []) {
@@ -284,8 +287,8 @@ async function craft(state, random = Math.random) {
 
     const componentCraft = Number(recipe.recipeId) !== Number(finalRecipe?.recipeId);
     const customerItems = await Database.fetchItems(state.characterId);
-    const requestedBatch = componentCraft && !learning ? requiredCraftCount(finalRecipe, recipe, state) : 1;
-    const materialBatch = componentCraft ? craftableBatchCount(customerItems, recipe, requestedBatch) : 1;
+    const requestedBatch = !learning ? requiredCraftCount(finalRecipe, recipe, state) : 1;
+    const materialBatch = craftableBatchCount(customerItems, recipe, Math.min(64, requestedBatch));
     const batchCount = station.clan || station.workshop ? Math.min(materialBatch, Math.floor(crafterMp / Math.max(1, Number(recipe.mpCost)))) : materialBatch;
     if (!batchCount || !hasNonSupplementalMaterials(customerItems, recipe, batchCount)) {
         const reconciled = await refreshPhysicalInventory(state);

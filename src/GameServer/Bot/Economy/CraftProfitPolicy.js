@@ -62,17 +62,40 @@ function inputValue(id, state, context = {}) {
     return Number.isFinite(price) && price > 0 ? price
         : invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id);
 }
-function materials(items, recipe, batches = 1) {
+function requirements(recipe, batches = 1) {
     if (!Number.isSafeInteger(batches) || batches < 1 || batches > 64) return null;
     const required = new Map();
-    for (const input of recipe.materials || []) {
-        const id = Number(input.selfId);
-        const amount = Number(input.amount) * batches;
+    for (const input of recipe?.materials || []) {
+        const id = Number(input.selfId), amount = Number(input.amount) * batches;
         if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(amount) || amount < 1) return null;
         const total = Number(required.get(id) || 0) + amount;
         if (!Number.isSafeInteger(total)) return null;
         required.set(id, total);
     }
+    return required;
+}
+function batchesFor(recipe, output) {
+    const count = Number(recipe?.productCount || 1);
+    if (!Number.isSafeInteger(output) || output < 0 || !Number.isSafeInteger(count) || count <= 0) return null;
+    const batches = Math.ceil(output / count);
+    return Number.isSafeInteger(batches) ? batches : null;
+}
+function craftableBatches(items, recipe, requested = 1) {
+    const required = requirements(recipe), amounts = new Map(), seen = new Set();
+    if (!required || !Number.isSafeInteger(requested) || requested < 1) return 0;
+    for (const item of items || []) {
+        const identity = Number.isSafeInteger(Number(item.id)) && Number(item.id) > 0 ? Number(item.id) : item;
+        if (item.equipped || item.protected || !required.has(Number(item.selfId)) || seen.has(identity)) continue;
+        seen.add(identity);
+        amounts.set(Number(item.selfId), (amounts.get(Number(item.selfId)) || 0) + Number(item.amount || 0));
+    }
+    let count = requested;
+    for (const [id, amount] of required) count = Math.min(count, Math.floor((amounts.get(id) || 0) / amount));
+    return count;
+}
+function materials(items, recipe, batches = 1) {
+    const required = requirements(recipe, batches);
+    if (!required) return null;
     const byItem = new Map(), physical = new Set();
     for (const item of items || []) {
         const id = Number(item.id), selfId = Number(item.selfId), amount = Number(item.amount);
@@ -100,5 +123,5 @@ function materials(items, recipe, batches = 1) {
 function succeeds(recipe, random = Math.random) {
     return Number(recipe.successRate) >= 100 || Number(random()) * 100 < Number(recipe.successRate);
 }
-module.exports = { revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
+module.exports = { requirements, batchesFor, craftableBatches, revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
     mpHours, successProbability, craftOutcomes };

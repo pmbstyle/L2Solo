@@ -237,6 +237,22 @@ async function verifyAuthoredPhysicalCraft() {
             assert.strictEqual(workshopDuplicate.crafted, false);
             assert.strictEqual(workshopDuplicate.reason, 'not_ready');
             assert.deepStrictEqual(await image(workshopIds), workshopDuplicateBefore);
+            const currentStation = ColdCraftingService.stationForRecipe(recipe.recipeId, workshopSettled);
+            const batchCustomer = await seed('bot_workshop_batch_customer', 'WorkshopBatchBuyer', 0, 40,
+                [item(57, 1000000), ...[...inputs].map(([id, amount]) => item(id, amount * 2))], {
+                    equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: recipe.recipeId,
+                        outputAmount: recipe.productCount * 2, target: { selfId: recipe.productId },
+                        craftProviders: { [recipe.recipeId]: { ...currentStation, known: false } } }
+                });
+            await Database.execute(['UPDATE characters SET locX=0,locY=0 WHERE id=?', [batchCustomer.characterId]]);
+            const batchResult = await ColdCraftingService.craft(batchCustomer, () => 0);
+            assert.equal(batchResult.crafted, true, 'fighter uses the agreed dwarf without learning his recipe');
+            assert.equal(batchResult.batchCount, 2, 'final own-use execution respects requested output');
+            assert.equal(held(await Database.fetchItems(batchCustomer.characterId), recipe.productId), recipe.productCount * 2);
+            assert.equal((await Database.fetchCharacterRecipes(batchCustomer.characterId)).length, 0);
+            assert.equal(batchResult.state.adena, 1000000 - currentStation.price * 2);
+            assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, batchCustomer), null,
+                'changed agreed workshop revision never silently selects a different dwarf');
             console.log('Native paid workshop conservation:', JSON.stringify({
                 recipeId: recipe.recipeId,
                 fee: selectedWorkshop.price,

@@ -7739,7 +7739,8 @@ const Database = {
                     || !rules.canCraft({ classId: workshopCrafter.classId, level: workshopCrafter.characterLevel }, recipe)
                     || !one('SELECT recipeId FROM character_recipes WHERE characterId = ? AND recipeId = ?', [crafterId, recipe.recipeId])
                     || Number(workshopCrafter.mp) < Number(recipe.mpCost) * batches
-                    || Math.hypot(Number(customer.physicalX) - Number(workshopCrafter.locX), Number(customer.physicalY) - Number(workshopCrafter.locY)) > 1200) {
+                    || Math.hypot(Number(customer.phase === 'cold' ? customer.locX : customer.physicalX) - Number(workshopCrafter.locX),
+                        Number(customer.phase === 'cold' ? customer.locY : customer.physicalY) - Number(workshopCrafter.locY)) > 1200) {
                     throw new Error('workshop unavailable');
                 }
                 const stateOf = row => ({ characterId: Number(row.characterId), clanId: Number(row.clanId),

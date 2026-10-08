@@ -219,9 +219,7 @@ function buildProjection(state, ctx, deps) {
         if (recipe && (recipe.kind === 'dual_sword_combine'
             || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe))
             && nodes.length + recipe.materials.length < 36) {
-            const combined = new Map();
-            for (const material of recipe.materials) combined.set(Number(material.selfId),
-                (combined.get(Number(material.selfId)) || 0) + Number(material.amount));
+            const combined = require('./CraftProfitPolicy').requirements(recipe) || new Map();
             const freeAmount = require('./WealthCraftDecision').freeAmount;
             const requirements = [];
             let ownInputOpportunityValue = 0;

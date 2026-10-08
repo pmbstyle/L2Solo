@@ -47,6 +47,7 @@ const network = load('WishNetwork.js', name => {
     throw Error(name);
 });
 const provider = load('WishProviders.js', name => {
+    if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('BoardIndex')) return { SELL: 1 };

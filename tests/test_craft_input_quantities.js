@@ -1,0 +1,16 @@
+'use strict';
+const assert = require('node:assert/strict');
+const Profit = require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
+const recipe = { productCount: 2, materials: [{ selfId: 202, amount: 6 }, { selfId: 202, amount: 4 }] };
+assert.equal(Profit.batchesFor(recipe, 5), 3);
+assert.deepEqual([...Profit.requirements(recipe, 3)], [[202, 30]]);
+assert.equal(Profit.batchesFor(recipe, 129), 65, 'demand may need multiple native attempts');
+assert.equal(Profit.requirements(recipe, 65), null, 'one native attempt remains bounded');
+const items = [{ id: 1, selfId: 202, amount: 6 }, { id: 2, selfId: 202, amount: 24 }];
+assert.equal(Profit.craftableBatches(items, recipe, 3), 3, 'split physical stacks supply complete batches');
+assert.equal(Profit.craftableBatches([items[0], items[0]], recipe, 3), 0, 'repeated object identity is not another stack');
+assert.equal(Profit.craftableBatches([{ ...items[1], equipped: true }, items[0]], recipe, 3), 0);
+assert.equal(Profit.craftableBatches([{ ...items[1], protected: true }, items[0]], recipe, 3), 0);
+assert.deepEqual(Profit.materials(items, recipe, 3), [{ id: 1, selfId: 202, amount: 6 }, { id: 2, selfId: 202, amount: 24 }]);
+assert.equal(Profit.materials([{ ...items[1], amount: 23 }, items[0]], recipe, 3), null, 'one missing material refuses the entire native batch');
+console.log('Shared recipe batches: output rounding, repeated inputs, split stacks, protection and native limit passed');
