@@ -34,6 +34,7 @@ const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
+const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 
 const ColdTrip = require('./ColdTrip');
 // Private main-thread provenance survives the queue's shallow clone but is
@@ -565,6 +566,12 @@ class ColdSimulationCoordinator {
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber() });
+                this.stopDiagnosticSelection?.();
+                this.stopDiagnosticSelection = Config.developerDiagnostics && Config.economyDiagnostics
+                    ? EconomyDiagnostics.followSelection(ownerIds => {
+                        if (!this.stopping && this.worker === worker && this.workerEpoch === epoch)
+                            worker.postMessage({ type: 'economy_diagnostics_selection', epoch, ownerIds });
+                    }) : null;
                 try {
                     this.attachTableChannel();
                 } catch (error) {
@@ -671,7 +678,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             developerDiagnostics: Config.developerDiagnostics === true,
-            ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: Config.economyDiagnosticsBotIds } : {}),
+            ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: EconomyDiagnostics.ownerIds() } : {}),
             coldHonestTravel: Config.coldHonestTravel,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
@@ -1025,6 +1032,7 @@ class ColdSimulationCoordinator {
     }
 
     snapshotEntry(state, index = this.contextIndex()) {
+        if (Config.developerDiagnostics && Config.economyDiagnostics) EconomyDiagnostics.enabled(state.characterId);
         return { state, context: this.contextFor(state, index) };
     }
 
@@ -2184,6 +2192,8 @@ class ColdSimulationCoordinator {
 
     onWorkerExit(code, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        this.stopDiagnosticSelection?.();
+        this.stopDiagnosticSelection = null;
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         Metrics.clearColdSafetyEpoch(epoch);
@@ -2228,6 +2238,8 @@ class ColdSimulationCoordinator {
         // Fence posted continuations before cancellation, early returns or any
         // drain await. A stopped same-epoch recipient cannot be rearmed.
         this.tableChannel.stopActorRecipient?.(this, epoch);
+        this.stopDiagnosticSelection?.();
+        this.stopDiagnosticSelection = null;
         this.cancelLeaseRenewalRound();
         this.cancelSafety();
         this.projectionRetention.reset();

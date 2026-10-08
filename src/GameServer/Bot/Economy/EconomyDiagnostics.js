@@ -18,6 +18,7 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
     capacity = Math.min(thread === 'main' ? LIMITS.mainRecords : LIMITS.workerRecords, Math.max(1, capacity));
     let rows = null, bytes = 0, selected = null, explicit = null, selectionKey = null;
     let counters = null, durations = null, transport = null, inFlight = null;
+    let selectionListener = null;
     let seq = 0, second = -1, rate = 0, dropped = 0, written = 0, offered = 0, sent = 0, batches = 0, attemptedBatches = 0, sentBytes = 0;
     let drops = null;
     const active = () => config.developerDiagnostics === true;
@@ -44,18 +45,45 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
         dropped += amount; drops ||= { rate: 0, queue: 0, size: 0, transport: 0, writer: 0, invalid: 0, stop: 0, upstream: 0, admission: 0 };
         drops[reason] += amount;
     }
-    function enabled(id) {
-        if (!detail() || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) return false;
+    function refreshSelection() {
         const key = String(config.economyDiagnosticsBotIds || '').slice(0, 512);
         if (selectionKey !== key) {
             selectionKey = key; selected = new Set(); explicit = key.trim() ? new Set(key.split(',').slice(0, LIMITS.owners)
                 .map(Number).filter(value => Number.isSafeInteger(value) && value > 0)) : null;
         }
+    }
+    function ownerIds() {
+        if (!detail()) return '0';
+        refreshSelection();
+        return [...(explicit || selected)].join(',') || '0';
+    }
+    function followSelection(listener) {
+        if (!detail() || thread !== 'main') return () => {};
+        selectionListener = listener;
+        return () => { if (selectionListener === listener) selectionListener = null; };
+    }
+    function useSelection(value) {
+        if (!detail() || thread === 'main' || typeof value !== 'string' || value.length > 512) return false;
+        const parts = value.split(',');
+        if (value !== '0' && (parts.length > LIMITS.owners || parts.some(part =>
+            !/^[1-9][0-9]*$/.test(part) || !Number.isSafeInteger(Number(part))))) return false;
+        config.economyDiagnosticsBotIds = value;
+        refreshSelection();
+        return true;
+    }
+    function enabled(id) {
+        if (!detail() || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) return false;
+        refreshSelection();
         id = Number(id);
         if (explicit) return explicit.has(id);
+        if (thread !== 'main') return false;
         if (selected.has(id)) return true;
         if (selected.size === LIMITS.owners || ((Math.imul(id, 2654435761) >>> 0) % 64) !== 0) return false;
-        selected.add(id); return true;
+        selected.add(id);
+        // Main alone owns automatic selection. At most sixteen additions per
+        // sample lifetime; new-world births use the existing snapshot path.
+        try { selectionListener?.(ownerIds()); } catch { /* Diagnostic control cannot fail gameplay. */ }
+        return true;
     }
     function pump() {
         if (!detail() || !transport || inFlight || !rows?.length) return;
@@ -78,7 +106,10 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
     }
     function enqueue(input, imported = false) {
         if (!detail()) return false;
-        if (!enabled(input?.owner)) return false;
+        if (imported) {
+            refreshSelection();
+            if (!(explicit || selected).has(Number(input?.owner))) return false;
+        } else if (!enabled(input?.owner)) return false;
         offered++;
         const timestamp = now(), bucket = Math.floor(timestamp / 1000);
         if (second !== bucket) { second = bucket; rate = 0; }
@@ -113,7 +144,7 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
     }
     function disconnect() { if (inFlight) lose('transport', inFlight.count); inFlight = null; transport = null; }
     function stop() { disconnect(); if (rows?.length) lose('stop', rows.length); rows = null; bytes = 0;
-        selected = null; explicit = null; selectionKey = null; counters = null; durations = null; drops = null; }
+        selected = null; explicit = null; selectionKey = null; selectionListener = null; counters = null; durations = null; drops = null; }
     function omitAggregatesOnOverflow(message, reason) {
         if (!active() || reason !== 'message_too_large' || message?.type !== 'heartbeat'
             || !Object.hasOwn(message.payload || {}, 'developerDiagnostics')) return false;
@@ -137,7 +168,7 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
                 { count: row.count, totalMs: row.totalMs, maxMs: row.maxMs, samples: row.samples.slice() }])) : {},
             detail: stats() };
     }
-    return { active, enabled, push, accept, ack, disconnect, stop, count, duration, metrics, stats, omitAggregatesOnOverflow,
+    return { active, enabled, ownerIds, followSelection, useSelection, push, accept, ack, disconnect, stop, count, duration, metrics, stats, omitAggregatesOnOverflow,
         noteDropped(amount) { if (active() && Number.isSafeInteger(amount) && amount > 0) lose('upstream', amount); },
         connect(send) { if (!detail()) return false; transport = send; pump(); return true; } };
 }

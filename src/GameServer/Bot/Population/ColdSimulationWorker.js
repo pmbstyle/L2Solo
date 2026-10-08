@@ -979,6 +979,11 @@ async function handle(message) {
 }
 
 parentPort.on('message', (message) => {
+    if (message?.type === 'economy_diagnostics_selection') {
+        if (Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch)
+            economyDiagnostics.useSelection(message.ownerIds);
+        return;
+    }
     if (message?.type === 'economy_diagnostics_ack' && Config.economyDiagnostics && message.epoch === epoch) {
         economyDiagnostics.ack(message.id, message.accepted); return;
     }
