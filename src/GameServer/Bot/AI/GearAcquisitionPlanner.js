@@ -19,7 +19,7 @@ const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementM
 // sourceCache still shares the plain result until that decision returns.
 const MAX_RESOLVED_SOURCE_CACHE = 128;
 const MAX_SOURCE_YIELDS = 16384;
-let sourceIndexCache = { spots: null, rewards: null, byItemId: new Map(), resolved: new Map(), yields: new Map() };
+let sourceIndexCache = { spots: null, rewards: null, npcs: null, byItemId: new Map(), resolved: new Map(), yields: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
@@ -1818,30 +1818,67 @@ function replacementPlanFor(state = {}, previousPlan = {}, spots = [], options =
 // each call) must not evict the index built for the real spot list: the
 // cache holds one list, and the next wish review would rebuild it in full.
 const NO_SOURCES = new Map();
+// Static NPC metadata is shared across selections. Replacing either catalog
+// releases the previous atlas; it never retains actors, clans or selected spots.
+let sourceRewardAtlas = { rewards: null, npcs: null, byNpc: new Map(), byName: new Map() };
+function sourceRewardAtlasFor(rewards, npcs) {
+    if (sourceRewardAtlas.rewards === rewards && sourceRewardAtlas.npcs === npcs) return sourceRewardAtlas;
+    const byNpc = new Map();
+    const byName = new Map();
+    const append = (index, key, row) => {
+        const rows = index.get(key) || [];
+        rows.push(row);
+        index.set(key, rows);
+    };
+    rewards.forEach((reward, ordinal) => {
+        const npc = ItemTemplateIndex.find(npcs, reward.selfId);
+        const row = { reward, ordinal, npcLevel: Number(npc?.template?.level || 0),
+            protectedRaid: BotRaidSafety.isProtectedRaidEntity(npc) };
+        append(byNpc, Number(reward.selfId), row);
+        append(byName, String(reward.template?.name || '').trim().toLowerCase(), row);
+    });
+    sourceRewardAtlas = { rewards, npcs, byNpc, byName };
+    return sourceRewardAtlas;
+}
 function sourceIndexFor(spots = []) {
     if (!spots?.length) return NO_SOURCES;
     const rewards = DataCache.npcRewards || [];
-    if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards) {
+    const npcs = DataCache.npcs;
+    if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards && sourceIndexCache.npcs === npcs) {
         return sourceIndexCache.byItemId;
     }
 
+    const atlas = sourceRewardAtlasFor(rewards, npcs);
+    const selectedRewards = new Set();
     const spotByNpc = new Map();
     const spotByName = new Map();
-    // Counts belong to the immutable source atlas, not to each bot review.
+    // Counts and raid decorations belong to this current selection.
     // This scratch index dies after construction; records retain two numbers.
     const spotCounts = new Map();
     const appendSpot = (index, key, spot) => {
         if (!key || !spot) return;
-        const existing = index.get(key) || [];
-        if (!existing.some((candidate) => candidate.id === spot.id)) existing.push(spot);
+        const existing = index.get(key) || new Map();
+        if (!existing.has(spot.id)) existing.set(spot.id, spot);
         index.set(key, existing);
     };
     (spots || []).forEach((spot) => {
         let total = 0;
         const byNpc = new Map();
         for (const entry of spot.npcEntries || []) {
-            if (entry.selfId) appendSpot(spotByNpc, Number(entry.selfId), spot);
-            if (entry.name) appendSpot(spotByName, String(entry.name).trim().toLowerCase(), spot);
+            if (entry.selfId) {
+                const npcId = Number(entry.selfId);
+                if (npcId && !spotByNpc.has(npcId)) {
+                    for (const row of atlas.byNpc.get(npcId) || []) selectedRewards.add(row);
+                }
+                appendSpot(spotByNpc, npcId, spot);
+            }
+            if (entry.name) {
+                const name = String(entry.name).trim().toLowerCase();
+                if (name && !spotByName.has(name)) {
+                    for (const row of atlas.byName.get(name) || []) selectedRewards.add(row);
+                }
+                appendSpot(spotByName, name, spot);
+            }
             const count = Math.max(1, Number(entry.count || 1));
             const npcId = Number(entry.selfId);
             total += count;
@@ -1852,12 +1889,16 @@ function sourceIndexFor(spots = []) {
     });
 
     const byItemId = new Map();
-    rewards.forEach((reward) => {
-        const protectedRaid = BotRaidSafety.isProtectedRaidEntity(ItemTemplateIndex.find(DataCache.npcs, reward.selfId));
+    // Scratch sets replace scans of each growing item's source list. A repeated
+    // reward object/spot/kind keeps its first record, as before; all joins die
+    // after construction, leaving only the current selected view.
+    const recordsByReward = new Map();
+    // Union ID/name matches, retaining original reward order for ties and aliases.
+    [...selectedRewards].sort((left, right) => left.ordinal - right.ordinal).forEach(({ reward, npcLevel, protectedRaid }) => {
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
-        ].map((spot) => [spot.id, spot])).values()];
+        ]).values()];
         if (!spotsForNpc.length) return;
         // Only the explicit raid-source atlas may opt a protected NPC into
         // equipment planning. Mentioning that NPC in an ordinary spot never
@@ -1873,29 +1914,38 @@ function sourceIndexFor(spots = []) {
         ].flatMap(([kind, groups]) => groups.flatMap((group) => (
             (group.items || []).map((item) => ({ id: Number(item.selfId || 0), kind })).filter((item) => item.id)
         )));
-        const npcLevel = Number(ItemTemplateIndex.find(DataCache.npcs, reward.selfId)?.template?.level || 0);
         eligibleSpots.forEach((spot) => {
             // The same NPC/spot/kind serves many items. Its immutable index
             // record is shared rather than copied into every item's list.
-            const records = new Map();
+            let recordsBySpot = recordsByReward.get(reward);
+            if (!recordsBySpot) {
+                recordsBySpot = new Map();
+                recordsByReward.set(reward, recordsBySpot);
+            }
+            let records = recordsBySpot.get(spot.id);
+            if (!records) {
+                records = new Map();
+                recordsBySpot.set(spot.id, records);
+            }
             itemKinds.forEach(({ id, kind }) => {
-                const entries = byItemId.get(id) || [];
-                if (!entries.some((entry) => entry.reward === reward && entry.spot.id === spot.id && entry.kind === kind)) {
-                    let record = records.get(kind);
-                    if (!record) {
-                        const counts = spotCounts.get(spot);
-                        record = { reward, spot, kind, npcLevel, totalCount: counts.total,
-                            sourceCount: counts.byNpc.get(Number(reward.selfId)) ?? 0 };
-                        records.set(kind, record);
-                    }
-                    entries.push(record);
+                let entry = records.get(kind);
+                if (!entry) {
+                    const counts = spotCounts.get(spot);
+                    const record = { reward, spot, kind, npcLevel, totalCount: counts.total,
+                        sourceCount: counts.byNpc.get(Number(reward.selfId)) ?? 0 };
+                    entry = { record, itemIds: new Set() };
+                    records.set(kind, entry);
                 }
+                if (entry.itemIds.has(id)) return;
+                entry.itemIds.add(id);
+                const entries = byItemId.get(id) || [];
+                entries.push(entry.record);
                 byItemId.set(id, entries);
             });
         });
     });
 
-    sourceIndexCache = { spots, rewards, byItemId, resolved: new Map(), yields: new Map() };
+    sourceIndexCache = { spots, rewards, npcs, byItemId, resolved: new Map(), yields: new Map() };
     return byItemId;
 }
 
