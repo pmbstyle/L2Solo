@@ -130,6 +130,32 @@ async function main() {
     assert.deepEqual(shown, Array.from({ length: 24 }, (_, i) => i + 1), 'HTML-size cuts continue at the first unseen row');
     afk.itemName = originalName;
 
+    let selectedAmount = 1, cancelled = 0;
+    const meetingWindow = Window.create({ afk: () => afk, workshops: () => workshop, response: () => response,
+        townOf: () => 'Giran', service: () => ({ entries: () => ({ available: true, entries: [] }),
+            answer: async (target, request) => {
+                selectedAmount = request.amount ?? 1;
+                target.playerBoardPreparation = { ...request, amount: selectedAmount };
+                return { ok: true, action: 'confirm_trade', ownerName: 'Kerrigan', side: SELL,
+                    amount: selectedAmount, selfId: 1864, town: 'Giran', total: selectedAmount * 18 };
+            }, cancel: async () => { cancelled++; } }) });
+    await meetingWindow.answer(session, { kind: 'sell_ad', id: 3 });
+    assert.match(packets.at(-1), /edit var="board_quantity"/);
+    assert.match(packets.at(-1), /board quantity \$board_quantity/);
+    await meetingWindow.handle(session, ['board', 'quantity', '7']);
+    assert.equal(selectedAmount, 7); assert.match(htmlVisible(packets.at(-1)), /Buy 7 Coal for 126 a/);
+    await meetingWindow.handle(session, ['board', 'quantity', '0']); assert.equal(selectedAmount, 7);
+    session.tradeMeetingPresence = { id: 7 };
+    assert.match(meetingWindow.show(session), /board cancel/);
+    await meetingWindow.handle(session, ['board', 'cancel']); assert.equal(cancelled, 1);
+    session.tradeMeetingPresence = undefined;
+    meetingWindow.meetingResult(session, { id: 7, state: 'completed' });
+    assert.match(htmlVisible(packets.at(-1)), /Trade completed/);
+    const delivered = packets.length;
+    meetingWindow.meetingResult(session, { id: 7, state: 'completed' }); assert.equal(packets.length, delivered);
+    meetingWindow.meetingResult(session, { id: 8, state: 'cancelled' });
+    assert.match(htmlVisible(packets.at(-1)), /Trade cancelled/);
+
     const defaultShow = Window.show;
     const ActorGenerics = invoke(path.actor), originalAdmin = ActorGenerics.adminPanel;
     const Config = invoke('GameServer/Bot/Population/PopulationConfig'), oldChatLog = Config.devLogPlayerChat;

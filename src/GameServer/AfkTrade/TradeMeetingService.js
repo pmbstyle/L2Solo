@@ -21,6 +21,10 @@ async function syncActors(row) {
             locX: row.locX, locY: row.locY, locZ: row.locZ, present: null } : undefined;
         if (row.state !== 'accepted') session.meetingTravel = undefined;
         await afk().syncOnlineInventory(id, await db().fetchItems(id));
+        if (!life().cachedState(id) && row.state !== 'accepted') {
+            try { require('./PlayerBoardWindow').meetingResult(session, row); }
+            catch (error) { utils.infoWarn('AfkTrade', 'meeting status presentation: %s', error.message); }
+        }
     }
 }
 function stage(request) {
@@ -106,6 +110,13 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         town: record.town, point, parties, lines: [{ payer: buyerSide, itemId: source.id, selfId: itemId,
             enchant: line.enchant || 0, count: amount, price: line.price, needAdId: needAd?.id || 0, needAdRevision: needAd?.revision || 0, adId: record.id, adRevision: record.revision, certificate }] };
     return { preparationId: stage(request), town: record.town, point, amount, price: line.price, total: amount * line.price };
+}
+async function cancel(characterId) {
+    const row = await db().fetchTradeMeetingForOwner(Number(characterId));
+    if (!row) return { ok: true, cancelled: false };
+    const result = await db().cancelTradeMeeting(row.id, 'explicit_cancel');
+    acceptRows(result); wake(row.actorA); wake(row.actorB);
+    return { ok: true, cancelled: result.meeting.state === 'cancelled' };
 }
 async function trade(characterId, store, itemId, amount, options) {
     const prepared = await prepareTrade(characterId, store, itemId, amount, options);
@@ -249,5 +260,5 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, accept, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { stage, discard, accept, cancel, prepareTrade, trade, wake, init, reset, presenceChanged,
     counters: () => ({ preparations: staged.size, pages, bytes: [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

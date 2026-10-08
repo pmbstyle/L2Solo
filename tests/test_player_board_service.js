@@ -62,6 +62,9 @@ async function main() {
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'agreed');
     assert.equal(agreements, 1); assert.equal(player.playerBoardPreparation, undefined);
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
+    assert.equal((await service.answer(player, { ...conditional, amount: 0 })).reason, 'record_changed');
+    assert.equal((await service.answer(player, { ...conditional, amount: 11 })).reason, 'record_changed');
+    assert.equal((await service.answer(player, { ...conditional, amount: 1.5 })).reason, 'record_changed');
     const workshop = service.entries(player, { kind: 'workshop' }).entries[0];
     assert.equal(workshop.price, 150);
     const order = { ...workshop, kind: 'workshop' };

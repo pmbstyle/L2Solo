@@ -112,7 +112,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
             const loc = { locX: Number(offer.store.locX), locY: Number(offer.store.locY), locZ: Number(offer.store.locZ) };
             if (distance(session.actor, loc) > SHOP_RANGE) return { ok: true, action: 'meet', ownerId: line.ownerId,
                 ownerName: offer.sourceName, side: line.storeType, town: line.town, loc };
-            const amount = Number(request.amount || 1);
+            const amount = Number(request.amount ?? 1);
             if (!Number.isSafeInteger(amount) || amount <= 0 || amount > line.count) return { ok: false, reason: 'record_changed' };
             if (request.confirmed === true) {
                 const prepared = session.playerBoardPreparation;
@@ -151,7 +151,13 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         session.actor.select(data);
         return { ok: true, action: 'store_opened', ownerId: line.ownerId };
     }
-    return { entries, answer };
+    async function cancel(session) {
+        if (!human(session)) return { ok: false, reason: 'player_unavailable' };
+        if (session.playerBoardPreparation) meetings().discard(session.playerBoardPreparation.preparationId);
+        session.playerBoardPreparation = undefined;
+        return meetings().cancel(Number(session.actor.fetchId()));
+    }
+    return { entries, answer, cancel };
 }
 
 const service = create();

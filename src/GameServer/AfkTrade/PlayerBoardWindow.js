@@ -107,6 +107,8 @@ function create({ service = () => require('./PlayerBoardService'),
         const page = service().entries(session, { ...query, kind: query.side === 'workshop' ? 'workshop' : undefined,
             limit: PAGE_SIZE });
         let body = header(session, query) + (message ? Html.esc(text(message, '', 512)) + '<br>' : '');
+        if (session.tradeMeetingPresence) body += 'Waiting for the merchant. Stay here.<br>'
+            + Html.link('Cancel trade', 'board cancel') + '<br>';
         let next = page.next;
         const back = previous(query);
         if (!page.available) body += 'The market board is not ready.<br>';
@@ -126,7 +128,10 @@ function create({ service = () => require('./PlayerBoardService'),
             const owner = text(result.ownerName, 'Merchant', 100);
             const verb = result.side === BUY ? 'Sell' : 'Buy';
             const body = `${verb} ${amount(result.amount)} ${Html.esc(itemName(result.selfId))} for ${amount(result.total)} a with ${Html.esc(owner)}?<br>`
+                + `Meeting place: ${Html.esc(text(result.town, 'the local town', 64))}.<br>`
                 + 'Your goods or payment will be held while you wait here.<br>'
+                + 'Quantity:<br><edit var="board_quantity" width=100 height=15 length=16><br>'
+                + Html.button('Update quantity', 'board quantity $board_quantity', { width: 140 }) + '<br>'
                 + Html.link('Agree and wait', 'board agree') + ' / ' + Html.link('Back', command(query, query.cursor));
             send(session, Html.page(body, { title: 'Confirm meeting' }));
         } else if (result.ok && result.action === 'confirm') {
@@ -155,6 +160,15 @@ function create({ service = () => require('./PlayerBoardService'),
                 if (town && town.length > 64) return;
                 return show(session, { side, town, selfId: Number(parts[4]), cursor: decodeCursor(parts[5], side) });
             }
+            if (parts[1] === 'quantity' && parts.length === 3) {
+                const prepared = session.playerBoardPreparation, count = integer(parts[2]);
+                if (!prepared || !count) return show(session, session.playerBoardView || {}, 'Enter a positive whole quantity.');
+                return answer(session, { ...prepared, amount: count, confirmed: false });
+            }
+            if (parts[1] === 'cancel' && parts.length === 2) {
+                await service().cancel(session);
+                return show(session, session.playerBoardView || {}, 'Trade cancelled. Unused goods and payment are returned.');
+            }
             if (parts[1] === 'agree' && parts.length === 2) {
                 const prepared = session.playerBoardPreparation;
                 return prepared ? answer(session, { ...prepared, confirmed: true }) : show(session, session.playerBoardView || {}, 'This offer is unavailable.');
@@ -174,7 +188,14 @@ function create({ service = () => require('./PlayerBoardService'),
             return show(session, session.playerBoardView || {}, 'This offer is unavailable.');
         }
     }
-    return { show, answer, handle };
+    function meetingResult(session, meeting) {
+        if (meeting.state === 'accepted' || session.playerBoardMeetingResult === meeting.id) return;
+        session.playerBoardMeetingResult = meeting.id;
+        return show(session, session.playerBoardView || {}, meeting.state === 'completed'
+            ? 'Trade completed. Goods and payment are delivered.'
+            : 'Trade cancelled. Unused goods and payment are returned.');
+    }
+    return { show, answer, handle, meetingResult };
 }
 const window = create();
 module.exports = { ...window, create, PAGE_SIZE, MAX_HTML, encodeCursor, decodeCursor };
