@@ -4330,7 +4330,7 @@ const Database = {
     // new ones take it. A bot's buy ads follow its goal this way. `expected`
     // maps every record of that kind the caller saw to its revision (the
     // move's idempotency key): any other state refuses the move.
-    replaceBoardRecords(ownerId, kind, configs = [], { expected = null } = {}) {
+    replaceBoardRecords(ownerId, kind, configs = [], { expected = null, expectedAuthority = null } = {}) {
         const characterId = Number(ownerId);
         const list = Array.isArray(configs) ? configs : [];
         if (!characterId || kind === 'shop' || !BoardRules.isKind(kind)
@@ -4338,6 +4338,14 @@ const Database = {
             return Promise.reject(new Error('invalid_board_records'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (expectedAuthority) {
+                const row = one('SELECT phase,simulationOwner,simulationRevision,simulationLeaseId,lastHotAt FROM bot_life_state WHERE characterId=?',
+                    [characterId]);
+                if (!row || row.phase !== expectedAuthority.phase || row.simulationOwner !== expectedAuthority.ownerId
+                    || Number(row.simulationRevision) !== expectedAuthority.revision
+                    || (row.simulationLeaseId || null) !== expectedAuthority.leaseId
+                    || Number(row.lastHotAt || 0) !== expectedAuthority.hotAt) throw Error('economy_plan_need_changed');
+            }
             const timestamp = now();
             const closed = all('SELECT id FROM afk_trade_shops WHERE ownerId = ? AND kind = ? ORDER BY id', [characterId, kind])
                 .map((row) => afkTradeShopUnsafe(row.id));
