@@ -40,6 +40,9 @@ const items = new Map();
 // each town (б7, the shop town), the same exponential rate as the counter's.
 const towns = new Map();
 let mirror = null;
+// Public deal evidence is shared across price readers, never across owners'
+// current offers, knowledge or payment. Weak keys follow the native row's life.
+let priceEvidenceCache = new WeakMap();
 let channel = null;
 const changeListeners = new Set();
 let loading = false;
@@ -330,6 +333,24 @@ function itemDeals(selfId) {
         : NO_DEALS;
 }
 
+const NO_PRICE_EVIDENCE = Object.freeze({ deals: 0, logMedian: null });
+function itemPriceEvidence(selfId) {
+    const id = Number(selfId);
+    const source = mirror ? mirror().get(`i:${id}`) : items.get(id);
+    if (!source) return NO_PRICE_EVIDENCE;
+    const deals = mirror ? source[1] : source.deals;
+    const kept = mirror ? (source.length - 3) / 3 : source.prices.length;
+    const held = priceEvidenceCache.get(source);
+    if (held?.deals === deals && held.kept === kept) return held.evidence;
+    // Native deals advance the count; mirror updates replace the table row.
+    // Keep only scalars, so a replaced row and its price tail are releasable.
+    const prices = mirror ? source.slice(3, 3 + kept) : [...source.prices];
+    prices.sort((a, b) => a - b);
+    const evidence = Object.freeze({ deals, logMedian: kept ? Math.log(prices[Math.floor(kept / 2)]) : null });
+    priceEvidenceCache.set(source, { deals, kept, evidence });
+    return evidence;
+}
+
 function firstPrice(selfId, timestamp = Date.now()) {
     return firstPriceOf(selfId, timestamp);
 }
@@ -351,6 +372,7 @@ function publish(tableChannel) {
 // Worker: the rows of its 'market' table (a Map), read when asked.
 function useTable(rows) {
     resets++;
+    priceEvidenceCache = new WeakMap();
     mirror = rows;
 }
 
@@ -369,6 +391,7 @@ function revisionOf(key) {
 
 function reset() {
     resets++;
+    priceEvidenceCache = new WeakMap();
     counters.clear();
     items.clear();
     towns.clear();
@@ -376,5 +399,5 @@ function reset() {
     notifyChanged({ reset: true });
 }
 
-module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, revisionOf, moveOf, itemDeals, townDemand, firstPrice,
+module.exports = { STARTING_MOVE, COUNTER_KEYS, REPLAY_DEALS, counterOf, gradeOf, deal, load, counter, revisionOf, moveOf, itemDeals, itemPriceEvidence, townDemand, firstPrice,
     publish, useTable, useSpots, reset, subscribeChanges };

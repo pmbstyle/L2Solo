@@ -23,7 +23,7 @@ const ITEM = 999999;
 const OTHER = 999998;
 const now = 1800000000000;
 const original = {
-    itemDeals: MarketCounters.itemDeals,
+    itemPriceEvidence: MarketCounters.itemPriceEvidence,
     counter: MarketCounters.counter,
     counterOf: MarketCounters.counterOf,
     firstPrice: MarketCounters.firstPrice,
@@ -32,7 +32,12 @@ const original = {
 let recent = [800, 1000, 1200];
 let ask = 1100;
 let bid = 900;
-MarketCounters.itemDeals = () => ({ prices: recent, deals: recent.length ? 5 : 0 });
+// Public deal evidence is prepared by MarketCounters; this fixture isolates
+// the prior's unchanged weights and personal inputs from that preparation.
+MarketCounters.itemPriceEvidence = () => ({
+    logMedian: recent.length ? Math.log(recent[Math.floor(recent.length / 2)]) : null,
+    deals: recent.length ? 5 : 0
+});
 MarketCounters.counter = () => ({ index: Math.log(1.2), deals: 5 });
 MarketCounters.counterOf = (selfId) => Number(selfId) === OTHER ? 'gear d' : 'material none';
 MarketCounters.firstPrice = () => 500;
@@ -120,7 +125,7 @@ try {
     });
 }
 finally {
-    for (const key of ['itemDeals', 'counter', 'counterOf', 'firstPrice']) MarketCounters[key] = original[key];
+    for (const key of ['itemPriceEvidence', 'counter', 'counterOf', 'firstPrice']) MarketCounters[key] = original[key];
     C4RecipeItems.loadRecipeItems = original.recipes;
     PriceBelief.resetCaches();
 }

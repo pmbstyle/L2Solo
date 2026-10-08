@@ -20,11 +20,6 @@ function counterIndex(selfId, timestamp) {
     return MarketCounters.counter(MarketCounters.counterOf(selfId), timestamp).index;
 }
 
-function median(values) {
-    const sorted = [...values].sort((a, b) => a - b);
-    return sorted[Math.floor(sorted.length / 2)];
-}
-
 // ARCH-NOTE: the previous one-hour, item-only cache inferred willingness
 // from every recipe with NPC/first-price inputs and no owner, finite exit,
 // labour, funding or source identity. A completed prepared owner calculation
@@ -49,8 +44,8 @@ function demandValue(selfId, context = {}) {
 function prior(selfId, ctx) {
     const id = Number(selfId);
     const observations = [];
-    const deals = MarketCounters.itemDeals(id);
-    if (deals.prices.length) observations.push([Math.log(median(deals.prices)), Math.min(DEALS_WEIGHT_MAX, deals.deals)]);
+    const deals = MarketCounters.itemPriceEvidence(id);
+    if (deals.logMedian !== null) observations.push([deals.logMedian, Math.min(DEALS_WEIGHT_MAX, deals.deals)]);
     const ask = ctx.board?.first(id, SELL, { excludeOwner: ctx.characterId, enchant: 0 });
     if (ask?.price > 0) observations.push([Math.log(ask.price), 1]);
     const bid = ctx.board?.first(id, BUY, { excludeOwner: ctx.characterId, enchant: 0 });
