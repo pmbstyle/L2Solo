@@ -29,9 +29,16 @@ async function seedBot(id, clanId, adena = 10000) {
     await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [account, 'test']]);
     await Database.execute([`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,hp,maxHp,mp,maxMp,sex,face,hair,hairColor,locX,locY,locZ,clanId)
         VALUES (?,?,?,1,0,40,100000,700000,500,500,250,250,0,0,0,0,83000,148000,-3400,?)`, [id, account, `ClanMember${id}`, clanId]]);
+    const inventory = { 57: { selfId: 57, name: 'Adena', amount: adena } };
+    // This clan fixture has no personal discretionary wishes. Publish that
+    // existing money-queue state explicitly; native payments require its
+    // authoritative packet even when a treasury supplies most of the price.
+    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').survivalReserve({
+        characterId: id, level: 40, adena, inventory, stats: { classId: 1, clanId } });
+    const money = invoke('GameServer/Bot/Economy/PurchaseFunding').packetFor({ queue: [], moneyPrice: 0, gap: null }, 0, reserve);
     await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,exp,sp,hp,maxHp,mp,maxMp,adena,phase,activity,currentRegion,
         locX,locY,locZ,inventorySummary,statsJson,updatedAt) VALUES (?,?,?,40,100000,700000,500,500,250,250,?,'cold','shopping','Giran',83000,148000,-3400,?,?,1)`,
-        [id, account, `ClanMember${id}`, adena, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1, clanId })]]);
+        [id, account, `ClanMember${id}`, adena, JSON.stringify(inventory), JSON.stringify({ classId: 1, clanId, money })]]);
     await Database.setItem(id, { selfId: 57, name: 'Adena', amount: adena, enchant: 0, equipped: false, slot: 0 });
     await Database.execute([`INSERT INTO bot_personas(characterId,seed,primaryDrive,archetype,traitsJson) VALUES (?,'test','status','clan',?)`, [id, JSON.stringify(persona.traits)]]);
 }

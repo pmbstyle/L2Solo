@@ -112,7 +112,8 @@ async function resolveClan(clan) {
     const placed = { price: Number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
     const purchase = await ColdMarketService.acquire(buyer, itemId, 1, {
         towns: offer.town ? [offer.town] : null, maxPrice: Number(offer.price), npc: offer.sourceType === 'npc',
-        purpose: 'clan', money: Number(offer.price), tag: { clanId: clan.id, offer: placed, clanPart }
+        purpose: 'clan', money: Number(offer.price), free: true, clanPart,
+        tag: { clanId: clan.id, offer: placed, clanPart }
     });
     if (!purchase.bought || !purchase.state) {
         if (purchase.traveling || purchase.state?.stats?.marketErrand) {
