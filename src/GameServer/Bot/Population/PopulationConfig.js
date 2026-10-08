@@ -2,6 +2,8 @@ const DEFAULTS = {
     enabled: true,
     staticBuyersDisabled: false,
     staticShotsDisabled: false,
+    economyDiagnostics: false,
+    economyDiagnosticsBotIds: '',
     // Personal knowledge errors and learning by own actions share one switch.
     knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,

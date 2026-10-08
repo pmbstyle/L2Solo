@@ -116,6 +116,13 @@ function buyOffer(state, offer, options = {}) {
             // Native commit includes the buyer's experience exactly once.
             const buyer = done.state || state;
             const units = Number(trade.amount ?? trade.units ?? 0), spent = Number(trade.totalPrice ?? trade.spent ?? 0);
+            const diagnostics = require('./EconomyDiagnostics');
+            if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+                phase: 'native_purchase', trigger: 'public_quote', reason: trade.replayed ? 'replayed' : 'committed',
+                source: offer.sourceType, item: Number(offer.selfId), actual: units, spent, quote: Number(offer.price),
+                town: offer.town, recordId: Number(offer.recordId), lineId: Number(offer.lineId),
+                revision: Number(offer.expectedRevision ?? offer.revision), nativeId: Number(trade.eventId),
+                commandId: trade.economyCommand?.[0], sequence: trade.economyCommand?.[2] });
             if (!trade.replayed) observePurchase(offer, units, buyer);
             if (Object.isExtensible(options)) options.economyCommand = trade.economyCommand;
             return { state: buyer, purchased: units > 0, units, spent, hot: done.hot,
@@ -332,6 +339,12 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
         }
     }); } finally { Commit.finish(state.characterId, admitted.command); }
     if (!purchase?.ok) return null;
+    const diagnostics = require('./EconomyDiagnostics');
+    if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+        phase: 'native_purchase', trigger: 'npc_quote', reason: purchase.replayed ? 'replayed' : 'committed',
+        source: 'npc', item: Number(selfId), actual: Number(purchase.amount), spent: Number(purchase.spent),
+        quote: Number(unitPrice), town: state.currentRegion, nativeId: Number(selfId),
+        commandId: admitted.command[0], sequence: admitted.command[2] });
     if (!purchase.replayed) observePurchase({ sourceType: 'npc', selfId, price: unitPrice }, purchase.amount, state);
     if (purchase.coldLifeRow) return { state: Commit.acceptRow(purchase.coldLifeRow),
         units: Number(purchase.amount), spent: Number(purchase.spent), economyCommand: admitted.command };
@@ -460,6 +473,8 @@ const ColdMarketService = {
             return Promise.resolve({ state, purchased: false, reason: 'purchase_quantity_unknown' });
         }
         const acceptedGoal = GoalState.snapshot(state.characterId)?.current;
+        const diagnostics = require('./EconomyDiagnostics');
+        const diagnosticGoalRevision = diagnostics.enabled(state.characterId) ? GoalState.snapshot(state.characterId)?.updatedAt : null;
         if (acceptedGoal && JSON.stringify(acceptedGoal) !== JSON.stringify(goal)) {
             return Promise.resolve({ state, purchased: false, reason: 'stale_purchase_goal' });
         }
@@ -532,7 +547,13 @@ const ColdMarketService = {
             });
             if (!plan) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
             return buyHere(state, plan).then(async bought => {
-                if (bought.units > 0) await GoalState.applyPurchase(state.characterId, goal, bought.units);
+                const progress = bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null;
+                if (diagnosticGoalRevision !== null) diagnostics.push({ owner: state.characterId,
+                    revision: Number(bought.state?.simulation?.revision), goalRevision: diagnosticGoalRevision,
+                    trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units > 0 ? 'filled' : 'no_fill',
+                    item: Number(goal.target.itemId), need: Number(goal.target.amount), actual: bought.units,
+                    remaining: Math.max(0, Number(goal.target.amount) - bought.units), spent: bought.spent, goalApplied: progress ? 1 : 0,
+                    town: state.currentRegion, wishKey: goal.plan?.wishKey });
                 return { ...bought, purchased: bought.units > 0,
                     reason: bought.units > 0 ? 'market_material_bought' : 'market_material_no_fill' };
             });
@@ -543,7 +564,14 @@ const ColdMarketService = {
             if (!bought.purchased) {
                 return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
-            return GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0)).then(() => bought);
+            return GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0)).then(() => {
+                if (diagnosticGoalRevision !== null) diagnostics.push({ owner: state.characterId,
+                    goalRevision: diagnosticGoalRevision, trigger: 'purchase_goal', phase: 'purchase_commit', reason: 'filled',
+                    item: Number(goal.target.itemId), need: 1, actual: Number(bought.units || 0), remaining: 0,
+                    spent: bought.spent, town: state.currentRegion, source: offer.sourceType,
+                    recordId: offer.recordId, lineId: offer.lineId, quote: offer.price, wishKey: goal.plan?.wishKey });
+                return bought;
+            });
         });
     },
     async finishTownErrands(state) {

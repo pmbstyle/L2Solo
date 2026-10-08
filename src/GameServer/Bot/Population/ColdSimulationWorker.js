@@ -120,6 +120,7 @@ let previousElu = performance.eventLoopUtilization();
 let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
+const economyDiagnostics = require('../Economy/EconomyDiagnostics').create({ config: Config, capacity: 64 });
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
@@ -199,6 +200,11 @@ const occupationPlanner = new ColdOccupationPlanner({
             ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
             tripCost: prepared.context.trip, preparedCraft: selected,
             npcOffersFor: OccupationSources.npcOffersFor,
+            ...(economyDiagnostics.enabled(input.state.characterId) ? { onTownDecision: decision => economyDiagnostics.push({
+                owner: input.state.characterId, revision: Number(input.state.simulation?.revision), trigger: 'economy_plan',
+                phase: 'town_choice', town: decision.town, reason: decision.reason, candidates: decision.candidates,
+                tripHours: decision.tripHours, tripFees: decision.tripFees
+            }) } : null),
             findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)),
             buyOrderEscrow: input.buyOrderEscrow, knownShotRecipes: input.knownShotRecipes
         }) : null;
@@ -446,6 +452,12 @@ function stopTimers() {
 
 function startKernel(config = {}) {
     if (kernel) return;
+    Config.economyDiagnostics = config.economyDiagnostics === true;
+    Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
+    if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
+        if (shuttingDown) return false;
+        parentPort.postMessage({ type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped }); return true;
+    });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = require('../../Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
     kernel = new ColdSimulationKernel({
@@ -848,6 +860,7 @@ async function handle(message) {
         buyerWaiters.clear();
         if (shuttingDown) break;
         shuttingDown = true;
+        if (Config.economyDiagnostics) economyDiagnostics.stop();
         occupationPlanner.stop();
         competitionCandidates?.stop();
         stopTimers();
@@ -862,6 +875,9 @@ async function handle(message) {
 }
 
 parentPort.on('message', (message) => {
+    if (message?.type === 'economy_diagnostics_ack' && Config.economyDiagnostics && message.epoch === epoch) {
+        economyDiagnostics.ack(message.id, message.accepted); return;
+    }
     Promise.resolve(handle(message)).catch((error) => {
         send('fault', { reason: error?.message || 'worker_message_error', stack: error?.stack || null, msgId: message?.msgId || null });
     });

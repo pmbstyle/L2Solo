@@ -14,6 +14,10 @@ const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
+// Run the same native cases with telemetry enabled: it must not affect fills,
+// funding, goal progress or stale-goal protection.
+const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
+Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9101,9102,9103,9105,9107';
 Data.init();
 
 async function buyer(id, wallet, held = 0, itemId = 2509) {
@@ -93,6 +97,18 @@ async function run() {
     assert.equal(Goals.snapshot(9107).current.target.amount, 400);
     console.log('Native goal quantities: full/partial stock and funds, existing bag, changed goal, replay, refusal and unknown amount passed');
 }
-run().then(() => Database.close()).catch(async error => {
+run().then(async () => {
+    await Database.close();
+    const lines = fs.readFileSync(require('node:path').join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8')
+        .trim().split('\n').map(JSON.parse);
+    assert.equal(lines[0].type, 'economy_diagnostics_header');
+    assert.match(lines[0].build, /^[0-9a-f]{40}$/); assert(lines[0].world); assert(lines[0].run);
+    const partial = lines.find(row => row.owner === 9102 && row.phase === 'purchase_commit');
+    assert.equal(partial.need, 1000); assert.equal(partial.actual, 200); assert.equal(partial.remaining, 800);
+    assert(partial.goalRevision > 0); assert(!Object.hasOwn(partial, 'name'));
+    assert(lines.every(row => Buffer.byteLength(JSON.stringify(row)) + 1 <= 1024));
+    assert.equal(invoke('HistoryDatabase').stats().economyDiagnostics.queued, 0);
+    console.log('Native quantity telemetry: existing history worker, exact build/world/run, committed partial quantity and bounded shutdown passed');
+}).catch(async error => {
     console.error(error); process.exitCode = 1; await Database.close();
 });

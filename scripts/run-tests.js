@@ -371,6 +371,7 @@ const tests = [
     'tests/test_economic_trip_marginal.js',
     'tests/test_market_town_forecast.js',
     'tests/test_native_purchase_equip.js',
+    'tests/test_economy_diagnostics.js',
     'tests/test_cold_purchase_failure_hot_bot.js',
     'tests/test_life_state_hot_row_guard.js',
     'tests/test_cold_inventory_jewelry.js',

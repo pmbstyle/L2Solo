@@ -50,7 +50,7 @@ function* prepare(state, economy, options = {}) {
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });
     const townOptions = { context: ctx, tripCost: options.tripCost || ctx.tripCost, timestamp: options.now,
-        prepareTrip: options.prepareTrip, findSpot: options.findSpot };
+        prepareTrip: options.prepareTrip, findSpot: options.findSpot, onDecision: options.onTownDecision };
     const heldTown = own.find(line => line.kind === 'shop' && line.storeType === SELL)?.town || state.stats?.shopTown?.town;
     const shopTown = heldTown || (yield* Town.chooseTown(state, sale.listings.slice(0, 3), townOptions)).town;
     const sell = [];

@@ -16,6 +16,8 @@ const Policy = require('../src/GameServer/Bot/Economy/ShotCraftPolicy');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { npcPlanningCatalogRows } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const root = path.resolve(__dirname, '..');
+const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
+Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '710021';
 // Keep the original native fixture and assertions, with both literal UUID
 // database paths configured and asserted before the first connection.
 async function createWorld(characters) {
@@ -50,7 +52,7 @@ module.exports.shotProbe = async () => {
     const crafted = { ...state, stats: { ...state.stats, shotCraft: { recipeId: 20 } },
         inventory: { ...state.inventory, 1463: { selfId: 1463, amount: 1000000 } } };
     kernel.upsert({ state: crafted, context: entry.context });
-    const before = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
+    const before = index.marketSnapshot(timestamp, crafted).unlistedSupply.get(1463);
     const proposed = { ...crafted, inventory: { ...crafted.inventory, 1463: { selfId: 1463, amount: 1000100 } } };
     const overlay = index.marketSnapshot(timestamp, proposed).unlistedSupply.get(1463);
     const held = index.marketSnapshot(timestamp).unlistedSupply.get(1463);
@@ -87,6 +89,16 @@ parentPort.on('message', message => {
         await Database.execute(['UPDATE characters SET username=? WHERE id=?', ['bot_recipe_supplier', sellerId]]);
         await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 100000000 });
         await Database.setItem(id, { selfId: 129, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 });
+        const offeredRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(20);
+        await Database.setSkill({ selfId: 172, name: 'Create Item', level: offeredRecipe.level }, id);
+        await Database.setItem(sellerId, { selfId: 57, name: 'Adena', amount: 10000000 });
+        await Database.setItem(sellerId, { selfId: offeredRecipe.recipeItemId, name: 'Genuine shot recipe', amount: 1 });
+        await Database.setItem(sellerId, { selfId: 1458, name: 'Crystal D', amount: 10000 });
+        await Afk.openBotRecords(sellerId, 'buy_ad', [1463, 2510].map(selfId => ({ storeType: 3, town: 'Giran',
+            lines: [{ selfId, count: 10000, price: selfId === 1463 ? 100 : 300, stackable: true }] })));
+        await Afk.openBotRecords(sellerId, 'sell_ad', [{ storeType: 1, town: 'Giran',
+            lines: [{ selfId: offeredRecipe.recipeItemId, count: 1, price: 1, stackable: false }] },
+        { storeType: 1, town: 'Giran', lines: [{ selfId: 1458, count: 10000, price: 100, stackable: true }] }]);
         const now = Date.now();
         let state = await Life.upsertState({ characterId: id, name: 'WorkerCrafter', accountName: 'bot_worker_shots',
             level: 20, exp: Number(DataCache.experience[19]), phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
@@ -102,7 +114,12 @@ parentPort.on('message', message => {
         const epoch = 'native:shot-plan', messages = []; let fault;
         worker = new Worker(wrapper, { eval: true, workerData: { workerEpoch: epoch,
             workerPath: root + '/src/GameServer/Bot/Population/ColdSimulationWorker.js', observer } });
-        worker.on('message', message => messages.push(message)); worker.on('error', error => { fault = error; });
+        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+        const diagnosticCoordinator = new ColdSimulationCoordinator(); diagnosticCoordinator.worker = worker; diagnosticCoordinator.workerEpoch = epoch;
+        worker.on('message', message => {
+            messages.push(message);
+            if (message.type === 'economy_diagnostics') diagnosticCoordinator.onMessage(message, worker, epoch);
+        }); worker.on('error', error => { fault = error; });
         const wait = async predicate => { const deadline = Date.now() + 60000;
             while (!messages.some(predicate)) { if (fault) throw fault;
                 const rejected = messages.find(message => message.type === 'fault'); if (rejected) throw Error(JSON.stringify(rejected));
@@ -115,25 +132,31 @@ parentPort.on('message', message => {
             rows: catalog.slice(at, at + Protocol.MAX_BATCH), done: at + Protocol.MAX_BATCH >= catalog.length });
         const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
-        send('init', { config: { loopIntervalMs: 1000 } }, 'init');
+        send('init', { config: { loopIntervalMs: 1000, economyDiagnostics: true, economyDiagnosticsBotIds: '710021' } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
-        // A real mirrored buy line funds one repeatable D-shot craft route.
-        send('table_page', { tables: [{ name: 'board', from: null, to: 0, full: true, rows: [[710090, [710090, 'buy_ad', 3, sellerId, 'Giran', 1, [[710091, 1463, 0, 10000, 100, null, 0], [710092, 2510, 0, 10000, 300, null, 0]], 1]]], removed: [], last: true }] });
+        // Finite funded demand and explicit finite inputs/scroll. E2 correctly
+        // refuses to invent a missing recipe or ingredient source from a bid.
+        const boardRows = (await Database.fetchAfkTradeShops(sellerId)).map(shop => [shop.id,
+            require('../src/GameServer/AfkTrade/BoardIndex').rowOf(Afk.recordStore(shop.id))]);
+        send('table_page', { tables: [{ name: 'board', from: null, to: 0, full: true, rows: boardRows,
+            removed: [], last: true }, { name: 'market', from: null, to: 0, full: true, rows: [], removed: [], last: true }] });
         send('snapshot_page', { rows: [{ state, context: { knownShotRecipes: [], buyOrderEscrow: 0 } }], ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'probe'), shotProbe: true });
         const response = await wait(message => message.probeId === 'probe'); if (response.error) throw Error(response.error);
         const result = response.value;
         console.log(JSON.stringify({ edges: result.edges, shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
-        assert(result.edges & 8); assert(result.plan?.shot?.recipeTarget > 0, 'native worker with no known recipe selects a profitable recipe');
+        const selectedStep = Policy.unpackStep(result.plan?.shot);
+        assert(result.edges & 8); assert(selectedStep?.recipeTarget > 0, 'native worker with no known recipe selects a profitable executable recipe');
+        assert(messages.some(message => message.type === 'economy_diagnostics'), 'worker emits sampled decision telemetry on the separate developer bridge');
         assert.deepEqual(result.forbiddenLoaded, [], 'pure craft decision loads no World actor, Network or database implementation');
         assert.equal(result.indexHooks.overlay, result.indexHooks.before + 100, 'projected own stock has a transient overlay');
-        assert.equal(result.indexHooks.held, result.indexHooks.before, 'an uncommitted projection does not publish global spare');
-        assert.equal(result.indexHooks.committed, result.indexHooks.overlay, 'canonical publish advances the index exactly once');
-        assert.equal(result.indexHooks.duplicate, result.indexHooks.committed);
-        assert.equal(result.indexHooks.removed, 0, 'canonical delete releases all spare stock');
+        assert.equal(result.indexHooks.held, undefined, 'foreign stock is never exposed by a global snapshot');
+        assert.equal(result.indexHooks.committed, undefined, 'canonical publishing does not expose private bags');
+        assert.equal(result.indexHooks.duplicate, undefined);
+        assert.equal(result.indexHooks.removed, undefined);
 
-        for (const step of [{ craft: { recipeId: 327, batches: 64 } }, { recipeTarget: 327 }, { wealth: { recipeId: 612 } }]) {
+        for (const step of [{ craft: { recipeId: 327, batches: 64 } }, { recipeTarget: 327 }, { wealth: { recipeId: 612, batches: 1 } }]) {
             const packed = Policy.packStep(step);
             assert(Buffer.byteLength(JSON.stringify({ shot: packed })) - 2 <= 32);
             assert.deepEqual(Policy.unpackStep(packed), step);
@@ -145,27 +168,18 @@ parentPort.on('message', message => {
         let purchases = 0;
         invoke('GameServer/Bot/Economy/ColdMarketService').acquire = async () => { purchases++; throw Error('unexpected recipe spend'); };
         try {
-            const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(result.plan.shot.recipeTarget);
+            const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(selectedStep.recipeTarget);
             assert.strictEqual(await Shots.obtainRecipe(state, { recipe, route: { profit: 0 } }, now), state);
             assert.strictEqual(await Shots.obtainRecipe(state, { recipe, route: { profit: -1 } }, now), state);
             assert.equal(purchases, 0);
             assert.deepEqual(await Database.fetchItems(id), before);
         } finally { invoke('GameServer/Bot/Economy/ColdMarketService').acquire = previousAcquire; }
-        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(result.plan.shot.recipeTarget);
-        await Database.setItem(sellerId, { selfId: 57, name: 'Adena', amount: 10000000 });
-        await Database.setItem(sellerId, { selfId: recipe.recipeItemId, name: 'Genuine shot recipe', amount: 1 });
+        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(selectedStep.recipeTarget);
         let supplier = await Life.upsertState({ characterId: sellerId, accountName: 'bot_recipe_supplier', name: 'RecipeSupplier',
             level: 30, exp: Number(DataCache.experience[29]), phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
-            adena: 10000000, inventory: Life.inventorySummaryFromItems(await Database.fetchItems(sellerId)),
+            adena: Number((await Database.fetchItems(sellerId)).find(row => row.selfId === 57)?.amount || 0), inventory: Life.inventorySummaryFromItems(await Database.fetchItems(sellerId)),
             loc: state.loc, vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 }, stats: { classId: 0 } }, 'shot_supplier_fixture');
-        await Afk.openBotRecords(sellerId, 'buy_ad', [{ storeType: 3, town: 'Giran', title: 'Funded crafted shots',
-            lines: [{ selfId: 2510, name: 'Spiritshot D', count: 10000, price: 300, enchant: 0, stackable: true, slot: 0 }] }]);
-        const scroll = (await Database.fetchItems(sellerId)).find(row => Number(row.selfId) === Number(recipe.recipeItemId));
-        await Afk.openBotRecords(sellerId, 'sell_ad', [{ storeType: 1, town: 'Giran', title: 'One real recipe',
-            lines: [{ objectId: scroll.id, selfId: recipe.recipeItemId, name: scroll.name, count: 1, price: 1,
-                enchant: 0, stackable: false, slot: 0 }] }]);
         state = await Life.upsertState({ ...result.state, activity: 'shopping', currentRegion: 'Giran' }, 'shot_plan_accepted_fixture');
-        const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
         const coordinator = new ColdSimulationCoordinator();
         coordinator.fenceBot = () => { throw Error('economic_fence_forbidden'); };
         const Market = require('../src/GameServer/Bot/Economy/BotAfkMarketService');
@@ -184,21 +198,24 @@ parentPort.on('message', message => {
             assert.equal(coordinator.counters.fences, 0);
             assert.equal(coordinator.counters.afterCommitStepErrors.economyPlan, 0);
         } finally { Goals.review = originalReview; }
-        // An owned natural drop is learned even when no current D-shot buyer
-        // exists; it is not a second recipe purchase or invented knowledge.
-        await Database.setItem(id, { selfId: 1804, name: 'Recipe: Soulshot D', amount: 1 });
+        // An owned book without a supported profitable exit is held. Neither
+        // ownership nor an old recipe-target packet invents a craft opportunity.
+        const ownedRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(317);
+        await Database.setItem(id, { selfId: ownedRecipe.recipeItemId, name: 'Owned shot recipe', amount: 1 });
         state = await Life.syncExternalInventory(id, 'natural_recipe_fixture', Life.cachedState(id));
         state = await Life.upsertState({ ...state, stats: { ...state.stats,
-            shotRecipeDemand: { itemId: 1804, amount: 1, maxSpend: 1, at: Date.now() } } }, 'owned_recipe_demand_fixture');
+            shotRecipeDemand: { itemId: ownedRecipe.recipeItemId, amount: 1, maxSpend: 1, at: Date.now() } } }, 'owned_recipe_demand_fixture');
         const noDemand = { ...await Shots.marketSnapshot(), shotDemand: new Map(), offersFor: () => [] };
-        const ownedStep = Policy.decide(state, noDemand, [317]);
-        assert.deepEqual(ownedStep, { recipeTarget: 20 }, 'a craftable owned book schedules native learning without requiring a purchase margin');
+        const ownedStep = Policy.decide(state, noDemand, [20]);
+        assert.equal(ownedStep, null, 'an unsupported own book stays available for a later useful opportunity');
         const beforeLearn = state.adena;
-        const learned = await Shots.execute(state, ownedStep);
-        assert((await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === 20));
-        assert.equal(learned.adena, beforeLearn, 'learning an owned scroll spends no Adena');
-        assert.equal(learned.stats.shotRecipeDemand, null, 'learning fills the matching recipe demand');
-        assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === 1804).reduce((sum, row) => sum + row.amount, 0), 0);
-        console.log('Native worker recipe decision, physical purchase/owned-book learning, zero economy fences and margin rejection passed');
+        const heldBook = await Shots.execute(state, { recipeTarget: 317 });
+        assert(!(await Database.fetchCharacterRecipes(id)).some(row => Number(row.recipeId) === 317));
+        assert.equal(heldBook.adena, beforeLearn);
+        assert.equal((await Database.fetchItems(id)).filter(row => row.selfId === ownedRecipe.recipeItemId).reduce((sum, row) => sum + row.amount, 0), 1);
+        await invoke('HistoryDatabase').flush();
+        const diagnostics = fs.readFileSync(path.join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+        assert(diagnostics.some(row => row.owner === id && row.phase === 'town_choice'), 'sampled worker choices reach the existing history writer');
+        console.log('Native worker executable recipe decision, physical purchase, own-stock privacy, held unsupported book, zero economy fences and margin rejection passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

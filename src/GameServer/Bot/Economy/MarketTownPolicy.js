@@ -90,6 +90,7 @@ function* chooseTown(state, items = [], options = {}) {
     const seed = targetTownForItems(state, items, { findSpot });
     const trip = options.tripCost || ctx?.travel || invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state, timestamp);
     const candidates = [], outcomes = [];
+    let fallbackRoute = null;
     const Price = invoke('GameServer/Bot/Economy/PriceDecision');
     const Valuation = require('./EconomicValuation');
     if (!Karma.closesTowns(state?.stats?.karma) && ctx?.demandFor && groups.size && ctx.ownStock?.known !== false) {
@@ -133,7 +134,7 @@ function* chooseTown(state, items = [], options = {}) {
                 receipts, monetaryResidual: residual, ownInputOpportunityValue: input,
                 actualCashFees: route.fees, foregoneBenefitHours: route.hours, cycleHours: route.hours }]);
             if (value.known) {
-                outcomes.push({ action: town, value: value.valueHours });
+                outcomes.push({ action: town, value: value.valueHours, tripHours: route.hours, tripFees: route.fees });
                 if (value.valueHours > 0) candidates.push({ action: town, value: value.valueHours });
             }
             yield 'candidate';
@@ -149,21 +150,28 @@ function* chooseTown(state, items = [], options = {}) {
             if (prepareTrip) yield* prepareTrip(seed);
             const route = ctx?.travelDetails?.(seed) || trip.details?.(seed);
             if (Number.isFinite(trip(seed)) && (!route || route.known
-                && route.fees <= require('./PurchaseFunding').budget(state))) town = seed;
+                && route.fees <= require('./PurchaseFunding').budget(state))) { town = seed; fallbackRoute = route; }
         } else {
             const alternatives = [];
             for (const candidate of towns) {
                 if (!canOpenTown(candidate) || Karma.closesTowns(state?.stats?.karma) && candidate !== Karma.TOWN_NAME) continue;
                 if (prepareTrip) yield* prepareTrip(candidate);
                 const cost = trip(candidate);
-                if (Number.isFinite(cost)) alternatives.push({ action: candidate, value: -cost });
+                const route = ctx?.travelDetails?.(candidate) || trip.details?.(candidate);
+                if (Number.isFinite(cost) && (!route || route.known && route.fees <= require('./PurchaseFunding').budget(state)))
+                    alternatives.push({ action: candidate, value: -cost, route });
                 yield 'candidate';
             }
-            town = Price.chooseByWeight(alternatives, key)?.action || null;
+            const chosen = Price.chooseByWeight(alternatives, key);
+            town = chosen?.action || null; fallbackRoute = chosen?.route || null;
             reason = 'observed_plaza_full';
         }
     }
-    options.onDecision?.({ town, reason, candidates: outcomes });
+    if (options.onDecision) {
+        const selected = outcomes.find(row => row.action === town);
+        options.onDecision({ town, reason, tripHours: selected?.tripHours ?? fallbackRoute?.hours,
+            tripFees: selected?.tripFees ?? fallbackRoute?.fees, candidates: outcomes.sort((a, b) => b.value - a.value).slice(0, 3) });
+    }
     return { town, reason };
 }
 function shopTown(state, items = [], options = {}) {

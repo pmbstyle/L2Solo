@@ -8,6 +8,8 @@
 const { parentPort, workerData } = require('worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 const HistoryStore = require('./HistoryStore');
+const diagnosticWriter = workerData.diagnostics ? new (require('./EconomyDiagnosticWriter').EconomyDiagnosticWriter)(
+    require('node:path').join(require('node:path').dirname(workerData.worldPath), 'logs'), workerData.diagnostics) : null;
 
 const TRANSFER_MS = Math.max(10, Number(workerData?.transferMs) || 200);
 const RETENTION_MS = 60 * 1000;
@@ -44,6 +46,7 @@ function tick() {
         if (Date.now() - lastRetentionAt >= RETENTION_MS) {
             lastRetentionAt = Date.now();
             HistoryStore.retention(history);
+            diagnosticWriter?.cleanup();
         }
     } catch (error) {
         parentPort.postMessage({ type: 'error', error: error?.message || String(error) });
@@ -51,6 +54,14 @@ function tick() {
 }
 
 parentPort.on('message', (message = {}) => {
+    if (message.type === 'economy_diagnostics') {
+        let written = 0;
+        try {
+            // Canonical history always goes first; telemetry never aborts it.
+            tick(); written = diagnosticWriter?.write(message.records) || 0;
+        } catch { /* Count the loss in the main buffer, never stop the world. */ }
+        parentPort.postMessage({ type: 'economy_diagnostics_ack', id: message.id, written }); return;
+    }
     if (message.type !== 'flush' && message.type !== 'stop') return;
     let reply;
     try {

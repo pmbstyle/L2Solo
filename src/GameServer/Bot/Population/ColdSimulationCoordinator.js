@@ -507,6 +507,18 @@ class ColdSimulationCoordinator {
 
     async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
+        if (message?.type === 'economy_diagnostics' && Config.economyDiagnostics && message.epoch === epoch) {
+            if (!Number.isSafeInteger(message.id) || message.id <= 0) return;
+            const diagnostics = require('../Economy/EconomyDiagnostics');
+            const accepted = diagnostics.accept(message.records);
+            if (this.diagnosticEpoch !== epoch) { this.diagnosticEpoch = epoch; this.diagnosticDropped = 0; }
+            const dropped = Number(message.dropped);
+            if (Number.isSafeInteger(dropped) && dropped >= this.diagnosticDropped) {
+                diagnostics.noteDropped(dropped - this.diagnosticDropped); this.diagnosticDropped = dropped;
+            }
+            worker.postMessage({ type: 'economy_diagnostics_ack', epoch, id: message.id,
+                accepted: accepted ? message.records.length : 0 }); return;
+        }
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
@@ -634,6 +646,7 @@ class ColdSimulationCoordinator {
 
     workerConfig() {
         return {
+            ...(Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: Config.economyDiagnosticsBotIds } : {}),
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
