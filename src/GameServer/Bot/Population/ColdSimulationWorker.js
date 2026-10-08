@@ -123,7 +123,8 @@ let previousElu = null;
 let planningSpots = [];
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
-const economyDiagnostics = require('../Economy/EconomyDiagnostics').create({ config: Config, capacity: 64 });
+// Planning producers import this same collector; its worker cap is64 rows.
+const economyDiagnostics = require('../Economy/EconomyDiagnostics');
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });

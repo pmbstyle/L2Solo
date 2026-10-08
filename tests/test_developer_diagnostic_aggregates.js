@@ -51,3 +51,12 @@ const rejectedByMain = create({ config: { developerDiagnostics: true, economyDia
 let rejectedId; rejectedByMain.connect(batch => { rejectedId = batch.id; return true; });
 rejectedByMain.push({ owner: 64, phase: 'main_refused' }); rejectedByMain.ack(rejectedId, 0);
 assert.equal(rejectedByMain.stats().drops.admission, 1); assert.equal(rejectedByMain.stats().drops.writer, 0);
+
+let queueClock = 0;
+const boundedWorker = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' },
+    thread: 'worker', capacity: LIMITS.mainRecords, now: () => queueClock });
+for (let i = 0; i < LIMITS.workerRecords; i++) assert(boundedWorker.push({ owner: 64, phase: 'queue_cap' }));
+queueClock += 1000;
+assert.equal(boundedWorker.push({ owner: 64, phase: 'queue_cap' }), false);
+assert.equal(boundedWorker.stats().queued, LIMITS.workerRecords, 'worker cap also applies to default/imported collectors');
+assert.equal(boundedWorker.stats().drops.queue, 1);

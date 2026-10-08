@@ -13,9 +13,9 @@ const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 're
     'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after',
     'receiptUnits', 'receiptSpent', 'commandKind'];
 const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId'];
-function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now,
-    thread = isMainThread ? 'main' : 'worker' } = {}) {
-    capacity = Math.min(LIMITS.mainRecords, Math.max(1, capacity));
+function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
+    capacity = thread === 'main' ? LIMITS.mainRecords : LIMITS.workerRecords, now = Date.now } = {}) {
+    capacity = Math.min(thread === 'main' ? LIMITS.mainRecords : LIMITS.workerRecords, Math.max(1, capacity));
     let rows = null, bytes = 0, selected = null, explicit = null, selectionKey = null;
     let counters = null, durations = null, transport = null, inFlight = null;
     let seq = 0, second = -1, rate = 0, dropped = 0, written = 0, offered = 0, sent = 0, batches = 0, attemptedBatches = 0, sentBytes = 0;
