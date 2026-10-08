@@ -55,6 +55,7 @@ function stateForActor(actor, session = actor?.session) {
     }
     const hotKit = invoke('GameServer/Bot/Population/ColdCombatProfile').capture(actor);
     const state = { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
+        acceptedIncoming: invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(actor.fetchId?.())?.acceptedIncoming || stored.acceptedIncoming || {},
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
         spotId: session?.currentSpot?.id || stored.spotId,
@@ -90,7 +91,7 @@ function inputKey(state, deps = {}) {
         Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
         invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
-        deps.inputKey || '', deps.mode || '', Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
+        deps.inputKey || '', deps.mode || '', JSON.stringify(state.acceptedIncoming || null), Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
         stats.production?.crafts || 0, positive(state.sp),
@@ -373,6 +374,9 @@ function forState(state = {}, deps = {}) {
         cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
+        stockFor: (id, rootKey) => ({ owned: rootKey.startsWith('stock:') && projection.nodes.find(node => node.key === rootKey)?.object?.itemId === id
+            ? positive(state.inventory?.[id]?.amount) : require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
+        incoming: positive(state.acceptedIncoming?.[id]) }),
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
         wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,

@@ -281,7 +281,13 @@ async function init() {
     for (;;) {
         const rows = await db().recoverTradeMeetings(cursor);
         if (!rows.length) break;
-        for (const row of rows) { enrolled.set(row.actorA, row.id); enrolled.set(row.actorB, row.id); wake(row.actorA); wake(row.actorB); }
+        for (const row of rows) {
+            for (const actor of [row.actorA, row.actorB]) {
+                const state = await db().fetchTradeMeetingOwnerState?.(actor);
+                if (state) life().acceptLifecycleRow(state);
+                enrolled.set(actor, row.id); wake(actor);
+            }
+        }
         cursor = rows.at(-1).id;
         await new Promise(resolve => setImmediate(resolve));
     }

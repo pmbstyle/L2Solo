@@ -2259,7 +2259,7 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
         statsPatch ? JSON.stringify(statsPatch) : null, now(), Number(characterId)]);
     const inventoryPatch = Object.fromEntries([...new Set([57, ...changedIds].map(Number))]
         .map(id => [id, physical[id] || null]));
-    return { ...normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)])), inventoryPatch };
+    return { ...normalizeRow(coldSimulationRow(characterId)), inventoryPatch };
 }
 
 // The funded order belongs to the native party row. Worker patches may
@@ -2778,7 +2778,32 @@ function coldSimulationPartition(row, options = {}, parsedStats) {
 }
 
 function coldSimulationRow(characterId) {
-    return one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    return row ? { ...row, acceptedIncoming: acceptedTradeIncomingUnsafe(Number(characterId), row) } : row;
+}
+
+// The existing participant slot and pending-settlement owner are the only
+// selectors. No second custody map or population-wide read is retained.
+function acceptedTradeIncomingUnsafe(characterId, row) {
+    const incoming = {};
+    const add = (id, count) => {
+        if (Number(id) === 57) return;
+        const amount = Number(incoming[id] || 0) + Number(count);
+        if (!Number.isSafeInteger(amount) || amount < 0) throw Error('trade_meeting_integer');
+        if (amount) incoming[id] = amount;
+    };
+    // Native snapshots serialize the slim reference with JSON.stringify or
+    // json_patch. A cheap marker gates the indexed read; SQL remains authority.
+    if (String(row?.statsJson || '').includes('"tradeMeeting":[')) {
+        const meeting = one(`SELECT m.id,m.actorA,m.actorB,m.state FROM board_trade_participants p
+            JOIN board_trade_meetings m ON m.id=p.meetingId WHERE p.characterId=?`, [characterId]);
+        if (meeting?.state === 'accepted') for (const line of all(`SELECT selfId,heldCount FROM board_trade_meeting_lines
+            WHERE meetingId=? AND payer=? AND custodyType='trade' AND heldCount>0 ORDER BY ordinal`,
+        [meeting.id, Number(meeting.actorB === characterId)])) add(line.selfId, line.heldCount);
+    }
+    if (pendingSettlementOwners.has(characterId)) for (const line of all(`SELECT selfId,SUM(amount) amount
+        FROM board_settlements WHERE ownerId=? GROUP BY selfId`, [characterId])) add(line.selfId, line.amount);
+    return incoming;
 }
 
 // A claim needs the lease columns and the workflow flags coldSimulationPartition
@@ -3697,7 +3722,7 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
         simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
     [JSON.stringify(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
-    return { changedIds: [...changedIds], row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id])) };
+    return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
 }
 
 function commitInteractionMemoryUnsafe(batch, timestamp) {
@@ -10216,7 +10241,7 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (!row) return null;
         if (row.phase === 'cold') return writeColdInventorySnapshotUnsafe(id, row, changed, null, patch);
         write("UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)),simulationRevision=simulationRevision+1 WHERE characterId=?", [JSON.stringify(patch), id]);
-        return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [id]));
+        return normalizeRow(coldSimulationRow(id));
     }
 });
 function tradeMeetingPositionUnsafe(id) {
@@ -10273,7 +10298,8 @@ Object.assign(Database, {
                 phase: row?.phase || 'player', ownerId: row?.simulationOwner || null,
                 leaseId: row?.simulationLeaseId || null, hotAt: Number(row?.lastHotAt || 0),
                 needRevision: Number(row?.simulationRevision || 0),
-                inventory: afkTradeInventoryUnsafe(id), position: tradeMeetingPositionUnsafe(Number(id)) };
+                inventory: afkTradeInventoryUnsafe(id), acceptedIncoming: acceptedTradeIncomingUnsafe(Number(id), row),
+                position: tradeMeetingPositionUnsafe(Number(id)) };
         }, 'board:meeting-prepare'));
     },
     acceptTradeMeeting(request) {
@@ -10290,6 +10316,9 @@ Object.assign(Database, {
             return { pending: false, meetingId: receipt[1], revision: receipt[2],
                 outcome: receipt[3] ? 'completed' : 'cancelled' };
         }, 'board:meeting-receipt');
+    },
+    fetchTradeMeetingOwnerState(actorId) {
+        return inTransaction(() => normalizeRow(coldSimulationRow(actorId)), 'board:meeting-owner-state');
     },
     fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
     fetchTradeMeetingForOwner(id) {

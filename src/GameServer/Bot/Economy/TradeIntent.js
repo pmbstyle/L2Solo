@@ -41,7 +41,8 @@ function encode(row) {
 // Use the prepared bounded graph, including non-selected craft alternatives.
 // Different roots allocate scarce stock in the existing money queue's order;
 // alternatives of one root all read that root's same allocation baseline.
-function project(state, network, projection, worth) {
+function project(state, network, projection, worth, limit = 3) {
+    if (network.quantityPrepared) return preparedProject(network, worth, limit);
     const byKey = new Map((projection.nodes || []).map(node => [node.key, node]));
     const allocated = new Map(), watched = new Set(), result = [];
     const incoming = state.acceptedIncoming || {};
@@ -95,6 +96,31 @@ function project(state, network, projection, worth) {
         for (const [id, row] of rows) if (!watched.has(id)) { watched.add(id); result.push(row); }
         for (const [id, count] of used) allocated.set(id, (baseline.get(id) || 0) + count);
     }
-    return result.slice(0, 3);
+    return result.slice(0, limit);
+}
+// A quantitative network already owns allocation and batch rounding. Readers
+// only project that result; they never subtract physical stock a second time.
+function preparedProject(network, worth, limit) {
+    const watched = new Set(), result = [];
+    for (const wish of network.queue || []) {
+        if (!wish.object?.itemId && !wish.object?.materials) continue;
+        try { rootTuple(wish.key); } catch (_) { return null; }
+        const rows = new Map();
+        const visit = (key, plan, value, recipeId = 0, depth = 0) => {
+            if (!plan || depth > 4 || !(plan.missingAmount > 0)) return;
+            const id = key.startsWith('item:') ? Number(key.slice(5)) : 0;
+            if (id && value > 0) {
+                const previous = rows.get(id);
+                rows.set(id, { itemId: id, amount: plan.missingAmount + (previous?.amount || 0), worth: worth(id),
+                    kind: wish.object?.kind, key: wish.key, recipeId, valueHours: value + (previous?.valueHours || 0), valueRate: wish.ratio });
+            }
+            const path = plan.intentionPath || plan, requirements = path.requirements || [];
+            const total = requirements.reduce((sum, row) => sum + row.amount, 0);
+            for (const row of requirements) visit(row.key, row.plan, value * row.amount / Math.max(1, total), path.recipeId || recipeId, depth + 1);
+        };
+        visit(wish.key, wish.plan, wish.valueHours);
+        for (const [id, row] of rows) if (!watched.has(id)) { watched.add(id); result.push(row); }
+    }
+    return result.slice(0, limit);
 }
 module.exports = { rootTuple, rootKey, encode, decode, project };

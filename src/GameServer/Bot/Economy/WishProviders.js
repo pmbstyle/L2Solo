@@ -241,18 +241,20 @@ function buildProjection(state, ctx, deps) {
                     }
                 }
             }
-            if (!learned && !ownedScroll && scrollAvailable) requirements.push({ key: itemNode(recipe.recipeItemId, depth + 1), amount: 1 });
+            const scrollKey = !learned && scrollAvailable ? itemNode(recipe.recipeItemId, depth + 1) : null;
+            if (!learned && !ownedScroll && scrollAvailable) requirements.push({ key: scrollKey, amount: 1 });
             // A physical attempt consumes one whole batch, including failure.
             // Its chance reduces the finite root benefit once; inputs are not
             // divided by expected yield. No imagined commissioned service.
             const regen = Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp);
             const recoveryHours = positive(recipe.mpCost) > 0 && regen > 0 ? positive(recipe.mpCost) / regen * 3 / 3600 : NaN;
             const cycleHours = recipe.kind === 'dual_sword_combine' ? Number(recipe.costHours || 1 / 3600) : recoveryHours;
-            if (scrollAvailable && Number.isFinite(cycleHours) && cycleHours > 0 && requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
+            if (scrollAvailable && (learned || scrollKey) && Number.isFinite(cycleHours) && cycleHours > 0 && requirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
                 itemId: Number(id), recipeId: recipe.recipeId,
                 requiresRecipeLearning: !learned, successProbability: Number(recipe.successRate ?? 100) / 100,
                 ownInputOpportunityValue, costHours: cycleHours, productCount: Number(recipe.productCount || 1),
-                grossRequirements: [...combined].map(([selfId, amount]) => ({ key: `item:${selfId}`, amount })),
+                grossRequirements: [...[...combined].map(([selfId, amount]) => ({ key: `item:${selfId}`, amount })),
+                    ...(!learned && scrollAvailable ? [{ key: scrollKey, amount: 1, once: true }] : [])],
                 requirements });
         }
         add({ key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] });

@@ -547,6 +547,7 @@ function normalize(row) {
         stats,
         marketTrades: marketCounts.get(Number(row.characterId)) || {},
         inventory,
+        ...(row.acceptedIncoming === undefined ? {} : { acceptedIncoming: row.acceptedIncoming || {} }),
         simulation: {
             ownerId: row.simulationOwner || 'legacy_main',
             revision: Math.max(0, Number(row.simulationRevision || 0)),
@@ -1678,9 +1679,13 @@ const BotLifeState = {
     acceptLifecycleRow(row) {
         const snapshot = normalize(row);
         const current = cache.get(snapshot.characterId);
+        if (Number(current?.simulation?.revision || 0) > Number(snapshot.simulation?.revision || 0)) return current;
+        if (row.acceptedIncoming === undefined && current?.acceptedIncoming) snapshot.acceptedIncoming = current.acceptedIncoming;
         if (Number(current?.stats?.clanLevelSpVersion || 0) > Number(snapshot.stats?.clanLevelSpVersion || 0)) return current;
         cache.set(snapshot.characterId, snapshot);
         notifyMarketReviewState(snapshot, current);
+        if (JSON.stringify(snapshot.acceptedIncoming) !== JSON.stringify(current?.acceptedIncoming || {}))
+            notifyColdSnapshot(snapshot, 'trade_incoming', { critical: true });
         invoke('GameServer/Clan/ClanService').syncColdMember(snapshot);
         return snapshot;
     },
@@ -1698,6 +1703,7 @@ const BotLifeState = {
             else delete inventory[id];
         }
         const snapshot = { ...current, inventory, adena: Number(row.adena),
+            ...(row.acceptedIncoming !== undefined ? { acceptedIncoming: row.acceptedIncoming || {} } : {}),
             vitals: { ...current.vitals, mp: Number(row.mp) }, updatedAt: Number(row.updatedAt),
             simulation: { ...current.simulation, revision: Number(row.simulationRevision) } };
         cache.set(snapshot.characterId, snapshot);
