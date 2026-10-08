@@ -2104,28 +2104,15 @@ function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip, heldItemI
     return { ids: [...ids], patch };
 }
 
-function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null) {
+function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
-    const stats = jsonObject(step.row.statsJson), packet = stats.money;
+    const stats = jsonObject(step.row.statsJson), packet = packetOverride || stats.money;
     if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
-    let rate = Number(funding.r ?? 0);
-    if (funding.r === undefined && funding.itemId) {
-        for (let index = 4; index + 2 < packet.length; index += 3) {
-            if (packet[index + 2] === Number(funding.itemId)) { rate = Number(packet[index]); break; }
-        }
-    }
-    const fundingPolicy = require('./GameServer/Bot/Economy/PurchaseFunding');
-    // ClanMarketService credits this part before acquisition. Keep it out of
-    // personal free money, then add its remaining actual-wallet allowance.
-    const clanPart = funding.free === true ? Math.min(wallet, Math.max(0, Number(funding.clanPart || 0))) : 0;
-    let budget = funding.free === true ? clanPart + (Number(packet[3]) === 0
-        ? fundingPolicy.budgetFor(packet, wallet - clanPart, 0, -Infinity) : 0)
-        : rate >= Number(packet[1]) ? fundingPolicy.budgetFor(packet, wallet, 0, rate) : 0;
-    if (funding.valueHours !== undefined) budget = Math.min(Number(packet[1]) > 0
-        ? Math.max(0, Number(funding.valueHours)) / Number(packet[1]) : Infinity,
-    require('./GameServer/Bot/Economy/PurchaseFunding').budgetFor(packet, wallet, 0, Number(packet[1])));
-    budget = Math.min(wallet, budget + Math.max(0, Number(funding.survivalCost || 0)));
+    const { r, itemId, valueHours, survivalCost, clanPart } = funding;
+    const budget = require('./GameServer/Bot/Economy/PurchaseFunding').spendable({
+        adena: wallet, stats: { money: packet }
+    }, 0, { r, itemId, valueHours, survivalCost, clanPart, free: funding.free === true });
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
 }
 
@@ -6994,6 +6981,8 @@ const Database = {
             }
             const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
             let remainingWallet = Number(wallet?.amount || 0);
+            const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
+            let remainingPacket = step ? jsonObject(step.row.statsJson).money : null;
             const parts = [];
             for (const [index, line] of lines.entries()) {
                 const fundingParts = line.fundingParts || [{ amount: line.amount, funding: line.funding, order: index }];
@@ -7009,9 +6998,10 @@ const Database = {
             if (parts.length > 12 || new Set(parts.map(part => part.order)).size !== parts.length) throw Error('invalid npc funding parts');
             parts.sort((left, right) => left.order - right.order);
             for (const part of parts) {
-                checkEconomyFundingUnsafe(characterId, step, part.amount * part.unitPrice,
-                    { ...part.funding, itemId: part.selfId }, remainingWallet);
-                remainingWallet -= part.amount * part.unitPrice;
+                const spent = part.amount * part.unitPrice, funding = { ...part.funding, itemId: part.selfId };
+                checkEconomyFundingUnsafe(characterId, step, spent, funding, remainingWallet, remainingPacket);
+                remainingWallet -= spent;
+                remainingPacket = Funding.packetAfterPurchase(remainingPacket, spent, funding);
             }
             if (!wallet || remainingWallet < 0) {
                 const row = completeEconomyStepUnsafe(characterId, step, { success: false,
@@ -7028,6 +7018,7 @@ const Database = {
                 }
             }
             const changed = new Set(lines.map(line => line.selfId)), patch = {};
+            if (step) patch.money = remainingPacket;
             // Reconcile the complete purchased bag once, not once per line.
             const gear = lines.find(line => !line.stackable && line.slot > 0
                 && (line.autoEquip ?? details.autoEquip) !== false);

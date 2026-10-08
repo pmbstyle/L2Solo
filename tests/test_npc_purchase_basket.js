@@ -86,7 +86,7 @@ async function run() {
     await assert.rejects(native(Life.cachedState(9514), { lines: [{ selfId: 2509, amount: 10001, unitPrice: 18 }] }), /invalid npc purchase/);
     assert.equal(await amount(9514, 57), 5000);
 
-    state = await seed(9515, 5000, { money: [0, .001, 1000, 0, .002, 3000, 999] });
+    state = await seed(9515, 5000, { money: [0, .001, 1000, 0, .003, 3000, 999] });
     await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 2509, amount: 100, unitPrice: 18,
         fundingParts: [{ amount: 50, funding: { r: .002 }, order: 0 }, { amount: 50, funding: { r: .001 }, order: 1 }] }] }), /funding_changed/);
     assert.equal(await amount(9515, 2509), 0); assert.equal(await amount(9515, 57), 5000);
@@ -130,6 +130,67 @@ async function run() {
     try { assert((await Basket.purchase(state, { seller, lines: [lines[0]] })).ok); }
     finally { DB.purchaseNpcInventoryBasket = actualPurchase; }
     assert.equal(Goals.snapshot(9518).current.type, 'progress_level', 'new goal published after native commit survives old result delivery');
+    const fundedPacket = [1000, .001, 0, 0, .1, 900, 2509, .05, 1440, 1060];
+    const fundedLines = [{ selfId: 2509, amount: 50, unitPrice: 18, funding: { r: .1 } },
+        { selfId: 1060, amount: 5, unitPrice: 108, funding: { r: .05 } }];
+    state = await seed(9519, 1440, { money: fundedPacket });
+    const fundedBasket = await Basket.purchase(state, { seller, lines: fundedLines });
+    assert(fundedBasket.ok); assert.equal(await amount(9519, 57), 0);
+    assert.equal(await amount(9519, 2509), 50); assert.equal(await amount(9519, 1060), 5);
+    assert.deepEqual(fundedBasket.state.stats.money, [1000, .001, 0, 0, .1, 0, 2509, .05, 0, 1060]);
+    const fundedRow = (await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=9519']))[0];
+    assert.deepEqual(JSON.parse(fundedRow.statsJson).money, fundedBasket.state.stats.money,
+        'native receipt persists consumed protection for the next seller');
+    const armourSeller = Basket.sellerFor(45, 'Dion', 37560);
+    assert(armourSeller && armourSeller.sourceId !== seller.sourceId, 'native second seller is the actual different armour NPC');
+    state = await seed(9520, 38460, { money: [1000, .001, 0, 0, .1, 900, 2509, .05, 38460, 45] });
+    const firstSeller = await Basket.purchase(state, { seller, lines: [fundedLines[0]] });
+    const secondSeller = await Basket.purchase(firstSeller.state, { seller: armourSeller,
+        lines: [{ selfId: 45, amount: 1, unitPrice: 37560, autoEquip: false, funding: { r: .05 } }] });
+    assert(secondSeller.ok); assert.equal(await amount(9520, 57), 0); assert.equal(await amount(9520, 45), 1);
+    state = await seed(9521, 1440, { money: fundedPacket });
+    const part = await Basket.purchase(state, { seller, lines: [{ ...fundedLines[0], amount: 20 }, fundedLines[1]] });
+    assert(part.ok); assert.equal(await amount(9521, 57), 540);
+    assert.deepEqual(part.state.stats.money.slice(4), [.1, 540, 2509, .05, 540, 1060],
+        'partial payment preserves the unpaid higher-priority contribution');
+    state = await seed(9522, 1440, { money: fundedPacket });
+    const originalBasket = DB.purchaseNpcInventoryBasket;
+    const pending = await Commit.admit(state, Commit.KINDS.npcBuy);
+    await DB.execute(["CREATE TEMP TRIGGER fail_funding_basket BEFORE INSERT ON items WHEN NEW.characterId=9522 AND NEW.selfId=1060 BEGIN SELECT RAISE(ABORT,'funding rollback'); END"]);
+    try { await assert.rejects(originalBasket.call(DB, 9522, { seller, lines: fundedLines, economyCommand: pending.command }), /funding rollback/); }
+    finally { Commit.finish(9522, pending.command); }
+    assert.equal(await amount(9522, 57), 1440);
+    assert.deepEqual(JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=9522']))[0].statsJson).money, fundedPacket,
+        'rollback restores original cumulative protection as well as cash');
+    await DB.execute(['DROP TRIGGER fail_funding_basket']);
+    state = await seed(9523, 1140, { money: [1000, .001, 0, 0, .1, 600, 2509, .05, 1140, 1060] });
+    const craftInputs = await Basket.purchase(state, { seller, lines: [
+        { selfId: 1785, amount: 2, unitPrice: 300, funding: { r: .1 } }, fundedLines[1]] });
+    assert(craftInputs.ok); assert.equal(await amount(9523, 57), 0); assert.equal(await amount(9523, 1785), 2);
+    assert.equal(await amount(9523, 2509), 0, 'input acquisition does not invent the eventual craft product');
+    assert.deepEqual(craftInputs.state.stats.money.slice(4), [.1, 0, 2509, .05, 0, 1060]);
+    const clanPacket = [1000, .001, 0, 2000];
+    state = await seed(9524, 1000, { money: clanPacket });
+    const clanCredit = await Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
+        unitPrice: 480, funding: { free: true, clanPart: 480 } }] });
+    assert(clanCredit.ok); assert.equal(await amount(9524, 57), 520); assert.equal(await amount(9524, 736), 1);
+    assert.deepEqual(clanCredit.state.stats.money, clanPacket, 'already credited clan money does not release personal funded protection');
+    state = await seed(9525, 1000, { money: clanPacket });
+    await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
+        unitPrice: 480, funding: { free: true, clanPart: 0 } }] }), /funding_changed/);
+    assert.equal(await amount(9525, 57), 1000); assert.equal(await amount(9525, 736), 0);
+    state = await seed(9526, 1000, { money: [1000, .001, 100, 0, .1, 720, 999] });
+    await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
+        unitPrice: 480, funding: { free: true, clanPart: 300 } }] }), /funding_changed/);
+    assert.equal(await amount(9526, 57), 1000, 'the same credit is not also counted as personal unprotected money');
+    state = await seed(9527, 1000, { money: [1000, .001, 100, 2000, .002, 700, 999] });
+    const nativeSurvival = await Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
+        unitPrice: 480, funding: { free: true, clanPart: 300, survivalCost: 200 } }] });
+    assert(nativeSurvival.ok); assert.equal(await amount(9527, 57), 520);
+    state = await seed(9528, 1000, { money: [1000, .001, 100, 2000, .002, 700, 999] });
+    await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
+        unitPrice: 480, funding: { free: true, clanPart: 300, survivalCost: 150, valueHours: .8 } }] }), /funding_changed/);
+    assert.equal(await amount(9528, 57), 1000, 'the shared and native value-hours/clan precedence matches exactly');
     console.log('Native NPC basket: actual seller, multi-item debit, partial progress, restart/replay, aggregate funding, rollback and hot delivery passed');
 }
 run().then(() => DB.close()).catch(async error => { console.error(error); process.exitCode = 1; await DB.close(); });
