@@ -14,7 +14,7 @@ const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 const TARGET = ScrollStock.TARGET_AMOUNT;
-assert.strictEqual(TARGET, 2, 'a small fixed target: the next trip and one spare');
+assert.strictEqual(TARGET, 10, 'the temporary carried target is ten scrolls');
 const price = ScrollStock.localNpcPrice('Dion');
 assert.ok(price > 0, 'the Dion grocer sells Scrolls of Escape');
 assert.ok(ScrollStock.localNpcPrice('Floran Village') > 0, 'so does Floran\'s');
@@ -29,8 +29,8 @@ function cold(scrolls, adena = 100000) {
 }
 
 assert.strictEqual(ScrollStock.restockPlan(cold(0), { unitPrice: price }).amount, TARGET, 'an empty stock buys the target');
-assert.strictEqual(ScrollStock.restockPlan(cold(1), { unitPrice: price }).amount, 1, 'only what is missing');
-assert.strictEqual(ScrollStock.restockPlan(cold(2), { unitPrice: price }).needed, false, 'a full stock buys nothing');
+assert.strictEqual(ScrollStock.restockPlan(cold(1), { unitPrice: price }).amount, 9, 'only what is missing');
+assert.strictEqual(ScrollStock.restockPlan(cold(TARGET), { unitPrice: price }).needed, false, 'a full stock buys nothing');
 const reserve = HealingPotionStock.operationalReserve(cold(0, 7600));
 const poor = ScrollStock.restockPlan(cold(0, reserve + price), { unitPrice: price });
 assert.strictEqual(poor.amount, 1, 'the consumables reserve is kept: one scroll above it');
@@ -43,14 +43,14 @@ assert.strictEqual(patch.adena, 100000 - TARGET * price);
 assert.strictEqual(patch.inventory[57].amount, 100000 - TARGET * price);
 assert.deepStrictEqual({ selfId: patch.purchase.selfId, amount: patch.purchase.amount, cost: patch.purchase.cost },
     { selfId: 736, amount: TARGET, cost: TARGET * price });
-assert.strictEqual(ScrollStock.coldPurchasePatch(cold(2), { unitPrice: price }), null);
+assert.strictEqual(ScrollStock.coldPurchasePatch(cold(TARGET), { unitPrice: price }), null);
 
 // The sale keeps the stock and sells the surplus.
-assert.deepStrictEqual(ScrollStock.keptAmounts(cold(5)), { 736: TARGET });
+assert.deepStrictEqual(ScrollStock.keptAmounts(cold(TARGET + 3)), { 736: TARGET });
 const sold = (state) => new Map(MarketListingPolicy.evaluate(state, { unlimited: true, states: [] }).npc
     .map((entry) => [entry.selfId, entry.count])).get(736);
-assert.strictEqual(sold(cold(2)), undefined, 'the stock is not NPC junk');
-assert.strictEqual(sold(cold(5)), 3, 'a surplus is sold');
+assert.strictEqual(sold(cold(TARGET)), undefined, 'the stock is not NPC junk');
+assert.strictEqual(sold(cold(TARGET + 3)), 3, 'a surplus is sold');
 
 // A hot bot buys into its backpack the same way.
 (async () => {
