@@ -77,6 +77,11 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const result = attempts.find(attempt => attempt.status === 'fulfilled').value, id = result.meeting.id;
 
         assert(result.pending);
+        assert.deepEqual(result.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 6 }, 'native owner slot exposes only accepted incoming trade goods');
+        assert.deepEqual(result.coldLifeRows[ids[1]].acceptedIncoming, {}, 'outgoing goods and route scrolls are not incoming');
+        Life.acceptLifecycleRow(result.coldLifeRows[ids[0]]);
+        assert.equal(Life.cachedState(ids[0]).acceptedIncoming[1867], 6);
+        assert.equal((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming[1867], 6);
         assert.deepEqual(await held(), holdings, 'acceptance only moves custody');
         assert.equal((await Database.acceptTradeMeeting(request)).meeting.id, id);
         await assert.rejects(Database.acceptTradeMeeting({ ...request, token: 'another' }), /participant_changed|authority_changed/);
@@ -141,11 +146,17 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         await Life.upsertState({ ...Life.cachedState(ids[0]), activity: 'shopping', stats: { ...Life.cachedState(ids[0]).stats, travel: undefined } }, 'fixture_arrival');
         const completed = await Database.arriveTradeMeeting(completedId);
         assert.equal(completed.meeting.state, 'completed');
+        assert.equal(completed.coldLifeRows[ids[0]].acceptedIncoming[1867], 6, 'terminal held goods become pending delivery, never both');
         await Database.arriveTradeMeeting(completedId);
         await Database.cancelTradeMeeting(completedId, 'late-cancel');
         for (const actor of ids) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(completedId, actor); }
         assert.equal((await Database.fetchTradeMeetingByToken(fulfilled.token)) ?? null, null, 'terminal rows are reclaimed');
         const receipt = { pending: false, meetingId: completedId, revision: completed.meeting.revision, outcome: 'completed' };
+        const delivered = await Database.fetchTradeMeetingOwnerState(ids[0]);
+        Life.acceptLifecycleRow(delivered);
+        assert.deepEqual(Life.cachedState(ids[0]).acceptedIncoming, {}, 'physical delivery clears incoming instead of counting it twice');
+        assert.equal(Life.acceptLifecycleRow(result.coldLifeRows[ids[0]]), Life.cachedState(ids[0]), 'an old acceptance reply cannot rewind delivered inventory or incoming');
+        assert.deepEqual(Life.cachedState(ids[0]).acceptedIncoming, {});
         for (const actor of ids) assert.deepEqual(await Database.fetchTradeMeetingReceipt(fulfilled.token, actor), receipt,
             'a lost reply after terminal cleanup recovers the original outcome from the participant slot');
         assert.equal(await Database.fetchTradeMeetingReceipt(fulfilled.token, 999), null);

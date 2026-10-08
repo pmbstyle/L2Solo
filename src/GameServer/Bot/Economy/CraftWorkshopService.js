@@ -1,5 +1,6 @@
 'use strict';
 const Profit = require('./CraftProfitPolicy');
+const Commit = require('./EconomyCommit');
 const recipes = () => invoke('GameServer/Items/C4RecipeItems');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
 const byRecipe = new Map();
@@ -120,30 +121,65 @@ function servicePrice(recipe, previous, state) {
     Belief.learn(belief, observations);
     return { ...previous, price: Math.max(1, Math.round(Math.exp(belief.mu))), firstPrice: first };
 }
-async function craft(ownerId, recipeId, customerId, { expectedPrice = null } = {}) {
+async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expectedRevision = null,
+    batches = 1, original = null, random = Math.random, funding = { r: 1 } } = {}) {
     const database = invoke('Database');
-    const crafter = life().cachedState(ownerId);
-    const recipe = recipes().resolveByRecipeId(recipeId);
-    const [physical] = await database.execute(['SELECT * FROM characters WHERE id = ?', [customerId]]);
-    if (!physical || !crafter || !recipe) throw new Error('workshop unavailable');
-    const customer = life().cachedState(customerId) || { characterId: Number(customerId), clanId: physical.clanId, stats: {} };
-    const quoteValue = quote(crafter, customer, recipeId);
-    if (!quoteValue || expectedPrice !== null && Number(expectedPrice) !== quoteValue.price) throw new Error('workshop price changed');
-    const materials = Profit.materials(await database.fetchItems(customerId), recipe);
-    if (!materials) throw new Error('workshop materials missing');
-    const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
-    if (!template) throw new Error('workshop product missing');
-    const result = await database.craftForCustomer(Number(ownerId), Number(customerId), {
-        materials, product: Profit.succeeds(recipe) ? { selfId: recipe.productId, amount: recipe.productCount,
-            name: template.template.name, stackable: !!template.etc?.stackable, slot: Number(template.etc?.slot || 0) } : null,
-        price: quoteValue.price, crafterMp: Number(crafter.vitals.mp) - Number(recipe.mpCost), adena: { name: 'Adena' },
-        workshop: { recipeId, batches: 1, entryPrice: quoteValue.entryPrice, fee: quoteValue.price,
-            crafterRevision: crafter.simulation?.revision || 0, customerRevision: customer.simulation?.revision || 0 }
-    });
-    if (result.crafterState) life().acceptLifecycleRow(result.crafterState);
-    if (result.customerState) life().acceptLifecycleRow(result.customerState);
-    return result;
+    let customer = life().cachedState(customerId);
+    let admitted = null;
+    try {
+        // Recovery retains the original identity and precedes the current
+        // quote, recipe book and already-consumed material checks.
+        if (original) {
+            if (!customer) throw Error('workshop customer unavailable');
+            admitted = await Commit.admit(customer, Commit.KINDS.craft, original);
+            const result = await database.craftForCustomer(Number(ownerId), Number(customerId), {
+                economyCommand: admitted.command });
+            if (result.customerState) Commit.acceptRow(result.customerState);
+            if (result.crafterState) Commit.acceptRow(result.crafterState);
+            return result;
+        }
+        const crafter = life().cachedState(ownerId);
+        const recipe = recipes().resolveByRecipeId(recipeId);
+        const [physical] = await database.execute(['SELECT * FROM characters WHERE id = ?', [customerId]]);
+        if (!physical || !crafter || !recipe || !Number.isSafeInteger(batches) || batches < 1 || batches > 64) {
+            throw new Error('workshop unavailable');
+        }
+        customer ||= { characterId: Number(customerId), clanId: physical.clanId, stats: {} };
+        const quoteValue = quote(crafter, customer, recipeId);
+        if (!quoteValue || expectedPrice !== null && Number(expectedPrice) !== quoteValue.price
+            || expectedRevision !== null && Number(expectedRevision) !== Number(crafter.simulation?.revision || 0)) {
+            throw new Error('workshop price changed');
+        }
+        const materials = Profit.materials(await database.fetchItems(customerId), recipe, batches);
+        if (!materials) throw new Error('workshop materials missing');
+        const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
+        if (!template) throw new Error('workshop product missing');
+        if (customer.phase) {
+            admitted = await Commit.admit(customer, Commit.KINDS.craft);
+            customer = admitted.state;
+        }
+        const product = { selfId: recipe.productId, amount: recipe.productCount * batches,
+            name: template.template.name, stackable: !!template.etc?.stackable, slot: Number(template.etc?.slot || 0) };
+        const result = await database.craftForCustomer(Number(ownerId), Number(customerId), {
+            materials, product: admitted || Profit.succeeds(recipe, random) ? product : null,
+            price: quoteValue.price * batches, crafterMp: Number(crafter.vitals.mp) - Number(recipe.mpCost) * batches,
+            adena: { name: 'Adena' }, economyCommand: admitted?.command, funding, random,
+            workshop: { recipeId, batches, entryPrice: quoteValue.entryPrice, fee: quoteValue.price * batches,
+                crafterRevision: crafter.simulation?.revision || 0, customerRevision: customer.simulation?.revision || 0 }
+        });
+        if (result.crafterState) Commit.acceptRow(result.crafterState);
+        if (result.customerState) Commit.acceptRow(result.customerState);
+        return result;
+    } catch (error) {
+        // The caller keeps this bounded original header when delivery fails;
+        // no new attempt is inferred from the leftover materials.
+        if (admitted) error.economyCommand = admitted.command;
+        throw error;
+    } finally {
+        if (admitted) Commit.finish(customerId, admitted.command);
+    }
 }
+
 async function knownFor(id) {
     id = Number(id);
     let known = knownRecipes.get(id);

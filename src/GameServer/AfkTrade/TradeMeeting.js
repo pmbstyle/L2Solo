@@ -235,4 +235,10 @@ function create(io) {
     }
     return { accept, leg, terminal, present, acknowledge, participant, meeting };
 }
-module.exports = { create, canonical };
+function projectIncoming(incoming) {
+    // Leave room for the existing numeric agreement reference inside the
+    // task's 128-byte own projection. Full counts remain native/prepared-only.
+    return Buffer.byteLength(JSON.stringify(incoming)) <= 56 ? { acceptedIncoming: incoming }
+        : { acceptedIncoming: null, incomingPending: true };
+}
+module.exports = { create, canonical, projectIncoming };

@@ -31,6 +31,14 @@ async function run() {
         'missing aggregate material selects its component');
     assert.equal(ColdCraftingService.requiredCraftCount(repeated, componentRecipe, repeatedState), 3,
         'the component demand uses the same aggregate input');
+    const completed = { ...repeatedState, stats: { equipmentPlan: { recipeId: repeated.recipeId, outputAmount: 2 } },
+        inventory: { ...repeatedState.inventory, [repeated.productId]: { amount: 2 } } };
+    assert.equal(ColdCraftingService.requiredCraftCount(repeated, repeated, completed), 0);
+    assert.equal(ColdCraftingService.readyRecipeFor(completed, repeated), null,
+        'extra ingredients cannot trigger another paid attempt after the root is filled');
+    assert.equal(ColdCraftingService.requiredCraftCount(repeated, repeated, {
+        ...completed, inventory: { ...completed.inventory, [repeated.productId]: { amount: 1 } }
+    }), 1, 'partial output only leaves the remaining native batch');
     const items = componentRecipe.materials.map((material, index) => ({
         id: index + 1,
         selfId: material.selfId,

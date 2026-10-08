@@ -36,6 +36,14 @@ async function run() {
         stats: { classId: 1, exp: Data.experience[34], persona: { traits: { commitment: .5, caution: .5,
             resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .8 } },
         timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
+    const waiting = Economy.forState({ ...base, incomingPending: true,
+        stats: { ...base.stats, decisionSeq: 7, activityLeaf: 88, wishFocus: ['power:101:7', 1, 50], money: [0, 1, 10, 40] } });
+    assert.equal(waiting.intentPending, true);
+    assert.equal(waiting.network.activity, null);
+    assert.equal(waiting.purchaseBudget(101), 0);
+    assert.equal(waiting.statsPacket.decisionSeq, 7);
+    assert.equal(waiting.statsPacket.activityLeaf, 88, 'unknown incoming does not renew the tendency roll');
+    assert.deepEqual(waiting.statsPacket.wishFocus, ['power:101:7', 1, 50]);
     if (process.argv.includes('--producer-status')) {
         const Life = invoke('GameServer/Bot/Population/BotLifeState');
         const Craft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');

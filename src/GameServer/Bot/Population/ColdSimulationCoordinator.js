@@ -1794,11 +1794,12 @@ class ColdSimulationCoordinator {
             // Native moves publish a new timestamp. Hold the worker's one
             // decision across this plan exactly as the town command does.
             this.economyDecisions.hold(id, decision);
+            const preparedState = state;
             try {
                 state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite, decision || null)) || state;
                 const applied = await this.step('economyPlan', id, () => invoke('GameServer/Bot/Economy/BotAfkMarketService')
                     .executePlan(state, entry.proposal.economyPlan,
-                        { beforeWrite, step: work => this.step('economyPlan', id, work) }));
+                        { beforeWrite, preparedState, step: work => this.step('economyPlan', id, work) }));
                 state = LifeState.cachedState(id) || applied?.state || state;
             } finally {
                 this.economyDecisions.release(id);

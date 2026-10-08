@@ -75,6 +75,25 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         assert(boughtAd, 'main publishes the worker quoted buy ad');
         assert.equal(boughtAd.lines[0].count, 5); assert.equal(boughtAd.lines[0].price, 110);
         assert.equal(funded.state.adena + boughtAd.escrowAdena, walletBefore, 'native writer conserves wallet plus escrow');
+        const prepared = Life.cachedState(id);
+        await Database.execute(['UPDATE bot_life_state SET simulationRevision=simulationRevision+1 WHERE characterId=?', [id]]);
+        const actual = Life.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [id]]))[0]);
+        const preserved = await Database.fetchAfkTradeShops(id);
+        const deferred = await Market.executePlan(actual, { sell: [], withdraw: [], buyAds: [], travel: null },
+            { preparedState: prepared, step: work => work() });
+        assert.equal(deferred.buyPending, true, 'a changed own native revision keeps the whole buy batch pending');
+        assert.deepEqual(await Database.fetchAfkTradeShops(id), preserved,
+            'stale complete-empty is not fresh consent to withdraw the old ads');
+        const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
+        const expected = Object.fromEntries(preserved.filter(row => row.kind === 'buy_ad').map(row => [row.id, row.revision]));
+        await assert.rejects(Database.replaceBoardRecords(id, 'buy_ad', [], {
+            expected, expectedAuthority: Commit.authority(prepared)
+        }), /economy_plan_need_changed/, 'the SQL transaction fences even an unchanged/stale main cache');
+        assert.deepEqual(await Database.fetchAfkTradeShops(id), preserved);
+        await Market.executePlan(actual, { sell: [], withdraw: [], buyAds: [], travel: null },
+            { preparedState: actual, step: work => work() });
+        assert.equal((await Database.fetchAfkTradeShops(id)).filter(row => row.kind === 'buy_ad').length, 0,
+            'a freshly prepared complete-empty batch closes obsolete unaccepted ads');
         const snapshots = coordinator.snapshot();
         assert(snapshots.economyPlans.p95Ms <= 5, 'warm native empty-plan execution including writer guards fits 5 ms');
         console.log(JSON.stringify({ economyPlans: snapshots.economyPlans, staleSteps: 1, ack: true }));

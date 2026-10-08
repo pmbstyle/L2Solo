@@ -102,7 +102,7 @@ class WishNetwork {
     // caller that holds the result itself, or a one-off proposal).
     build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, survivalReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
-        caller = 'wish_network', trigger = 'request' }) {
+        caller = 'wish_network', trigger = 'request', stockFor = null }) {
         const diagnostic = Diagnostics.active();
         if (diagnostic) Diagnostics.count('network', 'request');
         if (typeof actorKey !== 'string' || !actorKey || typeof inputKey !== 'string'
@@ -166,19 +166,37 @@ class WishNetwork {
                 actualCashFees: nonnegative(path.actualCashFees), riskHours: nonnegative(path.riskHours) }]);
             return value.known ? -value.valueHours : Infinity;
         };
-        const solve = (key, depth = 0) => {
+        const solve = (key, depth = 0, requested = 1, allocation = null) => {
             if (visiting.has(key)) throw new TypeError('cyclic_wish_network');
             const node = byKey.get(key);
             if (!node) throw new TypeError('missing_wish_requirement');
             if (depth > MAX_DEPTH) throw new RangeError('wish_network_depth');
-            if (plans.has(key)) {
+            if (!allocation && plans.has(key)) {
                 if (diagnostic) Diagnostics.count('network', 'node_hit', 'same_build');
                 const cachedPlan = plans.get(key);
                 if (depth + (cachedPlan?.height || 0) > MAX_DEPTH) throw new RangeError('wish_network_depth');
                 return cachedPlan;
             }
             visiting.add(key);
-            const choices = [];
+            const itemId = key.startsWith('item:') ? Number(key.slice(5)) : 0;
+            let amount = requested, ownValue = 0, incomingHeld = 0;
+            if (allocation && itemId) {
+                const stock = stockFor(itemId, allocation.rootKey) || {};
+                const prior = allocation.used.get(itemId) || 0;
+                const owned = Math.min(requested, Math.max(0, nonnegative(stock.owned) - prior));
+                incomingHeld = Math.min(requested - owned, Math.max(0, nonnegative(stock.incoming) - Math.max(0, prior - nonnegative(stock.owned))));
+                amount -= owned + incomingHeld;
+                ownValue = owned * nonnegative(node.price);
+                allocation.used.set(itemId, prior + owned + incomingHeld);
+                if (!amount) {
+                    visiting.delete(key);
+                    return { kind: 'owned', requestedAmount: requested, missingAmount: 0, awaitingIncoming: incomingHeld > 0,
+                        executable: incomingHeld === 0, requirements: [], tripEntries: [], height: 0,
+                        basePrice: 0, price: 0, baseEffort: ownValue > 0 ? ownValue * adenaToHours : 0,
+                        effort: ownValue > 0 ? ownValue * adenaToHours : 0 };
+                }
+            }
+            const choices = [], alternativeUse = new Map(allocation?.used || []);
             const paths = node.paths?.length ? node.paths : [{ kind: 'owned', activity: null,
                 price: node.price, costHours: node.costHours, riskHours: node.riskHours }];
             if (diagnostic) Diagnostics.count('network', 'path_request', 'known_input', paths.length);
@@ -197,7 +215,12 @@ class WishNetwork {
                     if (diagnostic) Diagnostics.count('network', 'path_refused', 'unknown_outcome');
                     continue;
                 }
-                let price = nonnegative(path.price), effort = priceOf(path), available = true, height = 0;
+                const units = allocation && path.kind === 'craft' ? Math.ceil(amount / Number(path.productCount || 1)) : allocation ? amount : 1;
+                if (!Number.isSafeInteger(units) || units <= 0) continue;
+                const local = allocation ? { rootKey: allocation.rootKey, used: new Map(allocation.used) } : null;
+                let price = nonnegative(path.price) * units, effort = (allocation ? priceOf({ ...path, ownInputOpportunityValue: 0 }) : priceOf(path)) * units,
+                    available = true, height = 0, awaitingIncoming = incomingHeld > 0;
+                if (allocation && ownValue > 0) effort += ownValue * adenaToHours;
                 let executable = path.executable !== false;
                 const trip = path.quoted && trips.get(tripKey(path));
                 const tripEntries = trip ? [trip.index] : [];
@@ -207,26 +230,36 @@ class WishNetwork {
                     effort = Math.max(0, Number(path.ownBenefitHours || 0) - valuation.valueHours);
                 }
                 const requirements = [];
-                for (const requirement of path.requirements || []) {
-                    const child = solve(requirement.key, depth + 1);
-                    const amount = nonnegative(requirement.amount ?? 1);
+                const inputs = allocation ? path.grossRequirements || path.requirements || [] : path.requirements || [];
+                for (const requirement of inputs) {
+                    const amount = nonnegative(requirement.amount ?? 1) * (allocation ? requirement.once ? 1 : units : 1);
+                    if (!Number.isSafeInteger(amount) || amount <= 0) { available = false; break; }
+                    const child = solve(requirement.key, depth + 1, amount, local);
                     if (!child || !amount) { available = false; break; }
                     if (!child.executable || Number(child.availableUnits ?? Infinity) < amount) executable = false;
-                    price += child.basePrice * amount;
-                    effort += child.baseEffort * amount;
+                    price += child.basePrice * (allocation ? 1 : amount);
+                    effort += child.baseEffort * (allocation ? 1 : amount);
+                    awaitingIncoming ||= !!child.awaitingIncoming;
                     for (const index of child.tripEntries) if (!tripEntries.includes(index)) tripEntries.push(index);
                     quoted ||= child.quoted;
                     height = Math.max(height, 1 + child.height);
-                    requirements.push({ key: requirement.key, amount });
+                    if (!allocation || child.missingAmount > 0 || child.awaitingIncoming) requirements.push({ key: requirement.key,
+                        amount: allocation ? child.missingAmount || amount : amount, ...(allocation ? { plan: child } : {}) });
                 }
                 const basePrice = price, baseEffort = effort;
                 price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries);
+                if (allocation) for (const [id, count] of local.used) alternativeUse.set(id, Math.max(alternativeUse.get(id) || 0, count));
                 if (available) choices.push({ ...path, executable, quoted, tripEntries, successProbability,
+                    ...(allocation ? { requestedAmount: requested, missingAmount: amount, batches: units, awaitingIncoming } : {}),
                     basePrice, baseEffort, price, effort, requirements, height });
                 else if (diagnostic) Diagnostics.count('network', 'path_refused', 'missing_requirement');
             }
             choices.sort((a, b) => Number(b.executable) - Number(a.executable) || a.effort - b.effort || a.price - b.price);
             const best = choices[0] || null;
+            if (allocation && best) {
+                const transformation = choices.find(choice => choice.kind === 'craft');
+                if (transformation && transformation !== best) best.intentionPath = transformation;
+            }
             if (diagnostic) Diagnostics.count('network', 'path_evaluated', 'known_available', choices.length);
             if (detail) for (const choice of choices) Diagnostics.push({ ...trace,
                 phase: 'wish_alternative', reason: choice === best ? 'selected_path' : 'evaluated_path',
@@ -238,7 +271,9 @@ class WishNetwork {
                 phase: 'craft_requirement', reason: 'selected_recipe_input', source: 'craft_input',
                 wishKey: requirement.key, recipeId: best.recipeId, requested: requirement.amount,
                 item: requirement.key.startsWith('item:') ? Number(requirement.key.slice(5)) : undefined });
-            visiting.delete(key); plans.set(key, best);
+            visiting.delete(key);
+            if (allocation) allocation.used = alternativeUse;
+            else plans.set(key, best);
             return best;
         };
         const wishes = roots.map(key => {
@@ -250,6 +285,21 @@ class WishNetwork {
                 valueHours: nonnegative(node.valueHours) * remaining * Number(plan?.successProbability ?? 1),
                 price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         }).filter(wish => wish.valueHours > 0 && wish.plan);
+        if (stockFor) {
+            // Existing money priority allocates free stock once. Alternatives of
+            // one root evaluate the same baseline and retain the maximum claim.
+            const used = new Map();
+            const priority = [...wishes].sort((a, b) => b.valueHours / Math.max(1, b.price) - a.valueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
+            for (const wish of priority) {
+                const allocation = { rootKey: wish.key, used: new Map(used) };
+                const plan = solve(wish.key, 0, 1, allocation);
+                wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
+                const node = byKey.get(wish.key);
+                wish.valueHours = plan ? nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress))) * Number(plan.successProbability ?? 1) : 0;
+                for (const [id, count] of allocation.used) used.set(id, count);
+                plans.set(wish.key, plan);
+            }
+        }
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
         const held = wishes.find(wish => wish.key === previous.focus?.[0]);
@@ -283,27 +333,28 @@ class WishNetwork {
             reserve: survivalReserve, available, source: wish.plan?.sourceType || wish.plan?.kind,
             recipeId: wish.plan?.recipeId });
         const demands = new Map(), leaves = new Map();
-        const flow = (key, value, amount = 1, rootKey = key) => {
-            const plan = plans.get(key);
+        const flow = (key, value, amount = 1, rootKey = key, prepared = null) => {
+            const plan = prepared || plans.get(key);
             if (!plan || !value) return;
             const node = byKey.get(key);
+            if (!(amount > 0) || stockFor && plan.missingAmount === 0) return;
             demands.set(key, (demands.get(key) || 0) + value / amount);
-            const ready = plan.kind !== 'craft' || !plan.requirements.length;
+            const ready = plan.kind !== 'craft' || !plan.awaitingIncoming && !plan.requirements.length;
             const acquired = Math.min(amount, Number(plan.availableUnits ?? Infinity));
             if (plan.activity && plan.executable && ready && acquired > 0) {
                 const leafKey = `${rootKey}:${key}:${plan.activity}`;
                 const leaf = leaves.get(leafKey) || { ...plan, key: leafKey, nodeKey: key, rootKey, activity: plan.activity,
                     object: node.object, amount: acquired,
-                    price: plan.basePrice * acquired + tripValue(plan.tripEntries, 'fees'),
-                    effort: plan.baseEffort * acquired + tripEffort(plan.tripEntries), valueHours: 0 };
+                    price: stockFor ? plan.price * acquired / amount : plan.basePrice * acquired + tripValue(plan.tripEntries, 'fees'),
+                    effort: stockFor ? plan.effort * acquired / amount : plan.baseEffort * acquired + tripEffort(plan.tripEntries), valueHours: 0 };
                 leaf.valueHours += value * acquired / amount;
                 leaves.set(leafKey, leaf);
             }
             const total = plan.requirements.reduce((sum, row) => sum + row.amount, 0);
             for (const requirement of plan.requirements) flow(requirement.key,
-                value * requirement.amount / total, amount * requirement.amount, rootKey);
+                value * requirement.amount / total, stockFor ? requirement.amount : amount * requirement.amount, rootKey, requirement.plan);
         };
-        for (const wish of weighted) flow(wish.key, wish.valueHours);
+        for (const wish of weighted) flow(wish.key, wish.valueHours, 1, wish.key, stockFor ? wish.plan : null);
         // Funding is a path to the first gap, not a second budget or desire.
         const unfunded = gap;
         if (unfunded) for (const path of moneyPaths.slice(0, 3)) {
@@ -326,6 +377,7 @@ class WishNetwork {
         const activity = heldActivity || choose(candidates, leaf => leaf.valueHours / Math.max(1 / 3600, leaf.effort),
             roll('activity'));
         const result = { inputKey, queue, moneyPrice, available, gap, hourAdena,
+            quantityPrepared: !!stockFor,
             focus, dormant, activity, demands, plans, decisionSeq,
             activityLeaf: individual && activity ? fnv1a32(activity.key) : 0 };
         if (diagnostic) {

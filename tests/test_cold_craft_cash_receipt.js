@@ -46,7 +46,7 @@ async function verifyAuthoredPhysicalCraft() {
             level, exp, loc: { ...nativeStation.loc }, currentRegion: 'Giran',
             adena: held(rows, 57), inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
             vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
-            stats: { classId, generatedCold: true, ...stats }, timing: {} }, 'native_gear_craft_fixture');
+            stats: { classId, generatedCold: true, money: [36000, 0, 0, 0], ...stats }, timing: {} }, 'native_gear_craft_fixture');
     }
     async function image(ids) {
         return Promise.all(ids.map(async id => ({
@@ -249,10 +249,39 @@ async function verifyAuthoredPhysicalCraft() {
             assert.equal(batchResult.crafted, true, 'fighter uses the agreed dwarf without learning his recipe');
             assert.equal(batchResult.batchCount, 2, 'final own-use execution respects requested output');
             assert.equal(held(await Database.fetchItems(batchCustomer.characterId), recipe.productId), recipe.productCount * 2);
+            assert((await Database.fetchItems(batchCustomer.characterId)).filter(row => Number(row.selfId) === Number(recipe.productId))
+                .every(row => Number(row.amount) === 1), 'nonstackable output keeps one physical object per crafted item');
             assert.equal((await Database.fetchCharacterRecipes(batchCustomer.characterId)).length, 0);
             assert.equal(batchResult.state.adena, 1000000 - currentStation.price * 2);
             assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, batchCustomer), null,
                 'changed agreed workshop revision never silently selects a different dwarf');
+            const recoveryStation = Workshop.find(recipe.recipeId, batchResult.state);
+            assert(recoveryStation);
+            const recovering = await seed('bot_workshop_lost_reply', 'WorkshopLostReply', 0, 40,
+                [item(57, 1000000), ...[...inputs].map(([id, amount]) => item(id, amount * 2))], {
+                    equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: recipe.recipeId,
+                        outputAmount: 1, target: { selfId: recipe.productId },
+                        craftProviders: { [recipe.recipeId]: { ...recoveryStation, known: false } } }
+                });
+            const exchange = Database.craftForCustomer;
+            let exchanges = 0;
+            Database.craftForCustomer = async (...args) => {
+                const result = await exchange(...args);
+                if (++exchanges === 1) throw Error('lost_native_reply');
+                return result;
+            };
+            let recovered;
+            try { recovered = await ColdCraftingService.craft(recovering, () => 0); }
+            finally { Database.craftForCustomer = exchange; }
+            assert.equal(recovered.crafted, true);
+            assert.equal(exchanges, 2, 'one attempt plus recovery of its saved result');
+            assert.equal(recovered.result.replayed, true);
+            assert.equal(recovered.state.adena, 1000000 - recoveryStation.price);
+            for (const [id, amount] of inputs) assert.equal(held(await Database.fetchItems(recovering.characterId), id), amount);
+            const recoveredImage = await image([recovering.characterId, workshopOwner.characterId]);
+            const completedRetry = await ColdCraftingService.craft({ ...recovered.state, activity: 'crafting' }, () => 0);
+            assert.equal(completedRetry.reason, 'not_ready');
+            assert.deepStrictEqual(await image([recovering.characterId, workshopOwner.characterId]), recoveredImage);
             console.log('Native paid workshop conservation:', JSON.stringify({
                 recipeId: recipe.recipeId,
                 fee: selectedWorkshop.price,

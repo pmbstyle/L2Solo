@@ -1,5 +1,6 @@
 'use strict';
 const { canonical } = require('./TradeMeeting');
+const { deflateRawSync, inflateRawSync } = require('node:zlib');
 const shape = (row, length) => Array.isArray(row) && row.length === length;
 function encode(input) {
     const row = canonical(input);
@@ -21,4 +22,67 @@ function decode(wire) {
         lines: wire[9].map(l => ({ payer: l[0], itemId: l[1], selfId: l[2], enchant: l[3], count: l[4], price: l[5],
             adId: l[6], adRevision: l[7], needAdId: l[8], needAdRevision: l[9], certificate: l[10] })) });
 }
-module.exports = { encode, decode };
+const PAGE_BYTES = 768, MAX_PAGES = 4, MAX_RAW_BYTES = 8192;
+function pages(input) {
+    const wire = encode(input), ref = wire[1], chunks = [];
+    let chunk = '';
+    const bytes = text => Buffer.byteLength(JSON.stringify([1, ref, chunks.length, MAX_PAGES, text]));
+    for (const character of JSON.stringify(wire)) {
+        if (bytes(chunk + character) > PAGE_BYTES) {
+            if (!chunk || chunks.length >= MAX_PAGES - 1) throw Error('trade_meeting_backpressure');
+            chunks.push(chunk); chunk = '';
+        }
+        chunk += character;
+    }
+    if (chunk) chunks.push(chunk);
+    return chunks.map((text, index) => [1, ref, index, chunks.length, text]);
+}
+// Transport pages budget the real existing command envelope, including its
+// epoch/message identity and collection field. Compression is bounded to one
+// canonical basket; no dictionary, extra queue or retained expanded graph.
+function commandPages(input, envelopeFor) {
+    if (typeof envelopeFor !== 'function') throw Error('trade_meeting_envelope');
+    const wire = encode(input), ref = wire[1], raw = Buffer.from(JSON.stringify(wire));
+    if (raw.byteLength > MAX_RAW_BYTES) throw Error('trade_meeting_backpressure');
+    const text = deflateRawSync(raw).toString('base64');
+    const chunks = []; let at = 0;
+    while (at < text.length) {
+        if (chunks.length >= MAX_PAGES) throw Error('trade_meeting_backpressure');
+        let low = 0, high = text.length - at;
+        while (low < high) {
+            const middle = Math.ceil((low + high) / 2);
+            const frame = [2, ref, chunks.length, MAX_PAGES, text.slice(at, at + middle)];
+            if (Buffer.byteLength(JSON.stringify(envelopeFor(frame))) <= PAGE_BYTES) low = middle;
+            else high = middle - 1;
+        }
+        if (!low) throw Error('trade_meeting_backpressure');
+        chunks.push(text.slice(at, at + low)); at += low;
+    }
+    return chunks.map((chunk, index) => [2, ref, index, chunks.length, chunk]);
+}
+function fromPages(frames) {
+    if (!Array.isArray(frames) || !frames.length || frames.length > MAX_PAGES * 2) throw Error('trade_meeting_pages');
+    const version = frames[0]?.[0], ref = frames[0]?.[1], count = frames[0]?.[3], chunks = new Map();
+    if (![1, 2].includes(version)) throw Error('trade_meeting_pages');
+    if (!Number.isSafeInteger(count) || count < 1 || count > MAX_PAGES) throw Error('trade_meeting_pages');
+    for (const frame of frames) {
+        if (!shape(frame, 5) || frame[0] !== version || frame[1] !== ref || frame[3] !== count
+            || !Number.isSafeInteger(frame[2]) || frame[2] < 0 || frame[2] >= count || typeof frame[4] !== 'string'
+            || Buffer.byteLength(JSON.stringify(frame)) > PAGE_BYTES) throw Error('trade_meeting_pages');
+        if (chunks.has(frame[2]) && chunks.get(frame[2]) !== frame[4]) throw Error('trade_meeting_consent_changed');
+        chunks.set(frame[2], frame[4]);
+    }
+    if (chunks.size !== count) throw Error('trade_meeting_pages_incomplete');
+    const text = Array.from({ length: count }, (_, index) => chunks.get(index)).join('');
+    let raw = text;
+    if (version === 2) {
+        const compressed = Buffer.from(text, 'base64');
+        if (compressed.toString('base64') !== text) throw Error('trade_meeting_pages');
+        raw = inflateRawSync(compressed, { maxOutputLength: MAX_RAW_BYTES }).toString('utf8');
+    }
+    if (Buffer.byteLength(raw) > MAX_RAW_BYTES) throw Error('trade_meeting_pages');
+    const decoded = decode(JSON.parse(raw));
+    if (decoded.token !== ref) throw Error('trade_meeting_consent_changed');
+    return decoded;
+}
+module.exports = { encode, decode, pages, commandPages, fromPages, PAGE_BYTES, MAX_PAGES, MAX_RAW_BYTES };

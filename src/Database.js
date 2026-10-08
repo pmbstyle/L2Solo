@@ -2259,7 +2259,7 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
         statsPatch ? JSON.stringify(statsPatch) : null, now(), Number(characterId)]);
     const inventoryPatch = Object.fromEntries([...new Set([57, ...changedIds].map(Number))]
         .map(id => [id, physical[id] || null]));
-    return { ...normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)])), inventoryPatch };
+    return { ...normalizeRow(coldSimulationRow(characterId)), inventoryPatch };
 }
 
 // The funded order belongs to the native party row. Worker patches may
@@ -2778,7 +2778,32 @@ function coldSimulationPartition(row, options = {}, parsedStats) {
 }
 
 function coldSimulationRow(characterId) {
-    return one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
+    return row ? { ...row, ...require('./GameServer/AfkTrade/TradeMeeting').projectIncoming(acceptedTradeIncomingUnsafe(Number(characterId), row)) } : row;
+}
+
+// The existing participant slot and pending-settlement owner are the only
+// selectors. No second custody map or population-wide read is retained.
+function acceptedTradeIncomingUnsafe(characterId, row) {
+    const incoming = {};
+    const add = (id, count) => {
+        if (Number(id) === 57) return;
+        const amount = Number(incoming[id] || 0) + Number(count);
+        if (!Number.isSafeInteger(amount) || amount < 0) throw Error('trade_meeting_integer');
+        if (amount) incoming[id] = amount;
+    };
+    // Native snapshots serialize the slim reference with JSON.stringify or
+    // json_patch. A cheap marker gates the indexed read; SQL remains authority.
+    if (String(row?.statsJson || '').includes('"tradeMeeting":[')) {
+        const meeting = one(`SELECT m.id,m.actorA,m.actorB,m.state FROM board_trade_participants p
+            JOIN board_trade_meetings m ON m.id=p.meetingId WHERE p.characterId=?`, [characterId]);
+        if (meeting?.state === 'accepted') for (const line of all(`SELECT selfId,heldCount FROM board_trade_meeting_lines
+            WHERE meetingId=? AND payer=? AND custodyType='trade' AND heldCount>0 ORDER BY ordinal`,
+        [meeting.id, Number(meeting.actorB === characterId)])) add(line.selfId, line.heldCount);
+    }
+    if (pendingSettlementOwners.has(characterId)) for (const line of all(`SELECT selfId,SUM(amount) amount
+        FROM board_settlements WHERE ownerId=? GROUP BY selfId`, [characterId])) add(line.selfId, line.amount);
+    return incoming;
 }
 
 // A claim needs the lease columns and the workflow flags coldSimulationPartition
@@ -3697,7 +3722,7 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
         simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
     [JSON.stringify(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
-    return { changedIds: [...changedIds], row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [id])) };
+    return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
 }
 
 function commitInteractionMemoryUnsafe(batch, timestamp) {
@@ -4305,7 +4330,7 @@ const Database = {
     // new ones take it. A bot's buy ads follow its goal this way. `expected`
     // maps every record of that kind the caller saw to its revision (the
     // move's idempotency key): any other state refuses the move.
-    replaceBoardRecords(ownerId, kind, configs = [], { expected = null } = {}) {
+    replaceBoardRecords(ownerId, kind, configs = [], { expected = null, expectedAuthority = null } = {}) {
         const characterId = Number(ownerId);
         const list = Array.isArray(configs) ? configs : [];
         if (!characterId || kind === 'shop' || !BoardRules.isKind(kind)
@@ -4313,6 +4338,14 @@ const Database = {
             return Promise.reject(new Error('invalid_board_records'));
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            if (expectedAuthority) {
+                const row = one('SELECT phase,simulationOwner,simulationRevision,simulationLeaseId,lastHotAt FROM bot_life_state WHERE characterId=?',
+                    [characterId]);
+                if (!row || row.phase !== expectedAuthority.phase || row.simulationOwner !== expectedAuthority.ownerId
+                    || Number(row.simulationRevision) !== expectedAuthority.revision
+                    || (row.simulationLeaseId || null) !== expectedAuthority.leaseId
+                    || Number(row.lastHotAt || 0) !== expectedAuthority.hotAt) throw Error('economy_plan_need_changed');
+            }
             const timestamp = now();
             const closed = all('SELECT id FROM afk_trade_shops WHERE ownerId = ? AND kind = ? ORDER BY id', [characterId, kind])
                 .map((row) => afkTradeShopUnsafe(row.id));
@@ -7746,8 +7779,14 @@ const Database = {
         }, 'item:cold-safe-enchant'));
     },
 
-    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null, workshop = null }) {
+    craftForCustomer(crafterId, customerId, { materials, product, crafterMp, price, adena, clanCraft = null, clanOrder = null, workshop = null,
+        economyCommand = null, funding = {}, random = Math.random }) {
         return withCharacterFlushes([crafterId, customerId], () => inTransaction(() => {
+            const step = economyStepUnsafe(customerId, economyCommand, EconomyCommit.KINDS.craft);
+            if (step?.replay) return { ...step.replay, customerState: step.replay.coldLifeRow,
+                crafterState: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [crafterId])) };
+            if (step && (!workshop || clanCraft || clanOrder)) throw Error('craft_executor_changed');
+            let success = !!product;
             let clanCrafter = null;
             let workshopCrafter = null;
             if (workshop) {
@@ -7768,11 +7807,13 @@ const Database = {
                         if (!row || Number(row.physicalHp) <= 0) throw new Error('customer unavailable');
                         continue;
                     }
-                    if (!row || row.phase !== 'cold' || row.simulationOwner !== LEGACY_SIMULATION_OWNER
-                        || row.simulationLeaseId || row.partyId || Number(row.hp) <= 0
+                    if (!row || (row === customer && step ? row.phase !== step.row.phase : row.phase !== 'cold')
+                        || row.simulationOwner !== LEGACY_SIMULATION_OWNER
+                        || row.simulationLeaseId || row.partyId || Number(row.phase === 'hot' ? row.physicalHp : row.hp) <= 0
                         || ['dead', 'respawning', 'traveling'].includes(row.activity)
                         || Number(row.simulationRevision) !== Number(revision)) throw new Error('workshop ownership changed');
                 }
+                if (customer.phase && !step) throw Error('workshop_command_missing');
                 const stats = jsonObject(workshopCrafter.statsJson);
                 const entry = stats.workshop?.entries?.find(row => Number(row.recipeId) === Number(recipe.recipeId));
                 if (!entry || Number(entry.price) !== Number(workshop.entryPrice)
@@ -7803,6 +7844,13 @@ const Database = {
                 if (required.size !== supplied.size || [...required].some(([id, amount]) => supplied.get(id) !== amount)
                     || product && (Number(product.selfId) !== Number(recipe.productId)
                         || Number(product.amount) !== Number(recipe.productCount) * batches)) throw new Error('workshop recipe changed');
+                if (step) {
+                    for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
+                    checkEconomyFundingUnsafe(customerId, step, Number(price), { ...funding, itemId: Number(recipe.productId) });
+                    const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(recipe.productId));
+                    if (!product || !template || !!product.stackable !== !!template.etc?.stackable
+                        || Number(product.slot || 0) !== Number(template.etc?.slot || 0)) throw Error('craft_product_template_changed');
+                }
                 crafterMp = Number(workshopCrafter.mp) - Number(recipe.mpCost) * batches;
             }
             let manualOrder = null;
@@ -7856,8 +7904,8 @@ const Database = {
             }
             const sources = [];
             for (const material of [...materials].sort((left, right) => Number(left.id) - Number(right.id))) {
-                const source = one('SELECT id, selfId, amount FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
-                if (!source || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
+                const source = one('SELECT id, selfId, amount, equipped FROM items WHERE id = ? AND characterId = ?', [material.id, customerId]);
+                if (!source || workshop && source.equipped || Number(source.selfId) !== Number(material.selfId) || Number(source.amount) < Number(material.amount)) throw new Error('customer craft material changed');
                 sources.push({ id: Number(source.id), amount: Number(source.amount) - Number(material.amount) });
                 if (Diagnostics.active()) stageNativeDiagnostic(customerId, null, 'craft_material', 'validated',
                     { item: Number(material.selfId), nativeId: Number(source.id), recipeId: Number(clanCraft?.recipeId || 0), owned: Number(source.amount), requested: Number(material.amount) });
@@ -7866,12 +7914,20 @@ const Database = {
             const customerAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [customerId]) : null;
             if (fee > 0 && (!customerAdena || Number(customerAdena.amount) < fee)) throw new Error('customer adena changed');
             let crafterAdena = fee > 0 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = 57 ORDER BY id LIMIT 1', [crafterId]) : null;
+            // One native roll after validated physical inputs and fees;
+            // the saved completion returns before every mutable quote check.
+            if (step) {
+                const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(workshop.recipeId);
+                success = recipe.successRate >= 100 || Number(random()) * 100 < recipe.successRate;
+                if (!success) product = null;
+            }
             const warehouseOutput = !!manualOrder && clanOrder.final === true;
             const target = product?.stackable ? warehouseOutput
                 ? one('SELECT id, amount FROM clan_warehouse_items WHERE clanId = ? AND selfId = ? AND enchant = 0 ORDER BY id LIMIT 1', [manualOrder.clanId, product.selfId])
                 : one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? ORDER BY id LIMIT 1', [customerId, product.selfId]) : null;
             let productId = Number(target?.id || 0);
             const productAmount = Number(target?.amount || 0) + Number(product?.amount || 0);
+            if (!Number.isSafeInteger(productAmount) || productAmount < 0) throw Error('craft_product_overflow');
             sources.forEach((source) => source.amount <= 0 ? write('DELETE FROM items WHERE id = ? AND characterId = ?', [source.id, customerId]) : write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [source.amount, source.id, customerId]));
             if (warehouseOutput && product) {
                 if (target) write('UPDATE clan_warehouse_items SET amount = ?, updatedAt = ? WHERE id = ? AND clanId = ?', [productAmount, now(), productId, manualOrder.clanId]);
@@ -7884,7 +7940,13 @@ const Database = {
                 state.updatedAt = now();
                 write('UPDATE clan_simulation_clans SET stateJson = ?, updatedAt = ? WHERE clanId = ?', [JSON.stringify(state), state.updatedAt, manualOrder.clanId]);
             } else if (target) write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [productAmount, productId, customerId]);
-            else if (product) productId = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)', [product.selfId, product.name || '', product.amount, product.slot || 0, customerId]).insertId;
+            else if (product) {
+                for (let index = 0; index < (product.stackable ? 1 : Number(product.amount)); index++) {
+                    const id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
+                        [product.selfId, product.name || '', product.stackable ? product.amount : 1, product.slot || 0, customerId]).insertId;
+                    if (!productId) productId = id;
+                }
+            }
             if (manualOrder) {
                 const eventId = recordClanGoalEventUnsafe({ clanId: manualOrder.clanId,
                     eventType: product ? 'player_order_crafted' : 'player_order_craft_failed', plan: 'craft',
@@ -7913,6 +7975,7 @@ const Database = {
                 write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [Number(customerAdena.amount) - fee, customerAdena.id, customerId]);
                 if (crafterAdena) {
                     nextCrafterAdena = Number(crafterAdena.amount) + fee;
+                    if (!Number.isSafeInteger(nextCrafterAdena)) throw Error('craft_fee_overflow');
                     write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [nextCrafterAdena, crafterAdena.id, crafterId]);
                 } else {
                     const id = write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (57, ?, ?, 0, 0, ?)', [adena?.name || 'Adena', fee, crafterId]).insertId;
@@ -7952,7 +8015,17 @@ const Database = {
                     customerState: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId = ?', [customerId]))
                 };
             }
-            return { ...clanStates, sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
+            const receipt = step ? { committed: true, success, units: Number(product?.amount || 0), spent: fee,
+                nativeId: Number(workshop.recipeId), mp: crafterMp } : {};
+            if (step) {
+                // Earlier workshop accounting also fences the customer. Complete
+                // against that current row, without restoring its older bag.
+                step.row = one('SELECT * FROM bot_life_state WHERE characterId=?', [customerId]);
+                clanStates.customerState = completeEconomyStepUnsafe(customerId, step, receipt,
+                    [...materials.map(row => Number(row.selfId)), ...(product ? [Number(product.selfId)] : [])]);
+                receipt.economyCommit = jsonObject(clanStates.customerState.statsJson).economyCommit;
+            }
+            return { ...clanStates, ...receipt, sources, product: product ? { id: productId, amount: productAmount } : null, customerAdena: fee > 0 ? { id: Number(customerAdena.id), amount: Number(customerAdena.amount) - fee } : null, crafterAdena: fee > 0 ? { id: Number(crafterAdena.id), amount: nextCrafterAdena } : null };
         }, 'craft:customer'));
     },
 
@@ -10255,7 +10328,7 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (!row) return null;
         if (row.phase === 'cold') return writeColdInventorySnapshotUnsafe(id, row, changed, null, patch);
         write("UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)),simulationRevision=simulationRevision+1 WHERE characterId=?", [JSON.stringify(patch), id]);
-        return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [id]));
+        return normalizeRow(coldSimulationRow(id));
     }
 });
 function tradeMeetingPositionUnsafe(id) {
@@ -10312,7 +10385,8 @@ Object.assign(Database, {
                 phase: row?.phase || 'player', ownerId: row?.simulationOwner || null,
                 leaseId: row?.simulationLeaseId || null, hotAt: Number(row?.lastHotAt || 0),
                 needRevision: Number(row?.simulationRevision || 0),
-                inventory: afkTradeInventoryUnsafe(id), position: tradeMeetingPositionUnsafe(Number(id)) };
+                inventory: afkTradeInventoryUnsafe(id), acceptedIncoming: acceptedTradeIncomingUnsafe(Number(id), row),
+                position: tradeMeetingPositionUnsafe(Number(id)) };
         }, 'board:meeting-prepare'));
     },
     acceptTradeMeeting(request) {
@@ -10329,6 +10403,9 @@ Object.assign(Database, {
             return { pending: false, meetingId: receipt[1], revision: receipt[2],
                 outcome: receipt[3] ? 'completed' : 'cancelled' };
         }, 'board:meeting-receipt');
+    },
+    fetchTradeMeetingOwnerState(actorId) {
+        return inTransaction(() => normalizeRow(coldSimulationRow(actorId)), 'board:meeting-owner-state');
     },
     fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
     fetchTradeMeetingForOwner(id) {

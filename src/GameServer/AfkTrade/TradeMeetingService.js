@@ -28,13 +28,18 @@ async function syncActors(row) {
     }
 }
 function stage(request) {
-    const codec = require('./TradeMeetingCodec'), wire = codec.encode(request);
-    const encoded = JSON.stringify(wire);
-    const count = Math.ceil(Buffer.byteLength(encoded) / 768);
+    const codec = require('./TradeMeetingCodec'), frames = codec.pages(request);
+    const count = frames.length;
+    const existing = staged.get(request.token);
+    if (existing) {
+        if (JSON.stringify(existing.frames) !== JSON.stringify(frames)) throw Error('trade_meeting_consent_changed');
+        return request.token;
+    }
     if (count > 4 || pages + count > 64) throw Error('trade_meeting_backpressure');
     for (const entry of staged.values()) if ([request.actorA, request.actorB].some(id => entry.actors.includes(id))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
-    staged.set(id, { request: codec.decode(wire), bytes: Buffer.byteLength(encoded), pages: count, actors: [request.actorA, request.actorB] });
+    staged.set(id, { frames, revisions: request.parties.map(party => party.revision),
+        bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });
     pages += count;
     return id;
 }
@@ -55,7 +60,7 @@ async function accept(id, characterId = null) {
     try {
         // DB persists the original token/sequences, so retry never invents
         // fresh consent after an acknowledgement or ordinary bot commit.
-        const result = await db().acceptTradeMeeting(entry.request);
+        const result = await db().acceptTradeMeeting(require('./TradeMeetingCodec').fromPages(entry.frames));
         return accepted(result);
     } finally { discard(id); }
 }
@@ -264,8 +269,7 @@ async function init() {
         // accepted meeting survives ordinary economic revisions and ad edits.
         for (const [key, entry] of staged) if (entry.actors.includes(id)) {
             const side = entry.actors.indexOf(id), state = life().cachedState(id);
-            const party = entry.request.parties[side];
-            if (!state || require('../Bot/Economy/EconomyCommit').authority(state).revision !== party.revision) discard(key);
+            if (!state || require('../Bot/Economy/EconomyCommit').authority(state).revision !== entry.revisions[side]) discard(key);
         }
         wake(id);
     });
@@ -281,7 +285,13 @@ async function init() {
     for (;;) {
         const rows = await db().recoverTradeMeetings(cursor);
         if (!rows.length) break;
-        for (const row of rows) { enrolled.set(row.actorA, row.id); enrolled.set(row.actorB, row.id); wake(row.actorA); wake(row.actorB); }
+        for (const row of rows) {
+            for (const actor of [row.actorA, row.actorB]) {
+                const state = await db().fetchTradeMeetingOwnerState?.(actor);
+                if (state) life().acceptLifecycleRow(state);
+                enrolled.set(actor, row.id); wake(actor);
+            }
+        }
         cursor = rows.at(-1).id;
         await new Promise(resolve => setImmediate(resolve));
     }

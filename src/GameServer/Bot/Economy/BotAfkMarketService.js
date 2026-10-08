@@ -389,7 +389,7 @@ async function reconcileBuyAds(state, goal, candidates) {
 
 // One buy ad per wanted item, in the town the item trades in. An ad stands
 // nowhere in the world: its place is the town's centre.
-async function publishBuyAds(ownerId, ads, lines, town) {
+async function publishBuyAds(ownerId, ads, lines, town, expectedAuthority = null) {
     const center = ListingService.townCenter(town) || { locX: 0, locY: 0, locZ: 0 };
     const result = await AfkTrade.replaceBotRecords(ownerId, 'buy_ad', lines.map((line) => ({
         storeType: AfkTrade.BUY,
@@ -397,7 +397,7 @@ async function publishBuyAds(ownerId, ads, lines, town) {
         town,
         locX: center.locX, locY: center.locY, locZ: center.locZ,
         lines: [line]
-    })), { expected: Object.fromEntries(ads.map((ad) => [ad.id, ad.revision])) });
+    })), { expected: Object.fromEntries(ads.map((ad) => [ad.id, ad.revision])), expectedAuthority });
     return result.retained?.[0] || result.opened[0] || null;
 }
 
@@ -620,9 +620,14 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // Executes only the worker's quoted lines. The native writers validate
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
-async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
+async function executePlan(state, plan, { step, beforeWrite = () => {}, preparedState = state } = {}) {
     if (state.stats?.tradeMeeting) return { state, pending: true };
     const ownerId = Number(state.characterId);
+    const authority = require('./EconomyCommit').authority(preparedState);
+    const stillPrepared = () => {
+        const current = require('./EconomyCommit').authority(LifeState.cachedState(ownerId) || state);
+        return Object.keys(authority).every(key => current[key] === authority[key]);
+    };
     const run = async (work) => {
         const result = await step(() => Database.withMutationAdmission(beforeWrite, work));
         state = LifeState.cachedState(ownerId) || result?.state || state;
@@ -671,7 +676,12 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
     });
     // An empty desired list closes the old ads; it does not run another bid
     // decision on main. The plan's quote remains the quote the worker made.
+    // An earlier native improvement/craft/sale may have filled the root or
+    // changed its inputs. Publishing its old certificate at the new revision
+    // would manufacture fresh authority from stale need. Keep it pending.
+    if (Object.hasOwn(plan, 'buyAds') && !stillPrepared()) return { state, buyPending: true };
     if (Object.hasOwn(plan, 'buyAds')) await run(async () => {
+        if (!stillPrepared()) throw Error('economy_plan_need_changed');
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
@@ -689,10 +699,13 @@ async function executePlan(state, plan, { step, beforeWrite = () => {} } = {}) {
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
                     { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
         });
-        if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state };
+        if (!wanted.length) {
+            if (ads.length) await publishBuyAds(ownerId, ads, [], ads[0].town, authority);
+            return { state: LifeState.cachedState(ownerId) || state };
+        }
         const town = buyAdTown(state, ads, wanted);
         if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines: existing }, wanted)) return { state };
-        await publishBuyAds(ownerId, ads, wanted, town);
+        await publishBuyAds(ownerId, ads, wanted, town, authority);
         return { state: LifeState.cachedState(ownerId) || state };
     });
     await run(async () => {
