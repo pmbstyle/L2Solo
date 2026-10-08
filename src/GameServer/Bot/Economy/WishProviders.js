@@ -5,30 +5,71 @@ const { SELL } = require('../../AfkTrade/BoardIndex');
 let catalogSource = null;
 const kits = new Map();
 
-// One immutable game-data view by class/grade/slot. It is shared by every
-// actor, and rebuilt only if the native item catalogue itself is replaced.
-function gearCandidates(state) {
+// Compatibility is game data shared by class/role, not an actor's prescribed
+// purchase. Keep every item (including SA and set parts) in this immutable view.
+// Only a review's finalists are bounded; prices, holdings and funding are live.
+const GEAR_FINALISTS_PER_SLOT = 8;
+function gearCandidates(state, ctx = null) {
     const Data = invoke('GameServer/DataCache');
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     if (catalogSource !== Data.items) { catalogSource = Data.items; kits.clear(); }
-    const role = Planner.roleFor(state), grade = Planner.gradeForLevel(state.level);
+    const role = Planner.roleFor(state);
     const classId = Number(state.stats?.classId || state.classId || 0);
-    const key = `${classId}:${role}:${grade}`;
+    const key = `${classId}:${role}`;
     if (!kits.has(key)) {
-        const slots = new Map();
-        const empty = { ...state, inventory: {} };
+        const slots = new Map(), empty = { classId, stats: { classId }, inventory: {} };
         for (const item of Data.items || []) {
-            if (!Planner.suitable(item, empty, role, grade)) continue;
+            if (!Planner.suitable(item, empty, role, String(item.etc?.rank || 'none'))) continue;
             const slot = Number(item.etc?.slot);
             if (!slots.has(slot)) slots.set(slot, []);
             slots.get(slot).push(item);
         }
-        for (const [slot, rows] of slots) slots.set(slot, rows.sort((a, b) =>
+        for (const list of slots.values()) list.sort((a, b) =>
             Planner.itemScore(b, role, classId) - Planner.itemScore(a, role, classId)
-            || Number(a.template.price) - Number(b.template.price)).slice(0, 3));
+            || Number(a.template.price) - Number(b.template.price) || Number(a.selfId) - Number(b.selfId));
         kits.set(key, slots);
     }
-    return kits.get(key);
+    const ranks = ['none', 'd', 'c', 'b', 'a', 's'];
+    const maxRank = ranks.indexOf(Planner.gradeForLevel(state.level));
+    const result = new Map();
+    const budget = Math.max(0, Number(state.adena || 0) - Number(ctx?.survivalReserve || 0));
+    const target = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
+    const held = String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/);
+    for (const [slot, list] of kits.get(key)) {
+        const allowed = list.filter(item => ranks.indexOf(String(item.etc?.rank || 'none')) <= maxRank);
+        // The exported game-data view is also used to construct fixed kits;
+        // it has no actor choice or expensive build evaluation.
+        if (!ctx) { result.set(slot, allowed); continue; }
+        const current = [7, 14].includes(slot) ? worn(state, 7) || worn(state, 14) : worn(state, slot);
+        const owned = current && Data.items && require('../../Item/ItemTemplateIndex').find(Data.items, current.selfId);
+        const before = owned ? Planner.itemScore(owned, role, classId) : 0;
+        const efficientByRank = new Map();
+        let affordable = null, above = null, retained = null;
+        const cheaper = (a, b) => !b || a.price < b.price || a.price === b.price && a.item.selfId < b.item.selfId;
+        const better = (a, b) => !b || a.ratio > b.ratio || a.ratio === b.ratio && cheaper(a, b);
+        for (const item of allowed) {
+            const price = Number(ctx.price(item.selfId));
+            if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
+            const score = Planner.itemScore(item, role, classId);
+            const row = { item, price, score, ratio: Math.max(0, score - before) / price };
+            if (Number(item.selfId) === target || Number(item.selfId) === Number(held?.[1])) retained = row;
+            // A proxy can nominate a same-score SA/set alternative, but cannot
+            // declare its true build benefit; gearGain does that below.
+            if (score < before) continue;
+            const rank = String(item.etc?.rank || 'none');
+            if (better(row, efficientByRank.get(rank))) efficientByRank.set(rank, row);
+            if (price <= budget && (!affordable || score > affordable.score
+                || score === affordable.score && cheaper(row, affordable))) affordable = row;
+            if (price > budget && cheaper(row, above)) above = row;
+        }
+        const selected = new Map();
+        // A price-efficient representative of every usable rank keeps intermediate
+        // purchases in the comparison, even when the wallet covers a higher one.
+        // Rank nominates alternatives, never a required next purchase.
+        for (const row of [retained, ...efficientByRank.values(), affordable, above]) if (row) selected.set(Number(row.item.selfId), row.item);
+        result.set(slot, [...selected.values()].slice(0, GEAR_FINALISTS_PER_SLOT));
+    }
+    return result;
 }
 function rows(state) { return Object.values(state.inventory || {}); }
 function worn(state, slot) {
@@ -126,6 +167,11 @@ function buildProjection(state, ctx, deps) {
         .map(entry => Number(entry?.recipeId ?? entry)));
     const preparingItems = new Set();
     const purchaseFor = require('./WishPurchaseEvidence').reader(state, ctx, deps);
+    const purchases = new Map();
+    const observedPurchase = id => {
+        if (!purchases.has(id)) purchases.set(id, purchaseFor(id));
+        return purchases.get(id);
+    };
     const sourcePath = id => {
         let best = null;
         for (const source of sourceIndex?.get(Number(id)) || []) {
@@ -150,7 +196,7 @@ function buildProjection(state, ctx, deps) {
         if (nodes.some(node => node.key === key)) return key;
         if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
         preparingItems.add(key);
-        const observed = purchaseFor(id);
+        const observed = observedPurchase(id);
         const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
             available: !!observed || price(id) > 0, executable: !!observed,
             ...(observed || { availableUnits: 0 }) }];
@@ -221,8 +267,8 @@ function buildProjection(state, ctx, deps) {
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
     const candidates = [];
-    for (const [slot, items] of gearCandidates(state)) for (const item of items) {
-        if (!Planner.suitable(item, state, Planner.roleFor(state), Planner.gradeForLevel(state.level))) continue;
+    for (const [slot, items] of gearCandidates(state, ctx)) for (const item of items) {
+        if (!Planner.considerable(item, state)) continue;
         if (Number(worn(state, slot)?.selfId) === Number(item.selfId)) continue;
         const gain = gearGain(state, item, timestamp, ownBuild);
         const current = worn(state, slot);
@@ -235,13 +281,23 @@ function buildProjection(state, ctx, deps) {
         const value = (gain.attack + gain.defence * ctx.deathHours) * horizon
             + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0);
         if (!(value > 0) || !(price(item.selfId) > 0)) continue;
-        candidates.push({ item, slot, value, ratio: value / price(item.selfId), gain });
+        const observed = observedPurchase(item.selfId);
+        const fullPrice = observed ? observed.price + observed.tripFees + observed.tripHours * ctx.hunt.perHour : price(item.selfId);
+        candidates.push({ item, slot, value, ratio: value / Math.max(1, fullPrice), gain, observed });
     }
-    candidates.sort((a, b) => b.ratio - a.ratio || a.item.selfId - b.item.selfId);
+    // Within a slot an executable quote cannot be screened out by a cheap
+    // forecast with no supplier. Different slots still use shared utility.
+    const bySlot = new Map();
+    for (const candidate of candidates) {
+        const best = bySlot.get(candidate.slot);
+        if (!best || Number(!!candidate.observed) > Number(!!best.observed)
+            || !!candidate.observed === !!best.observed && candidate.ratio > best.ratio) bySlot.set(candidate.slot, candidate);
+    }
+    const finalists = [...bySlot.values()].sort((a, b) => b.ratio - a.ratio || a.item.selfId - b.item.selfId);
     // Distinct slots, including each jewellery side. Dual blades stay a single
     // product requirement; its native combination is one acquisition path.
     const slots = new Set();
-    for (const candidate of candidates) {
+    for (const candidate of finalists) {
         if (slots.has(candidate.slot) || slots.size >= 4) continue;
         const key = itemNode(candidate.item.selfId);
         if (!key) continue;
@@ -349,4 +405,4 @@ function buildProjection(state, ctx, deps) {
     while (kept.size > 40 && roots.length) { roots.pop(); kept = reachable(); }
     return { nodes: nodes.filter(node => kept.has(node.key)), roots, values, moneyPaths, horizon };
 }
-module.exports = { build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { GEAR_FINALISTS_PER_SLOT, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

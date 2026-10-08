@@ -302,6 +302,14 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
 
+// Compatibility and the game's grade limit, independent of a desired grade.
+// Shared wish targets/recovery can buy a useful lower-grade improvement.
+function considerable(item, state = {}, role = roleFor(state)) {
+    const rank = String(item?.etc?.rank || 'none').toLowerCase();
+    return RANKS.includes(rank) && rankIndex(rank) <= rankIndex(gradeForLevel(state.level))
+        && suitable(item, state, role, rank);
+}
+
 // A profession change can leave a sword on a polearm fighter or a dagger on
 // an archer. Such a weapon must neither satisfy nor outscore the new kit.
 function ownedItemFitsBuild(item, role, classId) {
@@ -588,8 +596,9 @@ function preferredTarget(state = {}, options = {}) {
     const recipesByProduct = new Map(recipes.map((recipe) => [Number(recipe.productId), recipe]));
     const excluded = excludedTargetIds(options);
     const excludedMaterials = new Set((options.excludedMaterialIds || []).map(Number));
-    const allCandidates = (DataCache.items || [])
-        .filter((item) => suitable(item, state, role, recipeRank || gradeForLevel(state.level)))
+    const allCandidates = (options.wishTargetId ? [catalogItem(options.wishTargetId)].filter(Boolean) : DataCache.items || [])
+        .filter((item) => options.wishTargetId ? considerable(item, state, role)
+            : suitable(item, state, role, recipeRank || gradeForLevel(state.level)))
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter(item => !options.wishTargetId || Number(item.selfId) === Number(options.wishTargetId))
         .map((item) => ({ item, recipe: recipesByProduct.get(Number(item.selfId)) || null }))
@@ -1061,7 +1070,7 @@ function marketPlanForTarget(state = {}, targetId, options = {}) {
     const target = ItemTemplateIndex.find(DataCache.items, targetId);
     const role = roleFor(state);
     const ownedItems = inventoryItems(state.inventory);
-    if (!target || !suitable(target, state, role, gradeForLevel(state.level))) return null;
+    if (!target || !considerable(target, state, role)) return null;
     if (!isSlotUpgrade(target, ownedItems, role, classIdFor(state))) return null;
     const offer = marketOfferForTarget(target, state, options);
     return offer ? marketPlan(state, target, offer, { buyOrderEscrow: options.buyOrderEscrow }) : null;
@@ -1085,7 +1094,7 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
     // Once the requested upgrade has been acquired, recovery is complete.
     // Do not turn one failed weapon route into an endless sequence of
     // same-slot market replacements.
-    if (!suitable(failedTarget, state, role, gradeForLevel(state.level))
+    if (!considerable(failedTarget, state, role)
         || !isSlotUpgrade(failedTarget, ownedItems, role, classId)) return null;
     const failedSlot = WEAPON_SLOTS.has(Number(failedTarget.etc?.slot || 0))
         ? 'weapon'
@@ -1099,7 +1108,7 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
             const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
             return slot === failedSlot;
         })
-        .filter((item) => suitable(item, state, role, gradeForLevel(state.level)))
+        .filter((item) => considerable(item, state, role))
         .filter((item) => isSlotUpgrade(item, ownedItems, role, classId))
         .filter((item) => Number(item.template?.price || 0) <= cap)
         .map((item) => ({ item, offer: marketOfferForTarget(item, state, options) }))
@@ -2349,7 +2358,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 // One decision outside this module (a wish review) that judges a bot against
 // many sources shares its readiness the same way.
