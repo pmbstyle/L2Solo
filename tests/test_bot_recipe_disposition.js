@@ -75,10 +75,29 @@ async function run() {
         rank: 'c' }]), 'Giran');
     assert.strictEqual(MarketListingPolicy.classify(craftState, dMarketItem).action, 'market',
         'a D-grade recipe is a market item like any other: no scarce-recipe listing, no recipe-only rule (group E)');
+    for (const selfId of [1786, 1787, 1788]) {
+        const scroll = { selfId, amount: 2, kind: 'Other.Recipe' };
+        const info = C4RecipeItems.resolve(selfId);
+        assert(info, 'the local world recipe must exist');
+        assert.strictEqual(ItemDisposition.recipeProductRank(scroll), 'none');
+        assert.strictEqual(ItemDisposition.isNpcOnlyItem(scroll), false,
+            'a no-grade weapon recipe must reach the common market evaluation');
+        assert.strictEqual(ItemDisposition.recipeDisposition(craftState, scroll, []).action, 'learn');
+        assert.strictEqual(ItemDisposition.recipeDisposition(craftState, scroll, [info.recipeId]).action, 'market');
+        const seller = { ...craftState, classId: 28, stats: { classId: 28 }, inventory: { [selfId]: scroll } };
+        assert.strictEqual(ItemDisposition.canLearnRecipe(seller, scroll), false,
+            'lifting the grade restriction does not make ordinary fighters crafters');
+        const candidate = ItemDisposition.saleCandidates(seller, { unlimited: true }).find(item => item.selfId === selfId);
+        assert(candidate);
+        assert.strictEqual(MarketListingPolicy.classify(seller, candidate).action, 'market');
+        assert.strictEqual(candidate.rank, 'none');
+        assert.strictEqual(ItemDisposition.recipeDisposition({ ...craftState, craftLevel: 0 }, scroll, []).action, 'market',
+            'insufficient craft skill still prevents learning');
+    }
     assert.strictEqual(
         ItemDisposition.recipeDisposition(craftState, craftState.inventory[2250], []).action,
-        'npc',
-        'a recipe producing below C-grade output must go to the NPC shop'
+        'learn',
+        'a capable crafter may learn a no-grade arrow recipe'
     );
     assert.strictEqual(
         MarketListingPolicy.classify(craftState, {
@@ -117,7 +136,7 @@ async function run() {
     const updated = await LifeState.learnCraftableRecipes(craftState, { recipeIds: [recipe.recipeId] });
     assert.deepStrictEqual(learned, [{ characterId: 7001, recipeId: recipe.recipeId, type: recipe.type }]);
     assert.strictEqual(updated.inventory[2298].amount, 1, 'learning must consume exactly one recipe item');
-    assert.strictEqual(updated.inventory[2250].amount, 1, 'low-grade recipes must remain for NPC liquidation');
+    assert.strictEqual(updated.inventory[2250].amount, 1, 'unselected no-grade recipes remain intact');
     assert.strictEqual(updated.inventory[spellbook.selfId].amount, 1, 'spellbooks must remain for NPC liquidation');
     assert.strictEqual(updated.stats.lastRecipeBookLearning.learned[0].recipeId, recipe.recipeId);
 
@@ -128,12 +147,12 @@ async function run() {
     const leatherItem = { selfId: 1814, name: 'Recipe: Leather', amount: 1, kind: 'Other.Recipe' };
     assert.strictEqual(ItemDisposition.recipeDisposition(craftState, leatherItem, []).action, 'learn',
         'a dwarf must learn a material recipe its craft level allows');
-    assert.strictEqual(ItemDisposition.recipeDisposition(craftState, leatherItem, [leatherRecipe.recipeId]).action, 'npc',
-        'a known no-grade material recipe is NPC junk, not a market item');
+    assert.strictEqual(ItemDisposition.recipeDisposition(craftState, leatherItem, [leatherRecipe.recipeId]).action, 'market',
+        'a known no-grade material recipe remains available to other crafters');
     assert.strictEqual(ItemDisposition.recipeDisposition({ ...craftState, classId: 28, stats: { classId: 28 } },
-        leatherItem, []).action, 'npc', 'a non-crafter still sells a material recipe to the NPC');
+        leatherItem, []).action, 'market', 'a non-crafter may offer a material recipe on the market');
     assert.strictEqual(ItemDisposition.recipeDisposition({ characterId: 7003, level: 40, classId: 55, stats: { classId: 55 } },
-        leatherItem, []).action, 'npc', 'a Bounty Hunter has Create Item 1 but never crafts: it sells the recipe to the NPC');
+        leatherItem, []).action, 'market', 'a Bounty Hunter may sell a recipe but cannot learn it for production');
     learned.length = 0;
     const materialCrafter = { ...craftState, characterId: 7002, inventory: { 1814: leatherItem } };
     const learnedMaterial = await LifeState.learnCraftableRecipes(materialCrafter, { recipeIds: [leatherRecipe.recipeId] });
@@ -156,7 +175,7 @@ async function run() {
         inventory: { ...materialCrafter.inventory, 2250: craftState.inventory[2250] },
         stats: { classId: 56, marketSellRetryAfter: 500000 } }, { now: 1000, forcedCleanup: { reason: 'npc_only_inventory' } });
     assert.deepStrictEqual(calls, ['learn', ['npc', 2250]],
-        'a cleanup in the sale pause must learn the material recipe first and sell only the junk recipe');
+        'a sale pause still allows ordinary NPC liquidation after evaluating market alternatives');
 
     console.log('Bot recipe disposition checks passed');
 }

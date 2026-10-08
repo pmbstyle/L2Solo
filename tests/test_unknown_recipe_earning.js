@@ -49,6 +49,21 @@ assert.equal(chosen, null, 'learning consumes the owned scroll sale opportunity'
 const known = Decision.chooseOpportunity(state, [{ recipeId: recipe.recipeId }], context, options);
 assert(known && !known.learning);
 assert(!known.basket.purchases.some(row => row.selfId === recipe.recipeItemId), 'known recipes pay no scroll twice');
+for (const id of [1786, 1787, 1788]) {
+    const ng = Recipes.resolve(id);
+    const ngOptions = { ...options, unknownRecipes: () => [ng],
+        offersFor: product => product === ng.productId ? [{ ownerId: 2, price: 1000, count: 1, town: 'Giran' }] : [],
+        planPurchase: (owner, item, n) => ({ town: 'Giran', units: n, whole: true, cost: n, landed: n,
+            lines: [{ line: { lineId: item, revision: 1 }, count: n, price: 1 }], tripDetails: { hours: 0, fees: 0 } }) };
+    const ngChosen = Decision.chooseOpportunity(state, [], context, ngOptions);
+    assert(ngChosen?.learning, 'an unknown no-grade weapon recipe can enter a profitable production route');
+    assert.equal(ngChosen.basket.purchases.find(row => row.selfId === id).count, 1);
+    assert.equal(Decision.chooseOpportunity(state, [], context, { ...ngOptions, offersFor: () => [] }), null,
+        'lifting the grade restriction creates no guaranteed buyer');
+    assert.equal(Decision.chooseOpportunity(state, [], context, { ...ngOptions,
+        planPurchase: (owner, item, n) => item === id ? null : ngOptions.planPurchase(owner, item, n) }), null,
+        'lifting the grade restriction invents no missing scroll supply');
+}
 const basket = Policy.basketFor(recipe, (id, n) => ({ town: 'Giran', whole: true, units: n, cost: n, landed: n + 250,
     tripDetails: { hours: .2, fees: 50 } }), () => null, 3,
     { ...context, recipeInput: recipe.recipeItemId });

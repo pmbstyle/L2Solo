@@ -133,8 +133,7 @@ function isShotRecipeItem(item) {
 
 function isMarketRecipeItem(item) {
     const info = recipeInfo(item);
-    return !!info && info.recipe.type === 'dwarven' && isRecipeItem(item)
-        && gradeIndex(recipeProductRank(item)) >= gradeIndex('d');
+    return !!info && info.recipe.type === 'dwarven' && isRecipeItem(item);
 }
 
 const CRYSTALS = new Set(Object.values(CRYSTAL_IDS));
@@ -185,17 +184,10 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
         || isSkillBookItem(item, template);
 }
 
-// Materials feed every craft: a dwarf learns their recipes although the
-// products are no-grade. Other no-grade recipes stay NPC junk.
-function isMaterialRecipe(info) {
-    return String(info?.product?.template?.kind || '').startsWith('Other.Material');
-}
-
 // A bot learns a recipe it can craft (crafter class, craft level).
 function canLearnRecipe(state, item) {
     const info = recipeInfo(item);
     if (!info || info.recipe.type !== 'dwarven') return false;
-    if (gradeIndex(recipeProductRank(item)) < gradeIndex('d') && !isMaterialRecipe(info)) return false;
     return CraftShopService.canCraft(state, info.recipe);
 }
 
