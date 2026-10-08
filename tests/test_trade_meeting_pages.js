@@ -31,6 +31,23 @@ assert.deepEqual(Codec.fromPages([...frames, frames[0]]), source, 'identical pag
 assert.throws(() => Codec.fromPages(frames.slice(1)), /incomplete/);
 const changed = frames.map(frame => [...frame]); changed[0][4] += 'x';
 assert.throws(() => Codec.fromPages([...frames, changed[0]]), /consent_changed|pages/);
+const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
+for (const type of ['command_request', 'command_ack']) {
+    const makeEnvelope = frame => Protocol.envelope(type, 'e'.repeat(80), {
+        [type === 'command_request' ? 'requests' : 'results']: [{ kind: 'meeting', characterId: MAX, frame }]
+    }, 'm'.repeat(160));
+    const transported = Codec.commandPages(source, makeEnvelope);
+    assert(transported.length <= 4);
+    assert(transported.every(frame => Protocol.byteLength(makeEnvelope(frame)) <= 768),
+        'the actual protocol envelope, including widest epoch/message identity, fits');
+    assert.deepEqual(Codec.fromPages(transported), source);
+    assert.deepEqual(Codec.fromPages([...transported].reverse().concat([transported[0]])), source);
+    assert.throws(() => Codec.commandPages(source, frame => ({ frame, impossible: 'x'.repeat(768) })), /backpressure/);
+    const excessive = require('node:zlib').deflateRawSync(Buffer.alloc(Codec.MAX_RAW_BYTES + 1, 65)).toString('base64');
+    assert.throws(() => Codec.fromPages([[2, source.token, 0, 1, excessive]]), /larger than|too large|buffer/i,
+        'compressed input cannot expand past one bounded basket');
+    console.log(type, 'envelope pages:', transported.map(frame => Protocol.byteLength(makeEnvelope(frame))));
+}
 const refs = [];
 try {
     for (let n = 0; n < 16; n++) refs.push(Service.stage(request(n)));
