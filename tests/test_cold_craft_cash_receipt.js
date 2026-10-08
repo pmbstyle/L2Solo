@@ -201,6 +201,8 @@ async function verifyAuthoredPhysicalCraft() {
             });
         try {
             populationConfig.staticBuyersDisabled = true;
+            workshopCustomer.stats.equipmentPlan.craftProviders = { [recipe.recipeId]: { workshop: true,
+                characterId: workshopOwner.characterId, revision: publishedWorkshop.simulation.revision } };
             const selectedWorkshop = ColdCraftingService.stationForRecipe(recipe.recipeId, workshopCustomer);
             assert.strictEqual(selectedWorkshop.characterId, workshopOwner.characterId);
             assert.strictEqual(selectedWorkshop.workshop, true);
@@ -237,7 +239,9 @@ async function verifyAuthoredPhysicalCraft() {
             assert.strictEqual(workshopDuplicate.crafted, false);
             assert.strictEqual(workshopDuplicate.reason, 'not_ready');
             assert.deepStrictEqual(await image(workshopIds), workshopDuplicateBefore);
-            const currentStation = ColdCraftingService.stationForRecipe(recipe.recipeId, workshopSettled);
+            assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, workshopSettled), null,
+                'completed craft changed the selected public source revision');
+            const currentStation = Workshop.find(recipe.recipeId, workshopSettled);
             const batchCustomer = await seed('bot_workshop_batch_customer', 'WorkshopBatchBuyer', 0, 40,
                 [item(57, 1000000), ...[...inputs].map(([id, amount]) => item(id, amount * 2))], {
                     equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: recipe.recipeId,

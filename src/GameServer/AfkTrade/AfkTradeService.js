@@ -33,7 +33,7 @@ MarketCounters.publish(TableChannel.shared);
 TableChannel.shared.register('board', {
     eventDriven: true,
     key: (row) => row[0],
-    allRows: () => boardRows()
+    allRows: () => [...boardRows(), ...invoke('GameServer/Bot/Economy/CraftWorkshopService').publicRows()]
 });
 
 function boardRows() {

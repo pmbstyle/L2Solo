@@ -5,6 +5,32 @@ const recipes = () => invoke('GameServer/Items/C4RecipeItems');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
 const byRecipe = new Map();
 const owners = new Map();
+const publicDigests = new Map(), publicScopeDigests = new Map();
+const publicCandidates = new (require('./PublicWorkshopIndex').PublicWorkshopIndex)();
+function togglePublicDigest(row, direction = 1) {
+    const productId = Number(recipes().resolveByRecipeId(row[1])?.productId || 0);
+    if (!productId) return;
+    const hash = require('../Fnv1a').fnv1a32(JSON.stringify(row));
+    const scope = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(productId);
+    for (const [index, key] of [[publicDigests, productId], [publicScopeDigests, scope]]) {
+        const prior = index.get(key) || { xor: 0, sum: 0, count: 0 };
+        const next = { xor: (prior.xor ^ hash) >>> 0, sum: (prior.sum + direction * hash) >>> 0,
+            count: prior.count + direction };
+        if (next.count > 0) index.set(key, next); else index.delete(key);
+    }
+}
+function publicRecipeDigest(productId) {
+    const value = publicDigests.get(Number(productId));
+    return value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
+}
+function publicScopeDigest(scope) {
+    const value = publicScopeDigests.get(scope);
+    return value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
+}
+function candidateRow(row) {
+    return { characterId: row[0], recipeId: row[1], price: row[2], entryPrice: row[2], revision: row[3],
+        townName: row[4], loc: { locX: row[5], locY: row[6], locZ: row[7] }, capacityBatches: row[8] };
+}
 const inputOwners = new Map();
 const ownerInputs = new Map();
 const crafters = new Map();
@@ -25,7 +51,11 @@ function watchedInputs() {
 let unsubscribe = null;
 let unsubscribeOwnership = null;
 
-function remove(id, { recipes: dropRecipes = true } = {}) {
+function remove(id, { recipes: dropRecipes = true, publish = true } = {}) {
+    const removedRecipes = owners.get(Number(id)) || [];
+    for (const row of publicRecipeRows(id)) { togglePublicDigest(row, -1); publicCandidates.remove(`w:${Number(id)}:${row[1]}`); }
+    if (publish) for (const recipeId of removedRecipes) require('../Population/ColdTableChannel').shared
+        .changed('board', { key: `w:${Number(id)}:${recipeId}`, removed: true });
     require('./ShotMarketIndex').native().remove(id);
     if (dropRecipes) recipesChanged(id);
     for (const recipeId of owners.get(Number(id)) || []) {
@@ -44,8 +74,18 @@ function remove(id, { recipes: dropRecipes = true } = {}) {
 }
 function register(state) {
     const id = Number(state?.characterId);
-    remove(id, { recipes: state?.phase !== 'cold' });
-    if (!state || state.phase !== 'cold') return;
+    const previousRows = publicRecipeRows(id);
+    remove(id, { recipes: state?.phase !== 'cold', publish: false });
+    const publishRows = () => {
+        const rows = publicRecipeRows(id), keys = new Set(rows.map(row => row[1]));
+        const channel = require('../Population/ColdTableChannel').shared;
+        for (const row of previousRows) if (!keys.has(row[1])) channel.changed('board', { key: `w:${id}:${row[1]}`, removed: true });
+        for (const row of rows) {
+            const prior = previousRows.find(old => old[1] === row[1]);
+            if (!prior || row.some((value, at) => value !== prior[at])) channel.changed('board', [`w:${id}:${row[1]}`, ...row]);
+        }
+    };
+    if (!state || state.phase !== 'cold') { publishRows(); return; }
     require('./ShotMarketIndex').native().update(state);
     const items = new Set([...watchedInputs()].filter(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0));
     if (state.stats?.shotDemand?.itemId) items.add(Number(state.stats.shotDemand.itemId));
@@ -59,7 +99,7 @@ function register(state) {
     else recipesChanged(id);
     const shop = state?.stats?.workshop;
     if (!shop || state.phase !== 'cold' || state.simulation?.ownerId !== 'legacy_main' || Number(state.vitals?.hp) <= 0
-        || state.partyId || state.party?.partyId || ['dead', 'traveling'].includes(state.activity)) return;
+        || state.partyId || state.party?.partyId || ['dead', 'traveling'].includes(state.activity)) { publishRows(); return; }
     const ids = [];
     for (const entry of shop.entries || []) {
         const recipeId = Number(entry.recipeId);
@@ -68,6 +108,9 @@ function register(state) {
         ids.push(recipeId);
     }
     owners.set(id, ids);
+    ids.publicRows = Object.freeze(buildPublicRecipeRows(id).map(row => Object.freeze(row)));
+    for (const row of publicRecipeRows(id)) { togglePublicDigest(row); publicCandidates.put(`w:${id}:${row[1]}`, candidateRow(row)); }
+    publishRows();
 }
 function init() {
     if (!unsubscribe) unsubscribe = life().subscribeChanges(register);
@@ -93,19 +136,17 @@ function quote(crafter, customer, recipeId) {
     return { price, entryPrice: Number(entry.price) };
 }
 function find(recipeId, customer) {
-    const candidates = [];
-    for (const [id, state] of byRecipe.get(Number(recipeId)) || []) {
-        if (id === Number(customer.characterId) || life().cachedState(id) !== state || state.phase !== 'cold'
-            || state.simulation?.ownerId !== 'legacy_main') continue;
-        const recipe = recipes().resolveByRecipeId(recipeId);
-        if (!recipe || Number(state.vitals?.mp || 0) < Number(recipe.mpCost)) continue;
-        const priced = quote(state, customer, recipeId);
-        if (priced) candidates.push({ id: `workshop_${id}`, characterId: id, loc: state.loc,
-            townName: state.currentRegion, workshop: true, recipeId: Number(recipeId), ...priced,
-            revision: Number(state.simulation?.revision || 0) });
+    let best = null;
+    for (const row of publicForRecipe(recipeId, customer)) {
+        const selected = lookup(row.characterId, recipeId, customer);
+        if (!selected || selected.state.simulation?.revision !== row.revision) continue;
+        const priced = { id: `workshop_${row.characterId}`, ...row, workshop: true,
+            price: selected.price, entryPrice: selected.entryPrice };
+        if (!best || priced.price < best.price || priced.price === best.price && priced.characterId < best.characterId) best = priced;
     }
-    return candidates.sort((a, b) => a.price - b.price || a.characterId - b.characterId)[0] || null;
+    return best;
 }
+
 function servicePrice(recipe, previous, state) {
     const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
     const first = invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe);
@@ -250,6 +291,28 @@ function lookup(ownerId, recipeId, customer) {
     if (!state || life().cachedState(ownerId) !== state) return null;
     return { state, recipe: recipes().resolveByRecipeId(recipeId), ...quote(state, customer, recipeId) };
 }
+// Existing public recipe index is the source; only its published fee, place
+// and present physical capacity cross the worker boundary. No foreign book.
+function publicRecipeRows(ownerId) { return owners.get(Number(ownerId))?.publicRows || []; }
+function buildPublicRecipeRows(ownerId) {
+    const id = Number(ownerId), result = [];
+    for (const recipeId of owners.get(id) || []) {
+        const state = byRecipe.get(recipeId)?.get(id);
+        const entry = state?.stats?.workshop?.entries?.find(row => Number(row.recipeId) === recipeId);
+        const recipe = recipes().resolveByRecipeId(recipeId);
+        if (!state || !entry || !recipe || ![state.loc?.locX, state.loc?.locY, state.loc?.locZ].every(Number.isFinite)) continue;
+        const capacity = Math.min(64, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
+        result.push([id, recipeId, Number(entry.price), Number(state.simulation?.revision || 0),
+            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, Math.max(0, capacity)]);
+    }
+    return result;
+}
+function publicForRecipe(recipeId, customer = {}) {
+    return publicCandidates.candidates(recipeId, customer.characterId);
+}
+function* publicRows() {
+    for (const id of owners.keys()) for (const row of publicRecipeRows(id)) yield [`w:${id}:${row[1]}`, ...row];
+}
 function boardRecords() {
     return [...owners.keys()].flatMap(id => {
         const state = life().cachedState(id);
@@ -286,4 +349,4 @@ async function publishDemand(state, recipe, productPrice, context) {
     }
     return state;
 }
-module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, bookFor, review, find, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };
+module.exports = { init, register, remove, recipesChanged, knownFor, cachedRecipes, bookFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates, publishDemand };

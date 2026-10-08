@@ -27,17 +27,18 @@ function stationForRecipe(recipeId, state = null) {
     if (provider?.workshop) {
         const selected = Workshops.lookup(provider.characterId, recipeId, state);
         if (!selected || Number(selected.state.simulation?.revision || 0) !== Number(provider.revision)
-            || Number(selected.price) !== Number(provider.price)) return null;
+            || provider.price != null && Number(selected.entryPrice) !== Number(provider.price)) return null;
         return { id: `workshop_${provider.characterId}`, characterId: provider.characterId,
             loc: selected.state.loc, townName: selected.state.currentRegion, workshop: true,
-            recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice, revision: provider.revision };
+            recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice, revision: provider.revision,
+            capacityBatches: Math.min(64, Math.floor(Number(selected.state.vitals?.mp || 0) / Math.max(1, Number(selected.recipe.mpCost || 0)))) };
     }
     if (provider && state.stats.equipmentPlan.clanGoal?.clanId
         && (!Production.buyersDisabled() || state.stats.equipmentPlan.clanGoal.orderId)) return {
         id: `clan_crafter_${provider.characterId}`, characterId: provider.characterId,
         loc: provider.loc, clan: true
     };
-    if (Production.buyersDisabled()) return state ? Workshops.find(recipeId, state) : null;
+    if (Production.buyersDisabled()) return null;
     return CraftShopService.publishedStationRecipes().stationByRecipeId.get(Number(recipeId)) || null;
 }
 
@@ -89,8 +90,12 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
     return null;
 }
 
+function publicCraftPlan(state) {
+    const plan = state?.stats?.equipmentPlan;
+    return !!plan?.craftProviders?.[plan.recipeId]?.workshop;
+}
 function beginTravel(state, timestamp = Date.now()) {
-    if (Karma.closesTowns(state?.stats?.karma) || (!Production.buyersDisabled() && ClanCrafting.isPersonalCraft(state))) return null;
+    if (Karma.closesTowns(state?.stats?.karma) || (!Production.buyersDisabled() && ClanCrafting.isPersonalCraft(state) && !publicCraftPlan(state))) return null;
     const plan = state?.stats?.equipmentPlan;
     if (!state || state.activity === 'traveling' || !['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return null;
     const finalRecipe = C4RecipeItems.resolveByRecipeId(plan.recipeId)
@@ -237,7 +242,7 @@ async function craft(state, random = Math.random) {
         || C4DualSwordCombinations.resolveByRecipeId(plan?.recipeId);
     let recipe = readyRecipeFor(state, finalRecipe);
     const station = stationForRecipe(recipe?.recipeId, state);
-    if (!state || (!Production.buyersDisabled() && ClanCrafting.isPersonalCraft(state)) || state.activity !== 'crafting' || !recipe || !station) {
+    if (!state || (!Production.buyersDisabled() && ClanCrafting.isPersonalCraft(state) && !publicCraftPlan(state)) || state.activity !== 'crafting' || !recipe || !station) {
         return { state, crafted: false, reason: 'not_ready' };
     }
     if (C4DualSwordCombinations.isCombination(recipe)) {
@@ -315,7 +320,7 @@ async function craft(state, random = Math.random) {
     let result;
     try {
         result = station.workshop ? await Workshops.craft(crafter.id, recipe.recipeId, state.characterId, {
-            batches: batchCount, expectedPrice: entry.price, expectedRevision: station.revision, random
+            batches: batchCount, expectedPrice: entry.price, expectedRevision: station.revision, random, funding: { r: Number(plan.valueRate || 0) }
         }) : await Database.craftForCustomer(crafter.id, state.characterId, {
             materials,
             product: success ? {

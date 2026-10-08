@@ -286,7 +286,74 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
     return true;
 }
 
+// The visible executor uses the same selected workshop, material quantities,
+// native funding and durable attempt receipt as the distant customer.
+function workshopTarget(session, bot) {
+    const physical = LifeState.cachedState(bot.fetchId()) || session.coldLifeState;
+    const plan = session.coldLifeState?.stats?.equipmentPlan || physical?.stats?.equipmentPlan;
+    const saved = physical && { ...physical, stats: { ...physical.stats, equipmentPlan: plan } };
+    if (plan?.strategy !== 'craft' || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;
+    const Recipes = invoke('GameServer/Items/C4RecipeItems');
+    const ColdCraft = invoke('GameServer/Bot/Economy/ColdCraftingService');
+    const state = { ...saved, inventory: LifeState.inventorySummaryFromItems(bot.backpack.fetchItems()) };
+    const finalRecipe = Recipes.resolveByRecipeId(plan.recipeId);
+    const recipe = ColdCraft.readyRecipeFor(state, finalRecipe);
+    const station = recipe && ColdCraft.stationForRecipe(recipe.recipeId, state);
+    if (!station?.workshop) return null;
+    return { workshop: true, name: 'workshop', town: station.townName,
+        locX: station.loc.locX, locY: station.loc.locY, locZ: station.loc.locZ,
+        state, recipe, finalRecipe, station };
+}
+async function craftAtWorkshop(session, bot, target) {
+    if (session.workshopCrafting) return;
+    session.workshopCrafting = true;
+    const Workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+    try {
+        const { recipe, finalRecipe, station, state } = target;
+        const batches = Math.min(64, invoke('GameServer/Bot/Economy/ColdCraftingService')
+            .requiredCraftCount(finalRecipe, recipe, state));
+        if (!batches && !session.workshopOriginal) return;
+        const options = { batches: Math.min(batches, Math.max(1, Number(station.capacityBatches || batches))),
+            expectedRevision: station.revision, funding: { r: Number(state.stats.equipmentPlan.valueRate || 0) },
+            ...(session.workshopOriginal ? { original: session.workshopOriginal } : {}) };
+        let result;
+        try { result = await Workshops.craft(station.characterId, recipe.recipeId, bot.fetchId(), options); }
+        catch (error) {
+            if (!error.economyCommand) throw error;
+            session.workshopOriginal = error.economyCommand;
+            result = await Workshops.craft(station.characterId, recipe.recipeId, bot.fetchId(), { original: error.economyCommand });
+        }
+        session.workshopOriginal = undefined;
+        if (session.actor !== bot || bot.fetchIsOnline?.() === false) return;
+        const items = await invoke('Database').fetchItems(bot.fetchId());
+        const byId = new Map(items.map(row => [Number(row.id), row]));
+        const backpack = bot.backpack;
+        for (const item of [...backpack.fetchItems()]) {
+            const row = byId.get(Number(item.fetchId()));
+            if (!row) backpack.items = backpack.fetchItems().filter(other => other !== item);
+            else { item.setAmount(row.amount); byId.delete(Number(row.id)); }
+        }
+        for (const row of byId.values()) backpack.insertItem(row.id, row.selfId, row);
+        backpack.inventoryRevision = Number(backpack.inventoryRevision || 0) + 1;
+        session.coldLifeState = LifeState.cachedState(bot.fetchId()) || result.customerState;
+        session.dataSendToMe?.(ServerResponse.itemsList(backpack.fetchItems()));
+        invoke('GameServer/Bot/Economy/EconomyContext').forget(bot.fetchId());
+        session.shoppingTarget = undefined;
+        session.shoppingServicePhase = undefined;
+        session.shoppingDoneAnnounced = false;
+        raiseDecision(session, 'town');
+    } catch (error) {
+        if (!session.workshopOriginal) {
+            session.shoppingTarget = undefined;
+            session.shoppingServicePhase = undefined;
+            raiseDecision(session, 'town');
+        }
+        utils.infoWarn('Workshop', '%s: %s', bot.fetchName(), error.message);
+    } finally { session.workshopCrafting = false; }
+}
+
 module.exports = {
+    workshopTarget, craftAtWorkshop,
     tick(session, bot, Generics, BotAI) {
         if (session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
             return;
@@ -312,7 +379,11 @@ module.exports = {
         const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
 
         const Improvements = invoke('GameServer/Bot/Economy/BotImprovementService');
-        const selected = Improvements.chosen(null, invoke('GameServer/Bot/Economy/EconomyContext').forActor(bot, session));
+        const hotEconomy = invoke('GameServer/Bot/Economy/EconomyContext').forActor(bot, session);
+        const personalCraft = require('../../Economy/WishProviders').personalCraftPlan(hotEconomy.state, hotEconomy);
+        if (personalCraft && session.coldLifeState) session.coldLifeState = { ...session.coldLifeState,
+            stats: { ...session.coldLifeState.stats, equipmentPlan: personalCraft } };
+        const selected = Improvements.chosen(null, hotEconomy);
         if (selected && selected.kind !== 'enchant') {
             const station = Improvements.stationTarget(bot, selected);
             if (station) { session.shoppingTarget = station; session.shoppingServicePhase = 'improvement'; }
@@ -320,8 +391,10 @@ module.exports = {
             session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
         }
 
-        if (prepareEquipmentMarketStop(session, bot, closestTown, BotAI) && !session.companionShopping) return;
-        prepareWarehouseStop(session, bot, closestTown, BotAI);
+        const paidCraft = !session.companionShopping && workshopTarget(session, bot);
+        if (paidCraft) { session.shoppingTarget = paidCraft; session.shoppingServicePhase = 'workshop'; }
+        if (session.shoppingServicePhase !== 'workshop' && prepareEquipmentMarketStop(session, bot, closestTown, BotAI) && !session.companionShopping) return;
+        if (session.shoppingServicePhase !== 'workshop') prepareWarehouseStop(session, bot, closestTown, BotAI);
 
         if (!session.shoppingTarget) {
             const BotManager = invoke('GameServer/Bot/BotManager');
@@ -457,6 +530,10 @@ module.exports = {
             return;
         }
 
+        if (session.shoppingServicePhase === 'workshop') {
+            craftAtWorkshop(session, bot, target);
+            return;
+        }
         if (session.shoppingServicePhase === 'improvement') {
             Improvements.reviewHot(session).then(result => {
                 if (result) { session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
@@ -562,6 +639,7 @@ module.exports = {
             try {
                 const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
                 const purchased = await BotSupplyErrand.purchaseAtDestination(bot, companionErrand);
+                if (purchased.pending) return;
                 if (!purchased.ok || Number(purchased.delta) !== Number(companionErrand.amount)) {
                     throw new Error(purchased.reason || 'purchase_delta_mismatch');
                 }

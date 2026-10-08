@@ -11,6 +11,7 @@
 // Order of a side's list: the better price first (cheaper for a sell line,
 // higher for a buy line); at the same price a player's line before a bot's;
 // then the record id and the line id, so equal lines keep a stable order.
+const { fnv1a32 } = require('../Bot/Fnv1a');
 const SELL = 1;
 const BUY = 3;
 const EMPTY = Object.freeze([]);
@@ -128,6 +129,8 @@ class BoardIndex {
         this.serial = ++indexSerial;
         this.epoch = 0;
         this.itemChanges = new Map();
+        this.itemFingerprints = new Map();
+        this.groupFingerprints = new Map();
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
         this.sides = new Map([[SELL, new Map()], [BUY, new Map()]]);
         // side -> town (null for unplaced, '*' for all) -> sorted item ids.
@@ -147,6 +150,8 @@ class BoardIndex {
     clear() {
         this.epoch++;
         this.itemChanges.clear();
+        this.itemFingerprints.clear();
+        this.groupFingerprints.clear();
         this.sides.forEach((items) => items.clear());
         this.townItems.forEach((towns) => towns.clear());
         this.records.clear();
@@ -158,6 +163,30 @@ class BoardIndex {
     // A token that changes whenever a line of this item is put or removed.
     itemRevision(selfId) {
         return `${this.serial}.${this.epoch}.${this.itemChanges.get(Number(selfId)) || 0}`;
+    }
+
+    // Shared public content digest survives different main/worker index epochs.
+    // Updated beside the existing index; a preparation reads no line list.
+    itemFingerprint(selfId) {
+        return (this.itemFingerprints.get(Number(selfId)) || [0, 0, 0]).join('.');
+    }
+
+    groupFingerprint(scope) {
+        return (this.groupFingerprints.get(scope) || [0, 0, 0]).join('.');
+    }
+
+    changeFingerprint(index, key, hash, step) {
+        const row = index.get(key) || [0, 0, 0];
+        row[0] = (row[0] ^ hash) >>> 0; row[1] = (row[1] + step * hash) >>> 0; row[2] += step;
+        if (row[2]) index.set(key, row); else index.delete(key);
+    }
+
+    fingerprintLine(line, step) {
+        const hash = fnv1a32(JSON.stringify([line.recordId, Number(line.revision || 0), line.custodyPolicy,
+            line.lineId, line.kind, line.storeType, line.ownerId, line.town, line.botOwned,
+            line.selfId, line.enchant, line.count, line.price, line.pricing || null, line.fills]));
+        this.changeFingerprint(this.itemFingerprints, line.selfId, hash, step);
+        if (this.groupOf) this.changeFingerprint(this.groupFingerprints, this.groupOf(line.selfId), hash, step);
     }
 
     itemChanged(selfId) {
@@ -245,6 +274,7 @@ class BoardIndex {
             insert(town, line);
             indexed.push(line);
             this.itemChanged(line.selfId);
+            this.fingerprintLine(line, 1);
             this.countGroup(line, 1);
             this.countPricedOwner(line, 1);
         }
@@ -265,6 +295,7 @@ class BoardIndex {
         if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
             this.itemChanged(line.selfId);
+            this.fingerprintLine(line, -1);
             this.countGroup(line, -1);
             this.countPricedOwner(line, -1);
             const items = this.sides.get(line.storeType);
@@ -446,8 +477,8 @@ class BoardIndex {
     follower() {
         return {
             reset: () => this.clear(),
-            put: (_key, row) => this.put(recordOf(row)),
-            remove: (key) => this.remove(key)
+            put: (key, row) => { if (!String(key).startsWith('w:')) this.put(recordOf(row)); },
+            remove: (key) => { if (!String(key).startsWith('w:')) this.remove(key); }
         };
     }
 }
