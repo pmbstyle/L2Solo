@@ -131,7 +131,10 @@ function buyOffer(state, offer, options = {}) {
             const buyer = done.state || state;
             const units = Number(trade.amount ?? trade.units ?? 0), spent = Number(trade.totalPrice ?? trade.spent ?? 0);
             const diagnostics = require('./EconomyDiagnostics');
-            if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+            if (diagnostics.enabled(state.characterId)) diagnostics.push(trade.replayed ? { owner: state.characterId,
+                phase: 'purchase_receipt', reason: 'replayed', actual: 0, spent: 0, receiptUnits: units, receiptSpent: spent,
+                commandId: trade.economyCommand?.[0], sequence: trade.economyCommand?.[2],
+                nativeId: Number(trade.eventId ?? trade.nativeId) } : { owner: state.characterId,
                 phase: 'native_purchase', trigger: 'public_quote', reason: trade.replayed ? 'replayed' : 'committed',
                 source: offer.sourceType, item: Number(offer.selfId), actual: units, spent, quote: Number(offer.price),
                 town: offer.town, recordId: Number(offer.recordId), lineId: Number(offer.lineId),
@@ -368,7 +371,10 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
     if (!purchase?.ok) { if (Diagnostics.active()) purchaseObservation(state, selfId, amount, undefined, 'purchase_refusal', purchase?.reason || 'native_refused');
         return null; }
     const diagnostics = require('./EconomyDiagnostics');
-    if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+    if (diagnostics.enabled(state.characterId)) diagnostics.push(purchase.replayed ? { owner: state.characterId,
+        phase: 'purchase_receipt', reason: 'replayed', actual: 0, spent: 0, receiptUnits: Number(purchase.amount ?? purchase.units),
+        receiptSpent: Number(purchase.spent), nativeId: Number(purchase.nativeId),
+        commandId: admitted.command[0], sequence: admitted.command[2] } : { owner: state.characterId,
         phase: 'native_purchase', trigger: 'npc_quote', reason: purchase.replayed ? 'replayed' : 'committed',
         source: 'npc', item: Number(selfId), actual: Number(purchase.amount), spent: Number(purchase.spent),
         quote: Number(unitPrice), town: state.currentRegion, nativeId: Number(selfId),

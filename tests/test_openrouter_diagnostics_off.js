@@ -27,7 +27,7 @@ async function run() {
         assert.equal(on.telemetry.rawContent, '{"reply":"hello"}');
         assert.equal(on.telemetry.latencyMs, 0);
         const requestMessages = [];
-        async function repair(enabled) {
+        const repair = async (enabled) => {
             Config.developerDiagnostics = enabled; Gateway.resetCircuit(); let attempt = 0;
             Gateway.setTransport(async (_url, init) => {
                 requestMessages.push(JSON.parse(init.body).messages);
@@ -36,7 +36,7 @@ async function run() {
             });
             return Gateway.request({ ...spec, repairSchema: true, responseSchema: { name: 'fixture', schema: {
                 type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] } } });
-        }
+        };
         const repairedOff = await repair(false), repairedOn = await repair(true);
         assert.equal(repairedOff.ok, true); assert.equal(repairedOff.telemetry.attempts, 2);
         assert.equal(repairedOff.telemetry.initialRawContent, undefined);

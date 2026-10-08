@@ -100,7 +100,9 @@ function spawn() {
     if (config.diagnostics) Diagnostics.connect(batch => {
         if (worker !== instance) return false;
         const message = { type: 'economy_diagnostics', ...batch };
-        instance.postMessage(message); return Buffer.byteLength(JSON.stringify(message));
+        const wireBytes = Buffer.byteLength(JSON.stringify(message));
+        if (wireBytes > Diagnostics.LIMITS.batchBytes) return false;
+        instance.postMessage(message); return wireBytes;
     });
     if (PopulationConfig.developerDiagnostics) counters.starts += 1;
     instance.on('message', (message = {}) => {

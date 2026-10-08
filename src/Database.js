@@ -38,7 +38,8 @@ function publishNativeDiagnostics(rolledBack = null) {
     if (!nativeDiagnosticFacts) return;
     try {
         for (const row of nativeDiagnosticFacts) Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
-            reason: rolledBack, planned: row.actual, actual: 0, spent: 0 } : { ...row, outcome: 'committed' });
+            reason: rolledBack, planned: row.actual, actual: 0, spent: 0,
+            ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
     } catch (_) { /* Observations cannot change native results or errors. */ }
     nativeDiagnosticFacts = null;
 }
@@ -2083,15 +2084,15 @@ function economyStepUnsafe(characterId, command, kind) {
     if (!command) return null;
     if (kind !== undefined && command[1] !== kind) throw Error('economy_kind_changed');
     EconomyCommit.header(command[0], command[1], command[2], command.authority);
-    if (Diagnostics.active()) stageNativeDiagnostic(characterId, { command }, 'native_attempt', 'requested', { nativeId: command[1] });
+    if (Diagnostics.active()) stageNativeDiagnostic(characterId, { command }, 'native_attempt', 'requested', { commandKind: command[1] });
     const row = economyOwnerUnsafe(characterId, command.authority);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_admission', 'authority_checked',
-        { nativeId: command[1] });
+        { commandKind: command[1] });
     const tuple = jsonObject(row.statsJson).economyCommit;
     if (!EconomyCommit.valid(tuple) || tuple[2] !== command[0] || tuple[3] !== command[1]) throw Error('economy_intent_changed');
     if (tuple[1] === 1 && command[2] === tuple[0] - 1) {
         if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_replay', 'saved_receipt',
-            { nativeId: tuple[8], actual: tuple[5], spent: tuple[6] });
+            { nativeId: tuple[8], actual: 0, spent: 0, receiptUnits: tuple[5], receiptSpent: tuple[6] });
         return { row, replay: { ...EconomyCommit.result(tuple), coldLifeRow: normalizeRow(row) } };
     }
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');

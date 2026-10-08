@@ -10,14 +10,15 @@ const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 're
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'goalApplied', 'nativeId', 'sequence',
     'errandAt', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
-    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after'];
-const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome'];
+    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after',
+    'receiptUnits', 'receiptSpent', 'commandKind'];
+const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey', 'proposalId'];
 function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now,
     thread = isMainThread ? 'main' : 'worker' } = {}) {
     capacity = Math.min(LIMITS.mainRecords, Math.max(1, capacity));
     let rows = null, bytes = 0, selected = null, explicit = null, selectionKey = null;
     let counters = null, durations = null, transport = null, inFlight = null;
-    let seq = 0, second = -1, rate = 0, dropped = 0, written = 0, offered = 0, sent = 0, batches = 0, sentBytes = 0;
+    let seq = 0, second = -1, rate = 0, dropped = 0, written = 0, offered = 0, sent = 0, batches = 0, attemptedBatches = 0, sentBytes = 0;
     let drops = null;
     const active = () => config.developerDiagnostics === true;
     const detail = () => active() && config.economyDiagnostics === true;
@@ -40,7 +41,7 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
         row.samples[row.next] = ms; row.next = (row.next + 1) % LIMITS.durationSamples;
     }
     function lose(reason, amount = 1) {
-        dropped += amount; drops ||= { rate: 0, queue: 0, size: 0, transport: 0, writer: 0, invalid: 0, stop: 0, upstream: 0 };
+        dropped += amount; drops ||= { rate: 0, queue: 0, size: 0, transport: 0, writer: 0, invalid: 0, stop: 0, upstream: 0, admission: 0 };
         drops[reason] += amount;
     }
     function enabled(id) {
@@ -65,11 +66,14 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
             rows.shift(); batch.push(row); batchBytes += encoded; size += Buffer.byteLength(row);
         }
         bytes -= size; inFlight = { id: ++seq, count: batch.length, bytes: size, at: now() };
-        batches++; sent += batch.length;
+        attemptedBatches++;
         const message = { id: inFlight.id, records: batch };
         try { const result = transport(message);
-            sentBytes += Number.isSafeInteger(result) && result >= 0 ? result : Buffer.byteLength(JSON.stringify(message));
             if (result === false) { lose('transport', batch.length); inFlight = null; }
+            else {
+                batches++; sent += batch.length;
+                sentBytes += Number.isSafeInteger(result) && result >= 0 ? result : Buffer.byteLength(JSON.stringify(message));
+            }
         } catch { lose('transport', batch.length); inFlight = null; }
     }
     function enqueue(input, imported = false) {
@@ -83,7 +87,7 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
         const record = { v: 1, at: Number.isFinite(input.at) ? input.at : timestamp,
             thread: imported && ['main', 'worker'].includes(input.thread) ? input.thread : thread, owner: Number(input.owner) };
         for (const field of NUMBER_FIELDS) if (Number.isFinite(input[field])) record[field] = input[field];
-        for (const field of TEXT_FIELDS) if (typeof input[field] === 'string') record[field] = input[field].slice(0, field === 'wishKey' ? 96 : 64);
+        for (const field of TEXT_FIELDS) if (typeof input[field] === 'string') record[field] = input[field].slice(0, field === 'wishKey' || field === 'errandKey' ? 96 : 64);
         if (Array.isArray(input.candidates)) record.candidates = input.candidates.slice(0, 3)
             .map(row => ({ town: String(row.action || row.town || '').slice(0, 32), hours: Number.isFinite(row.value) ? row.value : null }));
         const row = JSON.stringify(record), size = Buffer.byteLength(row);
@@ -104,18 +108,25 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
     function ack(id, amount = 0) {
         if (!detail() || !inFlight || inFlight.id !== id) return false;
         const accepted = Number.isSafeInteger(amount) ? Math.min(inFlight.count, Math.max(0, amount)) : 0;
-        written += accepted; if (inFlight.count > accepted) lose('writer', inFlight.count - accepted);
+        written += accepted; if (inFlight.count > accepted) lose(thread === 'main' ? 'writer' : 'admission', inFlight.count - accepted);
         inFlight = null; pump(); return true;
     }
     function disconnect() { if (inFlight) lose('transport', inFlight.count); inFlight = null; transport = null; }
     function stop() { disconnect(); if (rows?.length) lose('stop', rows.length); rows = null; bytes = 0;
         selected = null; explicit = null; selectionKey = null; counters = null; durations = null; drops = null; }
+    function omitAggregatesOnOverflow(message, reason) {
+        if (!active() || reason !== 'message_too_large' || message?.type !== 'heartbeat'
+            || !Object.hasOwn(message.payload || {}, 'developerDiagnostics')) return false;
+        delete message.payload.developerDiagnostics;
+        count('transport', 'aggregate_drop', 'heartbeat_size');
+        return true;
+    }
     function stats() {
         if (!active()) return { enabled: false };
         return { enabled: true, detailEnabled: detail(), queued: rows?.length || 0, bytes, inFlight: inFlight?.count || 0,
             selected: explicit?.size || selected?.size || 0, keys: 0, dropped, acknowledged: written,
             destination: thread === 'main' ? 'history_writer' : 'main_admission',
-            ...(thread === 'main' ? { written } : { acceptedByMain: written }), offered, sent, batches, sentBytes,
+            ...(thread === 'main' ? { written } : { acceptedByMain: written }), offered, sent, batches, attemptedBatches, sentBytes,
             oldestAgeMs: rows?.length ? Math.max(0, now() - JSON.parse(rows[0]).at) : 0,
             inFlightAgeMs: inFlight ? Math.max(0, now() - inFlight.at) : 0, drops: drops ? { ...drops } : null };
     }
@@ -126,7 +137,7 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
                 { count: row.count, totalMs: row.totalMs, maxMs: row.maxMs, samples: row.samples.slice() }])) : {},
             detail: stats() };
     }
-    return { active, enabled, push, accept, ack, disconnect, stop, count, duration, metrics, stats,
+    return { active, enabled, push, accept, ack, disconnect, stop, count, duration, metrics, stats, omitAggregatesOnOverflow,
         noteDropped(amount) { if (active() && Number.isSafeInteger(amount) && amount > 0) lose('upstream', amount); },
         connect(send) { if (!detail()) return false; transport = send; pump(); return true; } };
 }
