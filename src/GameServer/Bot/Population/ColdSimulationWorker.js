@@ -748,7 +748,7 @@ function startKernel(config = {}) {
                 const report = competition.snapshot();
                 const large = Number.MAX_SAFE_INTEGER;
                 const outcomes = Object.fromEntries(Object.keys(report.outcomes).map(key => [key, large]));
-                const kernelReport = kernel.heartbeatSnapshot();
+                const kernelReport = kernel.heartbeatSnapshot(true);
                 const message = Protocol.envelope('heartbeat', epoch, {
                     ...kernelReport, safety: safetyTotals(),
                     // Forecast cooldowns can make a decision alarm the new

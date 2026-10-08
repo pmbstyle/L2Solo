@@ -1669,6 +1669,10 @@ class ColdSimulationKernel {
                     }
                 }
                 if (resolvedParty.status === 'dissolved') this.partyRequirementProgress.delete(String(run.party.partyId));
+                // Preserve the first-refresh key shape used for byte admission.
+                for (const key of ['partyRequirementRefreshes', 'partyRequirementRefreshMs', 'partyRequirementRefreshMaxMs']) {
+                    if (!Object.hasOwn(this.stats, key)) this.stats[key] = 0;
+                }
                 DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshes = Number(this.stats.partyRequirementRefreshes || 0) + 1);
                 DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMs = requirementMs);
                 DiagnosticConfig.developerDiagnostics && (this.stats.partyRequirementRefreshMaxMs = Math.max(Number(this.stats.partyRequirementRefreshMaxMs || 0), requirementMs));
@@ -1848,6 +1852,9 @@ class ColdSimulationKernel {
         DiagnosticConfig.developerDiagnostics && (this.stats.lastFlushRows = proposals.length);
         DiagnosticConfig.developerDiagnostics && (this.stats.maxFlushRows = Math.max(this.stats.maxFlushRows, proposals.length));
         const reason = String(options.reason || (force ? 'forced' : 'direct'));
+        // Numeric key presence is operational: FrameSizer expands any value
+        // to 32 characters, so off need only preserve the original shape.
+        if (!Object.hasOwn(this.stats.flushReasons, reason)) this.stats.flushReasons[reason] = 0;
         DiagnosticConfig.developerDiagnostics && (this.stats.flushReasons[reason] = Number(this.stats.flushReasons[reason] || 0) + 1);
         // Sent proposals keep their ownership slots until the commit ACK.
         // Priority and party flushes can fill that window just like a timer flush.
@@ -2067,7 +2074,7 @@ class ColdSimulationKernel {
         return this.heartbeatSnapshot();
     }
 
-    heartbeatSnapshot() {
+    heartbeatSnapshot(forSizing = false) {
         const now = this.now(), head = this.heap.peek();
         const scheduled = head && head.kind !== 'alarm' ? this.scheduleTokens.get(Number(head.characterId)) : null;
         const current = !!head && (head.kind === 'alarm'
@@ -2081,7 +2088,7 @@ class ColdSimulationKernel {
             Math.min(oldest, Number((typeof startedAt === 'object' ? startedAt.startedAt : startedAt) || now))
         ), now);
         return {
-            ...(DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
+            ...(forSizing || DiagnosticConfig.developerDiagnostics ? this.stats : { diagnosticsEnabled: false }),
             states: this.states.size,
             heap: this.heap.size,
             queueHead: {
