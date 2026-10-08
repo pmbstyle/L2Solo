@@ -313,6 +313,25 @@ function economyFor(state, deps = {}) {
     return invoke('GameServer/Bot/Economy/EconomyContext').forState(state, deps);
 }
 
+// Compare the existing compact economic output, without decoding it or
+// keeping another per-owner snapshot. Input digest, publication clock and
+// validity/held flags are metadata. The feasibility fingerprint binds its
+// mask to board identities/revisions; the mask itself is an economic result.
+function sameEconomicOutput(before, after) {
+    if (before.data.byteLength > MAX_BYTES || after.data.byteLength > MAX_BYTES) return null;
+    if (before.data.byteLength !== after.data.byteLength || before.counts !== after.counts) return false;
+    const counts = before.counts;
+    const fingerprint = counts & FEASIBILITY ? 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21
+        + ((counts >>> 8) & 15) * 12 + (counts & 4096 ? 17 : 0) + (counts & 8192 ? 32 : 0)
+        + (counts & WORKSHOP ? 32 : 0) : -1;
+    const left = new Uint8Array(before.data), right = new Uint8Array(after.data);
+    for (let at = 16; at < left.length; at++) {
+        if (at >= 24 && at < 28 || at >= fingerprint && at < fingerprint + 4) continue;
+        if (left[at] !== right[at]) return false;
+    }
+    return true;
+}
+
 class ColdEconomyDecisions {
     constructor() {
         this.byId = new Map();
@@ -328,6 +347,23 @@ class ColdEconomyDecisions {
         if (!id) return;
         const incoming = decision ? compact(decision) : null;
         const bagChanged = !!committed?.settled || !!committed?.pkDrops?.length;
+        if (Diagnostics.active() && incoming && Number.isFinite(Number(incoming.updatedAt))) {
+            const previous = this.byId.get(id);
+            Diagnostics.count('ready_card', 'publication', !previous ? 'first_card'
+                : previous.updatedAt === incoming.updatedAt ? 'same_clock' : 'updated_at');
+            const same = previous ? sameEconomicOutput(previous, incoming) : null;
+            Diagnostics.count('ready_card', same === null ? 'comparison_unavailable' : same ? 'unchanged' : 'changed',
+                same === null ? previous ? 'wide_packet' : 'not_retained' : 'economic_output');
+            if (Diagnostics.enabled(id)) {
+                const activity = incoming.activity;
+                Diagnostics.push({ owner: id, caller: 'cold_decision_accept', phase: 'decision_publication',
+                    trigger: bagChanged ? 'native_bag_changed' : 'state_publication',
+                    reason: same === null ? 'comparison_unavailable' : same ? 'economic_output_unchanged' : 'economic_output_changed',
+                    inputHash: incoming.inputHash, wishKey: activity?.rootKey, item: activity?.itemId,
+                    planned: activity?.amount, quote: activity?.price, source: activity?.sourceType || activity?.kind,
+                    town: activity?.town, npcId: activity?.npcId, recipeId: activity?.recipeId });
+            }
+        }
         if (incoming && Number.isFinite(Number(incoming.updatedAt))) this.byId.set(id, compact({ ...incoming, stale: bagChanged }));
         else if (this.byId.has(id)) this.byId.get(id).stale = true;
     }

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict'), fs = require('node:fs'), path = re
 const { Worker } = require('node:worker_threads');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
-const { capture, ColdEconomyDecisions } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+const { capture, compact, ColdEconomyDecisions } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const state = { characterId: 17, updatedAt: 100, level: 30, activity: 'hunting', adena: 100,
     stats: { classId: 1, decisionSeq: 2, money: [100, .1, 20, 0] }, inventory: {} };
 const economy = { inputKey: 'native:17', network: { demands: new Map(), queue: [], activity: null,
@@ -73,6 +73,24 @@ assert.equal(metrics.counts['ready_card:miss:state_publication'], 1);
 assert.equal(metrics.counts['ready_card:miss:stale_card'], 1);
 assert.equal(metrics.counts['ready_card:miss:not_published'], 1);
 assert.equal(metrics.counts['ready_card:build:decision_pack'], 1);
+const compared = new ColdEconomyDecisions();
+compared.accept(17, onDecision);
+const publication = compact({ key: 'new-technical-key', data: onDecision.data.slice(0), updatedAt: 101, flags: 7 });
+new DataView(publication.data).setUint32(4, 12345, true);
+const beforeBytes = Buffer.from(compared.byId.get(17).data).toString('hex');
+compared.accept(17, publication);
+assert.equal(Buffer.from(onDecision.data).toString('hex'), beforeBytes, 'comparison cannot mutate the previous economic card');
+metrics = Diagnostics.metrics();
+assert.equal(metrics.counts['ready_card:publication:updated_at'], 1);
+assert.equal(metrics.counts['ready_card:unchanged:economic_output'], 2, 'key/time/input digest/freshness publication is not an economic change');
+const changed = capture({ ...economy, network: { ...economy.network,
+    activity: { activity: 'shopping', itemId: 391, amount: 6, price: 60, rootKey: 'gear:391' } } }, state);
+compared.accept(17, changed);
+metrics = Diagnostics.metrics();
+assert.equal(metrics.counts['ready_card:changed:economic_output'], 1);
+assert.equal(metrics.counts['ready_card:publication:updated_at'], 2);
+assert.equal(metrics.counts['ready_card:comparison_unavailable:not_retained'], 2);
+assert.equal(metrics.counts['ready_card:build:decision_pack'], 2, 'packing is separate from completed wish-network builds');
 global.performance = original.performance; Diagnostics.push = original.push;
 
 // The real worker has its own cumulative counts and bounded rings. Publishing
