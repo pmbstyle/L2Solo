@@ -28,7 +28,7 @@ function clean() {
 }
 
 let created = 0;
-async function makeBot(items) {
+async function makeBot(items, admittedSpending = false) {
     const account = `bot_records_${++created}`;
     await Database.createAccount(account, 'pw');
     const id = Number((await Database.createCharacter(account, {
@@ -40,7 +40,8 @@ async function makeBot(items) {
     await LifeState.upsertState({
         characterId: id, accountName: account, name: `Records${created}`, level: 40, adena: Number(inventory[57]?.amount || 0),
         phase: 'cold', activity: 'hunting', currentRegion: 'Giran', loc: { locX: 82700, locY: 148600, locZ: -3470 },
-        inventory, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { generatedCold: true }, timing: {}
+        inventory, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
+        stats: { generatedCold: true, ...(admittedSpending ? { money: [36000, 0, 0, 0] } : {}) }, timing: {}
     }, 'test_seed');
     return id;
 }
@@ -99,7 +100,9 @@ async function run() {
 
     // A move that fails half way moves nothing: the bag keeps the stems, no
     // record stands.
-    const mover = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }, ...MATERIALS.map((selfId) => ({ selfId, name: `Item ${selfId}`, amount: 20 }))]);
+    // Conservation/replay fixture admits spending; separate native funding
+    // regressions reject an absent or insufficient protected spending packet.
+    const mover = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }, ...MATERIALS.map((selfId) => ({ selfId, name: `Item ${selfId}`, amount: 20 }))], true);
     const start = await holdings(mover);
     await injected(`CREATE TEMP TRIGGER inject_board BEFORE INSERT ON main.afk_trade_lines
         BEGIN SELECT RAISE(ABORT, 'injected line failure'); END`, async () => AfkTrade.publishBot(mover, await sellAd(mover, 1864)));

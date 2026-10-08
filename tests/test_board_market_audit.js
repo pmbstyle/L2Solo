@@ -39,7 +39,7 @@ function clean() {
     }
 }
 
-async function bot(items) {
+async function bot(items, admittedSpending = false) {
     const account = `bot_market_audit_${++sequence}`;
     await Database.createAccount(account, 'pw');
     const id = Number((await Database.createCharacter(account, {
@@ -52,7 +52,8 @@ async function bot(items) {
         characterId: id, accountName: account, name: `MarketAudit${sequence}`, phase: 'cold',
         activity: 'hunting', level: 40, adena: Number(inventory[57]?.amount || 0), inventory,
         loc: { locX: 83000, locY: 148000, locZ: -3466 }, currentRegion: 'Giran',
-        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { generatedCold: true }, timing: {}
+        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
+        stats: { generatedCold: true, ...(admittedSpending ? { money: [36000, 0, 0, 0] } : {}) }, timing: {}
     }, 'market_audit_seed');
     return id;
 }
@@ -86,7 +87,9 @@ async function run() {
     await AfkTrade.init();
 
     await check('stale replacement must check record identities', async () => {
-        const owner = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }]);
+        // Identity/rollback fixture has an admitted empty spending queue;
+        // rejection without native funding is covered by reconciliation tests.
+        const owner = await bot([{ selfId: 57, name: 'Adena', amount: 10000 }], true);
         const first = await Database.replaceBoardRecords(owner, 'buy_ad', [buyAd(1864, 100)], { expected: {} });
         const original = first.opened[0];
         const expected = { [original.id]: original.revision };
@@ -319,7 +322,7 @@ async function run() {
         const roll = TendencyRoll.roll;
         let proposal;
         try {
-            PriceDecision.chooseAsk = belief => belief.selfId === 1864 ? { price: 90 } : { npc: true };
+            PriceDecision.chooseAsk = belief => belief.selfId === 1864 ? { known: true, price: 90 } : { known: true, npc: true };
             TendencyRoll.roll = (key, ...parts) => {
                 assert.notStrictEqual(key, 'look', 'counter events replace attention rolls');
                 return roll(key, ...parts);
@@ -422,7 +425,7 @@ async function run() {
         assert.deepStrictEqual(stem.pricing, before.pricing, 'a kept quote does not reset unconsumed observations');
         assert.notDeepStrictEqual(stem.pricing, freshStem, 'fresh listing state would have forgotten its counter event');
         assert.strictEqual(varnish.fills, 0, 'a genuinely new line starts with no fill history');
-        assert.deepStrictEqual(varnish.pricing, freshVarnish);
+        assert.deepStrictEqual({ seenCount: 0, ...varnish.pricing }, { seenCount: 0, ...freshVarnish }, 'optional zero observations have the same native meaning');
         assert.strictEqual(await bag(owner, 1864) + stem.count + await bag(buyer, 1864), 1000);
         assert.strictEqual(await bag(owner, 1865) + varnish.count, 1000);
     });

@@ -82,7 +82,7 @@ async function run() {
         loc: { locX: -84700, locY: 244200, locZ: -3730 },
         currentRegion: 'Talking Island', inventory,
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true }, timing: {}
+        stats: { generatedCold: true, money: [36000, 0, 0, 0] }, timing: {}
     }, 'test_bot_afk_hunting');
     assert(hunting);
     ListingPolicy.evaluate = () => ({ listings: [{ selfId: 1865, name: 'Varnish',
@@ -163,7 +163,7 @@ async function run() {
     assert.strictEqual(switched.state.activity, 'hunting');
     assert.strictEqual(switched.shop.storeType, AfkTrade.BUY);
     assert.strictEqual(switched.shop.kind, 'buy_ad');
-    assert.strictEqual(switched.shop.town, townChoices.at(-1), 'buy ads use the shop opening decision');
+    assert.strictEqual(switched.shop.town, MarketTownPolicy.targetTownForItems(LifeState.snapshot(ownerId), [{ selfId: cWeapon.selfId }]), 'new bids use their item fallback without fabricating sale receipts');
     assert.strictEqual(MarketSnapshot.snapshot().dynamic.wtb, 1);
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 2, 'the shop and the buy ad');
     assert(AfkTrade.findOwnerProjection(ownerId), 'the shop still stands');
@@ -211,9 +211,9 @@ async function run() {
     const choicesBefore = townChoices.length;
     const dGradeBuyer = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), dGradeGoal);
     assert.strictEqual(dGradeBuyer.changed, true);
-    assert.strictEqual(townChoices.length, choicesBefore + 1, 'opening a new buy ad makes one shop-town decision');
-    assert.strictEqual(dGradeBuyer.shop.town, townChoices.at(-1),
-        'D-grade buy ads use weighted town choice rather than a fixed grade town');
+    assert.strictEqual(townChoices.length, choicesBefore, 'a purchase bid never invokes a sale-income town roll');
+    assert.strictEqual(dGradeBuyer.shop.town, MarketTownPolicy.targetTownForItems(LifeState.snapshot(ownerId), [{ selfId: 45 }]),
+        'an unsupported new purchase bid keeps the declared grade fallback');
     await BotAfkMarket.withdraw(ownerId);
 
     await Database.createAccount('bot_afk_second_seller', 'pw');
@@ -519,7 +519,9 @@ async function run() {
         currentRegion: 'Gludio',
         inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(gearBuyerId)),
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 0,
+        // This physical equip/sync fixture declares no reserved spending queue;
+        // real economic selection and funding rejection have separate native tests.
+        stats: { generatedCold: true, classId: 0, money: [36000, 0, 0, 0],
             equipmentPlan: { status: 'active', strategy: 'market',
                 target: { selfId: 45, name: 'Bone Helmet', slot: 6 } } }, timing: {}
     }, 'test_afk_gear_buyer');
@@ -570,7 +572,7 @@ async function run() {
         currentRegion: 'Giran', loc: { locX: 81100, locY: 148000, locZ: -3466 },
         inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(recipeBuyerId)),
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, classId: 57,
+        stats: { generatedCold: true, classId: 57, money: [36000, 0, 0, 0],
             shotRecipeDemand: { itemId: 3033, amount: 1, maxSpend: 1000000, at: Date.now() } },
         timing: {} }, 'recipe_buyer_ready');
     await AfkTrade.publishBot(recipeSellerId, { storeType: AfkTrade.SELL, title: 'Materials',
