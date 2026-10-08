@@ -10,6 +10,7 @@ const kits = new Map();
 // purchase. Keep every item (including SA and set parts) in this immutable view.
 // Only a review's finalists are bounded; prices, holdings and funding are live.
 const GEAR_FINALISTS_PER_SLOT = 8;
+const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 function gearCandidates(state, ctx = null) {
     const Data = invoke('GameServer/DataCache');
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -25,22 +26,31 @@ function gearCandidates(state, ctx = null) {
             if (!slots.has(slot)) slots.set(slot, []);
             slots.get(slot).push(item);
         }
-        for (const list of slots.values()) list.sort((a, b) =>
-            Planner.itemScore(b, role, classId) - Planner.itemScore(a, role, classId)
-            || Number(a.template.price) - Number(b.template.price) || Number(a.selfId) - Number(b.selfId));
+        // Scores and grade membership are game data for this class/role,
+        // not another owner cache. Parallel columns add nine bytes per entry.
+        for (const [slot, list] of slots) {
+            const scored = list.map(item => ({ item, score: Planner.itemScore(item, role, classId) }));
+            scored.sort((a, b) => b.score - a.score
+                || Number(a.item.template.price) - Number(b.item.template.price)
+                || Number(a.item.selfId) - Number(b.item.selfId));
+            slots.set(slot, { items: scored.map(row => row.item),
+                scores: Float64Array.from(scored, row => row.score),
+                // Unknown ranks formerly had index -1 and remain eligible.
+                ranks: Int8Array.from(scored, row => GEAR_RANKS.indexOf(String(row.item.etc?.rank || 'none'))) });
+        }
         kits.set(key, slots);
     }
-    const ranks = ['none', 'd', 'c', 'b', 'a', 's'];
-    const maxRank = ranks.indexOf(Planner.gradeForLevel(state.level));
+    const maxRank = GEAR_RANKS.indexOf(Planner.gradeForLevel(state.level));
     const result = new Map();
     const budget = Math.max(0, Number(state.adena || 0) - Number(ctx?.survivalReserve || 0));
     const target = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
     const held = String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/);
-    for (const [slot, list] of kits.get(key)) {
-        const allowed = list.filter(item => ranks.indexOf(String(item.etc?.rank || 'none')) <= maxRank);
+    for (const [slot, kit] of kits.get(key)) {
+        const allowed = [];
+        for (let at = 0; at < kit.items.length; at++) if (kit.ranks[at] <= maxRank) allowed.push(at);
         // The exported game-data view is also used to construct fixed kits;
         // it has no actor choice or expensive build evaluation.
-        if (!ctx) { result.set(slot, allowed); continue; }
+        if (!ctx) { result.set(slot, allowed.map(at => kit.items[at])); continue; }
         const current = [7, 14].includes(slot) ? worn(state, 7) || worn(state, 14) : worn(state, slot);
         const owned = current && Data.items && require('../../Item/ItemTemplateIndex').find(Data.items, current.selfId);
         const before = owned ? Planner.itemScore(owned, role, classId) : 0;
@@ -48,10 +58,11 @@ function gearCandidates(state, ctx = null) {
         let affordable = null, above = null, retained = null;
         const cheaper = (a, b) => !b || a.price < b.price || a.price === b.price && a.item.selfId < b.item.selfId;
         const better = (a, b) => !b || a.ratio > b.ratio || a.ratio === b.ratio && cheaper(a, b);
-        for (const item of allowed) {
+        for (const at of allowed) {
+            const item = kit.items[at];
             const price = Number(ctx.price(item.selfId));
             if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
-            const score = Planner.itemScore(item, role, classId);
+            const score = kit.scores[at];
             const row = { item, price, score, ratio: Math.max(0, score - before) / price };
             if (Number(item.selfId) === target || Number(item.selfId) === Number(held?.[1])) retained = row;
             // A proxy can nominate a same-score SA/set alternative, but cannot

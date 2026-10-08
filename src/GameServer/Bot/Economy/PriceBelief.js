@@ -5,6 +5,10 @@ const TendencyRoll = require('../AI/TendencyRoll');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
+const Diagnostics = require('./EconomyDiagnostics');
+// One scalar mixture per item: no owner, state, wallet or offer references.
+const MIXTURE_LIMIT = 1024;
+const mixtures = new Map();
 
 const S0 = 0.6;
 const K_MAX = 60;
@@ -43,33 +47,44 @@ function demandValue(selfId, context = {}) {
 // bias is a signed fractional error, so the log centre gains log(1 + bias).
 function prior(selfId, ctx) {
     const id = Number(selfId);
-    const observations = [];
     const deals = MarketCounters.itemPriceEvidence(id);
-    if (deals.logMedian !== null) observations.push([deals.logMedian, Math.min(DEALS_WEIGHT_MAX, deals.deals)]);
+    // Always re-read permitted sources and the owner's excluded offers. Only
+    // their pure numeric combination is reusable, never a spending decision.
     const ask = ctx.board?.first(id, SELL, { excludeOwner: ctx.characterId, enchant: 0 });
-    if (ask?.price > 0) observations.push([Math.log(ask.price), 1]);
     const bid = ctx.board?.first(id, BUY, { excludeOwner: ctx.characterId, enchant: 0 });
-    if (bid?.price > 0) observations.push([Math.log(bid.price), 1]);
     const first = MarketCounters.firstPrice(id, ctx.timestamp);
     const index = counterIndex(id, ctx.timestamp);
-    if (first > 0 && index !== null) observations.push([Math.log(first) + index, 0.5]);
     const demand = demandValue(id, ctx);
-    if (demand > 0) observations.push([Math.log(demand), 0.3]);
-    if (first > 0) observations.push([Math.log(first), 0.3]);
-    if (!observations.length) return null;
-    let weight = 0;
-    let sum = 0;
-    for (const [value, w] of observations) {
-        weight += w;
-        sum += value * w;
+    const inputs = [deals.logMedian, Math.min(DEALS_WEIGHT_MAX, deals.deals),
+        ask?.price > 0 ? Number(ask.price) : 0, bid?.price > 0 ? Number(bid.price) : 0,
+        first, index, demand];
+    let mixture = mixtures.get(id);
+    if (!mixture || !inputs.every((value, at) => Object.is(value, mixture.inputs[at]))) {
+        const observations = [];
+        if (deals.logMedian !== null) observations.push([deals.logMedian, inputs[1]]);
+        if (inputs[2] > 0) observations.push([Math.log(inputs[2]), 1]);
+        if (inputs[3] > 0) observations.push([Math.log(inputs[3]), 1]);
+        if (first > 0 && index !== null) observations.push([Math.log(first) + index, 0.5]);
+        if (demand > 0) observations.push([Math.log(demand), 0.3]);
+        if (first > 0) observations.push([Math.log(first), 0.3]);
+        let weight = 0, sum = 0;
+        for (const [value, w] of observations) { weight += w; sum += value * w; }
+        mixture = { inputs, mu: sum / weight, K: weight, known: observations.length > 0 };
+        mixtures.delete(id); mixtures.set(id, mixture);
+        if (mixtures.size > MIXTURE_LIMIT) mixtures.delete(mixtures.keys().next().value);
+        if (Diagnostics.active()) Diagnostics.count('price_mixture', 'build', 'sources_changed');
+    } else {
+        mixtures.delete(id); mixtures.set(id, mixture);
+        if (Diagnostics.active()) Diagnostics.count('price_mixture', 'hit', 'same_sources');
     }
+    if (!mixture.known) return null;
     const counter = MarketCounters.counterOf(id);
     const enabled = ctx.knowledgeEnabled ?? PriceLearning.knowledgeEnabled();
     const experience = Math.max(0, Number(ctx.marketTrades?.[counter]) || 0);
     const bias = enabled
         ? (2 * TendencyRoll.roll('n45e', ctx.characterId, id) - 1) * errorOf(ctx.understanding, experience, counter)
         : 0;
-    return { selfId: id, mu: sum / weight + Math.log1p(bias), K: weight, bias };
+    return { selfId: id, mu: mixture.mu + Math.log1p(bias), K: mixture.K, bias };
 }
 
 // Current line observations add weight to the fresh estimate, never to a
@@ -113,7 +128,7 @@ function lineObservations(line, belief, ctx) {
 }
 
 function resetCaches() {
-    // No retained owner-blind derived demand. Compatibility lifecycle hook.
+    mixtures.clear();
 }
 
 module.exports = { S0, K_MAX, sigma, errorOf, prior, learn, lineObservations, demandValue, resetCaches };

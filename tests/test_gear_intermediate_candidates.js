@@ -135,3 +135,28 @@ console.log('PASS shared provider/network -> exact native planner: useful interm
         require('node:fs').rmSync(fixture.directory, { recursive: true, force: true });
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });
+
+// Static class/role columns survive a new state object, while live prices,
+// wallet and the held target still pass through the same economic shortlist.
+{
+    Providers.gearCandidates(state);
+    const score = Planner.itemScore;
+    let scoreCalls = 0;
+    Planner.itemScore = (...args) => { scoreCalls++; return score(...args); };
+    try {
+        const live = { survivalReserve: 1000, price: id => Number(Data.items.find(row => row.selfId === id)?.template.price || 0) };
+        const originalPicks = Providers.gearCandidates(state, live);
+        const firstCalls = scoreCalls; scoreCalls = 0;
+        const copiedPicks = Providers.gearCandidates(structuredClone(state), live);
+        assert.deepEqual(copiedPicks, originalPicks, 'new equal owner objects keep exact nominees');
+        assert.equal(scoreCalls, firstCalls);
+        assert(scoreCalls <= originalPicks.size, 'only currently worn items may need static scoring, not the whole catalogue');
+        const source = Data.items;
+        const beforeReplacement = Providers.gearCandidates(state);
+        try {
+            Data.items = source.slice(); scoreCalls = 0;
+            assert.deepEqual(Providers.gearCandidates(state), beforeReplacement, 'replacement catalogue preserves every eligible item/order');
+            assert(scoreCalls > originalPicks.size, 'a replacement catalogue rebuilds its static columns');
+        } finally { Data.items = source; }
+    } finally { Planner.itemScore = score; }
+}
