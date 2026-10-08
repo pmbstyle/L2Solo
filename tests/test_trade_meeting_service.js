@@ -59,6 +59,10 @@ function request(n) {
         assert.equal(replay.meetingId, 7, 'lost acknowledgement replays the durable token after staging was removed');
         assert.equal(Service.counters().preparations, 0);
         assert.equal(await Service.receipt(original.token, 99), null, 'another owner cannot adopt the saved receipt');
+        native.fetchTradeMeetingByToken = async () => null;
+        native.fetchTradeMeetingReceipt = async (token, actor) => token === original.token && actor === original.actorA
+            ? { meetingId: 7, pending: false, outcome: 'completed' } : null;
+        assert.equal((await Service.receipt(original.token, original.actorA)).outcome, 'completed', 'cleaned terminal receipt is owner bounded');
         console.log('Meeting preparation: stale caller, one per actor, source invalidation, disconnect and bounded release passed');
     } finally { Service.reset(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

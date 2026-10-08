@@ -28,7 +28,8 @@ global.invoke = name => ({
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {} }
 })[name];
 new Function('require', 'module', fs.readFileSync(require.resolve('../src/GameServer/AfkTrade/TradeMeetingService'), 'utf8'))(
-    name => name.includes('TravelRoutes') ? { between: () => ({ start, route: { steps: step ? [step] : [] } }) }
+    name => name.includes('TravelRoutes') ? { between: () => ({ start, route: { fee: step?.fee || 0, steps: step ? [step] : [] } }) }
+        : name.includes('NpcObjectIndex') ? { nearTemplate: () => ({ fetchLocX: () => start.locX, fetchLocY: () => 0, fetchLocZ: () => 0 }) }
         : name.includes('TradeIntent') ? {} : require(name), loaded);
 const service = loaded.exports;
 const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolve => setImmediate(resolve)); };
@@ -52,6 +53,10 @@ const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolv
         lifeListener(1); await flush();
         assert.equal(acked.at(-1), 3, 'spent interrupted recall is acknowledged');
         assert.equal(paid.at(-1).scroll, false, 'recall recovery does not cast another scroll');
+        row.legA = null; row.routeA = JSON.stringify({ method: 'walk', scroll: false });
+        step = { locX: 9000, locY: 0, locZ: 0, fee: 0, npcId: 10 };
+        lifeListener(1); await flush();
+        assert.equal(paid.at(-1).legId, 'walk:2000:0:0', 'agreed foot travel ignores gatekeeper routes');
         state.activity = 'fighting'; const count = paid.length;
         lifeListener(1); await flush(); assert.equal(paid.length, count, 'survival pauses meeting movement');
         console.log('Cold meeting: native hops, interruption replay, arrival acknowledgement, remaining route and survival passed');

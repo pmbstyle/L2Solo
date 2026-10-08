@@ -106,7 +106,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
             const saved = await meetings().receipt?.(consent.preparationId, playerId);
             if (saved) {
                 session.playerBoardPreparation = undefined;
-                return { ok: true, action: 'agreed', pending: saved.pending };
+                return { ok: true, action: saved.outcome === 'completed' || saved.outcome === 'cancelled' ? saved.outcome : 'agreed', pending: saved.pending };
             }
         }
         const service = afk();
@@ -130,7 +130,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                     || prepared.price !== line.price || prepared.revision !== line.revision) return { ok: false, reason: 'record_changed' };
                 try { const result = await meetings().accept(prepared.preparationId);
                     session.playerBoardPreparation = undefined;
-                    return { ok: true, action: 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
+                    return { ok: true, action: result.outcome === 'completed' || result.outcome === 'cancelled' ? result.outcome : 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
                 catch (_) { return { ok: false, reason: 'record_changed' }; }
             }
             if (session.playerBoardPreparation) meetings().discard(session.playerBoardPreparation.preparationId);

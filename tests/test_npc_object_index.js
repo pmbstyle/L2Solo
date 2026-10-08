@@ -53,6 +53,9 @@ function actor(id) {
 
         World.indexSpawnsInGrid();
         fillerReads = 0;
+        assert.equal(Index.nearTemplate(World, 1, 0, 0, 200), target);
+        assert.equal(Index.nearTemplate(World, 2, 0, 0, 200), null);
+        assert.equal(fillerReads, 0, 'known template lookup ignores unrelated spawns');
         // Catch an accidental fallback on both hits and misses, independently
         // of machine speed. A missing/just-despawned target must stay O(1).
         const originalFind = World.npc.spawns.find;

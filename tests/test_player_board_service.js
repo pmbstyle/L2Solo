@@ -5,7 +5,7 @@ const { create } = require('../src/GameServer/AfkTrade/PlayerBoardService');
 
 async function main() {
     const board = new BoardIndex();
-    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false;
+    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false;
     const merchant = { fetchId: () => 900000045, fetchLocX: () => 1000, fetchLocY: () => 0, fetchLocZ: () => 0 };
     const player = { accountId: 'player_board', actor: { fetchId: () => 8, fetchHp: () => 100,
         fetchClanId: () => 0, fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
@@ -25,7 +25,7 @@ async function main() {
             : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection, store: { locX: 1000, locY: 0, locZ: 0 } }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
     meetings: () => ({ discard() {}, prepareTrade: async () => { prepares++; return { preparationId: 'prepared', total: 180 }; },
-        receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: true } : null; },
+        receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: !terminal, outcome: terminal ? 'completed' : 'accepted' } : null; },
         accept: async id => { assert.equal(id, 'prepared'); agreements++; if (lostAck) { durableReceipt = true; throw Error('reply_lost_after_commit'); } return { pending: true }; } }),
     life: () => ({ cachedState: (id) => ({ characterId: id, loc: { locX: 7000, locY: 0, locZ: 0 }, currentRegion: 'Dion' }) }),
     workshops: () => ({ boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', ownerId: 55, ownerName: 'Maker',
@@ -68,7 +68,8 @@ async function main() {
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
     assert(player.playerBoardPreparation, 'lost native reply preserves the original consent identity');
     board.remove(5);
-    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'agreed');
+    terminal = true;
+    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'completed', 'the replay shows completion rather than asking the player to wait again');
     assert.equal(agreements, 2, 'receipt replay after quote removal never creates a second native acceptance');
     assert.equal(player.playerBoardPreparation, undefined);
     lostAck = false; durableReceipt = false;

@@ -22,6 +22,15 @@ const originals = {
 async function run() {
     const finalRecipe = Recipes.resolveByRecipeId(189);
     const componentRecipe = Recipes.resolveByRecipeId(29);
+    const repeated = { ...finalRecipe, materials: [{ selfId: componentRecipe.productId, amount: 3 }, { selfId: componentRecipe.productId, amount: 5 }] };
+    const repeatedState = { inventory: { [componentRecipe.productId]: { amount: 5 },
+        ...Object.fromEntries(componentRecipe.materials.map(input => [input.selfId, { amount: input.amount * 3 }])) },
+    stats: { equipmentPlan: { craftProviders: { [componentRecipe.recipeId]: { known: true } } } } };
+    assert.equal(ColdCraftingService.hasMaterials(repeatedState, repeated), false, 'duplicate inputs require their sum');
+    assert.equal(ColdCraftingService.readyRecipeFor(repeatedState, repeated)?.recipeId, componentRecipe.recipeId,
+        'missing aggregate material selects its component');
+    assert.equal(ColdCraftingService.requiredCraftCount(repeated, componentRecipe, repeatedState), 3,
+        'the component demand uses the same aggregate input');
     const items = componentRecipe.materials.map((material, index) => ({
         id: index + 1,
         selfId: material.selfId,

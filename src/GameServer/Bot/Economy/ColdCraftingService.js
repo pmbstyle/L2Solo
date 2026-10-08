@@ -63,9 +63,8 @@ function recipeForState(state, recipe) {
 
 function hasMaterials(state, recipe) {
     recipe = recipeForState(state, recipe);
-    return (recipe?.materials || []).every((material) => (
-        Number(state?.inventory?.[String(material.selfId)]?.amount || 0) >= Number(material.amount || 0)
-    ));
+    const required = Profit.requirements(recipe);
+    return !!required && [...required].every(([id, amount]) => Number(state?.inventory?.[id]?.amount || 0) >= amount);
 }
 
 // Equipment recipes can require another manufactured resource (for example,
@@ -76,10 +75,10 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
     const nextVisited = new Set(visited).add(Number(recipe.recipeId));
     if (hasMaterials(state, recipe)) return recipe;
 
-    for (const material of recipe.materials || []) {
-        const owned = Number(state?.inventory?.[String(material.selfId)]?.amount || 0);
-        if (owned >= Number(material.amount || 0)) continue;
-        const component = componentFor(state, material.selfId);
+    for (const [id, amount] of Profit.requirements(recipe) || []) {
+        const owned = Number(state?.inventory?.[id]?.amount || 0);
+        if (owned >= amount) continue;
+        const component = componentFor(state, id);
         if (!component || !stationForRecipe(component.recipeId, state)) continue;
         const ready = readyRecipeFor(state, component, nextVisited);
         if (ready) return ready;
@@ -160,11 +159,12 @@ function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, 
     if (crafts === null) return 0;
     if (Number(finalRecipe.recipeId) === Number(recipe.recipeId)) return Math.max(1, crafts);
     const nextVisited = new Set(visited).add(Number(finalRecipe.recipeId));
-    for (const material of finalRecipe.materials || []) {
-        const component = componentFor(state, material.selfId);
+    for (const [id, amount] of Profit.requirements(finalRecipe) || []) {
+        const component = componentFor(state, id);
         if (!component) continue;
-        const owned = Number(state?.inventory?.[String(material.selfId)]?.amount || 0);
-        const needed = Math.max(0, Number(material.amount || 0) * crafts - owned);
+        const owned = Number(state?.inventory?.[id]?.amount || 0);
+        if (!Number.isSafeInteger(amount * crafts)) return 0;
+        const needed = Math.max(0, amount * crafts - owned);
         if (Number(component.recipeId) === Number(recipe.recipeId)) return Math.ceil(needed / Math.max(1, Number(recipe.productCount || 1)));
         const nested = requiredCraftCount(component, recipe, state, needed, nextVisited);
         if (nested > 1 || Number(component.recipeId) === Number(recipe.recipeId)) return nested;
@@ -173,14 +173,11 @@ function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, 
 }
 
 function hasCombinationIngredients(items, recipe) {
-    const amounts = (items || []).reduce((owned, item) => {
-        const selfId = Number(item.selfId || 0);
-        owned.set(selfId, Number(owned.get(selfId) || 0) + Number(item.amount || 0));
-        return owned;
-    }, new Map());
-    return (recipe?.materials || []).every((material) => (
-        Number(amounts.get(Number(material.selfId)) || 0) >= Number(material.amount || 0)
-    ));
+    // The native blacksmith exchange may consume the currently worn sword;
+    // ordinary craft readiness excludes equipped inputs.
+    const required = Profit.requirements(recipe), amounts = new Map();
+    for (const item of items || []) amounts.set(Number(item.selfId), (amounts.get(Number(item.selfId)) || 0) + Number(item.amount || 0));
+    return !!required && [...required].every(([id, count]) => (amounts.get(id) || 0) >= count);
 }
 
 async function combineDualSword(state, recipe, station) {

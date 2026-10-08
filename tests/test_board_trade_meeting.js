@@ -144,6 +144,12 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         await Database.arriveTradeMeeting(completedId);
         await Database.cancelTradeMeeting(completedId, 'late-cancel');
         for (const actor of ids) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(completedId, actor); }
+        assert.equal((await Database.fetchTradeMeetingByToken(fulfilled.token)) ?? null, null, 'terminal rows are reclaimed');
+        const receipt = { pending: false, meetingId: completedId, revision: completed.meeting.revision, outcome: 'completed' };
+        for (const actor of ids) assert.deepEqual(await Database.fetchTradeMeetingReceipt(fulfilled.token, actor), receipt,
+            'a lost reply after terminal cleanup recovers the original outcome from the participant slot');
+        assert.equal(await Database.fetchTradeMeetingReceipt(fulfilled.token, 999), null);
+        assert.equal(await Database.fetchTradeMeetingReceipt('changed-token', ids[0]), null);
         assert.equal((await bag(ids[0]))[1867], 26);
         assert.equal((await bag(ids[1]))[1867], 14);
         assert.equal((await bag(ids[0]))[57], 119380);

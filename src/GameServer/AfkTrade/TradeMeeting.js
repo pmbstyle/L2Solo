@@ -223,8 +223,11 @@ function create(io) {
         const mask = row.deliveryMask | 1 << side;
         write('UPDATE board_trade_meetings SET deliveryMask=? WHERE id=?', [mask, id]);
         if (mask === 3) {
-            ids(row).forEach((actor, index) => write('UPDATE board_trade_participants SET meetingId=NULL WHERE characterId=? AND meetingId=? AND nextSequence=?',
-                [actor, id, (index ? row.seqB : row.seqA) + 1]));
+            // One last outcome in the existing owner slot survives cleanup.
+            // A lost reply never needs an unbounded token history or fresh consent.
+            const receipt = JSON.stringify([row.token, row.id, row.revision, Number(row.state === 'completed')]);
+            ids(row).forEach((actor, index) => write('UPDATE board_trade_participants SET meetingId=NULL,lastReceipt=? WHERE characterId=? AND meetingId=? AND nextSequence=?',
+                [receipt, actor, id, (index ? row.seqB : row.seqA) + 1]));
             write('DELETE FROM board_trade_meeting_lines WHERE meetingId=?', [id]);
             write('DELETE FROM board_trade_meetings WHERE id=?', [id]);
         }

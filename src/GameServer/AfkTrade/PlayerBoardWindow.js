@@ -145,6 +145,8 @@ function create({ service = () => require('./PlayerBoardService'),
             const message = !result.ok ? result.reason === 'record_changed' ? 'This offer has changed.'
                 : result.reason === 'own_record' ? 'You cannot answer your own offer.' : 'This offer is unavailable.'
                 : result.action === 'crafted' ? 'Craft completed.'
+                    : result.action === 'completed' ? 'Trade completed. Goods and payment are delivered.'
+                    : result.action === 'cancelled' ? 'Trade cancelled. Unused goods and payment are returned.'
                     : result.action === 'agreed' ? 'Agreed. Wait here for the merchant. Leaving cancels the trade.'
                     : request.kind === 'workshop' ? `${owner} crafts ${itemName(result.productId)} in ${town}. Meet there.`
                         : `${owner} ${result.side === BUY ? 'buys ' + itemName(request.selfId) + ' in ' + town + '. Meet there.' : 'sells in ' + town + '.'}`;

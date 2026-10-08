@@ -60,11 +60,13 @@ async function accepted(result) {
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
     wake(row.actorA); wake(row.actorB);
     return { pending: result.pending, meetingId: row.id, revision: row.revision,
+        outcome: row.state,
         purchased: false, sold: false, state: life().cachedState(row.actorA) };
 }
 async function receipt(token, characterId) {
     const row = await db().fetchTradeMeetingByToken(token);
-    if (!row || ![row.actorA, row.actorB].includes(Number(characterId))) return null;
+    if (!row) return db().fetchTradeMeetingReceipt?.(token, characterId) || null;
+    if (![row.actorA, row.actorB].includes(Number(characterId))) return null;
     return accepted({ meeting: row, pending: row.state === 'accepted' });
 }
 async function prepareTrade(characterId, store, itemId, amount, options = {}) {
@@ -212,15 +214,21 @@ async function continueColdTravel(row, side, state) {
         }
     }
     const Routes = require('../Bot/Travel/TravelRoutes');
-    const route = JSON.parse(row[`route${suffix}`]), native = Routes.between(state.loc, point);
+    const route = JSON.parse(row[`route${suffix}`]);
+    if (route.method === 'walk') {
+        const legId = `walk:${point.locX}:${point.locY}:${point.locZ}`;
+        acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, 0, false));
+        return;
+    }
+    const native = Routes.between(state.loc, point);
     if (!native.route) { acceptRows(await db().cancelTradeMeeting(row.id, 'route_unavailable')); wake(state.characterId); return; }
     let kind = 'walk', destination = point, fee = 0, scroll = false;
     if (route.scroll && row[`nextLeg${suffix}`] === 1) {
         kind = 'soe'; destination = native.start; scroll = true;
-    } else if (native.route.steps?.length) {
+    } else if (native.route.steps?.length && native.route.fee <= row[`routeReserve${suffix}`]) {
         const step = native.route.steps[0];
-        const keeper = world().fetchNpcsInRadius(native.start.locX, native.start.locY, 1200)
-            .find(npc => Number(npc.fetchSelfId()) === step.npcId);
+        const keeper = require('../World/NpcObjectIndex').nearTemplate(world(), step.npcId,
+            native.start.locX, native.start.locY, 1200);
         if (!keeper) { acceptRows(await db().cancelTradeMeeting(row.id, 'gatekeeper_unavailable')); wake(state.characterId); return; }
         const gate = { locX: keeper.fetchLocX(), locY: keeper.fetchLocY(), locZ: keeper.fetchLocZ() };
         if (Math.hypot(state.loc.locX - gate.locX, state.loc.locY - gate.locY) <= 200) {

@@ -1657,6 +1657,7 @@ function applySchemaMigrations() {
         ALTER TABLE afk_trade_lines ADD COLUMN pricingSigma REAL NOT NULL DEFAULT 0;
     `)]);
     migrations.push([62, () => require('./GameServer/AfkTrade/TradeMeetingSchema').install(connection)]);
+    migrations.push([63, () => connection.exec('ALTER TABLE board_trade_participants ADD COLUMN lastReceipt TEXT')]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -10280,6 +10281,15 @@ Object.assign(Database, {
     },
     fetchTradeMeetingByToken(token) {
         return inTransaction(() => one('SELECT * FROM board_trade_meetings WHERE token=?', [String(token)]), 'board:meeting-replay');
+    },
+    fetchTradeMeetingReceipt(token, actorId) {
+        return inTransaction(() => {
+            const slot = one('SELECT lastReceipt FROM board_trade_participants WHERE characterId=?', [Number(actorId)]);
+            const receipt = slot?.lastReceipt && JSON.parse(slot.lastReceipt);
+            if (!receipt || receipt[0] !== token) return null;
+            return { pending: false, meetingId: receipt[1], revision: receipt[2],
+                outcome: receipt[3] ? 'completed' : 'cancelled' };
+        }, 'board:meeting-receipt');
     },
     fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
     fetchTradeMeetingForOwner(id) {
