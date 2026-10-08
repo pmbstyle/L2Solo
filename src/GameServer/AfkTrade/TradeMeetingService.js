@@ -39,13 +39,19 @@ function stage(request) {
     return id;
 }
 function discard(id) { const entry = staged.get(id); if (entry) { pages -= entry.pages; staged.delete(id); } }
-async function accept(id) {
+async function accept(id, characterId = null) {
     const entry = staged.get(id);
     if (!entry) {
         const row = await db().fetchTradeMeetingByToken?.(id);
-        if (!row) throw Error('trade_meeting_preparation_missing');
+        if (!row) {
+            const saved = characterId && await db().fetchTradeMeetingReceipt?.(id, characterId);
+            if (saved) return saved;
+            throw Error('trade_meeting_preparation_missing');
+        }
+        if (characterId && ![row.actorA, row.actorB].includes(Number(characterId))) throw Error('trade_meeting_preparation_missing');
         return accepted({ meeting: row, pending: row.state === 'accepted' });
     }
+    if (characterId && !entry.actors.includes(Number(characterId))) throw Error('trade_meeting_preparation_missing');
     try {
         // DB persists the original token/sequences, so retry never invents
         // fresh consent after an acknowledgement or ordinary bot commit.
@@ -135,7 +141,7 @@ async function cancel(characterId) {
 async function trade(characterId, store, itemId, amount, options) {
     const prepared = await prepareTrade(characterId, store, itemId, amount, options);
     if (!prepared.preparationId) return prepared;
-    const result = await accept(prepared.preparationId);
+    const result = await accept(prepared.preparationId, characterId);
     return { ...result, state: life().cachedState(characterId) };
 }
 function presenceChanged(session) {

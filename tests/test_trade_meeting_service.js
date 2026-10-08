@@ -63,6 +63,8 @@ function request(n) {
         native.fetchTradeMeetingReceipt = async (token, actor) => token === original.token && actor === original.actorA
             ? { meetingId: 7, pending: false, outcome: 'completed' } : null;
         assert.equal((await Service.receipt(original.token, original.actorA)).outcome, 'completed', 'cleaned terminal receipt is owner bounded');
+        assert.equal((await Service.accept(original.token, original.actorA)).outcome, 'completed', 'bot acceptance retries use the same cleaned receipt');
+        await assert.rejects(Service.accept(original.token, 99), /preparation_missing/);
         console.log('Meeting preparation: stale caller, one per actor, source invalidation, disconnect and bounded release passed');
     } finally { Service.reset(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

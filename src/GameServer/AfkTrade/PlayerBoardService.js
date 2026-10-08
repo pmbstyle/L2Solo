@@ -128,7 +128,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 const prepared = session.playerBoardPreparation;
                 if (!prepared || prepared.id !== line.recordId || prepared.lineId !== line.lineId || prepared.amount !== amount
                     || prepared.price !== line.price || prepared.revision !== line.revision) return { ok: false, reason: 'record_changed' };
-                try { const result = await meetings().accept(prepared.preparationId);
+                try { const result = await meetings().accept(prepared.preparationId, playerId);
                     session.playerBoardPreparation = undefined;
                     return { ok: true, action: result.outcome === 'completed' || result.outcome === 'cancelled' ? result.outcome : 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
                 catch (_) { return { ok: false, reason: 'record_changed' }; }
