@@ -215,8 +215,18 @@ function foundation(state, deps, persona, timestamp, price) {
     const kit = [stock('shots'), stock('potions')];
     const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats?.karma) ? 0
         : price(736) * Math.max(0, 1 - positive(state.inventory?.[736]?.amount));
-    const kitCost = id => Number(id) === 736 ? escapeCost
-        : kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
+    // A known executable quote pays whole missing units once. The personal
+    // price estimate still values an unseen option; it must not underfund
+    // a concrete merchant's mandatory stock and trigger repeated tiny fills.
+    const kitCost = (id, unitPrice = null) => {
+        const quoted = Number.isFinite(unitPrice) && unitPrice > 0;
+        if (Number(id) === 736 && invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return 0;
+        if (Number(id) === 736) return quoted
+            ? unitPrice * Math.max(0, 1 - positive(state.inventory?.[736]?.amount)) : escapeCost;
+        return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
+            + Math.max(0, (quoted ? Math.ceil(row.usePerHour) : row.usePerHour) - row.current)
+                * (quoted ? unitPrice : row.unitPrice), 0);
+    };
     const reserve = escapeCost + kit.reduce((sum, row) => sum + Math.max(0, row.usePerHour - row.current) * row.unitPrice, 0);
     return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,

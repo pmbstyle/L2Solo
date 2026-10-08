@@ -47,7 +47,8 @@ async function run() {
     const native = await nativeChoice.capture(originalState, {}, 'wealth_original_before_unit_overrides');
     const state = native.state;
     assert.strictEqual(native.read.activity.activity, 'hunting', 'the unchanged original inputs have no funded synthetic craft leaf');
-    assert(native.read.activity.rootKey.startsWith('power:'), 'the original native wish remains a power priority');
+    assert(native.read.activity.funding && native.captured.queue.some(row => row.key === native.read.activity.rootKey
+        && !row.funded), 'the selected real native priority is unfunded, including improvements as well as gear');
     assert(native.state.stats.money[3] > 0, 'the genuine unfunded priority remains a money gap');
     const nativePacket = structuredClone(state.stats.money);
     const productId = 999999;

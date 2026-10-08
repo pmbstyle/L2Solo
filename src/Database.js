@@ -7006,7 +7006,7 @@ const Database = {
                         npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town,
                         goalRevision: Number(line.goal?.updatedAt) });
                 if (!Number.isSafeInteger(itemId) || itemId <= 0 || seen.has(itemId)
-                    || !Number.isSafeInteger(count) || count <= 0 || count > 10000
+                    || !Number.isSafeInteger(count) || count <= 0
                     || !Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(count * price)) throw Error('invalid npc purchase');
                 seen.add(itemId);
                 const template = Index.find(Data.items, itemId);
@@ -7017,6 +7017,9 @@ const Database = {
                 }
                 const stackable = line.stackable === undefined ? !!template?.etc?.stackable : !!line.stackable;
                 const slot = line.slot === undefined ? Number(template?.etc?.slot || 0) : Number(line.slot);
+                // Stack quantities come from the funded missing need. They use
+                // one physical row; retain the instance bound for unstacked goods.
+                if (!stackable && count > 10000) throw Error('invalid npc purchase');
                 if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
                     || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
                 if (seller && step && slot > 0) {
@@ -7077,7 +7080,11 @@ const Database = {
             write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [remainingWallet, wallet.id, characterId]);
             for (const line of lines) {
                 const existing = line.stackable ? one('SELECT id,amount FROM items WHERE characterId=? AND selfId=? ORDER BY id LIMIT 1', [characterId, line.selfId]) : null;
-                if (existing) write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [Number(existing.amount) + line.amount, existing.id, characterId]);
+                if (existing) {
+                    const nextAmount = Number(existing.amount) + line.amount;
+                    if (!Number.isSafeInteger(nextAmount)) throw Error('invalid npc stack total');
+                    write('UPDATE items SET amount=? WHERE id=? AND characterId=?', [nextAmount, existing.id, characterId]);
+                }
                 else for (let index = 0; index < (line.stackable ? 1 : line.amount); index++) {
                     write('INSERT INTO items(selfId,name,amount,equipped,slot,characterId) VALUES(?,?,?,0,?,?)',
                         [line.selfId, line.name, line.stackable ? line.amount : 1, line.slot, characterId]);

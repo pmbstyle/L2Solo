@@ -66,7 +66,12 @@ assert.deepEqual(Visit.arrived(session.coldLifeState.stats), [22, 4], 'repeated 
 const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
 async function coldVisits() {
     let state = { ...warrior, phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
-        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: stock.target } },
+        // This clock-only fixture has no unpaid stock need; actual merchant
+        // payment/delivery is exercised by test_npc_purchase_consumers.
+        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: stock.target },
+            736: { selfId: 736, amount: 2 },
+            [native.stock('potions').itemId]: { selfId: native.stock('potions').itemId,
+                amount: Math.ceil(native.stock('potions').usePerHour * 24) } },
         stats: { ...warrior.stats, playedHours: 10 } };
     state = await ColdMarket.finishTownErrands(state); assert.deepEqual(state.stats.visitEvery, [10, 0]);
     state = await ColdMarket.finishTownErrands({ ...state, stats: { ...state.stats, playedHours: 13 } });

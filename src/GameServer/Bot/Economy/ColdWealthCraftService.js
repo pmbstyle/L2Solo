@@ -217,22 +217,19 @@ async function execute(state, opportunity) {
         // Each input is bought in its town (the one purchase path): here, or
         // the bot goes there and the craft waits for the next look.
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
-        for (const purchase of opportunity.basket.purchases) {
-            const bought = await ColdMarket.acquire(current, purchase.selfId, purchase.count,
-                { towns: [purchase.town], npc: Number(purchase.npc || 0) > 0, purpose: 'wealth_craft',
-                    r: opportunity.r, money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }),
-                    quoteDepth: 5, sourcePlan: purchase });
-            const previousAdena = Number(current.adena);
-            current = bought.state || current;
-            spent += Number(bought.spent ?? Math.max(0, previousAdena - Number(current.adena)));
-            // The bot went hot: the actor holds the materials; the craft stops here.
-            if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
-            if (!bought.bought && (bought.traveling || bought.state?.stats?.marketErrand)) {
-                return { state: bought.state, crafted: false, reason: 'buying_trip', spent };
-            }
-            const amount = Number(bought.amount ?? bought.units ?? 0);
-            if (!bought.bought || amount < purchase.count) throw new Error('purchase_unavailable');
+        const inputs = opportunity.basket.purchases.map(purchase => ({ selfId: purchase.selfId,
+            amount: recipe.materials.filter(row => Number(row.selfId) === Number(purchase.selfId))
+                .reduce((sum, row) => sum + Number(row.amount) * batches, 0),
+            options: { towns: [purchase.town], npc: Number(purchase.npc || 0) > 0, purpose: 'wealth_craft',
+                r: opportunity.r, money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }),
+                quoteDepth: 5, sourcePlan: purchase } }));
+        const bought = await ColdMarket.acquireMaterials(current, inputs);
+        current = bought.state || current; spent += Number(bought.spent || 0);
+        if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
+        if (!bought.ready && (bought.traveling || current.stats?.marketErrand)) {
+            return { state: current, crafted: false, reason: 'buying_trip', spent };
         }
+        if (!bought.ready) throw Error('purchase_unavailable');
     } catch (error) {
         const failed = withOutcome(current, opportunity, 'purchase_failed',
             { spent, error: String(error?.message || error) });

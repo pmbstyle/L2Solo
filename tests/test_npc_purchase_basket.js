@@ -83,7 +83,7 @@ async function run() {
     state = await seed(9514);
     await assert.rejects(native(state, { seller: { ...seller, town: 'Giran' } }), /seller_changed/);
     await assert.rejects(native(Life.cachedState(9514), { lines: [{ selfId: 2508, amount: 1, unitPrice: 300 }] }), /quote_changed/);
-    await assert.rejects(native(Life.cachedState(9514), { lines: [{ selfId: 2509, amount: 10001, unitPrice: 18 }] }), /invalid npc purchase/);
+    await assert.rejects(native(Life.cachedState(9514), { lines: [{ selfId: 2509, amount: Number.MAX_SAFE_INTEGER, unitPrice: 18 }] }), /invalid npc purchase/);
     assert.equal(await amount(9514, 57), 5000);
 
     state = await seed(9515, 5000, { money: [0, .001, 1000, 0, .003, 3000, 999] });
@@ -191,6 +191,21 @@ async function run() {
     await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
         unitPrice: 480, funding: { free: true, clanPart: 300, survivalCost: 150, valueHours: .8 } }] }), /funding_changed/);
     assert.equal(await amount(9528, 57), 1000, 'the shared and native value-hours/clan precedence matches exactly');
+    state = await seed(9529, 10000000);
+    const fullStack = await Basket.purchase(state, { seller, lines: [
+        { selfId: 2509, amount: 16481, unitPrice: 18 }, { selfId: 1785, amount: 10001, unitPrice: 300 }] });
+    assert(fullStack.ok); assert.equal(await amount(9529, 2509), 16481); assert.equal(await amount(9529, 1785), 10001);
+    assert.equal(await amount(9529, 57), 10000000 - 16481 * 18 - 10001 * 300,
+        'funded stack needs larger than ten thousand are bought in one transaction');
+    state = await seed(9530, 10000000);
+    await DB.setItem(9530, { selfId: 2509, name: 'Spiritshot', amount: Number.MAX_SAFE_INTEGER });
+    await assert.rejects(Basket.purchase(state, { seller,
+        lines: [{ selfId: 2509, amount: 1, unitPrice: 18 }] }), /invalid npc stack total/);
+    assert.equal(await amount(9530, 57), 10000000); assert.equal(await amount(9530, 2509), Number.MAX_SAFE_INTEGER);
+    state = await seed(9531, 1000000000);
+    await assert.rejects(Basket.purchase(state, { seller: armourSeller,
+        lines: [{ selfId: 45, amount: 10001, unitPrice: 37560, autoEquip: false }] }), /invalid npc purchase/);
+    assert.equal(await amount(9531, 57), 1000000000); assert.equal(await amount(9531, 45), 0);
     console.log('Native NPC basket: actual seller, multi-item debit, partial progress, restart/replay, aggregate funding, rollback and hot delivery passed');
 }
 run().then(() => DB.close()).catch(async error => { console.error(error); process.exitCode = 1; await DB.close(); });

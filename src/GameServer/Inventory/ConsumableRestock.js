@@ -62,6 +62,18 @@ function ensureActorStock(actor, line) {
 function buyForActor(actor, line) {
     const adenaItem = actor.backpack.fetchItemFromSelfId(57);
     if (!adenaItem) return Promise.resolve({ ok: false, reason: 'missing_adena' });
+    if (actor.session?.actor === actor
+        && Number(actor.session.coldLifeState?.characterId) === Number(actor.fetchId())) {
+        const town = actor.session.shoppingTarget?.town
+            || invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor)
+            || actor.session.coldLifeState.currentRegion;
+        return invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(actor, { town,
+            shots: false, potions: false, scrolls: false,
+            extras: [{ selfId: line.selfId, amount: line.amount, unitPrice: line.unitPrice }] }).then(result => ({
+            ok: result.ok && result.units > 0, reason: result.units ? undefined : 'not_enough_adena',
+            nextAdena: Number(actor.backpack.fetchItemFromSelfId(57)?.fetchAmount?.() || 0),
+            nextAmount: Number(actor.backpack.fetchItemFromSelfId(line.selfId)?.fetchAmount?.() || 0) }));
+    }
     const nextAdena = line.adena - line.cost;
     return persistenceDatabase().updateItemAmount(actor.fetchId(), adenaItem.fetchId(), nextAdena)
         .then(() => {

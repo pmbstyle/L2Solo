@@ -19,7 +19,6 @@ const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
-const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
@@ -665,15 +664,20 @@ module.exports = {
                     .find((candidate) => (
                         Number(candidate.sourceId) === Number(companionErrand.sourceId)
                         && Number(candidate.price) === Number(companionErrand.price)
+                        && ['locX', 'locY', 'locZ'].every(key => candidate[key] == null
+                            || Number(candidate[key]) === Number(companionErrand.target[key]))
                     ));
                 if (!offer) throw new Error('npc_offer_unavailable');
-                const store = {
-                    storeType: 1,
-                    items: [{ selfId: companionErrand.itemId, price: offer.price, count: companionErrand.amount || 1 }]
-                };
-                const bought = await TradeService.buyFromStore(bot, store, companionErrand.itemId, companionErrand.amount || 1, {
-                    expectedUnitPrice: companionErrand.price
-                });
+                const seller = { ...offer, locX: Number(companionErrand.target.locX),
+                    locY: Number(companionErrand.target.locY), locZ: Number(companionErrand.target.locZ) };
+                const result = await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(bot, {
+                    town: offer.town, seller, extras: [{ selfId: companionErrand.itemId,
+                        amount: companionErrand.amount || 1, offer: seller, autoEquip: true }] });
+                if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
+                const line = result.receipts.flatMap(row => row.lines || [])
+                    .find(row => Number(row.selfId) === Number(companionErrand.itemId));
+                if (!result.ok || !line) throw Error('npc_offer_unavailable');
+                const bought = { qty: line.amount, name: offer.itemName, totalAdena: line.amount * line.unitPrice };
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
                 session.companionEquipmentRetryAt = undefined;
@@ -757,11 +761,7 @@ module.exports = {
             }
             try {
                 const plan = ShotStock.planForActor(bot);
-                const current = ShotStock.shotAmount(bot, plan);
-                const amount = Math.max(0, ShotStock.PURCHASE_TARGET_AMOUNT - current);
-                const expectedCost = amount * Number(plan.price || 0);
-                // Survival first: the healing potions, then the shots with what is
-                // left (ShotStock.restockPlan keeps the potions' cost, user 2026-10-04).
+                const expectedCost = 0;
                 const potionPlan = HealingPotionStock.purchasePotionFor(bot);
                 const potionTown = session.shoppingTarget?.town
                     || session.coldLifeState?.currentRegion
@@ -771,21 +771,21 @@ module.exports = {
                         bot.fetchLocZ()
                     )?.name;
                 const potionPrice = HealingPotionStock.localNpcPrice(potionPlan, potionTown);
-                const potionResult = potionPrice > 0
-                    ? await HealingPotionStock.purchaseActorRestock(bot, {
-                        potion: potionPlan,
-                        unitPrice: potionPrice
-                    })
-                    : { ok: false, reason: 'no_local_offer' };
-                if (potionResult.ok && potionResult.changed) {
-                    TownChatter.say(session, BotAI, 'healing-potions-restocked', Speech.lines('town.healing-potions-restocked', { count: potionResult.amount, item: potionResult.potion.name, reserve: formatAdena(potionResult.reserve) }));
-                }
-                // Then the Scrolls of Escape for the next town trip (ScrollStock).
-                const scrollPrice = ScrollStock.localNpcPrice(potionTown);
-                if (scrollPrice > 0) await ScrollStock.purchaseActorRestock(bot, { unitPrice: scrollPrice });
-
-                const result = await ShotStock.purchaseActorRestock(bot, { plan, town: potionTown || null,
-                    potionUnitPrice: potionPrice || undefined });
+                const NpcRestock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+                const shotQuote = NpcRestock.quoteFor(plan.selfId, potionTown);
+                const board = await ShotStock.purchaseActorRestock(bot, { plan, town: potionTown || null,
+                    unitPrice: shotQuote?.price, potionUnitPrice: potionPrice || undefined, skipNpc: true });
+                if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
+                const basket = await NpcRestock.purchaseForActor(bot, { town: potionTown });
+                if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
+                const lines = basket.receipts.flatMap(row => row.lines || []);
+                const potion = lines.find(row => Number(row.selfId) === Number(potionPlan.selfId));
+                if (potion) TownChatter.say(session, BotAI, 'healing-potions-restocked', Speech.lines('town.healing-potions-restocked', {
+                    count: potion.amount, item: potionPlan.name, reserve: formatAdena(HealingPotionStock.operationalReserve(bot)) }));
+                const shot = lines.find(row => Number(row.selfId) === Number(plan.selfId));
+                const result = { ok: basket.ok && board.ok, delta: Number(board.delta || 0) + Number(shot?.amount || 0),
+                    cost: Number(board.cost || 0) + Number(shot?.amount || 0) * Number(shot?.unitPrice || 0),
+                    adena: Number(bot.backpack.fetchItemFromSelfId(57)?.fetchAmount?.() || 0) };
                 if (!result.ok) {
                     TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
                         { priority: 'coordination', values: { item: ShotStock.describe(plan) } });
@@ -815,6 +815,7 @@ module.exports = {
         setTimeout(async () => {
             await restockWork;
             if (session.actor !== bot || session.plan !== 'shopping' || session.shoppingRestock !== restockWork) return;
+            if (!LifeState.hotRow(bot.fetchId())) return;
             session.shoppingRestock = undefined;
             const companionResume = session.resumeAfterShopping;
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();

@@ -117,9 +117,10 @@ async function images(ids) {
         assert(Funding.spendable(crafter, 0, { r: candidate.r }) >= candidate.gear.cash + candidate.orePrice * 21);
         const history = [];
         originals = { buy: Afk.buyFromShop, npc: Database.purchaseNpcInventoryItem,
+            basket: Database.purchaseNpcInventoryBasket,
             crystal: Database.crystallizeInventoryItem, craft: Database.craftInventoryItems };
         Afk.buyFromShop = async(...args) => {const receipt = await originals.buy(...args);history.push('gear');return receipt;};
-        Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc(...args);history.push('ore');return receipt;};
+        Database.purchaseNpcInventoryBasket = async(...args) => {const receipt = await originals.basket(...args);history.push('ore');return receipt;};
         Database.crystallizeInventoryItem = async(...args) => {const receipt = await originals.crystal(...args);history.push('crystal');return receipt;};
         Database.craftInventoryItems = async(...args) => {const receipt = await originals.craft(...args);history.push('craft');return receipt;};
         const result = await Shots.execute(crafter, nativeStep, now);
@@ -184,7 +185,7 @@ async function images(ids) {
         const purchases = [];
         Afk.buyFromShop = async(...args) => {const receipt = await originals.buy(...args);
             purchases.push(['shop', args[3], args[4].expectedPrice]);return receipt;};
-        Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc(...args);
+        Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc.apply(Database, args);
             purchases.push(['npc', args[1].amount, args[1].unitPrice]);return receipt;};
         // ARCH-NOTE: E1/E5 replace the old level reserve and fixed 1000-shot
         // target. Keep the actual cheaper-line/NPC order and physical wallet
@@ -233,6 +234,7 @@ async function images(ids) {
         console.log('PASS native Maestro/Warsmith eligibility and no retired population scan');
     } finally {
         if (originals) {Afk.buyFromShop = originals.buy;Database.purchaseNpcInventoryItem = originals.npc;
+            Database.purchaseNpcInventoryBasket = originals.basket;
             Database.crystallizeInventoryItem = originals.crystal;Database.craftInventoryItems = originals.craft;}
         await Database.close();fs.rmSync(fixture.directory, { recursive: true, force: true });
     }
