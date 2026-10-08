@@ -19,11 +19,12 @@ function traderContext(state, deps = {}) {
     const hour = economy.hourAdena;
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
-    const trip = OfferOrder.tripCost(state, { origin, timestamp });
+    const economicTrip = deps.tripCost?.details ? deps.tripCost : economy.trip?.details ? economy.trip
+        : Profit.tripFor(state, { ...economy, origin });
+    const trip = economicTrip;
     const trader = PriceDecision.traderOf(deps.persona || economy.persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });
     // The bot's own trip to a town: none to the town it is shopping in.
     const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
-    const economicTrip = Profit.tripFor(state, economy);
     return {
         characterId: Number(state?.characterId || 0),
         understanding: trader.understanding,

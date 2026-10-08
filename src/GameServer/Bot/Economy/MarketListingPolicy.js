@@ -70,6 +70,7 @@ function traderContext(state, options = {}) {
             || ((selfId) => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId)),
         findSpot: options.findSpot || ((spotId) => invoke('GameServer/Bot/AI/SpotService').findById(spotId)),
         economy: options.economy,
+        tripCost: options.tripCost,
         knowledgeEnabled: options.knowledgeEnabled,
         demandFor: options.demandFor,
         ownStock: options.ownStock,

@@ -5,26 +5,18 @@
 const Data = invoke('GameServer/DataCache');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const StaticPricing = require('../Economy/StaticMerchantPricing');
-const Trip = require('./ColdTrip');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
-const Karma = require('../../Karma');
 const QUOTE_DEPTH = 5;
-let fixedBuy, npcByItem, mpRates, townByName, townKeys, townOrdinal, townReturn, gearByRank, teleports;
+let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank;
 
 function initialise() {
     if (fixedBuy) return;
     fixedBuy = new Map(); npcByItem = new Map(); mpRates = new Map();
     gearByRank = new Map();
-    townByName = new Map(); townKeys = new Map(); townOrdinal = new Map(); townReturn = new Map();
-    for (const [key, town] of Object.entries(Towns.towns)) { townOrdinal.set(town.name, townOrdinal.size); townByName.set(town.name, town); townKeys.set(town, key); }
-    teleports = Routes.teleportPoints();
-    for (const town of townByName.values()) {
-        const start = Routes.landingTown(town);
-        townReturn.set(town, { key: townKeys.get(start), lead: Math.hypot(town.locX - start.locX, town.locY - start.locY) <= Trip.TOWN_RADIUS
-            ? Trip.runMs(town, start) : require('../Travel/TripPayment').SCROLL_CAST_MS });
-    }
+    townByName = new Map(); townOrdinal = new Map();
+    for (const town of Object.values(Towns.towns)) { townOrdinal.set(town.name, townOrdinal.size); townByName.set(town.name, town); }
     // allOffers() has prices but no town/source authority. Index actual static
     // seller spawns once, using TownServiceCatalog's same 7500-unit town bound.
     const Shops = require('../../World/Generics/NpcShopBuyLists'), sellers = new Set(Shops.npcIds());
@@ -153,72 +145,7 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
     return [hash, blocked, lines.length];
 }
 
-function* regionalTown(loc) {
-    const x = Number(loc?.locX || 0), y = Number(loc?.locY || 0), z = Number(loc?.locZ);
-    const cell = `${(x >> 15) + 20}_${(y >> 15) + 18}`, index = Towns.regionIndex;
-    for (const dungeon of index.dungeons) {
-        const matches = dungeon.cell === cell && Number.isFinite(z) && z < dungeon.belowZ;
-        yield 'edge'; if (matches) return Towns.towns[dungeon.group];
-    }
-    for (const zone of index.zones) {
-        let inside = false;
-        for (let at = 0, previous = zone.points.length - 1; at < zone.points.length; previous = at++) {
-            const [px, py] = zone.points[at], [qx, qy] = zone.points[previous];
-            if ((py > y) !== (qy > y) && x < (qx - px) * (y - py) / (qy - py) + px) inside = !inside;
-            yield 'edge';
-        }
-        if (inside) return Towns.towns[zone.group];
-    }
-    const regional = Towns.towns[index.cells[cell]];
-    if (regional) return regional;
-    let closest = null, distance = Infinity;
-    for (const town of townByName.values()) {
-        const next = (town.locX - x) ** 2 + (town.locY - y) ** 2;
-        if (next < distance) { closest = town; distance = next; }
-        yield 'edge';
-    }
-    return closest;
-}
-
-function* forwardTrip(state, from, to) {
-    if (Karma.closesTowns(state.stats?.karma)) return to.name === Karma.TOWN_NAME
-        ? { route: { fee: 0, hops: 0 }, durationMs: Trip.honest() ? Trip.runMs(from, to)
-            : Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, to)) } : null;
-    const origin = yield* regionalTown(from), start = Towns.towns[origin?.respawnTown] || origin;
-    const destination = yield* regionalTown(to), destinationKey = townKeys.get(destination);
-    const gateKey = destinationKey === 'floran_village' ? 'dion_town' : destinationKey;
-    const gate = Towns.towns[gateKey], route = Routes.route(townKeys.get(start), gateKey);
-    if (!route || !start || !gate) return null;
-    const distance = Math.hypot(Number(from.locX) - start.locX, Number(from.locY) - start.locY);
-    const inStart = distance <= Trip.TOWN_RADIUS;
-    const Payment = require('../Travel/TripPayment'), scroll = !inStart && Payment.hasColdScroll(state);
-    const honestMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
-        + route.hops * Trip.HOP_MS + Trip.runMs(gate, to);
-    yield 'trip';
-    return { route, durationMs: Trip.honest() ? honestMs : !inStart && !scroll
-        ? Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, start)) : Trip.AUTHOR_TRIP_MS };
-}
-
-function* tripDetails(state, town) {
-    const to = townByName.get(town), from = state.stats?.marketReturn?.loc || state.loc;
-    if (!to || !from) return { known: false, hours: NaN, fees: NaN };
-    if (state.activity === 'shopping' && state.currentRegion === town) return { known: true, hours: 0, fees: 0 };
-    const plan = yield* forwardTrip(state, from, to);
-    if (!plan) return { known: false, hours: NaN, fees: NaN };
-    let back = Trip.AUTHOR_TRIP_MS;
-    if (Trip.honest()) {
-        back = Trip.runMs(to, from);
-        if (!Karma.closesTowns(state.stats?.karma)) {
-            const returning = townReturn.get(to);
-            for (const teleport of teleports) {
-                const hops = teleport.hops[returning.key];
-                if (hops !== undefined) back = Math.min(back, returning.lead + hops * Trip.HOP_MS + Trip.runMs(teleport, from));
-                yield 'edge';
-            }
-        }
-    }
-    return { known: true, hours: (plan.durationMs + back) / 3600000, fees: Number(plan.route.fee || 0) };
-}
+const { regionalTown, details: tripDetails } = require('../Economy/EconomicTrip');
 
 function* prepare(state, { board, timestamp, read = () => {}, stock = null } = {}) {
     const packet = state.stats?.money;
@@ -366,4 +293,4 @@ module.exports = { initialise, prepare, reservations, feasibility, tripDetails, 
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],
     catalogCounts: () => ({ npcItems: npcByItem?.size || 0,
         npcQuotes: [...(npcByItem?.values() || [])].reduce((sum, rows) => sum + rows.length, 0),
-        staticBuyItems: fixedBuy?.size || 0, teleportEdges: teleports?.length || 0, townPairs: townByName?.size || 0 }) };
+        staticBuyItems: fixedBuy?.size || 0, teleportEdges: Routes.teleportPoints().length, townPairs: townByName?.size || 0 }) };

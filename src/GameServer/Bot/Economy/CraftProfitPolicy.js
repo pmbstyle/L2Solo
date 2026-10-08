@@ -1,6 +1,5 @@
 'use strict';
 const Valuation = require('./EconomicValuation');
-let townByName = null;
 
 function successProbability(recipe) {
     const rate = Number(recipe?.successRate);
@@ -53,32 +52,7 @@ function contextFor(state, timestamp = Date.now()) {
     const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
     return { ...context, mpPerHour: Number(regen.mp) * 1200 };
 }
-function tripFor(state, { hourAdena } = {}) {
-    const Trip = require('../Population/ColdTrip');
-    if (!townByName) townByName = new Map(Object.values(require('../../World/TownRespawn').towns)
-        .map(town => [town.name, town]));
-    const from = state.stats?.marketReturn?.loc || state.loc;
-    const traveller = from === state.loc ? state : { ...state, loc: from };
-    const costs = new Map();
-    const details = town => {
-        if (!town || state.activity === 'shopping' && town === state.currentRegion) return { known: true, hours: 0, fees: 0 };
-        if (!costs.has(town)) {
-            const destination = townByName.get(town);
-            const plan = destination && Trip.townPlan(traveller, destination);
-            const back = plan ? Trip.spotTripMs({ ...traveller, loc: Trip.point(destination) }, from) : 0;
-            const hours = plan ? (plan.durationMs + back) / 3600000 : NaN;
-            const fees = plan ? Number(plan.route.fee || 0) : NaN;
-            costs.set(town, { known: Number.isFinite(hours) && hours >= 0 && Number.isFinite(fees) && fees >= 0, hours, fees });
-        }
-        return costs.get(town);
-    };
-    const trip = town => {
-        const row = details(town);
-        return row.known && Number.isFinite(hourAdena) ? Math.round(row.hours * hourAdena) + row.fees : Infinity;
-    };
-    trip.details = details;
-    return trip;
-}
+function tripFor(state, options = {}) { return require('./EconomicTrip').reader(state, options); }
 function inputValue(id, state, context = {}) {
     const worth = context.worth?.(Number(id));
     if (Number.isFinite(worth) && worth > 0) return worth;
