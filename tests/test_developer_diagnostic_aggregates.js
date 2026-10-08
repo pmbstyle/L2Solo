@@ -10,11 +10,11 @@ assert.deepEqual(off.metrics(), { enabled: false }); assert.deepEqual(off.stats(
 let clock = 100;
 const config = { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' };
 const collector = create({ config, capacity: 1, now: () => clock, thread: 'worker' });
-for (let i = 0; i < 100; i++) { collector.count('context', 'miss', String(i)); collector.duration('context', i); }
+for (let i = 0; i < LIMITS.keys + 20; i++) { collector.count('context', 'miss', String(i)); collector.duration('context', i); }
 const metrics = collector.metrics();
 assert.equal(Object.keys(metrics.counts).length, LIMITS.keys);
-assert.equal(Object.values(metrics.counts).reduce((a, b) => a + b), 100, 'overflow preserves unsampled quantity');
-assert.equal(metrics.durations.context.count, 100); assert.equal(metrics.durations.context.samples.length, LIMITS.durationSamples);
+assert.equal(Object.values(metrics.counts).reduce((a, b) => a + b), LIMITS.keys + 20, 'overflow preserves unsampled quantity');
+assert.equal(metrics.durations.context.count, LIMITS.keys + 20); assert.equal(metrics.durations.context.samples.length, LIMITS.durationSamples);
 for (let i = 0; i < 40; i++) collector.duration('layer' + i, 1);
 assert.equal(Object.keys(collector.metrics().durations).length, LIMITS.layers);
 assert(collector.push({ owner: 64, commandId: 'first', sequence: 1, phase: 'native_purchase' }));

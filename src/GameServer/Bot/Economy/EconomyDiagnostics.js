@@ -4,13 +4,13 @@
 const Config = require('../Population/PopulationConfig');
 const { isMainThread } = require('node:worker_threads');
 const LIMITS = Object.freeze({ recordBytes: 1024, batch: 16, batchBytes: 16384,
-    mainRecords: 256, workerRecords: 64, keys: 64, owners: 16, perSecond: 64,
+    mainRecords: 256, workerRecords: 64, keys: 256, owners: 16, perSecond: 64,
     layers: 16, durationSamples: 32 });
 const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 'remaining', 'recordId', 'lineId',
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'goalApplied', 'nativeId', 'sequence',
-    'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
+    'errandAt', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
-    'moneyPrice', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after'];
+    'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after'];
 const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome'];
 function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now,
     thread = isMainThread ? 'main' : 'worker' } = {}) {
@@ -78,7 +78,7 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
         if (second !== bucket) { second = bucket; rate = 0; }
         if (rate >= LIMITS.perSecond) { lose('rate'); return false; }
         // Forward the event's original time and thread, never a late main snapshot.
-        const record = { v: 1, at: imported && Number.isFinite(input.at) ? input.at : timestamp,
+        const record = { v: 1, at: Number.isFinite(input.at) ? input.at : timestamp,
             thread: imported && ['main', 'worker'].includes(input.thread) ? input.thread : thread, owner: Number(input.owner) };
         for (const field of NUMBER_FIELDS) if (Number.isFinite(input[field])) record[field] = input[field];
         for (const field of TEXT_FIELDS) if (typeof input[field] === 'string') record[field] = input[field].slice(0, field === 'wishKey' ? 96 : 64);

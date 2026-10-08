@@ -1,4 +1,6 @@
 'use strict';
+// This fixture inspects build diagnostics; opt in explicitly.
+require('../../src/GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const nativeWorker = require('./workerEconomyDecision');

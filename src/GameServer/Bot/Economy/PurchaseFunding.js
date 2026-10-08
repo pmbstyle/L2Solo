@@ -1,3 +1,4 @@
+const Diagnostics = require('./EconomyDiagnostics');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
 // higher-valued funded wishes keep their cumulative costs before a spend.
 const nonnegative = value => Math.max(0, Number(value) || 0);
@@ -19,29 +20,40 @@ function moneyReached(state) {
     for (let i = 5; i < packet.length; i += 3) fundedPrice = Math.max(fundedPrice, Number(packet[i]) || 0);
     return budget(state) - nonnegative(packet[2]) >= fundedPrice + Number(packet[3]);
 }
-function budgetFor(packet, wallet, escrow, r) {
+function budgetFor(packet, wallet, escrow, r, capture = null) {
     let prior = 0;
     for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i] > r) prior = packet[i + 1];
+    if (capture) capture.priorityReserve = nonnegative(prior);
     return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(packet[2]) - prior);
 }
 function spendable(state = {}, escrow = 0, options = {}) {
     const wallet = budget(state, escrow), packet = state.stats?.money;
-    let queueBudget = 0;
+    const capture = Diagnostics.active() && Diagnostics.enabled(state.characterId) ? {} : null;
+    let queueBudget = 0, reason = 'ratio_below_money_price';
     if (!Array.isArray(packet) || packet.length < 4) {
-        moneyPacketMissing++;
+        if (Diagnostics.active()) moneyPacketMissing++;
+        reason = 'money_packet_missing';
         queueBudget = Math.max(0, wallet - operatingReserve(state));
-    } else if (options.upperBound) queueBudget = Math.max(0, wallet - packet[2]);
-    else if (options.free) queueBudget = packet[3] === 0 ? budgetFor(packet, wallet, 0, -Infinity) : 0;
+    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - packet[2]); }
+    else if (options.free) { reason = packet[3] === 0 ? 'free_money' : 'funding_gap'; queueBudget = packet[3] === 0 ? budgetFor(packet, wallet, 0, -Infinity, capture) : 0; }
     else {
         let r = Number(options.r ?? 0);
         if (options.itemId && options.r === undefined) {
             for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i + 2] === Number(options.itemId)) { r = packet[i]; break; }
         }
-        if (options.valueHours !== undefined) queueBudget = Math.min(packet[1] > 0 ? nonnegative(options.valueHours) / packet[1] : Infinity,
-            budgetFor(packet, wallet, 0, packet[1]));
-        else if (r >= packet[1]) queueBudget = budgetFor(packet, wallet, 0, r);
+        if (options.valueHours !== undefined) { reason = 'finite_value'; queueBudget = Math.min(packet[1] > 0 ? nonnegative(options.valueHours) / packet[1] : Infinity,
+            budgetFor(packet, wallet, 0, packet[1], capture)); }
+        else if (r >= packet[1]) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
     }
-    return Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
+    const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
+    if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
+    if (capture) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
+        item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
+        escrow: nonnegative(escrow), available, budget: available, reserve: Number(packet?.[2]),
+        priorityReserve: capture.priorityReserve, moneyPrice: Number(packet?.[1]), valueHours: Number(options.valueHours),
+        decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
+        revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
+    return available;
 }
 // Finite action utility supplies a funding ratio, never an extra purse.
 // Native writers still reread the current money packet and physical wallet.
@@ -82,4 +94,4 @@ function packetFor(network, hour, reserve) {
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
 module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, moneyReached, packetFor, significant,
-    summary: () => ({ moneyPacketMissing }), resetCounters: () => { moneyPacketMissing = 0; } };
+    summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

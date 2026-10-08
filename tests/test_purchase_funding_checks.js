@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+require('../src/GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
