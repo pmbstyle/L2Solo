@@ -96,7 +96,7 @@ function basketFor(recipe, planFor, ownedFor = () => null, batches = 1, context 
 }
 function craftMargin(recipe, productPrice, basketCost) { return Profit.revenue(recipe, productPrice) - Number(basketCost); }
 function saleInput(exit, units, context) {
-    return { units, applicableUnits: Number(exit.applicableUnits ?? exit.count),
+    return { units, applicableUnits: exit.conditional || exit.offer?.conditional ? 0 : Number(exit.applicableUnits ?? exit.count),
         willingUnits: Number(exit.willingUnits ?? exit.count), cheaperUnits: Number(exit.cheaperUnits || 0),
         price: Number(exit.price), residualUnitValue: Number(exit.residualUnitValue ?? context.residualUnitValue ?? 0) };
 }

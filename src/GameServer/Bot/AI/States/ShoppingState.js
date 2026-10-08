@@ -61,6 +61,8 @@ async function sellInventoryToAfk(bot, store, coldState = null, sale = null) {
             bot.fetchId(), currentStore, item.selfId, qty,
             { objectId: item.objectId, expectedPrice: line.price, coldState: state }
         );
+        if (result.pending) return { pending: true, coldState: result.state || state,
+            itemsSold: sold.reduce((sum, line) => sum + line.qty, 0), totalAdena: sold.reduce((sum, line) => sum + line.totalAdena, 0), sold };
         state = result.coldState || state;
         sold.push({ qty, name: line.name || item.selfId, totalAdena: result.totalPrice });
     }
@@ -286,6 +288,9 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
 
 module.exports = {
     tick(session, bot, Generics, BotAI) {
+        if (session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
+            return;
+        }
         invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 2);
         if (session.partyCompanion === true && session.followPlayerSession && !session.companionShopping) {
             session.plan = 'following';
@@ -626,6 +631,7 @@ module.exports = {
                         { lineId: companionErrand.lineId, expectedPrice: companionErrand.price, coldState: session.coldLifeState }
                     )
                     : await TradeService.buyFromStore(bot, store, companionErrand.itemId, companionErrand.amount || 1);
+                if (bought.pending) return;
                 const boughtSummary = store?.afkTrade === true
                     ? { qty: bought.amount, name: storeItem?.name || companionErrand.itemName, totalAdena: bought.totalPrice }
                     : bought;
@@ -722,6 +728,7 @@ module.exports = {
                         buyerActor: buyer,
                         state: session.coldLifeState
                         });
+                    if (result.pending) return;
                     if (result.coldState) {
                         session.coldLifeState = result.coldState;
                         refreshPartyMemberships([session], invoke);

@@ -58,7 +58,7 @@ async function holdings(id) {
     const totals = await bag(id);
     for (const record of await Database.fetchAfkTradeShops(id)) {
         totals[57] = Number(totals[57] || 0) + Number(record.escrowAdena || 0);
-        if (Number(record.storeType) !== 1) continue;
+        if (Number(record.storeType) !== 1 || record.custodyPolicy === 1) continue;
         for (const line of record.lines) totals[line.selfId] = Number(totals[line.selfId] || 0) + Number(line.count);
     }
     for (const row of await Database.execute(['SELECT selfId, amount FROM board_settlements WHERE ownerId = ?', [id]])) {
@@ -116,17 +116,18 @@ async function run() {
     // nothing.
     const opened = await AfkTrade.publishBot(mover, await sellAd(mover, 1864));
     assert.strictEqual(opened.kind, 'sell_ad');
-    assert.strictEqual((await bag(mover))[1864], 10, 'the ad holds the stems it sells');
+    assert.strictEqual((await bag(mover))[1864], 20, 'an unaccepted ad holds no stems');
+    assert.equal(opened.custodyPolicy,1);
     await assert.rejects(AfkTrade.publishBot(mover, await sellAd(mover, 1864)), /board_ad_exists/);
     const bought = await AfkTrade.replaceBotRecords(mover, 'buy_ad', [buyAd(1870, 2, 500)], { expected: {} });
-    assert.strictEqual(bought.opened[0].escrowAdena, 1000);
+    assert.strictEqual(bought.opened[0].escrowAdena, 0);
     await assert.rejects(AfkTrade.replaceBotRecords(mover, 'buy_ad', [buyAd(1870, 2, 500)], { expected: {} }),
         /afk_trade_shop_changed/, 'a replayed move finds the board changed and moves nothing');
     assert.deepStrictEqual(await holdings(mover), start, 'nothing lost or doubled by the moves');
     // A close that fails half way keeps the record and the bag as they were.
     const before = await bag(mover);
-    await injected(`CREATE TEMP TRIGGER inject_board BEFORE UPDATE ON main.items WHEN NEW.characterId = ${mover}
-        BEGIN SELECT RAISE(ABORT, 'injected bag failure'); END`, () => AfkTrade.closeBotRecord(mover, opened.id, { expectedRevision: opened.revision }));
+    await injected(`CREATE TEMP TRIGGER inject_board BEFORE DELETE ON main.afk_trade_shops WHEN OLD.id = ${opened.id}
+        BEGIN SELECT RAISE(ABORT, 'injected record failure'); END`, () => AfkTrade.closeBotRecord(mover, opened.id, { expectedRevision: opened.revision }));
     assert.deepStrictEqual(await bag(mover), before);
     assert.strictEqual((await Database.fetchAfkTradeShops(mover)).length, 2);
 
@@ -176,14 +177,14 @@ async function run() {
     assert.strictEqual((await Database.fetchAfkTradeShops(keeper)).length, 1, 'a record 13 hours old stays open');
     assert(AfkTrade.ownerRecords(keeper).length === 1 && AfkTrade.offers(1864, AfkTrade.SELL).length === 1,
         'and stays on the board');
-    assert.strictEqual((await bag(keeper))[1864], undefined, 'its stems stay in the record');
+    assert.strictEqual((await bag(keeper))[1864], 10, 'the continuing conditional quote holds no extra stock');
 
     // What the board owes a bot survives a restart: a deal on a record of a
     // bot the worker holds waits; after a restart (the lease recovered) the
     // board merges it.
     const holder = await makeBot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
-    const buyer = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }]);
-    const holderAd = await AfkTrade.publishBot(holder, await sellAd(holder, 1864, 10, 100));
+    const buyer = await makeBot([{ selfId: 57, name: 'Adena', amount: 100000 }], true);
+    const holderAd = await AfkTrade.publishBot(holder, { ...await sellAd(holder, 1864, 10, 100), kind: 'shop' });
     await Database.execute(["UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner' WHERE characterId = ?", [holder]]);
     LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [holder]]))[0]);
     await AfkTrade.buyFromShop(buyer, AfkTrade.recordStore(holderAd.id), 1864, 3);

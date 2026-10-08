@@ -476,6 +476,7 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                         const paid = await AfkTrade.sellToShop(actor.fetchId(), ad.store, selfId, amount, {
                             lineId: ad.storeItem.afkTradeLineId, objectId: actorItem.fetchId(),
                             expectedPrice: ad.storeItem.price });
+                        if (paid.pending) return { qty: 0, totalAdena: 0, pending: true, meetingId: paid.meetingId };
                         adQty += paid.amount;
                         adAdena += paid.totalPrice;
                         left -= paid.amount;

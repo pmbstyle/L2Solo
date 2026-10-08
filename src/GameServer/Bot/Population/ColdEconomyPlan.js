@@ -67,7 +67,7 @@ function* prepareNative(state, economy, options) {
         .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
     const inventory = { ...state.inventory };
     for (const line of own) {
-        if (line.storeType !== SELL) continue;
+        if (line.storeType !== SELL || line.custodyPolicy === 1) continue;
         const row = inventory[line.selfId] || { selfId: line.selfId, amount: 0 };
         inventory[line.selfId] = { ...row, amount: Number(row.amount || 0) + line.count,
             instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
@@ -98,17 +98,22 @@ function* prepareNative(state, economy, options) {
         goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate });
     const lines = require('../Economy/BuyAdPolicy').linesFor(buyState, goal, { ...options, economy,
         watchList: economy.watchList || [], money });
-    const plan = { sell, withdraw, buyAds: lines.slice(0, 3).map(row => [row.selfId, row.count, row.price]),
+    const plan = { sell, withdraw, buyAds: lines.slice(0, 3).map(row => row.intent ? require('../Economy/TradeIntent').encode(row.intent) : [row.selfId, row.count, row.price]),
         travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null };
+    if (economy.intentPending) delete plan.buyAds;
     const shot = decideShot(state, economy, { ...options, ownLines: own });
     if (shot) plan.shot = shot;
-    // ARCH-NOTE: town names/large counts have variable JSON widths. Trim only
-    // lowest-priority optional lines to keep the entire 768 B wire budget.
+    // A complete buy batch is indivisible. Optional work is retained by the
+    // existing dirty preparation owner; absent buyAds means not prepared.
+    if (Buffer.byteLength(JSON.stringify({ buyAds: plan.buyAds })) > MAX_PLAN_PAYLOAD_BYTES) {
+        delete plan.buyAds;
+    }
     while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
         if (plan.sell.length) plan.sell.pop();
-        else if (plan.buyAds.length) plan.buyAds.pop();
         else if (plan.withdraw.length) plan.withdraw.pop();
-        else { plan.travel = null; break; }
+        else if (plan.travel) plan.travel = null;
+        else if (plan.shot) delete plan.shot;
+        else throw Error('economy_plan_payload_overflow');
     }
     if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {
         const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',
@@ -120,7 +125,7 @@ function* prepareNative(state, economy, options) {
             wallet: state.adena, escrow: options.buyOrderEscrow,
             budget: money, available: money, reserve: state.stats?.money?.[2] };
         Diagnostics.push({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
-        for (const row of plan.buyAds) Diagnostics.push({ ...trace, phase: 'buy_request', reason: 'bid_planned',
+        for (const row of plan.buyAds || []) Diagnostics.push({ ...trace, phase: 'buy_request', reason: 'bid_planned',
             item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });
     }
     return plan;

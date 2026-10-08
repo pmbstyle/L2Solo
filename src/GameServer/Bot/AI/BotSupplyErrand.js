@@ -256,6 +256,7 @@ async function purchaseAtDestination(bot, errand) {
             : await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
                 expectedUnitPrice: Number(errand.unitPrice)
             });
+        if (trade.pending) return { ok: true, pending: true, meetingId: trade.meetingId };
         if (trade.coldState && bot.session) {
             bot.session.coldLifeState = trade.coldState;
             refreshPartyMemberships([bot.session], invoke);

@@ -199,7 +199,7 @@ function* prepare(state, { board, timestamp, read = () => {}, stock = null, econ
             if (count++ === QUOTE_DEPTH) break;
             if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)) { yield 'quote'; continue; }
             const details = yield* ensureTrip(line.town);
-            result.push({ type: 'afk', offer: line, price: Number(line.price), count: Number(line.count), town: line.town,
+            result.push({ type: 'afk', conditional: line.custodyPolicy === 1, offer: line, price: Number(line.price), count: Number(line.count), town: line.town,
                 trip: trip(line.town), tripDetails: details, repeatable: false });
             yield 'quote';
         }

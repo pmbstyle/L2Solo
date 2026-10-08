@@ -414,8 +414,10 @@ async function purchaseActorRestock(actor, options = {}) {
     let cost = 0;
     for (const line of restock.shops) {
         try {
-            await AfkTrade.buyFromShop(actor.fetchId(), line.offer.store, plan.selfId, line.amount,
+            const result = await AfkTrade.buyFromShop(actor.fetchId(), line.offer.store, plan.selfId, line.amount,
                 { lineId: line.offer.lineId, expectedPrice: line.price });
+            if (result.pending) return { ok: true, pending: true, meetingId: result.meetingId, changed: delta > 0,
+                plan, amount: shotAmount(actor, plan), delta, cost };
             delta += line.amount;
             cost += line.cost;
         } catch (_) {

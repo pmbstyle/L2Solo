@@ -38,7 +38,7 @@ async function character(account, items) {
         await LifeState.upsertState({
             characterId: id, accountName: account, name: `Money${created}`, level: 40, adena: Number(inventory[57]?.amount || 0),
             phase: 'cold', activity: 'hunting', currentRegion: 'Giran', loc: { locX: 82700, locY: 148600, locZ: -3470 },
-            inventory, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { generatedCold: true }, timing: {}
+            inventory, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { generatedCold: true, money: [1000, 0, 0, 0] }, timing: {}
         }, 'test_seed');
     }
     return id;
@@ -50,9 +50,11 @@ async function held() {
     const add = (rows) => rows.forEach((row) => { totals[row.selfId] = Number(totals[row.selfId] || 0) + Number(row.amount); });
     add(await Database.execute(['SELECT selfId, SUM(amount) AS amount FROM items GROUP BY selfId']));
     add(await Database.execute([`SELECT lines.selfId, SUM(lines.count) AS amount FROM afk_trade_lines lines
-        JOIN afk_trade_shops shops ON shops.id = lines.shopId WHERE shops.storeType = 1 GROUP BY lines.selfId`]));
+        JOIN afk_trade_shops shops ON shops.id = lines.shopId WHERE shops.storeType = 1 AND shops.custodyPolicy=0 GROUP BY lines.selfId`]));
     add(await Database.execute(['SELECT 57 AS selfId, SUM(escrowAdena) AS amount FROM afk_trade_shops']));
     add(await Database.execute(['SELECT selfId, SUM(amount) AS amount FROM board_settlements GROUP BY selfId']));
+    add(await Database.execute(['SELECT selfId,SUM(heldCount) amount FROM board_trade_meeting_lines GROUP BY selfId']));
+    add(await Database.execute(['SELECT 57 selfId,SUM(escrowA+escrowB+routeReserveA+routeReserveB) amount FROM board_trade_meetings']));
     return totals;
 }
 
@@ -98,12 +100,12 @@ async function run() {
     const shop = await AfkTrade.publishBot(seller, { storeType: 1, title: 'Stems', town: 'Giran', locX: 81000, locY: 148000, locZ: -3466,
         appearance: {}, lines: [await stemLine(seller, 30, 120)] });
     await AfkTrade.buyFromShop(player, AfkTrade.recordStore(shop.id), 1864, 5);
-    const buyAd = await AfkTrade.publishBot(buyer, ad('buy_ad', [{ selfId: 1864, name: 'Stem', count: 20, price: 150, stackable: true }]));
+    const buyAd = await AfkTrade.publishBot(buyer, { ...ad('buy_ad', [{ selfId: 1864, name: 'Stem', count: 20, price: 150, stackable: true }]), kind: 'shop' });
     // The seller answers the buy ad in its town (the side that acts travels, E45).
     const answer = await stemLine(seller, 20, 150);
     await AfkTrade.sellToShop(seller, AfkTrade.recordStore(buyAd.id), 1864, 20, { objectId: answer.objectId });
     await AfkTrade.publishBot(seller, ad('sell_ad', [await stemLine(seller, 10, 90)]));
-    const leasedAd = await AfkTrade.publishBot(leased, ad('sell_ad', [await stemLine(leased, 20, 100)]));
+    const leasedAd = await AfkTrade.publishBot(leased, { ...ad('sell_ad', [await stemLine(leased, 20, 100)]), kind: 'shop' });
     const claim = await Owner.claim(LifeState.cachedState(leased), { timestamp: Date.now(), leaseMs: 30000 });
     assert(claim.ok);
     await AfkTrade.buyFromShop(player, AfkTrade.recordStore(leasedAd.id), 1864, 7);
@@ -114,11 +116,13 @@ async function run() {
         nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted,
             simulation: { ...leasedState.simulation, ownerId: Owner.OWNER_ID, revision: claim.revision } },
         proposal: { baseState: { inventory: leasedState.inventory } } }], { timestamp: Date.now() });
-    assert(commit.ok && commit.settled, 'the commit merges the leased bot\'s deal');
+    assert(!commit.ok, 'a native board deal fences the previously leased inventory');
+    await AfkTrade.settleOwners([leased]);
     const expiring = await AfkTrade.publishBot(leaver, ad('sell_ad', [await stemLine(leaver, 10, 300)]));
     await AfkTrade.publishBot(leaver, ad('buy_ad', [{ selfId: 1865, name: 'Varnish', count: 10, price: 400, stackable: true }]));
     const standing = AfkTrade.activeShops().length;
-    assert.strictEqual(standing, 5, 'the seller\'s shop and ad, the leased ad, the leaver\'s two ads');
+    assert.strictEqual(standing, 4, 'the small remaining backed shop is pruned; the seller and leaver keep their ads');
+    assert.equal(AfkTrade.recordStore(leasedAd.id), null);
     // Records close by events: the owners leave (the leave rule).
     assert.strictEqual(Number(expiring.expiresAt), 0, 'no record has a deadline');
     for (const owner of [seller, leased, leaver, buyer]) await AfkTrade.leave(owner);
@@ -127,7 +131,7 @@ async function run() {
     const heldChange = difference(await held(), heldBefore);
     const journalChange = difference(await journal(), journalBefore);
     assert.deepStrictEqual(journalChange, heldChange, 'the journal accounts for every change of what is held');
-    assert.deepStrictEqual(heldChange, { 57: 30 }, 'only the leased bot\'s hunt adds money; the board moves, it never makes');
+    assert.deepStrictEqual(heldChange, {}, 'a stale hunt is rejected; the board only transfers existing custody');
     console.log(`Board money journal: held change ${JSON.stringify(heldChange)} = journal flows ${JSON.stringify(journalChange)}`);
 
     await AfkTrade._resetForTests();

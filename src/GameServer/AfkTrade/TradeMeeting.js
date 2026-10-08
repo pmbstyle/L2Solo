@@ -2,14 +2,15 @@
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
+const ascii = value => typeof value === 'string' && /^[\x20-\x7e]*$/.test(value);
 const safe = (n, positive = false) => Number.isSafeInteger(n) && n >= (positive ? 1 : 0);
 function requireSafe(n, positive = false) { if (!safe(n, positive)) throw Error('trade_meeting_integer'); return n; }
 function sum(a, b) { return requireSafe(a + b); }
 function canonical(request) {
     const { token, actorA, actorB, seqA, seqB, town, point, lines, parties } = request;
-    if (typeof token !== 'string' || token.length < 1 || Buffer.byteLength(token) > 80
+    if (!ascii(token) || token.length < 1 || Buffer.byteLength(token) > 80
         || !safe(actorA, true) || !safe(actorB, true) || actorA >= actorB
-        || !safe(seqA, true) || !safe(seqB, true) || typeof town !== 'string' || town.length > 48
+        || !safe(seqA, true) || !safe(seqB, true) || !ascii(town) || town.length > 48
         || !point || !['locX', 'locY', 'locZ'].every(k => Number.isFinite(point[k]))
         || !Array.isArray(lines) || lines.length < 1 || lines.length > 5 || !Array.isArray(parties) || parties.length !== 2) throw Error('trade_meeting_terms');
     const basket = lines.map(line => {
@@ -35,7 +36,7 @@ function canonical(request) {
             || Buffer.byteLength(JSON.stringify(route)) > 256) throw Error('trade_meeting_route');
         if (!safe(party.revision) || !safe(party.hotAt)
             || !['hot', 'cold', 'player'].includes(party.phase)
-            || ![party.ownerId, party.leaseId].every(value => value === null || typeof value === 'string' && Buffer.byteLength(value) <= 80)
+            || ![party.ownerId, party.leaseId].every(value => value === null || ascii(value) && Buffer.byteLength(value) <= 80)
             || !safe(party.sequence, true) || party.sequence !== (side ? seqB : seqA)) throw Error('trade_meeting_authority');
         return { revision: party.revision, sequence: party.sequence,
             phase: party.phase, ownerId: party.ownerId, leaseId: party.leaseId, hotAt: party.hotAt, route: { fee: route.fee, scroll: route.scroll, method: route.method, durationMs: route.durationMs }, needRevision: requireSafe(party.needRevision) };

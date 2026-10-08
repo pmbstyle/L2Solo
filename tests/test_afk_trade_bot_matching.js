@@ -66,7 +66,7 @@ async function coldBot(characterId, name) {
         adena: 0, phase: 'cold', activity: 'hunting', currentRegion: 'Giran',
         loc: { locX: 83100, locY: 148100, locZ: -3400 },
         inventory: BotLifeState.inventorySummaryFromItems(await Database.fetchItems(characterId)),
-        stats: { generatedCold: true }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }
+        stats: { generatedCold: true, money: [36000,0,0,0] }, timing: {}, vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }
     }, 'test_seed');
 }
 
@@ -105,7 +105,7 @@ const ad = (kind, lines) => ({ kind, storeType: kind === 'sell_ad' ? 1 : 3, titl
     await coldBot(buyerId, 'BotBuyer');
     await coldBot(sellerId, 'BotSeller');
     await AfkTrade.publishBot(buyerId, ad('buy_ad', [{ selfId: VARNISH, name: 'Varnish', count: 1, price: 11, stackable: true }]));
-    assert.strictEqual(BotLifeState.snapshot(buyerId).adena, 89, 'the buy ad holds its escrow');
+    assert.strictEqual(BotLifeState.snapshot(buyerId).adena, 100, 'the conditional bid holds no escrow');
 
     // A crossed bot bid does not fill the player's WTS from afar (E45): a deal
     // needs someone in the town.

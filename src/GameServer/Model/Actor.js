@@ -5,6 +5,7 @@ const locationBatchDepth = new WeakMap();
 function publishLocation(actor) {
     if (!locationBatchDepth.has(actor) && actor.session?.actor === actor) {
         invoke('GameServer/World/World').updateUserLocation?.(actor.session, actor);
+        if (actor.session.tradeMeetingPresence) require('../AfkTrade/TradeMeetingService').presenceChanged(actor.session);
     }
 }
 
@@ -80,6 +81,7 @@ class ActorModel extends CreatureModel {
     setHp(data) {
         const wasLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
         super.setHp(data);
+        if (this.session?.tradeMeetingPresence) require('../AfkTrade/TradeMeetingService').presenceChanged(this.session);
         const isLow = this.fetchHp() <= this.fetchMaxHp() * 0.6;
         if (wasLow !== isLow && invoke('GameServer/Items/C4WeaponSA').hasRisk(this)) {
             invoke('GameServer/Actor/Generics/CalculateStats').refreshConditionalCombatStats(this);

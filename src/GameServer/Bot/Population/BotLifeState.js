@@ -590,6 +590,7 @@ function recordFromSession(session, phase, reason = '') {
     const characterId = Number(actor.fetchId());
     const inventory = inventorySummaryFromItems(actor.backpack?.fetchItems ? actor.backpack.fetchItems() : []);
     const stats = {
+        tradeMeeting: cache.get(characterId)?.stats?.tradeMeeting || null,
         ...Object.fromEntries(['playedHours', 'economyClock', 'frustration', 'lifelongKills', 'peoplePoints'].map(key => [key, session.coldLifeState?.stats?.[key] ?? cache.get(characterId)?.stats?.[key] ?? 0])),
         peopleEpisode: session.coldLifeState?.stats?.peopleEpisode ?? cache.get(characterId)?.stats?.peopleEpisode ?? null,
         ...(session.peopleKnowledge || {}),

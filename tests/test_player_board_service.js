@@ -5,7 +5,7 @@ const { create } = require('../src/GameServer/AfkTrade/PlayerBoardService');
 
 async function main() {
     const board = new BoardIndex();
-    let selects = 0, crafts = 0, x = 0;
+    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0;
     const merchant = { fetchId: () => 900000045, fetchLocX: () => 1000, fetchLocY: () => 0, fetchLocZ: () => 0 };
     const player = { accountId: 'player_board', actor: { fetchId: () => 8, fetchHp: () => 100,
         fetchClanId: () => 0, fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
@@ -22,8 +22,10 @@ async function main() {
     const shop = { characterId: 55, currentRegion: 'Dion', loc: { locX: 5000, locY: 0, locZ: 0 }, simulation: { revision: 2 } };
     const service = create({ afk: () => ({ isBoardReady: () => true, boardIndex: () => board,
         offerOf: (line) => line.ownerId === 47 ? null
-            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection }),
+            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection, store: { locX: 1000, locY: 0, locZ: 0 } }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
+    meetings: () => ({ discard() {}, prepareTrade: async () => { prepares++; return { preparationId: 'prepared', total: 180 }; },
+        accept: async id => { assert.equal(id, 'prepared'); agreements++; return { pending: true }; } }),
     life: () => ({ cachedState: (id) => ({ characterId: id, loc: { locX: 7000, locY: 0, locZ: 0 }, currentRegion: 'Dion' }) }),
     workshops: () => ({ boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', ownerId: 55, ownerName: 'Maker',
         town: 'Dion', loc: shop.loc, revision: 2, entries: [{ recipeId: 17, price: 150 }] }],
@@ -46,6 +48,20 @@ async function main() {
     assert.equal((await service.answer(player, request)).reason, 'record_changed'); assert.equal(selects, 2);
     assert.equal((await service.answer(player, { id: 3, lineId: 13, selfId: 1152, price: 500, revision: 4 })).reason, 'own_record');
     assert.equal((await service.answer(player, { id: 2, lineId: 12, selfId: 1864, price: 90, revision: 4 })).action, 'contact');
+    board.put({ ...record, id: 5, kind: 'sell_ad', custodyPolicy: 1,
+        lines: [{ lineId: 15, selfId: 1864, count: 10, price: 90 }] }, {});
+    const conditional = { id: 5, lineId: 15, selfId: 1864, price: 90, revision: 4, amount: 2 };
+    x = 7000; assert.equal((await service.answer(player, conditional)).action, 'meet');
+    assert.equal(prepares, 0); assert.equal(agreements, 0);
+    x = 1000; assert.equal((await service.answer(player, conditional)).action, 'confirm_trade');
+    assert.equal(prepares, 1); assert.equal(agreements, 0);
+    x = 1300; assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'meet');
+    assert.equal(agreements, 0);
+    x = 1000; assert.equal((await service.answer(player, { ...conditional, amount: 3, confirmed: true })).reason, 'record_changed');
+    assert.equal(agreements, 0);
+    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'agreed');
+    assert.equal(agreements, 1); assert.equal(player.playerBoardPreparation, undefined);
+    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
     const workshop = service.entries(player, { kind: 'workshop' }).entries[0];
     assert.equal(workshop.price, 150);
     const order = { ...workshop, kind: 'workshop' };

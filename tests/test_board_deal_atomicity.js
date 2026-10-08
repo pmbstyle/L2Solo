@@ -18,7 +18,6 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const ColdMarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
-const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const BuyStores = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 
 const databasePath = path.join(process.cwd(), 'tmp', 'test-board-deal-atomicity.sqlite');
@@ -49,7 +48,7 @@ async function makeBot(name, items) {
         adena: Number(inventory[57]?.amount || 0), phase: 'cold', activity: 'shopping', currentRegion: 'Giran',
         loc: { locX: 82700, locY: 148600, locZ: -3470 }, inventory,
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-        stats: { generatedCold: true, marketReturn: { regionName: 'Giran', spotId: null, loc: { locX: 82700, locY: 148600, locZ: -3470 } } },
+        stats: { generatedCold: true, money: [36000,0,0,0], marketReturn: { regionName: 'Giran', spotId: null, loc: { locX: 82700, locY: 148600, locZ: -3470 } } },
         timing: {}
     }, 'test_seed');
 }
@@ -73,7 +72,7 @@ async function holdings(ids, selfId) {
     } else {
         const [lines] = await Database.execute([`SELECT COALESCE(SUM(lines.count), 0) AS amount FROM afk_trade_lines lines
             JOIN afk_trade_shops shops ON shops.id = lines.shopId
-            WHERE shops.ownerId IN (${list}) AND shops.status = 'active' AND shops.storeType = 1 AND lines.selfId = ?`, [selfId]]);
+            WHERE shops.ownerId IN (${list}) AND shops.status = 'active' AND shops.storeType = 1 AND shops.custodyPolicy=0 AND lines.selfId = ?`, [selfId]]);
         total += Number(lines.amount);
     }
     if (await tableExists('board_settlements')) {
@@ -114,15 +113,13 @@ function marketWeapon() {
 async function listWeapon(name, weapon) {
     const seller = await makeBot(name, [{ selfId: 57, name: 'Adena', amount: 500 },
         { selfId: weapon.selfId, name: weapon.template.name, amount: 1, slot: weapon.etc.slot }]);
-    // One decision point for the visit, the same in every run.
-    const at = 1800000000000;
-    const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
-    for (let deal = 0; deal < 12; deal++) {
-        MarketCounters.deal(weapon.selfId, Number(weapon.template.price) * 2, 1, at - (12 - deal) * 300000, 999999);
-    }
-    const listed = await ListingService.open(seller, { now: at, random: () => 0.1 });
-    assert.strictEqual(listed.listed, true, `${name}: the weapon is listed`);
-    return listed.state;
+    // This fixture tests native custody failure after an admitted sale;
+    // valuation and listing choice have their own policy tests.
+    const item = (await Database.fetchItems(seller.characterId)).find(row => row.selfId === weapon.selfId);
+    await AfkTrade.publishBot(seller.characterId, { storeType: 1, town: 'Giran', ...seller.loc,
+        lines: [{ objectId: item.id, selfId: weapon.selfId, name: weapon.template.name, count: 1, price: 1000,
+            slot: weapon.etc.slot, stackable: false }] });
+    return LifeState.snapshot(seller.characterId);
 }
 
 async function buyerBot(name) {
@@ -202,15 +199,17 @@ async function run() {
         const goal = { type: 'buy_craft_material', status: 'active',
             target: { itemId: STEM, itemName: 'Stem', amount: 3, adena: 200 },
             plan: { expectedBenefit: 'market_buy_craft_material', priceSource: 'offer', sourceType: 'afk_bot_store', marketTown: 'Giran' } };
-        const opened = await BuyStores.open(buyer, goal);
-        assert.strictEqual(opened.opened, true, 'E24: the buyer asks for stems');
+        await AfkTrade.publishBot(buyer.characterId, { storeType: 3, town: 'Giran', ...buyer.loc,
+            lines: [{ selfId: STEM, name: 'Stem', count: 3, price: goal.target.adena, stackable: true }] });
         const seller = await makeBot('E24Seller', [{ selfId: STEM, name: 'Stem', amount: 2 }]);
         const ids = [buyer.characterId, seller.characterId];
         const adena = await holdings(ids, 57);
         const stems = await holdings(ids, STEM);
         const buyerStems = await bagAmount(buyer.characterId, STEM);
         await failItemsOf(seller.characterId);
-        await BuyStores.sellToBestBuyer(LifeState.snapshot(seller.characterId), 'Giran');
+        await BuyStores.sellToBestBuyer(LifeState.snapshot(seller.characterId), 'Giran', { answers: [{
+            line: AfkTrade.boardIndex().ownerLines(buyer.characterId)[0], count: 2,
+            item: { selfId: STEM, count: 2, objectId: (await Database.fetchItems(seller.characterId)).find(row => row.selfId === STEM).id } }] });
         await healItemsOf(seller.characterId);
         assert.strictEqual(await holdings(ids, 57), adena, 'E24: no adena is created or destroyed');
         assert.strictEqual(await holdings(ids, STEM), stems, 'E24: no stem is created or destroyed');
