@@ -202,7 +202,7 @@ async function main(Data, sqlOpens, isolated) {
         exactMainWorker: true, outputHash: digest(expected), inputHash,
         catalogHash: result.catalogHash, sqlRefusals: result.sqlRefusals,
         actorMutations: result.actorMutations, nativeSqlOpens: result.sqlOpens,
-        nativeThreadId: result.threadId, positiveNativeLevel: 52, positiveNativeCost: 27390 }));
+        nativeThreadId: result.threadId, positiveNativeLevel: 52, positiveNativeCost: inputs.lines[inputs.positiveLineIndex].cost }));
 }
 
 async function run() {
