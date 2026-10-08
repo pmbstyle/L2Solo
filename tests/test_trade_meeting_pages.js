@@ -3,6 +3,13 @@ const assert = require('node:assert/strict');
 const Codec = require('../src/GameServer/AfkTrade/TradeMeetingCodec');
 const Native = require('../src/GameServer/AfkTrade/TradeMeeting');
 const Service = require('../src/GameServer/AfkTrade/TradeMeetingService');
+const small = Native.projectIncoming({ 1867: 6 });
+assert.deepEqual(small, { acceptedIncoming: { 1867: 6 } });
+const wide = Native.projectIncoming({ 1867: Number.MAX_SAFE_INTEGER, 1870: Number.MAX_SAFE_INTEGER });
+assert(Buffer.byteLength(JSON.stringify({ tradeMeeting: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER], ...wide })) <= 128);
+const large = Native.projectIncoming(Object.fromEntries(Array.from({ length: 5 }, (_, index) => [1860 + index, Number.MAX_SAFE_INTEGER])));
+assert.deepEqual(large, { acceptedIncoming: null, incomingPending: true }, 'overflow is unknown input with a pending owner, never truncated stock');
+assert(Buffer.byteLength(JSON.stringify({ tradeMeeting: [Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER], ...large })) <= 128);
 const MAX = Number.MAX_SAFE_INTEGER;
 function request(n) {
     return { token: String(n).padEnd(80, 't'), actorA: 2*n+1, actorB: 2*n+2, seqA: MAX-1, seqB: MAX-1,

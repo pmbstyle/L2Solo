@@ -2779,7 +2779,7 @@ function coldSimulationPartition(row, options = {}, parsedStats) {
 
 function coldSimulationRow(characterId) {
     const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
-    return row ? { ...row, acceptedIncoming: acceptedTradeIncomingUnsafe(Number(characterId), row) } : row;
+    return row ? { ...row, ...require('./GameServer/AfkTrade/TradeMeeting').projectIncoming(acceptedTradeIncomingUnsafe(Number(characterId), row)) } : row;
 }
 
 // The existing participant slot and pending-settlement owner are the only

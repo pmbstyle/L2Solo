@@ -38,6 +38,7 @@ const positive = value => Math.max(0, Number(value) || 0);
 
 function stateForActor(actor, session = actor?.session) {
     const stored = session?.coldLifeState || {};
+    const current = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(actor.fetchId?.());
     const inventory = {};
     const physicalInventory = actor.backpack?.fetchItems?.() || [];
     for (const item of physicalInventory) {
@@ -55,7 +56,8 @@ function stateForActor(actor, session = actor?.session) {
     }
     const hotKit = invoke('GameServer/Bot/Population/ColdCombatProfile').capture(actor);
     const state = { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
-        acceptedIncoming: invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(actor.fetchId?.())?.acceptedIncoming || stored.acceptedIncoming || {},
+        acceptedIncoming: current?.acceptedIncoming || stored.acceptedIncoming || {},
+        incomingPending: current ? current.incomingPending === true : stored.incomingPending === true,
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
         sp: actor.fetchSp?.() ?? stored.sp,
         spotId: session?.currentSpot?.id || stored.spotId,
@@ -91,7 +93,7 @@ function inputKey(state, deps = {}) {
         Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
         invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
-        deps.inputKey || '', deps.mode || '', JSON.stringify(state.acceptedIncoming || null), Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
+        deps.inputKey || '', deps.mode || '', state.incomingPending, JSON.stringify(state.acceptedIncoming || null), Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
         stats.production?.crafts || 0, positive(state.sp),
@@ -367,6 +369,22 @@ function forState(state = {}, deps = {}) {
     context.routePending = !deps.tripCost && !context.routeRows;
     context.trip = deps.tripCost || Trip.preparedReader(context.routeRows || [], { hourAdena: context.hourAdena });
     context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
+    if (state.incomingPending) {
+        // ARCH-NOTE: an oversized incoming projection waits on the existing
+        // settlement/preparation owner. Never replace unknown stock with zero
+        // demand or renew the decision seed while that input is unavailable.
+        context.network = { inputKey: key, queue: [], activity: null, plans: new Map(), demands: new Map(),
+            focus: state.stats?.wishFocus || null, dormant: state.stats?.dormantWishes || [],
+            moneyPrice: positive(state.stats?.money?.[1]), hourAdena: context.hourAdena, available: 0,
+            decisionSeq: state.stats?.decisionSeq || 0, activityLeaf: state.stats?.activityLeaf || 0 };
+        context.moneyPrice = context.network.moneyPrice; context.gapHorizonHours = 0;
+        context.watchList = []; context.intentPending = true;
+        context.itemUsefulness = () => 0; context.worth = price; context.purchaseBudget = () => 0;
+        context.statsPacket = { wishFocus: context.network.focus, dormantWishes: context.network.dormant,
+            decisionSeq: context.network.decisionSeq, activityLeaf: context.network.activityLeaf,
+            money: state.stats?.money || [0, 0, base.survivalReserve, 0] };
+        return context;
+    }
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
     if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
