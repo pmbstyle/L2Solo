@@ -111,6 +111,58 @@ async function run() {
     const merged = captured.find(row => row.id === 9613).lines.find(row => row.selfId === 1785);
     assert.equal(merged.errands.length, 2); assert.equal(merged.fundingParts.length, 2);
 
+    // Configured graded-shot merchants are legal when enabled, but are not
+    // physical NPC sellers and must retain their singleton settlement.
+    const Policy = require('../src/GameServer/Bot/Economy/ProductionPolicy');
+    const wasDisabled = Policy.shotsDisabled;
+    try {
+        Policy.shotsDisabled = () => false;
+        const configured = invoke('GameServer/Bot/Economy/MarketOpportunity').fixedStoreOffers(1463)
+            .find(offer => offer.town === 'Dion');
+        assert(configured && !Npc.quoteFor(1463, 'Dion'), 'configured-only current D-shot quote');
+        const errand = { selfId: 1463, amount: 250, town: 'Dion', purpose: 'craft_input', r: 1, at };
+        state = await seed(9623, 3000000, { marketErrands: [errand], marketErrand: errand });
+        await Goals.set(9623, Market.errandGoal(errand));
+        state = await Market.finishTownErrands(state);
+        assert.equal(await amount(9623, 1463), 250, 'town visit reaches configured singleton');
+        assert.equal(state.stats.marketErrands.length, 0);
+        assert.equal(Goals.snapshot(9623).current.status, 'completed');
+        const receipt = captured.find(row => row.id === 9623 && row.lines.some(line => line.selfId === 1463));
+        assert(receipt && !receipt.seller, 'configured store is not presented as a real NPC');
+        assert.equal(receipt.lines.length, 1);
+        assert.equal(receipt.lines[0].unitPrice, configured.price);
+        const wallet = await amount(9623, 57);
+        await Market.finishTownErrands(state);
+        assert.equal(await amount(9623, 1463), 250);
+        assert.equal(await amount(9623, 57), wallet, 'unchanged configured errand never pays twice');
+
+        state = await seed(9624, 3000000);
+        const selected = (await Goals.set(9624, { type: 'buy_craft_material', status: 'active',
+            target: { itemId: 1463, amount: 125 }, plan: { expectedBenefit: 'market_buy_craft_material',
+                marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
+        const configuredGoal = await Market.tryPurchase(state, selected);
+        assert.equal(configuredGoal.units, 125);
+        assert.equal(await amount(9624, 1463), 125);
+        assert.equal(await amount(9624, 57), 3000000 - 125 * configured.price);
+        assert.equal(Goals.snapshot(9624).current.status, 'completed', 'singleton owns goal progress atomically');
+
+        state = await seed(9626, 3000000);
+        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125 } })).current;
+        const primeGoal = Goals.prime;
+        let paid;
+        try {
+            Goals.prime = () => { throw Error('fixture_goal_delivery_failed'); };
+            paid = await Market.tryPurchase(state, deferred);
+        } finally { Goals.prime = primeGoal; }
+        assert.equal(paid.purchased, true, 'post-commit goal delivery failure never rejects a paid purchase');
+        assert.equal(paid.units, 125);
+        assert.equal(await amount(9626, 57), 3000000 - 125 * configured.price);
+        assert.equal(await amount(9626, 1463), 125);
+        const authoritativeGoal = (await DB.execute(['SELECT goalJson,updatedAt FROM bot_goal_state WHERE characterId=?', [9626]]))[0];
+        assert.equal(JSON.parse(authoritativeGoal.goalJson).status, 'completed');
+        Goals.prime(9626, authoritativeGoal.goalJson, authoritativeGoal.updatedAt);
+    } finally { Policy.shotsDisabled = wasDisabled; }
+
     // Explicit selected native recipe/batches, without inventing a profitable
     // network choice. Its actual consumer buys only the five missing ore units.
     const Recipes = invoke('GameServer/Items/C4RecipeItems'), recipe = Recipes.resolveByRecipeId(20);

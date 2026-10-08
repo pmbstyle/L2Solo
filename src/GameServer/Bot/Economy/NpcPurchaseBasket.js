@@ -20,19 +20,9 @@ function observe(lines, state, replayed) {
     }
 }
 
-async function purchase(state, options = {}) {
-    if (!options.seller || !Array.isArray(options.lines) || options.lines.length > MAX_LINES
-        || !options.lines.length && !options.original) throw Error('invalid npc basket');
-    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const Goals = invoke('GameServer/Bot/Goals/GoalState'), previousGoal = Goals.snapshot(state.characterId);
-    const admitted = await Commit.admit(state, Commit.KINDS.npcBuy, options.original || null);
-    let result;
-    try { result = await Database.purchaseNpcInventoryBasket(state.characterId,
-        { ...options, coldState: admitted.state, economyCommand: admitted.command }); }
-    finally { Commit.finish(state.characterId, admitted.command); }
-    // A committed physical transaction cannot become a retryable unpaid action
-    // because a cache, telemetry or actor delivery failed afterwards.
-    let current = admitted.state;
+function acceptResult(state, result, previousGoal) {
+    const Goals = invoke('GameServer/Bot/Goals/GoalState');
+    let current = state;
     try {
         if (result.coldLifeRow) current = Commit.acceptRow(result.coldLifeRow);
         if (result.goalRow && Goals.snapshot(state.characterId) === previousGoal) Goals.prime(state.characterId,
@@ -45,6 +35,22 @@ async function purchase(state, options = {}) {
                 ownerId: row.simulationOwner, leaseId: row.simulationLeaseId || null }, updatedAt: Number(row.updatedAt) };
         utils.infoWarn('BotMarket', 'committed NPC state delivery deferred: %s', error.message);
     }
+    return current;
+}
+
+async function purchase(state, options = {}) {
+    if (!options.seller || !Array.isArray(options.lines) || options.lines.length > MAX_LINES
+        || !options.lines.length && !options.original) throw Error('invalid npc basket');
+    const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const Goals = invoke('GameServer/Bot/Goals/GoalState'), previousGoal = Goals.snapshot(state.characterId);
+    const admitted = await Commit.admit(state, Commit.KINDS.npcBuy, options.original || null);
+    let result;
+    try { result = await Database.purchaseNpcInventoryBasket(state.characterId,
+        { ...options, coldState: admitted.state, economyCommand: admitted.command }); }
+    finally { Commit.finish(state.characterId, admitted.command); }
+    // A committed physical transaction cannot become a retryable unpaid action
+    // because a cache, telemetry or actor delivery failed afterwards.
+    const current = acceptResult(admitted.state, result, previousGoal);
     const lines = result.lines || [];
     observe(lines, current, result.replayed);
     return { ...result, state: current, purchased: !!result.ok && Number(result.units) > 0,
@@ -76,4 +82,4 @@ async function purchaseForActor(actor, options = {}) {
     return result;
 }
 
-module.exports = { MAX_LINES, sellerFor, purchase, purchaseForActor };
+module.exports = { MAX_LINES, sellerFor, acceptResult, purchase, purchaseForActor };
