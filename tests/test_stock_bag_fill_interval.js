@@ -104,5 +104,20 @@ try {
     finally { Economy.basics = before; }
     assert.notEqual(Economy.inputKey(solo), Economy.inputKey({ ...solo, partyId: 2 }));
     assert.notEqual(Economy.inputKey(solo), Economy.inputKey(protectedLoot));
+    // Fractional table rates are forecasts, but funded purchase tranches must
+    // reach the same physical stock without fractional or duplicate units.
+    potions = 2.25; stacks = 0;
+    for (const phase of ['hot', 'cold']) for (const hours of [.5, 1, 2, 4]) {
+        for (const held of [0, 1, 2, 3, 8, 10]) {
+            const state = { ...fixture, phase, stats: { ...fixture.stats, visitEvery: [22, hours] },
+                inventory: { 1061: { selfId: 1061, amount: held, stackable: true } } };
+            const stock = Economy.basics(state, { spots: [] }).stock('potions');
+            assert.equal(stock.usePerHour, 2.25, 'native fractional table forecast reaches the stock rule');
+            const purchase = stock.survivalMissing + stock.missing;
+            assert(Number.isSafeInteger(purchase), `${phase}: whole potion purchase with ${held} held`);
+            const expected = Math.max(0, Math.max(3, Math.ceil(2.25 * hours)) - held);
+            assert.equal(purchase, expected, `${phase}: fill the greater of outing stock and survival stock once`);
+        }
+    }
     console.log('test_stock_bag_fill_interval: ok');
 } finally { Table.value = saved.value; Table.best = saved.best; Hunt.huntIncome = saved.hunt; }

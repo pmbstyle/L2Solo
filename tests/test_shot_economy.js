@@ -90,8 +90,8 @@ const index = {
     itemTemplates: new Map(DataCache.items.map((item) => [Number(item.selfId), item])),
     npcPrice: new Map([[1785, 550]]),
     gear: new Map([
-        ['d', [{ selfId: 45, price: 22324, crystals: 56, source: 'afk', count: 1, ownerId: 201 }]],
-        ['c', [{ selfId: 325, price: 100000, crystals: 1148, source: 'afk', count: 1, ownerId: 202 }]]
+        ['d', [{ selfId: 45, price: 22324, crystals: 56, source: 'afk', town: 'Giran', count: 1, ownerId: 201 }]],
+        ['c', [{ selfId: 325, price: 100000, crystals: 1148, source: 'afk', town: 'Giran', count: 1, ownerId: 202 }]]
     ]),
     shotDemand: new Map([[1463, [{ characterId: 200, amount: 1000, budget: 1000000, maxPrice: 1000, origin: 'public_bid' }]]]),
     shotSupply: new Map()
@@ -119,10 +119,10 @@ assert(candidate.profit > 100);
 const originalOffers = Afk.offers;
 try {
     Afk.offers = id => Number(id) === 1458
-        ? [{ sourceId: 500, price: 50, count: 100 }] : [];
+        ? [{ sourceId: 500, town: 'Giran', price: 50, count: 100 }] : [];
     assert.strictEqual(Shots.craftCandidate(dwarf, recipe, index).gear.source, 'crystals',
         'cheap actual crystal offers should beat buying and breaking equipment');
-    Afk.offers = () => [{ sourceId: 500, price: 1, count: 1000 }];
+    Afk.offers = () => [{ sourceId: 500, town: 'Giran', price: 1, count: 1000 }];
     const routes = Shots.scrapCraftRoutes(dwarf, [{ recipeId: 44 }], index);
     assert.strictEqual(routes.length, 1, 'a learned guaranteed equipment recipe can source crystals');
     assert.strictEqual(routes[0].cash, 25);

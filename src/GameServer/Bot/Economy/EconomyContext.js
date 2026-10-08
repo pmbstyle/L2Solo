@@ -225,8 +225,11 @@ function foundation(state, deps, persona, timestamp, price) {
         const use = shots ? shotUse : potionUse;
         const current = positive(state.inventory?.[itemId]?.amount);
         const target = Math.ceil(use * targetHours);
-        const survivalMissing = Math.max(0, Math.ceil(use) - current);
-        const missing = Math.max(0, target - Math.max(current, use));
+        // Forecast consumption may be fractional; both purchase tranches use
+        // the same whole-unit survival stock so their sum remains executable.
+        const survivalTarget = Math.ceil(use);
+        const survivalMissing = Math.max(0, survivalTarget - current);
+        const missing = Math.max(0, target - Math.max(current, survivalTarget));
         const benefitHours = shots ? (use > 0 ? shotBenefit * targetHours : 0)
             : positive(bestTable?.deaths) * deathHours * targetHours;
         return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
