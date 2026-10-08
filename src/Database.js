@@ -2063,14 +2063,44 @@ function economyStepUnsafe(characterId, command, kind) {
     return { row, command, reserved };
 }
 
-function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = null, learning = null) {
+function completeEconomyStepUnsafe(characterId, step, result, changedIds, mp = null, learning = null, statsPatch = null) {
     if (!step) return null;
     const tuple = EconomyCommit.completed(step.command, result);
-    const patch = { economyCommit: tuple, ...(learning ? { lastRecipeBookLearning: learning } : {}) };
+    const patch = { ...statsPatch, economyCommit: tuple, ...(learning ? { lastRecipeBookLearning: learning } : {}) };
     if (step.row.phase === 'cold') return writeColdInventorySnapshotUnsafe(characterId, step.row, changedIds, mp, patch);
     write("UPDATE bot_life_state SET statsJson=json_patch(COALESCE(statsJson,'{}'),json(?)) WHERE characterId=?",
         [JSON.stringify(patch), Number(characterId)]);
     return normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [Number(characterId)]));
+}
+
+// Preserve the pre-native-receipt cold auto-equip rule inside the purchase.
+// Only physical flags move; no predicted cold items are materialized here.
+function equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip) {
+    if (!step || step.row.phase !== 'cold' || autoEquip === false) return null;
+    const template = require('./GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(itemId));
+    if (template?.etc?.stackable || !(Number(template?.etc?.slot) > 0)) return null;
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const physical = all('SELECT * FROM items WHERE characterId=? AND amount>0', [characterId]);
+    const stats = jsonObject(step.row.statsJson);
+    const reconciled = Life.reconcileEquipmentInventory({ characterId, level: Number(step.row.level), phase: 'cold', stats,
+        inventory: Life.inventorySummaryFromItems(physical) });
+    const ids = new Set([Number(itemId)]);
+    for (const row of physical) {
+        const instance = reconciled.inventory[row.selfId]?.instances?.find(item => Number(item.id) === Number(row.id));
+        if (!instance) continue;
+        const equipped = instance.equipped ? 1 : 0, slot = Number(instance.slot || 0);
+        if (equipped !== Number(row.equipped) || slot !== Number(row.slot)) {
+            write('UPDATE items SET equipped=?,slot=? WHERE id=? AND characterId=?', [equipped, slot, row.id, characterId]);
+            ids.add(Number(row.selfId));
+        }
+    }
+    const patch = {};
+    for (const key of ['equipment', 'equipmentPlan', 'partyRequest', 'clanPartyObjective', 'clanEquipmentAcquisition',
+        'marketWanted', 'marketRetryAfter', 'marketLead']) {
+        if (Object.hasOwn(reconciled.stats, key)) patch[key] = reconciled.stats[key];
+        else if (Object.hasOwn(stats, key)) patch[key] = null;
+    }
+    return { ids: [...ids], patch };
 }
 
 function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}) {
@@ -4510,8 +4540,9 @@ const Database = {
                 sellerCharacterId: shop.ownerId, buyerCharacterId: buyerId }, [[Number(shop.ownerId), owner], [buyerId, buyer]]);
             const before = afkTradeShopUnsafe(shopId);
             const filled = completeAfkTradeIfFilledUnsafe(shopId, timestamp, botOwned);
+            const equipped = equipColdPurchaseUnsafe(buyerId, step, line.selfId, details.autoEquip);
             const completedRow = completeEconomyStepUnsafe(buyerId, step,
-                { units: quantity, spent: total, nativeId: eventId }, [line.selfId]);
+                { units: quantity, spent: total, nativeId: eventId }, equipped?.ids || [line.selfId], null, null, equipped?.patch);
             return {
                 committed: true,
                 ...(completedRow ? { economyCommit: jsonObject(completedRow.statsJson).economyCommit } : {}),
@@ -6889,7 +6920,7 @@ const Database = {
     },
 
     purchaseNpcInventoryItem(characterId, { selfId, name, amount, unitPrice, stackable = true, slot = 0, coldState = null,
-        economyCommand = null, validate = null, funding = {} }) {
+        economyCommand = null, validate = null, funding = {}, autoEquip = true }) {
         const count = Number(amount), price = Number(unitPrice), itemId = Number(selfId);
         if (!Number.isSafeInteger(count) || count <= 0 || count > 10000
             || !Number.isSafeInteger(price) || price <= 0
@@ -6916,8 +6947,10 @@ const Database = {
                 write('INSERT INTO items (selfId, name, amount, equipped, slot, characterId) VALUES (?, ?, ?, 0, ?, ?)',
                     [itemId, name || `Item ${itemId}`, stackable ? count : 1, Number(slot) || 0, characterId]);
             }
+            const equipped = equipColdPurchaseUnsafe(characterId, step, itemId, autoEquip);
             const coldLifeRow = step ? completeEconomyStepUnsafe(characterId, step,
-                { units: count, spent: count * price, nativeId: itemId }, [itemId]) : syncEconomySnapshotUnsafe(characterId, coldState, [itemId]);
+                { units: count, spent: count * price, nativeId: itemId }, equipped?.ids || [itemId], null, null, equipped?.patch)
+                : syncEconomySnapshotUnsafe(characterId, coldState, [itemId]);
             return { ok: true, committed: true, spent: count * price, amount: count, units: count,
                 ...(coldLifeRow ? { coldLifeRow, economyCommit: jsonObject(coldLifeRow.statsJson).economyCommit } : {}) };
         }, 'bot:npc-purchase'));

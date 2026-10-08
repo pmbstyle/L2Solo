@@ -127,7 +127,7 @@ function buyOffer(state, offer, options = {}) {
     }
     const reserved = !options.economyCommand;
     if (reserved && !MarketOpportunity.reserve(offer, qty)) return Promise.resolve({ purchased: false, reason: 'offer_changed' });
-    return buyNpcStack(state, offer.selfId, qty, Number(offer.price), PurchaseFunding.nativeTerms(options, offer.selfId), options.economyCommand).then(async (purchase) => {
+    return buyNpcStack(state, offer.selfId, qty, Number(offer.price), PurchaseFunding.nativeTerms(options, offer.selfId), options.economyCommand, options.autoEquip).then(async (purchase) => {
         if (!purchase) {
             if (reserved) MarketOpportunity.release(offer, qty);
             return { purchased: false, reason: 'persist_failed' };
@@ -301,7 +301,7 @@ async function buyHere(state, plan) {
     const money = npcPrice > 0 ? purchaseMoney(current, plan, spent) : 0;
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (rest > 0) {
-        const bought = await buyNpcStack(current, plan.selfId, rest, npcPrice, purchaseTerms(current, plan, spent));
+        const bought = await buyNpcStack(current, plan.selfId, rest, npcPrice, purchaseTerms(current, plan, spent), null, false);
         if (bought) {
             current = bought.state;
             units += bought.units;
@@ -315,7 +315,7 @@ async function buyHere(state, plan) {
 // (Database.purchaseNpcInventoryItem, as his cold shot restock made it): the
 // bag and the wallet in one transaction, the cold state following. null when
 // refused.
-async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, original = null) {
+async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, original = null, autoEquip = true) {
     const Database = invoke('Database');
     const template = ItemTemplateIndex.find(invoke('GameServer/DataCache').items, Number(selfId));
     const name = template?.template?.name || `Item ${selfId}`;
@@ -325,6 +325,7 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
     let purchase;
     try { purchase = await Database.purchaseNpcInventoryItem(state.characterId, {
         selfId, name, amount, unitPrice, stackable: !!template?.etc?.stackable,
+        autoEquip,
         slot: Number(template?.etc?.slot || 0), coldState: state, economyCommand: admitted.command,
         funding: { ...funding, itemId: selfId }, validate: () => {
             if (!staticOffers(selfId).some(offer => offer.town === state.currentRegion && Number(offer.price) === unitPrice)) throw Error('npc_quote_changed');

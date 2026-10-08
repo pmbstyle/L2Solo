@@ -937,7 +937,8 @@ async function buyFromShop(characterId, store, selfId, amount, options = {}) {
         expectedRevision: options.expectedRevision,
         economyCommand: admission.command,
         validate: admission.validate,
-        funding: options.funding
+        funding: options.funding,
+        autoEquip: options.autoEquip
     }); } finally { require('../Bot/Economy/EconomyCommit').finish(characterId, admission.command); }
     return deliverTrade({ ...result, economyCommand: admission.command }, 'sale', characterId, admission.state || options.coldState, options);
 }
