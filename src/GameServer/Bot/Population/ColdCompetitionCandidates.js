@@ -1,3 +1,4 @@
+const Config = require('./PopulationConfig');
 const { seeded, INTERVAL_MS } = require('./ColdCompetitionMonitor');
 const PartyTarget = require('./PartyHuntingTarget');
 const { StableOwnerMap } = require('./StableOwnerSet');
@@ -298,7 +299,9 @@ class ColdCompetitionCandidates {
     }
     snapshot() {
         // A retired frame must never re-enter Main's legacy array adapter.
-        const report = { ...this.monitor.snapshot(), events: this.frame?.events || [] };
+        const report = Config.developerDiagnostics
+            ? { ...this.monitor.snapshot(), events: this.frame?.events || [] }
+            : { diagnosticsEnabled: false, mode: this.monitor.report.mode, at: this.monitor.report.at, events: this.frame?.events || [] };
         if (this.frame) report.frame = this.frame;
         return report;
     }

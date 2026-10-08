@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 
@@ -186,7 +187,7 @@ async function assemble(input = {}) {
         estimatedTokens: Math.min(hardMaxTokens, serializedCost),
         budget,
         hardMaxTokens,
-        telemetry: {
+        telemetry: DiagnosticConfig.developerDiagnostics ? {
             fragmentCount: selected.length,
             included: selected.map((fragment) => fragment.id),
             itemIntent,
@@ -195,7 +196,7 @@ async function assemble(input = {}) {
             contextSlice: merchantSlice ? 'merchant' : 'general',
             journalCount: journal.length,
             estimatedTokens: Math.min(hardMaxTokens, serializedCost)
-        }
+        } : { enabled: false }
     };
 }
 

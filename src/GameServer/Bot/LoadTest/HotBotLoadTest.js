@@ -203,6 +203,7 @@ const HotBotLoadTest = {
     stableSince: 0,
 
     start() {
+        if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
         if (this.started) return;
         this.started = true;
 

@@ -1,4 +1,5 @@
-const { parentPort } = require('node:worker_threads');
+const { parentPort, workerData } = require('node:worker_threads');
+process.env.BOT_DEVELOPER_DIAGNOSTICS = workerData?.developerDiagnostics === true ? 'true' : 'false';
 require('../../Global');
 const OfferQuery = require('../Bot/Economy/OfferQuery');
 const TableMirror = require('../Bot/Population/TableMirror');
@@ -102,10 +103,10 @@ parentPort.on('message', (message) => {
             const forbidden = Object.keys(require.cache).some((filename) =>
                 /[\\/]src[\\/]Database\.js$|[\\/]World[\\/]World\.js$|[\\/]Bot[\\/]BotManager\.js$/.test(filename));
             if (forbidden) throw new Error('clan planning worker loaded a live runtime dependency');
-            const startedAt = performance.now();
+            const startedAt = workerData?.developerDiagnostics ? performance.now() : 0;
             const { member, spots, warehouseRows, options } = payload;
             const plan = planner.planForMember(member, spots, warehouseRows, { ...options, throwOnError: true });
-            parentPort.postMessage({ id: message.id, result: { plan, durationMs: performance.now() - startedAt } });
+            parentPort.postMessage({ id: message.id, result: { plan, ...(workerData?.developerDiagnostics ? { durationMs: performance.now() - startedAt } : {}) } });
             return;
         } else {
             throw new Error('unknown clan worker message');

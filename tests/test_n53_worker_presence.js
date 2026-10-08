@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('assert');
 const path = require('path');
 const { Worker } = require('worker_threads');
@@ -134,7 +135,7 @@ parentPort.on('message', message => { if(message.nativeControl) post({nativeCont
     }
     try {
         await wait(message => message.type === 'ready' && message.payload.phase === 'loaded');
-        send('init', { config: { loopIntervalMs: 100000, heartbeatMs: 100000 } }, 'init');
+        send('init', { config: { developerDiagnostics: true, loopIntervalMs: 100000, heartbeatMs: 100000 } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running');
         await check('initial catalog readiness defers compact absent rows', async () => {
             const response = await rpc('worker_presence_request', { rows: [flat(full(99))] }, 'worker_presence_ack');

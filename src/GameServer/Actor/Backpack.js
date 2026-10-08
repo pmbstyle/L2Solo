@@ -1,3 +1,5 @@
+const DiagnosticConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+const ConsumptionDiagnostics = require('../Bot/Economy/ConsumptionDiagnostics');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BackpackModel  = invoke('GameServer/Model/Backpack');
@@ -76,7 +78,7 @@ class Backpack extends BackpackModel {
         });
     }
 
-    deleteItem(session, id, amount, callback = () => {}) {
+    deleteItem(session, id, amount, callback = () => {}, diagnosticReason = null) {
         if (session.actor.isDead()) {
             return;
         }
@@ -84,11 +86,13 @@ class Backpack extends BackpackModel {
         this.fetchItem(id, (item) => {
             if (item.fetchPetLocked?.()) return;
             const total = item.fetchAmount() - amount;
+            const diagnosticBefore = diagnosticReason && DiagnosticConfig.developerDiagnostics === true && session?.accountId?.startsWith?.('bot_') ? total + amount : null;
             this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
             if (total > 0) {
                 // Update memory state instantly
                 item.setAmount(total);
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
+                if (diagnosticBefore !== null) ConsumptionDiagnostics.hot(session, item.fetchSelfId(), diagnosticBefore, Math.max(0, total), diagnosticReason);
                 callback(item.fetchSelfId());
 
                 if (session?.persistenceMode !== 'ephemeral') {
@@ -101,6 +105,7 @@ class Backpack extends BackpackModel {
                 Item.bindInventory(this);
                 this.onInventoryChange?.(item.fetchSelfId());
                 session.dataSendToMe(ServerResponse.itemsList(this.fetchItems()));
+                if (diagnosticBefore !== null) ConsumptionDiagnostics.hot(session, item.fetchSelfId(), diagnosticBefore, Math.max(0, total), diagnosticReason);
                 callback(item.fetchSelfId());
 
                 if (session?.persistenceMode !== 'ephemeral') {
@@ -120,7 +125,9 @@ class Backpack extends BackpackModel {
         const found = this.items.find(item => item.fetchSelfId() === (selfId || plan.selfId));
         const cost = invoke('GameServer/Items/C4WeaponSA').soulshotCost(this.fetchEquippedWeapon());
         if (cost > 0 && found && found.fetchAmount() >= cost) {
+            const diagnosticBefore = DiagnosticConfig.developerDiagnostics === true && session?.accountId?.startsWith?.('bot_') ? found.fetchAmount() : null;
             this.deleteItem(session, found.fetchId(), cost, () => {
+                if (diagnosticBefore !== null) ConsumptionDiagnostics.hot(session, found.fetchSelfId(), diagnosticBefore, diagnosticBefore - cost, 'soulshot');
                 callback(true, this.shotChargeInfo(found.fetchSelfId()));
             });
         } else {
@@ -138,7 +145,9 @@ class Backpack extends BackpackModel {
         const found = this.items.find(item => item.fetchSelfId() === (selfId || plan.selfId));
         const cost = this.fetchShotCost('spiritshot');
         if (cost > 0 && found && found.fetchAmount() >= cost) {
+            const diagnosticBefore = DiagnosticConfig.developerDiagnostics === true && session?.accountId?.startsWith?.('bot_') ? found.fetchAmount() : null;
             this.deleteItem(session, found.fetchId(), cost, () => {
+                if (diagnosticBefore !== null) ConsumptionDiagnostics.hot(session, found.fetchSelfId(), diagnosticBefore, diagnosticBefore - cost, 'spiritshot');
                 callback(true, this.shotChargeInfo(found.fetchSelfId()));
             });
         } else {
@@ -634,14 +643,14 @@ class Backpack extends BackpackModel {
                 this.deleteItem(session, id, 1, () => {
                     const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
                     TeleportTo(session, session.actor, coords);
-                });
+                }, 'item_skill');
                 return;
             }
 
             if (itemSkill.consume) {
                 this.deleteItem(session, id, 1, () => {
                     this.applySelfItemSkill(session, skill);
-                });
+                }, 'potion');
                 return;
             }
 
@@ -675,7 +684,7 @@ class Backpack extends BackpackModel {
         this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
             this.applyPetFood(eater, feed);
             session.dataSendToMeAndOthers(ServerResponse.skillStarted(eater, eater.fetchId(), skill), eater);
-        });
+        }, 'item_skill');
         return true;
     }
 
@@ -752,7 +761,7 @@ class Backpack extends BackpackModel {
             }
             weapon.chargedFishShot = true;
             session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
-        });
+        }, 'item_skill');
         return true;
     }
 
@@ -784,7 +793,7 @@ class Backpack extends BackpackModel {
             else World.indexSpawnsInGrid?.();
             this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
                 session.dataSendToMeAndOthers(ServerResponse.npcInfo(npc), npc);
-            });
+            }, 'item_skill');
         });
 
         return true;
@@ -977,7 +986,7 @@ class Backpack extends BackpackModel {
                 } else {
                     this.clearManorSeedPending(target, session.actor, seedId);
                 }
-            });
+            }, 'item_skill');
         });
     }
 
@@ -1036,7 +1045,7 @@ class Backpack extends BackpackModel {
                     rng: () => Math.random(),
                     attack: { clearLoadedShot() {} }
                 });
-            });
+            }, 'item_skill');
         });
     }
 
@@ -1305,7 +1314,7 @@ class Backpack extends BackpackModel {
 
         if (itemSkill.consumeAtStart) {
             const consumeCount = skill.fetchSemantic().itemConsumeCount || itemSkill.consumeCount || 1;
-            this.deleteItem(session, id, consumeCount, startCast);
+            this.deleteItem(session, id, consumeCount, startCast, 'item_skill');
         } else {
             startCast();
         }

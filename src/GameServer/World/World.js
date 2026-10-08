@@ -682,7 +682,7 @@ const World = {
             BotManager.botTell(targetSession, session, availability.partyDecision
                 ? PersonaPartyDecisionPolicy.reply(availability.partyDecision)
                 : `I can't join right now: ${availability.reasonText}.`);
-            console.info(
+            if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                 'BotParty :: %s refused %s: %s distance=%s',
                 bot?.fetchName() || 'unknown',
                 actor?.fetchName() || 'unknown',
@@ -792,7 +792,7 @@ const World = {
                 BotSocialMemory.recordEvent(session, state, 'party_refused', availability.reason);
                 session.dataSendToMe(ServerResponse.actionFailed());
                 coldBotTell(session, state, `I can't join right now: ${availability.reasonText}.`);
-                console.info(
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                     'BotParty :: %s refused remote invite from %s: %s',
                     state.name || lookup,
                     actor?.fetchName() || 'unknown',
@@ -890,7 +890,7 @@ const World = {
                     return false;
                 }
 
-                console.info(
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                     'BotRemoteChat :: %s replied to %s reason=%s',
                     state.name || lookup,
                     actor?.fetchName() || 'unknown',
@@ -952,7 +952,7 @@ const World = {
                     coldBotTell(session, target.coldLifeState || target, result.reply);
                 }
                 if (!result.ok) session.dataSendToMe(ServerResponse.actionFailed());
-                console.info(
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
                     'BotParty :: command join request player=%s target=%s party=%s result=%s applied=%s',
                     actor.fetchName?.() || 'unknown',
                     speaker?.actor?.fetchName?.() || target.name || lookup || 'unknown',

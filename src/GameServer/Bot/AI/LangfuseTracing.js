@@ -52,6 +52,7 @@ function parseEnvFile(filename) {
 }
 
 function config(overrides = {}) {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return { enabled: false, debug: false, capturePayloads: false };
     const option = options.default.Langfuse || {};
     const fileEnv = parseEnvFile(option.envFile);
     const value = (key, fallback = '') => process.env[key] || fileEnv[key] || fallback;
@@ -72,7 +73,7 @@ function config(overrides = {}) {
     return {
         ...source,
         ...overrides,
-        enabled: bool(overrides.enabled, source.enabled),
+        enabled: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && bool(overrides.enabled, source.enabled),
         baseUrl: overrides.baseUrl || source.baseUrl,
         publicKey: overrides.publicKey || source.publicKey,
         secretKey: overrides.secretKey || source.secretKey,
@@ -100,6 +101,7 @@ function observationOutput(value, cfg) {
 }
 
 function observationStatus(value) {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return undefined;
     const telemetry = value?.llmTelemetry || value?.telemetry || {};
     const outcome = String(
         value?.traceOutcome || value?.outcome || value?.reason || telemetry.outcome || ''
@@ -220,6 +222,7 @@ function init(overrides = {}) {
 }
 
 function status() {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return { enabled: false, initialized: false };
     const cfg = config();
     return {
         configured: !!(cfg.publicKey && cfg.secretKey),
@@ -231,6 +234,9 @@ function status() {
 }
 
 function withObservation(name, input, metadata, work, asType = 'span') {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return work(null);
+    input = typeof input === 'function' ? input() : input;
+    metadata = typeof metadata === 'function' ? metadata() : metadata;
     const cfg = config();
     if (!initialized || !tracing?.startActiveObservation) return work(null);
     return tracing.startActiveObservation(String(name), async (observation) => {
@@ -266,11 +272,15 @@ function withObservation(name, input, metadata, work, asType = 'span') {
 }
 
 function withRootObservation(name, input, metadata, work, asType = 'span') {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return work(null);
     if (!otelContext?.with || !rootContext) return withObservation(name, input, metadata, work, asType);
     return otelContext.with(rootContext, () => withObservation(name, input, metadata, work, asType));
 }
 
 function startObservation(name, input, metadata, asType = 'span') {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return null;
+    input = typeof input === 'function' ? input() : input;
+    metadata = typeof metadata === 'function' ? metadata() : metadata;
     if (!initialized || !tracing?.startObservation) return null;
     const cfg = config();
     try {
@@ -285,6 +295,7 @@ function startObservation(name, input, metadata, asType = 'span') {
 }
 
 function activeTraceId() {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return null;
     try { return tracing?.getActiveTraceId?.() || null; } catch (_) { return null; }
 }
 

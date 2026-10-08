@@ -77,7 +77,7 @@ function normalizeData(data, candidates, group = 'party') {
             reason: 'invalid_bot_id',
             data
         };
-        invalid.traceOutput = { ...invalid, candidate: null };
+        invalid.traceOutput = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ ...invalid, candidate: null }) : null;
         return invalid;
     }
     const normalized = {
@@ -89,7 +89,7 @@ function normalizeData(data, candidates, group = 'party') {
         reason,
         data
     };
-    normalized.traceOutput = {
+    normalized.traceOutput = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
         ok: normalized.ok,
         route: normalized.route,
         candidateId: candidate?.id ?? null,
@@ -97,7 +97,7 @@ function normalizeData(data, candidates, group = 'party') {
         confidence: normalized.confidence,
         reason: normalized.reason,
         data: normalized.data
-    };
+    }) : null;
     return normalized;
 }
 
@@ -141,7 +141,7 @@ async function route(input = {}) {
     } : ROUTER_SCHEMA;
     const userPayload = prompt(input, candidates.map((candidate) => candidateCard(candidate, input.dialogueState, channel)), channel);
     const botId = playerId(input.playerSession);
-    const metadata = {
+    const metadata = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({
         event: `${group}_chat_route`,
         source: `${group}_router`,
         channel,
@@ -149,7 +149,7 @@ async function route(input = {}) {
         candidateCount: candidates.length,
         model: cfg.model,
         sessionId: `${group}-chat:${botId || 'unknown'}`
-    };
+    }) : null;
 
     return LangfuseTracing.withObservation(
         `${group}.router.generation`,

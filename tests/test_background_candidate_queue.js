@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true';
 const assert = require('assert');
 const Queue = require('../src/GameServer/Bot/Population/BackgroundCandidateQueue');
 

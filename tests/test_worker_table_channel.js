@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('assert');
 const path = require('path');
 const { Worker } = require('worker_threads');
@@ -314,7 +315,7 @@ async function coldWorkerRoundTrip() {
         await until((m) => m.type === 'ready' && m.payload.phase === 'loaded', 'load');
         send('catalog_page', { catalog: 'spots', rows: [], done: true });
         send('catalog_page', { catalog: 'npc_offers', rows: [], done: true });
-        send('init', { config: { heartbeatMs: 250 } });
+        send('init', { config: { developerDiagnostics: true, heartbeatMs: 250 } });
         await until((m) => m.type === 'ready' && m.payload.phase === 'running', 'init');
 
         // A table over 240 KB reaches the real worker in several valid pages.

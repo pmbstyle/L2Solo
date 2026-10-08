@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Contracts = invoke('GameServer/Bot/Simulation/SimulationContracts');
 const Events = invoke('GameServer/Bot/Simulation/SimulationEvents');
 
@@ -71,7 +72,7 @@ const SimulationKernel = {
                 module.start?.(this.context);
                 module.started = true;
             } catch (err) {
-                this.metrics.moduleErrors += 1;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.moduleErrors += 1);
                 throw new Error(`Simulation module ${module.id} failed to start: ${err.message}`);
             }
         }
@@ -83,8 +84,8 @@ const SimulationKernel = {
 
     propose(proposal, snapshot, now = Date.now()) {
         const result = Contracts.validateProposal(proposal, snapshot, now);
-        if (result.accepted) this.metrics.proposalsAccepted += 1;
-        else this.metrics.proposalsRejected += 1;
+        if (result.accepted) DiagnosticConfig.developerDiagnostics && (this.metrics.proposalsAccepted += 1);
+        else DiagnosticConfig.developerDiagnostics && (this.metrics.proposalsRejected += 1);
         return result;
     },
 
@@ -98,7 +99,7 @@ const SimulationKernel = {
                 try {
                     handler(event, this.context);
                 } catch (err) {
-                    this.metrics.moduleErrors += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.metrics.moduleErrors += 1);
                     utils.infoWarn('BotSim', 'module=%s event=%s failed: %s', source, event.type, err.message);
                 }
             });
@@ -106,6 +107,7 @@ const SimulationKernel = {
     },
 
     snapshot() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         const modules = Array.from(this.modules.values()).map((module) => ({
             id: module.id,
             requires: [...module.requires],

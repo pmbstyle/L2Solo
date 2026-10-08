@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
@@ -36,8 +37,9 @@ const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const plannedKitSlots = Number(stock.usePerHour > 0 && !warrior.inventory[stock.itemId]?.amount)
     + Number(native.stock('potions').usePerHour > 0 && !warrior.inventory[native.stock('potions').itemId]?.amount);
 const freeSlots = Math.max(0, Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
-const noHistoryT = withShots.stacks === null ? 2 : withShots.stacks === 0 ? 24
+const bagT = withShots.stacks === null ? 24 : withShots.stacks === 0 ? 24
     : Math.max(.5, Math.min(24, freeSlots / withShots.stacks));
+const noHistoryT = Math.min(2, bagT);
 const b = 1 - withoutShots.exp / withShots.exp;
 assert(b >= withShots.shots * stock.unitPrice / native.hourAdena);
 for (const commitment of [.1, .9]) {
@@ -46,7 +48,7 @@ for (const commitment of [.1, .9]) {
     assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
     assert.equal(own.benefitHours, b * noHistoryT);
 }
-for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], noHistoryT], [[22, .1], .5]]) {
+for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], bagT], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
     assert.equal(own.targetHours, hours); assert.equal(own.target, Math.ceil(use * hours));
 }

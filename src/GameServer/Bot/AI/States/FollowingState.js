@@ -55,6 +55,7 @@ const SUPPORT_APPROACH_REPATH_MS = 1500;
 const SUPPORT_TARGET_DRIFT = 120;
 
 function timedFollowingStage(name, callback, items = 1) {
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics !== true) return callback();
     const startedAt = performance.now();
     try {
         return callback();
@@ -367,6 +368,7 @@ function recordRoleDecision(session, bot, action, reason, extra = {}) {
 
     session.roleDecision = current;
 
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return;
     const signature = roleDecisionSignature(current);
     const shouldLog = !previous ||
         roleDecisionSignature(previous) !== signature ||
@@ -380,7 +382,7 @@ function recordRoleDecision(session, bot, action, reason, extra = {}) {
             current.threatSource && `source=${current.threatSource}`,
             current.phase && `phase=${current.phase}`
         ].filter(Boolean).join(' ');
-        console.info("BotRole :: %s %s/%s (%s)%s", bot.fetchName(), action, reason, role, details ? ` ${details}` : '');
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotRole :: %s %s/%s (%s)%s", bot.fetchName(), action, reason, role, details ? ` ${details}` : '');
     }
 }
 
@@ -823,7 +825,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
             key: `resource-delivery-failed:${bot.fetchId()}:${delivery.purchasedAt}`,
             templates: [`I brought ${delivery.itemName}, but could not open trade (${trade.reason}).`]
         });
-        WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
             botId: bot.fetchId(),
             playerId: delivery.playerId,
             amount: delivery.amount
@@ -837,7 +839,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         key: `resource-delivery:${bot.fetchId()}:${delivery.purchasedAt}`,
         templates: [`I brought ${delivery.amount} ${delivery.itemName}. Please confirm the trade.`]
     });
-    WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(delivery.workflowId, 'trade', {
         botId: bot.fetchId(),
         playerId: delivery.playerId,
         amount: delivery.amount,

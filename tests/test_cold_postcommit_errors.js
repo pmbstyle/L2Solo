@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 const assert = require('node:assert/strict');
 require('../src/Global');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -5,6 +6,9 @@ const Events = invoke('GameServer/Bot/Population/BotLifeEvents');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const Chat = invoke('GameServer/Bot/Population/BotGlobalChat');
+const Consumption = invoke('GameServer/Bot/Economy/ConsumptionDiagnostics');
+let consumptionRows = [];
+const originalConsumptionPublish = Consumption.publish;
 const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdSimulationCoordinator } = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const originals = [];
@@ -46,11 +50,13 @@ async function run() {
     assert.equal(ack.reason, 'command_applied');
     assert.equal(ack.retryAfterMs, undefined);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
-    const entry = { nextState: state, proposal: { result: { events: [] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
+    Consumption.publish = (...args) => consumptionRows.push(args);
+    const entry = { nextState: state, proposal: { proposalId: 'consume-proposal', token: { revision: 4 }, commandId: 'consume-command', sequence: 9, result: { events: [], consumptionDiagnostics: [[1539, 5, 3, 1]] }, economyPlan: { sell: [], withdraw: [], buyAds: [], travel: null },
         partyResolution: { party: { partyId: 2, status: 'active', memberIds: [1] } } } };
     logs.length = 0;
-    await coordinator.afterCommit(entry);
+    await coordinator.afterCommit(entry, { revision: 5 });
     assert.equal(partyWrites, 1); assert.equal(resolves, 1); assert.equal(announcements, 1);
+    assert.deepEqual(consumptionRows[0], [1, [[1539, 5, 3, 1]], { source: 'cold_commit', commandId: 'consume-command', proposalId: 'consume-proposal', revision: 5, sequence: 9 }]);
     assert.equal(logs.filter(line => line.includes('postcommit improvement failed')).length, 1);
     coordinator.economyDecisions.decided = () => null;
     stub(Events, 'recordMany', () => { throw Error('journal_probe'); });
@@ -73,8 +79,14 @@ async function run() {
     assert.equal(resolves, 4); assert.equal(announcements, 4);
     assert.equal(coordinator.counters.afterCommitStepErrors.clanEvents, 1);
     assert.equal(logs.filter(line => line.includes('postcommit clanEvents failed')).length, 1);
+    await coordinator.afterCommit(entry, { row: { simulationRevision: 6 } });
+    assert.equal(consumptionRows.at(-1)[2].revision, 6, 'row-form durable revision is also accepted authority');
+    invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = false;
+    Consumption.publish = () => { throw Error('consumption publisher called off'); };
+    await coordinator.afterCommit(entry);
     console.log('Applied commands and independent post-commit steps survive synchronous failures');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
+    Consumption.publish = originalConsumptionPublish;
     for (const restore of originals.reverse()) restore();
 });

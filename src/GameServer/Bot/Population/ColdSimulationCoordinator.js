@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
 const path = require('path');
 const { randomUUID } = require('crypto');
@@ -192,7 +193,7 @@ class ColdSimulationCoordinator {
             send: payload => !this.stopping && this.ready && !!this.post('economy_route_request', payload),
             prepared: (id, key) => {
                 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-                Economy.forgetContext(id);
+                Economy.forgetContext(id, 'state_publication');
                 const record = invoke('GameServer/World/World').registeredActorById(id);
                 const session = record?.session;
                 if (record && !record.retired && session?.actor === record.actor
@@ -306,10 +307,10 @@ class ColdSimulationCoordinator {
             commit: (entries) => ColdSimulationOwner.commitAndReleaseBatch(entries),
             afterCommit: (entry, result) => this.afterCommit(entry, result),
             onResults: (results) => {
-                const startedAt = Date.now();
+                const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 this.handleCommitResults(results)
                     .catch((error) => this.recordError(error))
-                    .finally(() => this.queue.recordStage('ackBuild', Date.now() - startedAt));
+                    .finally(() => { if (Config.developerDiagnostics) this.queue.recordStage('ackBuild', Date.now() - startedAt); });
             },
             onPause: () => this.setPauseReason('commit_queue_high_water', true),
             onResume: () => this.setPauseReason('commit_queue_high_water', false),
@@ -403,14 +404,14 @@ class ColdSimulationCoordinator {
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = Date.now();
         const worker = new this.WorkerClass(this.workerPath, {
-            workerData: { workerEpoch: this.workerEpoch },
+            workerData: { workerEpoch: this.workerEpoch, developerDiagnostics: Config.developerDiagnostics === true },
             name: 'l2node-cold-simulation',
             resourceLimits: { maxOldGenerationSizeMb: Math.max(128, Number(Config.coldWorkerHeapMb) || 256) }
         });
         this.worker = worker;
         Metrics.beginColdSafetyEpoch(this.workerEpoch);
         this.attachSafetyTransport();
-        this.counters.workersStarted += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workersStarted += 1);
         const epoch = this.workerEpoch;
         worker.on('message', (message) => { this.onMessage(message, worker, epoch); });
         worker.on('error', (error) => {
@@ -428,8 +429,8 @@ class ColdSimulationCoordinator {
     }
 
     recordInvalid(reason = 'unknown') {
-        this.counters.invalidMessages += 1;
-        this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.invalidMessages += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.invalidReasons[reason] = Number(this.counters.invalidReasons[reason] || 0) + 1);
     }
 
     post(type, payload = {}, msgId = null, bytes = null) {
@@ -446,8 +447,8 @@ class ColdSimulationCoordinator {
             this.recordInvalid(`out_${type}_${valid.reason}`);
             return null;
         }
-        this.counters.messagesOut += 1;
-        this.counters.bytesOut += valid.bytes;
+        DiagnosticConfig.developerDiagnostics && (this.counters.messagesOut += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.bytesOut += valid.bytes);
         message.bytes = valid.bytes;
         this.worker.postMessage(message);
         return message.msgId;
@@ -527,7 +528,7 @@ class ColdSimulationCoordinator {
 
     async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
-        if (message?.type === 'economy_diagnostics' && Config.economyDiagnostics && message.epoch === epoch) {
+        if (message?.type === 'economy_diagnostics' && Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch) {
             if (!Number.isSafeInteger(message.id) || message.id <= 0) return;
             const diagnostics = require('../Economy/EconomyDiagnostics');
             const accepted = diagnostics.accept(message.records);
@@ -537,7 +538,7 @@ class ColdSimulationCoordinator {
                 diagnostics.noteDropped(dropped - this.diagnosticDropped); this.diagnosticDropped = dropped;
             }
             worker.postMessage({ type: 'economy_diagnostics_ack', epoch, id: message.id,
-                accepted: accepted ? message.records.length : 0 }); return;
+                accepted: Number.isSafeInteger(accepted) ? accepted : 0 }); return;
         }
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
@@ -547,11 +548,11 @@ class ColdSimulationCoordinator {
         // A restarted worker numbers its requests from 1 again (claim:1,
         // release:1): a duplicate is the same id from the same worker epoch.
         if (!this.remember(`${epoch}:${message.msgId}`)) {
-            this.counters.duplicateMessages += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.duplicateMessages += 1);
             return;
         }
-        this.counters.messagesIn += 1;
-        this.counters.bytesIn += valid.bytes;
+        DiagnosticConfig.developerDiagnostics && (this.counters.messagesIn += 1);
+        DiagnosticConfig.developerDiagnostics && (this.counters.bytesIn += valid.bytes);
         const payload = message.payload || {};
         switch (message.type) {
         case 'economy_route_result':
@@ -645,7 +646,7 @@ class ColdSimulationCoordinator {
             this.tableChannel.resync(this, message.workerEpoch, payload.names || []);
             break;
         case 'fault':
-            this.counters.workerErrors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
             utils.infoWarn('ColdWorker', 'worker fault: %s%s', payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
             break;
         default:
@@ -669,7 +670,8 @@ class ColdSimulationCoordinator {
 
     workerConfig() {
         return {
-            ...(Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: Config.economyDiagnosticsBotIds } : {}),
+            developerDiagnostics: Config.developerDiagnostics === true,
+            ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: Config.economyDiagnosticsBotIds } : {}),
             coldHonestTravel: Config.coldHonestTravel,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
@@ -1124,8 +1126,8 @@ class ColdSimulationCoordinator {
             ...(options.priority ? { priority: options.priority } : {})
         };
         if (!this.post('snapshot_page', payload, null, options.bytes)) return false;
-        this.counters.snapshotsSent += rows.length;
-        this.counters.snapshotPages += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotsSent += rows.length);
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotPages += 1);
         return true;
     }
 
@@ -1149,7 +1151,7 @@ class ColdSimulationCoordinator {
             if (!await this.sendSnapshotPage(rows, { initial: false, priority, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
-            this.counters.snapshotYields += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
             await yieldToLoop();
             return true;
         };
@@ -1194,7 +1196,7 @@ class ColdSimulationCoordinator {
             if (!await this.sendSnapshotPage(rows, { done, initial: true, bytes })) return false;
             rowsSent += rows.length;
             pagesSent += 1;
-            this.counters.snapshotYields += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
             await yieldToLoop();
             return true;
         };
@@ -1204,7 +1206,7 @@ class ColdSimulationCoordinator {
         let sliceStartedAt = Date.now();
         for (let stateIndex = 0; stateIndex < states.length; stateIndex++) {
             if (Date.now() - sliceStartedAt >= SNAPSHOT_SLICE_MS) {
-                this.counters.snapshotYields += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.snapshotYields += 1);
                 await yieldToLoop();
                 sliceStartedAt = Date.now();
             }
@@ -1272,7 +1274,7 @@ class ColdSimulationCoordinator {
                     party.partyId,
                     reason
                 );
-                console.info('ColdWorker :: dissolved invalid background party %s reason=%s declaredMembers=%d releasedMembers=%d',
+                Config.developerDiagnostics && console.info('ColdWorker :: dissolved invalid background party %s reason=%s declaredMembers=%d releasedMembers=%d',
                     party.partyId,
                     reason,
                     party.memberIds?.length || 0,
@@ -1283,12 +1285,12 @@ class ColdSimulationCoordinator {
     }
 
     startSnapshotJob(mode, work, pressure = {}) {
-        const startedAt = Date.now();
+        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
         this.snapshotInFlightInitial = mode === 'full';
         const job = (async () => {
             try {
                 const result = await work();
-                this.snapshotLast = {
+                if (Config.developerDiagnostics) this.snapshotLast = {
                     mode,
                     rows: Number(result?.rowsSent || 0),
                     pages: Number(result?.pagesSent || 0),
@@ -1300,7 +1302,7 @@ class ColdSimulationCoordinator {
                 };
                 return result;
             } catch (error) {
-                this.snapshotLast = {
+                if (Config.developerDiagnostics) this.snapshotLast = {
                     mode,
                     rows: 0,
                     pages: 0,
@@ -1341,7 +1343,7 @@ class ColdSimulationCoordinator {
                     break;
                 }
                 entries.forEach((entry) => this.snapshotQueue.complete(entry, true));
-                this.counters.snapshotCriticalRuns += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.snapshotCriticalRuns += 1);
             }
             return true;
         })();
@@ -1369,7 +1371,7 @@ class ColdSimulationCoordinator {
             return false;
         }
         if (initial) {
-            this.counters.snapshotFullRuns += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotFullRuns += 1);
             return this.startSnapshotJob('full', () => this.sendFullSnapshot());
         }
 
@@ -1377,8 +1379,8 @@ class ColdSimulationCoordinator {
         const pressure = this.snapshotPressure();
         const plan = this.snapshotQueue.takeNormal(pressure);
         if (plan.deferred) {
-            this.counters.snapshotDeferrals += 1;
-            this.snapshotLast = {
+            DiagnosticConfig.developerDiagnostics && (this.counters.snapshotDeferrals += 1);
+            if (Config.developerDiagnostics) this.snapshotLast = {
                 mode: 'deferred',
                 rows: 0,
                 pages: 0,
@@ -1402,7 +1404,7 @@ class ColdSimulationCoordinator {
             lease = admission.lease;
         }
 
-        this.counters.snapshotDirtyRuns += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.snapshotDirtyRuns += 1);
         return this.startSnapshotJob('dirty', async () => {
             const startedAt = Date.now();
             try {
@@ -1665,20 +1667,25 @@ class ColdSimulationCoordinator {
             occupancy,
             Date.now()
         );
-        if (admission.checked && !admission.admitted) this.counters.routeCapacityRejects += 1;
+        if (admission.checked && !admission.admitted) DiagnosticConfig.developerDiagnostics && (this.counters.routeCapacityRejects += 1);
         return admission.state;
     }
 
     async step(name, characterId, work) {
         try { return await work(); }
         catch (error) {
-            this.counters.afterCommitStepErrors[name] += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.afterCommitStepErrors[name] += 1);
             utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error?.message || error);
             return undefined;
         }
     }
 
     async afterCommit(entry, committed = {}) {
+        if (Config.developerDiagnostics === true) require('../Economy/ConsumptionDiagnostics').publish(
+            entry.nextState.characterId, entry.proposal.result?.consumptionDiagnostics, {
+                source: 'cold_commit', commandId: entry.proposal.commandId, proposalId: entry.proposal.proposalId,
+                revision: committed.revision ?? committed.row?.simulationRevision ?? entry.proposal.token?.revision, sequence: entry.proposal.sequence
+            });
         const id = entry.nextState.characterId;
         const source = entry.proposal[PROPOSAL_SOURCE];
         const sourceCurrent = () => !this.stopping && (!source || source.worker === this.worker && source.epoch === this.workerEpoch);
@@ -1719,7 +1726,7 @@ class ColdSimulationCoordinator {
         }
         await this.step('equipment', id, () => LifeState.enqueueEquipmentGoalAdvanceForState(state));
         if (sourceCurrent() && entry.proposal.economyPlan) {
-            const started = performance.now();
+            const started = Config.developerDiagnostics ? performance.now() : 0;
             const decision = await this.step('improvement', id, () => this.economyDecisions.decided(state));
             // Native moves publish a new timestamp. Hold the worker's one
             // decision across this plan exactly as the town command does.
@@ -1732,8 +1739,8 @@ class ColdSimulationCoordinator {
                 state = LifeState.cachedState(id) || applied?.state || state;
             } finally {
                 this.economyDecisions.release(id);
-                this.economyPlanCount++;
-                this.economyPlanTimes.push(performance.now() - started);
+                if (Config.developerDiagnostics) this.economyPlanCount++;
+                if (Config.developerDiagnostics) this.economyPlanTimes.push(performance.now() - started);
                 if (this.economyPlanTimes.length > 256) this.economyPlanTimes.shift();
             }
         }
@@ -1792,7 +1799,7 @@ class ColdSimulationCoordinator {
             await this.step('buff', id, () => invoke('GameServer/Bot/Economy/ColdBuffService')
                 .applyOffer(entry.proposal.buffOffer, { beforeWrite }));
         }
-        await this.step('metrics', id, () => {
+        if (Config.developerDiagnostics) await this.step('metrics', id, () => {
             Metrics.recordBackgroundResolve();
             Metrics.recordCombat(entry.proposal.result?.debug);
             Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
@@ -1900,7 +1907,7 @@ class ColdSimulationCoordinator {
             const results = [];
             for (const { request, identity } of requests) {
                 if (!sourceCurrent()) return;
-                this.counters.commands += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.commands += 1);
                 try {
                     const state = LifeState.cachedState(request.characterId);
                     const id = identity.characterId;
@@ -1934,7 +1941,7 @@ class ColdSimulationCoordinator {
                     });
                 } catch (error) {
                     if (!sourceCurrent()) return;
-                    this.counters.commandErrors += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.counters.commandErrors += 1);
                     const state = LifeState.cachedState(request.characterId);
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
                         ...(state ? { state } : {}) });
@@ -1992,7 +1999,7 @@ class ColdSimulationCoordinator {
         if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
         this.fencedBots.add(id);
         this.economyRoutes.forget(id);
-        this.counters.fences += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.fences += 1);
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });
         if (!msgId) return { ok: false, reason: 'fence_send_failed' };
         let timer = null;
@@ -2010,7 +2017,7 @@ class ColdSimulationCoordinator {
             await this.queue.flushCharacter(id);
             return { ok: true, reason: 'fenced', ...fenced };
         } catch (error) {
-            this.counters.fenceTimeouts += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {
@@ -2171,7 +2178,7 @@ class ColdSimulationCoordinator {
     }
 
     onWorkerError(error) {
-        this.counters.workerErrors += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
         this.recordError(error);
     }
 
@@ -2183,7 +2190,7 @@ class ColdSimulationCoordinator {
         this.projectionRetention.reset();
         this.economyDecisions.clear();
         this.economyRoutes.clear();
-        this.counters.workerExits += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerExits += 1);
         this.tableChannel.detach(this);
         this.worker = null;
         this.workerMaxInFlight = null;
@@ -2197,7 +2204,7 @@ class ColdSimulationCoordinator {
         const delays = [1000, 2000, 5000, 10000, 30000];
         const restartDelay = delays[Math.min(this.restartCount, delays.length - 1)];
         this.restartCount += 1;
-        this.counters.workerRestarts += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.workerRestarts += 1);
         utils.infoWarn('ColdWorker', 'worker exited code=%d; restarting in %dms', Number(code || 0), restartDelay);
         this.restartTimer = setTimeout(() => this.startWorker(), restartDelay);
         this.restartTimer.unref?.();
@@ -2273,17 +2280,17 @@ class ColdSimulationCoordinator {
 
     snapshot() {
         return {
-            ...this.counters,
+            ...(Config.developerDiagnostics ? this.counters : { diagnosticsEnabled: false }),
             started: this.started,
             ready: this.ready,
             snapshotsLoaded: this.snapshotsLoaded,
             epoch: this.workerEpoch,
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
-            competitionActions: this.competitionActions.snapshot(),
-            economyDecisions: { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size },
-            partyReviews: this.partyReviews,
-            economyPlans: { count: this.economyPlanCount, perCommit: this.economyPlanCount / Math.max(1, this.queue.snapshot().committed || 0), p95Ms: [...this.economyPlanTimes].sort((a, b) => a - b)[Math.max(0, Math.ceil(this.economyPlanTimes.length * .95) - 1)] || 0 },
+            competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,
+            economyDecisions: Config.developerDiagnostics ? { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size } : null,
+            partyReviews: Config.developerDiagnostics ? this.partyReviews : null,
+            economyPlans: Config.developerDiagnostics ? { count: this.economyPlanCount, perCommit: this.economyPlanCount / Math.max(1, this.queue.snapshot().committed || 0), p95Ms: [...this.economyPlanTimes].sort((a, b) => a - b)[Math.max(0, Math.ceil(this.economyPlanTimes.length * .95) - 1)] || 0 } : null,
             queue: this.queue.snapshot(),
             snapshots: {
                 ...this.snapshotQueue.snapshot(),
@@ -2291,12 +2298,14 @@ class ColdSimulationCoordinator {
                 inFlightInitial: this.snapshotInFlightInitial,
                 refreshPending: this.snapshotRefreshPending,
                 criticalInFlight: !!this.criticalSnapshotInFlight,
+                ...(Config.developerDiagnostics ? {
                 last: { ...this.snapshotLast },
                 fullRuns: this.counters.snapshotFullRuns,
                 dirtyRuns: this.counters.snapshotDirtyRuns,
                 criticalRuns: this.counters.snapshotCriticalRuns,
                 yields: this.counters.snapshotYields,
                 deferrals: this.counters.snapshotDeferrals
+                } : {})
             }
         };
     }

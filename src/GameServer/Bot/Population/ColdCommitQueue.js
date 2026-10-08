@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const Protocol = require('./ColdSimulationProtocol');
 const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
@@ -104,7 +105,7 @@ class ColdCommitQueue {
                 }
                 this.bytes -= previous.bytes;
                 queued.queuedAt = previous.queuedAt;
-                this.counters.coalesced += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.coalesced += 1);
             }
             this.p2.set(Number(proposal.characterId), queued);
         } else {
@@ -112,10 +113,10 @@ class ColdCommitQueue {
             lane.push(queued);
         }
         this.bytes += bytes;
-        this.counters.enqueued += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.enqueued += 1);
 
         if (this.size() >= this.maxEntries || this.bytes >= this.maxBytes) {
-            this.counters.highWaterHits += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.highWaterHits += 1);
             this.pause();
         } else if (this.size() >= this.highWater) {
             this.pause();
@@ -128,14 +129,14 @@ class ColdCommitQueue {
     pause() {
         if (this.paused) return;
         this.paused = true;
-        this.counters.pauses += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.pauses += 1);
         this.onPause();
     }
 
     maybeResume() {
         if (!this.paused || this.size() > this.lowWater || this.bytes > this.maxBytes / 2) return;
         this.paused = false;
-        this.counters.resumes += 1;
+        DiagnosticConfig.developerDiagnostics && (this.counters.resumes += 1);
         this.onResume();
     }
 
@@ -221,8 +222,8 @@ class ColdCommitQueue {
                 return await work();
             } catch (error) {
                 if (!/SQLITE_BUSY|database is locked/i.test(error?.message || '') || attempt >= waits.length) throw error;
-                this.counters.busy += 1;
-                this.counters.retries += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.busy += 1);
+                DiagnosticConfig.developerDiagnostics && (this.counters.retries += 1);
                 await delay(waits[attempt] + Math.floor(Math.random() * 10));
                 attempt += 1;
             }
@@ -234,7 +235,7 @@ class ColdCommitQueue {
         let batch = this.takeBatch(force);
         let earlyLease = null;
         if (!batch.length && this.capacityBlocked && this.size() && this.now() >= this.nextEarlyAttemptAt) {
-            this.counters.earlyAttempts += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.earlyAttempts += 1);
             this.nextEarlyAttemptAt = this.now() + 100;
             earlyLease = this.admitEarlyFlush();
             if (earlyLease) {
@@ -243,9 +244,9 @@ class ColdCommitQueue {
                 const rowLimit = Math.min(this.maxRows, 4, Math.max(1, Math.floor(Number(earlyLease.budgetMs || 8) / EARLY_COMMIT_ROW_BUDGET_MS)));
                 batch = this.takeBatch(true, rowLimit);
                 if (batch.length) this.lastBatchReason = 'capacity';
-                else this.counters.earlyEmpty += 1;
+                else DiagnosticConfig.developerDiagnostics && (this.counters.earlyEmpty += 1);
             } else {
-                this.counters.earlyDenied += 1;
+                DiagnosticConfig.developerDiagnostics && (this.counters.earlyDenied += 1);
             }
         }
         if (!batch.length) {
@@ -254,7 +255,7 @@ class ColdCommitQueue {
         }
         this.flushing = true;
         const reason = this.lastBatchReason || 'unknown';
-        this.flushReasons[reason] = Number(this.flushReasons[reason] || 0) + 1;
+        if (DiagnosticConfig.developerDiagnostics) this.flushReasons[reason] = Number(this.flushReasons[reason] || 0) + 1;
         batch.forEach((entry) => { this.bytes = Math.max(0, this.bytes - entry.bytes); });
         const startedAt = this.now();
         let results = [];
@@ -274,43 +275,43 @@ class ColdCommitQueue {
                     results.push({ ok: false, characterId: proposal.characterId, reason: error?.message || 'prepare_error', proposal });
                 }
             }
-            this.recordStage('prepare', this.now() - startedAt);
+            DiagnosticConfig.developerDiagnostics && this.recordStage('prepare', this.now() - startedAt);
             if (prepared.length) {
-                const commitStartedAt = this.now();
+                const commitStartedAt = DiagnosticConfig.developerDiagnostics ? this.now() : 0;
                 let committed;
                 try {
                     committed = await this.retryBusy(() => this.commit(prepared));
                 } finally {
                     // Includes database queueing and busy retries, not just SQL execution.
-                    this.recordStage('commitCall', this.now() - commitStartedAt);
+                    DiagnosticConfig.developerDiagnostics && this.recordStage('commitCall', this.now() - commitStartedAt);
                 }
                 const byId = new Map(prepared.map((entry) => [Number(entry.nextState.characterId), entry]));
                 for (const result of committed || []) {
                     const entry = byId.get(Number(result.characterId));
                     if (result.ok) {
-                        const afterStartedAt = this.now();
+                        const afterStartedAt = DiagnosticConfig.developerDiagnostics ? this.now() : 0;
                         try {
                             await this.afterCommit(entry, result);
                         } catch (error) {
                             // Persistence already succeeded. A failed journal or
                             // world notification must never become a rejected ACK.
-                            this.counters.errors += 1;
+                            DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1);
                             result.afterCommitError = error?.message || 'after_commit_error';
                         } finally {
-                            afterCommitMs += this.now() - afterStartedAt;
+                            if (DiagnosticConfig.developerDiagnostics) afterCommitMs += this.now() - afterStartedAt;
                         }
-                        this.counters.committed += 1;
+                        DiagnosticConfig.developerDiagnostics && (this.counters.committed += 1);
                     } else if (String(result.reason || '').includes('stale') || ['lease_changed', 'owner_changed'].includes(result.reason)) {
-                        this.counters.stale += 1;
+                        DiagnosticConfig.developerDiagnostics && (this.counters.stale += 1);
                     } else {
-                        this.counters.rejected += 1;
+                        DiagnosticConfig.developerDiagnostics && (this.counters.rejected += 1);
                     }
                     results.push({ ...result, proposal: entry?.proposal, nextState: entry?.nextState });
                 }
             }
-            this.counters.flushes += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.flushes += 1);
         } catch (error) {
-            this.counters.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1);
             results.push(...batch.map((proposal) => ({
                 ok: false,
                 characterId: proposal.characterId,
@@ -318,13 +319,15 @@ class ColdCommitQueue {
                 proposal
             })));
         } finally {
-            this.recordStage('afterCommit', afterCommitMs);
+            DiagnosticConfig.developerDiagnostics && this.recordStage('afterCommit', afterCommitMs);
             if (earlyLease) this.completeEarlyFlush(earlyLease, this.now() - startedAt);
             if (!this.size()) this.capacityBlocked = false;
+            if (DiagnosticConfig.developerDiagnostics) {
             this.samples.commit.push(this.now() - startedAt);
             if (this.samples.commit.length > 256) this.samples.commit.shift();
             this.samples.queue.push(...batch.map((entry) => startedAt - entry.queuedAt));
             if (this.samples.queue.length > 512) this.samples.queue.splice(0, this.samples.queue.length - 512);
+            }
             this.flushing = false;
             this.maybeResume();
         }
@@ -375,7 +378,7 @@ class ColdCommitQueue {
         const result = results?.[0] || { ok: false, characterId: id, reason: 'missing_commit_result' };
         if (result.ok) {
             try { await this.afterCommit({ proposal, token: proposal.token, nextState }, result); }
-            catch (error) { this.counters.errors += 1; result.afterCommitError = error?.message || 'after_commit_error'; }
+            catch (error) { DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1); result.afterCommitError = error?.message || 'after_commit_error'; }
         }
         this.onResults([{ ...result, proposal, nextState }]);
         return { ...result, proposal, nextState };
@@ -394,6 +397,7 @@ class ColdCommitQueue {
     }
 
     recordStage(stage, durationMs) {
+        if (!DiagnosticConfig.developerDiagnostics) return;
         const samples = this.stageSamples[stage];
         if (!samples) return;
         samples.push(Math.max(0, Number(durationMs) || 0));
@@ -405,7 +409,7 @@ class ColdCommitQueue {
         const queued = [...this.p0, ...this.p1, ...this.p2.values()];
         const oldestAt = queued.reduce((oldest, entry) => Math.min(oldest, Number(entry.queuedAt || now)), now);
         return {
-            ...this.counters,
+            ...(DiagnosticConfig.developerDiagnostics ? this.counters : { diagnosticsEnabled: false }),
             depth: this.size(),
             bytes: this.bytes,
             p0: this.p0.length,
@@ -414,12 +418,14 @@ class ColdCommitQueue {
             oldestMs: queued.length ? Math.max(0, now - oldestAt) : 0,
             paused: this.paused,
             flushing: this.flushing,
+            ...(DiagnosticConfig.developerDiagnostics ? {
             flushReasons: { ...this.flushReasons },
             stages: Object.fromEntries(Object.entries(this.stageSamples).map(([stage, samples]) => [stage, {
                 count: samples.length, p95Ms: percentile(samples)
             }])),
             commitP95Ms: percentile(this.samples.commit),
             queueP95Ms: percentile(this.samples.queue)
+            } : {})
         };
     }
 }

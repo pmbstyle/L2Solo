@@ -30,7 +30,7 @@ if (!process.argv.includes('--gc-child')) {
     worker.on('error', error => { clearTimeout(timer); console.error(error); process.exitCode = 1; });
     worker.on('message', message => {
         if (message.type === 'ready' && message.payload.phase === 'loaded') {
-            worker.postMessage(Protocol.envelope('init', epoch, { config: { loopIntervalMs: 1000 } }, 'init'));
+            worker.postMessage(Protocol.envelope('init', epoch, { config: { loopIntervalMs: 1000, developerDiagnostics: true } }, 'init'));
         }
         if (message.type === 'ready' && message.payload.phase === 'running' && !requested) {
             requested = true; worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'probe'), heapProbe: true });

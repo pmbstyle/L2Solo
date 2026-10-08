@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Policy = require('./Policy');
 const ReviewEvents = require('../Clan/ClanReviewEvents');
 const HOUR = 60 * 60 * 1000;
@@ -12,6 +13,7 @@ let nextDuesAt = 0;
 const duesPasses = new Map();
 const financeSamples = [];
 function financeSummary() {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     const sorted = [...financeSamples].sort((a, b) => a - b);
     return { samples: sorted.length, p95Ms: sorted.length ? sorted[Math.ceil(sorted.length * 0.95) - 1] : 0 };
 }
@@ -119,7 +121,7 @@ async function tick() {
         refresh(await db.tickClanHalls());
         if (!invoke('GameServer/Clan/ClanSimulationConfig').enabled) return;
         const deadline = Date.now() + 40;
-        const financeStarted = performance.now();
+        const financeStarted = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
         try {
             await db.planClanHallFinanceBatch([...financeDirty].slice(0, 4), {
                 deadline,
@@ -128,7 +130,7 @@ async function tick() {
                 failed: id => { financeDirty.add(id); }
             });
         } finally {
-            financeSamples.push(performance.now() - financeStarted);
+            if (DiagnosticConfig.developerDiagnostics) financeSamples.push(performance.now() - financeStarted);
             if (financeSamples.length > 128) financeSamples.shift();
         }
         // Hourly dues are a real payment deadline, independent of planning.

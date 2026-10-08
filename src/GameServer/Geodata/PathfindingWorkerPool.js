@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const os = require('os');
 const path = require('path');
 const { Worker } = require('worker_threads');
@@ -14,7 +15,7 @@ class BoundedPathfindingWorkerPool {
         this.size = Math.max(1, Math.min(2, Number(options.size) || Math.max(1, available - 1)));
         this.queueLimit = Math.max(this.size, Number(options.queueLimit) || 128);
         this.workerPath = options.workerPath || path.join(__dirname, 'PathfindingWorker.js');
-        this.workerFactory = options.workerFactory || ((workerPath) => new Worker(workerPath));
+        this.workerFactory = options.workerFactory || ((workerPath) => new Worker(workerPath, { workerData: { developerDiagnostics: invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true } }));
         this.restartLimit = Math.max(0, Number(options.restartLimit) || 3);
         this.workers = [];
         this.restartAttempts = [];
@@ -78,11 +79,11 @@ class BoundedPathfindingWorkerPool {
                 !lowest || queued.priority < lowest.priority ? queued : lowest
             ), null);
             if (!victim || victim.priority >= priority) {
-                this.metrics.rejected += 1;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.rejected += 1);
                 return Promise.reject(taskError('path worker queue is full', 'QUEUE_FULL'));
             }
             this.queue.splice(this.queue.indexOf(victim), 1);
-            this.metrics.preempted += 1;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.preempted += 1);
             this.finishTask(victim, null, taskError('path request preempted by higher priority work', 'PATH_PREEMPTED'));
         }
 
@@ -97,7 +98,7 @@ class BoundedPathfindingWorkerPool {
             cancelled: false,
             settled: false,
             timer: null,
-            queuedAt: Date.now(),
+            queuedAt: DiagnosticConfig.developerDiagnostics ? Date.now() : null,
             cancelFlag: new Int32Array(new SharedArrayBuffer(4)),
             resolve: null,
             reject: null
@@ -112,8 +113,8 @@ class BoundedPathfindingWorkerPool {
         if (key) this.latestByKey.set(key, id);
         this.queue.push(task);
         this.queue.sort((first, second) => second.priority - first.priority || first.id - second.id);
-        this.metrics.queued += 1;
-        this.metrics.maxQueue = Math.max(this.metrics.maxQueue, this.queue.length);
+        DiagnosticConfig.developerDiagnostics && (this.metrics.queued += 1);
+        DiagnosticConfig.developerDiagnostics && (this.metrics.maxQueue = Math.max(this.metrics.maxQueue, this.queue.length));
         this.dispatch();
         return promise;
     }
@@ -135,7 +136,7 @@ class BoundedPathfindingWorkerPool {
         if (!task || task.cancelled) return;
         task.cancelled = true;
         Atomics.store(task.cancelFlag, 0, 1);
-        this.metrics.stale += 1;
+        DiagnosticConfig.developerDiagnostics && (this.metrics.stale += 1);
         if (task.state === 'queued') {
             const index = this.queue.indexOf(task);
             if (index >= 0) this.queue.splice(index, 1);
@@ -157,7 +158,7 @@ class BoundedPathfindingWorkerPool {
             const eligible = this.queue.findIndex((task) => !task.request.townCorridor || task.priority >= 100 || this.townWorkMs < 80);
             if (eligible < 0) {
                 if (this.queue.length && !this.budgetTimer) {
-                    this.metrics.budgetDeferrals++;
+                    DiagnosticConfig.developerDiagnostics && (this.metrics.budgetDeferrals++);
                     this.budgetTimer = setTimeout(() => {
                         this.budgetTimer = null;
                         this.dispatch();
@@ -171,7 +172,7 @@ class BoundedPathfindingWorkerPool {
             if (!task) return;
             task.state = 'running';
             slot.task = task;
-            this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, Date.now() - task.queuedAt);
+            DiagnosticConfig.developerDiagnostics && (this.metrics.maxQueueWaitMs = Math.max(this.metrics.maxQueueWaitMs, Date.now() - task.queuedAt));
             slot.worker.postMessage({ type: 'path', id: task.id, request: task.request, cancelBuffer: task.cancelFlag.buffer });
         });
     }
@@ -181,15 +182,15 @@ class BoundedPathfindingWorkerPool {
         if (!task || Number(message?.id) !== task.id) return;
         slot.task = null;
         const workerMs = Math.max(0, Number(message.workerMs) || 0);
-        this.metrics.workerMs += workerMs;
+        DiagnosticConfig.developerDiagnostics && (this.metrics.workerMs += workerMs);
         if (task.request.townCorridor && task.priority < 100) this.townWorkMs += workerMs;
         if (!task.cancelled) {
             if (message.ok) {
                 this.restartAttempts[slot.index] = 0;
-                this.metrics.completed += 1;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.completed += 1);
                 this.finishTask(task, message.path, null);
             } else {
-                this.metrics.errors += 1;
+                DiagnosticConfig.developerDiagnostics && (this.metrics.errors += 1);
                 this.finishTask(task, null, taskError(message.error || 'path worker failed', message.code || 'PATH_WORKER_ERROR'));
             }
         } else {
@@ -205,7 +206,7 @@ class BoundedPathfindingWorkerPool {
         const task = slot.task;
         slot.task = null;
         if (task) {
-            this.metrics.errors += 1;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.errors += 1);
             this.finishTask(task, null, error instanceof Error ? error : taskError(String(error), 'PATH_WORKER_ERROR'));
         }
         const attempts = Number(this.restartAttempts[slot.index] || 0) + 1;
@@ -217,7 +218,7 @@ class BoundedPathfindingWorkerPool {
             if (!this.shuttingDown && this.workers.every((workerSlot) => !workerSlot)) {
                 this.unavailable = true;
                 this.queue.splice(0).forEach((queued) => {
-                    this.metrics.errors += 1;
+                    DiagnosticConfig.developerDiagnostics && (this.metrics.errors += 1);
                     this.finishTask(queued, null, taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
                 });
             }
@@ -243,7 +244,7 @@ class BoundedPathfindingWorkerPool {
     stats() {
         const isCompanion = (task) => String(task?.key || '').startsWith('companion:');
         return {
-            ...this.metrics,
+            ...(DiagnosticConfig.developerDiagnostics ? this.metrics : { diagnosticsEnabled: false }),
             workers: this.workers.filter(Boolean).length,
             busy: this.workers.filter((slot) => !!slot?.task).length,
             queue: this.queue.length,

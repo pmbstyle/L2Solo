@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./PopulationConfig');
 const { randomUUID } = require('crypto');
 
 const Database = invoke('Database');
@@ -15,7 +16,7 @@ function Metrics() {
 }
 
 function recordFailure(error) {
-    Metrics().recordColdOwnerError(error);
+    DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerError(error);
     if (error && typeof error === 'object') error.coldOwnerRecorded = true;
     throw error;
 }
@@ -139,12 +140,12 @@ function reflectRecovery(result = {}) {
 function claim(state, options = {}) {
     const partition = eligibility(state, options);
     if (!partition.ok) {
-        Metrics().recordColdOwnerRejected(partition.reason);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRejected(partition.reason);
         return Promise.resolve(partition);
     }
     const timestamp = Number(options.timestamp || Date.now());
     const leaseMs = Math.max(1000, Number(options.leaseMs || DEFAULT_LEASE_MS));
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     return Database.claimColdSimulationLease({
         characterId: Number(state.characterId),
         expectedRevision: ownership(state).revision,
@@ -155,7 +156,7 @@ function claim(state, options = {}) {
         allowParty: options.allowParty === true,
         allowLifecycle: options.allowLifecycle === true
     }).then((result) => {
-        Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
         return reflect(result);
     }).catch(recordFailure);
 }
@@ -170,7 +171,7 @@ function claimBatch(candidates = [], options = {}) {
         const partition = eligibility(state, candidate.options || options);
         if (!partition.ok) {
             const result = { ...partition, characterId: Number(state?.characterId || candidate.characterId || 0) };
-            Metrics().recordColdOwnerRejected(result.reason);
+            DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRejected(result.reason);
             rejected.push(result);
             return;
         }
@@ -186,10 +187,10 @@ function claimBatch(candidates = [], options = {}) {
         });
     });
     if (!requests.length) return Promise.resolve({ grants: [], rejected });
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     return Database.claimColdSimulationLeases(requests).then((results) => {
         results.forEach((result) => {
-            Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
+            DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerClaim(result, Date.now() - startedAt);
             if (result.ok) reflect(result);
         });
         return {
@@ -202,18 +203,18 @@ function claimBatch(candidates = [], options = {}) {
 function commit(claimToken, nextState, options = {}) {
     if (!claimToken?.ok) {
         const result = { ok: false, reason: 'missing_claim' };
-        Metrics().recordColdOwnerCommit(result, 0);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerCommit(result, 0);
         return Promise.resolve(result);
     }
     const partition = eligibility(nextState, options);
     if (!partition.ok) {
         const result = { ok: false, reason: 'partition_rejected', detail: partition.reason };
-        Metrics().recordColdOwnerCommit(result, 0);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerCommit(result, 0);
         return Promise.resolve(result);
     }
     if (Number(nextState.characterId) !== Number(claimToken.characterId)) {
         const result = { ok: false, reason: 'character_changed' };
-        Metrics().recordColdOwnerCommit(result, 0);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerCommit(result, 0);
         return Promise.resolve(result);
     }
     const canonicalState = {
@@ -222,7 +223,7 @@ function commit(claimToken, nextState, options = {}) {
     };
     const timestamp = Number(options.timestamp || Date.now());
     const leaseMs = Math.max(1000, Number(options.leaseMs || DEFAULT_LEASE_MS));
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     return Database.commitColdSimulationLease({
         characterId: Number(claimToken.characterId),
         expectedRevision: Number(claimToken.revision),
@@ -233,7 +234,7 @@ function commit(claimToken, nextState, options = {}) {
         patch: persistencePatch(canonicalState, timestamp),
         ...(options.memoryEvents ? { memoryEvents: options.memoryEvents } : {})
     }).then((result) => {
-        Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
         return reflect(result, withPersistedStats(canonicalState, result));
     }).catch(recordFailure);
 }
@@ -241,7 +242,7 @@ function commit(claimToken, nextState, options = {}) {
 function release(claimToken, options = {}) {
     if (!claimToken?.ok) {
         const result = { ok: false, reason: 'missing_claim' };
-        Metrics().recordColdOwnerRelease(result);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRelease(result);
         return Promise.resolve(result);
     }
     return Database.releaseColdSimulationLease({
@@ -251,7 +252,7 @@ function release(claimToken, options = {}) {
         leaseId: claimToken.leaseId,
         timestamp: Number(options.timestamp || Date.now())
     }).then((result) => {
-        Metrics().recordColdOwnerRelease(result);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRelease(result);
         return reflect(result);
     }).catch(recordFailure);
 }
@@ -346,12 +347,12 @@ function commitAndReleaseBatch(entries = [], options = {}) {
         });
     });
     if (!requests.length) return Promise.resolve(rejected);
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     return Database.commitAndReleaseColdSimulationLeases(requests).then((results) => {
         results.forEach((result) => {
-            Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
+            DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerCommit(result, Date.now() - startedAt);
             if (result.ok) {
-                Metrics().recordColdOwnerRelease({ ok: true });
+                DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRelease({ ok: true });
                 const state = states.get(Number(result.characterId));
                 reflect(result, withPersistedStats(state, result));
             }
@@ -373,7 +374,7 @@ function releaseBatch(tokens = [], options = {}) {
     if (!requests.length) return Promise.resolve([]);
     return Database.releaseColdSimulationLeases(requests).then((results) => {
         results.forEach((result) => {
-            Metrics().recordColdOwnerRelease(result);
+            DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRelease(result);
             if (result.ok) reflect(result);
         });
         return results;
@@ -383,7 +384,7 @@ function releaseBatch(tokens = [], options = {}) {
 function renewActiveLeases(tokens = [], options = {}) {
     return Database.renewColdSimulationLeases(tokens, options).then((results) => {
         results.forEach((result) => {
-            if (!result.ok) { Metrics().recordColdOwnerRejected(result.reason); return; }
+            if (!result.ok) { DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRejected(result.reason); return; }
             const cached = invoke('GameServer/Bot/Population/BotLifeState').cachedState(result.characterId);
             const current = cached?.simulation;
             if (cached?.phase === 'cold' && current?.ownerId === result.ownerId && current.revision === result.revision
@@ -406,7 +407,7 @@ function handoffToMain(state, options = {}) {
         allowLifecycle: options.allowLifecycle === true,
         ...(nextState ? { patch: persistencePatch(nextState, timestamp) } : {})
     }).then((result) => {
-        Metrics().recordColdOwnerHandoff(result);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerHandoff(result);
         return reflect(result, nextState);
     }).catch(recordFailure);
 }
@@ -414,7 +415,7 @@ function handoffToMain(state, options = {}) {
 function recoverExpiredLeases(timestamp = Date.now()) {
     if (!Database.isReady()) return Promise.resolve({ affectedRows: 0, rows: [] });
     return Database.recoverColdSimulationLeases({ timestamp, includeActive: false }).then((result) => {
-        Metrics().recordColdOwnerRecovery(result.affectedRows, false);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRecovery(result.affectedRows, false);
         return reflectRecovery(result);
     }).catch(recordFailure);
 }
@@ -422,7 +423,7 @@ function recoverExpiredLeases(timestamp = Date.now()) {
 function recoverStartupLeases() {
     if (!Database.isReady()) return Promise.resolve({ affectedRows: 0, rows: [] });
     return Database.recoverColdSimulationLeases({ includeActive: true }).then((result) => {
-        Metrics().recordColdOwnerRecovery(result.affectedRows, true);
+        DiagnosticConfig.developerDiagnostics && Metrics().recordColdOwnerRecovery(result.affectedRows, true);
         return reflectRecovery(result);
     }).catch(recordFailure);
 }

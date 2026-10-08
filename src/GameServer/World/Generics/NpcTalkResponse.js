@@ -2,7 +2,7 @@ const ServerResponse = invoke('GameServer/Network/Response');
 
 function npcTalkResponse(session, data) {
     let parts = data.link.split(' ') ?? [];
-    console.log("npcTalkResponse link:", data.link, "parts:", parts);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.log("npcTalkResponse link:", data.link, "parts:", parts);
     if (parts.length === 0 || !parts[0]) return;
 
     if (parts[0] === 'quest') {

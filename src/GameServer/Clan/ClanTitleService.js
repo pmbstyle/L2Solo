@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const ClanService = invoke('GameServer/Clan/ClanService');
@@ -60,7 +61,7 @@ async function snapshotFor(clan) {
     const events = missingMemberIds.length
         ? await Database.fetchClanGoalEvents(clan.id, MAX_HISTORY_EVENTS)
         : [];
-    metrics.snapshots += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.snapshots += 1);
     return {
         key: `clan:${number(clan.id)}:titles:v1:${missingMemberIds.join(',')}`,
         missingMemberIds,
@@ -106,16 +107,16 @@ function validateAssignments(snapshot, assignments) {
 
 async function resolveClan(clan, options = {}) {
     if (Config.llmTitleManagementEnabled === false) {
-        metrics.skipped += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.skipped += 1);
         return { ok: true, skipped: true, code: 'llm_titles_disabled' };
     }
     if (!clan || number(clan.level) < 3) {
-        metrics.skipped += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.skipped += 1);
         return { ok: true, skipped: true, code: 'clan_titles_unavailable' };
     }
     const snapshot = await (options.snapshotFor || snapshotFor)(clan);
     if (!snapshot.missingMemberIds.length) {
-        metrics.skipped += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.skipped += 1);
         return { ok: true, skipped: true, code: 'clan_titles_complete' };
     }
     const decision = ClanTitleBrain.choose(clan, snapshot, options);
@@ -123,22 +124,22 @@ async function resolveClan(clan, options = {}) {
         return { ok: true, pending: true, code: decision.code, decisionKey: decision.key };
     }
     if (!decision.ok) {
-        metrics.failed += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
         return decision;
     }
     const validated = validateAssignments(snapshot, decision.assignments);
     if (!validated.ok) {
-        metrics.invalid += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.invalid += 1);
         ClanTitleBrain.forget(snapshot.key);
         return { ...validated, retryable: true };
     }
     const applied = await ClanService.applyAutonomousMemberTitles(clan.id, validated.assignments);
     if (!applied.ok) {
-        metrics.failed += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
         return applied;
     }
-    metrics.appliedClans += applied.updated?.length ? 1 : 0;
-    metrics.appliedTitles += applied.updated?.length || 0;
+    DiagnosticConfig.developerDiagnostics && (metrics.appliedClans += applied.updated?.length ? 1 : 0);
+    DiagnosticConfig.developerDiagnostics && (metrics.appliedTitles += applied.updated?.length || 0);
     if (applied.updated?.length) {
         await Database.recordClanGoalEvent({
             clanId: clan.id,
@@ -168,6 +169,7 @@ module.exports = {
     },
     resolveClan,
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return { ...metrics, llm: ClanTitleBrain.metrics() };
     },
     resetMetrics() {

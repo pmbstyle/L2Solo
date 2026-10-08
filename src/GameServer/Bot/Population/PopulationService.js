@@ -433,8 +433,8 @@ function dissolveBackgroundParty(party, reason, memberCount = 0) {
     return BackgroundPartyState.setStatus(party.partyId, 'dissolved')
         .then(() => LifeState.releaseDissolvedPartyMembers(party.partyId, reason))
         .then((cleared) => {
-            Metrics.recordPartyDissolution();
-            console.info(
+            Config.developerDiagnostics && Metrics.recordPartyDissolution();
+            Config.developerDiagnostics && console.info(
                 'BotPopulation :: dissolved background party %s reason=%s members=%d cleared=%d',
                 party.partyId,
                 reason,
@@ -597,7 +597,7 @@ function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation =
     if (!travelState) return null;
 
     const cleanup = cleanupGoal.target;
-    console.info('BotGoals :: forced inventory cleanup for %s slots=%d npcOnly=%d reason=%s',
+    Config.developerDiagnostics && console.info('BotGoals :: forced inventory cleanup for %s slots=%d npcOnly=%d reason=%s',
         state.name, Number(cleanup.itemCount || 0), Number(cleanup.npcOnlySlots || 0), cleanup.cleanupReason);
     return {
         ...travelState,
@@ -749,7 +749,7 @@ function commitPartyMembership(party, members = [], event = null) {
             if (entry) entry.snapshot = LifeState.acceptNewerLifecycleRow(row) || entry.snapshot;
         }
         const assigned = LifeState.acceptPartyAssignments(preparedMembers);
-        assigned.forEach(() => Metrics.recordDbFlush());
+        assigned.forEach(() => Config.developerDiagnostics && Metrics.recordDbFlush());
         invoke('GameServer/Bot/AI/BotClanChat').onClanTask?.(committedParty, assigned);
         return { party: committedParty, assigned, failed: [], eventCommitted: !!event };
     }).catch((error) => {
@@ -881,8 +881,8 @@ function createBackgroundParty(members = [], objectiveOverride = null) {
                 partyEvent.weight
             );
         return eventWrite.then(() => {
-            Metrics.recordPartyFormation();
-            console.info(
+            Config.developerDiagnostics && Metrics.recordPartyFormation();
+            Config.developerDiagnostics && console.info(
                 'BotPopulation :: formed background party %s spot=%s members=%d leader=%s',
                 savedParty.partyId,
                 savedParty.spotId || 'none',
@@ -996,20 +996,20 @@ const PopulationService = {
         this.started = true;
         Promise.resolve(this.lifeReadyPromise).then(() => ClanActionService.startEvents(() => { this.nextClanActionAt = 0; }))
             .catch(error => utils.infoWarn('ClanReview', 'startup: %s', error.message));
-        this.initialSummaryTimer = setTimeout(() => {
+        if (Config.developerDiagnostics) this.initialSummaryTimer = setTimeout(() => {
             this.logSummary('start');
             this.initialSummaryTimer = null;
         }, 5000);
 
-        if (typeof this.initialSummaryTimer.unref === 'function') {
+        if (typeof this.initialSummaryTimer?.unref === 'function') {
             this.initialSummaryTimer.unref();
         }
 
-        this.summaryTimer = setInterval(() => {
+        if (Config.developerDiagnostics) this.summaryTimer = setInterval(() => {
             this.logSummary('summary');
         }, Config.summaryIntervalMs);
 
-        if (typeof this.summaryTimer.unref === 'function') {
+        if (typeof this.summaryTimer?.unref === 'function') {
             this.summaryTimer.unref();
         }
 
@@ -1172,7 +1172,7 @@ const PopulationService = {
             this.seedTimer = null;
             GeneratedColdSeeder.seedPopulation().then((result) => {
                 if (result.seeded > 0) {
-                    console.info(
+                    Config.developerDiagnostics && console.info(
                         'BotPopulation :: population wave=%d seeded=%d created=%d total=%d/%d target=%d avgLevel=%s starterSpots=%d',
                         result.wave || 1,
                         result.seeded,
@@ -1204,7 +1204,7 @@ const PopulationService = {
         const run = () => {
             if (this.personaBackfillRunning) return;
             if (this.playerActivityProfile().protected) {
-                Metrics.recordBackgroundDeferral();
+                Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
                 return;
             }
             this.personaBackfillRunning = true;
@@ -1244,7 +1244,7 @@ const PopulationService = {
         // an active resolver: a skipped migration tick is harmless, but a
         // queued one can stretch the normal world loop into a long backlog.
         if (this.playerActivityProfile().protected) {
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         if (this.classProgressionMigrationRunning || this.resolving || Config.enabled === false) return Promise.resolve([]);
@@ -1252,7 +1252,7 @@ const PopulationService = {
         return LifeState.migrateLegacyClassProgression(Config.classProgressionMigrationBatchSize)
             .then((migrated) => {
                 if (migrated.length) {
-                    console.info('BotPopulation :: migrated class progression for %d cold bot(s)', migrated.length);
+                    Config.developerDiagnostics && console.info('BotPopulation :: migrated class progression for %d cold bot(s)', migrated.length);
                 }
                 return migrated;
             })
@@ -1268,7 +1268,7 @@ const PopulationService = {
 
     migrateLegacyColdCombatProfiles() {
         if (this.playerActivityProfile().protected) {
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         if (this.coldCombatProfileMigrationRunning || this.resolving || this.classProgressionMigrationRunning || Config.enabled === false) {
@@ -1278,7 +1278,7 @@ const PopulationService = {
         return LifeState.migrateLegacyColdCombatProfiles(Config.coldCombatProfileMigrationBatchSize)
             .then((migrated) => {
                 if (migrated.length) {
-                    console.info('BotPopulation :: migrated cold combat profiles for %d bot(s)', migrated.length);
+                    Config.developerDiagnostics && console.info('BotPopulation :: migrated cold combat profiles for %d bot(s)', migrated.length);
                 }
                 return migrated;
             })
@@ -1302,7 +1302,7 @@ const PopulationService = {
     recordHotTick(session) {
         if (Config.enabled === false) return;
         if (!session || !session.accountId || !String(session.accountId).startsWith('bot_')) return;
-        Metrics.recordHotTick();
+        Config.developerDiagnostics && Metrics.recordHotTick();
     },
 
     markHot(session, reason = 'hot') {
@@ -1417,7 +1417,7 @@ const PopulationService = {
             classify: (state, timestamp) => this.partyAssemblyInput(state, timestamp),
             run: (candidates, timestamp, help) => this.runPartyAssemblyEvent(candidates, timestamp, help),
             expire: id => this.refreshPartyAssemblyRequest(id),
-            onRepair: () => Metrics.recordPartySafetyRepair(),
+            onRepair: () => Config.developerDiagnostics && Metrics.recordPartySafetyRepair(),
             onError: error => utils.infoWarn('BotPopulation', 'party event failed: %s', error?.message || error)
         });
         this.partyAssemblyEvents = service;
@@ -1639,7 +1639,7 @@ const PopulationService = {
         });
         if (!admission.ok) {
             this.scheduleClanActions(true);
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
         }
 
@@ -1678,7 +1678,7 @@ const PopulationService = {
             realPlayers: activity?.realPlayers
         });
         if (!admission.ok) {
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve({ skipped: true, reason: `governor_${admission.reason}` });
         }
 
@@ -1698,12 +1698,12 @@ const PopulationService = {
     resolveClanSimulation() {
         if (ClanSimulationConfig.enabled === false) return Promise.resolve(null);
         const activity = this.playerActivityProfile();
-        const startedAt = Date.now();
+        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
         return this.resolveClanActions(activity).then((actions) => this.resolveClanFounders(activity).then((founder) => ({
             actions,
             founder,
             playerProtected: !!activity?.protected,
-            elapsedMs: Date.now() - startedAt
+            ...(Config.developerDiagnostics ? { elapsedMs: Date.now() - startedAt } : {})
         })));
     },
 
@@ -1752,13 +1752,13 @@ const PopulationService = {
         });
         if (!admission.ok) {
             this.scheduleGoalBackgroundJob(nextAtKey, true);
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         if (lagAbort > 0 && lagMs >= lagAbort) {
             BackgroundWorkGovernor.complete(admission.lease, { durationMs: 0 });
             this.scheduleGoalBackgroundJob(nextAtKey, true);
-            Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
             return Promise.resolve([]);
         }
         const budgetMs = admission.budgetMs;
@@ -1805,7 +1805,7 @@ const PopulationService = {
                     select: () => LifeState.staleGoalCandidates(batchSize, Date.now(), this.goalProjectionTelemetry(job)),
                     refresh: (state) => this.refreshGoalCandidate(state),
                     work: async (state) => (await GoalService.reviewBatch([state], { now: Date.now() }))[0],
-                    onStage: (stage, duration) => BackgroundWorkGovernor.recordStage(job, stage, duration),
+                    onStage: Config.developerDiagnostics ? (stage, duration) => BackgroundWorkGovernor.recordStage(job, stage, duration) : undefined,
                     onProgress: (progress) => BackgroundWorkGovernor.recordProgress(job, progress)
                 });
             }
@@ -1819,13 +1819,13 @@ const PopulationService = {
             nextAtKey: 'nextWarehouseReleaseAt',
             run: ({ job, deadlineAt }) => {
                 const limit = Math.max(1, Number(Config.maxWarehouseReleasesPerTick) || 8);
-                const releaseStartedAt = Date.now();
+                const releaseStartedAt = Config.developerDiagnostics ? Date.now() : 0;
                 return invoke('GameServer/Clan/ClanWarehouseEquipmentService').resolveBatch(deadlineAt)
                     .then((results = []) => ({
                     results,
                     continuation: results.continuation || results.length >= limit || Date.now() >= deadlineAt
                 })).finally(() => {
-                    BackgroundWorkGovernor.recordStage(job, 'release', Date.now() - releaseStartedAt);
+                    Config.developerDiagnostics && BackgroundWorkGovernor.recordStage(job, 'release', Date.now() - releaseStartedAt);
                 });
             }
         });
@@ -2118,14 +2118,14 @@ const PopulationService = {
             || Number(cold.queue?.depth || 0) > 0
             || cold.queue?.flushing) {
             this.partyFormationPending = true;
-            Metrics.recordPartyFormationDeferral();
+            Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
             this.nextProtectedPartyFormationAt = timestamp + Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000);
             return Promise.resolve([]);
         }
 
         this.partyFormationRunning = true;
         this.partyFormationPending = false;
-        const startedAt = Date.now();
+        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
         const mainBudgetMs = Math.max(1, Number(Config.protectedPartyFormationMainBudgetMs) || 25);
         let failed = false;
         let retrySoon = false;
@@ -2174,7 +2174,7 @@ const PopulationService = {
                     || Number(currentCold.queue?.depth || 0) > 0
                     || currentCold.queue?.flushing) {
                     retrySoon = true;
-                    Metrics.recordPartyFormationDeferral();
+                    Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
                     return [];
                 }
                 const objectiveMember = selected.find((state) => partyObjectiveForState(state)?.priority === 'required') || selected[0];
@@ -2190,11 +2190,11 @@ const PopulationService = {
             utils.infoWarn('BotPopulation', 'protected party formation failed: %s', error?.message || error);
             return [];
         }).finally(() => {
-            const durationMs = Date.now() - startedAt;
+            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
             this.nextProtectedPartyFormationAt = Date.now() + (retrySoon
                 ? Math.max(1000, Number(Config.protectedPartyFormationPollMs) || 5000)
                 : this.protectedPartyFormationDelay(failed));
-            Metrics.recordPartyFormationDuration(durationMs);
+            Config.developerDiagnostics && Metrics.recordPartyFormationDuration(durationMs);
             this.partyFormationRunning = false;
         });
     },
@@ -2212,7 +2212,7 @@ const PopulationService = {
             // Required requests use formProtectedRequiredParty. Presence events
             // wake the ordinary indexed groups when protection ends.
             this.partyFormationPending = true;
-            Metrics.recordPartyFormationDeferral();
+            Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
             return Promise.resolve([]);
         }
         if (this.partyRequestCleanupRunning) {
@@ -2230,7 +2230,7 @@ const PopulationService = {
         const formationBudgetMs = this.partyFormationBudgetMs(activity);
         if (formationBudgetMs <= 0) {
             this.partyFormationPending = true;
-            Metrics.recordPartyFormationDeferral();
+            Config.developerDiagnostics && Metrics.recordPartyFormationDeferral();
             return activity.protected
                 ? Promise.resolve([])
                 : candidates ? Promise.resolve([]) : this.runPartyRequestCleanup(Config.partyRequestCleanupBatchSize).then(() => []);
@@ -2250,14 +2250,14 @@ const PopulationService = {
             if (Date.now() < deadlineAt) return false;
             if (!budgetStopRecorded) {
                 budgetStopRecorded = true;
-                Metrics.recordPartyFormationBudgetStop();
+                Config.developerDiagnostics && Metrics.recordPartyFormationBudgetStop();
             }
             return true;
         };
         const timedStage = (name, work) => {
-            const stageStartedAt = Date.now();
+            const stageStartedAt = Config.developerDiagnostics ? Date.now() : 0;
             return Promise.resolve().then(work).finally(() => {
-                Metrics.recordPartyFormationStage(name, Date.now() - stageStartedAt);
+                Config.developerDiagnostics && Metrics.recordPartyFormationStage(name, Date.now() - stageStartedAt);
             });
         };
         const formationWork = () => {
@@ -2365,7 +2365,7 @@ const PopulationService = {
                 return [];
             })
             .finally(() => {
-                Metrics.recordPartyFormationDuration(Date.now() - startedAt);
+                Config.developerDiagnostics && Metrics.recordPartyFormationDuration(Date.now() - startedAt);
                 this.partyFormationRunning = false;
             });
     },
@@ -2603,7 +2603,7 @@ const PopulationService = {
                     };
                     return commitPartyMembership(reconciledParty, members).then(({ party: repaired, failed }) => {
                         if (!repaired || failed.length) return null;
-                        console.info('BotPopulation :: reconciled background party %s members=%d', party.partyId, members.length);
+                        Config.developerDiagnostics && console.info('BotPopulation :: reconciled background party %s members=%d', party.partyId, members.length);
                         return repaired;
                     });
                 }
@@ -2686,8 +2686,8 @@ const PopulationService = {
                                     recruitEvent.weight
                                 );
                             return eventWrite.then(() => {
-                                Metrics.recordPartyRecruit(hydratedRecruits.length);
-                                console.info('BotPopulation :: recruited %d bot(s) into %s near %s', hydratedRecruits.length, party.partyId, party.spotId || 'none');
+                                Config.developerDiagnostics && Metrics.recordPartyRecruit(hydratedRecruits.length);
+                                Config.developerDiagnostics && console.info('BotPopulation :: recruited %d bot(s) into %s near %s', hydratedRecruits.length, party.partyId, party.spotId || 'none');
                                 return updatedParty;
                             });
                         });
@@ -2709,7 +2709,7 @@ const PopulationService = {
     resolveOwnedColdState(state) {
         const partition = ColdSimulationOwner.eligibility(state);
         if (!partition.ok) {
-            Metrics.recordColdOwnerLegacyDeferred(partition.reason);
+            Config.developerDiagnostics && Metrics.recordColdOwnerLegacyDeferred(partition.reason);
             return this.resolveColdState(state);
         }
 
@@ -2717,7 +2717,7 @@ const PopulationService = {
         const leaseMs = Math.max(2000, Number(Config.coldOwnerLeaseMs) || ColdSimulationOwner.DEFAULT_LEASE_MS);
         const timeoutMs = Math.min(leaseMs - 1000, Math.max(1000, Number(Config.coldOwnerResolveTimeoutMs) || 10000));
         let activeToken = null;
-        Metrics.recordColdOwnerSelected();
+        Config.developerDiagnostics && Metrics.recordColdOwnerSelected();
 
         const releaseActive = () => activeToken?.ok
             ? ColdSimulationOwner.release(activeToken).catch(() => ({ ok: false, reason: 'release_error' }))
@@ -2726,10 +2726,10 @@ const PopulationService = {
         return ColdSimulationOwner.claim(state, { timestamp: startedAt, leaseMs }).then((claim) => {
             if (!claim.ok) {
                 if (['legacy_activity', 'background_party', 'warehouse_state', 'market_state', 'craft_state', 'player_workflow'].includes(claim.reason)) {
-                    Metrics.recordColdOwnerLegacyDeferred(claim.reason);
+                    Config.developerDiagnostics && Metrics.recordColdOwnerLegacyDeferred(claim.reason);
                     return this.resolveColdState(state);
                 }
-                Metrics.recordSkippedResolve(`cold_owner_claim_${claim.reason || 'rejected'}`);
+                Config.developerDiagnostics && Metrics.recordSkippedResolve(`cold_owner_claim_${claim.reason || 'rejected'}`);
                 return { ok: false, reason: claim.reason || 'claim_rejected', state };
             }
             activeToken = claim;
@@ -2767,7 +2767,7 @@ const PopulationService = {
                 return LifeState.prepareResolve(lifecycleState, result, { persist: false, timestamp: startedAt })
                     .then((nextState) => ({ nextState, result }));
             }, timeoutMs).then(({ nextState, result }) => {
-                Metrics.recordColdOwnerResolved();
+                Config.developerDiagnostics && Metrics.recordColdOwnerResolved();
                 if (!nextState || joinedBackgroundParty(nextState)) {
                     const error = new Error('owner_result_invalidated');
                     error.code = 'COLD_OWNER_INVALIDATED';
@@ -2775,7 +2775,7 @@ const PopulationService = {
                 }
                 return ColdSimulationOwner.commit(activeToken, nextState, { leaseMs }).then((committed) => {
                     if (!committed.ok) {
-                        Metrics.recordSkippedResolve(`cold_owner_commit_${committed.reason || 'rejected'}`);
+                        Config.developerDiagnostics && Metrics.recordSkippedResolve(`cold_owner_commit_${committed.reason || 'rejected'}`);
                         return releaseActive().then(() => ({ ok: false, reason: committed.reason || 'commit_rejected', state }));
                     }
                     activeToken = committed;
@@ -2783,8 +2783,8 @@ const PopulationService = {
                     return LifeState.syncResolvedState(committedState)
                         .then(() => LifeEvents.recordMany(state.characterId, result.events || []))
                         .then(() => {
-                            Metrics.recordBackgroundResolve();
-                            Metrics.recordCombat(result.debug);
+                            Config.developerDiagnostics && Metrics.recordBackgroundResolve();
+                            Config.developerDiagnostics && Metrics.recordCombat(result.debug);
                             GlobalChat.maybeAnnounce(committedState, result.events || []);
                             return releaseActive().then((released) => ({
                                 ok: true,
@@ -2796,11 +2796,11 @@ const PopulationService = {
                 });
             });
         }).catch((error) => {
-            if (error?.code === 'COLD_OWNER_TIMEOUT') Metrics.recordColdOwnerTimeout();
-            else if (!error?.coldOwnerRecorded) Metrics.recordColdOwnerError(error);
-            Metrics.recordSkippedResolve(error?.code === 'COLD_OWNER_TIMEOUT' ? 'cold_owner_timeout' : 'cold_owner_error');
+            if (error?.code === 'COLD_OWNER_TIMEOUT') Config.developerDiagnostics && Metrics.recordColdOwnerTimeout();
+            else if (!error?.coldOwnerRecorded) Config.developerDiagnostics && Metrics.recordColdOwnerError(error);
+            Config.developerDiagnostics && Metrics.recordSkippedResolve(error?.code === 'COLD_OWNER_TIMEOUT' ? 'cold_owner_timeout' : 'cold_owner_error');
             return releaseActive().then(() => ({ ok: false, reason: error?.message || 'owner_error', state }));
-        }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+        }).finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
     },
 
     tickBudgeted() {
@@ -2875,7 +2875,7 @@ const PopulationService = {
             this.lastWalResetResult = { ...result, requestedAt: timestamp };
             if (result?.ok && Number(result.busy || 0) === 0) {
                 this.nextWalResetAt = Date.now() + cooldownMs;
-                console.info(
+                Config.developerDiagnostics && console.info(
                     'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
                     Math.round(Number(result.afterBytes || walBytes) / 1024 / 1024),
                     Number(result.checkpointedFrames || 0),
@@ -2902,8 +2902,8 @@ const PopulationService = {
 
         const activity = this.playerActivityProfile(timestamp);
         if (activity.protected) {
-            Metrics.recordBackgroundDeferral();
-            Metrics.recordWarehouseCleanupDeferral('player_protected');
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanupDeferral('player_protected');
             return Promise.resolve(null);
         }
         // This timer normally fires before the 5-second reset timer because
@@ -2911,17 +2911,17 @@ const PopulationService = {
         // a due reset a deterministic quiet window instead of starving it
         // behind a succession of short cleanup transactions.
         if (this.checkpointPressure().resetDue) {
-            Metrics.recordWarehouseCleanupDeferral('wal_pressure');
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanupDeferral('wal_pressure');
             return this.runAdaptiveWalReset(timestamp);
         }
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
         if (lagMs >= lagLimit) {
-            Metrics.recordWarehouseCleanupDeferral('event_loop_lag');
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanupDeferral('event_loop_lag');
             return Promise.resolve(null);
         }
         if (Number(Database.stats().pending || 0) > 0) {
-            Metrics.recordWarehouseCleanupDeferral('database_queue');
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanupDeferral('database_queue');
             return Promise.resolve(null);
         }
 
@@ -2944,10 +2944,10 @@ const PopulationService = {
                 this.warehouseCleanupPassUnits = 0;
                 this.nextWarehouseCleanupAt = Date.now() + pauseMs;
             }
-            Metrics.recordWarehouseCleanup(result || {}, Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanup(result || {}, Date.now() - startedAt);
             return result;
         }).catch((error) => {
-            Metrics.recordWarehouseCleanup({ errors: 1, cursor: this.warehouseCleanupCursor }, Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordWarehouseCleanup({ errors: 1, cursor: this.warehouseCleanupCursor }, Date.now() - startedAt);
             utils.infoWarn('BotWarehouse', 'bounded historical cleanup failed: %s', error?.message || error);
             return null;
         }).finally(() => {
@@ -2964,26 +2964,26 @@ const PopulationService = {
 
         const activity = this.playerActivityProfile(timestamp);
         if (activity.protected) {
-            Metrics.recordBackgroundDeferral();
-            Metrics.recordStateRetentionDeferral('player_protected');
+            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
+            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('player_protected');
             return Promise.resolve(null);
         }
         if (this.checkpointPressure().resetDue) {
-            Metrics.recordStateRetentionDeferral('wal_pressure');
+            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('wal_pressure');
             return this.runAdaptiveWalReset(timestamp);
         }
         const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
         const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
         if (lagMs >= lagLimit) {
-            Metrics.recordStateRetentionDeferral('event_loop_lag');
+            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('event_loop_lag');
             return Promise.resolve(null);
         }
         if (Number(Database.stats().pending || 0) > 0) {
-            Metrics.recordStateRetentionDeferral('database_queue');
+            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('database_queue');
             return Promise.resolve(null);
         }
 
-        const startedAt = Date.now();
+        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
         const budgetMs = Math.max(1, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
         this.stateRetentionRunning = true;
         return Database.cooperatively(() => PersistentStateRetention.runNextBatch({
@@ -2999,7 +2999,7 @@ const PopulationService = {
             compactedConversationRetentionMs: Config.compactedConversationRetentionMs,
             conversationMaxUncompactedRows: Config.conversationMaxUncompactedRows
         }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
-            const durationMs = Date.now() - startedAt;
+            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
             this.stateRetentionPassRows += Math.max(0, Number(result?.rowsRemoved || 0));
             if (result?.cycleComplete) {
                 const pauseMs = this.stateRetentionPassRows > 0
@@ -3008,10 +3008,10 @@ const PopulationService = {
                 this.stateRetentionPassRows = 0;
                 this.nextStateRetentionAt = Date.now() + pauseMs;
             }
-            Metrics.recordStateRetention(result || {}, durationMs, durationMs > budgetMs);
+            Config.developerDiagnostics && Metrics.recordStateRetention(result || {}, durationMs, durationMs > budgetMs);
             return result;
         }).catch((error) => {
-            Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
             utils.infoWarn('BotPopulation', 'bounded persistent-state retention failed: %s', error?.message || error);
             return null;
         }).finally(() => {
@@ -3020,6 +3020,7 @@ const PopulationService = {
     },
 
     goalProjectionTelemetry(job) {
+        if (!Config.developerDiagnostics) return {};
         return {
             onTiming: ({ waitMs, runMs }) => {
                 BackgroundWorkGovernor.recordStage(job, 'queue_wait', waitMs);
@@ -3057,14 +3058,14 @@ const PopulationService = {
                 if (remote.changed) return remote.state;
                 const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current);
                 if (!travel) return null;
-                const startedAt = Date.now();
+                const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 const saved = await LifeState.upsertState(travel, 'reconciled_market_travel');
-                BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - startedAt);
-                if (saved) console.info('BotPopulation :: reconciled market travel for %s', state.name);
+                Config.developerDiagnostics && BackgroundWorkGovernor.recordStage(telemetryJob, 'travel', Date.now() - startedAt);
+                if (saved) Config.developerDiagnostics && console.info('BotPopulation :: reconciled market travel for %s', state.name);
                 return saved;
             },
-            onStage: (stage, duration) => BackgroundWorkGovernor.recordStage(telemetryJob, stage, duration),
-            onProgress: (progress) => BackgroundWorkGovernor.recordProgress(telemetryJob, progress)
+            onStage: Config.developerDiagnostics ? (stage, duration) => BackgroundWorkGovernor.recordStage(telemetryJob, stage, duration) : undefined,
+            onProgress: Config.developerDiagnostics ? (progress) => BackgroundWorkGovernor.recordProgress(telemetryJob, progress) : undefined
         });
         Object.defineProperty(result.results, 'candidateCount', {
             value: result.continuation ? limit : result.processed || 0, configurable: true
@@ -3073,7 +3074,7 @@ const PopulationService = {
     },
 
     yieldSchedulerSlice(sliceStartedAt) {
-        Metrics.recordSchedulerYield(Date.now() - sliceStartedAt);
+        Config.developerDiagnostics && Metrics.recordSchedulerYield(Date.now() - sliceStartedAt);
         return new Promise((resolve) => setImmediate(resolve));
     },
 
@@ -3084,12 +3085,12 @@ const PopulationService = {
 
         for (const item of items || []) {
             if (Date.now() >= deadlineAt) {
-                Metrics.recordSchedulerBudgetStop();
+                Config.developerDiagnostics && Metrics.recordSchedulerBudgetStop();
                 break;
             }
             results.push(await work(item));
             if (Date.now() >= deadlineAt) {
-                Metrics.recordSchedulerBudgetStop();
+                Config.developerDiagnostics && Metrics.recordSchedulerBudgetStop();
                 break;
             }
             if (Date.now() - sliceStartedAt >= sliceMs) {
@@ -3178,7 +3179,7 @@ const PopulationService = {
                 }
             }, partyRouteOptions) || SpotProfiles.findForState(leader, partyRouteOptions);
             if (!spot) {
-                Metrics.recordSkippedResolve('party_missing_spot');
+                Config.developerDiagnostics && Metrics.recordSkippedResolve('party_missing_spot');
                 return { ok: false, reason: 'missing_spot', party };
             }
 
@@ -3303,8 +3304,8 @@ const PopulationService = {
                 }
                 });
             }).then((updatedParty) => {
-                Metrics.recordPartyResolve();
-                Metrics.recordCombat(result.debug);
+                Config.developerDiagnostics && Metrics.recordPartyResolve();
+                Config.developerDiagnostics && Metrics.recordCombat(result.debug);
                 const recruitment = PartyRecruitmentChat.maybeAnnounce(updatedParty, members, spot);
                 const persistedParty = recruitment.announced
                     ? BackgroundPartyState.createOrUpdate(recruitment.party)
@@ -3324,10 +3325,10 @@ const PopulationService = {
             });
         }).catch((err) => {
             utils.infoWarn('BotPopulation', 'background party resolve failed for %s: %s', party.partyId, err.message);
-            Metrics.recordSkippedResolve('party_resolve_failed');
+            Config.developerDiagnostics && Metrics.recordSkippedResolve('party_resolve_failed');
             return { ok: false, reason: 'resolve_failed', party };
         }).finally(() => {
-            Metrics.recordResolveDuration(Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
         });
     },
 
@@ -3351,7 +3352,7 @@ const PopulationService = {
         }
         const precomputedResult = workerRequest?.precomputedResult || null;
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve('joined_party_before_resolve');
+            Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_before_resolve');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
         // With a worker result the fight already happened: the transition
@@ -3375,7 +3376,7 @@ const PopulationService = {
                         reason: 'state_write_rejected',
                         state
                     }))
-                    .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+                    .finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
         // These transitions have no planning, market search, or inventory work
@@ -3391,18 +3392,18 @@ const PopulationService = {
                 timestamp: startedAt
             });
             if (joinedBackgroundParty(state)) {
-                Metrics.recordSkippedResolve('joined_party_during_transition');
+                Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_during_transition');
                 return Promise.resolve({ ok: false, reason: 'joined_party', state });
             }
             return LifeState.applyResolve(requestLifecycleState, result, options).then((updatedState) => {
                 if (!updatedState) {
-                    Metrics.recordSkippedResolve('transition_apply_failed');
+                    Config.developerDiagnostics && Metrics.recordSkippedResolve('transition_apply_failed');
                     return { ok: false, reason: 'apply_failed', state };
                 }
                 if (workerRequest?.precomputedPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions
                     .hold(updatedState.characterId, workerRequest.precomputedPlan.economyDecision);
-                Metrics.recordBackgroundResolve();
-                Metrics.recordCombat(result.debug);
+                Config.developerDiagnostics && Metrics.recordBackgroundResolve();
+                Config.developerDiagnostics && Metrics.recordCombat(result.debug);
                 const recoveredForMarket = state.activity === 'resting'
                     && (canResumeAffordableMarketPlan(updatedState)
                         || canResumeWarehouseMarketSale(updatedState));
@@ -3430,7 +3431,7 @@ const PopulationService = {
                 })));
             }).finally(() => {
                 if (workerRequest?.precomputedPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
-                Metrics.recordResolveDuration(Date.now() - startedAt);
+                Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
             });
         }
         const MammonUnseal = invoke('GameServer/Bot/AI/BotMammonUnseal');
@@ -3453,7 +3454,7 @@ const PopulationService = {
             };
             return LifeState.upsertState(serviceState, 'craft_service_idle')
                 .then((saved) => ({ ok: true, state: saved || serviceState, debug: { activity: 'craft_service_idle' } }))
-                .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+                .finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const staleShopping = BackgroundResolver.staleShopping(state);
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
@@ -3565,7 +3566,7 @@ const PopulationService = {
                     ));
                 });
             })
-                .finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+                .finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         // A deferred request still owns the safe fallback route until the
         // planner either reopens it or replaces the unavailable target. Do
@@ -3598,7 +3599,7 @@ const PopulationService = {
                 if (!saved) return { ok: false, reason: 'state_write_rejected', state };
                 await LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents]);
                 return { ok: true, state: saved, debug: { activity: 'craft_travel', fights: 0, wins: 0 } };
-            }).finally(() => Metrics.recordResolveDuration(Date.now() - startedAt));
+            }).finally(() => Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt));
         }
         const selectedSpot = passiveActivity
             ? null
@@ -3617,8 +3618,8 @@ const PopulationService = {
         const effectiveState = huntingTravelState || travellingState;
         const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
         if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
-            Metrics.recordSkippedResolve('missing_spot');
-            Metrics.recordResolveDuration(Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordSkippedResolve('missing_spot');
+            Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
             const retryAt = startedAt + 30000;
             const waiting = { ...plannedState, activity: 'resting',
                 timing: { ...plannedState.timing, nextResolveAt: retryAt },
@@ -3642,20 +3643,20 @@ const PopulationService = {
         });
 
         if (joinedBackgroundParty(state)) {
-            Metrics.recordSkippedResolve('joined_party_after_planning');
+            Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_after_planning');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
 
         return LifeState.applyResolve(effectiveState, result, { ...options, ...(workerPlan?.statsPacket ? { statsPacket: workerPlan.statsPacket } : {}) })
             .then((updatedState) => {
             if (!updatedState) {
-                Metrics.recordSkippedResolve('cold_apply_failed');
+                Config.developerDiagnostics && Metrics.recordSkippedResolve('cold_apply_failed');
                 return { ok: false, reason: 'apply_failed', state };
             }
             if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.hold(updatedState.characterId, workerPlan.economyDecision);
 
-            Metrics.recordBackgroundResolve();
-            Metrics.recordCombat(result.debug);
+            Config.developerDiagnostics && Metrics.recordBackgroundResolve();
+            Config.developerDiagnostics && Metrics.recordCombat(result.debug);
             if (updatedState.activity === 'crafting') {
                 return { ok: true, state: updatedState, debug: result.debug };
             }
@@ -3757,7 +3758,7 @@ const PopulationService = {
             return outcome;
         }).finally(() => {
             if (workerPlan?.economyDecision) ColdSimulationCoordinator.economyDecisions.release(state.characterId);
-            Metrics.recordResolveDuration(Date.now() - startedAt);
+            Config.developerDiagnostics && Metrics.recordResolveDuration(Date.now() - startedAt);
         });
     },
 
@@ -3809,7 +3810,7 @@ const PopulationService = {
                 parties: BackgroundPartyState, life: LifeState, memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
                 composition: PartyComposition, limitsFor: partyLimitsForObjective, clanReserved: requiresClanEquipmentParty,
                 commit: commitPartyMembership, participantAllowed: options.participantAllowed });
-            if (result.recruited) Metrics.recordPartyRecruit(result.recruited);
+            if (result.recruited) Config.developerDiagnostics && Metrics.recordPartyRecruit(result.recruited);
             return result;
         }
         if (members.some(state => requiresClanEquipmentParty(state))) return { rejected: 'clan_objective' };
@@ -3834,8 +3835,9 @@ const PopulationService = {
     },
 
     logSummary(reason = 'summary') {
+        if (!Config.developerDiagnostics) return { enabled: false };
         const summary = this.summary();
-        console.info('BotPopulation :: %s %s', reason, summary.line);
+        Config.developerDiagnostics && console.info('BotPopulation :: %s %s', reason, summary.line);
         return summary;
     }
 };

@@ -1,3 +1,4 @@
+const Diagnostics = require('./EconomyDiagnostics');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -10,6 +11,18 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
+
+function purchaseObservation(state, selfId, requested, budget, phase, reason, extra) {
+    if (!Diagnostics.active()) return;
+    Diagnostics.count('market', phase, reason);
+    if (!Diagnostics.enabled(state?.characterId)) return;
+    Diagnostics.push({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
+        wallet: Number(state.adena ?? state.inventory?.[57]?.amount), budget, available: budget,
+        reserve: Number(state.stats?.money?.[2]), owned: Number(state.inventory?.[selfId]?.amount || 0),
+        decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
+        revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0], town: state.currentRegion,
+        errandAt: Number(state.stats?.marketErrand?.at), ...extra });
+}
 
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
@@ -98,7 +111,8 @@ function buyOffer(state, offer, options = {}) {
     if (!options.economyCommand && !MarketOpportunity.botCanBuy(offer)) return Promise.resolve({ purchased: false, blocked: true, reason: 'configured_supply_retired' });
     const qty = Math.max(1, Math.floor(Number(options.qty) || 1));
     const blocker = options.economyCommand ? null : LifeState.marketPurchaseBlocker(state, offer, qty);
-    if (blocker) return Promise.resolve({ purchased: false, blocked: true, reason: blocker });
+    if (blocker) { if (Diagnostics.active()) purchaseObservation(state, offer.selfId, qty, undefined, 'purchase_refusal', blocker);
+        return Promise.resolve({ purchased: false, blocked: true, reason: blocker }); }
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
         return AfkTrade.buyFromShop(
@@ -116,7 +130,10 @@ function buyOffer(state, offer, options = {}) {
             const buyer = done.state || state;
             const units = Number(trade.amount ?? trade.units ?? 0), spent = Number(trade.totalPrice ?? trade.spent ?? 0);
             const diagnostics = require('./EconomyDiagnostics');
-            if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
+            if (diagnostics.enabled(state.characterId)) diagnostics.push(trade.replayed ? { owner: state.characterId,
+                phase: 'purchase_receipt', reason: 'replayed', actual: 0, spent: 0, receiptUnits: units, receiptSpent: spent,
+                commandId: trade.economyCommand?.[0], sequence: trade.economyCommand?.[2],
+                nativeId: Number(trade.eventId ?? trade.nativeId) } : { owner: state.characterId,
                 phase: 'native_purchase', trigger: 'public_quote', reason: trade.replayed ? 'replayed' : 'committed',
                 source: offer.sourceType, item: Number(offer.selfId), actual: units, spent, quote: Number(offer.price),
                 town: offer.town, recordId: Number(offer.recordId), lineId: Number(offer.lineId),
@@ -271,6 +288,10 @@ function planPurchase(state, selfId, amount, options = {}) {
         npcOffers: npc ? staticOffers(selfId) : [],
         cost: cost || tripFrom(state, timestamp)
     });
+    if (Diagnostics.active()) purchaseObservation(state, selfId, amount, money, 'purchase_plan', plan ? 'source_selected' : 'no_affordable_source',
+        Diagnostics.enabled(state.characterId) ? { planned: Number(plan?.units || 0), remaining: Math.max(0, amount - Number(plan?.units || 0)),
+            cost: Number(plan?.cost), town: plan?.town, source: plan?.npc > 0 ? 'npc_and_board' : 'board', unitPrice: Number(plan?.npcPrice),
+            caller: options.purpose || 'planPurchase' } : undefined);
     return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money, ...fundingTerms(options),
         ...(options.purpose ? { purpose: options.purpose } : {}), ...(options.tag ? { tag: options.tag } : {}) } : null;
 }
@@ -312,6 +333,9 @@ async function buyHere(state, plan, options = {}) {
         && Number(offer.price) === quotedPrice) ? quotedPrice : 0;
     const money = npcPrice > 0 ? purchaseMoney(current, plan, spent) : 0;
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
+    if (Diagnostics.active()) purchaseObservation(current, plan.selfId, plan.amount - units, money, 'npc_remainder',
+        !npcPrice ? 'no_current_npc_quote' : rest < plan.amount - units ? 'funding_partial' : 'funded',
+        Diagnostics.enabled(current.characterId) ? { planned: rest, actual: units, unitPrice: npcPrice, source: 'npc', town: plan.town } : undefined);
     const realSeller = require('./NpcRestockPlan').quoteFor(plan.selfId, plan.town, npcPrice);
     if (options.deferRealNpc && realSeller) return { state: current, units, spent, hot: false,
         progressApplied: !!options.goal && units > 0 };
@@ -343,7 +367,12 @@ async function buyHere(state, plan, options = {}) {
                 progressApplied: !!options.goal && units > 0 };
         }
     }
+    if (Diagnostics.active()) purchaseObservation(state, plan.selfId, plan.amount, plan.money, 'purchase_result',
+        units >= plan.amount ? 'filled' : npcPrice > 0 && money < (plan.amount - units) * npcPrice ? 'funding_partial'
+            : Number(plan.units || 0) < plan.amount ? 'supply_partial' : 'source_changed_or_refused',
+        Diagnostics.enabled(state.characterId) ? { planned: Number(plan.units), actual: units, remaining: Math.max(0, plan.amount - units), spent, town: plan.town } : undefined);
     return { state: current, units, spent, hot: false, progressApplied: !!options.goal && units > 0 };
+
 }
 
 // The NPC part of a stack purchase, the author's fenced cold write
@@ -383,13 +412,9 @@ async function buyNpcStack(state, selfId, amount, unitPrice, funding = {}, origi
     const purchase = await Basket.purchase(state, { seller, original,
         lines: [{ selfId, amount, unitPrice, autoEquip, funding: { ...funding, itemId: selfId } }] });
     if (!purchase?.ok) return null;
-    const diagnostics = require('./EconomyDiagnostics');
-    if (diagnostics.enabled(state.characterId)) diagnostics.push({ owner: state.characterId,
-        phase: 'native_purchase', trigger: 'npc_quote', reason: purchase.replayed ? 'replayed' : 'committed',
-        source: 'npc', item: Number(selfId), actual: Number(purchase.amount), spent: Number(purchase.spent),
-        quote: Number(unitPrice), town: state.currentRegion, nativeId: Number(selfId),
-        commandId: purchase.economyCommand?.[0], sequence: purchase.economyCommand?.[2] });
+
     return purchase;
+
 }
 
 // The bot's errand while it still stands (ERRAND_MS), else null.
@@ -441,6 +466,8 @@ async function acquire(state, selfId, amount, options = {}) {
     const visitTown = state.stats?.travel?.townName || (state.activity === 'shopping' ? state.currentRegion : null);
     const local = visitTown ? planPurchase(state, selfId, amount, { ...options, towns: [visitTown] }) : null;
     const plan = local || planPurchase(state, selfId, amount, options);
+    if (Diagnostics.active()) purchaseObservation(state, selfId, amount, options.money, 'acquire_request', plan ? 'planned' : 'no_source',
+        Diagnostics.enabled(state.characterId) ? { planned: Number(plan?.units || 0), caller: options.purpose || 'acquire', town: plan?.town } : undefined);
     if (!plan) return { state, bought: false, units: 0, traveling: false, plan: null };
     if (state.activity === 'shopping' && plan.town === state.currentRegion) {
         const bought = await buyHere(state, plan);
@@ -455,6 +482,8 @@ async function acquire(state, selfId, amount, options = {}) {
         ? null : GoalExecutor.beginMarketTravel(from, errandGoal(errand));
     if (travel && state.activity === 'shopping') travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
     const next = travel || withErrand;
+    if (Diagnostics.active()) purchaseObservation(state, selfId, amount, options.money, 'market_travel', travel ? 'departed' : state.party?.partyId || state.partyId ? 'party_wait' : 'town_visit_wait',
+        Diagnostics.enabled(state.characterId) ? { errandAt: errand.at, town: errand.town, planned: Number(plan.units), caller: errand.purpose } : undefined);
     if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan };
     const saved = await LifeState.upsertState(next, travel ? `market_errand_${errand.purpose}` : 'market_errand_kept');
     return { state: saved || next, bought: false, units: 0, traveling: !!travel && !!saved, plan };
@@ -532,6 +561,8 @@ async function buyErrand(state, options = {}) {
         ...(!options.skipNpc && !plan.lines?.length ? { errand } : {}) }) : { state, units: 0, hot: false };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
     const rest = Math.max(0, Number(errand.amount) - Number(bought.units || 0));
+    if (Diagnostics.active()) purchaseObservation(state, errand.selfId, errand.amount, plan?.money, 'errand_result', rest === 0 ? 'filled' : !plan ? 'no_source' : 'partial',
+        Diagnostics.enabled(state.characterId) ? { errandAt: errand.at, actual: Number(bought.units || 0), remaining: rest, spent: Number(bought.spent), town: errand.town } : undefined);
     const active = CombinedErrands.pending(bought.state).find(other => CombinedErrands.key(other) === CombinedErrands.key(errand));
     if (!active || Number(active.at) !== Number(errand.at) || Number(active.amount) !== Number(errand.amount)) {
         return { state: bought.state, purchased: bought.units > 0, units: bought.units, reason: 'errand_changed' };
@@ -653,7 +684,7 @@ const ColdMarketService = {
                 const progress = bought.progressApplied || (bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null);
                 if (diagnosticGoalRevision !== null) diagnostics.push({ owner: state.characterId,
                     revision: Number(bought.state?.simulation?.revision), goalRevision: diagnosticGoalRevision,
-                    trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units > 0 ? 'filled' : 'no_fill',
+                    trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units >= Number(goal.target.amount) ? 'filled' : bought.units > 0 ? 'partial' : 'no_fill',
                     item: Number(goal.target.itemId), need: Number(goal.target.amount), actual: bought.units,
                     remaining: Math.max(0, Number(goal.target.amount) - bought.units), spent: bought.spent, goalApplied: progress ? 1 : 0,
                     town: state.currentRegion, wishKey: goal.plan?.wishKey });

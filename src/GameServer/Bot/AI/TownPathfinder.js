@@ -364,6 +364,7 @@ function chooseNextTownStep(town, from, finalTarget) {
 }
 
 function createDiagnostics(from, to, routedTo, fromTown, toTown, routePlan, reason) {
+    if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return { changedTarget: !sameLoc(routedTo, to) };
     return {
         from: cloneLoc(from),
         to: cloneLoc(to),
@@ -482,6 +483,7 @@ const TownPathfinder = {
     },
 
     describeDiagnostics(diagnostics) {
+        if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return null;
         if (!diagnostics) return 'no path diagnostics';
         const route = `${locLabel(diagnostics.from)} -> ${locLabel(diagnostics.to)}`;
         const town = `${diagnostics.fromTown || 'field'} -> ${diagnostics.toTown || 'field'}`;

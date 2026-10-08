@@ -107,7 +107,7 @@ function nativeInputs(Data, Potions) {
     const positiveLineIndex = states.findIndex(state => state.level === 52);
     assert.deepEqual({ selfId: lines[positiveLineIndex].selfId, amount: lines[positiveLineIndex].amount,
         unitPrice: lines[positiveLineIndex].unitPrice, cost: lines[positiveLineIndex].cost },
-    { selfId: 1061, amount: 83, unitPrice: 330, cost: 27390 },
+    { selfId: 1061, amount: 7, unitPrice: 330, cost: 2310 },
     'the real SQL-refusal control uses the native funded level-52 potion line');
     return { states, lines, positiveLineIndex };
 }

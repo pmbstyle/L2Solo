@@ -21,7 +21,7 @@ async function tradeDone(session, buffer) {
     packet.readD(); // 1 = confirmed, 0 = cancelled
 
     if (packet.data[0] !== 1) {
-        console.info("TradeDone :: %s cancelled native bot trade", playerName);
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("TradeDone :: %s cancelled native bot trade", playerName);
         BotTradeService.cancel(session);
         session.dataSendToMe(ServerResponse.tradeDone(false));
         return;
@@ -64,7 +64,7 @@ async function tradeDone(session, buffer) {
             }
             reservedBuffTrade = confirmation.trade;
         }
-        console.info(
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
             "TradeDone :: %s confirmed native bot trade id=%s bot=%s playerItems=%j botItems=%j",
             playerName,
             tradeSummary?.id || 'unknown',

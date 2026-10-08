@@ -16,7 +16,7 @@ function skillStarted(actor, npcId, skill) {
         .writeD(0x00);
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${actor.fetchId()}:target=${npcId}:skill=${skill.fetchSelfId()}:level=${skill.fetchLevel?.() ?? 1}:hitTime=${skill.fetchCalculatedHitTime()}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${actor.fetchId()}:target=${npcId}:skill=${skill.fetchSelfId()}:level=${skill.fetchLevel?.() ?? 1}:hitTime=${skill.fetchCalculatedHitTime()}`;
     return buffer;
 }
 

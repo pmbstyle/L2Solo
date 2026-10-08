@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects developer action histories.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -194,7 +195,7 @@ async function actualWorkerArrival() {
     try {
         const loaded = await wait(message => message.type === 'ready' && message.payload.phase === 'loaded');
         assert.equal(loaded.payload.forbiddenDependencies, 0);
-        send('init', { config: { heartbeatMs: 250, loopIntervalMs: 20, pvpAggression: 1 } }, 'init');
+        send('init', { config: { developerDiagnostics: true, heartbeatMs: 250, loopIntervalMs: 20, pvpAggression: 1 } }, 'init');
         await wait(message => message.type === 'ready' && message.msgId === 'init');
         const now = Date.now();
         send('snapshot_page', { rows: [row(101, now), row(102, now)], initial: true, done: true }, 'initial');

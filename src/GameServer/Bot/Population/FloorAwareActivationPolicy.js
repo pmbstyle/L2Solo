@@ -78,13 +78,13 @@ function evaluateCandidate(state, context = {}, scan = {}) {
     const key = quantizedKey(playerLoc, candidateLoc);
     const cached = cache.get(key);
     if (cached && cached.expiresAt > timestamp) {
-        scan.cacheHits = Number(scan.cacheHits || 0) + 1;
+        if (Config.developerDiagnostics) scan.cacheHits = Number(scan.cacheHits || 0) + 1;
         return { ...cached.result, cached: true };
     }
 
     const checkLimit = Math.max(0, Number(context.geoCheckLimit ?? Config.activationFloorGeoChecksPerScan) || 0);
     if (Number(scan.geoChecks || 0) >= checkLimit) {
-        scan.budgetDeferred = Number(scan.budgetDeferred || 0) + 1;
+        if (Config.developerDiagnostics) scan.budgetDeferred = Number(scan.budgetDeferred || 0) + 1;
         return {
             accepted: false,
             reason: 'geodata_budget',
@@ -111,15 +111,16 @@ function evaluateCandidate(state, context = {}, scan = {}) {
 }
 
 function filterCandidates(states = [], context = {}) {
-    const startedAt = Date.now();
+    const startedAt = Config.developerDiagnostics ? Date.now() : 0;
     const scan = { geoChecks: 0, cacheHits: 0, budgetDeferred: 0 };
     const accepted = [];
-    const decisions = (states || []).map((state) => {
+    const decisions = Config.developerDiagnostics ? [] : null;
+    for (const state of states || []) {
         const result = evaluateCandidate(state, context, scan);
         if (result.accepted) accepted.push(state);
-        return { state, ...result };
-    });
-    Metrics.recordActivationFloorScan({
+        if (decisions) decisions.push({ state, ...result });
+    }
+    if (Config.developerDiagnostics) Metrics.recordActivationFloorScan({
         candidates: decisions.length,
         accepted: accepted.length,
         rejected: decisions.length - accepted.length,

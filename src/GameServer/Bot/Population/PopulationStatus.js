@@ -1,3 +1,4 @@
+const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -58,6 +59,7 @@ const PopulationStatus = {
     },
 
     summary() {
+        if (!Config.developerDiagnostics) return { enabled: false };
         const counts = this.counts();
         const metrics = Metrics.snapshot();
         const lag = Math.round(metrics.eventLoop.lagMs);

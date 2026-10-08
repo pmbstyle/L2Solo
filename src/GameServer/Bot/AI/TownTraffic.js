@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Corridor = invoke('GameServer/Geodata/TownPathCorridor');
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 
@@ -58,8 +59,8 @@ class TownTraffic {
                 if (distance < CELL) found.push({ ...entry, distance });
             }
         }
-        this.metrics.candidates += Math.min(inspected, MAX_CANDIDATES);
-        this.metrics.maxCandidates = Math.max(this.metrics.maxCandidates, Math.min(inspected, MAX_CANDIDATES));
+        DiagnosticConfig.developerDiagnostics && (this.metrics.candidates += Math.min(inspected, MAX_CANDIDATES));
+        DiagnosticConfig.developerDiagnostics && (this.metrics.maxCandidates = Math.max(this.metrics.maxCandidates, Math.min(inspected, MAX_CANDIDATES)));
         return found.sort((a, b) => a.distance - b.distance).slice(0, MAX_NEIGHBORS);
     }
 
@@ -68,9 +69,9 @@ class TownTraffic {
         session.townSteerAt = now + 500;
         const started = performance.now();
         if (started - this.windowAt >= WINDOW_MS) { this.windowAt = started; this.spentMs = 0; }
-        if (this.spentMs >= BUDGET_MS) { this.metrics.deferred++; return null; }
+        if (this.spentMs >= BUDGET_MS) { DiagnosticConfig.developerDiagnostics && (this.metrics.deferred++); return null; }
         try {
-            this.metrics.queries++;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.queries++);
             const id = Number(actor.fetchId());
             const speed = actor.fetchCollectiveRunSpd() || 120;
             const length = Corridor.distance(point, to);
@@ -99,21 +100,21 @@ class TownTraffic {
                     candidate.locZ = Geodata.getHeight(candidate.locX, candidate.locY, candidate.locZ);
                     if (Math.abs(candidate.locZ - point.locZ) > 32 || neighbors.some((n) => Corridor.distance(n, candidate) < 48)) continue;
                     if (Corridor.clearSegment(point, candidate) && Corridor.clearSegment(candidate, to)) {
-                        this.metrics.detours++;
+                        DiagnosticConfig.developerDiagnostics && (this.metrics.detours++);
                         return { point: candidate };
                     }
                 }
             }
-            this.metrics.yields++;
+            DiagnosticConfig.developerDiagnostics && (this.metrics.yields++);
             return { waitMs: 350 + id % 250 };
         } finally {
             const work = performance.now() - started;
             this.spentMs += work;
-            this.metrics.maxWorkMs = Math.max(this.metrics.maxWorkMs, work);
+            DiagnosticConfig.developerDiagnostics && (this.metrics.maxWorkMs = Math.max(this.metrics.maxWorkMs, work));
         }
     }
 
-    stats() { return { ...this.metrics, actors: this.actors.size, cells: this.cells.size }; }
+    stats() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.metrics, actors: this.actors.size, cells: this.cells.size }; }
 }
 
 const traffic = new TownTraffic();

@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const PartyAddressResolver = invoke('GameServer/Bot/AI/PartyAddressResolver');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
@@ -107,23 +108,25 @@ function roleAddressMatches(text, candidates) {
 }
 
 function recordMetric(result, options = {}) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     const source = options.source || 'deterministic';
     const dispatchCount = Math.max(0, Number(options.dispatchCount || 0));
-    if (source === 'deterministic') routeMetrics.messages += 1;
-    if (source === 'deterministic' && result?.candidate) routeMetrics.deterministicRoutes += 1;
+    if (source === 'deterministic') DiagnosticConfig.developerDiagnostics && (routeMetrics.messages += 1);
+    if (source === 'deterministic' && result?.candidate) DiagnosticConfig.developerDiagnostics && (routeMetrics.deterministicRoutes += 1);
     if (source === 'llm_router') {
-        routeMetrics.routerInvocations += 1;
-        if (result?.route === 'bot' && result?.candidate) routeMetrics.routerBotRoutes += 1;
+        DiagnosticConfig.developerDiagnostics && (routeMetrics.routerInvocations += 1);
+        if (result?.route === 'bot' && result?.candidate) DiagnosticConfig.developerDiagnostics && (routeMetrics.routerBotRoutes += 1);
     }
     if (result?.route === 'clarify' || result?.reason === 'explicit_ambiguous' || result?.reason === 'role_ambiguous') {
-        routeMetrics.clarified += 1;
+        DiagnosticConfig.developerDiagnostics && (routeMetrics.clarified += 1);
     }
-    if (result?.status === 'none' || result?.reason === 'unresolved' || result?.route === 'none') routeMetrics.unresolved += 1;
-    routeMetrics.dispatches += dispatchCount;
-    if (dispatchCount > 1) routeMetrics.multiDispatchViolations += 1;
+    if (result?.status === 'none' || result?.reason === 'unresolved' || result?.route === 'none') DiagnosticConfig.developerDiagnostics && (routeMetrics.unresolved += 1);
+    DiagnosticConfig.developerDiagnostics && (routeMetrics.dispatches += dispatchCount);
+    if (dispatchCount > 1) DiagnosticConfig.developerDiagnostics && (routeMetrics.multiDispatchViolations += 1);
 }
 
 function metrics() {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     return { ...routeMetrics };
 }
 

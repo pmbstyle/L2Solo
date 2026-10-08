@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Database = invoke('Database');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Policy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
@@ -52,8 +53,8 @@ async function purchase(offer) {
 let windowAt = 0, purchased = 0;
 const counters = { offers: 0, sold: 0, dropped: 0 };
 async function applyOffer(packet, { beforeWrite = () => {}, timestamp = Date.now() } = {}) {
-    counters.offers++;
-    const drop = reason => { counters.dropped++; return { ok: false, reason }; };
+    DiagnosticConfig.developerDiagnostics && (counters.offers++);
+    const drop = reason => { DiagnosticConfig.developerDiagnostics && (counters.dropped++); return { ok: false, reason }; };
     const provider = LifeState.cachedState(Number(packet?.providerId));
     const recipient = LifeState.cachedState(Number(packet?.recipientId));
     if (!provider || !recipient || provider.characterId === recipient.characterId
@@ -72,18 +73,18 @@ async function applyOffer(packet, { beforeWrite = () => {}, timestamp = Date.now
     const price = priceOffer(provider, recipient, packet.mpCost, packet.effects.length, timestamp);
     if (price === null) return drop('price_limit');
     const effects = Offer.expand(packet.effects, packet.timestamp);
-    try { beforeWrite(); } catch (error) { counters.dropped++; throw error; }
+    try { beforeWrite(); } catch (error) { DiagnosticConfig.developerDiagnostics && (counters.dropped++); throw error; }
     // Reserve a slot before awaiting the single native transaction.
     purchased++;
     let result;
     try {
         result = await purchase({ provider, recipient, spotId: packet.spotId, price,
             mpCost: packet.mpCost, effects, timestamp: packet.timestamp });
-    } catch (error) { purchased--; counters.dropped++; throw error; }
+    } catch (error) { purchased--; DiagnosticConfig.developerDiagnostics && (counters.dropped++); throw error; }
     if (!result.ok) { purchased--; return drop(result.reason || 'purchase_failed'); }
-    counters.sold++;
+    DiagnosticConfig.developerDiagnostics && (counters.sold++);
     return result;
 }
-function summary() { return { ...counters }; }
+function summary() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...counters }; }
 
 module.exports = { available, coldOffer, purchase, applyOffer, summary, skillAdapter };

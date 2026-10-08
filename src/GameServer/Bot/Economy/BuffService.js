@@ -130,17 +130,17 @@ async function castPaidBuff(playerSession, providerSession, skill, wait = waitFo
     const reported = Number(skill.fetchCalculatedHitTime?.() ?? skill.fetchHitTime?.());
     const castMs = Number.isFinite(reported) && reported > 0 ? Math.max(250, Math.floor(reported)) : 1000;
     providerSession.dataSendToMeAndOthers?.(ServerResponse.skillStarted(provider, player.fetchId(), skill), provider);
-    console.info('BuffService :: cast started player=%s provider=%s skill=%d castMs=%d',
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BuffService :: cast started player=%s provider=%s skill=%d castMs=%d',
         player.fetchName?.() || player.fetchId(), provider.fetchName?.() || provider.fetchId(), skill.fetchSelfId(), castMs);
     await wait(castMs);
     if (castInterrupted(playerSession, providerSession, player, provider, skill)) {
-        console.info('BuffService :: cast interrupted player=%s provider=%s skill=%d',
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BuffService :: cast interrupted player=%s provider=%s skill=%d',
             player.fetchName?.() || player.fetchId(), provider.fetchName?.() || provider.fetchId(), skill.fetchSelfId());
         return { effect: null, interrupted: true };
     }
     providerSession.dataSendToMeAndOthers?.(ServerResponse.magicSkillLaunched(provider, skill, [player]), provider);
     const outcome = Effects.execute(providerSession, provider, player, skill, { magicSkill: skill.fetchSpell?.() });
-    console.info('BuffService :: cast landed player=%s provider=%s skill=%d effect=%s',
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BuffService :: cast landed player=%s provider=%s skill=%d effect=%s',
         player.fetchName?.() || player.fetchId(), provider.fetchName?.() || provider.fetchId(), skill.fetchSelfId(), !!outcome?.effect);
     if (outcome?.effect) {
         provider.setMp(Number(provider.fetchMp()) - Number(skill.fetchConsumedMp()));
@@ -207,7 +207,7 @@ async function completeNativeTrade(trade, { wait = waitForCast } = {}) {
             ? applied ? `Done: ${applied} buff${applied === 1 ? '' : 's'} for ${charged} Adena.${unused ? ` Refunded ${unused} Adena for buffs not cast.` : ''}`
                 : `No buffs landed; ${unused} Adena refunded.`
             : `Only ${applied} buffs landed, and ${unused} Adena could not be refunded. Contact an admin.`);
-        console.info('BuffService :: native trade player=%s provider=%s offered=%d applied=%j skipped=%j charged=%d refunded=%d refundOk=%s',
+        if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BuffService :: native trade player=%s provider=%s offered=%d applied=%j skipped=%j charged=%d refunded=%d refundOk=%s',
             player?.fetchName?.() || offer.playerId, provider?.fetchName?.() || offer.providerId,
             offer.skills.length, appliedSkills, skippedSkills, charged, unused, refunded);
     }

@@ -571,7 +571,7 @@ module.exports = {
                     amount: Number(companionErrand.amount),
                     purchasedAt: Date.now()
                 };
-                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
                     botId: bot.fetchId(),
                     playerId: companionErrand.playerId,
                     itemSelfId: companionErrand.itemId,
@@ -602,7 +602,7 @@ module.exports = {
             ? Speech.lines('town.supply-purchase-failed.short-adena')
             : Speech.lines('town.supply-purchase-failed.unavailable'), { priority: 'coordination' });
                 utils.infoWarn('Shopping', 'requested supply purchase failed for %s: %s', bot.fetchName(), error.message);
-                WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(companionErrand.workflowId, 'return', {
                     botId: bot.fetchId(),
                     playerId: companionErrand.playerId,
                     itemSelfId: companionErrand.itemId,
@@ -941,7 +941,7 @@ module.exports = {
                     TownChatter.say(session, BotAI, 'supply-return', options.deliveryReady === true
             ? Speech.lines('town.supply-return.ready')
             : Speech.lines('town.supply-return.empty'), { priority: 'coordination' });
-                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(workflowId, 'return', {
                         botId: bot.fetchId(),
                         playerId: leaderSession?.actor?.fetchId?.() || null,
                         deliveryReady: options.deliveryReady === true
@@ -955,7 +955,7 @@ module.exports = {
                 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
                 Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_leader_offline')).catch(() => null).then(() => {
                     restoreHot();
-                    WorkflowTelemetry.recordSupply(workflowId, 'return', {
+                    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(workflowId, 'return', {
                         botId: bot.fetchId(),
                         deliveryReady: false,
                         leaderOnline: false

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('wealth-craft-policy');
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 isolated.assertConfigured(options.default);
 const Policy = require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
 const Data = invoke('GameServer/DataCache');

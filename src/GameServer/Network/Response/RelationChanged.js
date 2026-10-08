@@ -30,7 +30,7 @@ function relationChanged(actor) {
         .writeD(actor.fetchPvpFlag());
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `actor=${actor.fetchId()}:${actor.fetchName()}:relation=${relation}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${actor.fetchId()}:${actor.fetchName()}:relation=${relation}`;
     return buffer;
 }
 

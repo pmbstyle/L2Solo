@@ -385,6 +385,25 @@ function reservedEquipmentAmounts(state) {
     }, {});
 }
 
+// Only fields read by the reservation owners above. Plan descriptions,
+// observed prices, travel, progress and timestamps cannot change this input.
+function reservationInputKey(state = {}) {
+    const plan = state.stats?.equipmentPlan;
+    const craft = ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status)
+        && plan.strategy === 'craft';
+    const quantities = rows => (rows || []).map(row => [Number(row.selfId || 0), Number(row.amount || 0)]);
+    const clanCraft = craft && plan.clanGoal?.clanId && plan.recipeId;
+    const craftInputs = !craft ? null : clanCraft
+        ? [Number(plan.recipeId), Object.entries(plan.craftProviders || {})
+            .map(([id, provider]) => [Number(id), !!provider && !provider.known]).sort((a, b) => a[0] - b[0]),
+        Object.entries(plan.componentRecipes || {}).map(([id, recipe]) => [Number(id), Number(recipe)]).sort((a, b) => a[0] - b[0])]
+        : (plan.materials || []).map(row => [Number(row.selfId || 0), Number(row.amount || 0),
+            state.inventory?.[row.selfId]?.amount == null ? Number(row.owned || 0) : null]);
+    const combine = plan?.combine && ['active', 'component_ready', 'ready_to_craft', 'blocked'].includes(plan.status)
+        ? quantities(plan.combine.requirements) : null;
+    return JSON.stringify([Number(plan?.target?.selfId || 0), craftInputs, combine]);
+}
+
 function actorItemValue(item, property, method) {
     return item?.[method] ? item[method]() : item?.[property];
 }
@@ -619,6 +638,7 @@ module.exports = {
     reservedCombinationAmounts,
     reservedCraftAmounts,
     reservedEquipmentAmounts,
+    reservationInputKey,
     saleCandidates,
     saleSummary,
     isSpareConsumable,

@@ -4,6 +4,7 @@
 // seller separately. No saved basket, second wallet, or catalogue scan.
 const Funding = require('./PurchaseFunding');
 const Economy = require('./EconomyContext');
+const Diagnostics = require('./EconomyDiagnostics');
 const LIMIT = 12;
 const sellerKey = seller => [seller.town, seller.sourceId, seller.locX, seller.locY, seller.locZ].join(':');
 function quoteFor(selfId, town, price = null, seller = null) {
@@ -16,9 +17,24 @@ function quoteFor(selfId, town, price = null, seller = null) {
     }
     return best;
 }
+function observePlan(state, current, selfId, amount, count, available, offer, attribution, reason) {
+    if (!Diagnostics.active()) return;
+    const price = Number(offer.price);
+    Diagnostics.count('npc_plan', count > 0 ? 'planned' : 'refused', reason);
+    if (Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: Number(state.characterId),
+        phase: 'npc_plan', reason, caller: 'NpcRestockPlan', item: Number(selfId),
+        requested: amount, planned: count, available, budget: available, wallet: Number(current.adena),
+        unitPrice: price, npcId: Number(offer.sourceId), town: offer.town,
+        source: attribution.errand?.purpose || attribution.goal?.expectedGoal?.type || 'stock',
+        goalRevision: Number(attribution.goal?.updatedAt), errandAt: Number(attribution.errand?.at),
+        decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
+        revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
+}
 function collect(state, options = {}) {
     const town = options.town || state.currentRegion;
+    if (Diagnostics.active()) Diagnostics.count('npc_plan', 'request', 'collect');
     if (!town) return [];
+    const started = Diagnostics.active() ? performance.now() : 0;
     let current = { ...state, phase: 'cold', inventory: { ...state.inventory } };
     const Shot = invoke('GameServer/Inventory/ShotStock');
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
@@ -42,15 +58,24 @@ function collect(state, options = {}) {
         const cap = attribution.money == null ? Infinity : Math.max(0, Number(attribution.money));
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
-        const count = Math.min(maximum, Math.floor(amount), Math.floor(Math.min(cap,
-            Funding.spendable(current, 0, funding)) / price));
-        if (!(count > 0)) return;
+        const desired = Math.floor(amount);
+        const available = Funding.spendable(current, 0, funding);
+        const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price));
+        if (!(count > 0)) {
+            if (Diagnostics.active()) observePlan(state, current, selfId, amount, 0, available, offer, attribution, 'no_units');
+            return;
+        }
         const key = sellerKey(offer);
         if (!baskets.has(key)) baskets.set(key, { seller: offer, lines: [] });
         const basket = baskets.get(key);
         let line = basket.lines.find(row => row.selfId === Number(selfId));
         if (line && (line.unitPrice !== price || line.amount + count > maximum
-            || !Number.isSafeInteger(line.amount + count))) return;
+            || !Number.isSafeInteger(line.amount + count))) {
+            if (Diagnostics.active()) observePlan(state, current, selfId, amount, 0, available, offer, attribution, 'line_changed');
+            return;
+        }
+        if (Diagnostics.active()) observePlan(state, current, selfId, amount, count, available, offer, attribution,
+            count < desired ? 'partial' : 'funded');
         if (!line) {
             line = { selfId: Number(selfId), amount: 0, unitPrice: price, fundingParts: [],
                 autoEquip: attribution.autoEquip === true, errands: [] };
@@ -97,6 +122,7 @@ function collect(state, options = {}) {
             add(shot.selfId, plan.npcAmount, offer, {}, { survivalCost: context.kitCost(shot.selfId, offer.price) });
         }
     }
+    if (Diagnostics.active()) Diagnostics.duration('npc_plan', performance.now() - started);
     return [...baskets.values()];
 }
 async function purchase(state, options = {}) {

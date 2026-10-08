@@ -2,6 +2,7 @@ const assert = require('assert');
 const { format } = require('util');
 require('./helpers/databaseIsolation');
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const Chat = invoke('GameServer/Bot/AI/BotClanChat');
 const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Clan = invoke('GameServer/Clan/ClanService');

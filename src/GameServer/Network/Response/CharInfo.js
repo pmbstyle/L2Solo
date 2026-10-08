@@ -136,7 +136,7 @@ function charInfo(actor) {
         .writeD(0xffffff); // Name color
 
     const buffer = packet.fetchBuffer();
-    buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:baseRun=${runSpeed}:baseWalk=${walkSpeed}:moveMult=${movement.multiplier}:collectiveRun=${actor.fetchCollectiveRunSpd?.()}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:baseRun=${runSpeed}:baseWalk=${walkSpeed}:moveMult=${movement.multiplier}:collectiveRun=${actor.fetchCollectiveRunSpd?.()}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
     return buffer;
 }
 

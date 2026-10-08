@@ -50,10 +50,10 @@ function hot(session, target, tab) {
     const m = s.movement || {}, d = s.decisions || {}, buffs = s.buffs || {}, trade = s.trade || {};
     const details = [['Target', s.target ? `${s.target.type}: ${s.target.name || s.target.id}` : 'none'],
         ['Nearby', `Players ${s.nearby?.realPlayers ?? 0} / bots ${s.nearby?.friendlyBots ?? 0} / mobs ${s.nearby?.attackableNpcs ?? 0}`],
-        ['Movement', m.moving ? `moving (${m.towards})` : 'idle'], ['Path', `${m.pathSummary || 'none'} / geodata ${m.pathfinding?.pathLength ?? 0}`],
-        ['Blockers', s.blockers?.join(', ') || 'none'], ['Decision', Status.decisionSummary(d.role || d.hunt, d.role ? 'role' : 'hunt')],
+        ['Movement', m.moving ? `moving (${m.towards})` : 'idle'], ...((invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? [['Path', `${m.pathSummary || 'none'} / geodata ${m.pathfinding?.pathLength ?? 0}`]] : []),
+        ['Blockers', s.blockers?.join(', ') || 'none'], ...((invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? [['Decision', Status.decisionSummary(d.role || d.hunt, d.role ? 'role' : 'hunt')],
         ['Target AI', Status.decisionSummary(d.target, 'target')], ['Combat AI', Status.decisionSummary(d.combat, 'combat')],
-        ['PvP AI', Status.decisionSummary(d.pvp, 'pvp')],
+        ['PvP AI', Status.decisionSummary(d.pvp, 'pvp')]] : []),
         ['Buffs', buffs.eligible ? `WW ${buffs.windWalk}s / Shield ${buffs.shield}s / Haste ${buffs.haste}s / Might ${buffs.might}s${buffs.needsRefresh ? ' / refresh' : ''}` : `Might ${buffs.might ?? 0}s`],
         ['Trade', trade.last || (trade.shoppingTarget ? `going to ${trade.shoppingTarget.name}` : trade.store ? `${trade.store.type} / ${trade.store.title}` : 'none')],
         ['Spot detail', s.spot ? `${s.spot.name} / Lv ${s.spot.minLevel}-${s.spot.maxLevel} / density ${s.spot.density}` : 'none']];

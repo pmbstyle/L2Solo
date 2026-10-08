@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const { raiseDecision } = require('./AI/DecisionEvents');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
@@ -103,6 +104,7 @@ function clearTacticalState(session) {
 }
 
 function recordHotStage(name, startedAt) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     HotActorLodPolicy.recordSubsystem(name, performance.now() - startedAt, 1);
 }
 
@@ -460,9 +462,9 @@ const BotAI = {
         }
 
         if (HotActorLodPolicy.shouldRefreshStatus(session, lodContext, tickStartedAt)) {
-            const statusStartedAt = Date.now();
+            const statusStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
             session.botStatus = BotStatus.getStatus(session);
-            HotActorLodPolicy.recordStatusRefresh(session, Date.now() - statusStartedAt);
+            HotActorLodPolicy.recordStatusRefresh(session, DiagnosticConfig.developerDiagnostics ? Date.now() - statusStartedAt : 0);
         }
         if (defendingPvp) {
             if (session.partyCompanion === true && session.followPlayerSession) PartyCompanionService.updateMember(session);
@@ -507,7 +509,7 @@ const BotAI = {
 
         // If bot is a companion, dynamically refresh player's party HUD sidebar HP/MP bars
         if (session.followPlayerSession && session.partyCompanion === true) {
-            const partyMemberStartedAt = performance.now();
+            const partyMemberStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
             PartyCompanionService.updateMember(session);
             recordHotStage('partyMemberSync', partyMemberStartedAt);
         }
@@ -636,7 +638,7 @@ const BotAI = {
             session.plan = 'hunting';
         }
 
-        const equipmentStartedAt = performance.now();
+        const equipmentStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
         BotEquipmentUpgrade.applyBestUpgrades(session);
         recordHotStage('equipmentUpgrade', equipmentStartedAt);
 
@@ -644,7 +646,7 @@ const BotAI = {
         // next hunt or formation move. The queue yields to combat and support.
         if (isCompanion || session.hotBackgroundPartyId || session.partyGroundPickupQueue?.length
             || ['hunting', 'resting'].includes(session.plan)) {
-            const groundLootStartedAt = performance.now();
+            const groundLootStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
             PartyCompanionService.reconcileGroundLoot(session);
             const startedGroundPickup = PartyCompanionService.startQueuedGroundPickup(session);
             recordHotStage('partyGroundLoot', groundLootStartedAt);
@@ -668,19 +670,19 @@ const BotAI = {
         }
         if (state) {
             const stateName = session.plan;
-            const stateStartedAt = performance.now();
+            const stateStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
             try {
                 state.tick(session, bot, Generics, BotAI);
             } catch (err) {
                 console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
             } finally {
-                recordHotStage(`state.${stateName}`, stateStartedAt);
+                DiagnosticConfig.developerDiagnostics && recordHotStage(`state.${stateName}`, stateStartedAt);
             }
         } else {
             utils.infoWarn('GameServer', 'Unhandled Bot plan: %s', session.plan);
         }
         } finally {
-            HotActorLodPolicy.recordTick(lodContext.tier, Date.now() - tickStartedAt);
+            if (DiagnosticConfig.developerDiagnostics) HotActorLodPolicy.recordTick(lodContext.tier, Date.now() - tickStartedAt);
         }
     },
 

@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters.
 
 // Pure stream contract; generic providers do not establish native delivery.
 const assert = require('node:assert/strict');

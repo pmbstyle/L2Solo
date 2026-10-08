@@ -1,4 +1,5 @@
 const assert = require('assert');
+require('../src/GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const EventEmitter = require('events');
 const fs = require('fs');
 const path = require('path');

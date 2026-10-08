@@ -82,7 +82,7 @@ function maybeAnnounce(party, members, spot, timestamp = Date.now()) {
         ...party,
         stats: { ...(party.stats || {}), lastRecruitmentAdAt: timestamp }
     };
-    console.info('BotParty :: %s recruitment ad: %s', leader?.name || 'Bot', text);
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotParty :: %s recruitment ad: %s', leader?.name || 'Bot', text);
     return { party: nextParty, announced: true, text };
 }
 

@@ -1,3 +1,5 @@
+const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
@@ -55,9 +57,9 @@ const metrics = {
     queueOldestRunningAgeMs: 0,
     queueMaxAttempt: 0,
     queueObservedAt: 0,
-    stages: new Map(),
-    actionCounts: new Map(),
-    reasonCounts: new Map()
+    stages: new DiagnosticMetricMap(),
+    actionCounts: new DiagnosticMetricMap(),
+    reasonCounts: new DiagnosticMetricMap()
 };
 
 let bootstrapped = false;
@@ -78,10 +80,12 @@ function parseJson(value, fallback = {}) {
 }
 
 function record(map, value) {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     if (value) map.set(String(value), (map.get(String(value)) || 0) + 1);
 }
 
 function recordAction(action, field = 'claimed') {
+    if (!DiagnosticConfig.developerDiagnostics) return;
     record(metrics.actionCounts, `${action.actionType}:${field}`);
 }
 
@@ -90,25 +94,25 @@ function actionPayload(action) {
 }
 
 function recordQueueStats(stats = {}) {
-    metrics.queuePending = number(stats.pending);
-    metrics.queueReady = number(stats.ready);
-    metrics.queueRunning = number(stats.running);
-    metrics.queueExpiredRunning = number(stats.expiredRunning);
-    metrics.queueOldestPendingAgeMs = number(stats.oldestPendingAgeMs);
-    metrics.queueOldestReadyAgeMs = number(stats.oldestReadyAgeMs);
-    metrics.queueOldestRunningAgeMs = number(stats.oldestRunningAgeMs);
-    metrics.queueMaxAttempt = number(stats.maxAttempt);
-    metrics.queueObservedAt = number(stats.observedAt, Date.now());
+    DiagnosticConfig.developerDiagnostics && (metrics.queuePending = number(stats.pending));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueReady = number(stats.ready));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueRunning = number(stats.running));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueExpiredRunning = number(stats.expiredRunning));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueOldestPendingAgeMs = number(stats.oldestPendingAgeMs));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueOldestReadyAgeMs = number(stats.oldestReadyAgeMs));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueOldestRunningAgeMs = number(stats.oldestRunningAgeMs));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueMaxAttempt = number(stats.maxAttempt));
+    DiagnosticConfig.developerDiagnostics && (metrics.queueObservedAt = number(stats.observedAt, Date.now()));
 }
 
 async function refreshQueueStats() {
-    const startedAt = Date.now();
+    const startedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     try {
         const stats = await Database.fetchClanActionQueueStats();
         recordQueueStats(stats);
         return stats;
     } finally {
-        StageMetrics.record(metrics.stages, 'queue_stats', Date.now() - startedAt);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'queue_stats', Date.now() - startedAt);
     }
 }
 
@@ -267,8 +271,8 @@ async function bootstrap() {
             if (result.created) titleCreated += 1;
         }
     }
-    metrics.bootstraps += 1;
-    metrics.planned += created + titleCreated;
+    DiagnosticConfig.developerDiagnostics && (metrics.bootstraps += 1);
+    DiagnosticConfig.developerDiagnostics && (metrics.planned += created + titleCreated);
     return { attempted: clans.length, created, playerManaged, titleAttempted, titleCreated };
 }
 
@@ -294,7 +298,7 @@ async function scheduleTitleReview(clan) {
         priority: 20,
         payload: { reason: 'untitled_members', memberIds: missingIds, rosterKey }
     });
-    if (queued.created) metrics.planned += 1;
+    if (queued.created) DiagnosticConfig.developerDiagnostics && (metrics.planned += 1);
     return queued;
 }
 
@@ -316,7 +320,7 @@ async function scheduleNext(clan, goal, parentAction, delayMs = 0) {
             plan: String(goal.plan?.kind || '')
         }
     });
-    if (queued.created) metrics.planned += 1;
+    if (queued.created) DiagnosticConfig.developerDiagnostics && (metrics.planned += 1);
     return queued;
 }
 
@@ -332,7 +336,7 @@ async function schedulePlanAfterLevelUp(clan, parentAction) {
             reason: 'level_up'
         }
     });
-    if (queued.created) metrics.planned += 1;
+    if (queued.created) DiagnosticConfig.developerDiagnostics && (metrics.planned += 1);
     return queued;
 }
 
@@ -348,7 +352,7 @@ async function schedulePlanAfterMarketMiss(clan, parentAction) {
             reason: Contracts.REASON_CODES.MARKET_NO_OFFER
         }
     });
-    if (queued.created) metrics.planned += 1;
+    if (queued.created) DiagnosticConfig.developerDiagnostics && (metrics.planned += 1);
     return queued;
 }
 
@@ -359,9 +363,9 @@ async function loadClan(clanId) {
 }
 
 async function execute(action, options = {}) {
-    const projectionStartedAt = Date.now();
+    const projectionStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     const clan = await loadClan(action.clanId).finally(() => {
-        StageMetrics.record(metrics.stages, 'projection', Date.now() - projectionStartedAt);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'projection', Date.now() - projectionStartedAt);
     });
     if (!clan) return { ok: false, code: 'target_not_autonomous' };
     const payload = actionPayload(action);
@@ -371,7 +375,7 @@ async function execute(action, options = {}) {
         ? Math.min(requestedDeadline, leaseDeadline)
         : leaseDeadline;
     const actionType = String(action.actionType);
-    const executeStartedAt = Date.now();
+    const executeStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
     let result;
     try {
         switch (actionType) {
@@ -436,9 +440,9 @@ async function execute(action, options = {}) {
                 return { ok: false, code: 'unknown_clan_action_type' };
         }
     } finally {
-        const durationMs = Date.now() - executeStartedAt;
-        StageMetrics.record(metrics.stages, 'execute', durationMs);
-        StageMetrics.record(metrics.stages, `execute:${actionType}`, durationMs);
+        const durationMs = DiagnosticConfig.developerDiagnostics ? Date.now() - executeStartedAt : 0;
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'execute', durationMs);
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, `execute:${actionType}`, durationMs);
     }
     return result || { ok: true };
 }
@@ -446,7 +450,7 @@ async function execute(action, options = {}) {
 async function resolveAction(action, options = {}) {
     const startedAt = Date.now();
     let resolutionRecorded = false;
-    metrics.running += 1;
+    DiagnosticConfig.developerDiagnostics && (metrics.running += 1);
     recordAction(action, 'running');
     try {
         const result = await execute(action, options);
@@ -457,21 +461,21 @@ async function resolveAction(action, options = {}) {
         const reasonCode = result?.code || result?.reason || (ok ? '' : 'clan_action_failed');
         const retryDelay = eventWait ? null : deferredRetryDelay(String(action.actionType), result);
         if (retryDelay !== null) {
-            const deferStartedAt = Date.now();
+            const deferStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
             const released = await Database.releaseClanAction({
                 actionId: action.id,
                 availableAt: Date.now() + retryDelay,
                 expectedAttempt: action.attempt,
                 expectedLeaseUntil: action.leaseUntil
             }).finally(() => {
-                StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
+                DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
             });
             if (!released.ok) {
-                metrics.releaseConflicts += 1;
+                DiagnosticConfig.developerDiagnostics && (metrics.releaseConflicts += 1);
                 return released;
             }
-            metrics.deferred += 1;
-            metrics.retried += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.deferred += 1);
+            DiagnosticConfig.developerDiagnostics && (metrics.retried += 1);
             recordAction(action, 'deferred');
             record(metrics.reasonCounts, reasonCode);
             return {
@@ -481,24 +485,24 @@ async function resolveAction(action, options = {}) {
                 durationMs: Date.now() - startedAt
             };
         }
-        const settleStartedAt = Date.now();
+        const settleStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
         const resolved = await Database.resolveClanAction({
             actionId: action.id,
             status: ok ? 'succeeded' : 'failed',
             result,
             reasonCode
         }).finally(() => {
-            StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
         });
         if (!resolved.ok) {
-            metrics.releaseConflicts += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.releaseConflicts += 1);
             return resolved;
         }
         if (!resolved.idempotent) metrics.resolved += 1;
         resolutionRecorded = true;
         if (resolved.idempotent) return resolved;
 
-        const followUpStartedAt = Date.now();
+        const followUpStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
         try {
             const clan = await loadClan(action.clanId);
             const goal = clan?.state?.goal || null;
@@ -517,7 +521,7 @@ async function resolveAction(action, options = {}) {
                 await schedulePlanAfterLevelUp(clan, action);
             } else if (clan && playerMarketWait) {
                 await scheduleNext(clan, goal, action, Config.actionRetryMs);
-                metrics.retried += 1;
+                DiagnosticConfig.developerDiagnostics && (metrics.retried += 1);
             } else if (clan && marketMiss) {
                 await schedulePlanAfterMarketMiss(clan, action);
             } else if (clan && goal && !(String(action.actionType) === ACTION_TYPES.PLAN && goal.status === 'completed')) {
@@ -526,51 +530,51 @@ async function resolveAction(action, options = {}) {
                 if (!autonomous || String(action.actionType) === ACTION_TYPES.PLAN && goal.type !== 'equipment' || productive) {
                     const delay = autonomous ? 0 : reviewDelayFor(String(action.actionType), goal, result, ok, productive);
                     await scheduleNext(clan, goal, action, delay);
-                    if (delay > 0) metrics.retried += 1;
+                    if (delay > 0) DiagnosticConfig.developerDiagnostics && (metrics.retried += 1);
                 }
             }
         } finally {
-            StageMetrics.record(metrics.stages, 'follow_up', Date.now() - followUpStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'follow_up', Date.now() - followUpStartedAt);
         }
         if (ok) {
-            metrics.succeeded += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.succeeded += 1);
             recordAction(action, 'succeeded');
         } else {
-            metrics.failed += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
             recordAction(action, 'failed');
             record(metrics.reasonCounts, reasonCode);
         }
         return { ...resolved, result, durationMs: Date.now() - startedAt };
     } catch (error) {
         const reasonCode = error?.message || 'clan_action_exception';
-        const settleStartedAt = Date.now();
+        const settleStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
         const resolved = await Database.resolveClanAction({
             actionId: action.id,
             status: 'failed',
             result: { error: reasonCode },
             reasonCode: 'clan_action_exception'
         }).finally(() => {
-            StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'settle', Date.now() - settleStartedAt);
         });
         if (resolved?.ok) {
             if (!resolved.idempotent && !resolutionRecorded) metrics.resolved += 1;
             resolutionRecorded = true;
         } else {
-            metrics.releaseConflicts += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.releaseConflicts += 1);
         }
-        metrics.failed += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.failed += 1);
         record(metrics.reasonCounts, 'clan_action_exception');
         return { ok: false, code: 'clan_action_exception', error: reasonCode };
     } finally {
-        const durationMs = Math.max(0, Date.now() - startedAt);
-        metrics.durationMs += durationMs;
-        metrics.durationSamples += 1;
-        metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs);
-        StageMetrics.record(metrics.stages, 'total', durationMs);
+        const durationMs = DiagnosticConfig.developerDiagnostics ? Math.max(0, Date.now() - startedAt) : 0;
+        DiagnosticConfig.developerDiagnostics && (metrics.durationMs += durationMs);
+        DiagnosticConfig.developerDiagnostics && (metrics.durationSamples += 1);
+        DiagnosticConfig.developerDiagnostics && (metrics.durationMaxMs = Math.max(metrics.durationMaxMs, durationMs));
+        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'total', durationMs);
         if (Number.isFinite(Number(options.deadlineAt)) && Date.now() > Number(options.deadlineAt)) {
-            metrics.budgetOverruns += 1;
+            DiagnosticConfig.developerDiagnostics && (metrics.budgetOverruns += 1);
         }
-        metrics.running = Math.max(0, metrics.running - 1);
+        DiagnosticConfig.developerDiagnostics && (metrics.running = Math.max(0, metrics.running - 1));
     }
 }
 
@@ -590,10 +594,10 @@ const ClanActionService = {
         if (!Config.enabled) return Promise.resolve({ attempted: 0, claimed: 0, resolved: 0, released: 0, succeeded: 0, failed: 0, leftRunning: 0, budgetStopped: false });
         const budgetMs = Math.max(1, number(options.budgetMs, Config.resolveBudgetMs));
         const safeLimit = Math.max(1, Math.min(100, Math.floor(number(options.limit, Config.actionBatchSize))));
-        const batchStartedAt = Date.now();
-        const bootstrapStartedAt = Date.now();
+        const batchStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
+        const bootstrapStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
         return bootstrap().finally(() => {
-            StageMetrics.record(metrics.stages, 'bootstrap', Date.now() - bootstrapStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'bootstrap', Date.now() - bootstrapStartedAt);
         }).then(async (boot) => {
             const summary = {
                 bootstrap: boot,
@@ -607,7 +611,7 @@ const ClanActionService = {
                 budgetStopped: false
             };
             await scheduleReviews();
-            await refreshQueueStats();
+            if (DiagnosticConfig.developerDiagnostics) await refreshQueueStats();
             // Bootstrap and queue telemetry are admission overhead, not clan
             // work. Starting the execution budget before those reads caused a
             // live queue to claim and release the same oldest action forever
@@ -616,41 +620,41 @@ const ClanActionService = {
             while (summary.attempted < safeLimit) {
                 if (Date.now() >= deadlineAt) {
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
-                const claimStartedAt = Date.now();
+                const claimStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
                 const claim = await Database.claimClanAction({
                     leaseMs: Config.actionLeaseMs
                 }).finally(() => {
-                    StageMetrics.record(metrics.stages, 'claim', Date.now() - claimStartedAt);
+                    DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'claim', Date.now() - claimStartedAt);
                 });
-                metrics.leaseRecoveries += number(claim?.recovered);
+                DiagnosticConfig.developerDiagnostics && (metrics.leaseRecoveries += number(claim?.recovered));
                 const action = claim?.action || null;
                 if (!action) break;
-                metrics.claimed += 1;
+                DiagnosticConfig.developerDiagnostics && (metrics.claimed += 1);
                 summary.claimed += 1;
-                metrics.queueAgeMs += Math.max(0, Date.now() - number(action.createdAt, Date.now()));
-                metrics.queueAgeSamples += 1;
+                DiagnosticConfig.developerDiagnostics && (metrics.queueAgeMs += Math.max(0, Date.now() - number(action.createdAt, Date.now())));
+                DiagnosticConfig.developerDiagnostics && (metrics.queueAgeSamples += 1);
                 recordAction(action);
 
                 if (Date.now() >= deadlineAt) {
-                    const releaseStartedAt = Date.now();
+                    const releaseStartedAt = DiagnosticConfig.developerDiagnostics ? Date.now() : 0;
                     const released = await Database.releaseClanAction({
                         actionId: action.id,
                         expectedAttempt: action.attempt,
                         expectedLeaseUntil: action.leaseUntil
                     }).finally(() => {
-                        StageMetrics.record(metrics.stages, 'release', Date.now() - releaseStartedAt);
+                        DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'release', Date.now() - releaseStartedAt);
                     });
                     if (released.ok) {
-                        metrics.releasedUnstarted += 1;
+                        DiagnosticConfig.developerDiagnostics && (metrics.releasedUnstarted += 1);
                         summary.released += 1;
                     } else {
-                        metrics.releaseConflicts += 1;
+                        DiagnosticConfig.developerDiagnostics && (metrics.releaseConflicts += 1);
                     }
                     summary.budgetStopped = true;
-                    metrics.budgetStops += 1;
+                    DiagnosticConfig.developerDiagnostics && (metrics.budgetStops += 1);
                     break;
                 }
 
@@ -666,11 +670,12 @@ const ClanActionService = {
             summary.queue = queue;
             return summary;
         }).finally(() => {
-            StageMetrics.record(metrics.stages, 'batch_total', Date.now() - batchStartedAt);
+            DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'batch_total', Date.now() - batchStartedAt);
         });
     },
 
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             bootstraps: metrics.bootstraps,
             planned: metrics.planned,

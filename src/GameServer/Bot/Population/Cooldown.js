@@ -63,7 +63,7 @@ const Cooldown = {
                 BotManager.sessions = BotManager.sessions.filter((candidate) => candidate !== session);
                 session.actor = null;
 
-                console.info('BotPopulation :: cooled %s reason=%s', saved.name, reason);
+                if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: cooled %s reason=%s', saved.name, reason);
                 Metrics.recordCooldown();
                 return { ok: true, state: saved, reason };
             });

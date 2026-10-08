@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+require('../src/GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const fs = require('node:fs');
 const path = require('node:path');
 const { Worker } = require('node:worker_threads');

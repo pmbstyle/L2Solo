@@ -1,6 +1,7 @@
 const assert = require('assert');
 
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 

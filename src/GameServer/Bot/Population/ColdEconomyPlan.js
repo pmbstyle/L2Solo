@@ -1,5 +1,7 @@
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Funding = require('../Economy/PurchaseFunding');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
+const { fnv1a32 } = require('../Fnv1a');
 const MAX_BYTES = 768;
 const MAX_SHOT_BYTES = 128;
 const { COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES } = require('./ColdEconomyDecision');
@@ -33,7 +35,32 @@ function edges(before, after, context = {}, timestamp = Date.now(), options = {}
 
 // Same native sale/bid policies as a town/remote review, with the worker's
 // mirrors supplied explicitly. No warehouse or life-state/database reader.
-function* prepare(state, economy, options = {}) {
+function prepare(state, economy, options = {}) {
+    // Off returns the native iterator directly. On accumulates compute slices
+    // only: waiting between generator yields is not planning CPU time.
+    const iterator = prepareNative(state, economy, options);
+    return Diagnostics.active() ? measured(iterator) : iterator;
+}
+function* measured(iterator) {
+    if (Diagnostics.active()) Diagnostics.count('plan_compute', 'request');
+    let elapsed = 0, next;
+    try {
+        do {
+            const diagnostic = Diagnostics.active(), started = diagnostic ? performance.now() : 0;
+            next = iterator.next();
+            if (diagnostic && Diagnostics.active()) elapsed += performance.now() - started;
+            if (!next.done) yield next.value;
+        } while (!next.done);
+        if (Diagnostics.active()) {
+            Diagnostics.count('plan_compute', 'build');
+            Diagnostics.duration('plan_compute', elapsed);
+        }
+        return next.value;
+    } finally {
+        if (!next?.done) iterator.return();
+    }
+}
+function* prepareNative(state, economy, options) {
     const Listing = require('../Economy/MarketListingPolicy');
     const own = options.board?.ownerLines(Number(state.characterId)) || [];
     const kept = new Map(own.filter(line => line.storeType === SELL)
@@ -67,9 +94,10 @@ function* prepare(state, economy, options = {}) {
     const needs = require('../Goals/NeedsEvaluator').evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
     const goal = needs[0];
     const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
+    const money = Funding.spendable(state, options.buyOrderEscrow || 0,
+        goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate });
     const lines = require('../Economy/BuyAdPolicy').linesFor(buyState, goal, { ...options, economy,
-        watchList: economy.watchList || [], money: Funding.spendable(state, options.buyOrderEscrow || 0,
-            goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate }) });
+        watchList: economy.watchList || [], money });
     const plan = { sell, withdraw, buyAds: lines.slice(0, 3).map(row => [row.selfId, row.count, row.price]),
         travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null };
     const shot = decideShot(state, economy, { ...options, ownLines: own });
@@ -81,6 +109,19 @@ function* prepare(state, economy, options = {}) {
         else if (plan.buyAds.length) plan.buyAds.pop();
         else if (plan.withdraw.length) plan.withdraw.pop();
         else { plan.travel = null; break; }
+    }
+    if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {
+        const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',
+            trigger: options.trigger || 'plan_request', phase: 'plan_compute',
+            inputHash: economy.inputHash ?? fnv1a32(economy.inputKey || ''),
+            decisionSeq: economy.network?.decisionSeq ?? state.stats?.decisionSeq,
+            activityLeaf: economy.network?.activityLeaf ?? state.stats?.activityLeaf,
+            goalRevision: goal?.revision, wishKey: goal?.plan?.wishKey,
+            wallet: state.adena, escrow: options.buyOrderEscrow,
+            budget: money, available: money, reserve: state.stats?.money?.[2] };
+        Diagnostics.push({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
+        for (const row of plan.buyAds) Diagnostics.push({ ...trace, phase: 'buy_request', reason: 'bid_planned',
+            item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });
     }
     return plan;
 }

@@ -361,7 +361,7 @@ function refreshAfterEquipment(session, upgrades) {
         session.dataSendToMe(ServerResponse.itemsList(actor.backpack.fetchItems()));
     }
 
-    console.info(
+    if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info(
         "BotGear :: %s equipped upgrades: %s",
         actor.fetchName(),
         upgrades.map(({ item }) => item.fetchName()).join(', ')

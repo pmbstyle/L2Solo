@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
 
 const { performance } = require('perf_hooks');
@@ -52,19 +53,19 @@ function drain() {
     const entry = nextEntry();
     if (!entry) return;
     pending.delete(entry.key);
-    sample(waitSamples, performance.now() - entry.queuedAt);
-    const startedAt = performance.now();
+    if (DiagnosticConfig.developerDiagnostics) sample(waitSamples, performance.now() - entry.queuedAt);
+    const startedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
     try {
         entry.task();
-        counters.completed += 1;
+        DiagnosticConfig.developerDiagnostics && (counters.completed += 1);
     } catch (error) {
-        counters.errors += 1;
+        DiagnosticConfig.developerDiagnostics && (counters.errors += 1);
         if (typeof entry.onError === 'function') entry.onError(error);
         else console.error('Hot AI dispatch error:', error);
     } finally {
-        sample(runSamples, performance.now() - startedAt);
+        if (DiagnosticConfig.developerDiagnostics) sample(runSamples, performance.now() - startedAt);
         if (pending.size > 0) {
-            counters.yields += 1;
+            DiagnosticConfig.developerDiagnostics && (counters.yields += 1);
             scheduleDrain();
         }
     }
@@ -74,10 +75,10 @@ function enqueue(key, task, options = {}) {
     if (!key || typeof task !== 'function') return false;
     const existing = pending.get(key);
     if (existing) {
-        counters.coalesced += 1;
+        DiagnosticConfig.developerDiagnostics && (counters.coalesced += 1);
         if (options.urgent === true && !existing.urgent) {
             existing.urgent = true;
-            counters.urgent += 1;
+            DiagnosticConfig.developerDiagnostics && (counters.urgent += 1);
             urgentQueue.push(existing);
         }
         return false;
@@ -87,14 +88,14 @@ function enqueue(key, task, options = {}) {
         task,
         onError: options.onError,
         urgent: options.urgent === true,
-        queuedAt: performance.now(),
+        queuedAt: DiagnosticConfig.developerDiagnostics ? performance.now() : null,
         canceled: false
     };
     pending.set(key, entry);
     (entry.urgent ? urgentQueue : normalQueue).push(entry);
-    counters.enqueued += 1;
-    if (entry.urgent) counters.urgent += 1;
-    counters.maxDepth = Math.max(counters.maxDepth, pending.size);
+    DiagnosticConfig.developerDiagnostics && (counters.enqueued += 1);
+    if (entry.urgent) DiagnosticConfig.developerDiagnostics && (counters.urgent += 1);
+    DiagnosticConfig.developerDiagnostics && (counters.maxDepth = Math.max(counters.maxDepth, pending.size));
     scheduleDrain();
     return true;
 }
@@ -104,11 +105,12 @@ function cancel(key) {
     if (!entry) return false;
     entry.canceled = true;
     pending.delete(key);
-    counters.canceled += 1;
+    DiagnosticConfig.developerDiagnostics && (counters.canceled += 1);
     return true;
 }
 
 function snapshot() {
+    if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
     return {
         ...counters,
         depth: pending.size,

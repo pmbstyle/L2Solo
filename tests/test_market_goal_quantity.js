@@ -17,7 +17,7 @@ const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 // Run the same native cases with telemetry enabled: it must not affect fills,
 // funding, goal progress or stale-goal protection.
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9101,9102,9103,9105,9107';
+Config.developerDiagnostics = true; Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '9101,9102,9103,9105,9107';
 Data.init();
 
 async function buyer(id, wallet, held = 0, itemId = 2509) {

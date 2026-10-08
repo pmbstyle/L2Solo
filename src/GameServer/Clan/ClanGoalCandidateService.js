@@ -1,3 +1,4 @@
+const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const EquipmentService = invoke('GameServer/Clan/ClanEquipmentService');
 const EquipmentPolicy = invoke('GameServer/Clan/ClanEquipmentPolicy');
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
@@ -267,7 +268,7 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
     prune(startedAt);
     const cached = cache.get(key);
     if (cached && startedAt - cached.createdAt <= CACHE_TTL_MS) {
-        metrics.cacheHits += 1;
+        DiagnosticConfig.developerDiagnostics && (metrics.cacheHits += 1);
         return { ...cached.value, cacheHit: true };
     }
     const clanId = number(clan.id);
@@ -329,11 +330,11 @@ async function snapshotFor(clan, previousGoal = null, options = {}) {
         cache.set(key, { clanId, createdAt: Date.now(), value });
         group.add(key);
     }
-    const durationMs = Date.now() - startedAt;
-    metrics.builds += 1;
-    metrics.buildMs += durationMs;
-    metrics.buildMaxMs = Math.max(metrics.buildMaxMs, durationMs);
-    metrics.candidates += candidates.length;
+    const durationMs = DiagnosticConfig.developerDiagnostics ? Date.now() - startedAt : 0;
+    DiagnosticConfig.developerDiagnostics && (metrics.builds += 1);
+    DiagnosticConfig.developerDiagnostics && (metrics.buildMs += durationMs);
+    DiagnosticConfig.developerDiagnostics && (metrics.buildMaxMs = Math.max(metrics.buildMaxMs, durationMs));
+    DiagnosticConfig.developerDiagnostics && (metrics.candidates += candidates.length);
     return { ...value, cacheHit: false };
 }
 
@@ -346,6 +347,7 @@ module.exports = {
     networkCandidates,
     snapshotFor,
     metrics() {
+        if (!DiagnosticConfig.developerDiagnostics) return { enabled: false };
         return {
             ...metrics,
             buildAvgMs: metrics.builds ? metrics.buildMs / metrics.builds : 0,

@@ -5,10 +5,12 @@ const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const { WishNetwork, remember } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
+const Diagnostics = require('./EconomyDiagnostics');
+const { fnv1a32 } = require('../Fnv1a');
 const engine = new WishNetwork();
 const Trip = require('./EconomicTrip');
 let routeAnchors = new WeakMap();
-const mainColdForState = new Map();
+let mainColdForState = null;
 let runtime = {};
 const extensions = new Map();
 function configure(providers = {}) { runtime = providers; reset(); }
@@ -22,7 +24,8 @@ let planningContexts = 0;
 function setPlanningContexts(count) {
     planningContexts = Math.max(0, Math.min(64, Math.floor(Number(count) || 0)));
     while (cache.size > 64 - planningContexts) {
-        const key = cache.keys().next().value; cache.delete(key); engine.forget(key);
+        const key = cache.keys().next().value; cache.delete(key); engine.forget(key, 'planning_capacity');
+        if (Diagnostics.active()) Diagnostics.count('context', 'eviction', 'planning_capacity');
     }
 }
 // Groups apart, so a party composition that weighs many candidate groups
@@ -75,17 +78,17 @@ function routeState(state, session) {
 function inputKey(state, deps = {}) {
     const stats = state.stats || {};
     const items = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount, row.equippedCount || row.equipped,
-        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
+        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, row.kind, row.rank, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
-        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId, state.partyId,
+        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.clanId, state.party?.partyId, state.partyId,
         stats.generatedCold, stats.race, stats.marketSellRetryAfter,
         Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
-        JSON.stringify(stats.equipmentPlan || null), JSON.stringify(stats.clanMaterialDemand || null),
+        invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
@@ -184,7 +187,8 @@ function foundation(state, deps, persona, timestamp, price) {
     const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
     const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
-    if (spotTable?.stacks !== null && spotTable?.stacks !== undefined) {
+    const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
+    if (hasBagForecast) {
         const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
         const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
         // ARCH-NOTE: size the E9 bag interval on the bag after its
@@ -207,10 +211,14 @@ function foundation(state, deps, persona, timestamp, price) {
                 presenceOnly: true })) slotLimit = Math.min(slotLimit, saleLimit);
         }
         const free = Math.max(0, slotLimit - Floor.stateInventory(state, Data.items).slots - plannedSlots);
-        bagHours = spotTable.stacks > 0 ? free / spotTable.stacks : 24;
+        bagHours = free === 0 ? 0 : spotTable.stacks > 0 ? free / spotTable.stacks : 24;
     }
     const Visits = require('./TownVisitInterval');
-    const targetHours = Math.min(Visits.targetHours(state.stats, bagHours), Visits.targetHours({}, bagHours));
+    // Bag space bounds a planned outing; it never chooses its duration.
+    // Keep the existing initial estimate until actual town visits teach one.
+    const targetHours = hasBagForecast
+        ? Math.min(Visits.targetHours(state.stats), Visits.targetHours({}, bagHours))
+        : Visits.targetHours(state.stats);
     const stock = kind => {
         const shots = kind === 'shots';
         const itemId = shots ? shotItemId : potionItemId;
@@ -257,9 +265,13 @@ function basics(state = {}, deps = {}) {
 }
 function stockFor(state, kind, deps = {}) { return basics(state, deps).stock(kind); }
 function forState(state = {}, deps = {}) {
-    if (isMainThread && state.phase === 'cold') {
+    const diagnostic = Diagnostics.active();
+    if (diagnostic) Diagnostics.count('context', 'request');
+    if (diagnostic && isMainThread && state.phase === 'cold') {
         const caller = deps.caller || 'other';
-        mainColdForState.set(caller, (mainColdForState.get(caller) || 0) + 1);
+        mainColdForState ||= new Map();
+        const slot = mainColdForState.has(caller) || mainColdForState.size < 63 ? caller : 'overflow';
+        mainColdForState.set(slot, (mainColdForState.get(slot) || 0) + 1);
     }
     deps = resolved(state, deps);
     if (typeof deps.routeRows === 'function') deps.routeRows = deps.routeRows(state);
@@ -274,7 +286,17 @@ function forState(state = {}, deps = {}) {
     if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
     const key = inputKey(state, { ...deps, timestamp });
     if (held?.key === key && (isMainThread || held.context.state === state)
-        && marketHolds(sourceBoard, held.reads)) return remember(cache, actorKey, held).context;
+        && marketHolds(sourceBoard, held.reads)) {
+        if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
+        return remember(cache, actorKey, held).context;
+    }
+    const started = diagnostic ? performance.now() : 0;
+    // Identity replacement is the worker's technical safety backstop, not an
+    // economic event. An input-key mismatch is named as a dependency change;
+    // it does not claim which historical event caused it.
+    const diagnosticReason = !diagnostic ? null : !held ? 'not_retained' : held.key !== key
+        ? 'input_dependency_changed' : !isMainThread && held.context.state !== state ? 'state_publication' : 'used_market_changed';
+    if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     const reads = new Map();
     let building = true;
     const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
@@ -322,7 +344,8 @@ function forState(state = {}, deps = {}) {
         wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
-        hourAdena: context.hourAdena, riskWeight: context.riskWeight });
+        hourAdena: context.hourAdena, riskWeight: context.riskWeight,
+        caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason || 'context_build' });
     context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
     context.projection = projection;
@@ -358,7 +381,21 @@ function forState(state = {}, deps = {}) {
     };
     building = false;
 
-    if (planningContexts < 64) remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
+    if (diagnostic) {
+        Diagnostics.count('context', 'build', diagnosticReason);
+        Diagnostics.duration('context', performance.now() - started);
+    }
+    if (diagnostic && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+        caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason,
+        phase: 'wish_context', reason: diagnosticReason, inputHash: fnv1a32(networkKey),
+        decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
+        revision: state.simulation?.revision, wallet: positive(state.adena), escrow: positive(deps.buyOrderEscrow),
+        available: network.available, reserve: base.survivalReserve, wishKey: network.focus?.[0] });
+    if (planningContexts < 64) {
+        if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
+            Diagnostics.count('context', 'eviction', 'capacity');
+        remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
+    }
     return context;
 }
 function survivalReserve(state = {}) {
@@ -376,9 +413,14 @@ function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
     return { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
 }
 function forGroup(group, members, deps = {}) {
+    const diagnostic = Diagnostics.active();
+    if (diagnostic) Diagnostics.count('context_group', 'request');
     const contexts = (members || []).slice(0, 9).map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
-    if (!first) return null;
+    if (!first) {
+        if (diagnostic) Diagnostics.count('context_group', 'miss', 'empty_group');
+        return null;
+    }
     const actorKey = `group:${group.id || group.partyId}`;
     const proposal = String(group.id || group.partyId || '').startsWith('proposal:');
     const wallet = positive(group.adena ?? group.wallet);
@@ -386,8 +428,13 @@ function forGroup(group, members, deps = {}) {
     const held = proposal ? null : groups.get(actorKey);
     // A member rebuilt on a late price read keeps its network key; the held
     // group copies its first member, so it is valid only with the same members.
-    if (held?.key === key && held.members.every((member, i) => member === contexts[i]))
+    if (held?.key === key && held.members.every((member, i) => member === contexts[i])) {
+        if (diagnostic) Diagnostics.count('context_group', 'hit', 'same_members');
         return remember(groups, actorKey, held, GROUP_LIMIT).context;
+    }
+    const started = diagnostic ? performance.now() : 0;
+    if (diagnostic) Diagnostics.count('context_group', 'miss', proposal ? 'uncached_proposal'
+        : !held ? 'not_retained' : held.key !== key ? 'input_dependency_changed' : 'member_publication');
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
@@ -420,27 +467,47 @@ function forGroup(group, members, deps = {}) {
         hourAdena: network.hourAdena, statsPacket: { wishFocus: network.focus, dormantWishes: network.dormant } };
     context.itemUsefulness = id => contexts.reduce((sum, member) => sum + member.itemUsefulness(id), 0);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    if (!proposal) remember(groups, actorKey, { key, members: contexts, context }, GROUP_LIMIT);
+    if (diagnostic) {
+        Diagnostics.count('context_group', 'build');
+        Diagnostics.duration('context_group', performance.now() - started);
+    }
+    if (!proposal) {
+        if (diagnostic && !groups.has(actorKey) && groups.size >= GROUP_LIMIT)
+            Diagnostics.count('context_group', 'eviction', 'capacity');
+        remember(groups, actorKey, { key, members: contexts, context }, GROUP_LIMIT);
+    }
     return context;
 }
 function preparedRouteRows(state) {
     const context = cache.get(`character:${Number(state.characterId)}`)?.context;
     return context?.routeKey === Trip.key(state) ? context.routeRows : null;
 }
-function forgetGroup(partyId) { groups.delete(`group:${partyId}`); }
-function forgetContext(id) {
+function forgetGroup(partyId) {
+    if (groups.delete(`group:${partyId}`) && Diagnostics.active()) Diagnostics.count('context_group', 'eviction', 'group_release');
+}
+function forgetContext(id, reason = 'explicit_invalidation') {
     id = Number(id);
-    const key = `character:${id}`; cache.delete(key); engine.forget(key);
+    const key = `character:${id}`;
+    if (cache.delete(key) && Diagnostics.active()) Diagnostics.count('context', 'eviction', reason);
+    engine.forget(key, reason);
     for (const [groupKey, held] of groups) {
-        if (held.members.some(member => Number(member.state.characterId) === id)) groups.delete(groupKey);
+        if (held.members.some(member => Number(member.state.characterId) === id)) {
+            groups.delete(groupKey);
+            if (Diagnostics.active()) Diagnostics.count('context_group', 'eviction', reason);
+        }
     }
 }
 function forget(id) {
     forgetContext(id);
     invoke('GameServer/Bot/Population/ColdCombatProfile').forgetBuild(id);
 }
-function reset() { cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap(); }
+function reset() {
+    if (Diagnostics.active() && cache.size) Diagnostics.count('context', 'eviction', 'reset', cache.size);
+    if (Diagnostics.active() && groups.size) Diagnostics.count('context_group', 'eviction', 'reset', groups.size);
+    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap();
+}
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { size, setPlanningContexts, forState, forActor, forGroup, forgetGroup, basics, stockFor, stateForActor, routeState, preparedRouteRows, inputKey, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
-    craftIncome, summary: () => ({ mainColdForState: Object.fromEntries(mainColdForState) }), resetCounters: () => mainColdForState.clear() };
+    craftIncome, summary: () => ({ mainColdForState: Diagnostics.active() ? Object.fromEntries(mainColdForState || []) : null }),
+    resetCounters: () => { mainColdForState = null; } };

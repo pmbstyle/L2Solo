@@ -5,6 +5,7 @@ const fs = require('node:fs'), path = require('node:path');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('cold-warehouse-decision');
 require('../src/Global');
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 isolated.assertConfigured(options.default);
 const { DatabaseSync } = require('node:sqlite');
 const Database = invoke('Database'), Data = invoke('GameServer/DataCache');
