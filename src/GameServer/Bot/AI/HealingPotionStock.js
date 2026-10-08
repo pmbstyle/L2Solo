@@ -145,7 +145,7 @@ function restockPlan(value, options = {}) {
     const state = value?.backpack ? Economy.stateForActor(value) : value;
     // The budget needs the review; the same review gives the target.
     const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
-    const context = coldMain || options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state);
+    const context = options.context || (coldMain || options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state));
     const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory

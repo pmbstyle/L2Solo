@@ -476,8 +476,12 @@ async function acquireMaterials(state, requirements) {
     }
     let current = state, spent = 0, units = 0;
     const extras = [];
+    let reservedState = null, reserved = null;
     const held = (value, id) => {
-        const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(value);
+        if (reservedState !== value) {
+            reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(value);
+            reservedState = value;
+        }
         return require('./WealthCraftDecision').freeAmount(value,
             value.inventory?.[id] || { selfId: Number(id), amount: 0 }, reserved);
     };

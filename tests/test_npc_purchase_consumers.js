@@ -63,7 +63,27 @@ async function run() {
     state = await seed(9612, 50000);
     const requirements = [{ selfId: 1785, amount: 6, options: { towns: ['Dion'], r: 1, purpose: 'craft_input' } },
         { selfId: 3031, amount: 7, options: { towns: ['Dion'], r: 1, purpose: 'wealth_craft' } }];
-    const materials = await Market.acquireMaterials(state, requirements);
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const baseEconomics = Economy.basics;
+    let preparations = 0;
+    try {
+        Economy.basics = (...args) => { preparations++; return baseEconomics(...args); };
+        const raw = Npc.collect(state, { town: 'Dion', potions: false, scrolls: false, shots: false,
+            extras: requirements.map(row => ({ selfId: row.selfId, amount: row.amount, funding: { r: 1 } })) });
+        assert.equal(raw.length, 1); assert.equal(raw[0].lines.length, 2);
+        assert.equal(preparations, 0, 'ordinary selected craft inputs do not rebuild survival economics');
+    } finally { Economy.basics = baseEconomics; }
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const prepareReservations = Disposition.reservedEquipmentAmounts;
+    let reservations = 0, materials;
+    try {
+        Disposition.reservedEquipmentAmounts = (...args) => {
+            if (new Error().stack.includes('at held ')) reservations++;
+            return prepareReservations(...args);
+        };
+        materials = await Market.acquireMaterials(state, requirements);
+    } finally { Disposition.reservedEquipmentAmounts = prepareReservations; }
+    assert.equal(reservations, 2, 'one reservation preparation before payment and one for the changed bag');
     assert(materials.ready); assert.equal(captured.filter(row => row.id === 9612).length, 1);
     assert.equal(materials.spent, 6 * first.price + 7 * second.price);
     const repeated = await Market.acquireMaterials(materials.state, requirements);
@@ -162,6 +182,23 @@ async function run() {
         assert.equal(JSON.parse(authoritativeGoal.goalJson).status, 'completed');
         Goals.prime(9626, authoritativeGoal.goalJson, authoritativeGoal.updatedAt);
     } finally { Policy.shotsDisabled = wasDisabled; }
+
+    // Reusing one visit context must not preserve missing survival units
+    // after a virtual line filled them: the remaining wallet stays protected.
+    state = await seed(9627, 3000000, { classId: 1 },
+        [{ selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 }]);
+    state = { ...state, level: 40, exp: Data.experience[39],
+        stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
+    const survival = Economy.basics(state).stock('shots');
+    const survivalUnits = Math.ceil(survival.usePerHour);
+    const shotQuote = Npc.quoteFor(survival.itemId, 'Dion');
+    assert(survivalUnits > 0 && shotQuote, 'actual funded hourly NG shot kit');
+    const duplicateKit = Npc.collect(state, { town: 'Dion', potions: false, scrolls: false, shots: false,
+        extras: [{ selfId: survival.itemId, amount: survivalUnits, offer: shotQuote },
+            { selfId: survival.itemId, amount: survivalUnits, offer: shotQuote }] });
+    const kitLine = duplicateKit[0].lines.find(line => line.selfId === survival.itemId);
+    assert.equal(kitLine.amount, survivalUnits, 'a filled hourly kit cannot spend protected cash for a second kit');
+    assert.equal(kitLine.fundingParts.length, 1, 'the repeated survival allowance is recomputed after virtual payment');
 
     // Explicit selected native recipe/batches, without inventing a profitable
     // network choice. Its actual consumer buys only the five missing ore units.

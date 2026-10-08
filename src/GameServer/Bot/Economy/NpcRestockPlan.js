@@ -20,6 +20,17 @@ function collect(state, options = {}) {
     const town = options.town || state.currentRegion;
     if (!town) return [];
     let current = { ...state, phase: 'cold', inventory: { ...state.inventory } };
+    const Shot = invoke('GameServer/Inventory/ShotStock');
+    const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+    const survivalIds = new Set([736, Shot.planForState(current).selfId, Potions.purchasePotionFor(current).selfId]);
+    let preparedState = null, prepared = null;
+    const economics = () => {
+        if (preparedState !== current) {
+            prepared = require('node:worker_threads').isMainThread ? Economy.basics(current) : Economy.forState(current);
+            preparedState = current;
+        }
+        return prepared;
+    };
     const baskets = new Map();
     let order = 0;
     const add = (selfId, amount, offer, terms = {}, attribution = {}) => {
@@ -27,7 +38,7 @@ function collect(state, options = {}) {
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);
         const funding = { ...terms, itemId: Number(selfId),
-            survivalCost: Economy.basics(current).kitCost(selfId, price) };
+            survivalCost: attribution.survivalCost ?? (survivalIds.has(Number(selfId)) ? economics().kitCost(selfId, price) : 0) };
         const cap = attribution.money == null ? Infinity : Math.max(0, Number(attribution.money));
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
@@ -54,15 +65,16 @@ function collect(state, options = {}) {
             amount: Number(current.inventory[selfId]?.amount || 0) + count };
         current.inventory[57] = { ...current.inventory[57], selfId: 57, amount: current.adena };
         current.stats = { ...current.stats, money: Funding.packetAfterPurchase(current.stats?.money, count * price, funding) };
+        preparedState = null; prepared = null;
     };
     // Preserve the existing survival ordering: potions, escape scroll, work,
     // then shots. Each next shortage and allowance sees the virtual purchase.
     if (options.potions !== false) {
-        const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
         const potion = Potions.purchasePotionFor(current), offer = quoteFor(potion.selfId, town, null, options.seller);
         if (offer) {
-            const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price });
-            add(potion.selfId, plan.amount, offer);
+            const context = economics();
+            const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price, context });
+            add(potion.selfId, plan.amount, offer, {}, { survivalCost: context.kitCost(potion.selfId, offer.price) });
         }
     }
     if (options.scrolls !== false) {
@@ -78,11 +90,11 @@ function collect(state, options = {}) {
         add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
     if (options.shots !== false) {
-        const Shot = invoke('GameServer/Inventory/ShotStock');
         const shot = Shot.planForState(current), offer = quoteFor(shot.selfId, town, null, options.seller);
         if (offer) {
-            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0 });
-            add(shot.selfId, plan.npcAmount, offer);
+            const context = economics();
+            const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context });
+            add(shot.selfId, plan.npcAmount, offer, {}, { survivalCost: context.kitCost(shot.selfId, offer.price) });
         }
     }
     return [...baskets.values()];

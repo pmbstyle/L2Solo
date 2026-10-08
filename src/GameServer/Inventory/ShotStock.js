@@ -333,7 +333,7 @@ function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = actor ? Economy.stateForActor(value) : value;
     const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
-    const context = coldMain ? Economy.basics(state) : Economy.forState(state);
+    const context = options.context || (coldMain ? Economy.basics(state) : Economy.forState(state));
     const stock = context.stock('shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     const reserve = PurchaseFunding.operatingReserve(state);
