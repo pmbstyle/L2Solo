@@ -32,7 +32,7 @@ async function run() {
     DB.purchaseNpcInventoryBasket = async (id, details) => {
         captured.push({ id, seller: details.seller, lines: details.lines.map(line => ({ ...line })) });
         const result = await original.call(DB, id, details);
-        if (id === 9619 && result.ok) {
+        if ([9619, 9625].includes(id) && result.ok) {
             Life.acceptLifecycleRow(result.coldLifeRow);
             const committed = Life.cachedState(id);
             await Life.upsertState({ ...committed, phase: 'hot',
@@ -218,6 +218,40 @@ async function run() {
     assert.equal(shotCraft.stats.shotCraft.amount, 2 * recipe.productCount);
     assert.equal(await amount(9622, 1785), 0); assert.equal(await amount(9622, 1458), 0);
     assert.equal(await amount(9622, recipe.productId), 2 * recipe.productCount);
+
+    // Actual nested scrap craft inputs and main ore are acquired first. If
+    // the bot activates after that native commit, the cold craft stops before
+    // making gear, crystallizing it or spending actor-owned inputs/MP.
+    const scrapRecipe = Recipes.resolveByProductId(45);
+    const scrapInputs = scrapRecipe.materials.map(input => ({ selfId: input.selfId,
+        name: `Input ${input.selfId}`, amount: input.amount }));
+    state = await seed(9625, 50000, { classId: 57 }, scrapInputs);
+    state = await Life.upsertState({ ...state, level: 60 }, 'native_nested_craft');
+    await DB.setCharacterRecipe(9625, 20, 'dwarven');
+    await DB.setCharacterRecipe(9625, scrapRecipe.recipeId, 'dwarven');
+    await DB.setSkill({ selfId: 172, name: 'Create Item', level: 2, passive: false }, 9625);
+    await DB.setSkill({ selfId: 248, name: 'Crystallize', level: 1, passive: false }, 9625);
+    let nestedCrafts = 0, nestedCrystals = 0;
+    const crystalOwner = DB.crystallizeInventoryItem;
+    try {
+        DB.craftInventoryItems = async (...args) => { nestedCrafts++; return craftOwner.apply(DB, args); };
+        DB.crystallizeInventoryItem = async (...args) => { nestedCrystals++; return crystalOwner.apply(DB, args); };
+        const nested = { ...candidate, gear: { source: 'craft', selfId: 45, recipe: scrapRecipe,
+            inputs: scrapRecipe.materials, purchases: [], crystals: 56 } };
+        const activatedCraft = await Shots.craft(state, nested, {}, at);
+        assert.equal(activatedCraft.phase, 'hot');
+        assert.equal(await amount(9625, 1785), 6, 'main ore purchase commits before activation');
+        assert.equal(captured.filter(row => row.id === 9625).length, 1);
+        assert.equal(await amount(9625, 57), 50000 - 6 * first.price);
+        for (const input of scrapInputs) assert.equal(await amount(9625, input.selfId), input.amount);
+        assert.equal(await amount(9625, 45), 0); assert.equal(await amount(9625, 1458), 0);
+        assert.equal(await amount(9625, recipe.productId), 0);
+        assert.equal(Number((await DB.execute(['SELECT mp FROM characters WHERE id=?', [9625]]))[0].mp), 1000);
+        await Shots.craft(activatedCraft, nested, {}, at);
+        assert.equal(nestedCrafts, 0, 'a cold continuation cannot craft actor-owned inputs');
+        assert.equal(nestedCrystals, 0, 'a cold continuation cannot crystallize actor-owned gear');
+        assert.equal(captured.filter(row => row.id === 9625).length, 1);
+    } finally { DB.craftInventoryItems = craftOwner; DB.crystallizeInventoryItem = crystalOwner; }
 
     // A real hot ShoppingState callback, actual actor/bag/SQL delivery. Capture
     // only its existing four-second work callback; no sleeping or server.

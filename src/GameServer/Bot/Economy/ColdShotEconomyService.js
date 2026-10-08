@@ -292,7 +292,11 @@ function consumeMaterials(state, materials) {
 // (ColdMarketService.acquire): here when this town is the cheapest with the
 // trip, else an errand and a trip, and the craft waits. Returns { state,
 // ready }: ready once the bot holds the amount.
+const hotState = state => LifeState.hotRow(state.characterId) || (state.phase === 'hot' ? state : null);
+
 async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true, r = 0, sourcePlan = null) {
+    const hot = hotState(state);
+    if (hot) return { state: hot, ready: false, hot: true };
     const missing = amount - availableMaterial(state, selfId);
     if (missing <= 0) return { state, ready: true };
     const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input',
@@ -305,6 +309,8 @@ async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = tru
 // piece of gear bought (or crafted from bought inputs) and crystallized; each
 // purchase on the one purchase path. Returns { state, ready }.
 async function obtainCrystals(state, candidate, batches) {
+    const hot = hotState(state);
+    if (hot) return { state: hot, ready: false, hot: true };
     const needed = candidate.requiredCrystals * batches;
     if (availableMaterial(state, candidate.crystalId) >= needed) return { state, ready: true };
     const gear = candidate.gear;
@@ -332,9 +338,12 @@ async function obtainCrystals(state, candidate, batches) {
                 money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
                 ...(oreSource ? { sourcePlan: oreSource, towns: [oreSource.town] } : {}) } });
         const next = await ColdMarket().acquireMaterials(state, requirements);
+        const activated = hotState(next.state);
+        if (next.hot || activated) return { ...next, state: activated || next.state, ready: false, hot: true };
         if (!next.ready) return next;
         state = next.state;
         const materials = materialRows(await Database.fetchItems(state.characterId), gear.recipe);
+        if (hotState(state)) return { state: hotState(state), ready: false, hot: true };
         if (!materials || Number(state.vitals?.mp || 0) < Number(gear.recipe.mpCost)) return { state, ready: false };
         const template = require('../../Item/ItemTemplateIndex').find(DataCache.items, gear.selfId);
         let admitted = null, result;
@@ -371,21 +380,23 @@ async function obtainCrystals(state, candidate, batches) {
 function materialRows(items, recipe) { return Profit.materials(items, recipe); }
 
 async function craft(state, candidate, index, now) {
+    if (hotState(state)) return hotState(state);
     const productPerBatch = Number(candidate.recipe.productCount);
     const orePerBatch = Number(candidate.ore.amount);
     const mpPerBatch = Number(candidate.recipe.mpCost || 0);
     const batches = Math.min(Policy.batchCount(state, candidate), Number(candidate.maxBatches ?? 64));
     if (batches <= 0) return state;
     const crystals = await obtainCrystals(state, candidate, batches);
-    if (!crystals.ready) return crystals.state;
+    if (!crystals.ready || crystals.hot || hotState(crystals.state)) return hotState(crystals.state) || crystals.state;
     const ore = await buyMaterial(crystals.state, Number(candidate.ore.selfId), orePerBatch * batches, candidate.orePrice, true, candidate.r,
         candidate.basket.purchases.find(row => row.selfId === Number(candidate.ore.selfId)));
-    if (!ore.ready) return ore.state;
+    if (!ore.ready || ore.hot || hotState(ore.state)) return hotState(ore.state) || ore.state;
     state = ore.state;
     const batchRecipe = { ...candidate.recipe, materials: candidate.recipe.materials.map((material) => ({
         ...material, amount: Number(material.amount) * batches
     })) };
     const rows = materialRows(await Database.fetchItems(state.characterId), batchRecipe);
+    if (hotState(state)) return hotState(state);
     if (!rows) return state;
     let admitted = null, crafted;
     try {
