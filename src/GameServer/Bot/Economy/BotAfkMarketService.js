@@ -671,8 +671,13 @@ async function executePlan(state, plan, { step, beforeWrite = () => {}, prepared
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
                     { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count) }) };
         });
-        return listOnBoard(state, { planTowns: new Map(plan.sell.map(row => [Number(row[0]), row[3]])),
-            decided: { listings, decisions: listings.map(item => ({ action: 'list', item })) } });
+        // A selected WTS is an intention from the field, not a seated shop.
+        // Native market visits own shop opening and its separately valued trip.
+        const inventory = await Database.fetchItems(ownerId);
+        const current = AfkTrade.findOwnerProjection(ownerId)?.shop;
+        const shop = Number(current?.storeType) === AfkTrade.SELL ? current : null;
+        return listSellAds(ownerId, state, listings, shop, inventory,
+            { planTowns: new Map(plan.sell.map(row => [Number(row[0]), row[3]])) });
     });
     // An empty desired list closes the old ads; it does not run another bid
     // decision on main. The plan's quote remains the quote the worker made.
