@@ -105,12 +105,12 @@ function inputKey(state, deps = {}) {
 // in the world, rebuilds nobody (design 16.5). Not inputs, by the same rule:
 // the all-counter average a counter without its own move falls back to
 // (MarketCounters.moveOf) and PriceBelief's hourly demand cache.
-function marketToken(board, id) {
+function marketToken(board, id, deps = {}) {
     const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
-    return `${board?.itemRevision ? board.itemRevision(id) : '-'}|${Counters.revisionOf(Counters.counterOf(id))}`;
+    return `${board?.itemRevision ? board.itemRevision(id) : '-'}|${Counters.revisionOf(Counters.counterOf(id))}|${deps.workshopRevision?.(id) || 0}`;
 }
-function marketHolds(board, reads) {
-    for (const [id, token] of reads) if (marketToken(board, id) !== token) return false;
+function marketHolds(board, reads, deps) {
+    for (const [id, token] of reads) if (marketToken(board, id, deps) !== token) return false;
     return true;
 }
 function marketKey(reads) {
@@ -140,6 +140,11 @@ function resolved(state, deps) {
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
     if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
+    if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
+        const Workshops = require('./CraftWorkshopService');
+        deps.workshops = Workshops.publicForRecipe;
+        deps.workshopRevision = Workshops.publicRecipeDigest;
+    }
     if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     if (!deps.npcOffersFor && isMainThread) deps.npcOffersFor = id => {
@@ -322,7 +327,8 @@ function forState(state = {}, deps = {}) {
     if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
     const key = inputKey(state, { ...deps, timestamp });
     if (held?.key === key && (isMainThread || held.context.state === state)
-        && marketHolds(sourceBoard, held.reads)) {
+        && marketHolds(sourceBoard, held.reads, deps)) {
+        if (deps.onSourceRead) for (const id of held.reads.keys()) deps.onSourceRead(id);
         if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
         return remember(cache, actorKey, held).context;
     }
@@ -335,7 +341,9 @@ function forState(state = {}, deps = {}) {
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     const reads = new Map();
     let building = true;
-    const read = id => { id = Number(id); if (!reads.has(id)) reads.set(id, marketToken(sourceBoard, id)); };
+    const read = id => { id = Number(id); if (!reads.has(id)) {
+        reads.set(id, marketToken(sourceBoard, id, deps)); deps.onSourceRead?.(id);
+    } };
     const watch = id => { if (building) read(id); };
     const Data = invoke('GameServer/DataCache');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');

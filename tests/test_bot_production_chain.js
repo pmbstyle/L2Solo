@@ -38,7 +38,7 @@ async function seed(items, { crafter = false, nativePlayer = false, activity = '
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         adena: Number(items.find(item => item.selfId === 57)?.amount || 0),
         vitals: { hp: 1000, maxHp: 1000, mp: 3000, maxMp: 3000 },
-        stats: { classId: crafter ? 57 : 0, generatedCold: true, money: [36000, 0, 0, 0] }, timing: {} }, 'production_seed');
+        stats: { classId: crafter ? 57 : 0, generatedCold: true, money: [36000, 1 / 36000, 0, 0] }, timing: {} }, 'production_seed');
 }
 const cash = amount => ({ selfId: 57, name: 'Adena', amount });
 const ore = (selfId, amount) => ({ selfId, name: `Material ${selfId}`, amount });
@@ -80,6 +80,7 @@ async function run() {
     let crafter = await seed([cash(1000000)], { crafter: true });
     await Database.setCharacterRecipe(crafter.characterId, 1, 'dwarven');
     await Database.setCharacterRecipe(crafter.characterId, 20, 'dwarven');
+    await Database.setSkill({ selfId: 172, name: 'Create Item', passive: false, level: 8 }, crafter.characterId);
     await Database.setSkill({ selfId: 248, name: 'Crystallize', passive: false, level: 1 }, crafter.characterId);
     crafter = await Workshop.review(crafter);
     assert(Workshop.boardRecords().some(row => row.ownerId === crafter.characterId && row.entries.some(entry => entry.recipeId === 1)));
@@ -141,12 +142,12 @@ async function run() {
 
     const seller = await seed([cash(100000), { selfId: 45, name: 'Bone Helmet', amount: 1 }]);
     const gear = (await Database.fetchItems(seller.characterId)).find(item => item.selfId === 45);
-    await Afk.openBotRecords(seller.characterId, 'sell_ad', [{ storeType: Afk.SELL, town: 'Giran', ...location,
+    await Afk.publishBot(seller.characterId, { storeType: Afk.SELL, town: 'Giran', ...location,
         title: 'Real crystal source', lines: [{ objectId: gear.id, selfId: 45, name: gear.name, count: 1,
-            price: 1000, enchant: 0, stackable: false, slot: gear.slot }] }]);
+            price: 1000, enchant: 0, stackable: false, slot: gear.slot }] });
     const buyer = await seed([cash(1000000)]);
-    await Afk.openBotRecords(buyer.characterId, 'buy_ad', [{ storeType: Afk.BUY, town: 'Giran', ...location,
-        title: 'Funded shots', lines: [{ selfId: 1463, name: 'D Soulshot', count: 1000, price: 1000, enchant: 0, stackable: true, slot: 0 }] }]);
+    await Afk.publishBot(buyer.characterId, { storeType: Afk.BUY, town: 'Giran', ...location,
+        title: 'Funded shots', lines: [{ selfId: 1463, name: 'D Soulshot', count: 1000, price: 1000, enchant: 0, stackable: true, slot: 0 }] });
     crafter = Life.cachedState(crafter.characterId);
     const index = await Shots.marketSnapshot();
     const shotRecipe = Recipes.resolveByRecipeId(20);

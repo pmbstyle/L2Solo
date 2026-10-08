@@ -42,7 +42,7 @@ async function character({ bot = false, skins = 0 } = {}) {
 }
 async function order(price, count, owner = null) {
     const session = owner || await character({ bot: true });
-    const created = await Database.createAfkTradeShop(session.actor.fetchId(), { kind: 'buy_ad', storeType: 3, town: 'Giran',
+    const created = await Database.createAfkTradeShop(session.actor.fetchId(), { kind: 'shop', storeType: 3, town: 'Giran',
         lines: [{ selfId: ITEM, name: 'Animal Skin', count, price, enchant: 0, stackable: true }] });
     // Native publish normally refreshes the owner's escrow deduction too.
     session.actor.backpack.items = [];
@@ -100,6 +100,27 @@ async function run() {
         assert.equal(Afk.recordStore(bid.shop.id), null, 'filled ad is removed from the board');
         assert.equal(await held(bid.session.actor.fetchId()), 3);
         assert.equal(await worldAdena() - before, 2 * buyback);
+    });
+    await check('a pending agreement preserves earlier backed sales without NPC payout', async () => {
+        const player = await character({ skins: 3 });
+        await order(120, 1);
+        const low = await order(100, 2);
+        const original = Afk.sellToShop;
+        const store = buyer(), beforeCount = store.items[0].count, before = await worldAdena();
+        let callbacks = 0;
+        try {
+            Afk.sellToShop = async (...args) => args[1].shopId === low.shop.id
+                ? { pending: true, meetingId: 700, token: 'original-pending' } : original(...args);
+            const result = await Trade.sellToStore(player.actor, store, ITEM, 3,
+                { afterTrade: () => { callbacks++; } });
+            assert.equal(result.pending, true);
+            assert.equal(result.qty, 1); assert.equal(result.totalAdena, 120);
+            assert.equal(result.npcQty, 0); assert.equal(result.token, 'original-pending');
+            assert.equal(store.items[0].count, beforeCount - 1);
+            assert.equal(callbacks, 1, 'the committed first sale is presented once');
+            assert.equal(await remaining(low.shop), 2);
+            assert.equal(await worldAdena(), before, 'pending consent creates no native NPC money');
+        } finally { Afk.sellToShop = original; }
     });
     await check('best bid fills first across two ads', async () => {
         const player = await character({ skins: 5 }), high = await order(120, 2), low = await order(100, 4);

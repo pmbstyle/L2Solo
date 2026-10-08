@@ -146,3 +146,28 @@ assert.equal(index.ownerLines(5)[0].custodyPolicy,1);
 assert.equal(require('../src/GameServer/AfkTrade/BoardIndex').offerFields(index.ownerLines(5)[0]).conditional,true);
 assert.equal(require('../src/GameServer/AfkTrade/BoardIndex').offerFields(index.ownerLines(5)[0]).backed,false);
 assert.equal(recordOf(row.slice(0,8)).custodyPolicy,0);
+
+// Public content is comparable across main/worker startup orders and epochs.
+const leftContent = new BoardIndex(), rightContent = new BoardIndex();
+const rowsContent = [record(81, { revision: 2 }, [{ selfId: 1867, price: 30, count: 5 }]),
+    record(82, { revision: 3 }, [{ selfId: 1867, price: 31, count: 6 }])];
+rowsContent.forEach(row => leftContent.put(row));
+rightContent.clear(); [...rowsContent].reverse().forEach(row => rightContent.put(recordOf(rowOf({ ...row, lines: row.lines.map(line => ({ ...line, id: line.lineId })) }))));
+assert.equal(leftContent.itemFingerprint(1867), rightContent.itemFingerprint(1867));
+rightContent.put({ ...rowsContent[0], revision: 4 });
+assert.notEqual(leftContent.itemFingerprint(1867), rightContent.itemFingerprint(1867));
+rightContent.remove(81); rightContent.remove(82);
+assert.equal(rightContent.itemFingerprint(1867), '0.0.0');
+
+rightContent.follower().put('w:1:2', ['w:1:2', 1, 2, 50, 1, 'Giran', 0, 0, 0, 2]);
+assert.equal(rightContent.size, 0, 'public workshop source is not an ordinary shop in other board followers');
+
+const groupedContent = new BoardIndex({ groupOf: id => id < 2000 ? 'materials' : 'gear' });
+groupedContent.put(rowsContent[0]);
+const materialsBefore = groupedContent.groupFingerprint('materials');
+groupedContent.put(record(83, {}, [{ selfId: 1868, price: 20 }]));
+assert.notEqual(groupedContent.groupFingerprint('materials'), materialsBefore);
+const gearBefore = groupedContent.groupFingerprint('gear');
+groupedContent.remove(83);
+assert.equal(groupedContent.groupFingerprint('materials'), materialsBefore);
+assert.equal(groupedContent.groupFingerprint('gear'), gearBefore, 'an unrelated public category does not invalidate an actor');

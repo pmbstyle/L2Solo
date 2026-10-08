@@ -10270,7 +10270,12 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
     }, funding: checkEconomyFundingUnsafe, protection: checkEconomyMaterialProtectionUnsafe,
     position: tradeMeetingPositionUnsafe,
     stopTrip: meeting => {
-        for (const actor of [meeting.actorA, meeting.actorB]) write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
+        for (const actor of [meeting.actorA, meeting.actorB]) {
+            write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
+            // The physical receipt survives a retained session or process restart;
+            // its old companion workflow must not block future activation forever.
+            write("UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.supplyErrand') WHERE characterId=? AND json_extract(statsJson,'$.supplyErrand.meetingToken')=?", [actor, meeting.token]);
+        }
     },
     completed: (meeting, line) => {
         const at = now(), buyerId = line.payer ? meeting.actorB : meeting.actorA;
@@ -10389,8 +10394,8 @@ Object.assign(Database, {
                 position: tradeMeetingPositionUnsafe(Number(id)) };
         }, 'board:meeting-prepare'));
     },
-    acceptTradeMeeting(request) {
-        return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request), 'board:meeting-accept'));
+    acceptTradeMeeting(request, preparation) {
+        return withCharacterFlushes([request.actorA, request.actorB], () => inTransaction(() => TradeMeetings.accept(request, preparation), 'board:meeting-accept'));
     },
     fetchTradeMeetingByToken(token) {
         return inTransaction(() => one('SELECT * FROM board_trade_meetings WHERE token=?', [String(token)]), 'board:meeting-replay');

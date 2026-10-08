@@ -174,8 +174,8 @@ async function run() {
     const walletBeforeReprice = LifeState.snapshot(ownerId).adena;
     const repriced = await AfkTrade.repriceBot(ownerId, switched.shop.lines[0].id,
         Number(switched.shop.lines[0].price) - 1, switched.shop.revision);
-    assert.strictEqual(repriced.escrowAdena, switched.shop.escrowAdena - 1);
-    assert.strictEqual(LifeState.snapshot(ownerId).adena, walletBeforeReprice + 1);
+    assert.strictEqual(repriced.escrowAdena, 0, 'a conditional bid has no escrow to refund on a price edit');
+    assert.strictEqual(LifeState.snapshot(ownerId).adena, walletBeforeReprice, 'changing willingness does not create adena');
     await assert.rejects(AfkTrade.repriceBot(ownerId, repriced.lines[0].id,
         Number(repriced.lines[0].price) - 1, switched.shop.revision), /afk_trade_shop_changed/);
 
@@ -190,20 +190,29 @@ async function run() {
     AfkTrade._resetForTests();
     assert.strictEqual(await AfkTrade.init(), 2);
     assert(AfkTrade.findOwnerProjection(ownerId), 'shop state must restore after restart');
-    await AfkTrade.sellToShop(customerId, AfkTrade.recordStore(repriced.id), cWeapon.selfId, 1,
-        { objectId: customerStockId });
-    assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
-    assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
-    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop'],
-        'a filled ad is closed and deleted');
+    const beforeRemote = await Promise.all([Database.fetchItems(ownerId), Database.fetchItems(customerId)]);
+    await assert.rejects(AfkTrade.sellToShop(customerId, AfkTrade.recordStore(repriced.id), cWeapon.selfId, 1,
+        { objectId: customerStockId }), /trade_meeting_player_at_point/,
+    'a conditional bid cannot buy from a remote player without final confirmation');
+    assert.deepStrictEqual(await Promise.all([Database.fetchItems(ownerId), Database.fetchItems(customerId)]), beforeRemote,
+        'refused remote consent moves no physical goods or money');
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).find(row => row.id === repriced.id).lines[0].count, 1,
+        'a refusal preserves the public conditional quantity');
     const history = await Database.readHistory([
         `SELECT channel, sourceType FROM market_trades ORDER BY id`, []
     ]);
-    assert.deepStrictEqual(history.map((row) => row.sourceType), ['afk_bot_store', 'afk_bot_buy_store']);
-    const redundantDemand = await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
-    assert.strictEqual(redundantDemand.changed, false,
-        'an owned gear target must not reopen a persistent buy order');
-    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop']);
+    assert.deepStrictEqual(history.map((row) => row.sourceType), ['afk_bot_store'],
+        'neither editing a conditional bid nor refusing remote consent fabricates a trade');
+    // A separate physical acquisition (for example ordinary loot) completes
+    // the target. Its inventory event must close the now-obsolete advert.
+    await Database.setItem(ownerId, { selfId: cWeapon.selfId, name: cWeapon.template.name,
+        amount: 1, enchant: 0, equipped: false, slot: 0 });
+    await LifeState.syncExternalInventory(ownerId, 'test_actual_gear_acquired', LifeState.snapshot(ownerId));
+    await BotAfkMarket.reconcile(LifeState.snapshot(ownerId), buyGoal);
+    assert.strictEqual(LifeState.snapshot(ownerId).activity, 'hunting');
+    assert.strictEqual(Number(LifeState.snapshot(ownerId).inventory[cWeapon.selfId]?.amount), 1);
+    assert.deepStrictEqual((await Database.fetchAfkTradeShops(ownerId)).map((shop) => shop.kind), ['shop'],
+        'actual goal completion closes only the obsolete conditional buy advert');
 
     const dGradeGoal = { type: 'upgrade_gear', status: 'active',
         target: { itemId: 45, itemName: 'Bone Helmet', adena: 1000000 },

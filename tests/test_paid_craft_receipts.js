@@ -43,6 +43,29 @@ async function run() {
     await Database.init(); await Life.init(); Workshop.init();
     const successRecipe = Recipes.resolveByRecipeId(1);
     const owner = await seed(successRecipe, true), buyer = await seed(successRecipe);
+    const assertPublicDigest = () => {
+        let xor = 0, sum = 0, count = 0;
+        for (const prefixed of Workshop.publicRows()) {
+            const row = prefixed.slice(1);
+            if (Recipes.resolveByRecipeId(row[1])?.productId !== successRecipe.productId) continue;
+            const hash = require('../src/GameServer/Bot/Fnv1a').fnv1a32(JSON.stringify(row));
+            xor = (xor ^ hash) >>> 0; sum = (sum + hash) >>> 0; count++;
+        }
+        assert.equal(Workshop.publicRecipeDigest(successRecipe.productId), `${xor}:${sum}:${count}`);
+    };
+    assertPublicDigest();
+    // A native publication source may be mutated in place before its event.
+    // Removal must hash the previous published scalar, not the new object.
+    const publishedBefore = Workshop.publicRecipeRows(owner.characterId);
+    const previousMp = owner.vitals.mp;
+    owner.vitals.mp = successRecipe.mpCost;
+    Workshop.register(owner);
+    assert.equal(publishedBefore.find(row => row[1] === successRecipe.recipeId)[8], 64);
+    assert.equal(Workshop.publicRecipeRows(owner.characterId).find(row => row[1] === successRecipe.recipeId)[8], 1);
+    assertPublicDigest();
+    owner.vitals.mp = previousMp;
+    Workshop.register(owner);
+    assertPublicDigest();
     const before = await image([owner.characterId, buyer.characterId]);
     const native = Database.craftForCustomer;
     let calls = 0, command;
@@ -85,6 +108,41 @@ async function run() {
     assert.equal(hotResult.success, true);
     assert.equal(hotResult.customerState.phase, 'hot');
     assert.equal(count(await Database.fetchItems(hot.characterId), successRecipe.productId), successRecipe.productCount);
+    // Exercise the actual visible ShoppingState adapter, not only the native
+    // workshop entrypoint. A delivered result updates the physical backpack.
+    const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
+    const aiOwner = await seed(successRecipe, true), aiBuyer = await seed(successRecipe);
+    const aiHot = await Life.upsertState({ ...aiBuyer, phase: 'hot', timing: { lastHotAt: Date.now() },
+        stats: { ...aiBuyer.stats, equipmentPlan: { strategy: 'craft', status: 'ready_to_craft',
+            recipeId: successRecipe.recipeId, amount: successRecipe.productCount, valueRate: 1,
+            target: { selfId: successRecipe.productId }, craftProviders: { [successRecipe.recipeId]: {
+                workshop: true, characterId: aiOwner.characterId, revision: aiOwner.simulation.revision,
+                price: aiOwner.stats.workshop.entries.find(row => row.recipeId === successRecipe.recipeId).price } } } }
+    }, 'hot_adapter_customer');
+    const wrap = row => ({ ...row, fetchId() { return this.id; }, fetchSelfId() { return this.selfId; },
+        fetchAmount() { return this.amount; }, setAmount(value) { this.amount = value; } });
+    const bag = { items: (await Database.fetchItems(aiHot.characterId)).map(wrap), fetchItems() { return this.items; },
+        insertItem(id, selfId, row) { this.items.push(wrap({ ...row, id, selfId })); } };
+    const actor = { backpack: bag, fetchId: () => aiHot.characterId, fetchIsOnline: () => true,
+        fetchName: () => 'HotAdapter' };
+    const session = { actor, coldLifeState: aiHot };
+    const selected = Shopping.workshopTarget(session, actor);
+    assert(selected?.station.workshop, 'the visible bot uses its prepared personal workshop provider');
+    const actualCraft = Database.craftForCustomer;
+    let visibleCommits = 0;
+    Database.craftForCustomer = async (...args) => {
+        const result = await actualCraft(...args);
+        if (++visibleCommits === 1) throw Error('hot_adapter_lost_response');
+        return result;
+    };
+    try { await Shopping.craftAtWorkshop(session, actor, selected); }
+    finally { Database.craftForCustomer = actualCraft; }
+    assert.equal(visibleCommits, 2, 'one failed delivery and one original-token recovery');
+    assert.equal(count(bag.fetchItems(), successRecipe.productId), successRecipe.productCount);
+    assert.equal(session.workshopOriginal, undefined);
+    assertPublicDigest();
+    for (const [id, amount] of Profit.requirements(successRecipe)) assert.equal(count(bag.fetchItems(), id), amount * 2);
+    assert.equal(Shopping.workshopTarget(session, actor), null, 'visible completed target cannot craft again from leftover materials');
     const hotCold = await Life.upsertState({ ...Life.cachedState(hot.characterId), phase: 'cold' },
         'customer_handoff', { releaseHot: true });
     const hotReceipt = hotCold.stats.economyCommit;

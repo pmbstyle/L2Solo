@@ -24,6 +24,7 @@ function decode(wire) {
 }
 const PAGE_BYTES = 768, MAX_PAGES = 4, MAX_RAW_BYTES = 8192;
 function pages(input) {
+    if (input.incoming) return commandPages(input, frame => frame, null, { incoming: input.incoming });
     const wire = encode(input), ref = wire[1], chunks = [];
     let chunk = '';
     const bytes = text => Buffer.byteLength(JSON.stringify([1, ref, chunks.length, MAX_PAGES, text]));
@@ -40,9 +41,25 @@ function pages(input) {
 // Transport pages budget the real existing command envelope, including its
 // epoch/message identity and collection field. Compression is bounded to one
 // canonical basket; no dictionary, extra queue or retained expanded graph.
-function commandPages(input, envelopeFor) {
+function dependenciesOf(rows) {
+    if (!Array.isArray(rows) || rows.length > 40 || new Set(rows.map(row => row?.[0])).size !== rows.length
+        || !rows.every(row => shape(row, 4) && Number.isSafeInteger(row[0]) && row[0] > 0
+            && row.slice(1).every(value => typeof value === 'string' && Buffer.byteLength(value) <= 64))) throw Error('trade_meeting_dependencies');
+    return rows;
+}
+function incomingOf(rows) {
+    if (!shape(rows, 2) || !rows.every(row => row && typeof row === 'object' && !Array.isArray(row)
+        && Object.keys(row).length <= 40 && Object.entries(row).every(([id, count]) => Number.isSafeInteger(Number(id))
+            && Number(id) > 0 && String(Number(id)) === id && Number.isSafeInteger(count) && count >= 0))) throw Error('trade_meeting_incoming');
+    return rows;
+}
+function commandPages(input, envelopeFor, dependencies = null, metadata = null) {
     if (typeof envelopeFor !== 'function') throw Error('trade_meeting_envelope');
-    const wire = encode(input), ref = wire[1], raw = Buffer.from(JSON.stringify(wire));
+    const wire = encode(input), ref = wire[1];
+    const packed = dependencies === null && metadata === null ? wire : { request: wire,
+        ...(dependencies === null ? {} : { dependencies: dependenciesOf(dependencies) }),
+        ...(metadata === null ? {} : { incoming: incomingOf(metadata.incoming) }) };
+    const raw = Buffer.from(JSON.stringify(packed));
     if (raw.byteLength > MAX_RAW_BYTES) throw Error('trade_meeting_backpressure');
     const text = deflateRawSync(raw).toString('base64');
     const chunks = []; let at = 0;
@@ -81,7 +98,11 @@ function fromPages(frames) {
         raw = inflateRawSync(compressed, { maxOutputLength: MAX_RAW_BYTES }).toString('utf8');
     }
     if (Buffer.byteLength(raw) > MAX_RAW_BYTES) throw Error('trade_meeting_pages');
-    const decoded = decode(JSON.parse(raw));
+    const parsed = JSON.parse(raw), decoded = decode(Array.isArray(parsed) ? parsed : parsed.request);
+    if (!Array.isArray(parsed)) {
+        if (parsed.dependencies !== undefined) decoded.dependencies = dependenciesOf(parsed.dependencies);
+        if (parsed.incoming !== undefined) decoded.incoming = incomingOf(parsed.incoming);
+    }
     if (decoded.token !== ref) throw Error('trade_meeting_consent_changed');
     return decoded;
 }

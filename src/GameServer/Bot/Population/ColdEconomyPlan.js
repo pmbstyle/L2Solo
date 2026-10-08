@@ -85,7 +85,9 @@ function* prepareNative(state, economy, options) {
         const row = sale.listings[at];
         const town = own.find(line => line.storeType === SELL && line.selfId === row.selfId)?.town
             || (at < 3 ? shopTown : (yield* Town.chooseTown(state, [row], townOptions)).town);
-        if (town) sell.push([Number(row.selfId), Number(row.count), Number(row.price), town]);
+        const unchanged = own.some(line => line.storeType === SELL && line.selfId === Number(row.selfId)
+            && line.count === Number(row.count) && line.price === Number(row.price) && line.town === town);
+        if (town && !unchanged) sell.push([Number(row.selfId), Number(row.count), Number(row.price), town]);
         yield 'stock';
     }
     const listed = new Set(sale.listings.map(row => `${row.selfId}:${row.enchant || 0}`));
@@ -98,21 +100,24 @@ function* prepareNative(state, economy, options) {
         goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate });
     const lines = require('../Economy/BuyAdPolicy').linesFor(buyState, goal, { ...options, economy,
         watchList: economy.watchList || [], money });
-    const plan = { sell, withdraw, buyAds: lines.slice(0, 3).map(row => row.intent ? require('../Economy/TradeIntent').encode(row.intent) : [row.selfId, row.count, row.price]),
+    let buyAds;
+    try { buyAds = lines.slice(0, 3).map(row => row.intent ? require('../Economy/TradeIntent').encode(row.intent) : [row.selfId, row.count, row.price]); }
+    catch (_) { buyAds = [null]; }
+    const plan = { sell, withdraw, buyAds,
         travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null };
-    if (economy.intentPending) delete plan.buyAds;
+    if (economy.intentPending || plan.buyAds.some(row => row === null)) { delete plan.buyAds; plan.d = 1; }
     const shot = decideShot(state, economy, { ...options, ownLines: own });
     if (shot) plan.shot = shot;
     // A complete buy batch is indivisible. Optional work is retained by the
     // existing dirty preparation owner; absent buyAds means not prepared.
     if (Buffer.byteLength(JSON.stringify({ buyAds: plan.buyAds })) > MAX_PLAN_PAYLOAD_BYTES) {
-        delete plan.buyAds;
+        delete plan.buyAds; plan.d = (plan.d || 0) | 1;
     }
     while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
-        if (plan.sell.length) plan.sell.pop();
-        else if (plan.withdraw.length) plan.withdraw.pop();
-        else if (plan.travel) plan.travel = null;
-        else if (plan.shot) delete plan.shot;
+        if (plan.sell.length) { plan.sell.pop(); plan.d = (plan.d || 0) | 2; }
+        else if (plan.withdraw.length) { plan.withdraw.pop(); plan.d = (plan.d || 0) | 4; }
+        else if (plan.travel) { plan.travel = null; plan.d = (plan.d || 0) | 8; }
+        else if (plan.shot) { delete plan.shot; plan.d = (plan.d || 0) | 16; }
         else throw Error('economy_plan_payload_overflow');
     }
     if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {

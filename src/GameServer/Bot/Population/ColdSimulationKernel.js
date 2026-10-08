@@ -1026,6 +1026,71 @@ class ColdSimulationKernel {
         return candidates;
     }
 
+    receiveMeetingPage(request) {
+        const identity = Protocol.meetingIdentity(request), id = identity?.characterId;
+        if (!identity || !request.frame || this.stopping) return false;
+        let attempt = this.commandStartedAt.get(id);
+        if (attempt && (attempt.kind !== 'meeting' || attempt.commandId !== identity.commandId)) return false;
+        if (!attempt) {
+            const current = this.states.get(id);
+            if (!current || this.busy(id) || this.commanding.size >= 16
+                || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return false;
+            attempt = { kind: 'meeting', commandId: identity.commandId, state: current.state,
+                version: current.version, frames: [], frameHashes: [], sent: false, startedAt: this.now() };
+            this.commandStartedAt.set(id, attempt); this.commanding.add(id);
+        }
+        try {
+            const fingerprint = JSON.stringify(request.frame);
+            const oldHash = attempt.frameHashes[request.frame[2]];
+            const hash = require('../Fnv1a').fnv1a32(fingerprint);
+            if (oldHash !== undefined && oldHash !== hash) throw Error('trade_meeting_consent_changed');
+            attempt.frameHashes[request.frame[2]] = hash;
+            const old = attempt.frames[request.frame[2]];
+            if (old && JSON.stringify(old) !== JSON.stringify(request.frame)) throw Error('trade_meeting_consent_changed');
+            if (attempt.sent) {
+                // A duplicate original packet resends the held result pages.
+                for (const frame of attempt.output || []) this.emit('command_request', { requests: [
+                    { ...identity, frame }] }, `meeting-result:${id}:${identity.commandId}:${frame[2]}`);
+                return true;
+            }
+            attempt.frames[request.frame[2]] = request.frame;
+            if (attempt.preparing || attempt.frames.filter(Boolean).length !== request.frame[3]) return true;
+            const input = require('../../AfkTrade/TradeMeetingCodec').fromPages(attempt.frames);
+            attempt.frames = []; attempt.preparing = true;
+            Promise.resolve(this.prepareMeeting?.(id, input, attempt)).then(result => {
+                if (this.commandStartedAt.get(id) !== attempt) return;
+                if (!result || this.states.get(id)?.state !== attempt.state) throw Error('trade_meeting_stale_worker');
+                const frames = this.meetingResultPages(result, id, identity.commandId);
+                attempt.output = frames; attempt.acked = new Set(); attempt.sent = true;
+                for (const frame of frames) if (this.emit('command_request', { requests: [{ ...identity, frame }] },
+                    `meeting-result:${id}:${identity.commandId}:${frame[2]}`) === false)
+                    throw Error('trade_meeting_send_failed');
+            }).catch(error => {
+                if (!this.cancelCommand(id, attempt)) return;
+                this.emit('command_ack', { results: [{ ...identity, pageIndex: -1, ok: false,
+                    reason: String(error.message || error) }] });
+            });
+            return true;
+        } catch (error) {
+            this.cancelCommand(id, attempt);
+            this.emit('command_ack', { results: [{ ...identity, pageIndex: -1, ok: false, reason: error.message }] });
+            return true;
+        }
+    }
+
+    completeMeetingPage(payload) {
+        const identity = Protocol.meetingIdentity(payload);
+        if (!identity) return false;
+        const attempt = this.commandStartedAt.get(identity.characterId);
+        if (attempt?.kind !== 'meeting' || attempt.commandId !== identity.commandId) return false;
+        if (payload.ok === false) return this.cancelCommand(identity.characterId, attempt);
+        if (!attempt.sent || !attempt.output?.some(frame => frame[2] === payload.pageIndex)) return false;
+        attempt.acked.add(payload.pageIndex);
+        // Prefix acknowledgements never release the sole preparation owner.
+        if (attempt.acked.size === attempt.output.length) this.cancelCommand(identity.characterId, attempt);
+        return true;
+    }
+
     beginCommand(characterId, kind = 'lifecycle') {
         const id = Number(characterId), current = this.states.get(id);
         if (!Number.isSafeInteger(id) || id <= 0 || kind !== 'lifecycle'
@@ -1052,6 +1117,14 @@ class ColdSimulationKernel {
     refreshCommandSource(characterId) {
         const id = Number(characterId), attempt = this.commandStartedAt.get(id), current = this.states.get(id);
         if (!attempt || typeof attempt !== 'object') return;
+        if (attempt.kind === 'meeting') {
+            if (current?.state !== attempt.state) {
+                this.cancelCommand(id, attempt);
+                this.emit('command_ack', { results: [{ kind: 'meeting', characterId: id, commandId: attempt.commandId,
+                    pageIndex: -1, ok: false, reason: 'trade_meeting_owner_changed' }] });
+            }
+            return;
+        }
         if (current?.state.phase !== 'cold' || !Protocol.commandCheckpoint(current.state)) this.cancelCommand(id, attempt);
         else if (Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint)) attempt.version = current.version;
         else if (!attempt.sent) this.cancelCommand(id, attempt);
@@ -2008,6 +2081,7 @@ class ColdSimulationKernel {
     }
 
     completeCommand(payload = {}) {
+        if (payload.kind === 'meeting') return this.completeMeetingPage(payload);
         const identity = Protocol.commandIdentity(payload);
         if (!identity || typeof payload.ok !== 'boolean' || this.stopping) return false;
         const id = identity.characterId, attempt = this.commandStartedAt.get(id), current = this.states.get(id);

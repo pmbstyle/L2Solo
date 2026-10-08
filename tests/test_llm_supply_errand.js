@@ -41,7 +41,8 @@ async function main() {
         markCold: LifeState.markCold,
         botAiStop: BotAI.stop,
         botAiInit: BotAI.init,
-        botAiWakeup: BotAI.wakeup
+        botAiWakeup: BotAI.wakeup,
+        meetingReceipt: invoke('GameServer/AfkTrade/TradeMeetingService').receipt
     };
     const adena = item(10, 57, 100000, 'Adena');
     const shots = item(11, 1463, 991);
@@ -76,6 +77,34 @@ async function main() {
     const session = { accountId: 'bot_1', actor: bot, partyCompanion: true, followPlayerSession: player };
     const originalItems = DataCache.items;
     try {
+        const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+        const overdue = { phase: 'cold', activity: 'shopping', name: 'Waiting',
+            stats: { tradeMeeting: [99, 1], supplyErrand: { expiresAt: 1, meetingToken: 'original-supply-token' } } };
+        const kept = Resolver.resolveSolo({ state: overdue, timestamp: 100000 });
+        assert.strictEqual(kept.patch.stats.supplyErrand, overdue.stats.supplyErrand,
+            'accepted native consent survives an expired companion workflow clock');
+        assert.strictEqual(kept.events.length, 0);
+        const unaccepted = { ...overdue, stats: { supplyErrand: { expiresAt: 1 } } };
+        assert.strictEqual(Resolver.resolveSolo({ state: unaccepted, timestamp: 100000 }).patch.stats.supplyErrand, null,
+            'ordinary unaccepted companion requests retain their existing expiry');
+        const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
+        const acceptedErrand = { itemId: 1463, amount: 200, totalCost: 3400, meetingToken: 'original-supply-token' };
+        let outcome = { pending: true, outcome: 'accepted', meetingId: 99 };
+        Meetings.receipt = async (token, owner) => {
+            assert.strictEqual(token, acceptedErrand.meetingToken);
+            assert.strictEqual(owner, bot.fetchId());
+            return outcome;
+        };
+        assert.strictEqual((await BotSupplyErrand.purchaseAtDestination(bot, acceptedErrand)).pending, true,
+            'a replay keeps the original accepted obligation before any advert lookup');
+        outcome = { pending: false, outcome: 'completed', meetingId: 99 };
+        const delivered = await BotSupplyErrand.purchaseAtDestination(bot, acceptedErrand);
+        assert.strictEqual(delivered.delta, 200);
+        assert.strictEqual(delivered.item, shots);
+        outcome = { pending: false, outcome: 'cancelled', meetingId: 99 };
+        assert.strictEqual((await BotSupplyErrand.purchaseAtDestination(bot, acceptedErrand)).reason, 'supply_meeting_cancelled',
+            'a cancelled obligation cannot become a second purchase');
+        Meetings.receipt = originals.meetingReceipt;
         DataCache.items = [{ selfId: 1463, template: { name: 'Soulshot: D-grade' }, etc: { stackable: true } }];
         assert.strictEqual(MarketOpportunity.resolveSupplyItem('Soulshots D grade').selfId, 1463);
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('D-grade soulshots'), 'soulshot_d_grade');
@@ -234,6 +263,7 @@ async function main() {
         BotAI.stop = originals.botAiStop;
         BotAI.init = originals.botAiInit;
         BotAI.wakeup = originals.botAiWakeup;
+        invoke('GameServer/AfkTrade/TradeMeetingService').receipt = originals.meetingReceipt;
         DataCache.items = originalItems;
     }
     console.log('LLM supply errand checks passed');

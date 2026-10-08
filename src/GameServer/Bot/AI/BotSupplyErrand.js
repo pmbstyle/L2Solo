@@ -195,6 +195,17 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
 
 async function purchaseAtDestination(bot, errand) {
     if (!errand || !bot) return { ok: false, reason: 'missing_supply_errand' };
+    // Retry the original accepted obligation before looking up a new quote.
+    // Its advert can disappear while the native custody remains durable.
+    if (errand.meetingToken) {
+        const receipt = await invoke('GameServer/AfkTrade/TradeMeetingService').receipt(errand.meetingToken, bot.fetchId());
+        if (!receipt) return { ok: false, reason: 'supply_meeting_receipt_missing' };
+        if (receipt.pending) return { ok: true, pending: true, meetingId: receipt.meetingId };
+        if (receipt.outcome !== 'completed') return { ok: false, reason: 'supply_meeting_cancelled' };
+        const item = bot.backpack?.fetchItemFromSelfId?.(Number(errand.itemId));
+        if (!item) return { ok: false, reason: 'purchase_inventory_sync_failed' };
+        return { ok: true, delta: Number(errand.amount), cost: Number(errand.totalCost), item };
+    }
     if (!MarketOpportunity.botCanBuy({ ...errand, selfId: errand.itemId })) {
         return { ok: false, reason: 'configured_supply_retired' };
     }
@@ -256,7 +267,10 @@ async function purchaseAtDestination(bot, errand) {
             : await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
                 expectedUnitPrice: Number(errand.unitPrice)
             });
-        if (trade.pending) return { ok: true, pending: true, meetingId: trade.meetingId };
+        if (trade.pending) {
+            errand.meetingToken = trade.token || trade.preparationId;
+            return { ok: true, pending: true, meetingId: trade.meetingId };
+        }
         if (trade.coldState && bot.session) {
             bot.session.coldLifeState = trade.coldState;
             refreshPartyMemberships([bot.session], invoke);

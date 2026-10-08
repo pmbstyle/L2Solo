@@ -41,6 +41,14 @@ for (const type of ['command_request', 'command_ack']) {
     assert(transported.every(frame => Protocol.byteLength(makeEnvelope(frame)) <= 768),
         'the actual protocol envelope, including widest epoch/message identity, fits');
     assert.deepEqual(Codec.fromPages(transported), source);
+    const dependencies = [[1867, '1.2.3', '4', '5:6:7']];
+    const bound = Codec.commandPages(source, makeEnvelope, dependencies);
+    assert.deepEqual(Codec.fromPages(bound), { ...source, dependencies });
+    const incoming = [{ 1867: 2 }, {}];
+    const native = Codec.commandPages(source, makeEnvelope, null, { incoming });
+    assert.deepEqual(Codec.fromPages(native), { ...source, incoming }, 'expanded native incoming is carried only during actual preparation');
+    assert.throws(() => Codec.commandPages(source, makeEnvelope, null, { incoming: [{ 1867: -1 }, {}] }), /incoming/);
+    assert.throws(() => Codec.commandPages(source, makeEnvelope, dependencies.concat(dependencies)), /dependencies/);
     assert.deepEqual(Codec.fromPages([...transported].reverse().concat([transported[0]])), source);
     assert.throws(() => Codec.commandPages(source, frame => ({ frame, impossible: 'x'.repeat(768) })), /backpressure/);
     const excessive = require('node:zlib').deflateRawSync(Buffer.alloc(Codec.MAX_RAW_BYTES + 1, 65)).toString('base64');

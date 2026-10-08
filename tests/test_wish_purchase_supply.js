@@ -18,7 +18,7 @@ const state = { characterId: 1, level: 40, inventory: {}, stats: { recipes: [301
 const board = new BoardIndex();
 const persona = { primaryDrive: 'progression', understanding: 1,
     traits: { commitment: 0, caution: 0, ambition: 0 } };
-let allowCraft = false, spotReads = 0;
+let allowCraft = false, ownCraft = true, spotReads = 0;
 const adapters = {
     'GameServer/DataCache': { items: [item] },
     'GameServer/Progression/ProgressionCap': { effectiveLevelCap: () => 40 },
@@ -29,9 +29,9 @@ const adapters = {
         gainFor: (build, key, fn) => fn(), powerNumbers: () => ({ pAtk: 100, pDef: 100, mDef: 100 }),
         powerFor: () => ({ pAtk: 200, pDef: 100, mDef: 100 }), buildOptions: () => ({}) },
     'GameServer/Bot/Economy/BotImprovementPolicy': { opportunities: () => [], crystalPath: () => null },
-    'GameServer/Items/C4RecipeItems': { resolveByProductId: id => allowCraft && id === 101 ? recipe : null },
+    'GameServer/Items/C4RecipeItems': { resolveByProductId: id => allowCraft && id === 101 ? recipe : null, resolveByRecipeId: id => id === 301 ? recipe : null },
     'GameServer/Items/C4DualSwordCombinations': { loadRecipes: () => [] },
-    'GameServer/Bot/Economy/CraftShopService': { canCraft: () => true },
+    'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft },
     'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' }
@@ -64,7 +64,7 @@ preparedTrip.details = town => ({ known: town === 'Giran', hours: 0, fees: 0 });
 context.trip = preparedTrip;
 function run(craft, extra = {}) {
     allowCraft = craft;
-    const projection = provider.build(state, { ...context, ...extra.context }, { board });
+    const projection = provider.build(state, { ...context, ...extra.context }, { board, ...(extra.deps || {}) });
     const result = new network.WishNetwork().build({ actorKey: 'character:1', inputKey: String(craft),
         characterId: 1, nodes: projection.nodes, roots: projection.roots,
         wallet: extra.wallet ?? 1000, hourAdena: 100, persona, remembered: false });
@@ -241,3 +241,37 @@ assert.equal(ColdDecision.view(committedRich, emptyTransport, nativeDeps).gapHor
 assert(require('node:v8').serialize(richTransport).byteLength <= ColdDecision.MAX_BYTES);
 NativeEconomy.reset();
 console.log('PASS native capture/transport/view: rich funded urgency, unknown arrival, stock horizons, empty queue and wire bound');
+
+// A fighter buys a published service instead of pretending to learn a dwarf recipe.
+ownCraft = false;
+state.stats.recipes = [];
+const publicService = { characterId: 2, recipeId: 301, price: 5, entryPrice: 5, revision: 2,
+    townName: 'Giran', loc: { locX: 81100, locY: 148000, locZ: -3466 }, capacityBatches: 3 };
+const services = rows => ({ workshops: () => rows });
+let projected = run(true, { deps: services([publicService]) });
+let craftPath = projected.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
+assert(craftPath, 'a real public service makes the same craft transformation feasible for a fighter');
+assert.equal(craftPath.requiresRecipeLearning, false);
+assert.equal(craftPath.price, 5);
+assert(!craftPath.grossRequirements.some(row => row.key === 'item:401'), 'no recipe scroll charged to the customer');
+assert.equal(run(true, { deps: services([]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
+assert.equal(run(true, { deps: services([{ ...publicService, capacityBatches: 0 }]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
+assert.equal(run(true, { deps: services([{ ...publicService, townName: 'Unknown' }]) }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false);
+const serviceIndex = new (require('../src/GameServer/Bot/Economy/PublicWorkshopIndex').PublicWorkshopIndex)();
+for (let i = 0; i < 20; i++) serviceIndex.put(`bad:${i}`, { ...publicService, characterId: i + 2,
+    capacityBatches: i % 2 ? 0 : 3, townName: i % 2 ? 'Giran' : 'Unknown' });
+serviceIndex.put('usable', { ...publicService, characterId: 22 });
+const indexed = { workshops: (recipeId, owner) => serviceIndex.candidates(recipeId, owner.characterId) };
+assert.equal(provider.knownWorkshop(recipe, state, context, indexed).characterId, 22,
+    'twenty unusable public services cannot hide the next usable source');
+serviceIndex.put('cheaper', { ...publicService, characterId: 23, price: 2 });
+assert.equal([...serviceIndex.candidates(301)].length, 1, 'only the best usable source per town reaches a customer');
+assert.equal(provider.knownWorkshop(recipe, state, context, indexed).characterId, 23);
+serviceIndex.remove('cheaper');
+assert.equal(provider.knownWorkshop(recipe, state, context, indexed).characterId, 22,
+    'withdrawal reveals the next public source without a new crowd scan');
+const planned = provider.personalCraftPlan(state, { network: { activity: { rootKey: 'power:101:7', activity: 'crafting' },
+    queue: [{ key: 'power:101:7', object: { itemId: 101 }, ratio: 2, plan: craftPath }], plans: new Map() } });
+assert.equal(planned.craftProviders[301].characterId, 2);
+assert.equal(planned.valueRate, 2, 'paid service inherits the personal root funding rate');
+console.log('PASS public paid service for fighter, no scroll/phantom source, route and capacity gates, indexed usable choice per known town');

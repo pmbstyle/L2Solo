@@ -1,10 +1,10 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
-const Intent = require('../Bot/Economy/TradeIntent');
 const staged = new Map();
 const enrolled = new Map(); // Numeric participant reference, never custody/terms.
 const queue = new Set();
-let pages = 0, draining = false, unsubscribeLife, unsubscribePlayer, unsubscribeBoard;
+let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribePlayer, unsubscribeBoard;
+const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const db = () => invoke('Database');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
 const world = () => invoke('GameServer/World/World');
@@ -35,7 +35,7 @@ function stage(request) {
         if (JSON.stringify(existing.frames) !== JSON.stringify(frames)) throw Error('trade_meeting_consent_changed');
         return request.token;
     }
-    if (count > 4 || pages + count > 64) throw Error('trade_meeting_backpressure');
+    if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
     for (const entry of staged.values()) if ([request.actorA, request.actorB].some(id => entry.actors.includes(id))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
     staged.set(id, { frames, revisions: request.parties.map(party => party.revision),
@@ -43,7 +43,57 @@ function stage(request) {
     pages += count;
     return id;
 }
-function discard(id) { const entry = staged.get(id); if (entry) { pages -= entry.pages; staged.delete(id); } }
+function discard(id) {
+    const entry = staged.get(id);
+    if (entry) {
+        pages -= entry.pages; staged.delete(id);
+        entry.cancelled = true;
+        if (entry.ready) coordinator()?.cancelMeetingPreparation?.(id);
+    }
+}
+function adjustTransportPages(delta, byteDelta = 0) {
+    const count = transportPages + delta, bytes = transportBytes + byteDelta;
+    if (!Number.isSafeInteger(count) || count < 0 || bytes < 0
+        || pages + count > 64 || bytes + [...staged.values()].reduce((total, entry) => total + entry.bytes, 0) > 48 * 1024) throw Error('trade_meeting_backpressure');
+    transportPages = count; transportBytes = bytes;
+}
+function validatePrepared(entry, request) {
+    if (staged.get(request.token) !== entry || entry.cancelled) throw Error('trade_meeting_preparation_changed');
+    for (const proof of entry.proofs || []) {
+        if (!proof.approved || !coordinator().meetingPreparationCurrent(proof, request)) throw Error('trade_meeting_authority_changed');
+    }
+    return true;
+}
+async function prepareActors(token) {
+    const entry = staged.get(token), request = require('./TradeMeetingCodec').fromPages(entry.frames);
+    const bots = entry.actors.filter((_, side) => request.parties[side].phase !== 'player');
+    if (!bots.length) return;
+    if (!coordinator()?.requestMeetingPreparation) throw Error('trade_meeting_preparation_pending');
+    const proofs = await Promise.all(bots.map(id => coordinator().requestMeetingPreparation(id, request)));
+    if (staged.get(token) !== entry) throw Error('trade_meeting_preparation_changed');
+    entry.proofs = proofs;
+    validatePrepared(entry, request);
+    for (const proof of proofs) {
+        const side = entry.actors.indexOf(Number(proof.characterId));
+        if (side < 0 || proof.token !== token || proof.sequence !== request.parties[side].sequence) throw Error('trade_meeting_consent_changed');
+        request.parties[side].route = proof.route;
+        request.lines.forEach((line, index) => {
+            if (line.payer === side) {
+                const certificate = proof.certificates?.[index];
+                if (!certificate) throw Error('trade_meeting_need_changed');
+                line.certificate = certificate;
+            }
+        });
+    }
+    delete request.incoming; // Only the two active graph preparations needed the expanded native projection.
+    const frames = require('./TradeMeetingCodec').pages(request);
+    if (pages + transportPages - entry.pages + frames.length > 64) throw Error('trade_meeting_backpressure');
+    pages += frames.length - entry.pages;
+    entry.frames = frames; entry.pages = frames.length;
+    entry.bytes = frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0);
+    if (entry.bytes + transportBytes + [...staged.values()].reduce((sum, other) => sum + (other === entry ? 0 : other.bytes), 0) > 48 * 1024) throw Error('trade_meeting_backpressure');
+}
+
 async function accept(id, characterId = null) {
     const entry = staged.get(id);
     if (!entry) {
@@ -60,7 +110,11 @@ async function accept(id, characterId = null) {
     try {
         // DB persists the original token/sequences, so retry never invents
         // fresh consent after an acknowledgement or ordinary bot commit.
-        const result = await db().acceptTradeMeeting(require('./TradeMeetingCodec').fromPages(entry.frames));
+        if (entry.ready) await entry.ready;
+        const request = require('./TradeMeetingCodec').fromPages(entry.frames);
+        const result = await db().acceptTradeMeeting(request, entry.proofs ? {
+            validatePreparation: () => validatePrepared(entry, request), freshPreparation: true
+        } : undefined);
         return accepted(result);
     } finally { discard(id); }
 }
@@ -71,10 +125,12 @@ async function accepted(result) {
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
     wake(row.actorA); wake(row.actorB);
     return { pending: result.pending, meetingId: row.id, revision: row.revision,
-        outcome: row.state,
+        outcome: row.state, token: row.token, preparationId: row.token,
         purchased: false, sold: false, state: life().cachedState(row.actorA) };
 }
 async function receipt(token, characterId) {
+    const pending = staged.get(token);
+    if (pending?.actors.includes(Number(characterId))) return { pending: true, token, preparationId: token, outcome: 'preparing' };
     const row = await db().fetchTradeMeetingByToken(token);
     if (!row) return db().fetchTradeMeetingReceipt?.(token, characterId) || null;
     if (![row.actorA, row.actorB].includes(Number(characterId))) return null;
@@ -102,39 +158,36 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
             || own.hotAt !== callerAuthority.hotAt) throw Error('trade_meeting_authority_changed');
     }
     const buyerSide = actors.indexOf(buyer), sellerSide = 1 - buyerSide;
-    const source = sides[sellerSide].inventory.find(row => row.selfId === itemId && !row.equipped
-        && row.enchant === Number(line.enchant || 0) && row.amount >= amount && (!options.objectId || row.id === options.objectId));
-    if (!source) throw Error('trade_meeting_stock_changed');
-    let certificate = record.storeType === 3 && line.intentJson ? JSON.parse(line.intentJson) : null;
-    let needAd;
-    const buyerState = life().cachedState(buyer);
-    if (buyerState && !certificate) {
-        const own = (await db().fetchAfkTradeShops(buyer)).find(ad => ad.kind === 'buy_ad' && ad.lines[0]?.selfId === itemId && ad.lines[0]?.intentJson);
-        if (!own) throw Error('trade_meeting_preparation_pending');
-        needAd = own;
-        const intent = Intent.decode(JSON.parse(own.lines[0].intentJson));
-        if (own.lines[0].intentRevision !== sides[buyerSide].revision || intent.amount < amount || intent.price < line.price) throw Error('trade_meeting_preparation_pending');
-        certificate = Intent.encode({ ...intent, amount, price: line.price });
+    const sources = []; let remainder = amount;
+    for (const source of sides[sellerSide].inventory) {
+        if (source.selfId !== itemId || source.equipped || Number(source.enchant || 0) !== Number(line.enchant || 0)
+            || options.objectId && source.id !== options.objectId || !(source.amount > 0)) continue;
+        const count = Math.min(remainder, source.amount);
+        sources.push({ source, count }); remainder -= count;
+        if (!remainder || sources.length === 5) break;
     }
+    if (remainder) throw Error('trade_meeting_stock_changed');
     const point = { locX: record.locX, locY: record.locY, locZ: record.locZ };
     const parties = sides.map((side, index) => {
         const actor = actors[index], state = life().cachedState(actor);
         let route;
         if (state) {
-            const plan = require('../Bot/Population/ColdTrip').townPlan(state, point);
-            if (!plan) throw Error('trade_meeting_route');
-            route = { fee: plan.route.fee, scroll: !!plan.scroll, method: plan.method, durationMs: plan.durationMs };
+            // Worker supplies the chosen route together with its fresh consent.
+            route = { fee: 0, scroll: false, method: 'walk', durationMs: 0 };
         } else {
             const position = side.position;
             if (!position || Math.hypot(position.locX - point.locX, position.locY - point.locY, position.locZ - point.locZ) > 200) throw Error('trade_meeting_player_at_point');
             route = { fee: 0, scroll: false, method: 'walk', durationMs: 0 };
         }
-        return { ...side, route, needRevision: certificate && actor === buyer && record.storeType === 3 ? line.intentRevision : side.revision };
+        return { ...side, route, needRevision: side.revision };
     });
     const request = { token: randomUUID(), actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
-        town: record.town, point, parties, lines: [{ payer: buyerSide, itemId: source.id, selfId: itemId,
-            enchant: line.enchant || 0, count: amount, price: line.price, needAdId: needAd?.id || 0, needAdRevision: needAd?.revision || 0, adId: record.id, adRevision: record.revision, certificate }] };
-    return { preparationId: stage(request), town: record.town, point, amount, price: line.price, total: amount * line.price };
+        town: record.town, point, parties, incoming: sides.map(side => side.acceptedIncoming || {}), lines: sources.map(({ source, count }) => ({ payer: buyerSide, itemId: source.id, selfId: itemId,
+            enchant: line.enchant || 0, count, price: line.price, needAdId: 0, needAdRevision: 0, adId: record.id, adRevision: record.revision, certificate: null })) };
+    const token = stage(request), entry = staged.get(token);
+    entry.ready = prepareActors(token).catch(error => { discard(token); throw error; });
+    entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
+    return { preparationId: token, token, town: record.town, point, amount, price: line.price, total: amount * line.price };
 }
 async function cancel(characterId) {
     const row = await db().fetchTradeMeetingForOwner(Number(characterId));
@@ -146,8 +199,13 @@ async function cancel(characterId) {
 async function trade(characterId, store, itemId, amount, options) {
     const prepared = await prepareTrade(characterId, store, itemId, amount, options);
     if (!prepared.preparationId) return prepared;
-    const result = await accept(prepared.preparationId, characterId);
-    return { ...result, state: life().cachedState(characterId) };
+    // A lifecycle command may be waiting for this return on commandTail.
+    // Release it before either independent worker preparation replies.
+    const token = prepared.preparationId, entry = staged.get(token);
+    entry.ready.then(() => accept(token, characterId)).catch(error => {
+        utils.infoWarn('AfkTrade', 'meeting preparation %s: %s', token, error.message);
+    });
+    return { pending: true, preparationId: token, token, outcome: 'preparing', purchased: false, sold: false, state: life().cachedState(characterId) };
 }
 function presenceChanged(session) {
     const marker = session.tradeMeetingPresence, actor = session.actor;
@@ -162,7 +220,8 @@ function presenceChanged(session) {
 function reset() {
     unsubscribeLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribePlayer = unsubscribeBoard = undefined;
-    staged.clear(); pages = 0; enrolled.clear(); queue.clear();
+    for (const token of [...staged.keys()]) discard(token);
+    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
@@ -297,4 +356,5 @@ async function init() {
     }
 }
 module.exports = { stage, discard, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
-    counters: () => ({ preparations: staged.size, pages, bytes: [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };
+    adjustTransportPages,
+    counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

@@ -1585,7 +1585,9 @@ const BackgroundResolver = {
 
         if (state.stats?.supplyErrand) {
             const expiresAt = Number(state.stats.supplyErrand.expiresAt || 0);
-            if (expiresAt > 0 && timestamp >= expiresAt) {
+            // A native accepted obligation has no lateness deadline. Its
+            // terminal event releases this workflow; downtime cannot abandon it.
+            if (!(state.stats.supplyErrand.meetingToken && state.stats.tradeMeeting) && expiresAt > 0 && timestamp >= expiresAt) {
                 return {
                     patch: {
                         activity: 'hunting',

@@ -637,6 +637,8 @@ function recordFromSession(session, phase, reason = '') {
         supplyErrand: session.companionShopping?.kind === 'player_resource_purchase'
             ? {
                 workflowId: session.companionShopping.workflowId || null,
+                meetingToken: typeof session.companionShopping.meetingToken === 'string'
+                    && session.companionShopping.meetingToken.length <= 80 ? session.companionShopping.meetingToken : null,
                 itemSelfId: Number(session.companionShopping.itemId || 0) || null,
                 amount: Number(session.companionShopping.amount || 0) || null,
                 phase: session.supplyErrandPhase || 'cold',
