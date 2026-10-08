@@ -476,7 +476,16 @@ async function sellToStore(actor, store, selfId, qty, options = {}) {
                         const paid = await AfkTrade.sellToShop(actor.fetchId(), ad.store, selfId, amount, {
                             lineId: ad.storeItem.afkTradeLineId, objectId: actorItem.fetchId(),
                             expectedPrice: ad.storeItem.price });
-                        if (paid.pending) return { qty: 0, totalAdena: 0, pending: true, meetingId: paid.meetingId };
+                        if (paid.pending) {
+                            // Earlier backed sales already moved physical goods. Keep
+                            // their result and the merchant's remaining quantity exact.
+                            storeItem.count -= adQty;
+                            if (storeItem.count <= 0) store.items = store.items.filter(item => item !== storeItem);
+                            const result = { ...staticResult(), pending: true, meetingId: paid.meetingId,
+                                preparationId: paid.preparationId, token: paid.token };
+                            if (adQty) await runPostCommitCallback('afterTrade', options.afterTrade, result, storeItem);
+                            return result;
+                        }
                         adQty += paid.amount;
                         adAdena += paid.totalPrice;
                         left -= paid.amount;
