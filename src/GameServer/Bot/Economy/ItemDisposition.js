@@ -241,6 +241,12 @@ function skillBookSlotCount(state = {}, candidates) {
     return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item), candidates);
 }
 
+function soloSaleSlotLimit(state = {}, timestamp = Date.now()) {
+    return isTradeEligible(state) && !(state.party?.partyId || state.partyId)
+        && !(Number(state.stats?.marketSellRetryAfter || 0) > timestamp)
+        ? HALF_FULL_CLEANUP_SLOTS : null;
+}
+
 function inventoryCleanupNeed(state = {}, options = {}) {
     const timestamp = Number(options.now) || Date.now();
     const slots = inventorySlotCount(state);
@@ -263,8 +269,8 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     // Solo bots only: a party member sells from the field (AFK listing) and leaves its
     // party for the market only with a full bag (PartyMarketBreak); and only with
     // something to sell, else the trip would repeat every retry period.
-    const halfFull = isTradeEligible(state) && !(state.party?.partyId || state.partyId)
-        && slots >= HALF_FULL_CLEANUP_SLOTS && candidates.length > 0;
+    const soloLimit = soloSaleSlotLimit(state, timestamp);
+    const halfFull = soloLimit !== null && slots >= soloLimit && candidates.length > 0;
     // A normal market retry cooldown prevents pointless town loops. Residual
     // NPC-only books/recipes become deterministic cleanup work once a
     // generated character reaches its trading phase. Before that point they
@@ -425,21 +431,23 @@ function protectedStarterLootAmount(item, kind) {
 }
 
 function saleCandidates(state, options = {}) {
-    if (!isTradeEligible(state) && !options.allowPreTradeCleanup) return [];
+    if (!isTradeEligible(state) && !options.allowPreTradeCleanup) return options.presenceOnly ? false : [];
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
-    const reserved = { ...reservedEquipmentAmounts(state), ...(options.reserved || {}) };
+    const reserved = { ...(options.preparedReservations || reservedEquipmentAmounts(state)), ...(options.reserved || {}) };
     // The healing potions, the bot's own shots and the Scrolls of Escape a bot
     // spends are kept up to their restock targets; a surplus is sold.
-    const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
-    const kept = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: basics.stock('potions').target }),
+    const basics = options.keptAmounts ? null
+        : invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { saleReservations: reserved });
+    const kept = options.keptAmounts || {
+        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: basics.stock('potions').target }),
         ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, basics),
         ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount);
     }
-    return Object.values(state?.inventory || {}).flatMap((item) => {
+    const candidatesFor = (item) => {
         const selfId = Number(item?.selfId || 0);
         if (ClanCrafting.clanIdFor(state) && (ClanCrafting.isResource(selfId)
             || Number(state.stats?.clanMaterialDemand?.[selfId] || 0) > 0)) return [];
@@ -476,6 +484,7 @@ function saleCandidates(state, options = {}) {
             ? clanPrice
             : npcOnly ? Math.max(priceFor(state, item, template), NpcSellRules.npcBuyPrice(base)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
+        if (options.presenceOnly) return [true];
         const candidate = {
             selfId,
             name: item.name || template?.template?.name || `Item ${selfId}`,
@@ -501,7 +510,12 @@ function saleCandidates(state, options = {}) {
         }
         if (left > 0) { const row = groups.get(0) || {...candidate,count:0};row.count += left;groups.set(0,row); }
         return [...groups.values()];
-    }).sort((a, b) => {
+    };
+    if (options.presenceOnly) {
+        for (const item of Object.values(state?.inventory || {})) if (candidatesFor(item).length) return true;
+        return false;
+    }
+    return Object.values(state?.inventory || {}).flatMap(candidatesFor).sort((a, b) => {
         const craftedShotId = Number(state?.stats?.shotCraft?.productId || 0);
         const craftedPriority = Number(b.selfId === craftedShotId) - Number(a.selfId === craftedShotId);
         return craftedPriority || b.price - a.price || a.selfId - b.selfId;
@@ -593,6 +607,7 @@ module.exports = {
     isSkillBookItem,
     inventoryCleanupNeed,
     inventorySlotCount,
+    soloSaleSlotLimit,
     npcOnlySlotCount,
     skillBookSlotCount,
     isWarehouseCandidate,

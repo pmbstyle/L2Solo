@@ -46,7 +46,7 @@ for (const commitment of [.1, .9]) {
     assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
     assert.equal(own.benefitHours, b * noHistoryT);
 }
-for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], 24], [[22, .1], .5]]) {
+for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], noHistoryT], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
     assert.equal(own.targetHours, hours); assert.equal(own.target, Math.ceil(use * hours));
 }

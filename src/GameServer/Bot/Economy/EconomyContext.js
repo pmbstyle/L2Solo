@@ -75,14 +75,17 @@ function routeState(state, session) {
 function inputKey(state, deps = {}) {
     const stats = state.stats || {};
     const items = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount, row.equippedCount || row.equipped,
-        row.slot, row.enchant, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
+        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
-        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId,
+        Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.party?.partyId, state.partyId,
+        stats.generatedCold, stats.race, stats.marketSellRetryAfter,
+        Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
+        JSON.stringify(stats.equipmentPlan || null), JSON.stringify(stats.clanMaterialDemand || null),
         state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
@@ -181,20 +184,33 @@ function foundation(state, deps, persona, timestamp, price) {
     const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
     const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
-    if (!(positive(state.stats?.visitEvery?.[1]) > 0) && spotTable?.stacks !== null && spotTable?.stacks !== undefined) {
+    if (spotTable?.stacks !== null && spotTable?.stacks !== undefined) {
         const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
         const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
-        // ARCH-NOTE: size the E9 no-history interval on the bag after its
+        // ARCH-NOTE: size the E9 bag interval on the bag after its
         // planned kit stacks exist. Otherwise an empty shot/potion row uses
         // no slot, its refill uses one, and the shorter interval immediately
         // sells part of that refill back to the NPC. Existing stacks retain
         // the exact physical free-slot formula; zero-use stock reserves none.
         const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount))
             + Number(potionUse > 0 && !positive(state.inventory?.[potionItemId]?.amount));
-        const free = Math.max(0, Floor.inventoryLimit(race) - Floor.stateInventory(state, Data.items).slots - plannedSlots);
+        let slotLimit = Floor.inventoryLimit(race);
+        const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+        const saleLimit = Disposition.soloSaleSlotLimit(state, timestamp);
+        if (saleLimit !== null) {
+            // Stock cannot be its own reason for an earlier town visit. Keep
+            // the entire usable kit while checking known free saleable loot.
+            const keptAmounts = { [shotItemId]: positive(state.inventory?.[shotItemId]?.amount),
+                ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
+                736: positive(state.inventory?.[736]?.amount) };
+            if (Disposition.saleCandidates(state, { keptAmounts, preparedReservations: deps.saleReservations,
+                presenceOnly: true })) slotLimit = Math.min(slotLimit, saleLimit);
+        }
+        const free = Math.max(0, slotLimit - Floor.stateInventory(state, Data.items).slots - plannedSlots);
         bagHours = spotTable.stacks > 0 ? free / spotTable.stacks : 24;
     }
-    const targetHours = require('./TownVisitInterval').targetHours(state.stats, bagHours);
+    const Visits = require('./TownVisitInterval');
+    const targetHours = Math.min(Visits.targetHours(state.stats, bagHours), Visits.targetHours({}, bagHours));
     const stock = kind => {
         const shots = kind === 'shots';
         const itemId = shots ? shotItemId : potionItemId;
