@@ -99,7 +99,8 @@ function spawn() {
     worker = instance;
     if (config.diagnostics) Diagnostics.connect(batch => {
         if (worker !== instance) return false;
-        instance.postMessage({ type: 'economy_diagnostics', ...batch }); return true;
+        const message = { type: 'economy_diagnostics', ...batch };
+        instance.postMessage(message); return Buffer.byteLength(JSON.stringify(message));
     });
     if (PopulationConfig.developerDiagnostics) counters.starts += 1;
     instance.on('message', (message = {}) => {

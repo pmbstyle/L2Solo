@@ -58,17 +58,19 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
     }
     function pump() {
         if (!detail() || !transport || inFlight || !rows?.length) return;
-        const batch = []; let batchBytes = 128, size = 0;
+        const batch = []; let batchBytes = 512, size = 0;
         while (rows.length && batch.length < LIMITS.batch) {
             const row = rows[0], encoded = Buffer.byteLength(JSON.stringify(row)) + 1;
             if (batchBytes + encoded > LIMITS.batchBytes) break;
             rows.shift(); batch.push(row); batchBytes += encoded; size += Buffer.byteLength(row);
         }
         bytes -= size; inFlight = { id: ++seq, count: batch.length, bytes: size, at: now() };
-        batches++; sent += batch.length; sentBytes += batchBytes;
-        try { if (transport({ id: inFlight.id, records: batch }) === false) {
-            lose('transport', batch.length); inFlight = null;
-        } } catch { lose('transport', batch.length); inFlight = null; }
+        batches++; sent += batch.length;
+        const message = { id: inFlight.id, records: batch };
+        try { const result = transport(message);
+            sentBytes += Number.isSafeInteger(result) && result >= 0 ? result : Buffer.byteLength(JSON.stringify(message));
+            if (result === false) { lose('transport', batch.length); inFlight = null; }
+        } catch { lose('transport', batch.length); inFlight = null; }
     }
     function enqueue(input, imported = false) {
         if (!detail()) return false;
@@ -111,7 +113,9 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
     function stats() {
         if (!active()) return { enabled: false };
         return { enabled: true, detailEnabled: detail(), queued: rows?.length || 0, bytes, inFlight: inFlight?.count || 0,
-            selected: explicit?.size || selected?.size || 0, keys: 0, dropped, written, offered, sent, batches, sentBytes,
+            selected: explicit?.size || selected?.size || 0, keys: 0, dropped, acknowledged: written,
+            destination: thread === 'main' ? 'history_writer' : 'main_admission',
+            ...(thread === 'main' ? { written } : { acceptedByMain: written }), offered, sent, batches, sentBytes,
             oldestAgeMs: rows?.length ? Math.max(0, now() - JSON.parse(rows[0]).at) : 0,
             inFlightAgeMs: inFlight ? Math.max(0, now() - inFlight.at) : 0, drops: drops ? { ...drops } : null };
     }

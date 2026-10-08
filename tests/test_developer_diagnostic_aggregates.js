@@ -27,9 +27,17 @@ assert.equal(forwarded.accept([original]), 1);
 const event = JSON.parse(batches[0].records[0]);
 assert.equal(event.at, 20); assert.equal(event.thread, 'worker'); assert.equal(event.sequence, 3);
 assert.equal(forwarded.accept(new Array(17).fill(original)), false);
+assert.equal(forwarded.stats().sentBytes, Buffer.byteLength(JSON.stringify(batches[0])), 'wire bytes exclude conservative budget reservation');
 assert.equal(forwarded.ack(batches[0].id, 0), true); assert.equal(forwarded.stats().drops.writer, 1);
 config.developerDiagnostics = false;
 assert.deepEqual(collector.metrics(), { enabled: false }); assert.equal(collector.enabled(64), false);
 collector.stop(); config.developerDiagnostics = true;
 assert.equal(collector.stats().queued, 0); assert.deepEqual(collector.metrics().counts, {});
 console.log('Developer diagnostics: master precedence, no off work, bounded unsampled aggregates/durations, drops, original time/thread and correlation passed');
+
+const workerWire = create({ config: { developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '64' }, thread: 'worker' });
+let actualMessage; workerWire.connect(batch => { actualMessage = { type: 'economy_diagnostics', epoch: 'world', ...batch, dropped: 0 }; return Buffer.byteLength(JSON.stringify(actualMessage)); });
+workerWire.push({ owner: 64, phase: 'wire_test' });
+assert.equal(workerWire.stats().sentBytes, Buffer.byteLength(JSON.stringify(actualMessage)));
+workerWire.ack(actualMessage.id, 1); assert.equal(workerWire.stats().destination, 'main_admission');
+assert.equal(workerWire.stats().acceptedByMain, 1); assert.equal(workerWire.stats().written, undefined);
