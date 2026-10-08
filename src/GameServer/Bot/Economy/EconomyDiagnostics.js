@@ -8,10 +8,10 @@ const LIMITS = Object.freeze({ recordBytes: 1024, batch: 16, batchBytes: 16384,
     layers: 16, durationSamples: 32 });
 const NUMBER_FIELDS = ['revision', 'goalRevision', 'item', 'need', 'actual', 'remaining', 'recordId', 'lineId',
     'tripHours', 'tripFees', 'reserveDelta', 'quote', 'spent', 'edges', 'goalApplied', 'nativeId', 'sequence',
-    'errandAt', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
+    'errandAt', 'receiptUnits', 'receiptSpent', 'decisionSeq', 'activityLeaf', 'inputHash', 'target', 'owned', 'missing', 'requested', 'planned',
     'wallet', 'available', 'budget', 'reserve', 'priorityReserve', 'escrow', 'unitPrice', 'valueHours',
     'moneyPrice', 'cost', 'recipeId', 'npcId', 'durationMs', 'funded', 'before', 'after'];
-const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome'];
+const TEXT_FIELDS = ['trigger', 'phase', 'reason', 'town', 'source', 'wishKey', 'commandId', 'caller', 'layer', 'outcome', 'errandKey'];
 function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now,
     thread = isMainThread ? 'main' : 'worker' } = {}) {
     capacity = Math.min(LIMITS.mainRecords, Math.max(1, capacity));
@@ -83,7 +83,7 @@ function create({ config = Config, capacity = LIMITS.mainRecords, now = Date.now
         const record = { v: 1, at: Number.isFinite(input.at) ? input.at : timestamp,
             thread: imported && ['main', 'worker'].includes(input.thread) ? input.thread : thread, owner: Number(input.owner) };
         for (const field of NUMBER_FIELDS) if (Number.isFinite(input[field])) record[field] = input[field];
-        for (const field of TEXT_FIELDS) if (typeof input[field] === 'string') record[field] = input[field].slice(0, field === 'wishKey' ? 96 : 64);
+        for (const field of TEXT_FIELDS) if (typeof input[field] === 'string') record[field] = input[field].slice(0, field === 'wishKey' || field === 'errandKey' ? 96 : 64);
         if (Array.isArray(input.candidates)) record.candidates = input.candidates.slice(0, 3)
             .map(row => ({ town: String(row.action || row.town || '').slice(0, 32), hours: Number.isFinite(row.value) ? row.value : null }));
         const row = JSON.stringify(record), size = Buffer.byteLength(row);

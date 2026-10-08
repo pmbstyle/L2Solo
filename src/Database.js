@@ -31,14 +31,14 @@ function stageNativeDiagnostic(characterId, step, phase, reason, fields) {
     if (!Diagnostics.enabled(characterId)) return;
     if ((nativeDiagnosticFacts?.length || 0) >= 64) { Diagnostics.noteDropped(1); return; }
     nativeDiagnosticFacts ||= [];
-    nativeDiagnosticFacts.push({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
-        commandId: step?.command?.[0], sequence: step?.command?.[2], revision: Number(step?.row?.simulationRevision) });
+    nativeDiagnosticFacts.push(Object.freeze({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
+        commandId: step?.command?.[0], sequence: step?.command?.[2], revision: Number(step?.row?.simulationRevision) }));
 }
 function publishNativeDiagnostics(rolledBack = null) {
     if (!nativeDiagnosticFacts) return;
     try {
         for (const row of nativeDiagnosticFacts) Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
-            reason: rolledBack, planned: row.actual, actual: 0, spent: 0 } : { ...row, outcome: 'committed' });
+            reason: rolledBack, planned: row.planned ?? row.actual, actual: 0, spent: 0, goalApplied: 0 } : { ...row, outcome: 'committed' });
     } catch (_) { /* Observations cannot change native results or errors. */ }
     nativeDiagnosticFacts = null;
 }
@@ -2091,7 +2091,7 @@ function economyStepUnsafe(characterId, command, kind) {
     if (!EconomyCommit.valid(tuple) || tuple[2] !== command[0] || tuple[3] !== command[1]) throw Error('economy_intent_changed');
     if (tuple[1] === 1 && command[2] === tuple[0] - 1) {
         if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_replay', 'saved_receipt',
-            { nativeId: tuple[8], actual: tuple[5], spent: tuple[6] });
+            { nativeId: tuple[8], receiptUnits: tuple[5], receiptSpent: tuple[6], actual: 0, spent: 0 });
         return { row, replay: { ...EconomyCommit.result(tuple), coldLifeRow: normalizeRow(row) } };
     }
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
@@ -2157,12 +2157,13 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
     if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
     const { r, itemId, valueHours, survivalCost, clanPart } = funding;
+    const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
     const budget = require('./GameServer/Bot/Economy/PurchaseFunding').spendable({
         adena: wallet, stats: { money: packet }
-    }, 0, { r, itemId, valueHours, survivalCost, clanPart, free: funding.free === true });
+    }, 0, { r, itemId, valueHours, survivalCost, clanPart, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
-            moneyPrice: Number(packet[1]), escrow: 0,
+            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
             decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
 
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
@@ -7000,6 +7001,10 @@ const Database = {
             let total = 0, units = 0, errandCount = 0;
             for (const line of captured) {
                 const itemId = Number(line.selfId), count = Number(line.amount), price = Number(line.unitPrice);
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_requested',
+                    { lineId: lines.length, item: itemId, requested: count, planned: count, unitPrice: price,
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town,
+                        goalRevision: Number(line.goal?.updatedAt) });
                 if (!Number.isSafeInteger(itemId) || itemId <= 0 || seen.has(itemId)
                     || !Number.isSafeInteger(count) || count <= 0 || count > 10000
                     || !Number.isSafeInteger(price) || price <= 0 || !Number.isSafeInteger(count * price)) throw Error('invalid npc purchase');
@@ -7035,6 +7040,8 @@ const Database = {
                 lines.push({ ...line, selfId: itemId, amount: count, unitPrice: price, stackable, slot,
                     name: line.name || template?.template?.name || `Item ${itemId}` });
             }
+            if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'planned',
+                { requested: units, planned: units, cost: total, npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
             const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
             let remainingWallet = Number(wallet?.amount || 0);
             const Funding = require('./GameServer/Bot/Economy/PurchaseFunding');
@@ -7060,6 +7067,9 @@ const Database = {
                 remainingPacket = Funding.packetAfterPurchase(remainingPacket, spent, funding);
             }
             if (!wallet || remainingWallet < 0) {
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'insufficient_adena',
+                    { requested: units, planned: units, actual: 0, spent: 0, wallet: Number(wallet?.amount || 0),
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
                 const row = completeEconomyStepUnsafe(characterId, step, { success: false,
                     nativeId: Number(seller?.sourceId || lines[0].selfId) }, []);
                 return { ok: false, reason: 'insufficient_adena', ...(row ? { coldLifeRow: row } : {}) };
@@ -7072,6 +7082,12 @@ const Database = {
                     write('INSERT INTO items(selfId,name,amount,equipped,slot,characterId) VALUES(?,?,?,0,?,?)',
                         [line.selfId, line.name, line.stackable ? line.amount : 1, line.slot, characterId]);
                 }
+            }
+            if (Diagnostics.active()) for (const [lineId, line] of lines.entries()) {
+                stageNativeDiagnostic(characterId, step, 'native_quantity', 'npc_filled',
+                    { lineId, item: line.selfId, requested: line.amount, planned: line.amount, actual: line.amount,
+                        spent: line.amount * line.unitPrice, unitPrice: line.unitPrice,
+                        npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
             }
             const changed = new Set(lines.map(line => line.selfId)), patch = {};
             if (step) patch.money = remainingPacket;
@@ -7089,12 +7105,20 @@ const Database = {
                 for (const line of lines) for (const entry of line.errands) {
                     const index = errands.findIndex(other => Errands.key(other) === Errands.key(entry.errand)
                         && Number(other.at) === Number(entry.errand.at) && Number(other.amount) === Number(entry.errand.amount));
-                    if (index < 0) continue;
+                    if (index < 0) {
+                        if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_errand', 'stale_errand',
+                            { item: line.selfId, errandKey: Errands.key(entry.errand), errandAt: Number(entry.errand.at),
+                                requested: Number(entry.errand.amount), planned: entry.units, actual: 0, spent: 0 });
+                        continue;
+                    }
                     const old = errands[index], rest = Math.max(0, Number(old.amount) - entry.units);
                     if (!rest) errands.splice(index, 1);
                     else errands[index] = { ...old, amount: rest,
                         ...(Number.isFinite(old.money) ? { money: Math.max(0, old.money - entry.spent) } : {}),
                         ...(old.purpose === 'clan' ? { tag: { ...old.tag, clanPart: Math.max(0, Number(old.tag?.clanPart || 0) - entry.spent) } } : {}) };
+                    if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_errand', rest ? 'partial' : 'completed',
+                        { item: line.selfId, errandKey: Errands.key(old), errandAt: Number(old.at),
+                            requested: Number(old.amount), planned: entry.units, actual: entry.units, spent: entry.spent, remaining: rest });
                     patch.lastErrand = { purpose: old.purpose, selfId: old.selfId, units: entry.units, tag: old.tag || null, at: now() };
                 }
                 Object.assign(patch, { marketErrands: errands, marketErrand: errands[0] || null });
@@ -7106,8 +7130,12 @@ const Database = {
                 if (!Number.isSafeInteger(count) || count <= 0 || count > line.amount
                     || Number(expectedGoal?.target?.itemId) !== line.selfId) throw Error('invalid npc goal attribution');
                 const timestamp = now(), next = Goals.purchasePatch(expectedGoal, count, timestamp);
-                if (next) write('UPDATE bot_goal_state SET goalJson=?,updatedAt=? WHERE characterId=? AND updatedAt=? AND goalJson=?',
-                    [JSON.stringify(next), timestamp, characterId, updatedAt, JSON.stringify(expectedGoal)]);
+                const applied = next ? write('UPDATE bot_goal_state SET goalJson=?,updatedAt=? WHERE characterId=? AND updatedAt=? AND goalJson=?',
+                    [JSON.stringify(next), timestamp, characterId, updatedAt, JSON.stringify(expectedGoal)]) : null;
+                if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_goal', applied?.affectedRows ? 'applied' : 'unchanged',
+                    { item: line.selfId, goalRevision: Number(updatedAt), goalApplied: Number(applied?.affectedRows || 0),
+                        requested: Number(expectedGoal?.target?.amount), planned: count, actual: applied?.affectedRows ? count : 0,
+                        remaining: applied?.affectedRows ? Number(next.target?.amount) : undefined });
             }
             const receipt = { units, spent: total, nativeId: Number(seller?.sourceId || lines[0].selfId) };
             const row = step ? completeEconomyStepUnsafe(characterId, step, receipt, [...changed], null, null, patch)

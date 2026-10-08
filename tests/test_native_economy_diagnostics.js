@@ -9,6 +9,7 @@ const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const Native = require('./helpers/nativeMarketFixture');
+const Basket = require('../src/GameServer/Bot/Economy/NpcPurchaseBasket');
 Data.init();
 async function seed(id) {
     await Native.character(Database, id, 'Diagnostic' + id, 'bot_diagnostic_' + id);
@@ -21,8 +22,8 @@ async function seed(id) {
 async function purchase(state, amount = 6) {
     const admitted = await Commit.admit(state, Commit.KINDS.npcBuy);
     try {
-        const args = { selfId: 1060, name: 'Healing Potion', amount, unitPrice: 10, stackable: true, slot: 0,
-            coldState: admitted.state, economyCommand: admitted.command, autoEquip: false };
+        const args = { selfId: 1060, name: 'Healing Potion', amount, unitPrice: 108, stackable: true, slot: 0,
+            coldState: admitted.state, economyCommand: admitted.command, autoEquip: false, seller: Basket.sellerFor(1060, 'Dion', 108) };
         return { admitted, args, result: await Database.purchaseNpcInventoryItem(state.characterId, args) };
     } finally { Commit.finish(state.characterId, admitted.command); }
 }
@@ -35,7 +36,7 @@ async function run() {
     for (const key of Object.keys(original)) Diagnostics[key] = () => { throw Error('off called ' + key); };
     const off = await purchase(offState);
     Object.assign(Diagnostics, original);
-    assert.equal(off.result.units, 6); assert.equal(off.result.spent, 60);
+    assert.equal(off.result.units, 6); assert.equal(off.result.spent, 648);
     assert.equal(Database.stats().diagnostics.enabled, false);
     assert.equal(Database.stats().total, undefined); assert.equal(Database.stats().operations, undefined);
     Config.developerDiagnostics = true;
@@ -45,20 +46,22 @@ async function run() {
     assert.equal(on.result.units, off.result.units); assert.equal(on.result.spent, off.result.spent);
     const id = on.admitted.command[0];
     const correlated = rows.filter(row => row.commandId === id);
-    assert(correlated.some(row => row.phase === 'native_quantity' && row.requested === 6 && row.unitPrice === 10));
+    assert(correlated.some(row => row.phase === 'native_quantity' && row.requested === 6 && row.unitPrice === 108));
     const funding = correlated.find(row => row.phase === 'native_funding');
     assert.equal(funding.wallet, 1000); assert.equal(funding.budget, 900); assert.equal(funding.reserve, 100);
-    assert.equal(funding.cost, 60); assert.equal(funding.decisionSeq, 9);
-    assert(correlated.some(row => row.phase === 'native_result' && row.actual === 6 && row.spent === 60));
+    assert.equal(funding.cost, 648); assert.equal(funding.decisionSeq, 9);
+    assert(correlated.some(row => row.phase === 'native_result' && row.actual === 6 && row.spent === 648));
     assert(correlated.every(row => row.sequence === on.admitted.command[2] && row.outcome === 'committed'));
     const replay = await Database.purchaseNpcInventoryItem(128, on.args);
     assert.equal(replay.replayed, true);
-    assert(rows.some(row => row.phase === 'native_replay' && row.commandId === id && row.reason === 'saved_receipt'));
+    const replayRow = rows.find(row => row.phase === 'native_replay' && row.commandId === id && row.reason === 'saved_receipt');
+    assert(replayRow); assert.equal(replayRow.actual, 0); assert.equal(replayRow.spent, 0);
+    assert.equal(replayRow.receiptUnits, 6); assert.equal(replayRow.receiptSpent, 648);
     const current = Commit.acceptRow(on.result.coldLifeRow);
     const before = Native.amount(await Database.fetchItems(128), 57);
     const rejected = await Commit.admit(current, Commit.KINDS.npcBuy);
     const beforeIndex = rows.length;
-    await assert.rejects(Database.purchaseNpcInventoryItem(128, { ...on.args, amount: 100, unitPrice: 10,
+    await assert.rejects(Database.purchaseNpcInventoryItem(128, { ...on.args, amount: 100, unitPrice: 108,
         coldState: rejected.state, economyCommand: rejected.command }), /economy_funding_changed/);
     Commit.finish(128, rejected.command);
     assert.equal(Native.amount(await Database.fetchItems(128), 57), before);

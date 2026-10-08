@@ -57,9 +57,11 @@ function packetAfterPurchase(packet, spent, funding = {}) {
     }
     return changed ? next : packet;
 }
-function spendable(state = {}, escrow = 0, options = {}) {
+function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const wallet = budget(state, escrow), packet = state.stats?.money;
-    const capture = Diagnostics.active() && Diagnostics.enabled(state.characterId) ? {} : null;
+    const selected = Diagnostics.active() && Diagnostics.enabled(state.characterId);
+    // Native callers observe this same calculation; they never calculate a second wallet.
+    const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
     let queueBudget = 0, reason = 'ratio_below_money_price';
     if (!Array.isArray(packet) || packet.length < 4) {
         if (Diagnostics.active()) moneyPacketMissing++;
@@ -88,7 +90,7 @@ function spendable(state = {}, escrow = 0, options = {}) {
     }
     const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
-    if (capture) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
+    if (selected) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
         escrow: nonnegative(escrow), available, budget: available, reserve: Number(packet?.[2]),
         priorityReserve: capture.priorityReserve, moneyPrice: Number(packet?.[1]), valueHours: Number(options.valueHours),
