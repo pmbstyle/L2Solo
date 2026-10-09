@@ -1302,6 +1302,8 @@ if (process.argv.includes('--list')) {
 }
 
 fs.mkdirSync('tmp', { recursive: true });
+const keepGoing = process.argv.includes('--keep-going');
+const failedTests = [];
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
     const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' };
@@ -1316,6 +1318,11 @@ for (const testFile of selectedTests) {
     });
 
     if (result.status !== 0) {
-        process.exit(result.status || 1);
+        if (!keepGoing) process.exit(result.status || 1);
+        failedTests.push(testFile);
     }
+}
+if (failedTests.length) {
+    console.log(`\nFAILED (${failedTests.length}): ${failedTests.join(' ')}`);
+    process.exit(1);
 }
