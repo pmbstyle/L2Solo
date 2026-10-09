@@ -119,11 +119,13 @@ function create({ service = () => require('./PlayerBoardService'),
         const item = Html.link((entry.enchant ? '+' + amount(entry.enchant) + ' ' : '') + name, command({ ...query, selfId: entry.selfId }));
         const action = workshop ? 'Craft' : query.side === BUY ? 'Sell' : 'Buy';
         const mode = workshop ? 'Crafting fee' : entry.conditional ? 'Meeting offer' : entry.kind === 'shop' ? 'Private shop' : 'Advertisement';
-        return `<table width=270 bgcolor="${Html.COLOR.panel}" cellpadding=3 cellspacing=0>`
-            + Html.row([Html.cell(item, { width: 192, align: 'left' }), Html.cell(Html.link(action, 'board answer ' + request), { width: 78, align: 'right' })])
-            + `<tr><td width=270 colspan=2 align=left>${Html.font(amount(entry.price) + (workshop ? ' a fee' : ' a each'), Html.COLOR.title)}${workshop ? '' : ' | ' + amount(entry.count) + (query.side === BUY ? ' wanted' : ' available')}</td></tr>`
-            + Html.row([Html.cell(`${Html.esc(owner)} (${Html.esc(town)})<br1>${Html.font(mode)}`, { width: 192, align: 'left' }),
-                Html.cell(Html.link('Location', 'board locate ' + request), { width: 78, align: 'right' })]) + '</table><br1>';
+        // Let the native Chat window supply its translucent background.
+        return Html.table([
+            Html.row([Html.cell(item, { width: 192, align: 'left' }), Html.cell(Html.link(action, 'board answer ' + request), { width: 78, align: 'right' })]),
+            `<tr><td width=270 colspan=2 align=left>${Html.font(amount(entry.price) + (workshop ? ' a fee' : ' a each'), Html.COLOR.title)}${workshop ? '' : ' | ' + amount(entry.count) + (query.side === BUY ? ' wanted' : ' available')}</td></tr>`,
+            Html.row([Html.cell(`${Html.esc(owner)} (${Html.esc(town)})<br1>${Html.font(mode)}`, { width: 192, align: 'left' }),
+                Html.cell(Html.link('Location', 'board locate ' + request), { width: 78, align: 'right' })])
+        ]) + '<br1>' + Html.line('L2UI.SquareGray') + '<br1>';
     }
     function search(session, offset = 0) {
         const query = session.playerBoardView || normalize(session);
