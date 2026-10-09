@@ -608,10 +608,12 @@ function buildProjection(state, ctx, deps) {
     }).filter(row => row.npcComparable && !values.has(Number(row.selfId)));
     const saleValue = sale.reduce((sum, row) => sum + ctx.buyback(row.selfId) * row.count, 0);
     if (saleValue > 0) {
-        const town = state.stats?.shopTown?.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, sale);
+        const town = state.stats?.shopTown?.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, sale, {
+            findSpot: id => require('../AI/SpotIndex').spotById(deps.spots, id)
+        });
         const route = ctx.trip?.details?.(town);
         if (route?.known && route.fees <= Number(state.adena || 0)
-            && invoke('GameServer/Bot/Economy/TownNpcCatalog').rowsForTown(town).length) {
+            && require('../Population/ColdOccupationSources').hasNpcSellerInTown(town)) {
             moneyPaths.push({ activity: 'selling', kind: 'liquidate', repeatable: false,
                 capacityCash: saleValue, cashFees: route.fees, actionHours: route.hours,
                 town, items: sale.map(row => row.selfId) });

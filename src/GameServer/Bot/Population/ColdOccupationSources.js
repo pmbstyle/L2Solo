@@ -10,11 +10,11 @@ const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
 const QUOTE_DEPTH = 5;
 const EMPTY = Object.freeze([]);
-let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank;
+let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank, npcSellerTowns;
 
 function initialise() {
     if (fixedBuy) return;
-    fixedBuy = new Map(); npcByItem = new Map(); mpRates = new Map();
+    fixedBuy = new Map(); npcByItem = new Map(); mpRates = new Map(); npcSellerTowns = new Set();
     gearByRank = new Map();
     townByName = new Map(); townOrdinal = new Map();
     for (const town of Object.values(Towns.towns)) { townOrdinal.set(town.name, townOrdinal.size); townByName.set(town.name, town); }
@@ -29,6 +29,7 @@ function initialise() {
             if (![loc.locX, loc.locY, loc.locZ].every(Number.isFinite)) continue;
             const town = Towns.getClosestTown(loc.locX, loc.locY, loc.locZ);
             if (!town || Math.hypot(town.locX - loc.locX, town.locY - loc.locY) > 7500) continue;
+            npcSellerTowns.add(town.name);
             for (const row of Shops.fetchForNpc(sourceId)) {
                 const key = `${row.selfId}:${town.name}`, held = nativeOffers.get(key);
                 if (!held || Number(row.price) < held.price || Number(row.price) === held.price && sourceId < held.sourceId)
@@ -320,6 +321,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
 
 module.exports = { initialise, prepare, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
+    hasNpcSellerInTown: town => { initialise(); return npcSellerTowns.has(town); },
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],
     catalogCounts: () => ({ npcItems: npcByItem?.size || 0,
         npcQuotes: [...(npcByItem?.values() || [])].reduce((sum, rows) => sum + rows.length, 0),
