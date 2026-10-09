@@ -1,6 +1,7 @@
 const { isDeepStrictEqual } = require('node:util');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
+const SparseNumericStorage = require('./SparseNumericStorage');
 const { isMainThread } = require('node:worker_threads');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
@@ -406,6 +407,7 @@ class RetainedStateMap extends Map {
             let staged;
             try {
                 const state = this.get(id)?.state;
+                SparseNumericStorage.compactState(state);
                 staged = this.#skillDtos.prepare(id, state?.phase === 'cold' ? state.stats?.coldCombat?.skills : null);
                 this.#skillDtos.commit(staged);
             } catch (error) {
