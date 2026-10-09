@@ -1,7 +1,8 @@
 'use strict';
 
 // Origin permission only: skills, funds, world cap and personal knowledge stay
-// with the existing planner/executor. Public shops and held bags are not roots.
+// with the existing planner/executor. Authored character-creation grants are
+// roots; public shops and held bags are not.
 let prepared = null;
 let sourceRefs = null;
 let generation = 0;
@@ -41,6 +42,10 @@ function build(input) {
         if (!reached.has(id)) { reached.add(id); queue.push(id); }
         if (ordinary && !nonRaid.has(id)) { nonRaid.add(id); ordinaryQueue.push(id); }
     }
+    // The same authored table supplies both visible and generated bot creation.
+    // This admits a type's origin, not another grant or a repeatable shop offer.
+    for (const row of input.newbieItems || []) for (const item of row.items || [])
+        if (Number.isFinite(Number(item.amount)) && positive(item.amount)) admit(item.selfId, true);
     const npcs = new Map((input.npcs || []).map(row => [Number(row.selfId), row]));
     const spawned = new Set(), npcQueue = [], ordinaryNpcs = new Set(), ordinaryNpcQueue = [];
     function spawn(raw) { const id = Number(raw); if (npcs.has(id) && !spawned.has(id)) { spawned.add(id); npcQueue.push(id); } }
@@ -116,13 +121,14 @@ function nativeInputs(Data) {
     for (const [id, row] of Object.entries(require('./C4ExtractableItems').loadExtractableItems())) for (const group of row.products || []) if (positive(group.chance))
         transformations.push({ inputs: [Number(id)], outputs: ids(group.items || [group]) });
     const questItemIds = require('../Quest/QuestRegistry').equipmentTools();
-    return { items: Data.items, npcs: Data.npcs, npcSpawns: Data.npcSpawns, npcRewards: Data.npcRewards, questItemIds,
+    return { items: Data.items, npcs: Data.npcs, npcSpawns: Data.npcSpawns, npcRewards: Data.npcRewards,
+        newbieItems: Data.newbieItems, questItemIds,
         offers: shops.npcIds().flatMap(npcId => shops.fetchForNpc(npcId).map(row => ({ npcId, selfId: row.selfId }))),
         minions: [...require('../../../data/Npcs/Minions/c4_raid_bosses.json'), ...require('../../../data/Npcs/Minions/c4_group_leaders.json')],
         recipes: [...Object.values(require('./C4RecipeItems').loadRecipeItems()), ...require('./C4DualSwordCombinations').loadRecipes()
             .filter(recipe => spawnedIds.has(Number(recipe.station?.npcId)))], transformations };
 }
-function refs(Data) { return [Data.items, Data.npcs, Data.npcSpawns, Data.npcRewards]; }
+function refs(Data) { return [Data.items, Data.npcs, Data.npcSpawns, Data.npcRewards, Data.newbieItems]; }
 function prepare(input) {
     if (input) { prepared = build(input); sourceRefs = null; generation++; return prepared; }
     const Data = invoke('GameServer/DataCache'), current = refs(Data);
@@ -133,7 +139,8 @@ function prepare(input) {
 function current() {
     const Data = invoke('GameServer/DataCache');
     if (prepared && sourceRefs && Data.items === sourceRefs[0] && Data.npcs === sourceRefs[1]
-        && Data.npcSpawns === sourceRefs[2] && Data.npcRewards === sourceRefs[3]) return prepared;
+        && Data.npcSpawns === sourceRefs[2] && Data.npcRewards === sourceRefs[3]
+        && Data.newbieItems === sourceRefs[4]) return prepared;
     return prepare();
 }
 module.exports = { build, prepare, reset() { prepared = sourceRefs = null; generation++; },

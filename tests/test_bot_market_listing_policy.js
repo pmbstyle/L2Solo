@@ -46,7 +46,7 @@ function atRate(rate, work) {
 
 // Hard rules.
 assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)),
-    { action: 'ignore', reason: 'no_acquisition_source' }, 'starter grants do not create an ordinary supply route');
+    { action: 'market', reason: 'market' }, 'owned creation-origin surplus uses the shared market decision');
 for (const rate of ['x1', 'x10', 'x50']) {
     assert.strictEqual(atRate(rate, () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).action), 'market',
         'low-grade gear uses the same market decision at every rate');
@@ -65,7 +65,7 @@ const cheapCPlus = { ...saleItem(lowGradeGear), rank: 'c', basePrice: 1000 };
 assert.strictEqual(MarketListingPolicy.classify(seller, cheapCPlus).action, 'market',
     'cheap C+ gear reaches shared valuation');
 assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(starterWeapon), enchant: 6 }).action,
-    'ignore', 'an enchant cannot create an ordinary source for starter-only stock');
+    'market', 'enchanted creation-origin surplus retains its legitimate source');
 for (const count of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(lowGradeGear), count }).action,
         'ignore', 'invalid physical counts never enter valuation');
@@ -86,8 +86,10 @@ const spareStarter = { ...state, inventory: {
     1865: { selfId: 1865, amount: 1, kind: 'Other.Material' }
 } };
 const admitted = MarketListingPolicy.evaluate(spareStarter, options({ keptAmounts: {}, preparedReservations: {} }));
-assert(!admitted.decisions.some(decision => decision.item.selfId === Number(starterWeapon.selfId)),
-    'starter-only surplus is held without becoming bot market supply');
+const starterDecision = admitted.decisions.find(decision => decision.item.selfId === Number(starterWeapon.selfId));
+assert.strictEqual(starterDecision?.item.count, 1, 'only the spare creation-origin weapon reaches shared disposition');
+assert.strictEqual(starterDecision.priced, null, 'creation origin invents no price for an unobserved enchant');
+assert.strictEqual(starterDecision.action, 'warehouse', 'unknown enchanted value retains the physical spare');
 assert(admitted.decisions.some(decision => decision.item.selfId === 1865 && decision.item.count === 1
     && decision.priced), 'a single material reaches shared valuation');
 assert.strictEqual(spareStarter.inventory[starterWeapon.selfId].amount, 2, 'nomination never moves physical items');

@@ -38,6 +38,22 @@ async function run() {
     assert.equal(Buy.bidFor(state, goal), null, 'saved goals cannot buy a GM item');
     assert.deepEqual(Buy.linesFor(state, goal, { watchList: [{ itemId: 1305, amount: 1, worth: 1000 }] }), []);
     assert.equal(Market.canTradeRemotely(state, goal), false);
+    for (const id of [6, 10, 2368, 2369, 2370]) {
+        const template = Data.items.find(item => item.selfId === id);
+        const held = { ...stock(id), amount: 1, count: 1, kind: template.template.kind };
+        const free = { ...state, inventory: { [id]: held } };
+        const saleOptions = { ...options, preparedReservations: {} };
+        assert.equal(Listing.classify(free, held).action, 'market', `real creation-origin stock can be offered ${id}`);
+        assert.equal(Market.viableSellLine(held), true, `native quote admission reuses the source ${id}`);
+        assert.equal(Disposition.saleCandidates(free, saleOptions)[0]?.count, 1, `only physical surplus can be sold ${id}`);
+        assert.equal(Disposition.saleCandidates({ ...free, inventory: { [id]: { ...held, equipped: true } } }, saleOptions).length,
+            0, `creation-origin admission cannot sell worn weapon ${id}`);
+        assert.equal(Disposition.saleCandidates(free, { ...saleOptions, reserved: { [id]: 1 } }).length,
+            0, `creation-origin admission cannot sell a reserved weapon ${id}`);
+        assert.deepEqual(free.inventory[id], held, 'admission does not issue another item');
+    }
+    for (const id of [5789, 5790]) assert.equal(Listing.classify(state, { ...stock(id), count: 600 }).reason,
+        'beginner_shot', 'creation-source support does not admit restricted beginner consumables');
     const quest = Data.items.find(item => item.template.kind === 'Other.Quest');
     assert(quest);
     assert.equal(Listing.classify(state, { ...bad, selfId: quest.selfId }).reason, 'quest_item', 'saved kind cannot override canonical quest kind');

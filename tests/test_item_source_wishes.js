@@ -59,7 +59,13 @@ for (const id of [1303, 1305]) {
 }
 const starter = { characterId: 990999, level: 10, stats: { classId: 0 }, inventory: {
     2369: { selfId: 2369, amount: 1, equipped: true, slot: 7, equippedSlots: [7] } } };
-assert.equal(Catalog.hasSource(2369), false, 'starter is issued at character creation, not an ordinary source');
+assert.equal(Catalog.hasSource(2369), true, 'authored character creation is a real origin');
+assert.equal(Catalog.hasNonRaidSource(2369), true, 'creation does not require a raid');
+for (const id of [6, 10, 2368, 2369, 2370]) {
+    assert.deepEqual(Planner.sourceForItem(id, [], starter), [], 'origin admission invents no farming route');
+    assert.deepEqual(invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(id), [],
+        'creation admission invents no repeatable NPC supplier');
+}
 assert(Planner.isRealCatalogItem(Data.items.find(item => item.selfId === 2369)), 'starter remains valid owned equipment');
 assert.equal(Wishes.worn(starter, 7).selfId, 2369);
 assert.equal(Planner.combatReadiness(starter).hasWeapon, true, 'owned starter still participates in combat readiness');

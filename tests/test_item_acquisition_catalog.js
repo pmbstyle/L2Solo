@@ -47,6 +47,19 @@ assert(!result.allowsRecipe({ ...input.recipes[0], recipeItemId: 2 }), 'recipe i
 assert(!result.allowsRecipe({ ...input.recipes[0], materials: [{ selfId: 2, amount: 1 }] }), 'recipe id collision cannot forge materials');
 assert(!result.allowsRecipe(input.recipes[1]), 'a sourced product does not authorise an unsupported recipe');
 assert(result.allowsRecipe(input.recipes[5]), 'exchange does not need a nonexistent recipe scroll');
+const creationRecipe = { type: 'blacksmith_exchange', recipeId: 8, productId: 27,
+    productCount: 1, successRate: 100, materials: [{ selfId: 20, amount: 1 }] };
+const creation = Catalog.build({ ...input, newbieItems: [{ classId: 0, items: [
+    { selfId: 20, amount: 1 }, { selfId: 20, amount: 1 }, { selfId: 18, amount: 1 },
+    { selfId: 19, amount: 1 }, { selfId: 26, amount: 0 }, { selfId: 28, amount: -1 },
+    { selfId: 29, amount: Infinity }, { selfId: 30 }, { selfId: 900001, amount: 1 }
+] }], recipes: [...input.recipes, creationRecipe] });
+assert(creation.hasSource(20) && creation.hasNonRaidSource(20), 'authored creation grant is an ordinary origin');
+assert(creation.hasSource(27) && creation.hasNonRaidSource(27) && creation.allowsRecipe(creationRecipe),
+    'creation roots propagate through the same ordinary recipe graph');
+for (const id of [18, 19, 21, 22, 23, 26, 28, 29, 30, 900001])
+    assert(!creation.hasSource(id), `creation cannot admit quest, unsupported or nonpositive grant ${id}`);
+assert(!result.hasSource(20), 'an arbitrary starterItems list remains insufficient without the authored grant table');
 result = Catalog.build({ ...input, offers: [...input.offers, { npcId: 100, selfId: 12 }, { npcId: 100, selfId: 11 }] });
 assert(result.hasSource(13)); assert(result.allowsRecipe(3)); assert(result.allowsRecipe(4)); assert(result.allowsRecipe(5));
 
@@ -56,6 +69,10 @@ assert(!Object.keys(require.cache).some(path => /\/src\/Database(?:\/|\.js$)/.te
     'static startup catalog does not load the database or quest execution in workers');
 const native = Catalog.prepare();
 assert.equal(Catalog.prepare(), native, 'unchanged inputs reuse prepared table');
+for (const row of Data.newbieItems) for (const grant of row.items) {
+    assert(Catalog.hasSource(grant.selfId), `native creation class ${row.classId} item ${grant.selfId}`);
+    assert(Catalog.hasNonRaidSource(grant.selfId), `native creation is not raid-only ${grant.selfId}`);
+}
 for (const id of [97, 3, 736, 1835, 1458, 1459, 1460, 1461, 1462, 80, 97, 150, 2131, 2132, 6364, 6724, 6674])
     assert(Catalog.hasSource(id), `ordinary source ${id}`);
 for (const id of [1303, 1305, 2605, 4776, 1181, 1182, 1213, 990, 991]) assert(!Catalog.hasSource(id), `control exclusion ${id}`);
@@ -98,6 +115,17 @@ try {
     assert.notEqual(Catalog.prepare(), native);
     assert(Catalog.revision() > version, 'source token invalidates consumers on replaced input');
 } finally { [Data.items, Data.npcRewards] = originals; Catalog.prepare(); }
+const originalGrants = Data.newbieItems, beforeGrantChange = Catalog.revision();
+try {
+    Data.newbieItems = [];
+    assert(!Catalog.hasSource(6), 'removing the only creation origin invalidates admission');
+    assert.equal(Catalog.revision(), beforeGrantChange + 1, 'grant-table replacement rebuilds once');
+    const removed = Catalog.prepare();
+    assert.equal(Catalog.prepare(), removed, 'unchanged replacement table is reused');
+    Data.newbieItems = originalGrants;
+    assert(Catalog.hasSource(6), 'restoring authored creation restores its source');
+    assert.equal(Catalog.revision(), beforeGrantChange + 2);
+} finally { Data.newbieItems = originalGrants; Catalog.prepare(); }
 const registry = require('../src/GameServer/Quest/QuestRegistry');
 const activeTools = registry.activeQuests().flatMap(quest => quest.questItems || []).filter(id => {
     const row = Data.items.find(item => Number(item.selfId) === Number(id));
