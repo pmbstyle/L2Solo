@@ -28,8 +28,8 @@ function publicScopeDigest(scope) {
     return value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
 }
 function candidateRow(row) {
-    return { characterId: row[0], recipeId: row[1], price: row[2], entryPrice: row[2], revision: row[3],
-        townName: row[4], loc: { locX: row[5], locY: row[6], locZ: row[7] }, capacityBatches: row[8] };
+    return { characterId: row[0], recipeId: row[1], price: row[2], entryPrice: row[2],
+        townName: row[3], loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7] };
 }
 const inputOwners = new Map();
 const ownerInputs = new Map();
@@ -139,7 +139,7 @@ function find(recipeId, customer) {
     let best = null;
     for (const row of publicForRecipe(recipeId, customer)) {
         const selected = lookup(row.characterId, recipeId, customer);
-        if (!selected || selected.state.simulation?.revision !== row.revision) continue;
+        if (!selected) continue;
         const priced = { id: `workshop_${row.characterId}`, ...row, workshop: true,
             price: selected.price, entryPrice: selected.entryPrice };
         if (!best || priced.price < best.price || priced.price === best.price && priced.characterId < best.characterId) best = priced;
@@ -293,7 +293,19 @@ function lookup(ownerId, recipeId, customer) {
 }
 // Existing public recipe index is the source; only its published fee, place
 // and present physical capacity cross the worker boundary. No foreign book.
+// The owner's save revision is not part of the public offer: it changes on
+// every save and would republish the row and invalidate every customer's
+// market read. Execution validates the live owner (lookup, craft revision).
 function publicRecipeRows(ownerId) { return owners.get(Number(ownerId))?.publicRows || []; }
+// ARCH-NOTE: capacity is published as a power-of-two floor (0, 1, 2, 4 .. 64)
+// so MP regeneration republishes the row only when capacity halves or doubles;
+// a plan may see up to half of the present batches. Execution recounts MP.
+function capacityBucket(batches) {
+    if (!(batches >= 1)) return 0;
+    let bucket = 1;
+    while (bucket * 2 <= batches) bucket *= 2;
+    return bucket;
+}
 function buildPublicRecipeRows(ownerId) {
     const id = Number(ownerId), result = [];
     for (const recipeId of owners.get(id) || []) {
@@ -302,8 +314,8 @@ function buildPublicRecipeRows(ownerId) {
         const recipe = recipes().resolveByRecipeId(recipeId);
         if (!state || !entry || !recipe || ![state.loc?.locX, state.loc?.locY, state.loc?.locZ].every(Number.isFinite)) continue;
         const capacity = Math.min(64, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
-        result.push([id, recipeId, Number(entry.price), Number(state.simulation?.revision || 0),
-            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, Math.max(0, capacity)]);
+        result.push([id, recipeId, Number(entry.price),
+            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, capacityBucket(capacity)]);
     }
     return result;
 }

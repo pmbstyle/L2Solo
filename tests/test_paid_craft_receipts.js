@@ -60,8 +60,8 @@ async function run() {
     const previousMp = owner.vitals.mp;
     owner.vitals.mp = successRecipe.mpCost;
     Workshop.register(owner);
-    assert.equal(publishedBefore.find(row => row[1] === successRecipe.recipeId)[8], 64);
-    assert.equal(Workshop.publicRecipeRows(owner.characterId).find(row => row[1] === successRecipe.recipeId)[8], 1);
+    assert.equal(publishedBefore.find(row => row[1] === successRecipe.recipeId)[7], 64);
+    assert.equal(Workshop.publicRecipeRows(owner.characterId).find(row => row[1] === successRecipe.recipeId)[7], 1);
     assertPublicDigest();
     owner.vitals.mp = previousMp;
     Workshop.register(owner);

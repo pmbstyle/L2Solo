@@ -650,7 +650,6 @@ function knownWorkshop(recipe, state, ctx, deps) {
         if (Number(row.characterId) === Number(state.characterId)
             || Number(row.recipeId) !== Number(recipe.recipeId) || !(Number(row.capacityBatches) > 0)
             || !Number.isSafeInteger(Number(row.price)) || Number(row.price) < 0
-            || !Number.isSafeInteger(Number(row.revision)) || Number(row.revision) < 0
             || ![row.loc?.locX, row.loc?.locY, row.loc?.locZ].every(Number.isFinite)) continue;
         const route = trip.details(row.townName);
         if (!route?.known || !Number.isFinite(route.hours) || !Number.isFinite(route.fees)) continue;
@@ -680,7 +679,7 @@ function personalCraftPlan(state, context) {
             if (Number(recipe.productId) === targetId) finalRecipe = recipe;
             components[recipe.productId] = Number(recipe.recipeId);
             providers[recipe.recipeId] = { workshop: true, characterId: Number(plan.workshop.characterId),
-                revision: Number(plan.workshop.revision), price: Number(plan.workshop.price),
+                price: Number(plan.workshop.price),
                 loc: plan.workshop.loc, townName: plan.workshop.townName, known: true };
         }
         for (const row of plan.requirements || []) visit(row.plan || context.network.plans.get(row.key), depth + 1);

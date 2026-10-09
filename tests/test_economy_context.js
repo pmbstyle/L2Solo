@@ -166,6 +166,28 @@ async function run() {
     assert.equal(typeof context.statsPacket.activityLeaf, 'number');
     assert(context.statsPacket.activityLeaf !== 0);
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
+    const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+    const shopRecipe = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems())
+        .find(row => row.type === 'dwarven' && Number(row.mpCost) > 0);
+    const shopOwner = { ...base, characterId: 1801, simulation: { ownerId: 'legacy_main', revision: 1 },
+        vitals: { ...base.vitals, mp: shopRecipe.mpCost * 5 },
+        stats: { ...base.stats, workshop: { entries: [{ recipeId: shopRecipe.recipeId, price: 100 }] } } };
+    const shopSaved = changes => Workshop.register({ ...shopOwner, ...changes,
+        simulation: { ...shopOwner.simulation, revision: shopOwner.simulation.revision + 1 } });
+    try {
+        Workshop.register(shopOwner);
+        assert.equal(Workshop.publicRecipeRows(shopOwner.characterId).length, 1);
+        // Every market read of this customer carries the workshop digest.
+        const shopDeps = () => ({ workshops: Workshop.publicForRecipe,
+            workshopRevision: () => Workshop.publicRecipeDigest(shopRecipe.productId) });
+        const shopContext = Economy.forState(base, shopDeps());
+        assert.equal(Economy.forState(base, shopDeps()), shopContext);
+        shopSaved({ vitals: { ...shopOwner.vitals, mp: shopRecipe.mpCost * 6 } });
+        assert.equal(Economy.forState(base, shopDeps()), shopContext,
+            'a workshop owner save without an offer change keeps the customer cache hit');
+        shopSaved({ vitals: { ...shopOwner.vitals, mp: shopRecipe.mpCost * 2 } });
+        assert.notEqual(Economy.forState(base, shopDeps()), shopContext, 'halved capacity is an offer change');
+    } finally { Workshop.remove(shopOwner.characterId); }
     const physicalSpot = { id: 'gear-physical', npcEntries: [{ selfId: 130 }] };
     const mixedSpot = { id: 'gear-mixed', npcEntries: [{ selfId: 130 }, { selfId: 264 }] };
     const threatSpots = [physicalSpot, mixedSpot];

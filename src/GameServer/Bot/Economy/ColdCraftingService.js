@@ -26,11 +26,13 @@ function stationForRecipe(recipeId, state = null) {
     const provider = state?.stats?.equipmentPlan?.craftProviders?.[recipeId];
     if (provider?.workshop) {
         const selected = Workshops.lookup(provider.characterId, recipeId, state);
-        if (!selected || Number(selected.state.simulation?.revision || 0) !== Number(provider.revision)
-            || provider.price != null && Number(selected.entryPrice) !== Number(provider.price)) return null;
+        // The agreement is the dwarf and his published fee; his save revision
+        // is read here and checked again by the craft after the async reads.
+        if (!selected || provider.price != null && Number(selected.entryPrice) !== Number(provider.price)) return null;
         return { id: `workshop_${provider.characterId}`, characterId: provider.characterId,
             loc: selected.state.loc, townName: selected.state.currentRegion, workshop: true,
-            recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice, revision: provider.revision,
+            recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice,
+            revision: Number(selected.state.simulation?.revision || 0),
             capacityBatches: Math.min(64, Math.floor(Number(selected.state.vitals?.mp || 0) / Math.max(1, Number(selected.recipe.mpCost || 0)))) };
     }
     if (provider && state.stats.equipmentPlan.clanGoal?.clanId

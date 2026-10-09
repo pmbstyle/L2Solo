@@ -148,14 +148,14 @@ function changeWorkshop(key, row) {
     if (!(recipeId > 0)) return;
     if (previous) { publicWorkshopKeys.delete(key); publicWorkshopIndex.remove(key); }
     if (row) {
-        const value = { characterId: row[0], recipeId, price: row[2], entryPrice: row[2], revision: row[3], townName: row[4],
-            loc: { locX: row[5], locY: row[6], locZ: row[7] }, capacityBatches: row[8] };
+        const value = { characterId: row[0], recipeId, price: row[2], entryPrice: row[2], townName: row[3],
+            loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7] };
         publicWorkshopKeys.set(key, value); publicWorkshopIndex.put(key, value);
     }
     const productId = Number(invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(recipeId)?.productId || 0);
     if (productId) {
         const digest = workshopDigests.get(productId) || { xor: 0, sum: 0, count: 0 };
-        const scalar = value => [value.characterId, value.recipeId, value.entryPrice, value.revision, value.townName, value.loc.locX, value.loc.locY, value.loc.locZ, value.capacityBatches];
+        const scalar = value => [value.characterId, value.recipeId, value.entryPrice, value.townName, value.loc.locX, value.loc.locY, value.loc.locZ, value.capacityBatches];
         const change = (values, step) => {
             const hash = require('../Fnv1a').fnv1a32(JSON.stringify(values));
             digest.xor = (digest.xor ^ hash) >>> 0; digest.sum = (digest.sum + step * hash) >>> 0; digest.count += step;
@@ -488,7 +488,7 @@ boardIndex.setOwnerChangeObserver((previous, next, board) => {
 tables.watch('board', {
     reset: () => { publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
     put: (key, row) => {
-        if (String(key).startsWith('w:')) { changeWorkshop(key, row.length === 10 ? row.slice(1) : row); return; }
+        if (String(key).startsWith('w:')) { changeWorkshop(key, row.length === 9 ? row.slice(1) : row); return; }
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
         changedItems(previous, boardIndex.records.get(Number(key)));

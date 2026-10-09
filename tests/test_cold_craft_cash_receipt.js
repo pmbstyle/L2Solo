@@ -240,7 +240,7 @@ async function verifyAuthoredPhysicalCraft() {
             assert.strictEqual(workshopDuplicate.reason, 'not_ready');
             assert.deepStrictEqual(await image(workshopIds), workshopDuplicateBefore);
             assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, workshopSettled), null,
-                'completed craft changed the selected public source revision');
+                'a finished plan keeps no workshop agreement');
             const currentStation = Workshop.find(recipe.recipeId, workshopSettled);
             const batchCustomer = await seed('bot_workshop_batch_customer', 'WorkshopBatchBuyer', 0, 40,
                 [item(57, 1000000), ...[...inputs].map(([id, amount]) => item(id, amount * 2))], {
@@ -257,8 +257,8 @@ async function verifyAuthoredPhysicalCraft() {
                 .every(row => Number(row.amount) === 1), 'nonstackable output keeps one physical object per crafted item');
             assert.equal((await Database.fetchCharacterRecipes(batchCustomer.characterId)).length, 0);
             assert.equal(batchResult.state.adena, 1000000 - currentStation.price * 2);
-            assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, batchCustomer), null,
-                'changed agreed workshop revision never silently selects a different dwarf');
+            assert.equal(ColdCraftingService.stationForRecipe(recipe.recipeId, batchCustomer)?.characterId,
+                workshopOwner.characterId, 'the agreed dwarf is kept; a different dwarf is never selected');
             const recoveryStation = Workshop.find(recipe.recipeId, batchResult.state);
             assert(recoveryStation);
             const recovering = await seed('bot_workshop_lost_reply', 'WorkshopLostReply', 0, 40,
