@@ -66,6 +66,24 @@ function byteLength(value) {
     }
 }
 
+// Main reconstructs the lifecycle input from its admitted native state and
+// the acquisition fields. The worker's full plannedState is useful locally
+// for combat, but is redundant on the wire when a large bag exceeds the cap.
+function omitPlannedStates(message) {
+    if (message?.type !== 'command_request') return false;
+    const requests = message.payload?.requests;
+    if (!Array.isArray(requests) || requests.some(row => row?.kind !== 'lifecycle')) return false;
+    let changed = false;
+    const compact = requests.map(request => {
+        if (!request.precomputedPlan?.plannedState) return request;
+        const { plannedState, ...plan } = request.precomputedPlan;
+        changed = true;
+        return { ...request, precomputedPlan: plan };
+    });
+    if (changed) message.payload = { ...message.payload, requests: compact };
+    return changed;
+}
+
 function envelope(type, workerEpoch, payload = {}, msgId = null) {
     return {
         version: PROTOCOL_VERSION,
@@ -471,5 +489,6 @@ module.exports = {
     commandIdentity,
     meetingIdentity,
     byteLength,
+    omitPlannedStates,
     competitionEvent
 };

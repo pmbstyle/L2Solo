@@ -237,7 +237,9 @@ function capture(economy, state, seen = state) {
     const activity = leaf ? new CompactActivity(leaf) : null;
     if (activity?.activity === 'shopping') activity.heldAtDecision = Math.max(0, Number(seen?.inventory?.[activity.itemId]?.amount || 0));
     let clan = null;
-    if (Number(state?.stats?.clanId) > 0) {
+    // Workshop-only publications carry no hunting valuation. Clan membership
+    // cannot turn that partial source into a second, fabricated economy review.
+    if (Number(state?.stats?.clanId) > 0 && economy?.hunt) {
         const horizonHours = economy.horizonHours ?? require('../Economy/EconomicValuation')
             .stageHours(state, economy.hunt.expPerHour, economy.persona);
         const itemId = Number(state.stats.equipmentPlan?.target?.selfId || 0);

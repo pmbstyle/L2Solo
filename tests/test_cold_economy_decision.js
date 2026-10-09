@@ -5,6 +5,14 @@ const { capture, stateKey, ColdEconomyDecisions, kindCode, kindFor, compact } = 
 for (const kind of [undefined, 'improvement', 'book', 'resale', 'shots', 'potions']) assert.equal(kindFor(kindCode(kind)), kind);
 assert.equal(kindCode('future-provider'), 255); assert.equal(kindFor(255), undefined);
 const state = { characterId: 7, updatedAt: 1000, level: 30, activity: 'hunting', inventory: {}, stats: { classId: 1 } };
+const clanWorkshop = { ...state, phase: 'hot', stats: { ...state.stats, clanId: 9,
+    equipmentPlan: { target: { selfId: 193 } } } };
+const workshopOnly = { known: true, recipeId: 25, productId: 1864, incomePerHour: 100, cycleHours: .1 };
+const workshopDecision = compact(structuredClone(capture({ workshop: workshopOnly }, clanWorkshop)));
+assert.deepEqual(workshopDecision.workshop, workshopOnly,
+    'hot clan members can publish their native workshop without a hunting review');
+assert.equal(workshopDecision.clan, null, 'a workshop source cannot fabricate clan valuation');
+assert.equal(workshopDecision.key, stateKey(clanWorkshop));
 const economy = { inputKey: 'fixture', riskWeight: 1.5,
     projection: { values: new Map(Array.from({ length: 40 }, (_, i) => [2000 + i, i + 1])), nodes: [] },
     watchList: Array.from({ length: 3 }, (_, i) => ({ itemId: 100 + i, amount: 1, worth: 12000, kind: 'book' })),
