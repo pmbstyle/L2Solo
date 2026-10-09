@@ -18,7 +18,7 @@ let uncached = source.replace(/function wornReader\(state\) \{[\s\S]*?\n\}\n\/\/
         && (Number(row.slot) === slot || row.equippedSlots?.includes(slot))) || null;
 }
 // What wearing`);
-uncached = uncached.replace('if (!withoutSlot.has(slot))', 'if (true)')
+uncached = uncached.replace('if (!withoutSlot || previousSlot !== slot)', 'if (true)')
     .replace('(inventoryEntries ||= Object.entries(state.inventory || {}))', 'Object.entries(state.inventory || {})');
 assert.notEqual(uncached, source, 'reference bypass must apply');
 const reference = new Module(filename, module);

@@ -106,18 +106,21 @@ function gearGain(state, item, timestamp = Date.now(), build = null) {
 function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state)) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     build ||= Profile.buildGainsFor(state, timestamp);
-    let inventoryEntries;
-    const withoutSlot = new Map();
+    let inventoryEntries, withoutSlot, previousSlot;
     return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
         const before = Profile.powerNumbers(build);
         const slot = Number(item.etc.slot);
         // Only a new native gain needs a hypothetical bag. Prepare its unchanged
-        // rows/removal once per slot, then give each candidate a fresh overlay.
-        // Cached gains allocate no bag; all scratch is released at review return.
-        if (!withoutSlot.has(slot)) withoutSlot.set(slot, Object.fromEntries((inventoryEntries ||= Object.entries(state.inventory || {}))
-            .map(([key, row]) => [key, Number(row.slot) === slot
-                ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row])));
-        const inventory = { ...withoutSlot.get(slot), [item.selfId]: { selfId: Number(item.selfId), amount: 1, equipped: true,
+        // rows/removal for the current slot, then give each candidate a fresh
+        // overlay. Candidates are grouped by slot: keep one base, not one bag
+        // for every slot. Cached gains allocate no bag; scratch dies at return.
+        if (!withoutSlot || previousSlot !== slot) {
+            previousSlot = slot;
+            withoutSlot = Object.fromEntries((inventoryEntries ||= Object.entries(state.inventory || {}))
+                .map(([key, row]) => [key, Number(row.slot) === slot
+                    ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
+        }
+        const inventory = { ...withoutSlot, [item.selfId]: { selfId: Number(item.selfId), amount: 1, equipped: true,
             equippedCount: 1, slot, enchant: 0 } };
         const after = Profile.powerFor({ ...state, inventory }, timestamp, Profile.buildOptions(build, timestamp));
         const attack = caster ? 'mAtk' : 'pAtk';
