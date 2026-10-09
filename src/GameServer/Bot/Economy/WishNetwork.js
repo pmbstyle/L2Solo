@@ -377,13 +377,27 @@ class WishNetwork {
         // Funding is a path to the first gap, not a second budget or desire.
         const unfunded = gap;
         if (unfunded) for (const path of moneyPaths.slice(0, 3)) {
+            const shortfall = Math.max(0, unfunded.price - available);
+            const key = `money:${unfunded.key}:${path.activity}:${path.object || ''}`;
+            // A bag can pay part of this gap once. It does not establish an
+            // hourly income or promise the entire purchase after more time.
+            if (path.repeatable === false) {
+                if (path.available === false || path.kind !== 'liquidate'
+                    || ![path.capacityCash, path.cashFees, path.actionHours].every(Number.isFinite)
+                    || path.capacityCash <= 0 || path.cashFees < 0 || path.actionHours < 0) continue;
+                const contribution = Math.min(shortfall, Math.max(0, path.capacityCash - path.cashFees));
+                if (!(contribution > 0)) continue;
+                leaves.set(key, { ...path, key, nodeKey: unfunded.key, funding: true,
+                    rootKey: unfunded.key, price: 0, shortfall, contribution,
+                    effort: path.actionHours + nonnegative(path.riskHours) * nonnegative(riskWeight),
+                    valueHours: Math.min(unfunded.valueHours, moneyPrice * contribution) });
+                continue;
+            }
             const income = nonnegative(path.incomePerHour);
             if (!(income > 0) || path.available === false || path.repeatable === false
                 || path.kind === 'production' && (!(path.cycleHours > 0) || path.repeatable !== true)) continue;
-            const shortfall = Math.max(0, unfunded.price - available);
             const effort = shortfall / income + nonnegative(path.costHours)
                 + nonnegative(path.riskHours) * nonnegative(riskWeight);
-            const key = `money:${unfunded.key}:${path.activity}:${path.object || ''}`;
             leaves.set(key, { ...path, key, nodeKey: unfunded.key, funding: true,
                 rootKey: unfunded.key, price: 0, effort, valueHours: unfunded.valueHours, shortfall });
         }

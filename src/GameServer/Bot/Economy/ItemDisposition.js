@@ -441,6 +441,20 @@ function protectedStarterLootAmount(item, kind) {
     return Math.max(0, Math.min(Number(item?.amount || 0), Number(item?.starterMobLootAmount || 0)));
 }
 
+function saleFreeAmount(state, item, reserved = {}) {
+    if (!item) return 0;
+    const template = templateFor(item.selfId), kind = kindFor(item, template);
+    const protectedAmount = isNpcOnlyItem(item, template) ? 0 : protectedStarterLootAmount(item, kind);
+    const rawEquippedCount = Number(item.equippedCount ?? (item.equipped ? 1 : 0));
+    const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
+    // Sale-specific starter cleanup is preserved; customer, clan and explicit
+    // physical reservations use the same stock guard as production.
+    return Math.min(Math.max(0, Number(item.amount || 0) - equippedCount
+        - Number(reserved[item.selfId] || 0) - protectedAmount),
+    require('./WealthCraftDecision').freeAmount(state, { ...item,
+        equippedCount, starterMobLootAmount: protectedAmount }, reserved));
+}
+
 function saleCandidates(state, options = {}) {
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
@@ -461,10 +475,7 @@ function saleCandidates(state, options = {}) {
         const selfId = Number(item?.selfId || 0);
         if (ClanCrafting.clanIdFor(state) && (ClanCrafting.isResource(selfId)
             || Number(state.stats?.clanMaterialDemand?.[selfId] || 0) > 0)) return [];
-        const amount = Number(item?.amount || 0);
-        const rawEquippedCount = Number(item?.equippedCount ?? (item?.equipped ? 1 : 0));
-        const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
-        const sellableAmount = Math.max(0, amount - equippedCount - Number(reserved[selfId] || 0));
+        const sellableAmount = saleFreeAmount(state, item, reserved);
         if (!selfId || selfId === 57 || BeginnerShots.isRestricted(selfId) || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
@@ -484,8 +495,7 @@ function saleCandidates(state, options = {}) {
         // NPC-only recipes and unmapped books are explicit cleanup targets. They
         // must not inherit the generic starter-loot protection, otherwise a
         // generated bot can carry the same book forever after a market visit.
-        const protectedAmount = npcOnly ? 0 : protectedStarterLootAmount(item, kind);
-        const sellableCount = Math.max(0, sellableAmount - protectedAmount);
+        const sellableCount = sellableAmount;
         const base = basePrice(item, template);
         // Recipes and spellbooks must still be liquidatable when their datapack
         // price is zero. The NPC path applies its own minimum price of one.
@@ -635,6 +645,7 @@ module.exports = {
     reservedEquipmentAmounts,
     reservationInputKey,
     saleCandidates,
+    saleFreeAmount,
     saleSummary,
     isSpareConsumable,
     unreservedActorItems,

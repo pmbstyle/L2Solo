@@ -107,3 +107,28 @@ assert.equal(removed.decisionSeq, 2, 'a new focus raises the decision once befor
 const sameKeyNewEvent = network.build({ ...eventInput, decisionSeq: 51 });
 assert.equal(sameKeyNewEvent.decisionSeq, 51, 'an unchanged input key cannot reuse another decision');
 console.log('PASS individual event seeds / held leaves / missing leaf / focus transition');
+
+const liquidationInput = { actorKey: 'finite-sale', inputKey: 'bag', remembered: false,
+    wallet: 10, hourAdena: 0, roots: ['upgrade'], nodes: [{ key: 'upgrade', need: 'power',
+        valueHours: 1000, price: 254442, paths: [{ activity: 'shopping', price: 254442 }] }],
+    moneyPaths: [{ activity: 'selling', kind: 'liquidate', repeatable: false,
+        capacityCash: 4171, cashFees: 0, actionHours: .25, items: [1867] }] };
+const finiteSale = network.build(liquidationInput);
+assert.equal(finiteSale.activity.contribution, 4171);
+assert.equal(finiteSale.activity.effort, .25, 'finite cash uses the actual action time');
+assert.equal(finiteSale.activity.valueHours, finiteSale.moneyPrice * 4171);
+assert(finiteSale.activity.valueHours < 1000, 'one sale cannot claim the entire expensive upgrade');
+assert.equal(finiteSale.hourAdena, 0, 'a liquidation never establishes repeatable income');
+for (const patch of [{ capacityCash: 0 }, { cashFees: 4171 }, { actionHours: NaN },
+    { actionHours: -1 }, { cashFees: NaN }, { capacityCash: Infinity }, { available: false }]) {
+    const result = network.build({ ...liquidationInput, inputKey: JSON.stringify(patch),
+        moneyPaths: [{ ...liquidationInput.moneyPaths[0], ...patch }] });
+    assert.equal(result.activity, null, 'empty, uneconomic or unknown finite actions cannot fund a gap');
+}
+const cappedSale = network.build({ ...liquidationInput, inputKey: 'large-bag',
+    moneyPaths: [{ ...liquidationInput.moneyPaths[0], capacityCash: 300000, cashFees: 100 }] });
+assert.equal(cappedSale.activity.contribution, 254432, 'finite value is capped at the remaining gap');
+assert.equal(network.build({ ...liquidationInput, inputKey: 'receipt', wallet: 4181,
+    activityLeaf: finiteSale.activityLeaf, moneyPaths: [] }).activity, null,
+'after receipt an empty bag cannot renew the sale');
+console.log('PASS finite liquidation / partial gap / fees / unknown route / receipt');

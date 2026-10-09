@@ -21,10 +21,12 @@ function isMarketGoal(goal) {
 }
 
 function reviewDecision(state, existing, options, timestamp) {
+    let economy = null;
     const candidates = NeedsEvaluator.evaluate(state, {
         ...options,
         spot: reviewSpot(state, options.spot, existing?.current),
-        now: timestamp
+        now: timestamp,
+        onEconomy: context => { economy = context; options.onEconomy?.(context); }
     });
     const marketCandidate = candidates.find(isMarketGoal);
     const activeMarketGoal = isMarketGoal(existing?.current);
@@ -33,7 +35,15 @@ function reviewDecision(state, existing, options, timestamp) {
         && Number.isSafeInteger(existing.inputHash) && candidates[0]?.inputHash === existing.inputHash) return { result: existing, unchanged: true, goal: null, candidates };
 
     const goal = GoalPlanner.plan(candidates, timestamp);
-    if (!goal) return { result: null, unchanged: true, goal: null, candidates };
+    if (!goal) {
+        if (existing?.current?.type === 'sell_inventory'
+            && ['planned', 'active', 'blocked'].includes(existing.current.status)
+            && economy && !economy.intentPending && !economy.routePending && !state.incomingPending) {
+            return { result: null, unchanged: false, candidates,
+                goal: { ...existing.current, status: 'abandoned', reviewedAt: timestamp, nextReviewAt: timestamp } };
+        }
+        return { result: null, unchanged: true, goal: null, candidates };
+    }
     if (existing?.current?.type === goal.type) goal.createdAt = existing.current.createdAt;
     return { result: null, unchanged: false, goal, candidates };
 }

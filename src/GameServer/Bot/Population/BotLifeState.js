@@ -3372,21 +3372,25 @@ const BotLifeState = {
             });
     },
 
-    applyNpcLiquidation(state, candidates = [], options = {}) {
+    applyNpcLiquidation(state, candidates = []) {
         if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
+        const Disposition = require('../Economy/ItemDisposition');
+        const reserved = Disposition.reservedEquipmentAmounts(state);
         const inventory = { ...(state.inventory || {}) };
         let payout = 0;
         const sold = [];
         candidates.forEach((candidate) => {
             const selfId = Number(candidate.selfId || 0);
             const existing = inventory[String(selfId)];
+            if (!existing || selfId === 57 || require('../../Items/C4BeginnerShots').isRestricted(selfId)) return;
+            const free = Disposition.saleFreeAmount(state, existing, reserved);
             const equippedCount = Math.max(0, Number(existing?.equippedCount ?? (existing?.equipped ? 1 : 0)));
             const amount = Math.min(
                 Math.max(0, Number(existing?.amount || 0) - equippedCount),
-                Math.max(0, Number(candidate.count || 0))
+                Math.max(0, Number(candidate.count || 0)), free
             );
             const price = Math.max(0, Number(candidate.npcPrice || 0));
-            if (!selfId || amount <= 0 || price <= 0) return;
+            if (!selfId || !Number.isFinite(amount) || !Number.isFinite(price) || amount <= 0 || price <= 0) return;
             inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
             payout += amount * price;
             sold.push([selfId, amount, price]);

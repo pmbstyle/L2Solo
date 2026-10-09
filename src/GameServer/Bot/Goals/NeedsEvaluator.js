@@ -38,6 +38,7 @@ function evaluate(state = {}, options = {}) {
         plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
         blockers: [] }];
     const context = options.economy || require('../Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
+    options.onEconomy?.(context);
     const leaf = context.network.activity;
     if (!leaf) return [];
     const itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
@@ -80,7 +81,7 @@ function evaluate(state = {}, options = {}) {
     if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',
         target: { itemIds: leaf.items || [], itemCount: leaf.items?.length || 0 },
         plan: { ...common.plan, kind: 'market_sell', expectedBenefit: 'market_sale_inventory',
-            marketTown: options.saleTown || invoke('GameServer/Bot/Economy/MarketTownPolicy').saleTown(state, timestamp).town } }];
+            marketTown: options.saleTown || leaf.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').saleTown(state, timestamp).town } }];
     if (leaf.activity === 'improving') return [{ ...common, type: 'improving', target: { improvement: leaf.improvement },
         plan: { ...common.plan, marketTown: 'Giran', expectedBenefit: 'improvement' } }];
     if (leaf.activity === 'hunting') return [{ ...common, type: leaf.funding ? 'earn_adena' : 'progress_level',

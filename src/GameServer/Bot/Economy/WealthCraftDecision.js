@@ -64,10 +64,11 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
 }
 function freeAmount(state, item, reserved = {}) {
     if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return 0;
+    const count = value => Math.max(0, Number(value) || 0);
     return Math.max(0, Math.floor(Number(item.amount ?? item.count ?? 0))
-        - Math.max(Number(item.equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
-            Number(reserved[item.selfId] || 0), Number(state.stats?.clanMaterialDemand?.[item.selfId] || 0),
-            Number(item.protectedAmount || 0), Number(item.starterMobLootAmount || 0), Number(item.reservedAmount || 0)));
+        - Math.max(count(item.equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
+            count(reserved[item.selfId]), count(state.stats?.clanMaterialDemand?.[item.selfId]),
+            count(item.protectedAmount), count(item.starterMobLootAmount), count(item.reservedAmount)));
 }
 function* decisionSearch(state, knownRecipes, context, options, mode) {
     const budgetState = { ...state, adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) };

@@ -84,7 +84,9 @@ function routeState(state, session) {
 function inputKey(state, deps = {}) {
     const stats = state.stats || {};
     const items = Object.values(state.inventory || {}).map(row => [row.selfId, row.amount, row.equippedCount || row.equipped,
-        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, row.kind, row.rank, (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
+        row.slot, row.enchant, row.stackable, row.starterMobLootAmount, row.kind, row.rank,
+        row.reservedAmount, row.protectedAmount, row.protected, row.acceptedCustomer, row.assignedClan, row.available,
+        (row.instances || []).map(item=>[item.id,item.enchant,item.slot,item.equipped,item.amount].join('/')).join(';')].join(':')).sort().join(',');
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).

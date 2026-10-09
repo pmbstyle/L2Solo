@@ -600,13 +600,23 @@ function buildProjection(state, ctx, deps) {
     for (const node of deps.nodes || []) { if (node.need) root(node); else add(node); }
     const moneyPaths = ctx.hunt.perHour > 0 ? [{ activity: 'hunting', kind: 'money',
         spotId: ctx.bestSpotId, incomePerHour: ctx.hunt.perHour, riskHours: ctx.expectedDeathHours }] : [];
-    const protectedIds = new Set([57, 5575, ctx.stock('shots').itemId, ctx.stock('potions').itemId, 736]);
-    const sale = rows(state).filter(row => !row.equipped && !row.equippedCount && !values.has(Number(row.selfId))
-        && !protectedIds.has(Number(row.selfId)) && !/quest/i.test(String(row.kind || ''))
-        && !row.starterMobLootAmount && Number(row.amount) > 0);
-    const saleValue = sale.reduce((sum, row) => sum + ctx.buyback(row.selfId) * row.amount, 0);
-    if (saleValue > 0) moneyPaths.push({ activity: 'selling', kind: 'liquidate', incomePerHour: saleValue,
-        costHours: 1, items: sale.map(row => row.selfId) });
+    const sale = invoke('GameServer/Bot/Economy/ItemDisposition').saleCandidates(state, {
+        preparedReservations: deps.saleReservations,
+        keptAmounts: { ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, ctx),
+            ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: ctx.stock('potions').target }),
+            ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) }
+    }).filter(row => row.npcComparable && !values.has(Number(row.selfId)));
+    const saleValue = sale.reduce((sum, row) => sum + ctx.buyback(row.selfId) * row.count, 0);
+    if (saleValue > 0) {
+        const town = state.stats?.shopTown?.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, sale);
+        const route = ctx.trip?.details?.(town);
+        if (route?.known && route.fees <= Number(state.adena || 0)
+            && invoke('GameServer/Bot/Economy/TownNpcCatalog').rowsForTown(town).length) {
+            moneyPaths.push({ activity: 'selling', kind: 'liquidate', repeatable: false,
+                capacityCash: saleValue, cashFees: route.fees, actionHours: route.hours,
+                town, items: sale.map(row => row.selfId) });
+        }
+    }
     // External game providers compete by the same value, rather than by
     // arriving after twelve preassigned gear slots.
     const byKey = new Map(nodes.map(node => [node.key, node]));
