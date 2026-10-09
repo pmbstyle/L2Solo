@@ -1,3 +1,4 @@
+const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ClanCrafting = require('../../Clan/ClanCraftingPolicy');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
@@ -325,7 +326,7 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
 // Shared wish targets/recovery can buy a useful lower-grade improvement.
 function considerable(item, state = {}, role = roleFor(state)) {
     const rank = String(item?.etc?.rank || 'none').toLowerCase();
-    return RANKS.includes(rank) && rankIndex(rank) <= rankIndex(gradeForLevel(state.level))
+    return Sources.hasSource(item?.selfId) && RANKS.includes(rank) && rankIndex(rank) <= rankIndex(gradeForLevel(state.level))
         && suitable(item, state, role, rank);
 }
 
@@ -607,17 +608,18 @@ function preferredTarget(state = {}, options = {}) {
     const owned = inventoryMap(state.inventory);
     const ownedItems = inventoryItems(state.inventory);
     const craftRecipes = options.craftRecipes
-        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven')
+        ? options.craftRecipes.filter((recipe) => recipe.type === 'dwarven' && Sources.allowsRecipe(recipe))
         : CraftShopService.publishedStationRecipes().recipes;
     const recipes = ClanCrafting.clanIdFor(state) && !options.clanCrafting
         ? [] : [...craftRecipes, ...C4DualSwordCombinations.loadRecipes()];
     const recipeRank = options.recipeId
         ? String((DataCache.items || []).find((item) => Number(item.selfId) === Number(recipes.find((recipe) => Number(recipe.recipeId) === Number(options.recipeId))?.productId))?.etc?.rank || '')
         : null;
-    const recipesByProduct = new Map(recipes.map((recipe) => [Number(recipe.productId), recipe]));
+    const recipesByProduct = new Map(recipes.filter(recipe => Sources.allowsRecipe(recipe)).map((recipe) => [Number(recipe.productId), recipe]));
     const excluded = excludedTargetIds(options);
     const excludedMaterials = new Set((options.excludedMaterialIds || []).map(Number));
     const allCandidates = (options.wishTargetId ? [catalogItem(options.wishTargetId)].filter(Boolean) : DataCache.items || [])
+        .filter(item => Sources.hasSource(item.selfId))
         .filter((item) => options.wishTargetId ? considerable(item, state, role)
             : suitable(item, state, role, recipeRank || gradeForLevel(state.level)))
         .filter((item) => !excluded.has(Number(item.selfId)))
@@ -695,7 +697,7 @@ function preferredDropTarget(state = {}, options = {}) {
     const owned = inventoryMap(state.inventory);
     const excluded = excludedTargetIds(options);
     const candidates = (DataCache.items || [])
-        .filter((item) => suitable(item, state, role, 'none'))
+        .filter((item) => Sources.hasSource(item.selfId) && suitable(item, state, role, 'none'))
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => Number(owned.get(Number(item.selfId)) || 0) < 1)
         .sort((a, b) => itemScore(b, role, classId) - itemScore(a, role, classId) || Number(b.template?.price || 0) - Number(a.template?.price || 0));
@@ -714,6 +716,7 @@ function preferredNoGradeTarget(state = {}, options = {}) {
     const candidates = planned.items
         .map((desired) => ItemTemplateIndex.find(DataCache.items, desired.selfId))
         .filter(isRealCatalogItem)
+        .filter(item => Sources.hasSource(item.selfId))
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => {
             if (uniqueItems.has(Number(item.selfId))) return false;
@@ -1398,18 +1401,22 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const currentMarketRecovery = previousPlan?.strategy === 'market'
         ? recoveryTargets.find((entry) => Number(entry.targetId) === Number(previousPlan.target?.selfId || 0))
         : null;
+    const targetAllowed = (!previousPlan?.target?.selfId || Sources.hasSource(previousPlan.target.selfId))
+        && (!previousPlan?.recipeId || Sources.allowsRecipe(previousPlan.recipeId));
     return {
         levelingRecovery,
-        planCurrent: !levelingRecovery && !ClanCrafting.isPersonalCraft(state, previousPlan) && Boolean(previousPlan)
+        planCurrent: targetAllowed && !levelingRecovery && !ClanCrafting.isPersonalCraft(state, previousPlan) && Boolean(previousPlan)
             && sameGrade
             && Number(previousPlan.plannedForLevel || 0) === currentLevel,
-        routeCurrent: !levelingRecovery && !ClanCrafting.isPersonalCraft(state, previousPlan) && Boolean(previousPlan)
+        routeCurrent: targetAllowed && !levelingRecovery && !ClanCrafting.isPersonalCraft(state, previousPlan) && Boolean(previousPlan)
             && sameGrade
             && sourceAllowed
             && sourceViable
             && modelCurrent
             && Number(previousPlan.plannedForLevel || 0) === currentLevel,
-        invalidSource: !sourceAllowed
+        invalidSource: !targetAllowed
+            ? { reason: 'unsupported_item_source' }
+            : !sourceAllowed
             ? { npcId: sourceNpcId, reason: 'protected_raid_source' }
             : !sourceViable
                 ? { npcId: sourceNpcId, reason: 'level_too_low' }
@@ -2199,7 +2206,7 @@ function dualSwordBridgePlan(state, options = {}) {
         if (!offers.has(item.selfId)) offers.set(item.selfId, npcOfferForTarget(item, state, options));
         return offers.get(item.selfId);
     } };
-    const candidates = C4DualSwordCombinations.loadRecipes().flatMap(recipe => {
+    const candidates = C4DualSwordCombinations.loadRecipes().filter(recipe => Sources.allowsRecipe(recipe)).flatMap(recipe => {
         const item = catalogItem(recipe.productId);
         if (!item || rankIndex(item.etc?.rank) > maxRank || excluded.has(Number(item.selfId))
             || !suitable(item, state, role, item.etc?.rank)) return [];
@@ -2252,6 +2259,11 @@ function combinationBladeMarketPlan(target, materials, state, planningOptions) {
 }
 
 function rawPlanFor(state = {}, options = {}) {
+    if (options.wishTargetId && !Sources.hasSource(options.wishTargetId)
+        || options.recipeId && !Sources.allowsRecipe(options.recipeId)) return {
+        status: 'blocked', reason: 'unsupported_item_source', strategy: 'none', target: null,
+        recipeId: null, materials: [], next: null
+    };
     if (isCraftService(state)) {
         return { status: 'service', strategy: 'none', recipeId: null, materials: [], next: null };
     }
@@ -2299,7 +2311,6 @@ function rawPlanFor(state = {}, options = {}) {
             ? bestSourceForState(sourceForItem(target.selfId, planningOptions.spots || [], state, planningOptions), state, planningOptions)
             : null;
         const offer = marketOfferForTarget(target, state, planningOptions);
-        const directKills = source ? 1 / Math.max(source.expectedYield, 0.000001) : Infinity;
         const directEffort = source ? sourceEffort(source, state, planningOptions) : Infinity;
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;

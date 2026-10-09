@@ -1,3 +1,4 @@
+const ItemSources = require('../Items/ItemAcquisitionCatalog');
 'use strict';
 
 const { WishNetwork } = require('../Bot/Economy/WishNetwork');
@@ -46,6 +47,7 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
         const memberIndex = members.findIndex(member => Number(member.characterId ?? member.id) === Number(entry.memberId));
         const context = memberContexts[memberIndex];
         const id = Number(entry.plan?.target?.selfId || entry.itemId);
+        if (!ItemSources.hasSource(id)) continue;
         const usefulness = positive(context?.clanItemUsefulness?.(id) ?? context?.itemUsefulness?.(id));
         if (!id || usefulness <= 0) continue;
         nodes.push({ key: `clan-item:${entry.memberId}:${id}`, need: 'care',
@@ -141,6 +143,7 @@ function forClan(clan, inputs = {}) {
         const basics = () => fallback ??= Economy.basics(member, { persona: member.persona });
         const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics().hunt.expPerHour, basics().persona);
         const clanItemUsefulness = id => {
+            if (!ItemSources.hasSource(id)) return 0;
             if (Number(id) === Number(numbers?.plan?.itemId)) return positive(numbers.plan.valueHours);
             const item = require('../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
             if (!item?.etc?.slot) return 0;

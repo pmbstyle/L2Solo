@@ -16,6 +16,10 @@ const { BoardIndex, SELL, BUY } = require('../src/GameServer/AfkTrade/BoardIndex
 
 const ITEM = 999999;
 const OTHER = 999998;
+// Synthetic price/evidence catalogue, local to this test process.
+const Sources = invoke('GameServer/Items/ItemAcquisitionCatalog');
+const originalHasSource = Sources.hasSource;
+Sources.hasSource = id => [ITEM, OTHER].includes(Number(id)) || originalHasSource(id);
 const now = 1800000000000;
 const original = {
     itemDeals: MarketCounters.itemDeals, counter: MarketCounters.counter,
@@ -210,6 +214,7 @@ try {
     });
 }
 finally {
+    Sources.hasSource = originalHasSource;
     for (const key of ['itemDeals', 'counter', 'counterOf', 'firstPrice']) MarketCounters[key] = original[key];
     PriceDecision.chooseAsk = original.chooseAsk;
     PriceDecision.chooseBid = original.chooseBid;

@@ -282,6 +282,7 @@ const DataCache = {
         ]);
 
         invoke('GameServer/Npc/NpcSkills').prepareThreats(DataCache.npcs);
+        invoke('GameServer/Items/ItemAcquisitionCatalog').prepare();
         utils.infoSuccess('Datapack', 'cached');
     },
 

@@ -1,4 +1,5 @@
 'use strict';
+const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Tendency = require('../AI/TendencyRoll');
@@ -104,6 +105,7 @@ function opportunities(state, ctx) {
     };
     const result = [];
     for (const item of instances(state)) {
+        if (!Sources.hasSource(item.selfId)) continue;
         const a = adapter(item), category = Rules.categoryOf(a);
         // What losing this weapon costs: once per item, only where a try can fail.
         let stuck = null;
@@ -120,7 +122,7 @@ function opportunities(state, ctx) {
                 ? Math.max(0, salePrice - enchantedPrice(item, from, ctx)) / ctx.hunt.perHour : 0);
             if (!(benefit > 0)) continue;
             const alternatives = Object.entries(scrolls).flatMap(([id, rule]) => {
-                if (!Rules.validTarget(a, rule) || rule.scrollType === 'blessed' && Rules.isSafe(a, from, config)) return [];
+                if (!Sources.hasSource(id) || !Rules.validTarget(a, rule) || rule.scrollType === 'blessed' && Rules.isSafe(a, from, config)) return [];
                 const price = positive(ctx.price(id)); if (!price) return [];
                 const cost = enchantCost(item, from, to, rule, config);
                 if (!Number.isFinite(cost.count)) return [];
@@ -148,10 +150,11 @@ function opportunities(state, ctx) {
                 sale: !equipped });
         }
         if (equipped && a.isWeapon()) for (const recipe of SA.options(7300, item.selfId, 'install')) {
+            const materials = SA.costs(recipe);
+            if (!Sources.hasSource(recipe.productId) || materials.some(mat => !Sources.hasSource(mat.selfId))) continue;
             const product = { ...item, selfId: recipe.productId };
             const benefit = value(`sa:${item.selfId}:${item.slot}:${from}:${recipe.productId}`,
                 () => changedInventory(state, item, product));
-            const materials = SA.costs(recipe);
             const price = materials.reduce((sum, mat) => sum + ctx.price(mat.selfId) * mat.amount, 0);
             if (benefit > 0 && price > 0) result.push({ key: `sa:${item.id}:${recipe.id}`, kind: 'sa', objectId: item.id,
                 itemId: item.selfId, from, recipeId: recipe.id, npcId: 7300, materials, price, valueHours: benefit });
@@ -160,7 +163,7 @@ function opportunities(state, ctx) {
     const slots = state.stats?.hennas || [];
     if (slots.filter(Boolean).length < Henna.slotsForClass(state.stats?.classId || state.classId)) {
         for (const symbol of Henna.availableForClass(state.stats?.classId || state.classId)) {
-            if (slots.includes(symbol.id)) continue;
+            if (!Sources.hasSource(symbol.dyeSelfId) || slots.includes(symbol.id)) continue;
             const benefit = value(`henna:${symbol.id}`, () => ({ ...state, stats: { ...state.stats, hennas: [...slots, symbol.id] } }));
             if (benefit <= 0) continue;
             result.push({ key: `henna:${symbol.id}`, kind: 'henna', symbolId: symbol.id,
@@ -183,6 +186,7 @@ function enchantedPrice(item, level, ctx) {
     return Math.min(...costs, Infinity);
 }
 function crystalPath(state, id, ctx, spots = []) {
+    if (!Sources.hasSource(id)) return null;
     const Native = invoke('GameServer/Items/SoulCrystalProgression');
     const target = Native.catalog.crystals[id];
     if (!target || target.stage <= 0 || target.stage > 10 || state.level < 40) return null;
@@ -190,10 +194,7 @@ function crystalPath(state, id, ctx, spots = []) {
     if (held.length > 1 || held[0]?.amount > 1) return null;
     const current = held[0] && (Native.catalog.crystals[held[0].selfId] || { color: {4662:'red',4663:'green',4664:'blue'}[held[0].selfId], stage: -1 });
     if (current && current.color !== target.color || current?.stage >= target.stage) return null;
-    const starterId = { red: 4629, green: 4640, blue: 4651 }[target.color];
-    if (!state.stats?.soulCrystalQuest || !held.length || current?.stage < 0) return {
-        kind: 'crystal_quest', activity: 'improving', price: 0, costHours: 0,
-        improvement: { kind: 'crystal_quest', starterId }, itemId: Number(id), amount: 1 };
+    if (!state.stats?.soulCrystalQuest || !held.length || current?.stage < 0) return null;
     let best = null;
     for (const spot of spots) {
         if (spot.raidBoss) continue;

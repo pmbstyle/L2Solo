@@ -63,6 +63,7 @@ function canTradeRemotely(state, goal) {
         || !(state.stats?.generatedCold === true || String(state.accountName || '').startsWith('bot_'))
         || !side) return false;
     if (side === AfkTrade.BUY) {
+        if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(goal.target?.itemId)) return false;
         // A purchase planned at an NPC shop is made there, never through a
         // WTB (NeedsEvaluator keeps NG/D gear on that plan); in town the bot
         // still takes a cheaper listing if one is there.
@@ -100,7 +101,8 @@ function hasShop(characterId) {
 // caller has just made it (a goal review). Near death the evaluation only
 // asks to recover and judges nothing else, so the order waits like a rest.
 function standingBuyNeed(state, lines, candidates) {
-    const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
+    const items = new Set(lines.filter((line) => Number(line.count) > 0
+        && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)).map((line) => Number(line.selfId)));
     if (!items.size) return false;
     const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
     // ARCH-NOTE: NeedsEvaluator's native survival floor carries rest/revive
@@ -138,7 +140,8 @@ function appearance(row, items) {
 }
 
 function viableSellLine(line) {
-    return LotPolicy.viable(line);
+    return LotPolicy.viable(line)
+        && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId);
 }
 
 async function publishPrunedSellShop(shop, kept, town = shop.town, loc = shop) {
@@ -346,7 +349,34 @@ async function repriceSellLines(ownerId, stock, lines) {
 // while the needs still ask for their items (standingBuyNeed), else go.
 async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
-    const ads = buyAds(ownerId);
+    let ads = buyAds(ownerId);
+    // Recovery/rest can retain ordinary wishes, but cannot retain a source-invalid
+    // saved advertisement. Reuse the native batch withdrawal/refund owner.
+    const withdrawals = [];
+    let sourceChanged = false;
+    for (const ad of ads) {
+        const remaining = (ad.lines || []).filter(line => Number(line.count) > 0);
+        const invalid = remaining.filter(line => !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId));
+        if (!invalid.length) continue;
+        if (invalid.every(line => line.pricing)) {
+            for (const line of invalid) withdrawals.push({ recordId: ad.id, lineId: line.id,
+                expectedRevision: ad.revision, previousPricing: { ...line.pricing } });
+        } else if (invalid.length === remaining.length) {
+            // Legacy lines without a pricing cursor can close only a wholly
+            // impossible record; unrelated valid stock keeps its native owner.
+            try {
+                const result = await AfkTrade.closeBotRecord(ownerId, ad.id, { expectedRevision: ad.revision });
+                sourceChanged = sourceChanged || result.closed;
+            }
+            catch (error) { if (!staleMove(error)) throw error; }
+        }
+    }
+    if (withdrawals.length) {
+        const result = await AfkTrade.repriceBotLines(ownerId, [], { withdrawals });
+        sourceChanged = sourceChanged || Number(result.changed) > 0;
+    }
+    ads = buyAds(ownerId);
+    state = LifeState.snapshot(ownerId) || state;
     let side = desiredSide(goal);
     // ARCH-NOTE: a cached voluntary watch may still match a newly dead/resting
     // state. The native survival floor judges before that watch can change its side.
@@ -358,12 +388,12 @@ async function reconcileBuyAds(state, goal, candidates) {
     }
     const lines = linesOf(ads);
     if (side !== AfkTrade.BUY) {
-        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: false };
-        if (state.phase !== 'cold') return { state, changed: false };
+        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: sourceChanged };
+        if (state.phase !== 'cold') return { state, changed: sourceChanged };
         return withdrawBuyAds(ownerId, null, state);
     }
     if (!canTradeRemotely(state, goal)) {
-        if (!ads.length || state.phase !== 'cold') return { state, changed: false };
+        if (!ads.length || state.phase !== 'cold') return { state, changed: sourceChanged };
         return withdrawBuyAds(ownerId, null, state);
     }
     // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
@@ -372,14 +402,15 @@ async function reconcileBuyAds(state, goal, candidates) {
         { money: PurchaseFunding.spendable(state, escrow,
             goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
     const town = buyAdTown(state, ads, wanted);
-    if (!wanted.length || (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted))) {
-        return { state, changed: false };
+    if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: sourceChanged };
+    if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted)) {
+        return { state, changed: sourceChanged };
     }
     let shop;
     try {
         shop = await publishBuyAds(ownerId, ads, wanted, town);
     } catch (error) {
-        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
+        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: sourceChanged, reason: error.message };
         throw error;
     }
     return finishPublish(ownerId, state, shop);
@@ -635,7 +666,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (!stillPrepared()) return { state, tradeDeferred: true };
         const Ready = require('./ReadyTradeChoice');
         const line = Ready.resolve(plan.take, AfkTrade.boardIndex(), ownerId);
-        if (!line) return { state, tradeDeferred: true };
+        if (!line || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId))
+            return { state, tradeDeferred: true };
         const offer = AfkTrade.offerOf(line);
         if (!offer) return { state, tradeDeferred: true };
         const result = await run(async () => {
@@ -689,7 +721,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     });
     if (plan.sell?.length) await run(async () => {
         const ctx = ListingPolicy.traderContext(state);
-        const listings = plan.sell.slice(0, 8).map(([selfId, count, price]) => {
+        const listings = plan.sell.slice(0, 8)
+            .filter(row => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(row[0])).map(([selfId, count, price]) => {
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
             const bag = state.inventory?.[selfId], copies = (bag?.instances || []).filter(row => !row.equipped && row.amount > 0);
             const enchants = new Set([...copies.map(row => Number(row.enchant || 0)),
@@ -725,7 +758,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
-        const wanted = (plan.buyAds || []).slice(0, 3).map(row => {
+        const wanted = (plan.buyAds || []).slice(0, 3)
+            .filter(row => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(row[0])).map(row => {
             const [selfId, count, price] = row;
             const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money

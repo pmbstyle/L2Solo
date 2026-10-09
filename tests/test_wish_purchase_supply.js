@@ -47,6 +47,8 @@ const network = load('WishNetwork.js', name => {
     throw Error(name);
 });
 const provider = load('WishProviders.js', name => {
+    // This isolated routing fixture supplies admitted synthetic origins.
+    if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: () => true };
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;

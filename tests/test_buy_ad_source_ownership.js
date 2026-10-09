@@ -5,6 +5,7 @@ const filename = require.resolve('../src/GameServer/Bot/Economy/BuyAdPolicy');
 const loaded = { exports: {} }, priced = [];
 const context = { economy: { moneyPrice: .001, worth: () => 10000 } };
 const imports = {
+    'GameServer/Items/ItemAcquisitionCatalog': { hasSource: id => [736, 1121].includes(Number(id)) },
     'GameServer/DataCache': { items: [{ selfId: 736, template: { price: 400 }, etc: {} },
         { selfId: 1121, template: { price: 8 }, etc: {} }] },
     'GameServer/Bot/Economy/PurchaseFunding': { spendable: () => 50000 },

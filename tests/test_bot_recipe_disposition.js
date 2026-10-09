@@ -19,7 +19,7 @@ DataCache.init();
 const recipe = C4RecipeItems.resolve(2298);
 const dRecipe = C4RecipeItems.resolve(2153);
 const lowGradeRecipe = C4RecipeItems.resolve(2250);
-const spellbook = DataCache.items.find((item) => item?.template?.kind === 'Other.Spellbook');
+const spellbook = DataCache.items.find((item) => Number(item.selfId) === 3942); // reachable unmapped C4 book: Party Return
 assert(recipe && dRecipe && lowGradeRecipe && spellbook,
     'the datapack must contain recipe and spellbook fixtures');
 

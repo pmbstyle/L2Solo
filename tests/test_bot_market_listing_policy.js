@@ -25,8 +25,9 @@ const lowGradeGear = DataCache.items.find((item) => (
     && ItemDisposition.gradeIndex(item.etc?.rank) < ItemDisposition.gradeIndex('c')
     && Number(item.template.price || 0) <= 50000
     && !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
+    && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId)
 ));
-const spellbook = DataCache.items.find((item) => item?.template?.kind === 'Other.Spellbook');
+const spellbook = DataCache.items.find((item) => Number(item.selfId) === 3942); // reachable unmapped C4 book: Party Return
 assert(starterWeapon && lowGradeGear && spellbook, 'datapack fixtures');
 
 function saleItem(item, count = 1, price = 1000) {
@@ -44,7 +45,8 @@ function atRate(rate, work) {
 }
 
 // Hard rules.
-assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)), { action: 'market', reason: 'market' });
+assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)),
+    { action: 'ignore', reason: 'no_acquisition_source' }, 'starter grants do not create an ordinary supply route');
 for (const rate of ['x1', 'x10', 'x50']) {
     assert.strictEqual(atRate(rate, () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).action), 'market',
         'low-grade gear uses the same market decision at every rate');
@@ -63,7 +65,7 @@ const cheapCPlus = { ...saleItem(lowGradeGear), rank: 'c', basePrice: 1000 };
 assert.strictEqual(MarketListingPolicy.classify(seller, cheapCPlus).action, 'market',
     'cheap C+ gear reaches shared valuation');
 assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(starterWeapon), enchant: 6 }).action,
-    'market', 'a spare enchanted starter item reaches shared valuation');
+    'ignore', 'an enchant cannot create an ordinary source for starter-only stock');
 for (const count of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
     assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(lowGradeGear), count }).action,
         'ignore', 'invalid physical counts never enter valuation');
@@ -84,8 +86,8 @@ const spareStarter = { ...state, inventory: {
     1865: { selfId: 1865, amount: 1, kind: 'Other.Material' }
 } };
 const admitted = MarketListingPolicy.evaluate(spareStarter, options({ keptAmounts: {}, preparedReservations: {} }));
-assert(admitted.decisions.some(decision => decision.item.selfId === Number(starterWeapon.selfId)
-    && decision.item.count === 1 && decision.reason === 'expected_value'), 'only the spare starter copy reaches shared valuation');
+assert(!admitted.decisions.some(decision => decision.item.selfId === Number(starterWeapon.selfId)),
+    'starter-only surplus is held without becoming bot market supply');
 assert(admitted.decisions.some(decision => decision.item.selfId === 1865 && decision.item.count === 1
     && decision.priced), 'a single material reaches shared valuation');
 assert.strictEqual(spareStarter.inventory[starterWeapon.selfId].amount, 2, 'nomination never moves physical items');

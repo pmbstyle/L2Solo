@@ -1,3 +1,4 @@
+const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const NpcShopPriceScale = require('../../World/Generics/NpcShopPriceScale');
 const DataCache = invoke('GameServer/DataCache');
@@ -143,7 +144,7 @@ function seatedMpPerSecond(level) {
 const MAX_CRAFT_DEPTH = 5;
 function craftPrice(id, item, options, depth) {
     const recipe = C4RecipeItems.resolveByProductId(id);
-    if (!recipe) return null;
+    if (!Sources.allowsRecipe(recipe)) return null;
     if (depth >= MAX_CRAFT_DEPTH) {
         // Cut short: what is priced from here is no full price to keep.
         options.cut = true;
@@ -170,13 +171,16 @@ function craftPrice(id, item, options, depth) {
 // The gear that breaks into each crystal, with its crystal count: crystal
 // selfId -> [{ gear, crystals }], static data built once.
 let gearByCrystal = null;
+let crystalRevision = -1;
 function crystalSources(id) {
-    if (!gearByCrystal) {
+    const revision = Sources.revision();
+    if (!gearByCrystal || crystalRevision !== revision) {
+        crystalRevision = revision;
         gearByCrystal = new Map();
         for (const gear of DataCache.items) {
             const crystals = Number(gear?.etc?.cristals || 0);
             const crystalId = CRYSTAL_IDS[String(gear?.etc?.rank || '').toUpperCase()];
-            if (!(crystals > 0) || !crystalId) continue;
+            if (!Sources.hasSource(gear.selfId) || !(crystals > 0) || !crystalId) continue;
             if (!gearByCrystal.has(crystalId)) gearByCrystal.set(crystalId, []);
             gearByCrystal.get(crystalId).push({ gear, crystals });
         }
@@ -206,7 +210,7 @@ function noGradeShotPrice(item) {
 
 function priceOf(id, options, depth) {
     const item = ItemTemplateIndex.find(DataCache.items, id);
-    if (!item || id === 57 || !(Number(item.template?.price) > 0)) return null;
+    if (!Sources.hasSource(id) || !item || id === 57 || !(Number(item.template?.price) > 0)) return null;
     return dropPrice(id, item, options.spots, options.timestamp)
         || craftPrice(id, item, options, depth)
         || crystalPrice(id, item, options)
@@ -227,6 +231,7 @@ const CACHE_MS = 60 * 60 * 1000;
 const cache = new Map();
 function cachedFirstPrice(itemId, options = {}, depth = 0) {
     const id = Number(itemId);
+    if (!Sources.hasSource(id)) return null;
     const kept = cache.get(id);
     const clock = Date.now();
     if (kept && clock - kept.at < CACHE_MS) return kept.value;

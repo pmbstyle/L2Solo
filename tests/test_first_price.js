@@ -117,6 +117,11 @@ assert.strictEqual(FirstPrice.firstPrice(1804, { spots: [] }).price, NpcSellRule
     const chain = [...loose.slice(0, 6), loose[loose.length - 1]].map((item) => Number(item.selfId));
     assert.strictEqual(new Set(chain).size, 7, 'fixture: seven distinct items');
     const resolve = Recipes.resolveByProductId;
+    // This artificial price-depth fixture has independent admitted origins.
+    const Catalog = invoke('GameServer/Items/ItemAcquisitionCatalog');
+    const nativeSource = Catalog.hasSource, nativeRecipe = Catalog.allowsRecipe;
+    Catalog.hasSource = id => chain.includes(Number(id)) || nativeSource(id);
+    Catalog.allowsRecipe = recipe => chain.includes(Number(recipe?.productId)) || nativeRecipe(recipe);
     Recipes.resolveByProductId = (id) => {
         const at = chain.indexOf(Number(id));
         return at >= 0 && at < chain.length - 1
@@ -133,6 +138,7 @@ assert.strictEqual(FirstPrice.firstPrice(1804, { spots: [] }).price, NpcSellRule
             'fixture: its full price is above the buy-back the cut gives');
     } finally {
         Recipes.resolveByProductId = resolve;
+        Catalog.hasSource = nativeSource; Catalog.allowsRecipe = nativeRecipe;
         FirstPrice.resetCache();
     }
 }

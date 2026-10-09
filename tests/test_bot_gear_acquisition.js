@@ -1093,7 +1093,9 @@ if (materialPlan.strategy === 'craft' && materialPlan.next) {
     assert(materialPlan.materials.some((material) => Number(material.farmEffort) > 0),
         'craft planning must persist the farm cost needed to compare market components');
     const legacyPlan = { ...materialPlan,
-        materials: materialPlan.materials.map(({ farmEffort, ...material }) => material) };
+        materials: materialPlan.materials.map(material => {
+            const copy = { ...material }; delete copy.farmEffort; return copy;
+        }) };
     const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(legacyPlan, mage, [stoneGolemSpot]);
     assert(costedPlan.materials.some((material) => Number(material.farmEffort) > 0),
         'a retained craft plan must gain comparable farm costs without changing its target');
@@ -1151,6 +1153,7 @@ assert.strictEqual(
 
 const originalItemsForAvailabilityFallback = DataCache.items;
 const originalNpcsForAvailabilityFallback = DataCache.npcs;
+const originalSpawnsForAvailabilityFallback = DataCache.npcSpawns;
 const originalRewardsForAvailabilityFallback = DataCache.npcRewards;
 try {
     const ownedAWeapon = {
@@ -1177,6 +1180,7 @@ try {
         selfId: fallbackNpcId,
         template: { name: 'Availability Dropper', level: 60, kind: 'Monster' }
     }];
+    DataCache.npcSpawns = [...originalSpawnsForAvailabilityFallback, { spawns: [{ selfId: fallbackNpcId, total: 4 }] }];
     DataCache.npcRewards = [...originalRewardsForAvailabilityFallback, {
         selfId: fallbackNpcId,
         template: { name: 'Availability Dropper' },
@@ -1243,6 +1247,7 @@ try {
 } finally {
     DataCache.items = originalItemsForAvailabilityFallback;
     DataCache.npcs = originalNpcsForAvailabilityFallback;
+    DataCache.npcSpawns = originalSpawnsForAvailabilityFallback;
     DataCache.npcRewards = originalRewardsForAvailabilityFallback;
 }
 

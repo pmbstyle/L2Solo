@@ -2,8 +2,10 @@
 
 const { trait, stageHours, resale } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
+const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
 let catalogSource = null;
+let sourceRevision = -1;
 const kits = new Map();
 
 // Compatibility is game data shared by class/role, not an actor's prescribed
@@ -11,17 +13,20 @@ const kits = new Map();
 // Only a review's finalists are bounded; prices, holdings and funding are live.
 const GEAR_FINALISTS_PER_SLOT = 8;
 const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
-function gearCandidates(state, ctx = null, wornFor = wornReader(state)) {
+function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null) {
     const Data = invoke('GameServer/DataCache');
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
-    if (catalogSource !== Data.items) { catalogSource = Data.items; kits.clear(); }
+    const revision = Sources.revision();
+    if (catalogSource !== Data.items || sourceRevision !== revision) {
+        catalogSource = Data.items; sourceRevision = revision; kits.clear();
+    }
     const role = Planner.roleFor(state);
     const classId = Number(state.stats?.classId || state.classId || 0);
     const key = `${classId}:${role}`;
     if (!kits.has(key)) {
         const slots = new Map(), empty = { classId, stats: { classId }, inventory: {} };
         for (const item of Data.items || []) {
-            if (!Planner.suitable(item, empty, role, String(item.etc?.rank || 'none'))) continue;
+            if (!Sources.hasSource(item.selfId) || !Planner.suitable(item, empty, role, String(item.etc?.rank || 'none'))) continue;
             const slot = Number(item.etc?.slot);
             if (!slots.has(slot)) slots.set(slot, []);
             slots.get(slot).push(item);
@@ -60,6 +65,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state)) {
         const better = (a, b) => !b || a.ratio > b.ratio || a.ratio === b.ratio && cheaper(a, b);
         for (const at of allowed) {
             const item = kit.items[at];
+            if (acquisitionAllowed && !acquisitionAllowed(item.selfId)) continue;
             const price = Number(ctx.price(item.selfId));
             if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
             const score = kit.scores[at];
@@ -202,7 +208,10 @@ function buildProjection(state, ctx, deps) {
     const nodes = [], roots = [], values = new Map();
     const add = node => { if (nodes.length >= 64 || nodes.some(row => row.key === node.key)) return false;
         nodes.push(node); return true; };
-    const root = node => { if (add(node)) roots.push(node.key); };
+    const root = node => {
+        if (node.object?.itemId && !Sources.hasSource(node.object.itemId)) return;
+        if (add(node)) roots.push(node.key);
+    };
     const positive = value => Math.max(0, Number(value) || 0);
     const price = id => ctx.price(id);
     const horizon = stageHours(state, ctx.hunt.expPerHour, ctx.persona);
@@ -244,6 +253,7 @@ function buildProjection(state, ctx, deps) {
             spotId: best.source.spot.id, npcId: best.source.reward.selfId, itemId: Number(id), amount: 1 } : null;
     };
     const craftPath = (recipe, id, depth = 0, ownOnly = false) => {
+        if (!Sources.allowsRecipe(recipe)) return null;
         const ownCapable = recipe && (recipe.kind === 'dual_sword_combine'
             || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
         let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
@@ -303,13 +313,18 @@ function buildProjection(state, ctx, deps) {
         return null;
     };
     const itemNode = (id, depth = 0) => {
+        if (!Sources.hasSource(id)) return null;
         const key = `item:${id}`;
         if (nodes.some(node => node.key === key)) return key;
         if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
-        preparingItems.add(key);
         const observed = observedPurchase(id);
+        // A raid origin belongs to the clan's prepared roster. A personal
+        // wish needs actual owned stock or a finite supplier, not a price.
+        const ordinary = Sources.hasNonRaidSource(id);
+        if (!ordinary && !observed && !positive(state.inventory?.[id]?.amount)) return null;
+        preparingItems.add(key);
         const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
-            available: !!observed || price(id) > 0, executable: !!observed,
+            available: !!observed || ordinary && price(id) > 0, executable: !!observed,
             ...(observed || { availableUnits: 0 }) }];
         const drop = sourcePath(id);
         if (drop) paths.push(drop);
@@ -337,7 +352,7 @@ function buildProjection(state, ctx, deps) {
     if (ctx.board && ctx.hourAdena > 0 && serviceCraft.isServiceCrafter(state)
         && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || '')))
         for (const recipe of producerCandidates()) {
-        if (!recipe || seenProduction.has(Number(recipe.recipeId))) continue;
+        if (!Sources.allowsRecipe(recipe) || seenProduction.has(Number(recipe.recipeId))) continue;
         seenProduction.add(Number(recipe.recipeId));
         if (!serviceCraft.canCraft(state, recipe)) continue;
         const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
@@ -416,7 +431,9 @@ function buildProjection(state, ctx, deps) {
     }
     const candidates = [];
     const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic, ctx.gearThreatMask ?? 3);
-    for (const [slot, items] of gearCandidates(state, ctx, wornFor)) for (const item of items) {
+    const acquisitionAllowed = id => Sources.hasNonRaidSource(id)
+        || positive(state.inventory?.[id]?.amount) > 0 || !!observedPurchase(id);
+    for (const [slot, items] of gearCandidates(state, ctx, wornFor, acquisitionAllowed)) for (const item of items) {
         if (!Planner.considerable(item, state)) continue;
         const current = wornFor(slot);
         if (Number(current?.selfId) === Number(item.selfId)) continue;
@@ -520,6 +537,7 @@ function buildProjection(state, ctx, deps) {
     const known = new Set([...candidates.map(row => Number(row.item.selfId)), ...rows(state).map(row => Number(row.selfId))]);
     const resaleWishes = [];
     for (const id of known) {
+        if (!Sources.hasSource(id)) continue;
         if (positive(state.inventory?.[id]?.amount)) continue;
         const ask = ctx.board?.first(id, SELL, { excludeOwner: state.characterId });
         if (!(ask?.price > 0)) continue;

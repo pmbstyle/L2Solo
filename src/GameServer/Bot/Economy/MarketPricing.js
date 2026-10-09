@@ -42,8 +42,10 @@ function traderContext(state, deps = {}) {
         npcOffersFor: deps.npcOffersFor || (() => []),
         demandFor: deps.demandFor || economy.demandFor || null,
         ownStock: deps.ownStock || economy.ownStock || null,
-        canSell: deps.canSell || null,
-        canBuy: line => Number(line.enchant || 0) > 0 || !npcOwnsPurchase(economy, line.selfId),
+        canSell: line => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)
+            && deps.canSell?.(line) !== false,
+        canBuy: line => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)
+            && (Number(line.enchant || 0) > 0 || !npcOwnsPurchase(economy, line.selfId)),
         derivedDemandValue: deps.derivedDemandValue ?? economy.derivedDemandValue,
         derivedDemandSupported: deps.derivedDemandSupported ?? economy.derivedDemandSupported,
         tripCost: trip || null,
@@ -228,12 +230,17 @@ function look(state, lines, ctx) {
     for (const line of lines) {
         if (!(line.count > 0) || !line.pricing) continue;
         if (line.ownerId && Number(line.ownerId) !== Number(ctx.characterId)) continue;
+        // Source admission is independent of price noise or a retained quote:
+        // the native withdrawal owner returns only this line's held remainder.
+        const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
+            expectedRevision: line.revision, previousPricing: { ...line.pricing } };
+        if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)) {
+            withdrawals.push(move); continue;
+        }
         const counter = MarketCounters.counter(MarketCounters.counterOf(line.selfId), ctx.timestamp);
         const reason = Number(ctx.reviewReasons?.get(line.lineId) || 0);
         const forced = Boolean(reason & 14);
         if (!forced && !(reason & 1) && counter.deals <= line.pricing.seenCounter) continue;
-        const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
-            expectedRevision: line.revision, previousPricing: { ...line.pricing } };
         if (line.storeType === SELL && ctx.canSell?.(line) === false) { withdrawals.push(move); continue; }
         if (line.storeType === BUY && ctx.canBuy?.(line) === false) { withdrawals.push(move); continue; }
         const belief = beliefFor(line.selfId, ctx, line.enchant || 0);

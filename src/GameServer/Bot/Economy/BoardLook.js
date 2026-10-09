@@ -73,6 +73,10 @@ function keepInputs(seen, id, values) {
     inputs.set(id, values);
 }
 function inputsFor(state, line, ctx) {
+    // A feasibility mask protects owned reservations; it cannot legitimise
+    // source-invalid saved stock or a wish learned from a GM advertisement.
+    if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId))
+        return [0, Number(line.count), 0, 0];
     const revision = Number(ctx.board?.itemRevision?.(line.selfId) || 0);
     const buyer = ctx.board?.first?.(line.selfId, 3, { excludeOwner: ctx.characterId,
         enchant: Number(line.enchant || 0) });

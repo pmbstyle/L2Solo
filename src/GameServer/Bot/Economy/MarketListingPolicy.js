@@ -33,6 +33,8 @@ function classify(state, item) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
     if (ItemDisposition.isQuestItem(item)) return { action: 'ignore', reason: 'quest_item' };
+    if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId))
+        return { action: 'ignore', reason: 'no_acquisition_source' };
     if (!LotPolicy.viable(item)) return { action: 'ignore', reason: 'invalid_item' };
     if (ItemDisposition.isNpcOnlyItem(item)) {
         return { action: 'npc', reason: 'npc_only_item' };

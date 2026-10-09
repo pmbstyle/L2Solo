@@ -19,8 +19,13 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 
 DataCache.init();
+// This one synthetic junk-recipe fixture models a reachable dropped item.
+const Sources = invoke('GameServer/Items/ItemAcquisitionCatalog');
+const originalHasSource = Sources.hasSource;
+Sources.hasSource = id => Number(id) === 999001 || originalHasSource(id);
+process.on('exit', () => { Sources.hasSource = originalHasSource; });
 
-const spellbook = DataCache.items.find((item) => item?.template?.kind === 'Other.Spellbook');
+const spellbook = DataCache.items.find((item) => Number(item.selfId) === 3942); // reachable unmapped C4 book: Party Return
 assert(spellbook, 'the datapack must contain a spellbook fixture');
 const dEnchantScroll = DataCache.items.find((item) => Number(item?.selfId) === 956);
 assert(dEnchantScroll?.template?.kind === 'Other.Scroll', 'the datapack must contain the D-grade armor enchant scroll fixture');
@@ -347,9 +352,10 @@ const soldInventoryState = {
 assert.strictEqual(ItemDisposition.npcOnlySlotCount(soldInventoryState), 0, 'zero-amount non-stackable instances must not count as NPC inventory');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed(soldInventoryState, { now }), null, 'sold NPC-only instances must not create a cleanup goal');
 
-const npcFixtures = DataCache.items
-    .filter((item) => /^(recipe:|spellbook)/i.test(item?.template?.name || ''))
-    .slice(0, 21);
+const npcFixtures = [DataCache.items.find(item => Number(item.selfId) === 3942), ...DataCache.items
+    .filter((item) => /^(recipe:|spellbook)/i.test(item?.template?.name || '')
+        && item.template.kind !== 'Other.Quest' && Sources.hasSource(item.selfId) && Number(item.selfId) !== 3942)
+    .slice(0, 20)];
 assert(npcFixtures.length >= 21, 'the datapack must contain enough recipe/spellbook fixtures');
 const skillBooks = DataCache.items.filter((item) => {
     const name = String(item?.template?.name || '').toLowerCase();
@@ -369,7 +375,7 @@ for (const item of skillBooks) {
     if (mapped) mappedBooks++; else unmappedBooks++;
     assert.strictEqual(ItemDisposition.isNpcOnlyItem({
         selfId: item.selfId, name: item.template.name, kind: item.template.kind, amount: 1
-    }), !mapped, `original book ${item.selfId} follows the authored C4 training catalogue`);
+    }), !mapped && item.template.kind !== 'Other.Quest', `original book ${item.selfId} follows the authored C4 training catalogue`);
 }
 assert(mappedBooks > 0 && unmappedBooks > 0, 'the unchanged catalogue must exercise both preserved and NPC-only books');
 const orcAmulets = DataCache.items.filter((item) => /^amulet\b/i.test(item?.template?.name || ''));
@@ -452,8 +458,9 @@ assert(expectedNpcBookFixtures.length > 0 && expectedNpcBookFixtures.length < np
     'the unchanged 21-item mixed bag contains both NPC junk and mapped training books');
 // This quotation helper also exposes cheap goods, including mapped books,
 // while the actual listing policy applies their native expected-value choice.
-assert(npcFixtures.every(item => Number(item.template.price) <= ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE),
-    'all original 21 items satisfy the independent authored cheap-price bound');
+assert(npcFixtures.every(item => !mappedBookIds.has(Number(item.selfId))
+    || Number(item.template.price) <= ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE),
+    'the reachable bag combines explicit NPC junk and cheap mapped books');
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(npcState).length, npcFixtures.length);
 const mixedBookDisposition = MarketListingPolicy.evaluate(npcState);
 for (const item of expectedNpcBookFixtures) {

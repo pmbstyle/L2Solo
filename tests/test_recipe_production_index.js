@@ -11,6 +11,10 @@ global.invoke = name => {
     assert.equal(name, 'GameServer/Items/C4RecipeItems');
     return { loadRecipeItems: () => recipes };
 };
+// Synthetic recipes have independently supplied origin permission.
+const Catalog = require('../src/GameServer/Items/ItemAcquisitionCatalog');
+const nativeAdmission = Catalog.allowsRecipe;
+Catalog.allowsRecipe = recipe => recipes.includes(recipe);
 const { forBoard } = require('../src/GameServer/Bot/Economy/RecipeProductionIndex');
 const quotes = new Map();
 const board = { list: (id, side) => quotes.get(`${id}:${side}`) || [] };
@@ -50,3 +54,5 @@ assert(index.reset().includes(index.scopeFor(9)));
 assert.deepEqual(ids(index, 9), []); assert(index.revision(index.scopeFor(9)) > initialRevision);
 index.update(101); assert.deepEqual(ids(index, 2), [1], 'snapshot replacement repopulates incrementally');
 console.log('PASS public recipe admission, skill bounds, reverse removal, membership-only revisions and fixed buyer');
+
+Catalog.allowsRecipe = nativeAdmission;

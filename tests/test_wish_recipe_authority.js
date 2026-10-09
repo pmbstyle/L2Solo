@@ -31,8 +31,8 @@ try {
             'recipe order and duplicate representations do not cause another decision');
         const forgotten = reader.forState(state, { ...deps, knownRecipes: [] });
         assert.notStrictEqual(forgotten, learned, 'authoritative withdrawal invalidates cached knowledge');
-        const firstAdmission = reader.forState(state, { ...deps, knownRecipes: [], producerRevision: 1 });
-        const nextAdmission = reader.forState(state, { ...deps, knownRecipes: [], producerRevision: 2 });
+        const firstAdmission = reader.forState(state, { ...deps, knownRecipes: [], producerSource: () => ({ revision: 1, recipes: [] }) });
+        const nextAdmission = reader.forState(state, { ...deps, knownRecipes: [], producerSource: () => ({ revision: 2, recipes: [] }) });
         assert.notStrictEqual(nextAdmission, firstAdmission, 'changed indexed candidate membership invalidates preparation');
         assert.notEqual(nextAdmission.inputKey, firstAdmission.inputKey);
         reader.reset();

@@ -15,7 +15,8 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     const template = templateFor(selfId);
     const basePrice = Number(template?.template?.price || 0);
     const adena = Math.max(0, Number(state?.adena || 0));
-    if (!selfId || !template || basePrice <= 0 || adena <= 0) return null;
+    if (!selfId || !template || basePrice <= 0 || adena <= 0
+        || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(selfId)) return null;
     // Saved goals/watch rows cannot override the loaded quest classification.
     if (invoke('GameServer/Bot/Economy/ItemDisposition').isQuestItem({ selfId }, template)) return null;
     if (goal.type === 'upgrade_gear' && Number(template.etc?.slot || 0) > 0

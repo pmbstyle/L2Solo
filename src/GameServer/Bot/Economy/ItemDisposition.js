@@ -193,13 +193,17 @@ function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
 // A bot learns a recipe it can craft (crafter class, craft level).
 function canLearnRecipe(state, item) {
     const info = recipeInfo(item);
-    if (!info || info.recipe.type !== 'dwarven') return false;
+    if (!info || info.recipe.type !== 'dwarven'
+        || !invoke('GameServer/Items/ItemAcquisitionCatalog').allowsRecipe(info.recipe)) return false;
     return CraftShopService.canCraft(state, info.recipe);
 }
 
 function recipeDisposition(state, item, knownRecipeIds = []) {
     const info = recipeInfo(item);
     if (!info || !isRecipeItem(item)) return null;
+    if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId)
+        || !invoke('GameServer/Items/ItemAcquisitionCatalog').allowsRecipe(info.recipe))
+        return { action: 'keep', reason: 'no_acquisition_source' };
     const known = new Set((knownRecipeIds || []).map((value) => Number(value)));
     if (!canLearnRecipe(state, item)) return isMarketRecipeItem(item)
         ? { action: 'market', reason: 'recipe_not_learnable' }
@@ -463,7 +467,10 @@ function saleCandidates(state, options = {}) {
         if (!selfId || selfId === 57 || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
-        if (isQuestItem(item, template)) return [];
+        // Unsupported stock stays owned; neither a board sale nor NPC cleanup
+        // may turn a service item's nominal price into bot income.
+        if (isQuestItem(item, template)
+            || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(selfId)) return [];
         const kind = kindFor(item, template);
         const npcOnly = isNpcOnlyItem(item, template);
         if (options.onlyNpc === true && !npcOnly) return [];
