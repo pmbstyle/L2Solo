@@ -171,3 +171,11 @@ const gearBefore = groupedContent.groupFingerprint('gear');
 groupedContent.remove(83);
 assert.equal(groupedContent.groupFingerprint('materials'), materialsBefore);
 assert.equal(groupedContent.groupFingerprint('gear'), gearBefore, 'an unrelated public category does not invalidate an actor');
+
+const Query = require('../src/GameServer/Bot/Economy/OfferQuery');
+const admittedFill = Query.fill([{ ownerId: 1, price: 1, count: 2 }, { ownerId: 2, price: 2, count: 2 }], 2,
+    { accept: line => line.ownerId !== 1 });
+assert.equal(admittedFill.cost, 4);
+assert.equal(admittedFill.lines[0].line.ownerId, 2, 'fill streams caller admission before selecting an executable quote');
+const admittedTown = Query.cheapestTown(leftContent, 1867, { amount: 1, accept: line => line.recordId !== 81 });
+assert.equal(admittedTown.lines[0].line.recordId, 82, 'town selection passes caller admission into the same fill');

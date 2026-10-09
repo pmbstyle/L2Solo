@@ -693,6 +693,71 @@ async function run() {
     assert.strictEqual(palusPurchase.adena, 300000 - palusPlan.market.price);
     assert(palusPurchase.adena >= palusPlan.market.reserve, 'the purchase must retain the operating reserve');
 
+    const Admission = require('../src/GameServer/Bot/Population/PartyAdmission');
+    const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const selectedBoard = new BoardIndex();
+    selectedBoard.put({ id: 990001, ownerId: 990101, storeType: Afk.SELL, custodyPolicy: 1,
+        kind: 'sell_ad', town: 'Dion', revision: 1, lines: [{ lineId: 9900010, selfId: 1864, count: 3, price: 1 }] });
+    selectedBoard.put({ id: 990002, ownerId: 990102, storeType: Afk.SELL, kind: 'shop', town: 'Giran', revision: 1,
+        lines: [{ lineId: 9900020, selfId: 1864, count: 3, price: 100 }] });
+    let supplier = { characterId: 990101, party: { partyId: 'party-busy' } };
+    const nativeBoardIndex = Afk.boardIndex;
+    Admission.configureTradeAdmission(id => Number(id) === 990101 ? supplier
+        : Number(id) >= 991100 && Number(id) < 991109 ? { characterId: Number(id), party: { partyId: 'crowded' } } : null);
+    Afk.boardIndex = () => selectedBoard;
+    try {
+        for (const extra of [{}, { quoteDepth: 5 }]) {
+            const planned = ColdMarketService.planPurchase(state, 1864, 1, { npc: false, cost: () => 0, ...extra });
+            assert.strictEqual(planned.town, 'Giran', 'a cheap forbidden personal quote cannot launch a trip to Dion');
+            assert.strictEqual(planned.lines[0].line.recordId, 990002, 'the legal backed alternative is selected');
+        }
+        const staleSource = { selfId: 1864, town: 'Dion', npc: 0, cost: 1, landed: 1,
+            lines: [{ line: selectedBoard.list(1864, Afk.SELL, 'Dion')[0], count: 1, price: 1 }] };
+        assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
+            { npc: false, sourcePlan: staleSource, cost: () => 0 }), null, 'a held worker source is admitted again before travel');
+        const npcTown = MarketOpportunity.npcOffersAll(1785)[0];
+        selectedBoard.put({ id: 990003, ownerId: 990101, storeType: Afk.SELL, custodyPolicy: 1,
+            kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });
+        const npcPlan = ColdMarketService.planPurchase(state, 1785, 1, { towns: [npcTown.town], cost: () => 0 });
+        assert.strictEqual(npcPlan.npc, 1, 'a legal NPC remains available when the cheaper personal source is in a party');
+        const nativeList = selectedBoard.list.bind(selectedBoard);
+        let indexedReads = 0;
+        selectedBoard.list = (...args) => { indexedReads++; return nativeList(...args); };
+        const admissionEconomy = { inputKey: 'held-context', moneyPrice: .0001,
+            trip: () => 0 };
+        admissionEconomy.trip.details = () => ({ known: true, hours: 0, fees: 0 });
+        const fundedBuyer = { ...state, adena: 100000, stats: { ...state.stats, money: [1000, .0001, 0, 0] } };
+        const admissionRequest = { selfId: 1864, amount: 1, town: 'Dion', npc: false, r: .1 };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false);
+        const refusedReads = indexedReads;
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false);
+        assert.strictEqual(indexedReads, refusedReads, 'an unchanged observed membership retains the cheap negative-cache hit');
+        supplier = { characterId: 990101 };
+        assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
+            { npc: false, cost: () => 0 }).lines[0].line.recordId, 990001,
+        'the same public quote becomes legal immediately after the supplier leaves the party');
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), true, 'a held context cannot retain a refusal after source-owner membership changes');
+        const missingRequest = { selfId: 9999999, amount: 1, town: 'Dion', npc: false, r: .1 };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
+        const missingReads = indexedReads;
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
+        assert.strictEqual(indexedReads, missingReads, 'a refusal with no conditional owners retains its original cache');
+        for (let at = 0; at < 9; at++) selectedBoard.put({ id: 991100 + at, ownerId: 991100 + at,
+            storeType: Afk.SELL, custodyPolicy: 1, kind: 'sell_ad', town: 'Dion', revision: 1,
+            lines: [{ lineId: 9911000 + at, selfId: 1865, count: 1, price: 1 }] });
+        const overflowRequest = { selfId: 1865, amount: 10, town: 'Dion', npc: false, r: .1 };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
+        const overflowReads = indexedReads;
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
+        assert(indexedReads > overflowReads, 'more than eight distinct source owners cannot leave an incomplete refusal cache');
+    } finally {
+        Afk.boardIndex = nativeBoardIndex;
+        Admission.configureTradeAdmission(id => BotLifeState.cachedState(Number(id)),
+            id => World.registeredActorById(Number(id))?.session);
+    }
     assert.deepStrictEqual(Economy.summary().mainColdForState, {}, 'all consumption avoids a main cold wish build');
     console.log('Bot cold market purchase checks passed');
 }

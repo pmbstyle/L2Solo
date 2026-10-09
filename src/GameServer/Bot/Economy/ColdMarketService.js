@@ -11,6 +11,7 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const OfferOrder = require('./OfferOrder');
 const OfferQuery = require('./OfferQuery');
+const { personalOfferAllowed } = require('../Population/PartyAdmission');
 
 function purchaseObservation(state, selfId, requested, budget, phase, reason, extra) {
     if (!Diagnostics.active()) return;
@@ -247,9 +248,16 @@ function planPurchase(state, selfId, amount, options = {}) {
     // The selected executable quote funds its own missing mandatory units.
     // A personal estimate never becomes a second purse held across the trip.
     let fundingContext;
+    const accept = line => {
+        const allowed = personalOfferAllowed(line, state);
+        if (line?.conditional || line?.custodyPolicy === 1) {
+            options.onAdmissionRead?.(Number(line.ownerId ?? line.sourceId), allowed);
+        }
+        return allowed;
+    };
     const moneyForTown = (_town, npcPrice, lines) => {
         if (!options.currentFunding) return money;
-        const first = lines.find(line => Number(line.price) > 0 && Number(line.price) <= maxPrice
+        const first = lines.find(line => accept(line) && Number(line.price) > 0 && Number(line.price) <= maxPrice
             && Number(line.count) >= 1 && Number(line.ownerId ?? line.sourceId) !== Number(state.characterId)
             && (!(npcPrice > 0) || Number(line.price) <= npcPrice));
         const price = Number(first?.price || npcPrice || 0);
@@ -267,7 +275,7 @@ function planPurchase(state, selfId, amount, options = {}) {
             const price = Number(source.npcPrice ?? (Number(source.cost) - lineCost) / Number(source.npc));
             if (staticOffers(selfId).some(offer => offer.town === source.town && Number(offer.price) === price)) npcPrice = price;
         }
-        const filled = OfferQuery.fill(quotes, amount, { money: moneyForTown(source.town, npcPrice, quotes), maxPrice, npcPrice, excludeOwner: state?.characterId });
+        const filled = OfferQuery.fill(quotes, amount, { money: moneyForTown(source.town, npcPrice, quotes), maxPrice, npcPrice, excludeOwner: state?.characterId, accept });
         if (filled.units < amount || !Number.isFinite(Number(source.landed))) return null;
         plan = { ...filled, town: source.town, npcPrice, whole: true, spendBudget: moneyForTown(source.town, npcPrice, quotes),
             landed: filled.cost + Math.max(0, Number(source.landed) - Number(source.cost || 0)) };
@@ -292,13 +300,13 @@ function planPurchase(state, selfId, amount, options = {}) {
         const trip = cost || tripFrom(state, timestamp);
         for (const [town, group] of groups) {
             const filled = OfferQuery.fill(group.lines, amount, { money: moneyForTown(town, group.npcPrice, group.lines), maxPrice, npcPrice: group.npcPrice,
-                excludeOwner: state?.characterId });
+                excludeOwner: state?.characterId, accept });
             const landed = filled.cost + Number(trip(town));
             if (filled.units < amount || !Number.isFinite(landed)) continue;
             if (!plan || landed < plan.landed) plan = { town, ...filled, npcPrice: group.npcPrice, landed, whole: true, spendBudget: moneyForTown(town, group.npcPrice, group.lines) };
         }
     } else plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
-        amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId,
+        amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept,
         npcOffers: npc ? staticOffers(selfId) : [],
         cost: cost || tripFrom(state, timestamp)
     });
@@ -346,15 +354,16 @@ function worthwhileTravel(state, plan, options = {}) {
     return result.known && result.valueHours > 0;
 }
 const deniedTrips = new WeakMap();
+const ADMISSION_OWNER_LIMIT = 8;
 function canTravelForPurchase(state, request, options = {}) {
     if (request?.purpose === 'clan') return true;
     const id = Number(request?.selfId), amount = Number(request?.amount);
     if (!(id > 0) || !(amount > 0)) return false;
     const economy = options.economy || require('../Population/ColdEconomyDecision').economyFor(state);
     const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
-    // Cache only a refused departure on the lifetime of a held prepared
-    // context. Native spending never uses this result. One bounded key,
-    // current own funding/route and this item's source revision, no timer.
+    // One refusal lives only with its held prepared context. Public quote
+    // versions omit membership, so retain at most eight observed owner/allowed
+    // pairs and recheck them through the same indexed admission on a hit.
     let key = null;
     if (options.economy && economy.inputKey && board?.itemRevision && !options.cost) {
         const rates = invoke('GameServer/ProgressionRates').profile();
@@ -363,13 +372,24 @@ function canTravelForPurchase(state, request, options = {}) {
             require('./EconomicTrip').key(state), board.itemRevision(id), rates.multiplier, rates.adena,
             require('./ProductionPolicy').shotsDisabled()]);
         if (token.length <= 2048) key = token;
-        if (key && deniedTrips.get(economy) === key) return false;
+        const previous = key && deniedTrips.get(economy);
+        if (previous?.key === key && previous.owners.every(([ownerId, allowed]) =>
+            personalOfferAllowed({ custodyPolicy: 1, ownerId }, state) === allowed)) return false;
     }
-    const plan = planPurchase(state, id, amount, { ...request, ...options,
+    const owners = [];
+    let overflow = false;
+    const onAdmissionRead = key ? (ownerId, allowed) => {
+        if (overflow) return;
+        const held = owners.find(pair => pair[0] === ownerId);
+        if (held) { held[1] = allowed; return; }
+        if (owners.length === ADMISSION_OWNER_LIMIT) { overflow = true; return; }
+        owners.push([ownerId, allowed]);
+    } : undefined;
+    const plan = planPurchase(state, id, amount, { ...request, ...options, onAdmissionRead,
         cost: options.cost || (typeof economy.trip === 'function' ? economy.trip : null),
         ...(request.town ? { towns: [request.town] } : {}), currentFunding: true });
     const allowed = worthwhileTravel(state, plan, { ...request, ...options, economy });
-    if (key && !allowed) deniedTrips.set(economy, key);
+    if (key && !allowed && !overflow) deniedTrips.set(economy, { key, owners });
     else deniedTrips.delete(economy);
     return allowed;
 }

@@ -14,6 +14,7 @@ const dependencies={
  'GameServer/Bot/Population/BotLifeState':{
  cachedState:()=>current,hotRow:()=>null,marketPurchaseBlocker:()=>null,
  subscribeChanges:fn=>{listener=fn;return()=>{};},
+ subscribeMarketReviewChanges:()=>()=>{},
  upsertState:async(next,reason)=>{writes.push(reason);current={...next,simulation:{...next.simulation,revision:next.simulation.revision+1}};listener({characterId:current.characterId});return current;}
  },
  'GameServer/Bot/Economy/MarketOpportunity':{bestOffer:()=>offer,botCanBuy:()=>true,fixedStoreOffers:()=>[],npcOffersAll:()=>[]},

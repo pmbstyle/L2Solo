@@ -105,3 +105,40 @@ assert.deepEqual(packedDecision.shot, step);
 assert.equal(packedDecision.workshop.cycleHours, 0.01);
 assert.equal(Plan.MAX_PLAN_PAYLOAD_BYTES + Publication.COMMAND_HEADER_BYTES + 32 + 8, Plan.MAX_BYTES);
 console.log('PASS native town/NPC authority parity, streamed routes/reservations and five-quote purchase view');
+
+// Public wishes keep all quotes; the executable worker sources use current
+// party admission without changing the bounded five-row view.
+const Admission = require('../src/GameServer/Bot/Population/PartyAdmission');
+let sourceOwner = { characterId: 701, party: { partyId: 'busy-party' } };
+Admission.configureTradeAdmission(id => Number(id) === 701 ? sourceOwner : null);
+const admissionBoard = new BoardIndex();
+admissionBoard.put({ id: 701, ownerId: 701, storeType: 1, custodyPolicy: 1, kind: 'sell_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7010, selfId: 1864, count: 10, price: 1 }] });
+admissionBoard.put({ id: 702, ownerId: 702, storeType: 1, kind: 'shop', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7020, selfId: 1864, count: 10, price: 100 }] });
+admissionBoard.put({ id: 703, ownerId: 701, storeType: 3, custodyPolicy: 1, kind: 'buy_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7030, selfId: 1882, count: 10, price: 10000 }] });
+admissionBoard.put({ id: 704, ownerId: 702, storeType: 3, kind: 'shop', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7040, selfId: 1882, count: 10, price: 9000 }] });
+const admittedSources = drain(Sources.prepare(owner, { board: admissionBoard, timestamp: 1000 })).value;
+const admittedPurchase = drain(admittedSources.options.preparePurchase(owner, 1864, 1, { npc: false })).value;
+assert.equal(admittedPurchase.lines[0].line.recordId, 702, 'a cheaper party personal ask cannot start ingredient travel');
+const leatherRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(25);
+const leatherTemplate = Data.items.find(item => Number(item.selfId) === Number(leatherRecipe.productId));
+const admittedExits = drain(admittedSources.options.prepareExits(owner, leatherRecipe, leatherTemplate)).value;
+assert(!admittedExits.some(exit => exit.offer?.recordId === 703), 'a party personal bid is not an executable craft exit');
+assert(admittedExits.some(exit => exit.offer?.recordId === 704), 'a backed shop remains an executable exit');
+const crystalGear = Data.items.find(item => Number(item.etc?.cristals) > 0
+    && /^(Weapon|Armor)\./.test(String(item.template?.kind || '')));
+admissionBoard.put({ id: 705, ownerId: 701, storeType: 1, custodyPolicy: 1, kind: 'sell_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7050, selfId: crystalGear.selfId, count: 1, price: 1 }] });
+admissionBoard.put({ id: 706, ownerId: 702, storeType: 1, kind: 'shop', town: 'Giran', revision: 1,
+    lines: [{ lineId: 7060, selfId: crystalGear.selfId, count: 1, price: 100 }] });
+const gearSources = [...admittedSources.options.gearRowsFor(String(crystalGear.etc.rank))].filter(Boolean);
+assert(!gearSources.some(row => row.offer?.recordId === 705), 'crystal acquisition cannot use a party personal gear supplier');
+assert(gearSources.some(row => row.offer?.recordId === 706), 'backed gear remains a crystal acquisition option');
+sourceOwner = { characterId: 701 };
+const releasedPurchase = drain(admittedSources.options.preparePurchase(owner, 1864, 1, { npc: false })).value;
+assert.equal(releasedPurchase.lines[0].line.recordId, 701, 'leaving the party opens the same unchanged public quote');
+Admission.configureTradeAdmission(id => invoke('GameServer/Bot/Population/BotLifeState').cachedState(Number(id)),
+    id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);

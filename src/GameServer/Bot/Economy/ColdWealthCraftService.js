@@ -14,6 +14,7 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const Commit = require('./EconomyCommit');
+const { personalOfferAllowed } = require('../Population/PartyAdmission');
 
 const inFlight = new Set();
 
@@ -42,7 +43,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
             scrollQuote = board.list(recipe.recipeItemId, AfkTrade.SELL).slice(0, 5).find(row =>
                 Number(row.lineId) === Number(step.scroll[0]) && Number(row.revision) === Number(step.scroll[1])
                 && Number(row.ownerId) !== Number(state.characterId) && Number(row.count) >= 1
-                && Number(row.price) > 0 && !Number(row.enchant || 0));
+                && Number(row.price) > 0 && !Number(row.enchant || 0) && personalOfferAllowed(row, state));
             if (!scrollQuote) return null;
         }
         context.recipeInput = Number(recipe.recipeItemId);
@@ -55,7 +56,8 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
             const line = compact ? board.list(recipe.productId, AfkTrade.BUY).slice(0, 5)
                 .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
             if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price || line.count <= 0
-                || line.ownerId === Number(state.characterId) || line.selfId !== Number(recipe.productId)) return null;
+                || line.ownerId === Number(state.characterId) || line.selfId !== Number(recipe.productId)
+                || !personalOfferAllowed(line, state)) return null;
             exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: line.count, town: line.town, offer: require('../../AfkTrade/BoardIndex').offerFields(line) };
         } else {
             const fixed = staticExits(recipe, template)[lineId - 1];
@@ -68,7 +70,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         const lines = board.list(recipe.productId, AfkTrade.BUY);
         for (let at = 0; at < Math.min(5, lines.length); at++) {
             const line = lines[at];
-            if (line.ownerId !== Number(state.characterId) && line.count > 0) {
+            if (line.ownerId !== Number(state.characterId) && line.count > 0 && personalOfferAllowed(line, state)) {
                 exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town,
                     offer: require('../../AfkTrade/BoardIndex').offerFields(line) }; break;
             }
@@ -118,7 +120,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         const groups = new Map(), lines = board.list(id, AfkTrade.SELL);
         for (let at = 0; at < Math.min(5, lines.length); at++) {
             const line = lines[at];
-            if (line.ownerId === Number(state.characterId) || Number(line.enchant || 0)) continue;
+            if (line.ownerId === Number(state.characterId) || Number(line.enchant || 0) || !personalOfferAllowed(line, state)) continue;
             if (!groups.has(line.town)) groups.set(line.town, { lines: [], npcPrice: 0 });
             groups.get(line.town).lines.push(line);
         }
@@ -214,6 +216,9 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
 }
 
 async function execute(state, opportunity) {
+    if (opportunity.exit.type === 'afk' && !personalOfferAllowed(opportunity.exit.offer, state)) {
+        return { state, crafted: false, reason: 'buyer_changed' };
+    }
     const recipe = opportunity.recipe;
     const batches = Math.min(64, Math.max(1, Number(opportunity.batches || 1)));
     if (!Number.isSafeInteger(batches) || Number(state.vitals?.mp || 0) < Number(recipe.mpCost || 0) * batches) {
@@ -269,15 +274,15 @@ async function execute(state, opportunity) {
             crafted: false, reason: 'materials_changed' };
     }
 
-    if (opportunity.exit.type === 'afk' && current.currentRegion === opportunity.exit.offer.town
-        && !AfkTrade.offers(recipe.productId, AfkTrade.BUY,
+    if (opportunity.exit.type === 'afk' && (!personalOfferAllowed(opportunity.exit.offer, current)
+        || current.currentRegion === opportunity.exit.offer.town && !AfkTrade.offers(recipe.productId, AfkTrade.BUY,
         { characterId: current.characterId }).some((offer) => (
         Number(offer.recordId) === Number(opportunity.exit.offer.recordId)
             && Number(offer.lineId) === Number(opportunity.exit.offer.lineId)
             && Number(offer.expectedRevision) === Number(opportunity.exit.offer.expectedRevision)
             && Number(offer.price) === Number(opportunity.exit.price)
             && Number(offer.count) > 0
-    ))) {
+    )))) {
         const changed = withOutcome(current, opportunity, 'buyer_changed', { spent });
         return { state: await LifeState.upsertState(changed, 'wealth_craft_buyer_changed') || changed,
             crafted: false, reason: 'buyer_changed' };

@@ -42,7 +42,7 @@ function bestSellOffer(index, selfId, options = {}) {
 // rest, within `money`: { lines: [{ line, count, price }], npc (units from the NPC),
 // units, cost }. One rule for the purchase of a stack (a shot restock,
 // materials): ShotStock.restockPlan and cheapestTown.
-function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0 } = {}) {
+function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0, accept = null } = {}) {
     let left = Math.max(0, Math.floor(Number(amount) || 0));
     let budget = Math.max(0, Number(money));
     const taken = [];
@@ -50,6 +50,7 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
     for (const line of lines || []) {
         if (left <= 0) break;
         const price = Number(line.price);
+        if (accept && !accept(line)) continue;
         if (excludeOwner && Number(line.ownerId ?? line.sourceId) === Number(excludeOwner)) continue;
         if (!(price > 0) || price > maxPrice || (npcPrice > 0 && price > npcPrice) || !(Number(line.count) > 0)) continue;
         const count = Math.min(left, Number(line.count), Math.floor(budget / price));
@@ -93,7 +94,7 @@ function cheapestTown(index, selfId, options = {}) {
         const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
         const filled = fill(lines, amount, {
             npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
-            excludeOwner: options.excludeOwner
+            excludeOwner: options.excludeOwner, accept: options.accept
         });
         if (!filled.units) continue;
         const landed = filled.cost + trip;

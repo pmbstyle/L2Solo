@@ -238,6 +238,51 @@ async function run() {
     assert.strictEqual(purchases.length, 0);
     assert.strictEqual(crafted, false);
     assert.strictEqual(sold, false);
+    const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const sourceBoard = new BoardIndex();
+    sourceBoard.put({ id: 991010, ownerId: 991001, storeType: AfkTrade.SELL, custodyPolicy: 1,
+        kind: 'sell_ad', town: 'Giran', revision: 1, lines: [{ lineId: 9910100, selfId: 1867, count: 6, price: 1 }] });
+    sourceBoard.put({ id: 991011, ownerId: 991002, storeType: AfkTrade.SELL, kind: 'shop', town: 'Giran', revision: 1,
+        lines: [{ lineId: 9910110, selfId: 1867, count: 6, price: 500 }] });
+    sourceBoard.put({ id: 991012, ownerId: 991001, storeType: AfkTrade.BUY, custodyPolicy: 1,
+        kind: 'buy_ad', town: 'Giran', revision: 1, lines: [{ lineId: 9910120, selfId: 1882, count: 1, price: 100000 }] });
+    sourceBoard.put({ id: 991013, ownerId: 991002, storeType: AfkTrade.BUY, kind: 'shop', town: 'Giran', revision: 1,
+        lines: [{ lineId: 9910130, selfId: 1882, count: 1, price: 90000 }] });
+    const Admission = require('../src/GameServer/Bot/Population/PartyAdmission');
+    Admission.configureTradeAdmission(id => Number(id) === 991001 ? { characterId: 991001,
+        party: { partyId: 'buyer-busy' } } : null);
+    const forbiddenExit = { ...unit, template: DataCache.items[0], r: ratio,
+        exit: { type: 'afk', conditional: true, price: 50000, town: 'Dion',
+            offer: { ownerId: 991001, conditional: true, town: 'Dion' } } };
+    const nativeBoardIndex = AfkTrade.boardIndex;
+    const syntheticItems = DataCache.items;
+    AfkTrade.boardIndex = () => sourceBoard;
+    DataCache.items = originals.items;
+    Recipes.resolveByRecipeId = id => Number(id) === 25 ? leather : null;
+    try {
+        const fundedCrafter = { ...state, stats: { ...state.stats, money: [1000, .00001, 0, 0] } };
+        const step = { recipeId: 25, batches: 1, exit: [991013, 9910130, 90000, 1] };
+        const currentBasket = Service.recheck(fundedCrafter, step, [{ recipeId: 25 }]);
+        assert(currentBasket, 'a backed native buyer and legal ingredients still pass spending recheck');
+        assert.strictEqual(currentBasket.basket.purchases[0].lines[0].line.recordId, 991011,
+            'main spending recheck skips the cheaper party personal ingredient supplier');
+        assert.strictEqual(Service.recheck(fundedCrafter,
+            { ...step, exit: [991012, 9910120, 100000, 1] }, [{ recipeId: 25 }]), null,
+        'a selected party personal buyer cannot pass spending recheck');
+        assert.strictEqual(Service.recheck(fundedCrafter, { recipeId: 25, batches: 1 }, [{ recipeId: 25 }])?.exit.offer.recordId,
+            991013, 'the legacy bounded exit look selects the legal backed buyer');
+    } finally {
+        AfkTrade.boardIndex = nativeBoardIndex;
+        DataCache.items = syntheticItems;
+        Recipes.resolveByRecipeId = recipeId => recipeId === recipe.recipeId ? recipe : null;
+    }
+    const writesBefore = purchases.length;
+    const blockedBuyer = await Service.execute(state, forbiddenExit);
+    assert.strictEqual(blockedBuyer.reason, 'buyer_changed', 'even a remote personal buyer is rejected before acquiring craft inputs');
+    assert.strictEqual(blockedBuyer.state, state, 'a forbidden exit cannot write a buying state or acquire knowledge');
+    assert.strictEqual(purchases.length, writesBefore);
+    Admission.configureTradeAdmission(id => LifeState.cachedState(Number(id)),
+        id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);
     assert.deepStrictEqual(Economy.summary().mainColdForState, {});
     console.log(JSON.stringify({ scope: 'declared unit clock plus genuine native unfunded execution',
         recipeId: recipe.recipeId, productId, wallet: originalState.adena, cash: unit.basket.cashCost,

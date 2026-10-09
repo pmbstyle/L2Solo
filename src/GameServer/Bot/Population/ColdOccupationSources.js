@@ -8,6 +8,7 @@ const StaticPricing = require('../Economy/StaticMerchantPricing');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
+const { personalOfferAllowed } = require('./PartyAdmission');
 const QUOTE_DEPTH = 5;
 const EMPTY = Object.freeze([]);
 let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank, npcSellerTowns;
@@ -217,7 +218,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         const result = []; read(recipe.productId); let count = 0;
         for (const line of board?.list(recipe.productId, 3) || []) {
             if (count++ === QUOTE_DEPTH) break;
-            if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)) { yield 'quote'; continue; }
+            if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)
+                || !personalOfferAllowed(line, owner)) { yield 'quote'; continue; }
             const details = yield* ensureTrip(line.town);
             result.push({ type: 'afk', conditional: line.custodyPolicy === 1, offer: line, price: Number(line.price), count: Number(line.count), town: line.town,
                 trip: trip(line.town), tripDetails: details, repeatable: false });
@@ -253,7 +255,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         const towns = []; let depth = 0;
         for (const line of board?.list(id, 1) || []) {
             if (depth++ === QUOTE_DEPTH) break;
-            if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)) { yield 'quote'; continue; }
+            if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)
+                || !personalOfferAllowed(line, owner)) { yield 'quote'; continue; }
             const index = townOrdinal.get(line.town);
             if (index === undefined) { yield 'quote'; continue; }
             let held = towns[index]; if (!held) towns[index] = held = { town: line.town, lines: [], npcPrice: 0 };
@@ -307,7 +310,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             let depth = 0;
             for (const line of board?.list(gear.selfId, 1) || []) {
                 if (depth++ === QUOTE_DEPTH) break;
-                if (Number(line.ownerId) !== Number(state.characterId) && !Number(line.enchant || 0) && Number(line.price) > 0) {
+                if (Number(line.ownerId) !== Number(state.characterId) && !Number(line.enchant || 0) && Number(line.price) > 0
+                    && personalOfferAllowed(line, state)) {
                     yield { ...gear, source: 'afk', price: Number(line.price), cash: Number(line.price), count: Number(line.count),
                         town: line.town, ownerId: Number(line.ownerId), offer: line, repeatable: false };
                 } else yield null;
