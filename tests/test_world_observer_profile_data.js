@@ -27,7 +27,7 @@ assert.equal(state.stats.money[5], 120, 'inspection must not alter the saved all
 const henna = project({ ...state, stats: { wishFocus: ['henna:124', 1, 50] } }, { wishName: () => 'STR +4 · CON -4' });
 assert.match(UI.renderEconomy(henna), /Install henna · STR \+4 · CON -4/);
 assert.match(UI.renderEconomy(economy), /Avadon Shield/);
-assert.match(UI.renderEconomy(economy), /priorities, not money held in escrow/);
+assert.match(UI.renderEconomy(economy), /Amounts are priorities only/);
 
 (async () => {
     const queries = [];

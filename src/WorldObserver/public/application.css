@@ -310,6 +310,78 @@ button { cursor: pointer; }
 .profile-data-paging { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
 .profile-data-paging button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--gold); background: var(--accent-bg); }
 .profile-data-paging button:disabled { opacity: .4; }
+.economy-profile { container-type: inline-size; display: grid; gap: 18px; font-size: 13px; line-height: 1.5; }
+.economy-heading h3 { margin: 0; font-size: 20px; font-weight: 650; letter-spacing: -.025em; }
+.economy-heading p { margin: 5px 0 0; color: var(--muted); }
+.economy-plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.economy-card { min-width: 0; padding: 22px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--surface-strong); }
+.economy-card h4 { margin: 0; font-size: 17px; font-weight: 650; line-height: 1.4; letter-spacing: -.015em; overflow-wrap: anywhere; }
+.economy-card--wish { display: flex; flex-direction: column; border-color: color-mix(in srgb, var(--gold), transparent 70%); background: linear-gradient(135deg, var(--accent-bg), var(--surface)); }
+.economy-eyebrow { display: block; margin-bottom: 14px; color: var(--faint); font-size: 10px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.economy-wish-heading { display: flex; align-items: center; gap: 14px; margin-bottom: auto; }
+.economy-wish-heading h4 { font-size: 22px; }
+.economy-wish-icon { display: grid; flex: 0 0 48px; width: 48px; height: 48px; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--gold); font-size: 24px; }
+.economy-wish-icon img { width: 32px; height: 32px; object-fit: contain; }
+.economy-profile a { color: var(--gold); text-decoration: none; }
+.economy-profile a:hover { text-decoration: underline; }
+.economy-price { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.economy-price > span { color: var(--muted); font-size: 12px; }
+.economy-price strong { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.economy-unit { color: var(--faint); font-size: .7em; font-weight: 500; }
+.economy-action-target { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+.economy-facts { display: flex; flex-wrap: wrap; gap: 16px 24px; margin: 20px 0 0; }
+.economy-facts > div { flex: 1 1 130px; min-width: 0; }
+.economy-location { margin-top: 18px; color: var(--muted); font-size: 12px; }
+.economy-location summary { width: fit-content; cursor: pointer; }
+.economy-location p { margin: 8px 0 0; color: var(--faint); }
+.economy-location code { color: var(--muted); }
+.economy-profile dt { margin: 0; color: var(--faint); font-size: 11px; }
+.economy-profile dd { margin: 4px 0 0; font-weight: 550; overflow-wrap: anywhere; }
+.economy-goal { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.economy-goal .economy-eyebrow { margin-bottom: 6px; }
+.economy-status { flex: 0 0 auto; padding: 5px 10px; border-radius: 6px; background: var(--accent-bg); color: var(--gold); font-size: 11px; }
+.economy-equipment { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; padding: 0 4px; color: var(--faint); font-size: 12px; }
+.economy-equipment strong { color: var(--muted); font-weight: 550; }
+.economy-equipment > span:last-child { margin-left: auto; }
+.economy-section-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 16px; margin-bottom: 20px; }
+.economy-section-heading > span { color: var(--faint); font-size: 11px; }
+.economy-money-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 0; }
+.economy-money-metrics dd { margin-top: 7px; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.economy-budget { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line-soft); }
+.economy-budget-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 5px 16px; margin-bottom: 8px; }
+.economy-budget-heading h5 { margin: 0; color: var(--muted); font-size: 12px; font-weight: 550; }
+.economy-budget-heading > span { color: var(--faint); font-size: 11px; }
+.economy-budget-row { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 9px 0; }
+.economy-budget-row > span { min-width: 0; overflow-wrap: anywhere; }
+.economy-budget-row strong { flex-shrink: 0; font-weight: 550; font-variant-numeric: tabular-nums; }
+.economy-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+.economy-deferred .economy-section-heading { margin-bottom: 8px; }
+.economy-deferred-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; }
+.economy-deferred-row + .economy-deferred-row { border-top: 1px solid var(--line-soft); }
+.economy-deferred-row > div { min-width: 0; overflow-wrap: anywhere; }
+.economy-deferred-row strong { font-weight: 550; }
+.economy-deferred-row > div > span { display: block; margin-top: 4px; color: var(--faint); font-size: 11px; }
+.economy-deferred-row > span { flex-shrink: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.profile-data { padding-top: 0; border-top: 0; font-size: 13px; line-height: 1.55; }
+.profile-data h3 { margin: 0 0 12px; font-size: 16px; font-weight: 650; }
+.profile-data h3:not(:first-child) { margin-top: 24px; }
+.profile-data p { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+.profile-data ul { margin: 0; padding-left: 20px; }
+.profile-data li + li { margin-top: 8px; }
+.profile-data .profile-table-scroll { border: 1px solid var(--line-soft); border-radius: 10px; }
+.profile-data .profile-data-table th { padding: 12px 14px; background: var(--surface-strong); font-size: 11px; }
+.profile-data .profile-data-table td { padding: 12px 14px; }
+.profile-data .profile-data-table tr:last-child td { border-bottom: 0; }
+@container (max-width: 580px) {
+    .economy-plan-grid { grid-template-columns: minmax(0, 1fr); }
+    .economy-card { padding: 18px; }
+    .economy-equipment > span:last-child { width: 100%; margin-left: 0; }
+    .economy-goal { align-items: flex-start; }
+}
+@container (max-width: 360px) {
+    .economy-money-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; }
+    .economy-money-metrics dd { font-size: 17px; }
+}
 body[data-view="overview"], body[data-view="characters"], body[data-view="parties"], body[data-view="dungeon"], body[data-view="profile"] { overflow: auto; }
 body[data-view="overview"] .observer-shell, body[data-view="characters"] .observer-shell, body[data-view="parties"] .observer-shell, body[data-view="dungeon"] .observer-shell { display: none; }
 body[data-view="profile"] .observer-shell { display: block; height: auto; max-width: 1120px; margin: 0 auto; padding: 28px; }
@@ -317,10 +389,12 @@ body[data-view="profile"] .map-panel, body[data-view="profile"] .side-panel > se
 body[data-view="profile"] .side-panel { display: block; overflow: visible; }
 body[data-view="profile"] .inspector-section { padding: 26px; }
 body[data-view="profile"] .selected-inspector { overflow: visible; max-height: none; }
+body.has-app-shell[data-view="profile"] .side-panel .inspector-section { display: block; min-height: 0; overflow: visible; }
+body.has-app-shell[data-view="profile"] .side-panel .selected-inspector { height: auto; max-height: none; overflow: visible; }
 body[data-view="profile"] .inspector-section > .section-title { display: none; }
 body[data-view="profile"] .inspector-avatar { width: 62px; height: 62px; font-size: 24px; border-radius: 14px; }
 body[data-view="profile"] .inspector-name strong { font-size: 28px; }
-body[data-view="profile"] .inspector-name span { margin-top: 8px; font-size: 13px; }
+body[data-view="profile"] .inspector-name span { margin-top: 8px; font-size: 13px; line-height: 1.5; white-space: normal; }
 body[data-view="profile"] .inspector-vitals { max-width: 500px; margin: 24px 0; }
 body[data-view="profile"] .detail-grid { grid-template-columns: repeat(3, 1fr); }
 body[data-view="profile"] .detail-grid strong { font-size: 14px; }

@@ -3281,7 +3281,7 @@ function renderInspector() {
         ${renderBuild(build)}
         </div>
         <div data-profile-panel="equipment" id="profile-panel-equipment" role="tabpanel" aria-labelledby="profile-tab-equipment">${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : '<p class="muted-copy">Equipment information is unavailable.</p>'}</div>
-        ${actor.economy ? `<div data-profile-panel="economy" id="profile-panel-economy" role="tabpanel" aria-labelledby="profile-tab-economy">${ProfileData.renderEconomy(actor.economy)}</div>` : ''}
+        ${actor.economy ? `<div data-profile-panel="economy" id="profile-panel-economy" role="tabpanel" aria-labelledby="profile-tab-economy">${ProfileData.renderEconomy(actor.economy, { spot: actor.spot })}</div>` : ''}
         ${['inventory', 'warehouse', 'skills', 'pvp', 'board'].map(section => {
             const entry = state.profileCollections[section] || {};
             return `<div data-profile-panel="${section}" id="profile-panel-${section}" role="tabpanel" aria-labelledby="profile-tab-${section}">${ProfileData.renderCollection(section, entry.data, entry)}</div>`;

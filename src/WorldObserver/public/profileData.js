@@ -13,33 +13,68 @@
     const item = row => row ? `<a class="inspector-link" href="/observer/database/items/${Number(row.selfId)}" data-app-route>${escape(row.name)}</a>` : 'Unknown';
     const wish = row => row?.item ? item(row.item) : escape(({ stock: 'Restock', henna: 'Install henna', enchant: 'Enchant equipment',
         sa: 'Install special ability', book: 'Learn skill', level: 'Reach level', care: 'Help character', scores: 'Settle score' })[row?.kind] || label(row?.kind))
-        + (row?.name || row?.reference ? ` · ${escape(row.name || row.reference)}` : '');
+        + (row?.name || row?.reference ? `${row?.kind === 'stock' ? ' ' : ' · '}${escape(row.name || row.reference)}` : '');
     const cell = (name, value) => `<div><span>${escape(name)}</span><strong>${value}</strong></div>`;
-    function renderEconomy(economy) {
-        if (!economy) return '<p class="muted-copy">No saved economic decision.</p>';
+    const wholeNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+    const adena = value => value == null || !Number.isFinite(Number(value)) ? '—' : `${wholeNumber.format(Number(value))} <span class="economy-unit">A</span>`;
+    const reason = value => ({ superseded: 'Replaced by a newer wish', source_unavailable: 'No source available',
+        wish_focus: 'Waiting for the priority wish', no_missing_craftable_upgrade: 'No craftable upgrades available',
+        insufficient_funds: 'Needs more adena' })[value] || null;
+    const activityName = action => ({ hunting: action.funding ? 'Hunting for income' : 'Hunting for items',
+        shopping: 'Buying items', selling: 'Selling surplus items', crafting: 'Crafting an item',
+        improving: 'Improving equipment', learning: 'Learning a skill', restocking: 'Restocking supplies',
+        trading: 'Trading', travelling: 'Travelling', resting: 'Recovering' })[action.activity] || 'Preparing the next step';
+    const wishIcon = row => `<span class="economy-wish-icon" aria-hidden="true">${row?.item?.iconUrl?.startsWith('/observer/item-icons/')
+        ? `<img src="${escape(row.item.iconUrl)}" alt="" loading="lazy">` : '✦'}</span>`;
+    const fact = (name, value) => `<div><dt>${escape(name)}</dt><dd>${value}</dd></div>`;
+    const status = value => ({ complete: 'Checked', active: 'In progress', deferred: 'On hold' })[value] || 'Saved';
+    function renderEconomy(economy, { spot = null } = {}) {
+        if (!economy) return '<p class="muted-copy">No economic plan available yet.</p>';
         const focus = economy.focus, action = economy.selectedAction, money = economy.money;
-        const target = economy.acquisitionGoal;
-        return `<section class="inspector-block"><h3>Wishes & next step</h3>
-            <p>Current wish, chosen action, and money priorities.</p>
-            <div class="detail-grid">${cell('Current wish', focus ? wish(focus) : 'No saved focus')}
-            ${cell('Estimated price', `${number(focus?.estimatedPrice)} A`)}
-            ${cell('Focus started at played hours', number(focus?.sincePlayedHours))}</div>
-            <h3>Selected way forward</h3>${action ? `<p>${wish(action.root)} → <strong>${escape(label(action.activity))}</strong>${action.funding ? ' · earning money for the wish' : ''}</p>
-                <div class="detail-grid">${action.item || action.inputKey ? cell('Input / product', action.item ? item(action.item) : escape(action.inputKey)) : ''}
-                ${action.amount > 0 ? cell('Amount', number(action.amount)) : ''}${cell('Source', escape(source(action.source)))}
-                ${action.npcId ? cell('NPC', `<a href="/observer/database/npcs/${Number(action.npcId)}" data-app-route>#${Number(action.npcId)}</a>`) : ''}
-                ${action.town ? cell('Town', escape(action.town)) : ''}${action.spotId ? cell('Spot', escape(action.spotId)) : ''}
-                ${action.recipeId ? cell('Recipe', `#${Number(action.recipeId)}`) : ''}${action.estimatedPrice > 0 ? cell('Estimated cost', `${number(action.estimatedPrice)} A`) : ''}
-                ${action.effortHours != null ? cell('Estimated effort', `${number(action.effortHours)} h`) : ''}${action.funding && action.shortfall != null ? cell('Funding shortfall', `${number(action.shortfall)} A`) : ''}</div>`
-                : '<p class="muted-copy">No selected step saved yet. It will appear after the next economic decision.</p>'}
-            ${target ? `<h3>Saved acquisition goal</h3><p>${item(target.target)} · ${escape(label(target.status))}</p>
-                ${target.next ? `<p>Next: ${escape(label(target.next.kind))}${target.next.item ? ` · ${item(target.next.item)}` : ''}${target.next.npcName ? ` · ${escape(target.next.npcName)}` : ''}${target.next.raidBoss ? ' · raid encounter' : ''}</p>` : ''}` : ''}
-            ${economy.equipmentPlan ? `<p>Equipment plan: ${escape(label(economy.equipmentPlan.status))}${economy.equipmentPlan.reason ? ` · ${escape(label(economy.equipmentPlan.reason))}` : ''}</p>` : ''}
-            ${money ? `<h3>Money plan</h3><div class="detail-grid">${cell('Wallet', `${number(money.wallet)} A`)}${cell('Survival reserve', `${number(money.survivalReserve)} A`)}
-                ${cell('Estimated earnings', `${number(money.adenaPerHour)} A/h`)}${cell('First unfunded wish price', `${number(money.firstUnfundedPrice)} A`)}</div>
-                <p>Allocations from the last decision · these are priorities, not money held in escrow.</p>
-                ${money.funded.length ? `<ul>${money.funded.map(row => `<li>${row.item ? item(row.item) : 'Other wishes'} · ${number(row.cost)} A · cumulative ${number(row.cumulativeCost)} A</li>`).join('')}</ul>` : '<p>No saved allocations.</p>'}` : ''}
-            ${economy.dormant.length ? `<h3>Deferred wishes</h3><ul>${economy.dormant.map(row => `<li>${wish(row)} · ${escape(label(row.reason))} · ${number(row.estimatedPrice)} A</li>`).join('')}</ul>` : ''}
+        const target = economy.acquisitionGoal, equipment = economy.equipmentPlan;
+        const spotName = spot && String(spot.id) === String(action?.spotId) && spot.name !== spot.id ? spot.name : null;
+        const methodAddsDetail = action && ({ hunting: 'money', selling: 'liquidate', crafting: 'craft' })[action.activity] !== action.source;
+        const actionFacts = action ? [
+            methodAddsDetail ? fact('Method', escape(source(action.source))) : '',
+            action.item ? fact('Item needed', item(action.item)) : '',
+            action.amount > 0 ? fact('Quantity', wholeNumber.format(action.amount)) : '',
+            action.npcId ? fact('NPC', `<a href="/observer/database/npcs/${Number(action.npcId)}" data-app-route>${escape(target?.next?.npcId === action.npcId && target.next.npcName || `NPC #${Number(action.npcId)}`)}</a>`) : '',
+            action.town ? fact('Town', escape(action.town)) : '',
+            spotName ? fact('Hunting area', escape(spotName)) : '',
+            action.recipeId ? fact('Recipe', `#${Number(action.recipeId)}`) : '',
+            action.estimatedPrice > 0 ? fact('Estimated cost', adena(action.estimatedPrice)) : '',
+            action.effortHours != null ? fact('Estimated time', `${Number(action.effortHours).toFixed(1)} h`) : '',
+            action.funding && action.shortfall != null ? fact('Still needed', adena(action.shortfall)) : ''
+        ].join('') : '';
+        return `<section class="economy-profile" aria-label="Economic plans">
+            <header class="economy-heading"><h3>Wishes & plans</h3><p>What matters next, and how the bot plans to get it.</p></header>
+            <div class="economy-plan-grid">
+                <article class="economy-card economy-card--wish">
+                    <span class="economy-eyebrow">Priority wish</span>
+                    <div class="economy-wish-heading">${wishIcon(focus)}<h4>${focus ? wish(focus) : 'No priority chosen yet'}</h4></div>
+                    ${focus?.estimatedPrice != null ? `<div class="economy-price"><span>Estimated cost</span><strong>${adena(focus.estimatedPrice)}</strong></div>` : ''}
+                </article>
+                <article class="economy-card">
+                    <span class="economy-eyebrow">Selected action</span>
+                    <h4 class="economy-action-title">${action ? escape(activityName(action)) : 'Waiting for the next decision'}</h4>
+                    ${action?.root ? `<p class="economy-action-target">Working toward ${wish(action.root)}</p>` : ''}
+                    ${actionFacts ? `<dl class="economy-facts">${actionFacts}</dl>` : !action ? '<p class="economy-note">A chosen action will appear when the bot reviews its plan.</p>' : ''}
+                    ${action?.spotId && !spotName ? `<details class="economy-location"><summary>Hunting location</summary><p>World cell <code>${escape(action.spotId)}</code></p></details>` : ''}
+                </article>
+            </div>
+            ${target ? `<article class="economy-card economy-goal"><div><span class="economy-eyebrow">Equipment goal</span><h4>${item(target.target)}</h4>
+                ${target.next ? `<p class="economy-note">${escape(target.next.raidBoss ? 'Raid drop' : source(target.next.kind))}${target.next.npcName ? ` · ${escape(target.next.npcName)}` : ''}</p>` : ''}</div>
+                <span class="economy-status">${escape(status(target.status))}</span></article>` : ''}
+            ${equipment ? `<div class="economy-equipment"><span>Equipment review</span><strong>${escape(status(equipment.status))}</strong>${reason(equipment.reason) ? `<span>${escape(reason(equipment.reason))}</span>` : ''}</div>` : ''}
+            ${money ? `<article class="economy-card economy-money">
+                <header class="economy-section-heading"><h4>Adena & spending</h4><span>Latest budget</span></header>
+                <dl class="economy-money-metrics">${fact('Wallet', adena(money.wallet))}${fact('Survival reserve', adena(money.survivalReserve))}
+                    ${fact('Estimated income / hour', adena(money.adenaPerHour))}${money.firstUnfundedPrice > 0 ? fact('Next unfunded wish', adena(money.firstUnfundedPrice)) : ''}</dl>
+                ${money.funded.length ? `<div class="economy-budget"><div class="economy-budget-heading"><h5>Planned purchases</h5><span>Amounts are priorities only</span></div>
+                    ${money.funded.map(row => `<div class="economy-budget-row"><span>${row.item ? item(row.item) : 'Other planned purchases'}</span><strong>${adena(row.cost)}</strong></div>`).join('')}</div>` : '<p class="economy-note">No purchases budgeted yet.</p>'}
+            </article>` : ''}
+            ${economy.dormant.length ? `<article class="economy-card economy-deferred"><header class="economy-section-heading"><h4>Deferred wishes</h4><span>${economy.dormant.length} waiting</span></header>
+                ${economy.dormant.map(row => `<div class="economy-deferred-row"><div><strong>${wish(row)}</strong><span>${escape(reason(row.reason) || 'Deferred')}</span></div><span>${adena(row.estimatedPrice)}</span></div>`).join('')}</article>` : ''}
         </section>`;
     }
     function renderCollection(section, data, { loading = false, error = null } = {}) {
