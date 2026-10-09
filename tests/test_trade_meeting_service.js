@@ -35,7 +35,12 @@ function request(n) {
         await Service.init();
         await assert.rejects(Service.prepareTrade(1, { shopId: 1 }, 1867, 1, { coldState: state }), /authority_changed/);
         assert.equal(Service.counters().preparations, 0, 'fresh native reads cannot authorize a stale caller');
+        state.party = { partyId: 'cold-party' };
+        assert.throws(() => Service.stage(request(0)), /party_busy/);
+        assert.equal(Service.counters().preparations, 0, 'group admission moves no preparation or custody');
+        state.party = null;
         let id = Service.stage(request(0));
+        assert.equal(Service.canJoinParty(1), false, 'a staged actor is excluded before formation commits');
         assert.equal(Service.stage(request(0)), id, 'identical staging retry owns no additional pages');
         assert.throws(() => Service.stage({ ...request(0), town: 'Dion' }), /consent_changed/);
         assert.throws(() => Service.stage({ ...request(0), token: 'different' }), /preparation_busy/);
@@ -59,6 +64,7 @@ function request(n) {
             ? { id: 7, actorA: original.actorA, actorB: original.actorB, revision: 1, state: 'accepted' } : null;
         native.acceptTradeMeeting = async () => { throw Error('duplicate_reservation'); };
         const replay = await Service.accept(original.token);
+        assert.equal(Service.canJoinParty(1), false, 'a native accepted retry still owns the actor');
         assert.equal(replay.meetingId, 7, 'lost acknowledgement replays the durable token after staging was removed');
         assert.equal(Service.counters().preparations, 0);
         assert.equal(await Service.receipt(original.token, 99), null, 'another owner cannot adopt the saved receipt');

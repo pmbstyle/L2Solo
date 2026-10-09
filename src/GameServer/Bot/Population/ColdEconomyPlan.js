@@ -88,7 +88,7 @@ function* prepareNative(state, economy, options) {
         conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
     const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true,
         slots: Listing.BOARD_SLOTS, kept, conditionalKept, stored: new Map() });
-    const answer = canAct && economy.network?.activity?.activity !== 'shopping' ? Ready.sale(sale.answers) : null;
+    const answer = canAct && economy.network?.activity?.activity !== 'shopping' ? Ready.sale(sale.answers, state) : null;
     if (answer) return { take: answer, sell: [], withdraw: [], travel: null };
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });

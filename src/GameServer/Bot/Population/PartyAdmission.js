@@ -22,4 +22,28 @@ function priority(objectives, timestamp) {
         return urgency + Math.min(6, age / 120000);
     }));
 }
-module.exports = { PartyAdmission, priority };
+// E169: admission only. Existing group reviews and accepted trade receipts
+// keep their native owner; no departure/return policy is introduced here.
+function partyTradeAllowed(direction, state = {}, session = null, preparing = false, accepted = false) {
+    if (direction === 'party') return !preparing && !accepted && !state?.stats?.tradeMeeting;
+    if (direction === 'trade') return !(state?.party?.partyId || state?.partyId || state?.playerPartyId || state?.stats?.playerPartyTakeover?.playerId
+        || session?.hotBackgroundPartyId || session?.partyCompanion || session?.followPlayerSession);
+    throw new TypeError('invalid_party_trade_direction');
+}
+let tradeStateFor = id => typeof invoke === 'function'
+    ? invoke('GameServer/Bot/Population/BotLifeState')?.cachedState?.(Number(id)) : null;
+let tradeSessionFor = id => typeof invoke === 'function'
+    ? invoke('GameServer/World/World')?.registeredActorById?.(Number(id))?.session : null;
+function configureTradeAdmission(stateFor, sessionFor = () => null) {
+    tradeStateFor = stateFor;
+    tradeSessionFor = sessionFor;
+}
+function personalOfferAllowed(offer, ownState, otherState, ownSession = null, otherSession = null) {
+    if (!(offer?.conditional || offer?.custodyPolicy === 1)) return true;
+    const otherId = Number(offer.ownerId ?? offer.sourceId);
+    if (ownSession === null && ownState?.characterId) ownSession = tradeSessionFor(ownState.characterId);
+    if (otherState === undefined) otherState = tradeStateFor(otherId);
+    if (otherSession === null) otherSession = tradeSessionFor(otherId);
+    return partyTradeAllowed('trade', ownState, ownSession) && partyTradeAllowed('trade', otherState, otherSession);
+}
+module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission };

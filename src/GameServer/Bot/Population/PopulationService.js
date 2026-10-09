@@ -665,7 +665,8 @@ function assignPartyMembers(members = [], party) {
 }
 
 function hydratePartyCandidates(candidates = []) {
-    const selected = (candidates || []).filter((state) => Number(state?.characterId || 0) > 0);
+    const selected = (candidates || []).filter((state) => Number(state?.characterId || 0) > 0
+        && require('../../AfkTrade/TradeMeetingService').canJoinParty(state.characterId, state));
     if (!selected.length || !Database.isReady() || typeof LifeState.statesByIds !== 'function') {
         return Promise.resolve(selected);
     }
@@ -723,6 +724,10 @@ async function commitPartyReview(party, members, timestamp) {
 function commitPartyMembership(party, members = [], event = null) {
     const selected = (members || []).filter(Boolean);
     if (!party || !selected.length) return Promise.resolve({ party: null, assigned: [], failed: selected });
+    if (selected.some(member => !member.party?.partyId && !member.partyId
+        && !require('../../AfkTrade/TradeMeetingService').canJoinParty(member.characterId, member))) {
+        return Promise.resolve({ party: null, assigned: [], failed: selected, reason: 'party_trade_busy' });
+    }
     if (require('./ClanEquipmentPartyPolicy').needsReview(party, selected, Date.now())) {
         return Promise.resolve({ party: null, assigned: [], failed: selected, reason: 'clan_party_unsafe' });
     }

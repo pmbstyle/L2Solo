@@ -79,6 +79,27 @@ Database.init();
     assert(preparedMembers.every((entry) => Number(entry.snapshot.timing.nextResolveAt) === firstPartyDue),
         'atomic party assignment must align member scheduling with the durable party row');
 
+    const Meetings = require('../src/GameServer/AfkTrade/TradeMeetingService');
+    const preparation = { token: 'party-admission-preparing', actorA: 3200001, actorB: 3200002,
+        seqA: 1, seqB: 1, town: 'Giran', point: { locX: 0, locY: 0, locZ: 0 },
+        lines: [{ payer: 0, itemId: 1, selfId: 1867, count: 1, price: 100 }],
+        parties: [0, 1].map(() => ({ revision: 0, sequence: 1, needRevision: 0,
+            phase: 'cold', ownerId: 'legacy_main', leaseId: null, hotAt: 0,
+            route: { fee: 0, scroll: false, method: 'walk', durationMs: 0 } })) };
+    Meetings.stage(preparation);
+    assert.equal((await Database.commitBackgroundPartyMembership({ party: preparedParty.row, members: preparedMembers })).reason,
+        'party_trade_busy', 'a queued membership cannot pass a current bilateral preparation');
+    assert.equal((await Database.execute(['SELECT COUNT(*) n FROM bot_background_parties WHERE partyId=?', [preparedParty.row.partyId]]))[0].n, 0);
+    assert.equal((await Database.execute(['SELECT COUNT(*) n FROM bot_life_state WHERE partyId=?', [preparedParty.row.partyId]]))[0].n, 0);
+    Meetings.discard(preparation.token);
+    // Existing native commitments are checked directly, even without service
+    // enrollment or a stats marker in a stale cached lifecycle projection.
+    await Database.execute([`INSERT INTO board_trade_meetings(token,terms,actorA,actorB,seqA,seqB,town,locX,locY,locZ,routeA,routeB)
+        VALUES ('party-admission-native','{}',3200001,3200002,1,1,'Giran',0,0,0,'{}','{}')`]);
+    assert.equal((await Database.commitBackgroundPartyMembership({ party: preparedParty.row, members: preparedMembers })).reason,
+        'party_trade_busy', 'accepted native trade fences both hot and cold party admission');
+    await Database.execute(["DELETE FROM board_trade_meetings WHERE token='party-admission-native'"]);
+
     const staleAssignment = preparedMembers.map(entry => ({ ...entry, expectedSimulationRevision: 999,
         expectedSimulationLeaseId: '' }));
     assert.equal((await Database.commitBackgroundPartyMembership({ party: preparedParty.row,
@@ -122,6 +143,23 @@ Database.init();
         createdAt: 500,
         metaJson: '{"partyId":"bgp_atomic_success","memberIds":[3200001,3200002]}'
     });
+
+    await Database.execute([`INSERT INTO board_trade_meetings(token,terms,actorA,actorB,seqA,seqB,town,locX,locY,locZ,routeA,routeB)
+        VALUES ('party-admission-retained','{}',3200001,3200002,1,1,'Giran',0,0,0,'{}','{}')`]);
+    const retainedStates = await LifeState.statesForParty('bgp_atomic_success');
+    const retainedAssignments = retainedStates.map(member => LifeState.preparePartyAssignment(member,
+        'bgp_atomic_success', member.stats.role, 3200001, firstPartyDue));
+    assert.equal((await Database.commitBackgroundPartyMembership({ party: preparedParty.row, members: retainedAssignments })).ok,
+        true, 'legacy accepted merchants retain their current native party owner');
+    const transferStates = await LifeState.statesForParty('bgp_atomic_success');
+    const transferParty = PartyState.prepareCommit({ ...preparedParty.snapshot, partyId: 'bgp_forbidden_transfer' });
+    const transfers = transferStates.map(member => LifeState.preparePartyAssignment(member,
+        transferParty.snapshot.partyId, member.stats.role, 3200001, firstPartyDue));
+    assert.equal((await Database.commitBackgroundPartyMembership({ party: transferParty.row, members: transfers })).reason,
+        'party_trade_busy', 'changing party is a new admission even when the actor was already grouped');
+    assert.equal((await Database.execute(['SELECT COUNT(*) n FROM bot_background_parties WHERE partyId=?', ['bgp_forbidden_transfer']]))[0].n, 0);
+    assert.equal((await Database.execute(['SELECT COUNT(*) n FROM bot_life_state WHERE partyId=?', ['bgp_atomic_success']]))[0].n, 2);
+    await Database.execute(["DELETE FROM board_trade_meetings WHERE token='party-admission-retained'"]);
 
     const Calculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
     const goalMembers = await LifeState.statesForParty('bgp_atomic_success');

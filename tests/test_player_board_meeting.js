@@ -11,7 +11,8 @@ const Board = require('../src/GameServer/AfkTrade/PlayerBoardWindow');
 const Meetings = require('../src/GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const HtmlLink = invoke('GameServer/Network/Request/HtmlLink');
-const seller = 730501, buyer = 730502;
+const seller = 730501, buyer = 730502, follower = 730503;
+const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const point = { locX: 83396, locY: 147904, locZ: -3404 };
 const workerFaults = [];
 const waitFor = async (predicate, label, timeoutMs = 30000) => {
@@ -27,12 +28,12 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
 };
 (async () => {
     const fixture = await createWorld([{ id: seller, name: 'MeetingSeller', level: 20 },
-        { id: buyer, name: 'MeetingPlayer', level: 20 }], 'player-board-meeting');
+        { id: buyer, name: 'MeetingPlayer', level: 20 }, { id: follower, name: 'MeetingCompanion', level: 20 }], 'player-board-meeting');
     let session;
     try {
         World.user = { sessions: [], revision: 0 };
         await Database.createAccount('bot_board_meeting', 'test');
-        await Database.execute(["UPDATE characters SET username='bot_board_meeting' WHERE id=?", [seller]]);
+        await Database.execute(["UPDATE characters SET username='bot_board_meeting' WHERE id IN (?,?)", [seller, follower]]);
         for (const id of [seller, buyer]) await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 1000000, slot: 0 });
         await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
         await Database.setItem(seller, { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 });
@@ -40,6 +41,7 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
             INSERT INTO items(selfId,name,amount,enchant,equipped,slot,characterId)
             SELECT 952,'Magic Ring',1,n%7,0,0,? FROM stock`, [seller]]);
         await Life.init();
+        await PartyState.init();
         await Life.upsertState({ characterId: seller, name: 'MeetingSeller', phase: 'cold', activity: 'hunting',
             level: 20, adena: 1000000, inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
             loc: point, currentRegion: 'Giran', vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 },
@@ -72,6 +74,21 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         await Coordinator.start();
         Coordinator.worker.on('message', message => { if (message.type === 'fault') workerFaults.push(message.payload.reason); });
         await waitFor(() => Coordinator.ready && Coordinator.snapshotsLoaded, 'worker startup');
+        const restoreLegacyParty = async reason => {
+            const member = Life.cachedState(seller), dueAt = member.timing.nextResolveAt || Date.now();
+            await Life.upsertState({ characterId: follower, name: 'MeetingCompanion', phase: 'cold', activity: 'grouped',
+                level: 20, adena: 0, inventory: {}, loc: member.loc, currentRegion: member.currentRegion,
+                party: { partyId: 'retained-meeting-party', leaderId: seller, role: 'dps' },
+                vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 },
+                stats: { classId: 0, generatedCold: true, role: 'dps', leaderId: seller },
+                timing: { lastResolvedAt: Date.now(), nextResolveAt: dueAt } }, reason + '_follower');
+            await Life.upsertState({ ...Life.cachedState(seller),
+                party: { partyId: 'retained-meeting-party', leaderId: seller, role: 'dps' },
+                stats: { ...Life.cachedState(seller).stats, leaderId: seller } }, reason);
+            await PartyState.createOrUpdate({ partyId: 'retained-meeting-party', leaderId: seller,
+                memberIds: [seller, follower], status: 'active', spotId: 'meeting-fixture',
+                nextResolveAt: dueAt, roleCoverage: { dps: 2 }, stats: {} });
+        };
         const html = () => session.packets.filter(packet => packet[0] === 0x0f).at(-1)?.subarray(5).toString('utf16le') || '';
         const tells = () => session.packets.filter(packet => packet[0] === 0x4a).map(packet => ({
             sender: packet.readInt32LE(1), kind: packet.readInt32LE(5),
@@ -90,6 +107,13 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         };
         Board.show(session, { side: 1, town: 'Giran' });
         const buy = /action="bypass -h (board answer [^"]+)"><font[^>]*>Buy<\/font>/.exec(html())[1];
+        await Life.upsertState({ ...Life.cachedState(seller), party: { partyId: 'new-party' } }, 'grouped_offer_fixture');
+        await click(buy);
+        assert(html().includes('This bot is hunting with a party'), html());
+        assert.equal(Meetings.counters().preparations, 0);
+        assert.equal(await fixture.amount(buyer, 57), 1000000, 'same-point group refusal reserves no payment');
+        assert.equal(await fixture.amount(seller, 20), 1, 'same-point group refusal reserves no goods');
+        await Life.upsertState({ ...Life.cachedState(seller), party: { partyId: null } }, 'solo_offer_fixture');
         await click(buy);
         assert(html().includes('Agree and wait'), html());
         assert.equal(Meetings.counters().preparations, 0, 'reading the quantity form must not hold a bot preparation');
@@ -133,7 +157,7 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         Afk.refreshRecord(remoteSale.shop);
         const recoveredAt = Date.now() - 1000;
         await Life.upsertState({ ...Life.cachedState(seller), activity: 'resting',
-            party: { partyId: 'retained-meeting-party' },
+            party: { partyId: null },
             loc: { ...point, locX: point.locX + 400 },
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
             vitals: { hp: 10, maxHp: 187, mp: 74, maxMp: 74 },
@@ -144,6 +168,9 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         await click(remoteBuy); await click('board agree');
         await waitFor(() => !session.playerBoardAgreePending, 'resting merchant agreement');
         assert(html().includes('Trade agreed'), html());
+        // Restore a pre-update overlap only after native consent; new grouped
+        // deals are prohibited, but saved custody must still reach its buyer.
+        await restoreLegacyParty('legacy_meeting_party_fixture');
         assert.equal(Meetings.isPlayerWaiting(seller), true, 'accepted custody prioritizes the merchant while the human waits at the point');
         assert.equal(Coordinator.contextFor(Life.cachedState(seller)).playerWaiting, true,
             'the real coordinator carries waiting-player priority into the worker context');
@@ -223,7 +250,7 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
         try {
             await Database.setItem(seller, { selfId: 736, name: 'Scroll of Escape', amount: 2, slot: 0 });
             await Life.upsertState({ ...Life.cachedState(seller), activity: 'hunting',
-                party: { partyId: 'retained-meeting-party' },
+                party: { partyId: null },
                 loc: { locX: 120937, locY: -5280, locZ: -3784 }, currentRegion: 'Aden',
                 inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
                 stats: { ...Life.cachedState(seller).stats, restUntil: null, travel: null },
@@ -232,6 +259,7 @@ const waitFor = async (predicate, label, timeoutMs = 30000) => {
             await click(new RegExp('action="bypass -h (board answer sell_ad ' + cancelSale.shop.id + ' [^"]+)"').exec(html())[1]);
             await click('board agree');
             await waitFor(() => !session.playerBoardAgreePending, 'field merchant agreement');
+            await restoreLegacyParty('legacy_field_party_fixture');
             await waitFor(() => Life.cachedState(seller).stats.travel?.meetingId, 'native SoE leg');
             const [fieldMeeting] = await Database.fetchTradeMeetingsForOwner(buyer);
             assert.equal(JSON.parse(fieldMeeting.legA).scroll, true);

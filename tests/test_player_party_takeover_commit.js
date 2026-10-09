@@ -58,6 +58,13 @@ async function run() {
     assert.strictEqual((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [partyId]]))[0].status, 'hot');
     assert.strictEqual((await Database.execute(['SELECT COUNT(*) AS n FROM bot_life_state WHERE partyId=?', [partyId]]))[0].n, 2);
 
+    await Database.execute([`INSERT INTO board_trade_meetings(token,terms,actorA,actorB,seqA,seqB,town,locX,locY,locZ,routeA,routeB)
+        VALUES ('takeover-existing-meeting','{}',101,102,1,1,'Giran',0,0,0,'{}','{}')`]);
+    assert.equal((await Database.takeOverBackgroundParty(request)).reason, 'party_trade_busy',
+        'player takeover cannot race a native accepted trade on the autonomous roster');
+    assert.equal((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [partyId]]))[0].status, 'hot');
+    assert.equal((await Database.execute(['SELECT COUNT(*) n FROM bot_life_state WHERE partyId=?', [partyId]]))[0].n, 2);
+    await Database.execute(["DELETE FROM board_trade_meetings WHERE token='takeover-existing-meeting'"]);
     const committed = await Database.takeOverBackgroundParty(request);
     assert(committed.ok, JSON.stringify(committed));
     assert.strictEqual(committed.party.status, 'player_taken_over');

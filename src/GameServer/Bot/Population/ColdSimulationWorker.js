@@ -54,7 +54,8 @@ const stubs = new Map([
             excludeOwner: options.buyerCharacterId,
             budget: options.budget,
             cost: options.cost,
-            accept: options.accept
+            accept: offer => require('./PartyAdmission').personalOfferAllowed(offer,
+                kernel?.states.get(Number(options.buyerCharacterId))?.state) && (!options.accept || options.accept(offer))
         })
     }],
     // Immutable map boundaries only; no live World, geodata or database access.
@@ -997,6 +998,7 @@ function startKernel(config = {}) {
         routeRequests.clear();
         return nativeClear();
     };
+    require('./PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state);
     kernel.prepareMeeting = (id, meeting) => {
         const entry = kernel.states.get(id);
         const side = meeting.actorA === id ? 0 : 1;

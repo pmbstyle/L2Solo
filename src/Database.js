@@ -5072,6 +5072,18 @@ const Database = {
             }).map((entry) => Number(entry.row.characterId));
             if (conflicts.length) return { ok: false, reason: 'membership_conflict', conflicts };
 
+            // Check only new joins. Retained members may finish pre-update
+            // accepted obligations while their party's native owner advances them.
+            const MeetingService = require('./GameServer/AfkTrade/TradeMeetingService');
+            const Admission = require('./GameServer/Bot/Population/PartyAdmission');
+            const blocked = batch.filter(entry => entry.row.partyId
+                && String(entry.expectedPartyId || '') !== String(entry.row.partyId)
+                && !Admission.partyTradeAllowed('party', {}, null,
+                    MeetingService.hasPreparation(entry.row.characterId),
+                    !!TradeMeetings.anchor(Number(entry.row.characterId))))
+                .map(entry => Number(entry.row.characterId));
+            if (blocked.length) return { ok: false, reason: 'party_trade_busy', conflicts: blocked };
+
             const reserved = all(`SELECT characterId FROM clan_operation_members
                 WHERE characterId IN (${placeholders}) AND status = 'active'`, characterIds)
                 .map((row) => Number(row.characterId));
@@ -5799,6 +5811,13 @@ const Database = {
                     || row.simulationLeaseId) {
                     return { ok: false, reason: 'member_changed' };
                 }
+            }
+
+            const MeetingService = require('./GameServer/AfkTrade/TradeMeetingService');
+            const Admission = require('./GameServer/Bot/Population/PartyAdmission');
+            if (ids.some(id => !Admission.partyTradeAllowed('party', {}, null,
+                MeetingService.hasPreparation(id), !!TradeMeetings.anchor(id)))) {
+                return { ok: false, reason: 'party_trade_busy' };
             }
 
             const timestamp = Math.max(now(), Number(party.updatedAt) + 1,
@@ -10318,6 +10337,8 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         return creditRecordOwnerUnsafe(owner, item, count, at);
     }, funding: checkEconomyFundingUnsafe, protection: checkEconomyMaterialProtectionUnsafe,
     position: tradeMeetingPositionUnsafe,
+    canStartTrade: (id, state) => require('./GameServer/Bot/Population/PartyAdmission').partyTradeAllowed(
+        'trade', state, invoke('GameServer/World/World').registeredActorById(id)?.session),
     stopTrip: meeting => {
         for (const actor of [meeting.actorA, meeting.actorB]) {
             write("UPDATE bot_life_state SET activity='shopping',statsJson=json_remove(statsJson,'$.travel') WHERE characterId=? AND json_extract(statsJson,'$.travel.meetingId')=?", [actor, meeting.id]);
@@ -10466,8 +10487,9 @@ Object.assign(Database, {
     },
     prepareTradeParticipant(id) {
         return withCharacterFlush(id, () => inTransaction(() => {
-            const slot = TradeMeetings.participant(Number(id)), row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
+            const slot = TradeMeetings.participant(Number(id)), row = one("SELECT *, json_extract(statsJson,'$.playerPartyTakeover.playerId') playerPartyId FROM bot_life_state WHERE characterId=?", [id]);
             return { sequence: slot.nextSequence, meetingId: slot.meetingId, anchor: TradeMeetings.anchor(Number(id)), revision: Number(row?.simulationRevision || 0),
+                partyId: row?.partyId || null, playerPartyId: row?.playerPartyId || null,
                 phase: row?.phase || 'player', ownerId: row?.simulationOwner || null,
                 leaseId: row?.simulationLeaseId || null, hotAt: Number(row?.lastHotAt || 0),
                 needRevision: Number(row?.simulationRevision || 0),

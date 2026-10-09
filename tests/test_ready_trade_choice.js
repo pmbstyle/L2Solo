@@ -4,6 +4,7 @@ require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 Data.init();
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+const Admission = require('../src/GameServer/Bot/Population/PartyAdmission');
 const Choice = require('../src/GameServer/Bot/Economy/ReadyTradeChoice');
 const board = new BoardIndex();
 board.put({ id: 77, ownerId: 99, kind: 'sell_ad', custodyPolicy: 1, revision: 4,
@@ -26,6 +27,13 @@ assert.equal(Choice.purchase({ ...state, inventory: { 1869: { amount: 2 } } },
     'the prepared need is not bought again after acquiring it');
 assert.deepEqual(Choice.purchase({ ...state, inventory: { 1869: { amount: 1 } } },
     { network: { activity: { ...leaf, heldAtDecision: 0 } } }, board), [1, 1869, 1, 77, 78, 4, 237]);
+for (const phase of ['hot', 'cold']) {
+    assert.equal(Choice.purchase({ ...state, phase, party: { partyId: 'buyer-party' } }, economy, board), null);
+    Admission.configureTradeAdmission(id => id === 99 ? { phase, partyId: 'seller-party' } : null);
+    assert.equal(Choice.purchase({ ...state, phase }, economy, board), null, 'grouped seller is never selected');
+    assert.equal(Choice.resolve([1, 1869, 2, 77, 78, 4, 237], board, 42), null, 'a selected seller who joined a party is invalidated');
+}
+Admission.configureTradeAdmission(() => null);
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
 function prepared(input) {
     const iterator = Plan.prepare(input, economy, { board });

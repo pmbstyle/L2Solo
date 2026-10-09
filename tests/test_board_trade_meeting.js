@@ -59,6 +59,18 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const difference = (after, before) => Object.fromEntries([...new Set([...Object.keys(after), ...Object.keys(before)])]
             .map(key => [key, Number(after[key] || 0) - Number(before[key] || 0)]).filter(row => row[1]));
         const holdings = await held(), journal = await flows();
+        // A fresh native membership wins over an earlier unassigned projection.
+        for (const phase of ['cold', 'hot']) {
+            await Database.execute(['UPDATE bot_life_state SET partyId=?,phase=? WHERE characterId=?', ['native-party', phase, ids[1]]]);
+            assert.equal((await Database.prepareTradeParticipant(ids[1])).partyId, 'native-party');
+            await assert.rejects(Database.acceptTradeMeeting(request), /party_busy/);
+            assert.deepEqual(await held(), holdings, 'party rejection reserves neither goods, fare nor Adena');
+        }
+        await Database.execute(["UPDATE bot_life_state SET partyId=NULL,phase='cold',statsJson=json_set(statsJson,'$.playerPartyTakeover.playerId',9) WHERE characterId=?", [ids[1]]]);
+        assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, 9);
+        await assert.rejects(Database.acceptTradeMeeting(request), /party_busy/);
+        assert.deepEqual(await held(), holdings, 'native player membership blocks custody even with no runtime session');
+        await Database.execute(["UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.playerPartyTakeover') WHERE characterId=?", [ids[1]]]);
         await assert.rejects(Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => false }), /preparation_changed/);
         assert.deepEqual(await held(), holdings, 'worker source invalidation after native flush moves no assets');
         for (const changed of [{ ownerId: 'stale_owner' }, { leaseId: 'stale_lease' }, { hotAt: 1 }, { revision: parties[0].revision + 1 }]) {
@@ -90,7 +102,9 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal(Life.cachedState(ids[0]).acceptedIncoming[1867], 6);
         assert.equal((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming[1867], 6);
         assert.deepEqual(await held(), holdings, 'acceptance only moves custody');
+        await Database.execute(['UPDATE bot_life_state SET partyId=? WHERE characterId=?', ['legacy-party', ids[1]]]);
         assert.equal((await Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => { throw Error('expired_worker'); } })).meeting.id, id, 'durable replay precedes expired worker preparation');
+        await Database.execute(['UPDATE bot_life_state SET partyId=NULL WHERE characterId=?', [ids[1]]]);
         await assert.rejects(Database.acceptTradeMeeting({ ...request, token: 'another' }), /participant_changed|authority_changed/);
         await assert.rejects(Database.acceptTradeMeeting({ ...request, lines: [{ ...request.lines[0], count: 5 }] }), /consent_changed/);
         const bag = async owner => Object.fromEntries((await Database.fetchItems(owner)).map(row => [row.selfId, row.amount]));

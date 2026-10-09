@@ -1,6 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
+const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const staged = new Map();
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
 const playerWaiters = new Map(); // Derived numeric references, retired with native commitments.
@@ -119,6 +120,7 @@ function stage(request) {
         if (JSON.stringify(existing.frames) !== JSON.stringify(frames)) throw Error('trade_meeting_consent_changed');
         return request.token;
     }
+    if ([request.actorA, request.actorB].some(id => !partyTradeAllowed('trade', life().cachedState(id), sessionFor(id)))) throw Error('trade_meeting_party_busy');
     if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
     for (const entry of staged.values()) if ([request.actorA, request.actorB].some(id => entry.actors.includes(id))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
@@ -133,6 +135,10 @@ function hasPreparation(characterId) {
     const id = Number(characterId);
     for (const entry of staged.values()) if (entry.actors.includes(id)) return true;
     return false;
+}
+function canJoinParty(characterId, state = life().cachedState(characterId), session = sessionFor(characterId)) {
+    const current = life()?.cachedState?.(characterId) || state;
+    return partyTradeAllowed('party', current, session, hasPreparation(characterId), !!enrolled.get(Number(characterId))?.size);
 }
 function discard(id) {
     const entry = staged.get(id);
@@ -212,7 +218,8 @@ async function accept(id, characterId = null) {
 async function accepted(result) {
     acceptRows(result);
     const row = result.meeting;
-    enroll(row.actorA, row.id); enroll(row.actorB, row.id);
+    if (row.state === 'accepted') { enroll(row.actorA, row.id); enroll(row.actorB, row.id); }
+    else { unenroll(row.actorA, row.id); unenroll(row.actorB, row.id); }
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
     notifyPlayerTravel(row);
     wake(row.actorA); wake(row.actorB);
@@ -237,6 +244,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         || options.expectedRevision !== undefined && record.revision !== options.expectedRevision) throw Error('trade_meeting_quote_changed');
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
+    if (sides.some((side, index) => !partyTradeAllowed('trade', side, sessionFor(actors[index])))) throw Error('trade_meeting_party_busy');
     const anchors = sides.filter(side => side.meetingId).map(side => side.anchor);
     if (anchors.some(anchor => !anchor || anchor.town !== record.town)
         || anchors.some(anchor => ['locX', 'locY', 'locZ'].some(k => anchor[k] !== anchors[0][k]))) throw Error('trade_meeting_point_changed');
@@ -478,7 +486,7 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, hasPreparation, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { stage, discard, hasPreparation, canJoinParty, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
     isPlayerWaiting: id => !!playerWaiters.get(Number(id))?.size,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

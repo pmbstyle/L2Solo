@@ -1054,6 +1054,9 @@ function offerOf(line, town = null) {
     const projection = entry.actor ? entry : null;
     return {
         ...offerFields(line, town),
+        available: require('../Bot/Population/PartyAdmission').personalOfferAllowed(line, null,
+            invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(line.ownerId), null,
+            World.registeredActorById?.(line.ownerId)?.session),
         sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
         itemName: storeItem.name || itemName(line.selfId),
         projection,
@@ -1079,7 +1082,7 @@ function offers(selfId, storeType, options = {}) {
         if (excluded && line.ownerId === excluded) continue;
         if (enchant !== null && line.enchant !== enchant) continue;
         const offer = offerOf(line, options.town || null);
-        if (!offer || (options.accept && !options.accept(offer))) continue;
+        if (!offer || !offer.available || (options.accept && !options.accept(offer))) continue;
         result.push(offer);
         if (result.length >= limit) break;
     }

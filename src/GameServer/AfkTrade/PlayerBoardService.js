@@ -19,6 +19,7 @@ function human(session) {
 }
 function meetingFailure(error, playerId, line, phase) {
     const reason = ({
+        trade_meeting_party_busy: 'merchant_party', party_trade_busy: 'merchant_party',
         trade_meeting_stock_changed: line.storeType === BUY ? 'items_missing' : 'stock_changed', inventory_item_changed: 'stock_changed',
         economy_material_protected: 'stock_changed',
         not_enough_adena: line.storeType === BUY ? 'merchant_declined' : 'insufficient_funds',

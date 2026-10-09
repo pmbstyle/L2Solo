@@ -1068,6 +1068,9 @@ const PartyCompanionService = {
             if (!bot || bot.fetchIsOnline?.() === false || bot.isDead?.()) {
                 return { ok: false, reason: 'party_member_unavailable' };
             }
+            if (!require('../../AfkTrade/TradeMeetingService').canJoinParty(bot.fetchId(), companionSession.coldLifeState, companionSession)) {
+                return { ok: false, reason: 'party_trade_busy' };
+            }
             if (companionSession.partyCompanion === true || companionSession.followPlayerSession) {
                 return { ok: false, reason: 'party_member_already_attached' };
             }
@@ -1154,6 +1157,7 @@ const PartyCompanionService = {
         const leader = leaderSession?.actor;
         const bot = companionSession?.actor;
         if (!leader || !bot) return false;
+        if (!require('../../AfkTrade/TradeMeetingService').canJoinParty(bot.fetchId(), companionSession.coldLifeState, companionSession)) return false;
         // An autonomous hot roster has one lifecycle owner. Do not leave its
         // other actors orphaned by attaching a single member to a player.
         if (companionSession.hotBackgroundPartyId || companionSession.hotCompetitionCommit) return false;

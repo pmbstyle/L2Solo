@@ -228,7 +228,12 @@ function bestOffer(selfId, options = {}) {
         excludeOwner: options.buyerCharacterId,
         budget: options.budget,
         cost: options.cost,
-        accept: (offer) => botCanBuy(offer) && (!options.accept || options.accept(offer)),
+        accept: (offer) => botCanBuy(offer)
+            && require('../Population/PartyAdmission').personalOfferAllowed(offer,
+                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId)),
+                invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(offer.sourceId)),
+                World.registeredActorById?.(Number(options.buyerCharacterId))?.session,
+                World.registeredActorById?.(Number(offer.sourceId))?.session) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
@@ -240,7 +245,9 @@ function bestOffer(selfId, options = {}) {
 function findBuyOffers(selfId, options = {}) {
     const town = options.town || null;
     return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })
-        .filter((offer) => offer.available);
+        .filter((offer) => offer.available && require('../Population/PartyAdmission').personalOfferAllowed(offer,
+            invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.sellerCharacterId)), null,
+            World.registeredActorById?.(Number(options.sellerCharacterId))?.session));
 }
 
 function bestBuyOffer(selfId, options = {}) {

@@ -89,6 +89,7 @@ const tests = [
     'tests/test_pvp_aggression.js',
     'tests/test_cold_competition_cadence.js',
     'tests/test_party_admission.js',
+    'tests/test_party_trade_admission.js',
     'tests/test_party_session_review.js',
     'tests/test_party_assembly_recovery.js',
     'tests/test_cold_competition_actions.js',

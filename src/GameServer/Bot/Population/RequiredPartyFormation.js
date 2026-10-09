@@ -2,6 +2,9 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const PersonaPartyPolicy = invoke('GameServer/Bot/Population/PersonaPartyPolicy');
 
+const { isMainThread } = require('node:worker_threads');
+const { partyTradeAllowed } = require('./PartyAdmission');
+
 const ELIGIBLE_ACTIVITIES = new Set(['hunting', 'resting', 'party_wait']);
 
 // The open requests this player-safe formation assembles: required ones
@@ -26,6 +29,8 @@ function eligible(state) {
         && String(state.simulation?.ownerId || 'legacy_main') === 'legacy_main'
         && !state.party?.partyId
         && !state.partyId
+        && partyTradeAllowed('party', state)
+        && (!isMainThread || require('../../AfkTrade/TradeMeetingService').canJoinParty(state.characterId, state))
         && spotFor(state)
     );
 }
