@@ -162,9 +162,7 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
 // monetary value, physical residual and actual trip time/fees before one
 // tendency roll. `gain` is the board's Adena over the NPC for slot selection;
 // answering a bid returns its physical line/count, including partial demand.
-// smallLot: a lot too small for the board (MarketLotPolicy) that the author
-// keeps for a bulk lot: keeping it or a buy ad only.
-function disposition(item, ctx, { town = null, room = 1, smallLot = false, stockQuote = false, standingPrice = 0, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, stockQuote = false, standingPrice = 0, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0,
         current: standingPrice, rollKey: [...rollKey, 'ask'] });
@@ -176,7 +174,7 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, stock
     // Only the field advert owner enables this option; shops and production
     // continue to require the ordinary supported outcome.
     const quotePrice = stockQuotePrice(belief, market,
-        stockQuote && !smallLot && room > 0 && ctx.ownStock?.known !== false);
+        stockQuote && room > 0 && ctx.ownStock?.known !== false);
     const quote = quotePrice !== null;
     if (quote) {
         ask = { ...ask, price: standingPrice || quotePrice, npc: false, money: NaN, value: NaN, stockQuote: true };
@@ -193,10 +191,10 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, stock
         if (result.known) options.push({ action, value: result.valueHours });
     };
     const loss = (price, count) => Math.max(0, reference - price) * count * ctx.trader.caution * moneyPrice;
-    if (!smallLot) add('npc', { receipts: market.buyback * units, riskHours: loss(market.buyback, units) });
+    add('npc', { receipts: market.buyback * units, riskHours: loss(market.buyback, units) });
     if (room > 0) add('keep', { monetaryResidual: units * (useful > 0 ? useful : market.buyback) });
     if (quote) add('list', { monetaryResidual: units * (useful > 0 ? useful : market.buyback) });
-    if (gain > 0 && !smallLot && ask.known) {
+    if (gain > 0 && ask.known) {
         const share = market.units > 0 ? units / market.units : 0;
         add('list', { receipts: Math.max(0, Number(ask.sold || 0) * ask.price * share),
             monetaryResidual: Math.max(0, Number(ask.residual || 0) * market.buyback * share),

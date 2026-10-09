@@ -20,11 +20,12 @@ const starterWeapon = (DataCache.newbieItems || [])
     .flatMap((row) => row.items || [])
     .map((item) => DataCache.items.find((entry) => Number(entry.selfId) === Number(item.selfId)))
     .find((item) => item?.template?.kind?.startsWith('Weapon.'));
+const starterIds = new Set((DataCache.newbieItems || []).flatMap((row) => (row.items || []).map((item) => Number(item.selfId))));
 const lowGradeGear = DataCache.items.find((item) => (
     (item?.template?.kind?.startsWith('Weapon.') || item?.template?.kind?.startsWith('Armor.'))
     && ItemDisposition.gradeIndex(item.etc?.rank) < ItemDisposition.gradeIndex('c')
     && Number(item.template.price || 0) <= 50000
-    && !MarketListingPolicy.starterItemIds().has(Number(item.selfId))
+    && !starterIds.has(Number(item.selfId))
     && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId)
 ));
 const spellbook = DataCache.items.find((item) => Number(item.selfId) === 3942); // reachable unmapped C4 book: Party Return

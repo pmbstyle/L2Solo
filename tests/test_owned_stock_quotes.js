@@ -29,7 +29,6 @@ try {
         assert.equal(result.priced.ask.price, 1000, 'price uses the permitted personal estimate');
         if (result.action === 'list') listed++;
         assert.notEqual(decide(true, seed, { room: 0 }).action, 'list', 'cannot retain unavailable capacity');
-        assert.notEqual(decide(true, seed, { smallLot: true }).action, 'list', 'ordinary lot restriction still applies');
     }
     assert(listed > 0 && listed < 100, 'a first conditional offer is possible, not compulsory');
     assert.notEqual(decide(true, 77, {}, { ...ctx, ownStock: { known: false } }).action, 'list',

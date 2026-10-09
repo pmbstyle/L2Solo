@@ -1,7 +1,6 @@
 const BeginnerShots = require('../../Items/C4BeginnerShots');
 const LotPolicy = require('./MarketLotPolicy');
 const BoardRules = require('../../AfkTrade/BoardRules');
-const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -9,18 +8,6 @@ const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 
-
-let newbieItemSource = null;
-let newbieItemIds = new Set();
-
-function starterItemIds() {
-    const source = DataCache.newbieItems || [];
-    if (newbieItemSource !== source) {
-        newbieItemSource = source;
-        newbieItemIds = new Set(source.flatMap((row) => (row.items || []).map((item) => Number(item.selfId || 0))).filter(Boolean));
-    }
-    return newbieItemIds;
-}
 
 function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
@@ -203,6 +190,5 @@ module.exports = {
     isGear,
     traderContext,
     actorState,
-    npcSaleForActor,
-    starterItemIds
+    npcSaleForActor
 };

@@ -32,9 +32,10 @@ async function check(name, work) {
 async function run() {
     DataCache.init();
     await check('low-grade market does not depend on rate name', () => {
+        const starterIds = new Set((DataCache.newbieItems || []).flatMap((row) => (row.items || []).map((item) => Number(item.selfId))));
         const item = DataCache.items.find(row => /^(Weapon|Armor)\./.test(row.template?.kind)
             && Disposition.gradeIndex(row.etc?.rank) < Disposition.gradeIndex('c')
-            && !ListingPolicy.starterItemIds().has(Number(row.selfId)));
+            && !starterIds.has(Number(row.selfId)));
         assert(item);
         for (const rate of ['x1', 'x10', 'x50']) {
             process.env.L2NODE_PROGRESSION_RATE = rate;

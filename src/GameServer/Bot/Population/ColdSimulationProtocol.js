@@ -76,7 +76,8 @@ function omitPlannedStates(message) {
     let changed = false;
     const compact = requests.map(request => {
         if (!request.precomputedPlan?.plannedState) return request;
-        const { plannedState, ...plan } = request.precomputedPlan;
+        const plan = { ...request.precomputedPlan };
+        delete plan.plannedState;
         changed = true;
         return { ...request, precomputedPlan: plan };
     });
