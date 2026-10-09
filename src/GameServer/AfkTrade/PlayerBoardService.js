@@ -137,16 +137,20 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (line.ownerId === playerId) return { ok: false, reason: 'own_record' };
         const offer = service.offerOf(line);
         if (!offer) return { ok: false, reason: 'record_changed' };
+        // The canonical advertisement exposes its meeting point on the offer;
+        // the store contains trade terms, without location coordinates.
+        const meetingLoc = line.custodyPolicy === 1 ? { locX: offer.locX, locY: offer.locY, locZ: offer.locZ } : null;
+        if (meetingLoc && !Object.values(meetingLoc).every(Number.isFinite)) return { ok: false, reason: 'location_unavailable' };
         if (request.locateOnly === true) {
             const owner = life().cachedState(line.ownerId);
-            const loc = line.custodyPolicy === 1 ? offer.store && { locX: offer.store.locX, locY: offer.store.locY, locZ: offer.store.locZ }
+            const loc = line.custodyPolicy === 1 ? meetingLoc
                 : offer.projection?.actor ? location(offer.projection.actor) : owner?.loc;
             return loc ? { ok: true, action: 'locate', ownerName: offer.sourceName,
                 town: line.custodyPolicy === 1 || offer.projection?.actor ? line.town : owner?.currentRegion || line.town, loc: { ...loc } }
                 : { ok: false, reason: 'location_unavailable' };
         }
         if (line.custodyPolicy === 1) {
-            const loc = { locX: Number(offer.store.locX), locY: Number(offer.store.locY), locZ: Number(offer.store.locZ) };
+            const loc = meetingLoc;
             if (distance(session.actor, loc) > SHOP_RANGE) return { ok: true, action: 'meet', ownerId: line.ownerId,
                 ownerName: offer.sourceName, side: line.storeType, town: line.town, loc, conditional: true };
             const amount = Number(request.amount ?? 1);

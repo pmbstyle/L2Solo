@@ -151,6 +151,33 @@ function packet(values) {
     assert.equal(await amount(customer.id, 57), 992);
     assert.equal((await Database.fetchAfkTradeShops(buyer.id))[0].lines[0].count, 1);
 
+    // Conditional advertisements expose their meeting point on the offer,
+    // not on its trade store. Follow Location from a real SQLite record.
+    const point = { locX: 83396, locY: 147904, locZ: -3404 };
+    const ad = await Database.createAfkTradeShop(seller.id, { kind: 'sell_ad', storeType: AfkTrade.SELL,
+        town: 'Giran', ...point, lines: [{ selfId: VARNISH, count: 1, price: 13 }] });
+    AfkTrade.refreshRecord(ad.shop);
+    customer.session.actor.setLocXYZ({ locX: 83255, locY: 148069, locZ: -3405 });
+    BoardWindow.show(customer.session, { side: AfkTrade.SELL, town: 'Giran', selfId: VARNISH });
+    const html = customer.session.sent.at(-1).toString('utf16le', 5, customer.session.sent.at(-1).length - 6);
+    const locate = /action="bypass -h (board locate sell_ad [^"]+)"/.exec(html)[1];
+    HtmlLink(customer.session, Buffer.concat([Buffer.from([0x21]), Buffer.from(locate + '\0', 'utf16le')]));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(customer.session.playerBoardWaypoint,
+        { x: point.locX, y: point.locY, z: point.locZ, name: 'E43Seller' }, 'Location marks the actual advertisement meeting point');
+    const marker = customer.session.sent.findLast(row => row[0] === 0xeb);
+    assert(marker, 'Location sends a native radar packet');
+    assert.deepEqual([9, 13, 17].map(offset => marker.readInt32LE(offset)), [point.locX, point.locY, point.locZ]);
+    const buy = locate.replace('board locate ', 'board answer ');
+    HtmlLink(customer.session, Buffer.concat([Buffer.from([0x21]), Buffer.from(buy + '\0', 'utf16le')]));
+    await new Promise(resolve => setImmediate(resolve));
+    const meetPage = customer.session.sent.at(-1);
+    assert.equal(meetPage[0], 0x0f);
+    assert.match(meetPage.toString('utf16le', 5, meetPage.length - 6), /Go to the meeting point/, 'Buy checks distance before preparing a meeting trade');
+    assert.equal(customer.session.playerBoardPreparation, undefined, 'an out-of-range click creates no trade preparation');
+    assert.equal(await amount(customer.id, VARNISH), 5);
+    assert.equal(await amount(customer.id, 57), 992);
+
     AfkTrade._resetForTests();
     await Database.close();
     clean();

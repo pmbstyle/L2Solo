@@ -5,7 +5,7 @@ const { create } = require('../src/GameServer/AfkTrade/PlayerBoardService');
 
 async function main() {
     const board = new BoardIndex();
-    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false, stagedReceipt = false;
+    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false, stagedReceipt = false, meetingX = 1000;
     const merchant = { fetchId: () => 900000045, fetchLocX: () => 1000, fetchLocY: () => 0, fetchLocZ: () => 0 };
     const player = { accountId: 'player_board', actor: { fetchId: () => 8, fetchHp: () => 100,
         fetchClanId: () => 0, fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
@@ -22,7 +22,8 @@ async function main() {
     const shop = { characterId: 55, currentRegion: 'Dion', loc: { locX: 5000, locY: 0, locZ: 0 }, simulation: { revision: 2 } };
     const service = create({ afk: () => ({ isBoardReady: () => true, boardIndex: () => board,
         offerOf: (line) => line.ownerId === 47 ? null
-            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection, store: { locX: 1000, locY: 0, locZ: 0 } }),
+            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection,
+                locX: meetingX, locY: 0, locZ: 0, store: { shopId: line.recordId } }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
     meetings: () => ({ discard() {}, prepareTrade: async () => { prepares++; return { preparationId: 'prepared', total: 180 }; },
         receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: !terminal, outcome: terminal ? 'completed' : 'accepted' }
@@ -54,6 +55,16 @@ async function main() {
         lines: [{ lineId: 15, selfId: 1864, count: 10, price: 90 }] }, {});
     const conditional = { id: 5, lineId: 15, selfId: 1864, price: 90, revision: 4, amount: 2 };
     x = 7000; assert.equal((await service.answer(player, conditional)).action, 'meet');
+    assert.deepEqual((await service.answer(player, { ...conditional, locateOnly: true })).loc, { locX: 1000, locY: 0, locZ: 0 });
+    board.put({ ...record, id: 6, kind: 'buy_ad', storeType: BUY, custodyPolicy: 1,
+        lines: [{ lineId: 16, selfId: 1864, count: 10, price: 90 }] }, {});
+    const buyAd = { ...conditional, id: 6, lineId: 16 };
+    assert.equal((await service.answer(player, buyAd)).action, 'meet');
+    assert.deepEqual((await service.answer(player, { ...buyAd, locateOnly: true })).loc, { locX: 1000, locY: 0, locZ: 0 });
+    meetingX = NaN;
+    assert.equal((await service.answer(player, conditional)).reason, 'location_unavailable', 'invalid coordinates cannot bypass the distance check');
+    assert.equal((await service.answer(player, { ...buyAd, locateOnly: true })).reason, 'location_unavailable');
+    meetingX = 1000;
     assert.equal(prepares, 0); assert.equal(agreements, 0);
     x = 1000; assert.equal((await service.answer(player, conditional)).action, 'confirm_trade');
     assert.equal(prepares, 1); assert.equal(agreements, 0);
