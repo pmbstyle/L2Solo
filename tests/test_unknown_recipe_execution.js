@@ -9,11 +9,15 @@ const Service = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const Shots = invoke('GameServer/Bot/Economy/ShotCraftPolicy');
+const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+// The native book is read through the workshop cache; every book change
+// invalidates it as the native learning does.
+const setBook = rows => { book = rows; Workshop.recipesChanged(state.characterId); };
 const recipe = Recipes.resolveByRecipeId(79), board = Afk.boardIndex();
 const state = { characterId: 900003, phase: 'cold', activity: 'shopping', currentRegion: 'Giran', level: 60,
     adena: 1000000, vitals: { mp: 1000 }, inventory: {}, loc: { locX: 83396, locY: 147904, locZ: -3400 },
     stats: { classId: 57, money: [1000, .001, 0, 0] } };
-let book = [], buys = 0, learns = 0, travel = false, refuseLearning = false;
+let book = [], reads = 0, buys = 0, learns = 0, travel = false, refuseLearning = false;
 const originals = { book: Database.fetchCharacterRecipes, acquire: Market.acquire, learn: Life.learnCraftableRecipes };
 function row(id, selfId, storeType, price, count) {
     board.put({ id, ownerId: id + 1, kind: 'shop', storeType, status: 'active', town: 'Giran', revision: 1,
@@ -38,7 +42,7 @@ assert.equal(Service.recheck(state, { ...step, scroll: [scroll.lineId, scroll.re
 assert(!Service.recheck(state, { ...step, scroll: [-1] }, []), 'absent owned scroll is unavailable');
 assert(Service.recheck(state, step, [{ recipeId: recipe.recipeId }])?.learning === false,
     'authoritative knowledge avoids duplicate acquisition');
-Database.fetchCharacterRecipes = async () => book;
+Database.fetchCharacterRecipes = async () => { reads++; return book; };
 Market.acquire = async (current, itemId, amount, terms) => {
     buys++; assert.equal(itemId, recipe.recipeItemId); assert.equal(amount, 1); assert.equal(terms.npc, false);
     assert.equal(terms.sourcePlan.cost, 10);
@@ -47,21 +51,23 @@ Market.acquire = async (current, itemId, amount, terms) => {
 };
 Life.learnCraftableRecipes = async (current, { recipeIds }) => {
     learns++; assert.deepEqual(recipeIds, [recipe.recipeId]);
-    if (!refuseLearning) book = [{ recipeId: recipe.recipeId }];
+    if (!refuseLearning) setBook([{ recipeId: recipe.recipeId }]);
     return { ...current, inventory: {} };
 };
 (async () => {
     const result = await Service.acquireRecipe(state, opportunity);
     assert(result.ready); assert.equal(result.spent, 10); assert.equal(buys, 1); assert.equal(learns, 1);
+    const readsBefore = reads;
     assert((await Service.acquireRecipe(result.state, opportunity)).ready);
+    assert.equal(reads, readsBefore, 're-entry reads the cached book, not the database');
     assert.equal(buys, 1, 'learned recipe is never repurchased on re-entry'); assert.equal(learns, 1);
-    book = []; travel = true;
+    setBook([]); travel = true;
     const moving = await Service.acquireRecipe(state, opportunity);
     assert(!moving.ready); assert.equal(moving.reason, 'buying_trip'); assert.equal(learns, 1, 'travelling cannot learn or craft');
     travel = false; refuseLearning = true;
     const refused = await Service.acquireRecipe(state, opportunity);
     assert(!refused.ready); assert.equal(refused.reason, 'recipe_not_learned', 'absence from authoritative book blocks production');
-    book = []; refuseLearning = false;
+    setBook([]); refuseLearning = false;
     const owned = await Service.acquireRecipe({ ...state, inventory: { [recipe.recipeItemId]: { selfId: recipe.recipeItemId, amount: 1 } } }, opportunity);
     assert(owned.ready); assert.equal(buys, 3, 'owned scroll learned without another purchase');
     console.log('PASS ordinary native recipe recheck, exact source, compact step, purchase/learn ordering, travel and re-entry');

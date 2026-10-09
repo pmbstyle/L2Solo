@@ -404,7 +404,7 @@ async function tryCraft(state) {
         const decision = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state);
         const step = require('./ShotCraftPolicy').unpackStep(decision?.shot);
         if (!step?.wealth) return { state, crafted: false, reason: 'no_profit' };
-        const book = await Database.fetchCharacterRecipes(characterId);
+        const book = await Workshops.knownFor(characterId);
         const opportunity = recheck(state, step.wealth, book);
         if (!opportunity) return { state, crafted: false, reason: 'no_profit' };
         return await execute(state, opportunity);
@@ -426,8 +426,9 @@ function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {})
 
 async function acquireRecipe(state, opportunity) {
     const recipe = opportunity.recipe;
-    const knows = async () => (await Database.fetchCharacterRecipes(state.characterId))
-        .some(row => Number(row.recipeId) === Number(recipe.recipeId));
+    // The cached book is dropped by every learning (recipesChanged), so the
+    // check after learning reads the native book once more.
+    const knows = async () => (await Workshops.knownFor(state.characterId)).includes(Number(recipe.recipeId));
     if (await knows()) return { state, ready: true, spent: 0 };
     let current = state, spent = 0;
     const free = () => require('./WealthCraftDecision').freeAmount(current,
