@@ -607,8 +607,11 @@ class ColdSimulationKernel {
             && !!current.state.stats?.tradeMeeting === !!previous.state.stats?.tradeMeeting
             && nextDueAt(current.state, this.now(), {}, this.partySession, true)
                 === nextDueAt(previous.state, this.now(), {}, this.partySession, true)) return;
-        if (!leader || this.busy(leaderId) || lifecycleKind(leader.state, leader.context) !== 'party') return;
-        this.schedule(leaderId, leader.version, this.dueAt(leader.state, leader.context));
+        if (this.busy(leaderId) || lifecycleKind(leader.state, leader.context) !== 'party') return;
+        const due = this.dueAt(leader.state, leader.context), scheduled = this.scheduleTokens.get(leaderId);
+        if (scheduled?.version === leader.version && scheduled.dueAt === due
+            && scheduled.heapEntry.playerWaiting === playerWaitingTransition(leader.state, leader.context)) return;
+        this.schedule(leaderId, leader.version, due);
     }
 
     upsert(entry = {}) {

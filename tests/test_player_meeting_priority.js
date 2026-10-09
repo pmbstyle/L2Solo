@@ -138,6 +138,11 @@ function addParty(kernel, dueAt) {
         context: {} });
     assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 500000,
         'a cleared obligation restores the native group deadline');
+    const ordinaryToken = changed.kernel.scheduleTokens.get(31).token;
+    changed.kernel.upsert({ state: { ...arrivedMerchant, activity: 'resting', stats: {},
+        timing: { ...arrivedMerchant.timing, nextResolveAt: 510000 } }, context: {} });
+    assert.equal(changed.kernel.scheduleTokens.get(31).token, ordinaryToken,
+        'an ordinary follower transition leaves the unchanged group deadline token intact');
 
     for (const waitingAtEnd of [false, true]) {
         const refresh = fixture(1), merchant = state(30, 99000, true);
