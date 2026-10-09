@@ -73,7 +73,7 @@ function* prepareNative(state, economy, options) {
             instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
     }
     const saleState = { ...state, inventory };
-    const sale = Listing.evaluate(saleState, { ...options, economy, slots: Listing.BOARD_SLOTS, kept, stored: new Map() });
+    const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true, slots: Listing.BOARD_SLOTS, kept, stored: new Map() });
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });
     const townOptions = { context: ctx, tripCost: options.tripCost || ctx.tripCost, timestamp: options.now,

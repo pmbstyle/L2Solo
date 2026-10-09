@@ -31,6 +31,34 @@ const id = 730062;
         const before = await Database.fetchItems(id);
         const execute = plan => Market.executePlan(state, { withdraw: [], travel: null, ...plan },
             { step: work => work() });
+        const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+        const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
+        const options = { board: Afk.boardIndex(), now: 1800000000000, findSpot: () => null,
+            npcOffersFor: () => [], onTownDecision: () => {} };
+        const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+        // Public completed prices are price evidence, not a pending buyer.
+        for (const itemId of [1786, 1867, 79, 1835]) Counters.deal(itemId, 1000, 1, options.now - 1, id + 1);
+        const economy = { ...Decision.economyFor(state, options), moneyPrice: .001 };
+        const Roll = invoke('GameServer/Bot/AI/TendencyRoll'), roll = Roll.roll;
+        // Fix this one character decision, not a buyer or a sale outcome.
+        Roll.roll = (...key) => key[0] === 'dispose' ? .999 : roll(...key);
+        let prepared;
+        try {
+            const iterator = Plan.prepare(state, economy, options);
+            do { prepared = iterator.next(); } while (!prepared.done);
+            const visible = Plan.prepare({ ...state, phase: 'hot' }, economy, options);
+            let hot;
+            do { hot = visible.next(); } while (!hot.done);
+            assert.deepEqual(hot.value.sell, prepared.value.sell, 'visible and far owners quote the same physical stock');
+        } finally { Roll.roll = roll; }
+        assert(prepared.value.sell.length > 0, 'the native field owner selects WTS without a supplied buyer forecast');
+        const nativeBefore = await Database.fetchItems(id);
+        await execute(prepared.value);
+        const nativeAds = Afk.ownerRecords(id).filter(row => row.kind === 'sell_ad');
+        assert(nativeAds.length > 0 && nativeAds.every(row => row.custodyPolicy === 1));
+        assert.deepEqual(await Database.fetchItems(id), nativeBefore, 'first quotes retain actual stock');
+        assert.equal((Life.cachedState(id) || state).activity, 'hunting', 'quoting starts no trip');
+        for (const ad of nativeAds) await Afk.closeBotRecord(id, ad.id);
         const sell = [[1786, 2, 100, 'Giran'], [1867, 500, 100, 'Dion'], [79, 1, 1000, 'Giran'], [1835, 500, 10, 'Dion']];
         const result = await execute({ sell });
         state = result.state;

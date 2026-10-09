@@ -320,19 +320,21 @@ function chooseByWeight(options, rollKey) {
     return valid[valid.length - 1];
 }
 
-// Which candidates take `slots` board slots: a weighted roll by their gain
-// over the NPC, one after another without repeats. candidates: [{ gain }].
+// Which candidates take `slots` board slots: existing income gain, or an
+// explicit attention weight for a free conditional quote. Quote attention
+// is not forecast income. One draw sequence without repeated candidates.
 function chooseSlots(candidates, slots, seed) {
-    const pool = candidates.filter((candidate) => candidate.gain > 0);
+    const weight = candidate => candidate.slotWeight ?? candidate.gain;
+    const pool = candidates.filter((candidate) => weight(candidate) > 0);
     const chosen = [];
     const random = TendencyRoll.seeded(String(seed));
     while (chosen.length < slots && pool.length) {
         let total = 0;
-        for (const candidate of pool) total += candidate.gain;
+        for (const candidate of pool) total += weight(candidate);
         let left = random() * total;
         let at = 0;
         for (; at < pool.length - 1; at++) {
-            left -= pool[at].gain;
+            left -= weight(pool[at]);
             if (left <= 0) break;
         }
         chosen.push(pool[at]);

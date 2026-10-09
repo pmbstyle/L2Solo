@@ -126,12 +126,16 @@ function evaluate(state, options = {}) {
         }
         const town = MarketTownPolicy.targetTownForItems(state, [item], options);
         const chosen = MarketPricing.disposition(item, ctx, {
-            town, room: roomFor(item, options.stored), smallLot,
+            town, room: roomFor(item, options.stored), smallLot, stockQuote: options.stockQuotes === true,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
         const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action,
-            reason: smallLot && chosen.action === 'keep' ? hard.reason : 'expected_value', item,
-            priced: chosen.priced, gain: chosen.gain, answer: chosen.answer };
+            reason: smallLot && chosen.action === 'keep' ? hard.reason
+                : chosen.priced?.ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
+            priced: chosen.priced, gain: chosen.gain, answer: chosen.answer,
+            // Attention to a free quote uses its possible spread, never expected receipts.
+            slotWeight: chosen.priced?.ask?.stockQuote
+                ? Math.max(0, chosen.priced.ask.price - chosen.priced.market.buyback) : chosen.gain };
         decisions.push(decision);
         if (decision.action === 'list') forBoard.push(decision);
     }
@@ -140,7 +144,7 @@ function evaluate(state, options = {}) {
     for (const decision of forBoard) {
         if (chosen.has(decision)) {
             const price = decision.priced.ask.price;
-            decision.item = { ...decision.item, price, marketReason: 'expected_value',
+            decision.item = { ...decision.item, price, marketReason: decision.reason,
                 pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL, enchant: decision.item.enchant || 0 }) };
             continue;
         }

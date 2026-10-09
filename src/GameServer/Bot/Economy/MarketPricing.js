@@ -139,13 +139,26 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
 // answering a bid returns its physical line/count, including partial demand.
 // smallLot: a lot too small for the board (MarketLotPolicy) that the author
 // keeps for a bulk lot: keeping it or a buy ad only.
-function disposition(item, ctx, { town = null, room = 1, smallLot = false, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, smallLot = false, stockQuote = false, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0, rollKey: [...rollKey, 'ask'] });
     if (!priced) return { action: 'keep', priced: null, gain: 0 };
-    const { ask, market, belief } = priced;
+    let { ask } = priced;
+    const { market, belief } = priced;
+    // A free conditional offer retains these same physical goods. It is not
+    // a forecast: neither income nor a buyer/arrival/lifetime is invented.
+    // Only the field advert owner enables this option; shops and production
+    // continue to require the ordinary supported outcome.
+    const quotePrice = Math.round(Math.exp(belief.mu));
+    const quote = stockQuote && !smallLot && room > 0 && !market.known && !market.truncated
+        && ctx.ownStock?.known !== false
+        && !market.demand && Number.isSafeInteger(quotePrice) && quotePrice > market.buyback;
+    if (quote) {
+        ask = { ...ask, price: quotePrice, npc: false, money: NaN, value: NaN, stockQuote: true };
+        priced.ask = ask;
+    }
     const useful = ctx.economy?.worth?.(item.selfId);
-    const gain = ask.npc ? 0 : (ask.money - market.buyback) * units;
+    const gain = quote || ask.npc ? 0 : (ask.money - market.buyback) * units;
     const reference = Math.exp(belief.mu);
     const moneyPrice = Number(ctx.moneyPrice ?? ctx.economy?.moneyPrice);
     const options = [];
@@ -157,6 +170,7 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, rollK
     const loss = (price, count) => Math.max(0, reference - price) * count * ctx.trader.caution * moneyPrice;
     if (!smallLot) add('npc', { receipts: market.buyback * units, riskHours: loss(market.buyback, units) });
     if (room > 0) add('keep', { monetaryResidual: units * (useful > 0 ? useful : market.buyback) });
+    if (quote) add('list', { monetaryResidual: units * (useful > 0 ? useful : market.buyback) });
     if (gain > 0 && !smallLot && ask.known) {
         const share = market.units > 0 ? units / market.units : 0;
         add('list', { receipts: Math.max(0, Number(ask.sold || 0) * ask.price * share),
