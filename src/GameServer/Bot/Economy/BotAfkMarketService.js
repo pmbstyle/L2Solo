@@ -342,19 +342,14 @@ async function repriceSellLines(ownerId, stock, lines) {
     return shop;
 }
 
-// The buy side of a review: the bot's buy ads follow its goal as the author's
-// single WTB order did. A buy goal the bot can trade remotely gets its ad
-// (replacing another one); a buy goal it travels for takes the ads back
-// first (the trip pays from the wallet); without a buy goal the ads stand
-// while the needs still ask for their items (standingBuyNeed), else go.
-async function reconcileBuyAds(state, goal, candidates) {
-    const ownerId = Number(state.characterId);
-    let ads = buyAds(ownerId);
-    // Recovery/rest can retain ordinary wishes, but cannot retain a source-invalid
-    // saved advertisement. Reuse the native batch withdrawal/refund owner.
+// Source admission is fixed when an ad opens (BuyAdPolicy, the wish gates);
+// only a saved ad from before that rule can lack a source. The board start
+// closes such ads once through the native batch withdrawal/refund owner.
+async function withdrawSourceInvalidBuyAds(ownerId) {
+    ownerId = Number(ownerId);
     const withdrawals = [];
     let sourceChanged = false;
-    for (const ad of ads) {
+    for (const ad of buyAds(ownerId)) {
         const remaining = (ad.lines || []).filter(line => Number(line.count) > 0);
         const invalid = remaining.filter(line => !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId));
         if (!invalid.length) continue;
@@ -375,7 +370,17 @@ async function reconcileBuyAds(state, goal, candidates) {
         const result = await AfkTrade.repriceBotLines(ownerId, [], { withdrawals });
         sourceChanged = sourceChanged || Number(result.changed) > 0;
     }
-    ads = buyAds(ownerId);
+    return sourceChanged;
+}
+
+// The buy side of a review: the bot's buy ads follow its goal as the author's
+// single WTB order did. A buy goal the bot can trade remotely gets its ad
+// (replacing another one); a buy goal it travels for takes the ads back
+// first (the trip pays from the wallet); without a buy goal the ads stand
+// while the needs still ask for their items (standingBuyNeed), else go.
+async function reconcileBuyAds(state, goal, candidates) {
+    const ownerId = Number(state.characterId);
+    const ads = buyAds(ownerId);
     state = LifeState.snapshot(ownerId) || state;
     let side = desiredSide(goal);
     // ARCH-NOTE: a cached voluntary watch may still match a newly dead/resting
@@ -388,12 +393,12 @@ async function reconcileBuyAds(state, goal, candidates) {
     }
     const lines = linesOf(ads);
     if (side !== AfkTrade.BUY) {
-        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: sourceChanged };
-        if (state.phase !== 'cold') return { state, changed: sourceChanged };
+        if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: false };
+        if (state.phase !== 'cold') return { state, changed: false };
         return withdrawBuyAds(ownerId, null, state);
     }
     if (!canTradeRemotely(state, goal)) {
-        if (!ads.length || state.phase !== 'cold') return { state, changed: sourceChanged };
+        if (!ads.length || state.phase !== 'cold') return { state, changed: false };
         return withdrawBuyAds(ownerId, null, state);
     }
     // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
@@ -402,15 +407,15 @@ async function reconcileBuyAds(state, goal, candidates) {
         { money: PurchaseFunding.spendable(state, escrow,
             goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
     const town = buyAdTown(state, ads, wanted);
-    if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: sourceChanged };
+    if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: false };
     if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted)) {
-        return { state, changed: sourceChanged };
+        return { state, changed: false };
     }
     let shop;
     try {
         shop = await publishBuyAds(ownerId, ads, wanted, town);
     } catch (error) {
-        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: sourceChanged, reason: error.message };
+        if (staleMove(error) || error?.message === 'board_cap_reached') return { state, changed: false, reason: error.message };
         throw error;
     }
     return finishPublish(ownerId, state, shop);
@@ -868,7 +873,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
+module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, withdrawSourceInvalidBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };

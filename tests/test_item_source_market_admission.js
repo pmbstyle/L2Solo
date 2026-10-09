@@ -115,12 +115,10 @@ async function run() {
         pricing: { price: 10, seenCounter: Number.MAX_SAFE_INTEGER, sigma: 0.5, seenItem: 0, rival: 0, worth: 0, seenFills: 0 } }] });
     await Afk.openBotRecords(owner, 'buy_ad', [ad(1305), ad(1864)]);
     const validAd = Afk.ownerRecords(owner).find(row => row.kind === 'buy_ad' && row.lines[0].selfId === 1864);
-    const restState = { ...state, inventory: {}, vitals: { hp: 1, maxHp: 100, mp: 1, maxMp: 100 } };
-    const rested = await Market.reconcileBuyAds(restState, { type: 'recover', plan: { kind: 'rest' } },
-        [{ type: 'recover', plan: { kind: 'rest' } }]);
-    assert.equal(rested.changed, true, 'source cancellation is reported to the existing review caller');
+    assert.equal(await Market.withdrawSourceInvalidBuyAds(owner), true, 'the board start closes a saved unsupported ad');
     const ads = Afk.ownerRecords(owner).filter(row => row.kind === 'buy_ad');
-    assert.deepEqual(ads.map(row => row.id), [validAd.id], 'rest keeps independent valid wish but closes unsupported one');
+    assert.deepEqual(ads.map(row => row.id), [validAd.id], 'the independent valid wish stays');
+    assert.equal(await Market.withdrawSourceInvalidBuyAds(owner), false, 'a second start finds nothing to close');
     assert.equal(await amount(57), wallet, 'conditional quote close does not manufacture income');
     const buyReview = Pricing.look(state, [{ ...lookLines[0], selfId: 1305, storeType: Afk.BUY }],
         { characterId: owner, timestamp: Date.now() });

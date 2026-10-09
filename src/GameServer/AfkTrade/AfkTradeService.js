@@ -1149,6 +1149,15 @@ async function init() {
     await require('./GiranShopDistribution').restore(shops);
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
+    // A bot buy ad saved before source admission was fixed at its opening may
+    // ask for an item with no source; it closes here once, not in each review.
+    const BotMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+    const buyOwners = new Set(shops.filter(shop => kindOf(shop) === 'buy_ad' && String(shop.ownerAccount || '').startsWith('bot_'))
+        .map(shop => Number(shop.ownerId)));
+    for (const ownerId of buyOwners) {
+        try { await BotMarket.withdrawSourceInvalidBuyAds(ownerId); }
+        catch (error) { utils.infoWarn('AfkTrade', 'source-invalid buy ads of %d stay: %s', ownerId, error.message); }
+    }
     // The market counters learn the board's last deals again (group E, E58).
     MarketCounters.useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
     MarketCounters.reset();
