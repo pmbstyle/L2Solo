@@ -29,11 +29,11 @@ const SOULSHOT = 1835;
 const SWORD = 2;
 let nextId = 991000;
 
-function record(ownerId, { kind = 'sell_ad', storeType = 1, town = 'Giran', account = `bot_${ownerId}`, lines }) {
+function record(ownerId, { kind = 'sell_ad', custodyPolicy = 0, storeType = 1, town = 'Giran', account = `bot_${ownerId}`, lines }) {
     const id = ++nextId;
     return AfkTrade.refreshRecord({
         id, ownerId, ownerName: `Owner${ownerId}`, ownerAccount: account, kind, storeType, status: 'active', town,
-        title: '', revision: 1, expiresAt: 0, locX: 83000, locY: 148000, locZ: -3400, appearance: {},
+        title: '', custodyPolicy, revision: 1, expiresAt: 0, locX: 83000, locY: 148000, locZ: -3400, appearance: {},
         lines: lines.map((line, index) => ({ id: id * 10 + index, name: `Item ${line.selfId}`, enchant: 0, ...line }))
     });
 }
@@ -90,6 +90,45 @@ function picked(offer) {
     assert.strictEqual(ShotStock.restockTarget(actor, 'Giran', [991302])?.sourceId, 991303, 'C11: then the cheapest stall');
     assert.strictEqual(ShotStock.restockTarget(actor, 'Giran', [991302, 991303])?.sourceId, 991304, 'C11: excluded skipped');
     assert.strictEqual(ShotStock.restockTarget(actor, 'Dion'), null, 'C11: only the town');
+    // A cheaper personal advertisement cannot send a current player
+    // companion on a trip that native acceptance will necessarily reject.
+    record(991305, { kind: 'sell_ad', custodyPolicy: 1, lines: [{ selfId: SOULSHOT, count: 500, price: 3 }] });
+    assert.equal(ShotStock.restockTarget(actor, 'Giran')?.sourceId, 991305, 'solo hot buyer selects the cheaper personal ad');
+    const previousUsers = World.user;
+    World.user = { sessions: [], revision: 0 };
+    const companion = { actor, botSession: true, partyCompanion: true, accountId: 'bot_guard_buyer',
+        fetchAccountId: () => 'bot_guard_buyer' };
+    World.insertUser(companion);
+    try {
+        assert(!MarketOpportunity.hotOffers(SOULSHOT, { town: 'Giran', buyerCharacterId: actor.fetchId() })
+            .some(offer => offer.sourceId === 991305), 'hot buyer admission removes the forbidden candidate before the trip');
+        assert.equal(ShotStock.restockTarget(actor, 'Giran')?.sourceId, 991302,
+            'actual companion shot-restock caller selects the still-legal backed stock instead');
+        const amounts = new Map([[57, 10000], [SOULSHOT, 0]]);
+        const items = new Map([...amounts].map(([selfId]) => [selfId, { fetchId: () => selfId,
+            fetchAmount: () => amounts.get(selfId), setAmount: amount => amounts.set(selfId, amount) }]));
+        actor.session = companion;
+        actor.fetchLevel = () => 1;
+        companion.coldLifeState = { characterId: actor.fetchId(), phase: 'hot',
+            stats: { money: [77000, 1.3e-5, 0, 0, 4e-5, 7000, SOULSHOT] } };
+        actor.backpack = { fetchItemFromSelfId: selfId => items.get(Number(selfId)) };
+        const originalBuy = AfkTrade.buyFromShop, purchases = [];
+        AfkTrade.buyFromShop = async (_buyer, store, selfId, amount, options) => {
+            purchases.push([store.ownerId, amount, options.expectedPrice]);
+            amounts.set(57, amounts.get(57) - amount * options.expectedPrice);
+            amounts.set(selfId, amounts.get(selfId) + amount);
+            return {};
+        };
+        try {
+            const result = await ShotStock.purchaseActorRestock(actor, { town: 'Giran', skipNpc: true,
+                targetAmount: 100, unitPrice: 7, potionUnitPrice: 0,
+                plan: ShotStock.planForKind('soulshot', 'none') });
+            assert.deepEqual(purchases, [[991302, 100, 5]],
+                'actual purchase/fill caller skips cheaper personal stock and fills from legal backed stock');
+            assert.equal(result.delta, 100, 'skipNpc companion still completes the legal purchase');
+        } finally { AfkTrade.buyFromShop = originalBuy; }
+
+    } finally { World.user = previousUsers; }
     AfkTrade._resetForTests();
 }
 

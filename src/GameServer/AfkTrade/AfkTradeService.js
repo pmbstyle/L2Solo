@@ -1075,6 +1075,8 @@ function offerOf(line, town = null) {
 // given; `accept(offer)` filters, `limit` stops early.
 function offers(selfId, storeType, options = {}) {
     const excluded = Number(options.characterId || 0);
+    const ownState = excluded ? invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(excluded) : null;
+    const ownSession = excluded ? World.registeredActorById?.(excluded)?.session : null;
     const enchant = options.enchant === undefined || options.enchant === null ? null : Number(options.enchant);
     const limit = Number(options.limit) > 0 ? Number(options.limit) : Infinity;
     const result = [];
@@ -1082,7 +1084,9 @@ function offers(selfId, storeType, options = {}) {
         if (excluded && line.ownerId === excluded) continue;
         if (enchant !== null && line.enchant !== enchant) continue;
         const offer = offerOf(line, options.town || null);
-        if (!offer || !offer.available || (options.accept && !options.accept(offer))) continue;
+        if (!offer || !offer.available
+            || !require('../Bot/Population/PartyAdmission').personalOfferAllowed(offer, ownState, undefined, ownSession)
+            || (options.accept && !options.accept(offer))) continue;
         result.push(offer);
         if (result.length >= limit) break;
     }

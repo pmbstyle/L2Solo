@@ -205,11 +205,14 @@ function fixedStoreOffers(selfId = null) {
 
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
+    const ownState = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
+    const ownSession = World.registeredActorById?.(Number(options.buyerCharacterId))?.session;
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
         ...(town ? npcOffers(selfId, town) : [])
-    ].filter((offer) => offer.available)
+    ].filter((offer) => offer.available && require('../Population/PartyAdmission').personalOfferAllowed(offer,
+        ownState, undefined, ownSession))
         .sort((left, right) => OfferOrder.compareOffers(left, right, options.cost));
 }
 
