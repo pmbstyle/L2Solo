@@ -227,7 +227,7 @@ function create({ service = () => require('./PlayerBoardService'),
                 + 'Agree to reserve the goods and payment.<br1>'
                 + 'Stay here until the merchant arrives.<br>'
                 + Html.columns([Html.cell('<edit var="board_quantity" width=150 height=15 length=16>', { width: 160 }),
-                    Html.cell(Html.button('Set quantity', 'board quantity $board_quantity', { width: 100 }), { width: 110 })]) + '<br1>' + Html.spacer(6)
+                    Html.cell(Html.button('Set', 'board quantity $board_quantity', { width: 100 }), { width: 110 })]) + '<br1>' + Html.spacer(6)
                 + Html.font('Change the quantity above,') + '<br1>' + Html.font('or agree to the amount shown.');
             send(session, page(body, Html.actionFooter([
                 { label: 'Agree and wait', command: 'board agree' }, { label: 'Back', command: command(query, query.cursor) }])));
