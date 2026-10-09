@@ -1,9 +1,19 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
+const { MAX_COMMITMENTS } = require('./TradeMeeting');
 const staged = new Map();
-const enrolled = new Map(); // Numeric participant reference, never custody/terms.
+const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
+function enroll(actor, id) {
+    let rows = enrolled.get(actor);
+    if (!rows) enrolled.set(actor, rows = new Set());
+    rows.add(id);
+}
+function unenroll(actor, id) {
+    const rows = enrolled.get(actor); rows?.delete(id);
+    if (!rows?.size) enrolled.delete(actor);
+}
 const queue = new Set();
-let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribePlayer, unsubscribeBoard;
+let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribeMarketLife, unsubscribePlayer, unsubscribeBoard;
 const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const db = () => invoke('Database');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
@@ -17,9 +27,10 @@ async function syncActors(row) {
     for (const id of [row.actorA, row.actorB]) {
         const session = sessionFor(id);
         if (!session) continue;
-        session.tradeMeetingPresence = row.state === 'accepted' ? { id: row.id,
-            locX: row.locX, locY: row.locY, locZ: row.locZ, present: null } : undefined;
-        if (row.state !== 'accepted') session.meetingTravel = undefined;
+        const anchor = await db().fetchTradeMeetingForOwner?.(id) || (row.state === 'accepted' ? row : null);
+        session.tradeMeetingPresence = anchor ? { id: anchor.id,
+            locX: anchor.locX, locY: anchor.locY, locZ: anchor.locZ, present: null } : undefined;
+        if (!anchor || session.meetingTravel?.id === row.id && row.state !== 'accepted') session.meetingTravel = undefined;
         await afk().syncOnlineInventory(id, await db().fetchItems(id));
         if (!life().cachedState(id) && row.state !== 'accepted') {
             try { require('./PlayerBoardWindow').meetingResult(session, row); }
@@ -128,7 +139,7 @@ async function accept(id, characterId = null) {
 async function accepted(result) {
     acceptRows(result);
     const row = result.meeting;
-    enrolled.set(row.actorA, row.id); enrolled.set(row.actorB, row.id);
+    enroll(row.actorA, row.id); enroll(row.actorB, row.id);
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
     wake(row.actorA); wake(row.actorB);
     return { pending: result.pending, meetingId: row.id, revision: row.revision,
@@ -152,7 +163,9 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         || options.expectedRevision !== undefined && record.revision !== options.expectedRevision) throw Error('trade_meeting_quote_changed');
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
-    if (sides.some(side => side.meetingId)) throw Error('trade_meeting_participant_busy');
+    const anchors = sides.filter(side => side.meetingId).map(side => side.anchor);
+    if (anchors.some(anchor => !anchor || anchor.town !== record.town)
+        || anchors.some(anchor => ['locX', 'locY', 'locZ'].some(k => anchor[k] !== anchors[0][k]))) throw Error('trade_meeting_point_changed');
     // Preserve the caller's decision authority across asynchronous native reads.
     // Freshly reading a participant must not turn a stale decision into consent.
     const sourceState = options.coldState || life().cachedState(characterId);
@@ -174,7 +187,8 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         if (!remainder || sources.length === 5) break;
     }
     if (remainder) throw Error('trade_meeting_stock_changed');
-    const point = { locX: record.locX, locY: record.locY, locZ: record.locZ };
+    const destination = anchors[0] || record;
+    const point = { locX: destination.locX, locY: destination.locY, locZ: destination.locZ };
     const parties = sides.map((side, index) => {
         const actor = actors[index], state = life().cachedState(actor);
         let route;
@@ -186,6 +200,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
             if (!position || Math.hypot(position.locX - point.locX, position.locY - point.locY, position.locZ - point.locZ) > 200) throw Error('trade_meeting_player_at_point');
             route = { fee: 0, scroll: false, method: 'walk', durationMs: 0 };
         }
+        if (side.meetingId) route = { fee: 0, scroll: false, method: `meeting:${side.meetingId}`, durationMs: 0 };
         return { ...side, route, needRevision: side.revision };
     });
     const request = { token: randomUUID(), actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
@@ -197,11 +212,13 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     return { preparationId: token, token, town: record.town, point, amount, price: line.price, total: amount * line.price };
 }
 async function cancel(characterId) {
-    const row = await db().fetchTradeMeetingForOwner(Number(characterId));
-    if (!row) return { ok: true, cancelled: false };
-    const result = await db().cancelTradeMeeting(row.id, 'explicit_cancel');
-    acceptRows(result); wake(row.actorA); wake(row.actorB);
-    return { ok: true, cancelled: result.meeting.state === 'cancelled' };
+    const rows = db().fetchTradeMeetingsForOwner ? await db().fetchTradeMeetingsForOwner(Number(characterId))
+        : [await db().fetchTradeMeetingForOwner(Number(characterId))].filter(Boolean);
+    for (const row of rows) {
+        const result = await db().cancelTradeMeeting(row.id, 'explicit_cancel');
+        acceptRows(result); wake(row.actorA); wake(row.actorB);
+    }
+    return { ok: true, cancelled: rows.length > 0 };
 }
 async function trade(characterId, store, itemId, amount, options) {
     const prepared = await prepareTrade(characterId, store, itemId, amount, options);
@@ -225,8 +242,8 @@ function presenceChanged(session) {
     marker.present = present; marker.atWaypoint = atWaypoint; wake(actor.fetchId());
 }
 function reset() {
-    unsubscribeLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
-    unsubscribeLife = unsubscribePlayer = unsubscribeBoard = undefined;
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
+    unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
     staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); queue.clear();
 }
@@ -236,14 +253,17 @@ function wake(id) {
     if (!draining) { draining = true; setImmediate(drain); }
 }
 async function processOwner(id) {
-    const row = await db().fetchTradeMeeting(enrolled.get(id));
+    for (const meetingId of [...(enrolled.get(id) || [])].slice(0, MAX_COMMITMENTS)) await processMeeting(id, meetingId);
+}
+async function processMeeting(id, meetingId) {
+    const row = await db().fetchTradeMeeting(meetingId);
     if (!enrolled.has(id)) return;
-    if (!row) { enrolled.delete(id); return; }
+    if (!row) { unenroll(id, meetingId); return; }
     if (row.state !== 'accepted') {
         await syncActors(row);
         await afk().settleOwners([row.actorA, row.actorB]);
         for (const actor of [row.actorA, row.actorB]) await db().acknowledgeTradeMeeting(row.id, actor);
-        enrolled.delete(row.actorA); enrolled.delete(row.actorB);
+        unenroll(row.actorA, row.id); unenroll(row.actorB, row.id);
         return;
     }
     const state = life().cachedState(id), session = sessionFor(id);
@@ -262,6 +282,8 @@ async function processOwner(id) {
         wake(id); return; }
     const side = row.actorA === id ? 0 : 1;
     if (arrived.meeting.arrivalMask & 1 << side) return;
+    const anchorId = state?.stats?.tradeMeeting?.[0] || await db().fetchTradeMeetingForOwner?.(id).then(anchor => anchor?.id);
+    if (anchorId && anchorId !== row.id) return;
     if (state?.phase === 'cold' && !state.stats?.travel && !['fighting', 'resting'].includes(state.activity)) {
         await continueColdTravel(row, side, state);
     } else if (session && state?.phase === 'hot') {
@@ -292,7 +314,7 @@ async function continueColdTravel(row, side, state) {
     }
     const Routes = require('../Bot/Travel/TravelRoutes');
     const route = JSON.parse(row[`route${suffix}`]);
-    if (route.method === 'walk') {
+    if (route.method === 'walk' || String(route.method).startsWith('meeting:')) {
         const legId = `walk:${point.locX}:${point.locY}:${point.locZ}`;
         acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, 0, false));
         return;
@@ -328,7 +350,7 @@ async function drain() {
     } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -339,6 +361,10 @@ async function init() {
         }
         wake(id);
     });
+    // Cold commit/reflection publishes authority changes without republishing
+    // general life snapshots. Continue the enrolled meeting on that event too;
+    // the existing Set coalesces both sources and native presence decides arrival.
+    unsubscribeMarketLife = life().subscribeMarketReviewChanges(wake);
     unsubscribeBoard = afk().subscribeBoardChanges(change => {
         const owners = new Set((change.ownerIds || []).map(Number));
         for (const [key, entry] of staged) if (change.reset || entry.actors.some(id => owners.has(id))) discard(key);
@@ -355,7 +381,7 @@ async function init() {
             for (const actor of [row.actorA, row.actorB]) {
                 const state = await db().fetchTradeMeetingOwnerState?.(actor);
                 if (state) life().acceptLifecycleRow(state);
-                enrolled.set(actor, row.id); wake(actor);
+                enroll(actor, row.id); wake(actor);
             }
         }
         cursor = rows.at(-1).id;

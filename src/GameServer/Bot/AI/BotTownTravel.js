@@ -215,6 +215,7 @@ async function requestMeeting(session, bot, meeting, side) {
     };
     const hop = async () => {
         if (!valid()) { session.meetingTravel = undefined; return; }
+        if (String(JSON.parse(meeting[`route${suffix}`]).method).startsWith('meeting:')) { finish(); return; }
         const native = Routes.between(position(), point), step = native.route?.steps?.[0];
         if (!step) { finish(); return; }
         const latest = await Database.fetchTradeMeeting(meeting.id);

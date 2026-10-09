@@ -38,6 +38,7 @@ function prepared(session) {
     delete session.heldEconomy; delete session.economySeq;
 }
 function hold(session, actor, context) {
+    invoke('GameServer/Inventory/ShotStock').enableAutoShot(actor, { stock: context.stock('shots') });
     if (context.routePending) return held(session) || { network: { activity: null },
         statsPacket: statsFor(session), riskWeight: context.riskWeight };
     if (session.coldLifeState) Object.assign(statsFor(session), context.statsPacket);

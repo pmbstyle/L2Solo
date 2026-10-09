@@ -218,8 +218,8 @@ async function handle(playerSession, state, intent) {
         const lots = invoke('GameServer/Bot/Economy/BotAfkMarketService');
         if (line && (!Number.isSafeInteger(unitPrice)
             || !lots.viableSellLine({ ...line, count: quantity, price: unitPrice }))) {
-            return { handled: true, ok: false, reason: 'resource_lot_too_small', action: 'shop_quote',
-                reply: `I list materials in lots worth at least ${lots.minimumResourceLotValue()} Adena. Offer a larger batch.` };
+            return { handled: true, ok: false, reason: 'invalid_shop_offer', action: 'shop_quote',
+                reply: 'Offer a positive whole quantity and a whole Adena price per item.' };
         }
     }
     let result;

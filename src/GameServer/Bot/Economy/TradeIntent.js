@@ -3,23 +3,32 @@
 // Version 1 of the board command's typed root certificate. This is a view
 // of the wish graph, never a second wallet or a persistent acquisition plan.
 const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status', 'resale'];
+const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 // A selected executable NPC quote already has a native purchase owner.
 // Public BUY ads describe alternative player supply, not a duplicate NPC job.
 const nativeNpc = plan => plan?.sourceType === 'npc' && plan.quoted === true && plan.executable === true;
+// Only completed preparation can retire public supply. A different root may
+// still project player supply for the same item, so keep that alternative.
+function npcOwnsPurchase(economy, selfId) {
+    return !economy?.intentPending && !economy?.routePending
+        && nativeNpc(economy?.network?.plans?.get?.(`item:${Number(selfId)}`))
+        && Array.isArray(economy.watchList)
+        && !economy.watchList.some(row => Number(row.itemId) === Number(selfId));
+}
 function rootTuple(key) {
     const parts = String(key).split(':'), kind = roots.indexOf(parts[0]);
     if (kind < 1) throw Error('trade_intent_unknown_root');
     const arity = [1, 4, 5].includes(kind) ? 3 : 2;
     if (parts.length !== arity) throw Error('trade_intent_invalid_root');
-    const a = kind === 2 ? ['shots', 'potions'].indexOf(parts[1]) + 1 : Number(parts[1]);
+    const a = kind === 2 ? stockKinds.indexOf(parts[1]) : Number(parts[1]);
     const b = arity === 3 ? Number(parts[2]) : 0;
     if (!integer(a) || a <= 0 || !integer(b) || arity === 3 && b <= 0) throw Error('trade_intent_invalid_root');
     return [kind, a, b];
 }
 function rootKey(kind, a, b) {
     if (!roots[kind] || !integer(a) || a <= 0 || !integer(b)) throw Error('trade_intent_invalid_root');
-    const key = kind === 2 ? `stock:${[null, 'shots', 'potions'][a]}`
+    const key = kind === 2 ? `stock:${stockKinds[a]}`
         : `${roots[kind]}:${a}${[1, 4, 5].includes(kind) ? `:${b}` : ''}`;
     const tuple = rootTuple(key);
     if (tuple[0] !== kind || tuple[1] !== a || tuple[2] !== b) throw Error('trade_intent_invalid_root');
@@ -126,4 +135,4 @@ function preparedProject(network, worth, limit) {
     }
     return result.slice(0, limit);
 }
-module.exports = { rootTuple, rootKey, encode, decode, project };
+module.exports = { rootTuple, rootKey, encode, decode, project, npcOwnsPurchase };

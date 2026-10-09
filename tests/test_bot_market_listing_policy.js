@@ -44,20 +44,30 @@ function atRate(rate, work) {
 }
 
 // Hard rules.
-assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)), { action: 'npc', reason: 'starter_kit' });
+assert.deepStrictEqual(MarketListingPolicy.classify(seller, saleItem(starterWeapon)), { action: 'market', reason: 'market' });
 for (const rate of ['x1', 'x10', 'x50']) {
     assert.strictEqual(atRate(rate, () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).action), 'market',
         'low-grade gear uses the same market decision at every rate');
 }
 assert.strictEqual(MarketListingPolicy.classify(seller, saleItem(spellbook)).reason, 'npc_only_item');
 assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(DataCache.items.find((item) => Number(item.selfId) === 1865)), count: 2 }).reason,
-    'small_material_lot');
+    'market');
 assert.strictEqual(atRate('x10', () => MarketListingPolicy.classify(seller, saleItem(lowGradeGear)).action), 'market',
     'anything else is the market\'s, at any demand');
 for (const removed of ['listingFloor', 'listingPrice', 'SPECULATIVE_SUPPLY_LIMIT', 'MIN_LISTING_BASE_PERCENT']) {
     assert.strictEqual(MarketListingPolicy[removed], undefined, `${removed} is gone`);
 }
 assert.strictEqual(BotMarketPricing.listingFloor, undefined, 'no 60% listing floor');
+
+const cheapCPlus = { ...saleItem(lowGradeGear), rank: 'c', basePrice: 1000 };
+assert.strictEqual(MarketListingPolicy.classify(seller, cheapCPlus).action, 'market',
+    'cheap C+ gear reaches shared valuation');
+assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(starterWeapon), enchant: 6 }).action,
+    'market', 'a spare enchanted starter item reaches shared valuation');
+for (const count of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.strictEqual(MarketListingPolicy.classify(seller, { ...saleItem(lowGradeGear), count }).action,
+        'ignore', 'invalid physical counts never enter valuation');
+}
 
 // A small world: an empty board index and counters for the items below.
 const items = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871, 1872, 1873];
@@ -66,7 +76,43 @@ const state = { characterId: 4242, level: 40, adena: 50000, stats: { generatedCo
 const now = 1800000000000;
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const options = (extra = {}) => ({ now, board, persona: null, npcOffersFor: () => [], findSpot: () => null, ...extra });
+// The native inventory path nominates a spare starter weapon and a one-unit
+// material; valuation can still keep or liquidate them when demand is absent.
+const spareStarter = { ...state, inventory: {
+    [starterWeapon.selfId]: { selfId: Number(starterWeapon.selfId), amount: 2,
+        equippedCount: 1, enchant: 6, kind: starterWeapon.template.kind },
+    1865: { selfId: 1865, amount: 1, kind: 'Other.Material' }
+} };
+const admitted = MarketListingPolicy.evaluate(spareStarter, options({ keptAmounts: {}, preparedReservations: {} }));
+assert(admitted.decisions.some(decision => decision.item.selfId === Number(starterWeapon.selfId)
+    && decision.item.count === 1 && decision.reason === 'expected_value'), 'only the spare starter copy reaches shared valuation');
+assert(admitted.decisions.some(decision => decision.item.selfId === 1865 && decision.item.count === 1
+    && decision.priced), 'a single material reaches shared valuation');
+assert.strictEqual(spareStarter.inventory[starterWeapon.selfId].amount, 2, 'nomination never moves physical items');
+
 MarketCounters.reset();
+// The same tiny physical lot answers a nearby public buyer. Changing only
+// the actual trip fees/time makes that answer lose the shared valuation.
+const bidBoard = new BoardIndex({ groupOf: MarketCounters.counterOf });
+bidBoard.put({ id: 950001, kind: 'buy_ad', storeType: 3, ownerId: 950002,
+    town: 'Giran', lines: [{ lineId: 950003, selfId: 1865, count: 2, price: 10000, enchant: 0 }] });
+const tinyStock = { ...state, inventory: { 1865: { selfId: 1865, amount: 2, kind: 'Other.Material' } } };
+function tinySale(fees, hours) {
+    const tripCost = () => fees;
+    tripCost.details = () => ({ known: true, fees, hours });
+    return MarketListingPolicy.evaluate(tinyStock, options({ board: bidBoard, tripCost,
+        keptAmounts: {}, preparedReservations: {} }));
+}
+const nearbyTinySale = tinySale(0, 0);
+assert.strictEqual(nearbyTinySale.answers.length, 1, 'two materials can answer a nearby profitable buyer');
+assert.strictEqual(nearbyTinySale.answers[0].count, 2);
+const distantTinySale = tinySale(30000, 1);
+assert.strictEqual(distantTinySale.answers.length, 0,
+    'the same 20000 Adena receipts do not pay a 30000 Adena trip plus an hour of lost activity');
+assert.strictEqual(distantTinySale.decisions[0].reason, 'expected_value',
+    'the travel loss is decided by shared valuation, not lot admission');
+assert.strictEqual(tinyStock.inventory[1865].amount, 2, 'comparing trips never moves the physical lot');
+
 // No supported finite item demand exists. The public first price is not an
 // owner-blind recipe willingness or an observed listing lifetime.
 const withoutMarket = MarketListingPolicy.evaluate(state, options());

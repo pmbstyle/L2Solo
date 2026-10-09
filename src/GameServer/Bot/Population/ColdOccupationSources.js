@@ -9,6 +9,7 @@ const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
 const QUOTE_DEPTH = 5;
+const EMPTY = Object.freeze([]);
 let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank;
 
 function initialise() {
@@ -156,6 +157,13 @@ function recipeIndex(board) {
         && !!fixedBuy.get(Number(recipe.productId))?.length });
 }
 
+// The same enabled fixed material buyers feed production actions and the
+// finite wish graph. These are supported authored exits, not player forecasts.
+function fixedBuyerOffersFor(id) {
+    initialise();
+    return Production.buyersDisabled() ? EMPTY : fixedBuy.get(Number(id)) || EMPTY;
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
@@ -215,7 +223,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             yield 'quote';
         }
         if (!Production.buyersDisabled() && String(template?.template?.kind || '').startsWith('Other.Material')) {
-            for (const exit of fixedBuy.get(Number(recipe.productId)) || []) {
+            for (const exit of fixedBuyerOffersFor(recipe.productId)) {
                 const details = yield* ensureTrip(exit.town);
                 result.push({ ...exit, trip: trip(exit.town), tripDetails: details }); yield 'quote';
             }
@@ -311,6 +319,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
 }
 
 module.exports = { initialise, prepare, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+    fixedBuyerOffersFor,
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],
     catalogCounts: () => ({ npcItems: npcByItem?.size || 0,
         npcQuotes: [...(npcByItem?.values() || [])].reduce((sum, rows) => sum + rows.length, 0),

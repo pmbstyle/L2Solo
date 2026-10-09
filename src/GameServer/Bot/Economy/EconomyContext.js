@@ -1,5 +1,7 @@
 'use strict';
 
+const GearThreat = require('./GearThreat');
+
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
@@ -56,6 +58,7 @@ function stateForActor(actor, session = actor?.session) {
     }
     const hotKit = invoke('GameServer/Bot/Population/ColdCombatProfile').capture(actor);
     const state = { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
+        craftLevel: actor.backpack?.fetchDwarvenCraftLevel?.(actor) ?? stored.craftLevel,
         acceptedIncoming: current?.acceptedIncoming || stored.acceptedIncoming || {},
         incomingPending: current ? current.incomingPending === true : stored.incomingPending === true,
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
@@ -85,7 +88,7 @@ function inputKey(state, deps = {}) {
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
-    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
+    return [state.level, stats.classId, state.craftLevel ?? stats.dwarvenCraftLevel, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
         Providers.recipeIds(state, deps).join(','), deps.producerRevision ?? '',
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
@@ -93,7 +96,7 @@ function inputKey(state, deps = {}) {
         stats.generatedCold, stats.race, stats.marketSellRetryAfter,
         Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
         invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
-        state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
+        state.spotId, deps.gearThreatMask ?? GearThreat.maskFor(state, deps), stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', state.incomingPending, JSON.stringify(state.acceptedIncoming || null), Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
@@ -134,13 +137,21 @@ function watchedBoard(board, watch) {
         ...(board.heads ? { heads: (selfId, ...rest) => { watch(selfId); return board.heads(selfId, ...rest); } } : {})
     });
 }
+function defaultProducerSource(state, board) {
+    const index = require('../Population/ColdOccupationSources').recipeIndex(board);
+    const level = require('./CraftEligibility').craftLevelFor(state), scope = index.scopeFor(level);
+    return { recipes: index.rowsFor(level), scope, revision: index.revision(scope) };
+}
 function resolved(state, deps) {
     deps = { ...runtime, ...deps };
     if (typeof deps.board === 'function') deps.board = deps.board();
+    if (!deps.board && isMainThread) deps.board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
     if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
+    if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = require('../Population/ColdOccupationSources').fixedBuyerOffersFor;
+    if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
     if (typeof deps.producerSource === 'function') {
         const source = deps.producerSource(state, deps.board);
         deps.producerRecipes = source?.recipes;
@@ -199,12 +210,16 @@ function foundation(state, deps, persona, timestamp, price) {
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
     const bestTable = spotTable || Table.best(tableRole, state.level, true);
-    const { selfId: shotItemId, perAction: shotPerAction } = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    const shotPlan = ShotStock.planForState(state);
+    const shotItemId = shotPlan.selfId;
     const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const rawShots = shotPerAction > 0 ? positive(bestTable?.shots) : 0;
     const withoutShots = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-    const shotBenefit = Math.max(0, 1 - positive(withoutShots?.exp) / Math.max(1, positive(bestTable?.exp)));
-    const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
+    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable, withoutShots,
+        hourAdena: Hunt.huntHour(hunt, state), unitPrice: price(shotItemId) });
+    const shotBenefit = shotPolicy.benefit;
+    const shotUse = positive(state.inventory?.[shotItemId]?.amount) > 0
+        ? shotPolicy.usePerHour : shotPolicy.purchaseUsePerHour;
     const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
     const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
@@ -273,16 +288,20 @@ function foundation(state, deps, persona, timestamp, price) {
         const itemId = shots ? shotItemId : potionItemId;
         const use = shots ? shotUse : potionUse;
         const current = positive(state.inventory?.[itemId]?.amount);
-        const target = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
+        const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
+        // Useful owned stock need not justify expensive replacement stock.
+        const canRestock = !shots || shotPolicy.purchaseUsePerHour > 0;
+        const target = canRestock ? wantedTarget : Math.min(current, wantedTarget);
         // Forecast consumption may be fractional; both purchase tranches use
         // the same whole-unit survival stock so their sum remains executable.
-        const survivalTarget = Math.ceil(use);
+        const survivalTarget = canRestock ? Math.ceil(use) : Math.min(current, Math.ceil(use));
         const survivalMissing = Math.max(0, survivalTarget - current);
         const missing = Math.max(0, target - Math.max(current, survivalTarget));
         const benefitPerUnit = use > 0
             ? (shots ? shotBenefit : positive(bestTable?.deaths) * deathHours) / use : 0;
         const benefitHours = missing * benefitPerUnit;
-        return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
+        return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: shotPolicy.usePerHour } : {}),
+            current, hours: use > 0 ? current / use : Infinity,
             targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId), benefitPerUnit, benefitHours,
             needed: use > 0 && current < survivalTarget };
     };
@@ -337,11 +356,14 @@ function forState(state = {}, deps = {}) {
     // A valid completed card survives planner-slot reuse or card eviction;
     // the same route is repriced with the current hour value, never a wallet.
     if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
+    const gearThreat = GearThreat.prepare(state, deps, held?.gearThreat);
+    deps.gearThreatMask = gearThreat.mask;
     const key = inputKey(state, { ...deps, timestamp });
     if (held?.key === key && (isMainThread || held.context.state === state)
         && marketHolds(sourceBoard, held.reads, deps)) {
         if (deps.onSourceRead) for (const id of held.reads.keys()) deps.onSourceRead(id);
         if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
+        held.gearThreat = gearThreat;
         return remember(cache, actorKey, held).context;
     }
     const started = diagnostic ? performance.now() : 0;
@@ -375,7 +397,7 @@ function forState(state = {}, deps = {}) {
     });
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
     const Tendency = require('../AI/TendencyRoll');
-    const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt: base.hunt, price, buyback, calibration,
+    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
         survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena };
@@ -463,7 +485,7 @@ function forState(state = {}, deps = {}) {
     if (deps.rememberContext !== false && planningContexts < 64) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
             Diagnostics.count('context', 'eviction', 'capacity');
-        remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
+        remember(cache, actorKey, { key, reads, context, gearThreat }, 64 - planningContexts);
     }
     return context;
 }

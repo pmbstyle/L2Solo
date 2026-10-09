@@ -57,6 +57,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
+    if (name.endsWith('ItemTemplateIndex')) return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './BotImprovementPolicy') return { isCaster: () => false };
     if (name === './WishPurchaseEvidence') return require('../src/GameServer/Bot/Economy/WishPurchaseEvidence');
     if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0) };
@@ -232,4 +233,42 @@ const sharedTrials = new network.WishNetwork().build({ actorKey: 'shared-produce
 assert.equal(sharedTrials.activity?.rootKey, 'resale:501');
 assert(!sharedTrials.queue.some(row => row.key === 'resale:502'),
     'profitability is checked again when the first trial takes shared physical stock');
-console.log('PASS finite producer graph: partial inputs, native conditional forecast, direct materials, own output, incoming/protected stock, funding, unknown book/farm and demand retirement');
+// Use the real capability reader at the producer-root boundary. A beginner
+// must reach scroll/material intentions, not just pass a standalone skill test.
+const nativeCraft = invoke('GameServer/Bot/Economy/CraftEligibility');
+invoke('GameServer/DataCache').skillTree = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/Skills/Tree/tree.json')));
+serviceCraft.isServiceCrafter = nativeCraft.isServiceCrafter;
+serviceCraft.canCraft = nativeCraft.canCraft;
+state.classId = 53; state.level = 5; state.inventory = {}; state.stats = {}; state.acceptedIncoming = {};
+adapters['GameServer/DataCache'].experience = Array.from({ length: 40 }, (_, level) => level * 100);
+recipe.level = 1;
+put(20, 101, 1, 100, 3); put(21, 202, 10, 1); put(27, 401, 1, 1);
+const beginnerDeps = { knownRecipes: [], producerRecipes: [recipe] };
+const beginner = prepare({ deps: beginnerDeps });
+assert(beginner.projection.roots.includes('resale:101'));
+assert(beginner.watch.some(row => row.itemId === 401), 'the native capable beginner asks for its unknown recipe scroll');
+assert(beginner.watch.some(row => row.itemId === 202), 'the same producer asks for missing physical materials');
+state.level = 4;
+assert(!prepare({ deps: beginnerDeps }).projection.roots.includes('resale:101'));
+state.level = 5; state.craftLevel = 0;
+assert(!prepare({ deps: beginnerDeps }).projection.roots.includes('resale:101'), 'native unlearned zero wins over the tree');
+console.log('PASS finite producer graph: partial inputs, native conditional forecast, direct materials, own output, incoming/protected stock, funding, unknown book/farm and demand retirement / beginner native skill -> scroll and material intentions');
+// A currently enabled authored material buyer is the same supported exit
+// already used by native production, without a peer WTB or infinite root.
+state.craftLevel = 1; state.inventory = {}; state.stats = {}; state.adena = 1000;
+board.remove(20); item.template.kind = 'Other.Material';
+const fixedBuyer = { type: 'static', price: 100, count: 999999, town: 'Giran' };
+const fixedDeps = { ...beginnerDeps, fixedProductionOffersFor: id => id === 101 ? [fixedBuyer] : [] };
+const fixed = prepare({ deps: fixedDeps });
+assert(fixed.projection.roots.includes('resale:101'), 'fixed buyer supports an unknown material recipe without a public product WTB');
+assert(fixed.watch.some(row => row.itemId === 401), 'its finite queue asks for one physical recipe scroll');
+assert(fixed.watch.some(row => row.itemId === 202), 'the same queue asks for missing ingredients');
+assert.equal(fixed.projection.nodes.find(row => row.key === 'resale:101').object.amount, 1, 'authored replenishable demand never becomes an unlimited production wish');
+assert(!prepare({ deps: { ...fixedDeps, fixedProductionOffersFor: () => [] } }).projection.roots.includes('resale:101'), 'disabled fixed buyers do not fabricate a producer root');
+state.adena = 0;
+const unfundedFixed = prepare({ wallet: 0, deps: fixedDeps });
+assert.equal(unfundedFixed.result.queue.find(row => row.key === 'resale:101').funded, false);
+assert.notEqual(unfundedFixed.result.activity?.activity, 'shopping', 'an unfunded conditional wish cannot execute a purchase');
+state.adena = 1000; item.template.kind = 'Armor.Chest';
+assert(!prepare({ deps: fixedDeps }).projection.roots.includes('resale:101'), 'fixed material buyers do not buy arbitrary equipment');
+console.log('PASS supported fixed buyer -> finite recipe/material queue, disabled/funding/material controls');

@@ -2,6 +2,7 @@
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
+const MAX_COMMITMENTS = 8;
 const ascii = value => typeof value === 'string' && /^[\x20-\x7e]*$/.test(value);
 const safe = (n, positive = false) => Number.isSafeInteger(n) && n >= (positive ? 1 : 0);
 function requireSafe(n, positive = false) { if (!safe(n, positive)) throw Error('trade_meeting_integer'); return n; }
@@ -47,6 +48,20 @@ function create(io) {
     const { one, all, write, take, debit, credit, snapshot, protection, funding, now } = io;
     const meeting = id => one('SELECT * FROM board_trade_meetings WHERE id=?', [requireSafe(id, true)]);
     const ids = row => [row.actorA, row.actorB];
+    // Two indexed bounded arms: an actor's commitments never scan the world.
+    function active(id, includeTerminal = false) {
+        const stateFilter = includeTerminal ? '' : " AND state='accepted'";
+        return all(`SELECT * FROM board_trade_meetings WHERE actorA=?${stateFilter}
+            UNION ALL SELECT * FROM board_trade_meetings WHERE actorB=?${stateFilter}
+            ORDER BY id LIMIT ${MAX_COMMITMENTS}`, [id, id]);
+    }
+    const samePoint = (a, b) => a.town === b.town && ['locX', 'locY', 'locZ'].every(k => a[k] === b[k]);
+    function anchor(id) { return active(id)[0] || null; }
+    function anchorMarker(id) {
+        const row = anchor(id);
+        write('UPDATE board_trade_participants SET meetingId=? WHERE characterId=?', [row?.id || null, id]);
+        return row ? [row.id, row.revision] : null;
+    }
     function participant(id) {
         const character = one('SELECT id FROM characters WHERE id=?', [id]);
         if (!character) throw Error('trade_meeting_character_missing');
@@ -55,7 +70,7 @@ function create(io) {
     }
     function fence(row, changed) {
         const states = {};
-        ids(row).forEach(id => { const next = snapshot(id, changed, { tradeMeeting: row.state === 'accepted' ? [row.id, row.revision] : null }); if (next) states[id] = next; });
+        ids(row).forEach(id => { const next = snapshot(id, changed, { tradeMeeting: anchorMarker(id) }); if (next) states[id] = next; });
         return states;
     }
     function result(row, coldLifeRows = {}) { return { meeting: row, pending: row.state === 'accepted', coldLifeRows }; }
@@ -82,9 +97,15 @@ function create(io) {
         }
         actors.forEach((id, side) => {
             const slot = participant(id);
-            if (slot.meetingId !== null || slot.nextSequence !== sequences[side]) throw Error('trade_meeting_participant_changed');
+            if (slot.nextSequence !== sequences[side]) throw Error('trade_meeting_participant_changed');
             requireSafe(slot.nextSequence + 1, true);
-            const party = request.parties[side];
+            const party = request.parties[side], commitments = active(id), existing = commitments[0];
+            if (active(id, true).length >= MAX_COMMITMENTS) throw Error('trade_meeting_backpressure');
+            if (existing) {
+                if (!samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
+                if (party.route.method !== `meeting:${existing.id}` || party.route.fee !== 0
+                    || party.route.scroll || party.route.durationMs !== 0) throw Error('trade_meeting_route_changed');
+            } else if (party.route.method.startsWith('meeting:')) throw Error('trade_meeting_route_changed');
             const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
             if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || (life.simulationOwner || null) !== party.ownerId || (life.simulationLeaseId || null) !== party.leaseId
@@ -115,8 +136,12 @@ function create(io) {
             for (const line of request.lines.filter(line => line.payer === side && line.adId)) {
                 const ad = one('SELECT * FROM afk_trade_shops WHERE id=?', [line.adId]);
                 const adLine = ad && one('SELECT * FROM afk_trade_lines WHERE shopId=? AND selfId=? AND enchant=? LIMIT 1', [line.adId, line.selfId, line.enchant]);
+                const committed = ad ? active(ad.ownerId) : [];
+                const reserved = committed.length ? Number(one(`SELECT COALESCE(SUM(count),0) amount FROM board_trade_meeting_lines
+                    WHERE meetingId IN (${committed.map(() => '?').join(',')}) AND sourceAdId=? AND selfId=? AND enchant=? AND custodyType='trade'`,
+                [...committed.map(row => row.id), line.adId, line.selfId, line.enchant])?.amount || 0) : 0;
                 if (!ad || ad.ownerId !== (ad.storeType === 3 ? id : actors[1 - side]) || ad.custodyPolicy !== 1 || ad.revision !== line.adRevision
-                    || !adLine || adLine.selfId !== line.selfId || adLine.price !== line.price || adLine.count < quoteTotals.get(`${line.adId}:${line.selfId}:${line.enchant}`)) throw Error('trade_meeting_quote_changed');
+                    || !adLine || adLine.selfId !== line.selfId || adLine.price !== line.price || adLine.count < sum(reserved, quoteTotals.get(`${line.adId}:${line.selfId}:${line.enchant}`))) throw Error('trade_meeting_quote_changed');
                 if (!fresh && ad.storeType === 3 && (!line.certificate || adLine.intentJson !== JSON.stringify(line.certificate)
                     || adLine.intentRevision !== party.needRevision || party.needRevision !== party.revision)) throw Error('trade_meeting_need_changed');
             }
@@ -157,7 +182,7 @@ function create(io) {
                 if (!scroll) throw Error('trade_meeting_scroll_missing');
                 hold(5 + side, side, { itemId: scroll.id, selfId: 736 }, 1, 'route');
             }
-            write('UPDATE board_trade_participants SET nextSequence=nextSequence+1,meetingId=? WHERE characterId=?', [id, actors[side]]);
+            write('UPDATE board_trade_participants SET nextSequence=nextSequence+1,meetingId=COALESCE(meetingId,?) WHERE characterId=?', [id, actors[side]]);
         });
         const row = meeting(id);
         return result(row, fence(row, [...request.lines.map(line => line.selfId), 736]));
@@ -233,14 +258,19 @@ function create(io) {
             // One last outcome in the existing owner slot survives cleanup.
             // A lost reply never needs an unbounded token history or fresh consent.
             const receipt = JSON.stringify([row.token, row.id, row.revision, Number(row.state === 'completed')]);
-            ids(row).forEach((actor, index) => write('UPDATE board_trade_participants SET meetingId=NULL,lastReceipt=? WHERE characterId=? AND meetingId=? AND nextSequence=?',
-                [receipt, actor, id, (index ? row.seqB : row.seqA) + 1]));
+            ids(row).forEach(actor => {
+                // Older appointments can finish later. Keep the newest outcome
+                // without clearing a different still accepted commitment.
+                const slot = participant(actor), previous = slot.lastReceipt && JSON.parse(slot.lastReceipt);
+                if (!previous || previous[1] < row.id) write('UPDATE board_trade_participants SET lastReceipt=? WHERE characterId=?', [receipt, actor]);
+                anchorMarker(actor);
+            });
             write('DELETE FROM board_trade_meeting_lines WHERE meetingId=?', [id]);
             write('DELETE FROM board_trade_meetings WHERE id=?', [id]);
         }
         return { acknowledged: true, cleaned: mask === 3 };
     }
-    return { accept, leg, terminal, present, acknowledge, participant, meeting };
+    return { accept, leg, terminal, present, acknowledge, participant, meeting, active, anchor };
 }
 function projectIncoming(incoming) {
     // Leave room for the existing numeric agreement reference inside the
@@ -248,4 +278,4 @@ function projectIncoming(incoming) {
     return Buffer.byteLength(JSON.stringify(incoming)) <= 56 ? { acceptedIncoming: incoming }
         : { acceptedIncoming: null, incomingPending: true };
 }
-module.exports = { create, canonical, projectIncoming };
+module.exports = { create, canonical, projectIncoming, MAX_COMMITMENTS };

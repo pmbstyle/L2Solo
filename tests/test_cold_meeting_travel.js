@@ -6,7 +6,7 @@ let state = { characterId: 1, phase: 'cold', activity: 'shopping', vitals: { hp:
 let row = { id: 7, actorA: 1, actorB: 2, state: 'accepted', locX: 2000, locY: 0, locZ: 0,
     routeA: JSON.stringify({ scroll: false }), nextLegA: 1, routeReserveA: 100, legA: null };
 let start = { locX: 0, locY: 0, locZ: 0 }, step = { locX: 1000, locY: 0, locZ: 0, fee: 100, npcId: 10 };
-let lifeListener;
+let lifeListener, marketListener;
 const database = {
     recoverTradeMeetings: async cursor => cursor ? [] : [{ id: 7, actorA: 1, actorB: 2 }],
     fetchTradeMeeting: async () => row,
@@ -22,7 +22,8 @@ global.utils = { infoWarn: (...args) => { throw Error(args.join(' ')); } };
 global.invoke = name => ({
     Database: database,
     'GameServer/Bot/Population/BotLifeState': { cachedState: id => id === 1 ? state : { ...state, characterId: 2, stats: { travel: {} } },
-        acceptLifecycleRow: () => {}, subscribeChanges: fn => { lifeListener = fn; return () => {}; } },
+        acceptLifecycleRow: () => {}, subscribeChanges: fn => { lifeListener = fn; return () => {}; },
+        subscribeMarketReviewChanges: fn => { marketListener = fn; return () => { marketListener = null; }; } },
     'GameServer/World/World': { registeredActorById: () => null, subscribeUserChanges: () => () => {},
         fetchNpcsInRadius: () => [{ fetchSelfId: () => 10, fetchLocX: () => start.locX, fetchLocY: () => 0, fetchLocZ: () => 0 }] },
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {} }
@@ -30,18 +31,18 @@ global.invoke = name => ({
 new Function('require', 'module', fs.readFileSync(require.resolve('../src/GameServer/AfkTrade/TradeMeetingService'), 'utf8'))(
     name => name.includes('TravelRoutes') ? { between: () => ({ start, route: { fee: step?.fee || 0, steps: step ? [step] : [] } }) }
         : name.includes('NpcObjectIndex') ? { nearTemplate: () => ({ fetchLocX: () => start.locX, fetchLocY: () => 0, fetchLocZ: () => 0 }) }
-        : name.includes('TradeIntent') ? {} : require(name), loaded);
+        : name.includes('TradeIntent') ? {} : require('node:module').createRequire(require.resolve('../src/GameServer/AfkTrade/TradeMeetingService'))(name), loaded);
 const service = loaded.exports;
 const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolve => setImmediate(resolve)); };
 (async () => {
     try {
         await service.init(); await flush();
         assert.deepEqual(paid[0], { id: 7, side: 0, sequence: 1, legId: 'gk:1000:0:0', fee: 100, scroll: false });
-        lifeListener(1); await flush();
+        marketListener(1); await flush();
         assert.deepEqual(paid[1], paid[0], 'interrupted transit resumes using the original paid identity');
         assert.equal(row.routeReserveA, 0, 'replay consumes no second fare');
         state.loc = { locX: 1000, locY: 0, locZ: 0 }; start = state.loc; step = null;
-        lifeListener(1); await flush();
+        marketListener(1); lifeListener(1); await flush();
         assert.deepEqual(acked, [1]);
         assert.equal(paid.at(-1).legId, 'walk:2000:0:0');
         assert.equal(paid.at(-1).fee, 0, 'final movement is on foot');

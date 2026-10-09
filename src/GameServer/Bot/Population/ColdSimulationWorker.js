@@ -229,7 +229,10 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (!intents) throw Error('trade_meeting_preparation_pending');
             const routePlan = require('./ColdTrip').townPlan(input.state, request.point);
             if (!routePlan) throw Error('trade_meeting_route');
-            own.route = { fee: routePlan.route.fee, scroll: !!routePlan.scroll, method: routePlan.method, durationMs: routePlan.durationMs };
+            const shared = /^meeting:([1-9][0-9]*)$/.exec(own.route.method);
+            if (shared && Number(shared[1]) !== Number(input.state.stats?.tradeMeeting?.[0])) throw Error('trade_meeting_route_changed');
+            own.route = shared ? { fee: 0, scroll: false, method: own.route.method, durationMs: 0 }
+                : { fee: routePlan.route.fee, scroll: !!routePlan.scroll, method: routePlan.method, durationMs: routePlan.durationMs };
             let total = own.route.fee, spendable = Infinity, sellerDecision = null;
             const required = new Map(), sold = new Map();
             for (const line of request.lines) if (line.payer === side) required.set(line.selfId, (required.get(line.selfId) || 0) + line.count);

@@ -25,6 +25,22 @@ async function run() {
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const capture = Profile.capture;
+    try {
+        Profile.capture = () => ({});
+        let craftLevel = 0;
+        const actor = { fetchId: () => 999001, fetchLevel: () => 16, fetchClassId: () => 53,
+            backpack: { fetchItems: () => [], fetchDwarvenCraftLevel: () => craftLevel } };
+        const session = { coldLifeState: { craftLevel: 1, stats: { dwarvenCraftLevel: 1 } } };
+        const unlearned = Economy.stateForActor(actor, session);
+        assert.equal(unlearned.craftLevel, 0, 'native hot zero overrides stored cold capability');
+        craftLevel = 1;
+        const learned = Economy.stateForActor(actor, session);
+        assert.equal(learned.craftLevel, 1);
+        assert.notEqual(Economy.inputKey(unlearned), Economy.inputKey(learned), 'learning invalidates the planning inputs');
+        assert.notEqual(Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 0 } }),
+            Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 1 } }));
+    } finally { Profile.capture = capture; }
     const Board = invoke('GameServer/AfkTrade/BoardIndex').BoardIndex;
     const board = new Board();
     const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
@@ -150,6 +166,34 @@ async function run() {
     assert.equal(typeof context.statsPacket.activityLeaf, 'number');
     assert(context.statsPacket.activityLeaf !== 0);
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
+    const physicalSpot = { id: 'gear-physical', npcEntries: [{ selfId: 130 }] };
+    const mixedSpot = { id: 'gear-mixed', npcEntries: [{ selfId: 130 }, { selfId: 264 }] };
+    const threatSpots = [physicalSpot, mixedSpot];
+    const threatBot = { ...base, characterId: 1901, spotId: physicalSpot.id,
+        stats: { ...base.stats, decisionSeq: 7, activityLeaf: 88,
+            targetCombat: { lastDefeatedNpcIds: [130] } } };
+    const threatDeps = { spots: threatSpots };
+    const physical = Economy.forState(threatBot, threatDeps);
+    assert.equal(physical.gearThreatMask, 1);
+    assert.equal(Economy.forState(threatBot, threatDeps), physical);
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 130];
+    assert.equal(Economy.forState(threatBot, threatDeps), physical, 'same applicability preserves context');
+    threatBot.spotId = mixedSpot.id;
+    const stillPhysical = Economy.forState(threatBot, threatDeps);
+    assert.equal(stillPhysical.gearThreatMask, 1, 'unobserved magic is not personal knowledge');
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 264];
+    const magical = Economy.forState(threatBot, threatDeps);
+    assert.equal(magical.gearThreatMask, 3);
+    assert.notEqual(magical, stillPhysical, 'own magic observation invalidates the whole projection');
+    assert.equal(magical.statsPacket.decisionSeq, physical.statsPacket.decisionSeq);
+    assert.equal(threatBot.stats.activityLeaf, 88, 'preparing threat never changes the saved activity');
+    assert.equal(threatBot.stats.decisionSeq, 7, 'preparing threat never starts a decision event');
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130];
+    assert.equal(Economy.forState(threatBot, threatDeps).gearThreatMask, 1);
+    threatBot.stats.relations = [{ hostility: 1, targetId: 77 }];
+    assert.equal(Economy.forState(threatBot, threatDeps).gearThreatMask, 3, 'hostile intent prevents physical-only valuation');
+    Economy.forget(threatBot.characterId);
+    console.log('PASS contextual gear projection / own observation / unchanged tendency roll');
     const rich = { ...base, adena: 1e12 };
     const richContext = Economy.forState(rich);
     assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);

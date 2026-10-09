@@ -131,10 +131,15 @@ async function run() {
     BotManager.findSessionByName = (name) => name === 'RemoteTrader'
         ? { actor: { fetchId: () => ownerId } } : null;
     try {
-        const tooSmall = BotAfkTradeChat.parse(LifeState.snapshot(ownerId),
+        const smallOffer = BotAfkTradeChat.parse(LifeState.snapshot(ownerId),
             'offer 90 Adena for Varnish x1', remotePlayer);
         assert.strictEqual((await BotAfkTradeChat.handle(remotePlayer,
-            LifeState.snapshot(ownerId), tooSmall)).reason, 'resource_lot_too_small');
+            LifeState.snapshot(ownerId), smallOffer)).ok, true, 'one material reaches ordinary negotiation');
+        Negotiation.declinePrice(AfkTrade.findOwnerProjection(ownerId).session, remotePlayer);
+        const invalidOffer = { ...smallOffer, quantity: 0 };
+        const invalidReply = await BotAfkTradeChat.handle(remotePlayer, LifeState.snapshot(ownerId), invalidOffer);
+        assert.strictEqual(invalidReply.reason, 'invalid_shop_offer');
+        assert.match(invalidReply.reply, /positive whole quantity/);
         assert.strictEqual(await World.messageBotByName(remotePlayer, remotePlayer.actor,
             'RemoteTrader', 'offer 2200 Adena for Varnish x22'), true);
         assert.strictEqual(await World.messageBotByName(remotePlayer, remotePlayer.actor,
@@ -430,21 +435,21 @@ async function run() {
     const originalRate = process.env.L2NODE_PROGRESSION_RATE;
     try {
         process.env.L2NODE_PROGRESSION_RATE = 'x1';
-        const x1Minimum = BotAfkMarket.minimumResourceLotValue();
         process.env.L2NODE_PROGRESSION_RATE = 'x10';
-        assert.strictEqual(BotAfkMarket.minimumResourceLotValue(), x1Minimum * 10);
-        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1865, count: 19, price: 1000 }), false);
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1865, count: 19, price: 1000 }), true);
         assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1865, count: 20, price: 1000 }), true);
-        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1875, count: 1, price: 25000 }), false,
-            'even an expensive common resource must have at least five units');
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1875, count: 1, price: 25000 }), true,
+            'one common resource reaches the economic decision');
         assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1875, count: 5, price: 25000 }), true);
-        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 2508, count: 4, price: 5000 }), false);
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 2508, count: 4, price: 5000 }), true);
         assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1962, count: 1, price: 48750 }), true);
         assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 2095, count: 1, price: 333305 }), true,
             'a weapon blade is a crafting piece, not a bulk resource');
         assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: cWeapon.selfId, count: 1, price: 1 }), true);
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1835, kind: 'Other.Shot', count: 499, price: 1 }), true);
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1865, count: 2, price: 1 }), true);
+        assert.strictEqual(BotAfkMarket.viableSellLine({ selfId: 1865, count: 0, price: 1000 }), false);
         process.env.L2NODE_PROGRESSION_RATE = 'x50';
-        assert.strictEqual(BotAfkMarket.minimumResourceLotValue(), x1Minimum * 50);
         process.env.L2NODE_PROGRESSION_RATE = 'x10';
 
         await Database.createAccount('bot_afk_lot_seller', 'pw');
@@ -465,7 +470,7 @@ async function run() {
             kind: 'Other.Material', count: Number(state.inventory?.['1865']?.amount || 0), price: 1000 }] });
         const premature = await BotAfkMarket.reconcile(lotState, sellGoal);
         assert.strictEqual(premature.changed, false);
-        assert.strictEqual(AfkTrade.findOwnerProjection(lotOwnerId), null);
+        assert.strictEqual(AfkTrade.findOwnerProjection(lotOwnerId), null, 'a remote quote does not move physical stock');
         assert.strictEqual(amount(await Database.fetchItems(lotOwnerId), 1865), 19);
         await Database.updateItemAmount(lotOwnerId, lotStockId, 20);
         const accumulated = await LifeState.syncExternalInventory(lotOwnerId,
@@ -477,11 +482,13 @@ async function run() {
         assert.strictEqual(bulk.shop.lines[0].price, 1000);
         await AfkTrade.buyFromShop(customerId,
             AfkTrade.findOwnerProjection(lotOwnerId).actor.fetchPrivateStore(), 1865, 1);
-        assert.strictEqual(AfkTrade.findOwnerProjection(lotOwnerId), null);
+        assert.strictEqual(AfkTrade.findOwnerProjection(lotOwnerId).shop.lines[0].count, 19,
+            'a small positive remainder stays in the physical shop');
+        assert.strictEqual(amount(await Database.fetchItems(lotOwnerId), 1865), 0,
+            'unsold physical stock remains held by its existing shop');
+        await BotAfkMarket.withdraw(lotOwnerId);
         assert.strictEqual(amount(await Database.fetchItems(lotOwnerId), 1865), 19,
-            'a sub-threshold remainder must return to the bot in the trade commit');
-        assert.strictEqual((await BotAfkMarket.reconcile(LifeState.snapshot(lotOwnerId), sellGoal)).changed, false,
-            'the returned remainder must not reopen an underpriced shop');
+            'closing the shop returns only unsold units');
 
         await Database.createAccount('bot_afk_old_small_lot', 'pw');
         const oldOwnerId = Number((await Database.createCharacter('bot_afk_old_small_lot',
@@ -503,7 +510,7 @@ async function run() {
         AfkTrade._resetForTests();
         assert.strictEqual(await AfkTrade.init(), 2);
         assert.deepStrictEqual(AfkTrade.findOwnerProjection(oldOwnerId).shop.lines.map((line) => Number(line.selfId)), [1875, 1962],
-            'a restart keeps a record as it is; the owner\'s next review prunes its lots');
+            'a restart keeps valid single-unit lots');
     } finally {
         if (originalRate === undefined) delete process.env.L2NODE_PROGRESSION_RATE;
         else process.env.L2NODE_PROGRESSION_RATE = originalRate;

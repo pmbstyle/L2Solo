@@ -80,7 +80,13 @@ function inputsFor(state, line, ctx) {
     const units = Number(demand?.applicableUnits ?? buyer?.count ?? 0);
     const feasible = typeof ctx.canSell === 'function' && line.storeType === 1 ? ctx.canSell(line) !== false
         : line.storeType !== 3 || Number(ctx.economy?.worth?.(line.selfId) ?? line.pricing?.worth ?? Infinity) > 0;
-    return [revision, Number(line.count), units, Number(feasible)];
+    // Adena prices are whole units; an unchanged affordable ceiling is not
+    // another economic edge. Unknown prepared usefulness is not zero.
+    const worth = line.storeType === 3 ? ctx.economy?.worth?.(line.selfId) : null;
+    const value = line.storeType === 3 && ctx.canBuy?.(line) === false ? 0
+        : line.storeType === 3 && typeof ctx.economy?.worth === 'function'
+        ? Number.isFinite(worth) && worth >= 0 ? Math.floor(worth) : -1 : Number(feasible);
+    return [revision, Number(line.count), units, value];
 }
 
 function attention(state, line, ctx, observed) {
@@ -126,7 +132,9 @@ function review(state, lines, ctx, lookSeen) {
         if (before && (before[1] !== input[1] || before[2] !== input[2])
             || Number.isFinite(line.pricing.seenCount) && Number(line.pricing.seenCount) !== input[1]
             || Number(line.fills || 0) > Number(line.pricing.seenFills || 0)) reason |= 2;
-        if (!input[3] || before && before[3] !== input[3]) reason |= 4;
+        if (!input[3] || before && before[3] !== input[3]
+            || !before && line.storeType === 3 && typeof ctx.economy?.worth === 'function'
+                && input[3] >= 0 && input[3] !== Math.floor(Number(line.pricing.worth))) reason |= 4;
         const choice = attention(state, line, ctx, lookSeen?.get(line.lineId));
         if (!reason && (!choice || Rolls.roll('board_look', Number(state.characterId), `${line.lineId}:${choice.deals}`)
             >= choice.probability)) continue;

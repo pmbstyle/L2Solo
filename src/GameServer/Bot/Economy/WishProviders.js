@@ -108,14 +108,15 @@ function wornReader(state) {
 }
 // What wearing `item` in its slot adds to the bot's build: remembered per
 // build and item (design 16.5), so a later review of the same build reuses it.
-function gearGain(state, item, timestamp = Date.now(), build = null) {
-    return gearGainReader(state, timestamp, build)(item);
+function gearGain(state, item, timestamp = Date.now(), build = null, threatMask = 3) {
+    return gearGainReader(state, timestamp, build, undefined, threatMask)(item);
 }
-function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state)) {
+function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state), threatMask = 3) {
+    threatMask = threatMask === 1 ? 1 : 3;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     build ||= Profile.buildGainsFor(state, timestamp);
     let inventoryEntries, withoutSlot, previousSlot;
-    return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
+    return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${threatMask}:${item.selfId}:${item.etc.slot}`, () => {
         const before = Profile.powerNumbers(build);
         const slot = Number(item.etc.slot);
         // Only a new native gain needs a hypothetical bag. Prepare its unchanged
@@ -135,7 +136,7 @@ function gearGainReader(state, timestamp, build, caster = require('./BotImprovem
         const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
         const defenceGain = Math.max(0, 1 - Number(before.pDef) / Math.max(1, Number(after.pDef)));
         const magicGain = Math.max(0, 1 - Number(before.mDef) / Math.max(1, Number(after.mDef)));
-        return { attack: attackGain, defence: Math.max(defenceGain, magicGain) };
+        return { attack: attackGain, defence: threatMask === 1 ? defenceGain : Math.max(defenceGain, magicGain) };
     });
 }
 // Damage per second in a 60-second rotation: each skill's reuse limits its
@@ -348,19 +349,24 @@ function buildProjection(state, ctx, deps) {
         const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
         if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
         const asks = ctx.board.list(id, SELL);
-        for (const offer of ctx.board.list(id, 3).slice(0, 5)) {
+        const publicOffers = ctx.board.list(id, 3).slice(0, 5);
+        const product = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
+        const fixedOffers = String(product?.template?.kind || '').startsWith('Other.Material')
+            ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
+        for (const offer of [...publicOffers, ...fixedOffers]) {
             if (Number(offer.ownerId) === Number(state.characterId) || Number(offer.enchant || 0)
                 || !(offer.count > 0) || !(offer.price > 0) || ownSales.some(line => line.price !== offer.price)) continue;
             const trip = ctx.trip?.details?.(offer.town);
             if (!trip?.known || ![trip.hours, trip.fees].every(value => Number.isFinite(value) && value >= 0)) continue;
+            const fixed = offer.type === 'static';
             let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
-            exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
+            if (!fixed) exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
             const forecast = exit.prospective || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
             if (!forecast?.known) continue;
-            const competitors = asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
+            const competitors = fixed ? [] : asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
             let cheaperUnits = 0;
             for (const line of competitors) if (!Number(line.enchant || 0) && line.price < offer.price) cheaperUnits += Number(line.count);
-            if (asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
+            if (!fixed && asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
             const input = { ...forecast, cheaperUnits, price: offer.price, residualUnitValue: Number(exit.residualUnitValue ?? ctx.buyback(id)) };
             const before = Price.saleOutcome({ ...input, units: oldUnits });
             const after = Price.saleOutcome({ ...input, units: oldUnits + count });
@@ -409,7 +415,7 @@ function buildProjection(state, ctx, deps) {
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
     const candidates = [];
-    const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic);
+    const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic, ctx.gearThreatMask ?? 3);
     for (const [slot, items] of gearCandidates(state, ctx, wornFor)) for (const item of items) {
         if (!Planner.considerable(item, state)) continue;
         const current = wornFor(slot);

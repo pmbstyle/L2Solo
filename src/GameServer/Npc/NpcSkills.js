@@ -191,6 +191,24 @@ function combatSkillsFor(npc) {
     });
 }
 
+// Prepared once with the datapack; zero is unknown, one physical, three mixed.
+// Retain only numeric membership, never the temporary native skill models.
+let threatMembership = new Uint8Array(0);
+function prepareThreats(npcs) {
+    const maximum = npcs.reduce((value, npc) => Math.max(value, Number(npc.selfId)), 0);
+    const prepared = new Uint8Array(maximum + 1);
+    for (const npc of npcs) {
+        const id = Number(npc.selfId);
+        if (prepared[id]) continue;
+        const actor = { fetchSelfId: () => id, fetchLevel: () => npc.template.level,
+            fetchMaxHp: () => npc.vitals?.maxHp || 1, fetchHp: () => npc.vitals?.maxHp || 1 };
+        prepared[id] = combatSkillsFor(actor).some(skill => skill.fetchSpell() && skill.fetchTargetKind() === 'enemy') ? 3 : 1;
+    }
+    threatMembership = prepared;
+}
+function threatFor(npcId) { return threatMembership[Number(npcId)] || 0; }
+function threatBytes() { return threatMembership.byteLength; }
+
 function passiveSkillsFor(npc) {
     return forNpc(npc).filter((skill) => skill.fetchPassive?.() === true);
 }
@@ -203,6 +221,9 @@ function maxHpMultiplierFor(npc) {
 }
 
 module.exports = {
+    prepareThreats,
+    threatFor,
+    threatBytes,
     forNpc,
     combatSkillsFor,
     passiveSkillsFor,

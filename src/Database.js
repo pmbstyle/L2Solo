@@ -1658,6 +1658,10 @@ function applySchemaMigrations() {
     `)]);
     migrations.push([62, () => require('./GameServer/AfkTrade/TradeMeetingSchema').install(connection)]);
     migrations.push([63, () => connection.exec('ALTER TABLE board_trade_participants ADD COLUMN lastReceipt TEXT')]);
+    migrations.push([64, () => connection.exec(`
+        CREATE INDEX board_trade_meetings_actor_a ON board_trade_meetings(actorA,state,id);
+        CREATE INDEX board_trade_meetings_actor_b ON board_trade_meetings(actorB,state,id);
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -2795,9 +2799,10 @@ function acceptedTradeIncomingUnsafe(characterId, row) {
     // Native snapshots serialize the slim reference with JSON.stringify or
     // json_patch. A cheap marker gates the indexed read; SQL remains authority.
     if (String(row?.statsJson || '').includes('"tradeMeeting":[')) {
-        const meeting = one(`SELECT m.id,m.actorA,m.actorB,m.state FROM board_trade_participants p
-            JOIN board_trade_meetings m ON m.id=p.meetingId WHERE p.characterId=?`, [characterId]);
-        if (meeting?.state === 'accepted') for (const line of all(`SELECT selfId,heldCount FROM board_trade_meeting_lines
+        const meetings = all(`SELECT id,actorB FROM board_trade_meetings WHERE actorA=? AND state='accepted'
+            UNION ALL SELECT id,actorB FROM board_trade_meetings WHERE actorB=? AND state='accepted'
+            ORDER BY id LIMIT ${require('./GameServer/AfkTrade/TradeMeeting').MAX_COMMITMENTS}`, [characterId, characterId]);
+        for (const meeting of meetings) for (const line of all(`SELECT selfId,heldCount FROM board_trade_meeting_lines
             WHERE meetingId=? AND payer=? AND custodyType='trade' AND heldCount>0 ORDER BY ordinal`,
         [meeting.id, Number(meeting.actorB === characterId)])) add(line.selfId, line.heldCount);
     }
@@ -10386,7 +10391,7 @@ Object.assign(Database, {
     prepareTradeParticipant(id) {
         return withCharacterFlush(id, () => inTransaction(() => {
             const slot = TradeMeetings.participant(Number(id)), row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);
-            return { sequence: slot.nextSequence, meetingId: slot.meetingId, revision: Number(row?.simulationRevision || 0),
+            return { sequence: slot.nextSequence, meetingId: slot.meetingId, anchor: TradeMeetings.anchor(Number(id)), revision: Number(row?.simulationRevision || 0),
                 phase: row?.phase || 'player', ownerId: row?.simulationOwner || null,
                 leaseId: row?.simulationLeaseId || null, hotAt: Number(row?.lastHotAt || 0),
                 needRevision: Number(row?.simulationRevision || 0),
@@ -10413,6 +10418,7 @@ Object.assign(Database, {
         return inTransaction(() => normalizeRow(coldSimulationRow(actorId)), 'board:meeting-owner-state');
     },
     fetchTradeMeeting(id) { return inTransaction(() => TradeMeetings.meeting(Number(id)), 'board:meeting-read'); },
+    fetchTradeMeetingsForOwner(id) { return inTransaction(() => TradeMeetings.active(Number(id)), 'board:meeting-owner-group'); },
     fetchTradeMeetingForOwner(id) {
         return inTransaction(() => { const slot = one('SELECT meetingId FROM board_trade_participants WHERE characterId=?', [id]);
             return slot?.meetingId ? TradeMeetings.meeting(slot.meetingId) : null; }, 'board:meeting-owner');

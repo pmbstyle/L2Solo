@@ -54,6 +54,11 @@ const changedOwners = new Set();
 const changedItemIds = new Set();
 
 function notifyBoardChange(change) {
+    // Main and worker economic consumers use the same item->recipe source.
+    // Membership changes follow board events, never a per-actor catalogue scan.
+    const production = require('../Bot/Population/ColdOccupationSources').recipeIndex(board);
+    if (change.reset) production.reset();
+    else for (const id of change.selfIds || []) production.update(id);
     for (const listener of boardChangeListeners) {
         try { listener(change); }
         catch (error) { utils.infoWarn('AfkTrade', 'board listener failed: %s', error.message); }

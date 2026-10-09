@@ -1,0 +1,1038 @@
+{
+  "timestamp": 1791538658175,
+  "state": {
+    "characterId": 2000096,
+    "level": 19,
+    "exp": 797708,
+    "sp": 17067,
+    "adena": 169135,
+    "spotId": "-18_39",
+    "phase": "cold",
+    "activity": "grouped",
+    "homeRegion": "Wandering",
+    "currentRegion": "Orc Grunt fields",
+    "loc": {
+      "locX": -102447,
+      "locY": 235367,
+      "locZ": -3384
+    },
+    "vitals": {
+      "hp": 485.55947418076335,
+      "maxHp": 495.2355803754536,
+      "mp": 156.9488,
+      "maxMp": 175.9488
+    },
+    "stats": {
+      "classId": 0,
+      "race": 0,
+      "build": {
+        "role": "dps",
+        "classId": null,
+        "level": 19,
+        "grade": "none",
+        "tier": "starter_fighter",
+        "classFamily": null,
+        "armor": "heavy",
+        "weapon": "one_handed_sword_or_blunt",
+        "statPriority": [
+          "pAtk",
+          "pDef",
+          "shot_efficiency"
+        ],
+        "specialAbilities": [],
+        "skills": [
+          {
+            "name": "Power Strike",
+            "intent": "starter_damage",
+            "minLevel": 5
+          },
+          {
+            "name": "Power Strike",
+            "intent": "tier_priority",
+            "minLevel": 1
+          },
+          {
+            "name": "rest only when needed",
+            "intent": "tier_priority",
+            "minLevel": 1
+          }
+        ],
+        "exampleGear": [
+          "starter sword/blunt",
+          "no-grade armor"
+        ],
+        "consumables": [
+          "soulshots"
+        ],
+        "partyNeed": "buffer_for_sustained_grind",
+        "playstyle": "simple_solo",
+        "warnings": [
+          "avoid red mobs"
+        ],
+        "source": "c4_guide_hints"
+      },
+      "coldCombat": {
+        "version": 5,
+        "skillSource": "database",
+        "capturedAt": 1791537970179,
+        "classId": 0,
+        "effects": [],
+        "skills": [
+          {
+            "selfId": 3,
+            "level": 9,
+            "passive": false,
+            "spell": false,
+            "power": 70,
+            "mp": 19,
+            "hp": 0,
+            "hitTime": 1080,
+            "reuse": 13000,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 16,
+            "level": 9,
+            "passive": false,
+            "spell": false,
+            "power": 210,
+            "mp": 17,
+            "hp": 0,
+            "hitTime": 1080,
+            "reuse": 11000,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 56,
+            "level": 9,
+            "passive": false,
+            "spell": false,
+            "power": 187,
+            "mp": 37,
+            "hp": 0,
+            "hitTime": 3200,
+            "reuse": 25000,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 141,
+            "level": 3,
+            "passive": true,
+            "spell": false,
+            "power": 3,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 142,
+            "level": 5,
+            "passive": true,
+            "spell": false,
+            "power": 1,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 194,
+            "level": 1,
+            "passive": true,
+            "spell": false,
+            "power": 1,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 226,
+            "level": 1,
+            "passive": false,
+            "spell": false,
+            "power": 1,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 1320,
+            "level": 1,
+            "passive": true,
+            "spell": false,
+            "power": 1,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          },
+          {
+            "selfId": 1322,
+            "level": 1,
+            "passive": false,
+            "spell": false,
+            "power": 1,
+            "mp": 0,
+            "hp": 0,
+            "hitTime": 0,
+            "reuse": 0,
+            "buffTime": 0,
+            "itemId": 0,
+            "itemCount": 0,
+            "itemIdOT": 0,
+            "itemCountOT": 0,
+            "itemConsumeSteps": 0,
+            "npcId": 0,
+            "totalLifeTime": 0,
+            "timeLostIdle": 0,
+            "timeLostActive": 0,
+            "isCubic": false
+          }
+        ],
+        "cooldowns": {
+          "3": 1791538671175
+        },
+        "charges": 0,
+        "chargeExpiresAt": null,
+        "summon": null
+      },
+      "generatedCold": true,
+      "hennas": [
+        null,
+        null,
+        null
+      ],
+      "playedHours": 11.35040638888889,
+      "frustration": 0,
+      "huntEfficiency": [
+        {
+          "spotId": "-18_39",
+          "signature": "net-xp-v1:0:19:party:10:1119:0:1122:0:1146:0:1147:0:114:0:154:0:19:0:41:0:876:0:907:0",
+          "at": 1791538658175,
+          "samples": 3,
+          "exp": 21380.625,
+          "cycleMs": 95902.5625,
+          "adena": 243.3125,
+          "loot": 15294.1875,
+          "kills": 9.3125,
+          "source": "cold_round"
+        }
+      ],
+      "karma": 0,
+      "fightsWon": 521,
+      "fightsResolved": 521,
+      "deaths": 0,
+      "expEarned": 797708,
+      "wishFocus": [
+        "care:2000382",
+        10.69494611111111,
+        0
+      ],
+      "decisionSeq": 88,
+      "activityLeaf": 1582945506,
+      "visitEvery": [
+        10.05,
+        1.36
+      ],
+      "targetCombat": {
+        "targetNpcId": 398,
+        "resolves": 9,
+        "defeated": 59,
+        "targetKills": 33,
+        "interruptions": 26,
+        "lastDefeatedNpcIds": [
+          398,
+          398,
+          398,
+          93,
+          398,
+          398,
+          398,
+          93
+        ],
+        "lastResolvedAt": 1791538365115,
+        "populationTargets": {
+          "93": {
+            "resolves": 6,
+            "defeated": 8,
+            "targetKills": 6,
+            "interruptions": 2,
+            "lastDefeatedNpcIds": [
+              93
+            ],
+            "lastResolvedAt": 1791493433944
+          },
+          "398": {
+            "resolves": 9,
+            "defeated": 59,
+            "targetKills": 33,
+            "interruptions": 26,
+            "lastDefeatedNpcIds": [
+              398,
+              398,
+              398,
+              93,
+              398,
+              398,
+              398,
+              93
+            ],
+            "lastResolvedAt": 1791538365115
+          }
+        }
+      },
+      "soulCrystalQuest": false
+    },
+    "inventory": {
+      "1": {
+        "selfId": 1,
+        "name": "Short Sword",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Weapon.Sword",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4003792,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "3": {
+        "selfId": 3,
+        "name": "Broadsword",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Weapon.Sword",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4015640,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "9": {
+        "selfId": 9,
+        "name": "Cedar Staff",
+        "amount": 2,
+        "kind": "Weapon.Blunt",
+        "rank": "none",
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false
+      },
+      "13": {
+        "selfId": 13,
+        "name": "Short Bow",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Weapon.Bow",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4002217,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "17": {
+        "selfId": 17,
+        "name": "Wooden Arrow",
+        "amount": 89,
+        "kind": "Other.Arrow",
+        "rank": "none"
+      },
+      "19": {
+        "selfId": 19,
+        "name": "Small Shield",
+        "amount": 2,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          8
+        ],
+        "stackable": false,
+        "slot": 8,
+        "rank": "none",
+        "kind": "Armor.Shield",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4004360,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 8
+          },
+          {
+            "id": 4006263,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "21": {
+        "selfId": 21,
+        "name": "Shirt",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Leather",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4002824,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "28": {
+        "selfId": 28,
+        "name": "Pants",
+        "amount": 5,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Leather",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4001213,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4003788,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4003789,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4003790,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4003791,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "41": {
+        "selfId": 41,
+        "name": "Cloth Cap",
+        "amount": 1,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          6
+        ],
+        "stackable": false,
+        "slot": 6,
+        "rank": "none",
+        "kind": "Armor.Wear",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4026251,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 6
+          }
+        ]
+      },
+      "57": {
+        "selfId": 57,
+        "name": "Adena",
+        "amount": 169135
+      },
+      "112": {
+        "selfId": 112,
+        "name": "Apprentice's Earring",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4026018,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "113": {
+        "selfId": 113,
+        "name": "Mystic's Earring",
+        "amount": 3,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4068208,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4081522,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": 4081523,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "114": {
+        "selfId": 114,
+        "name": "Earring of Strength",
+        "amount": 2,
+        "equipped": true,
+        "equippedCount": 2,
+        "equippedSlots": [
+          1,
+          2
+        ],
+        "stackable": false,
+        "slot": 1,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4035723,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 1
+          },
+          {
+            "id": 4045249,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 2
+          }
+        ]
+      },
+      "154": {
+        "selfId": 154,
+        "name": "Dwarven Mace",
+        "amount": 2,
+        "kind": "Weapon.Blunt",
+        "rank": "none",
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          7
+        ],
+        "slot": 7
+      },
+      "736": {
+        "selfId": 736,
+        "name": "Scroll of Escape",
+        "amount": 11,
+        "kind": "Other.Scroll",
+        "rank": "none",
+        "stackable": true
+      },
+      "875": {
+        "selfId": 875,
+        "name": "Ring of Knowledge",
+        "amount": 4,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4009997,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": null,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": null,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          },
+          {
+            "id": null,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "876": {
+        "selfId": 876,
+        "name": "Ring of Anguish",
+        "amount": 2,
+        "equipped": true,
+        "equippedCount": 2,
+        "equippedSlots": [
+          4,
+          5
+        ],
+        "stackable": false,
+        "slot": 4,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4044108,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 4
+          },
+          {
+            "id": 4046815,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 5
+          }
+        ]
+      },
+      "906": {
+        "selfId": 906,
+        "name": "Necklace of Knowledge",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4009372,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "907": {
+        "selfId": 907,
+        "name": "Necklace of Anguish",
+        "amount": 1,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          3
+        ],
+        "stackable": false,
+        "slot": 3,
+        "rank": "none",
+        "kind": "Armor.Jewel",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4066037,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 3
+          }
+        ]
+      },
+      "1060": {
+        "selfId": 1060,
+        "name": "Lesser Healing Potion",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": true,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Other.Potion",
+        "enchant": 0
+      },
+      "1119": {
+        "selfId": 1119,
+        "name": "Short Leather Gloves",
+        "amount": 1,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          9
+        ],
+        "stackable": false,
+        "slot": 9,
+        "rank": "none",
+        "kind": "Armor.Wear",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4003940,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 9
+          }
+        ]
+      },
+      "1121": {
+        "selfId": 1121,
+        "name": "Apprentice's Shoes",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": false,
+        "slot": 12,
+        "rank": "none",
+        "kind": "Armor.Wear",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4026180,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": false,
+            "slot": 0
+          }
+        ]
+      },
+      "1122": {
+        "selfId": 1122,
+        "name": "Cotton Shoes",
+        "amount": 1,
+        "kind": "Armor.Wear",
+        "rank": "none",
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          12
+        ],
+        "slot": 12
+      },
+      "1146": {
+        "selfId": 1146,
+        "name": "Squire's Shirt",
+        "amount": 1,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          10
+        ],
+        "stackable": false,
+        "slot": 10,
+        "rank": "none",
+        "kind": "Armor.Leather",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4000468,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 10
+          }
+        ]
+      },
+      "1147": {
+        "selfId": 1147,
+        "name": "Squire's Pants",
+        "amount": 1,
+        "equipped": true,
+        "equippedCount": 1,
+        "equippedSlots": [
+          11
+        ],
+        "stackable": false,
+        "slot": 11,
+        "rank": "none",
+        "kind": "Armor.Leather",
+        "enchant": 0,
+        "instances": [
+          {
+            "id": 4000469,
+            "amount": 1,
+            "enchant": 0,
+            "equipped": true,
+            "slot": 11
+          }
+        ]
+      },
+      "1802": {
+        "selfId": 1802,
+        "name": "Recipe: Necklace of Anguish",
+        "amount": 1,
+        "kind": "Other.Recipe",
+        "rank": "none",
+        "stackable": true
+      },
+      "1864": {
+        "selfId": 1864,
+        "name": "Stem",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": true,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Other.Material",
+        "enchant": 0
+      },
+      "1867": {
+        "selfId": 1867,
+        "name": "Animal Skin",
+        "amount": 7,
+        "kind": "Other.Material",
+        "rank": "none"
+      },
+      "1868": {
+        "selfId": 1868,
+        "name": "Thread",
+        "amount": 14,
+        "kind": "Other.Material",
+        "rank": "none"
+      },
+      "1870": {
+        "selfId": 1870,
+        "name": "Coal",
+        "amount": 2,
+        "kind": "Other.Material",
+        "rank": "none",
+        "stackable": true
+      },
+      "1871": {
+        "selfId": 1871,
+        "name": "Charcoal",
+        "amount": 7,
+        "kind": "Other.Material",
+        "rank": "none",
+        "stackable": true
+      },
+      "1872": {
+        "selfId": 1872,
+        "name": "Animal Bone",
+        "amount": 5,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": true,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Other.Material",
+        "enchant": 0
+      },
+      "1896": {
+        "selfId": 1896,
+        "name": "Necklace of Anguish Chain",
+        "amount": 1,
+        "equipped": false,
+        "equippedCount": 0,
+        "equippedSlots": [],
+        "stackable": true,
+        "slot": 0,
+        "rank": "none",
+        "kind": "Other.Material",
+        "enchant": 0
+      },
+      "2008": {
+        "selfId": 2008,
+        "name": "Cedar Staff Head",
+        "amount": 10,
+        "kind": "Other.Material",
+        "rank": "none"
+      },
+      "2136": {
+        "selfId": 2136,
+        "name": "Recipe: Cokes",
+        "amount": 1,
+        "kind": "Other.Recipe",
+        "rank": "none",
+        "stackable": true
+      }
+    },
+    "timing": {}
+  }
+}

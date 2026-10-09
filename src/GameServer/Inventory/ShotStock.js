@@ -119,6 +119,32 @@ function planForState(state) {
     return { ...plan, perAction: Math.max(0, Number(count) || 0) };
 }
 
+// A shared bounded encounter decision; never builds the wish graph or reads SQL.
+// The stock review supplies its existing table/hunt reads. Combat preparation
+// can read the same static table and at most eight of the owner's hunt samples.
+function usePolicy(state, prepared = {}) {
+    const plan = prepared.plan || planForState(state);
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    let best = prepared.bestTable, without = prepared.withoutShots, hour = prepared.hourAdena;
+    if (!Object.hasOwn(prepared, 'bestTable')) {
+        const role = state.party?.role || state.stats?.role || BotRoles.inferRole(state.stats?.classId || 0);
+        const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
+        const hunt = Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
+        const spot = hunt.spotId || state.spotId;
+        best = (spot && Table.value(spot, tableRole, state.level, true)) || Table.best(tableRole, state.level, true);
+        without = spot ? Table.value(spot, tableRole, state.level, false) : null;
+        hour = Hunt.huntHour(hunt, state);
+    }
+    const rawUse = plan.perAction > 0 ? Math.max(0, Number(best?.shots) || 0) : 0;
+    const benefit = Math.max(0, 1 - Math.max(0, Number(without?.exp) || 0) / Math.max(1, Number(best?.exp) || 0));
+    const buyback = invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
+    const affordableUse = cost => rawUse > 0 && Number(hour) > 0 && benefit >= rawUse * cost / hour ? rawUse : 0;
+    const usePerHour = affordableUse(buyback);
+    return { itemId: plan.selfId, rawUse, benefit, usePerHour,
+        purchaseUsePerHour: usePerHour > 0 ? affordableUse(Number(prepared.unitPrice ?? Infinity)) : 0 };
+}
+
 // The shots a bot keeps, by selfId: its own shot up to the amount a restock
 // buys it to (restockPlan); any more of it, and shots of another grade, are
 // spare. One rule for the sale set (ItemDisposition.saleCandidates) and the
@@ -194,21 +220,45 @@ function isCompatibleWithActor(kind, selfId, actor) {
     );
 }
 
-function enableAutoShot(actor) {
+// Hot combat only checks scalar inputs; an input change prepares the shared
+// allowance once. Weak ownership releases it with the actor, never on a timer.
+const autoUse = new WeakMap();
+function autoInputs(actor, held) {
+    const session = actor.session, state = session?.coldLifeState, stats = state?.stats;
+    const classId = actor.fetchClassId?.(), level = actor.fetchLevel?.();
+    const weaponId = actor.backpack?.paperdoll?.[7]?.selfId || actor.backpack?.paperdoll?.[14]?.selfId;
+    const equipmentRevision = actor.backpack?.equipmentRevision;
+    const spotId = session?.currentSpot?.id || state?.spotId;
+    const partyId = session?.hotBackgroundPartyId;
+    const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
+    if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
+        && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
+    return { classId, level, weaponId, equipmentRevision, spotId, partyId, role, huntAt };
+}
+function refreshAutoShot(actor) {
+    const held = autoUse.get(actor), inputs = autoInputs(actor, held);
+    if (inputs !== held) enableAutoShot(actor, { inputs });
+}
+function enableAutoShot(actor, options = {}) {
     if (!actor?.backpack) return null;
 
     const plan = planForActor(actor);
-    if (!actor.backpack.fetchItemFromSelfId?.(plan.selfId)) return null;
-
     const enabled = actor.autoSoulshots instanceof Set
         ? actor.autoSoulshots
         : new Set(actor.autoSoulshots || []);
     // A bot has one combat profile. Remove an old grade/kind after an equipment
     // upgrade so a physical weapon never keeps a caster shot (or vice versa).
     SHOT_IDS.forEach((selfId) => enabled.delete(selfId));
-    enabled.add(plan.selfId);
+    // Spawn and weapon refresh have no held review yet; use only the actor's
+    // physical inventory and own hunt samples, not a new economic graph.
+    const stock = options.stock || usePolicy(invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(actor));
+    const allowed = Number(stock.itemId) === plan.selfId && (stock.ownedUsePerHour ?? stock.usePerHour) > 0;
+    // Auto mode may outlive an empty stack; native charging still requires
+    // physical units. A useful gift need not justify buying replacement stock.
+    if (allowed) enabled.add(plan.selfId);
     actor.autoSoulshots = enabled;
-    return plan;
+    autoUse.set(actor, options.inputs || autoInputs(actor));
+    return allowed && actor.backpack.fetchItemFromSelfId?.(plan.selfId) ? plan : null;
 }
 
 function planForRows(rows, classId) {
@@ -513,7 +563,9 @@ module.exports = {
     kindForSelfId,
     isCompatibleWithActor,
     keptAmounts,
+    usePolicy,
     enableAutoShot,
+    refreshAutoShot,
     planForRows,
     shotAmount,
     ensureActorStock,

@@ -1,7 +1,7 @@
 'use strict';
 const assert = require('node:assert/strict');
 const Service = require('../src/GameServer/AfkTrade/TradeMeetingService');
-let lifeListener, boardListener, playerListener;
+let lifeListener, marketListener, boardListener, playerListener;
 let revision = 0;
 const state = { characterId: 1, phase: 'cold', simulation: { revision: 0, ownerId: 'legacy_main' }, timing: {} };
 const native = { recoverTradeMeetings: async () => [],
@@ -13,7 +13,8 @@ global.invoke = name => ({
     Database: native,
     'GameServer/Bot/Population/BotLifeState': {
         cachedState: () => ({ ...state, simulation: { ...state.simulation, revision } }),
-        subscribeChanges: fn => { lifeListener = fn; return () => { lifeListener = null; }; }
+        subscribeChanges: fn => { lifeListener = fn; return () => { lifeListener = null; }; },
+        subscribeMarketReviewChanges: fn => { marketListener = fn; return () => { marketListener = null; }; }
     },
     'GameServer/AfkTrade/AfkTradeService': {
         subscribeBoardChanges: fn => { boardListener = fn; return () => { boardListener = null; }; }
@@ -68,5 +69,5 @@ function request(n) {
         assert.equal((await Service.accept(original.token, original.actorA)).outcome, 'completed', 'bot acceptance retries use the same cleaned receipt');
         await assert.rejects(Service.accept(original.token, 99), /preparation_missing/);
         console.log('Meeting preparation: stale caller, one per actor, source invalidation, disconnect and bounded release passed');
-    } finally { Service.reset(); }
+    } finally { Service.reset(); assert.equal(marketListener, null, 'reset removes the authority event subscription'); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

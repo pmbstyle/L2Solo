@@ -61,7 +61,15 @@ module.exports.meetingPrepareProbe = async id => {
     buyerRequest.lines = [{ payer: 0, itemId: 710056, selfId: wanted.itemId, enchant: 0, count: 1, price: 1, adId: record.id,
         adRevision: 1, certificate: null }];
     const buyer = await kernel.prepareMeeting(id, buyerRequest);
-    return { result, buyer, seller, wanted: wanted.itemId, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
+    state.stats.tradeMeeting = [42, 1];
+    const sharedRequest = JSON.parse(JSON.stringify(request));
+    sharedRequest.token = 'actual-shared-meeting'; sharedRequest.parties[0].route.method = 'meeting:42';
+    const shared = JSON.parse(JSON.stringify(await kernel.prepareMeeting(id, sharedRequest)));
+    sharedRequest.token = 'forged-shared-meeting'; sharedRequest.parties[0].route.method = 'meeting:43';
+    let staleShared;
+    try { await kernel.prepareMeeting(id, sharedRequest); } catch (error) { staleShared = error.message; }
+    delete state.stats.tradeMeeting;
+    return { result, buyer, seller, shared, staleShared, wanted: wanted.itemId, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -109,6 +117,8 @@ parentPort.on('message', message => {
         assert(response.value.result.dependencies.every(row => row[1].startsWith('g:')));
         assert.equal(response.value.buyer.token, 'actual-positive-buyer');
         assert.equal(response.value.seller.token, 'actual-positive-seller');
+        assert.deepEqual(response.value.shared.parties[0].route, { fee: 0, scroll: false, method: 'meeting:42', durationMs: 0 });
+        assert.equal(response.value.staleShared, 'trade_meeting_route_changed');
         const certificate = require('../src/GameServer/Bot/Economy/TradeIntent').decode(response.value.buyer.lines[0].certificate);
         assert.equal(certificate.itemId, response.value.wanted); assert.equal(certificate.amount, 1); assert.equal(certificate.price, 1);
         assert.deepEqual(response.value.forbiddenLoaded, []);
