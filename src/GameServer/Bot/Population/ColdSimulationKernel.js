@@ -1,3 +1,4 @@
+const { isDeepStrictEqual } = require('node:util');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const { isMainThread } = require('node:worker_threads');
@@ -546,11 +547,16 @@ class ColdSimulationKernel {
     }
 
     upsert(entry = {}) {
-        const state = entry.state || entry;
+        let state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
         if (!characterId) return false;
         const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
         const current = this.states.get(characterId);
+        // Only an active bilateral preparation needs stable object identity.
+        // Repeated structured-clone snapshots of identical physical state are
+        // not new consent. Changed bags/timing/ownership still invalidate it.
+        if (this.commandStartedAt.get(characterId)?.kind === 'meeting'
+            && current && isDeepStrictEqual(current.state, state)) state = current.state;
         if (entry.context?.requirementRefresh === false) {
             this.partyRequirementProgress.delete(String(entry.context?.party?.partyId || current?.context?.party?.partyId || ''));
         }

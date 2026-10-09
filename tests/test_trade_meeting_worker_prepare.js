@@ -29,6 +29,7 @@ const state = { characterId: id, name: 'OriginSeller', level: 20, exp: Number(Da
 const observer = String.raw`
 module.exports.meetingPrepareProbe = async id => {
     const state = kernel.states.get(id).state, authority = require('../Economy/EconomyCommit').authority(state);
+    boardIndex.put({ id: 710057, kind: 'sell_ad', storeType: 1, ownerId: id+1, botOwned: true, town: 'Giran', revision: 1, custodyPolicy: 1, lines: [{ id: 710058, selfId: 48, enchant: 0, count: 1, price: 1 }] });
     const request = { token: 'actual-meeting-prepare', actorA: id, actorB: id+1, seqA: 0, seqB: 0,
         town: 'Giran', point: { locX: 83396, locY: 147904, locZ: -3400 },
         parties: [0,1].map(() => ({ ...authority, sequence: 0, needRevision: authority.revision,
@@ -40,6 +41,15 @@ module.exports.meetingPrepareProbe = async id => {
     const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { board: boardReady(), routeRows,
         workshop: { known: true, recipeId: 0, incomePerHour: 0 }, timestamp: Date.now() });
     const Intent = require('../Economy/TradeIntent');
+    // A seller answering somebody else's BUY goes through the real disposition
+    // path; an own SELL quote above intentionally did not exercise that path.
+    boardIndex.put({ id: 710060, kind: 'buy_ad', storeType: 3, ownerId: id+1, botOwned: true,
+        town: 'Giran', revision: 1, custodyPolicy: 1,
+        lines: [{ id: 710061, selfId: 1869, enchant: 0, count: 1000000, price: 1000000 }] });
+    const sellRequest = JSON.parse(JSON.stringify(request));
+    sellRequest.token = 'actual-positive-seller';
+    sellRequest.lines[0].adId = 710060; sellRequest.lines[0].count = 1000000; sellRequest.lines[0].price = 1000000;
+    const seller = await kernel.prepareMeeting(id, sellRequest);
     const wanted = Intent.project(state, economy.network, economy.projection, itemId => economy.worth(itemId) ?? economy.price(itemId), 40)
         .find(row => row.amount >= 1 && row.worth >= 1);
     if (!wanted) throw Error('fixture_has_no_real_buy_wish');
@@ -51,7 +61,7 @@ module.exports.meetingPrepareProbe = async id => {
     buyerRequest.lines = [{ payer: 0, itemId: 710056, selfId: wanted.itemId, enchant: 0, count: 1, price: 1, adId: record.id,
         adRevision: 1, certificate: null }];
     const buyer = await kernel.prepareMeeting(id, buyerRequest);
-    return { result, buyer, wanted: wanted.itemId, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
+    return { result, buyer, seller, wanted: wanted.itemId, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -98,6 +108,7 @@ parentPort.on('message', message => {
             === invoke('GameServer/Bot/Economy/MarketCounters').counterOf(1869)));
         assert(response.value.result.dependencies.every(row => row[1].startsWith('g:')));
         assert.equal(response.value.buyer.token, 'actual-positive-buyer');
+        assert.equal(response.value.seller.token, 'actual-positive-seller');
         const certificate = require('../src/GameServer/Bot/Economy/TradeIntent').decode(response.value.buyer.lines[0].certificate);
         assert.equal(certificate.itemId, response.value.wanted); assert.equal(certificate.amount, 1); assert.equal(certificate.price, 1);
         assert.deepEqual(response.value.forbiddenLoaded, []);

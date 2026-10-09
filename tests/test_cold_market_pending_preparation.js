@@ -33,7 +33,7 @@ const dependencies={
 global.invoke=name=>dependencies[name]||{};
 const diagnostics={active:()=>false,enabled:()=>false};
 const sandbox={module:{exports:{}},invoke:global.invoke,utils:{infoWarn:()=>{}},Date,Promise,console,
- require:name=>name==='./EconomyDiagnostics'?diagnostics:name==='../Population/CombinedErrandPolicy'?{pending:state=>state.stats?.marketErrand?[state.stats.marketErrand]:[],ERRAND_MS:1}:name==='./OfferOrder'?{farmingOrigin:()=>null,tripCost:()=>()=>0}:name==='./OfferQuery'?{cheapestTown:(_board,_id,opts)=>({town:'Elven Village',units:opts.amount,cost:75*opts.amount,spendBudget:1000,lines:[{line:offer,count:opts.amount,price:75}]})}:{}
+ require:name=>name==='./EconomyDiagnostics'?diagnostics:name==='../Population/CombinedErrandPolicy'?{pending:state=>state.stats?.marketErrand?[state.stats.marketErrand]:[],ERRAND_MS:1}:name==='./WealthCraftDecision'?{freeAmount:(_state,item)=>Number(item.amount||0)}:name==='./OfferOrder'?{farmingOrigin:()=>null,tripCost:()=>()=>0}:name==='./OfferQuery'?{cheapestTown:(_board,_id,opts)=>({town:'Elven Village',units:opts.amount,cost:75*opts.amount,spendBudget:1000,lines:[{line:offer,count:opts.amount,price:75}]})}:{}
 };
 vm.runInNewContext(fs.readFileSync(root+'/src/GameServer/Bot/Economy/ColdMarketService.js','utf8'),sandbox,{filename:'ColdMarketService.js'});
 (async()=>{
@@ -52,6 +52,9 @@ vm.runInNewContext(fs.readFileSync(root+'/src/GameServer/Bot/Economy/ColdMarketS
  next=await sandbox.module.exports.tryPurchase(current,{type:'market_errand'});
  assert.equal(next.pending,true); assert.deepEqual(writes,[]); assert.equal(current.stats.marketErrand.amount,1); Service.discard(prepared);
 
+ dependencies['GameServer/Bot/Economy/ItemDisposition']={reservedEquipmentAmounts:()=>new Map()};
+ next=await sandbox.module.exports.acquireMaterials(current,[{selfId:48,amount:1,options:{r:1}}]);
+ assert.equal(next.pending,true); assert.equal(next.ready,false); assert.deepEqual(writes,[]); Service.discard(prepared);
  dependencies.Database.fetchWarehouseItems=async()=>[];
  dependencies['GameServer/Bot/Economy/ColdSafeEnchantService']={enchantSafe:async state=>({state})};
  dependencies['GameServer/Bot/Population/BotLifeState'].learnCraftableRecipes=async state=>state;

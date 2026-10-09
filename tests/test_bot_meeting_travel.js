@@ -30,14 +30,14 @@ global.invoke = name => {
     if (name === 'Database') return database;
     if (name === 'GameServer/Bot/Population/BotLifeState') return {};
     if (name === 'GameServer/AfkTrade/AfkTradeService') return { syncOnlineInventory: async () => {} };
-    if (name === 'GameServer/World/World') return { notifyUserStateChanged() {}, fetchNpcsInRadius: () => [{
-        fetchSelfId: () => 1, fetchLocX: () => x < 1000 ? 0 : 1400, fetchLocY: () => 0, fetchLocZ: () => 0 }] };
+    if (name === 'GameServer/World/World') return { notifyUserStateChanged() {}, npc: { spawns: [{
+        fetchSelfId: () => 1, fetchLocX: () => x < 1000 ? 0 : 1400, fetchLocY: () => 0, fetchLocZ: () => 0 }] } };
     if (name === 'GameServer/Actor/Generics/TeleportTo') return (_session, _actor, point, options) => {
         teleports.push({ point, arrive: options.onArrival }); return true;
     };
     return originalInvoke(name);
 };
-Routes.between = position => ({ start: { locX: 0, locY: 0 }, route: { steps: position.locX >= 2000 ? [] : [{
+Routes.between = position => ({ start: { locX: position.locX < 1000 ? 0 : 1400, locY: 0 }, route: { steps: position.locX >= 2000 ? [] : [{
     npcId: 1, locX: position.locX < 1000 ? 1000 : 2000, locY: 0, locZ: 0,
     fee: position.locX < 1000 ? 100 : 200 }] } });
 (async () => {

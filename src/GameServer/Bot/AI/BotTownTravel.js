@@ -220,7 +220,7 @@ async function requestMeeting(session, bot, meeting, side) {
         const latest = await Database.fetchTradeMeeting(meeting.id);
         const held = JSON.parse(latest?.[`leg${suffix}`] || 'null');
         if (step.fee > Number(latest?.[`routeReserve${suffix}`]) && !held?.legId?.startsWith('gk:')) { finish(); return; }
-        const gatekeeper = require('../World/NpcObjectIndex').nearTemplate(invoke('GameServer/World/World'),
+        const gatekeeper = require('../../World/NpcObjectIndex').nearTemplate(invoke('GameServer/World/World'),
             step.npcId, native.start.locX, native.start.locY, 1200);
         if (!gatekeeper) throw Error('trade_meeting_gatekeeper_unavailable');
         const gate = { locX: gatekeeper.fetchLocX(), locY: gatekeeper.fetchLocY(), locZ: gatekeeper.fetchLocZ() };

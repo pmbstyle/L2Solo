@@ -252,6 +252,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                     const quote = input.board?.records.get(line.adId)?.find(row => row.selfId === line.selfId);
                     if (Number(quote?.ownerId) !== ownId) {
                         sellerDecision ||= require('../Economy/MarketListingPolicy').evaluate(input.state, { economy, board: input.board,
+                            npcOffersFor: OccupationSources.npcOffersFor,
+                            findSpot: id => SpotIndex.spotById(planningSpots, id),
                             now: input.timestamp, decisionPoint: `meeting:${request.token}`, slots: 5 });
                         const answer = sellerDecision.answers.find(row => row.item.selfId === line.selfId
                             && Number(row.line.recordId) === line.adId && row.count >= line.count);
