@@ -393,22 +393,33 @@ function buildProjection(state, ctx, deps) {
     const production = new Map(), seenProduction = new Set();
     const serviceCraft = invoke('GameServer/Bot/Economy/CraftShopService');
     if (ctx.board && ctx.hourAdena > 0 && serviceCraft.isServiceCrafter(state)
-        && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || '')))
+        && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || ''))) {
+        // Per-bot constants of the candidate loop: the bot's own plain sell lines
+        // are read once and grouped by item, not once per candidate recipe.
+        // ARCH-NOTE: deps.producerRecipes is the worker's public recipe set for
+        // this bot's scope; it is not bounded here, so the loop grows with that set.
+        const Price = require('./PriceDecision'), WealthCraft = require('./WealthCraftDecision');
+        const ItemTemplates = require('../../Item/ItemTemplateIndex'), Profit = require('./CraftProfitPolicy');
+        const items = invoke('GameServer/DataCache').items;
+        const ownSalesByItem = new Map();
+        for (const line of ctx.board.ownerLines?.(state.characterId) || []) {
+            if (line.storeType !== SELL || line.custodyPolicy === 1 || Number(line.enchant || 0)) continue;
+            if (!ownSalesByItem.has(line.selfId)) ownSalesByItem.set(line.selfId, []);
+            ownSalesByItem.get(line.selfId).push(line);
+        }
         for (const recipe of producerCandidates()) {
         if (!Sources.allowsRecipe(recipe) || seenProduction.has(Number(recipe.recipeId))) continue;
         seenProduction.add(Number(recipe.recipeId));
         if (!serviceCraft.canCraft(state, recipe)) continue;
         const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
         if (!Number.isSafeInteger(count) || count <= 0) continue;
-        const Price = require('./PriceDecision');
-        const stock = require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {});
-        const ownSales = (ctx.board.ownerLines?.(state.characterId) || []).filter(line => line.storeType === SELL
-            && line.custodyPolicy !== 1 && line.selfId === id && !Number(line.enchant || 0));
+        const stock = WealthCraft.freeAmount(state, state.inventory?.[id] || {});
+        const ownSales = ownSalesByItem.get(id) || [];
         const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
         if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
-        const product = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
+        const product = ItemTemplates.find(items, id);
         const fixedOffers = String(product?.template?.kind || '').startsWith('Other.Material')
             ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
         for (const offer of [...publicOffers, ...fixedOffers]) {
@@ -431,7 +442,7 @@ function buildProjection(state, ctx, deps) {
             if (!before.known || !after.known || exit.trial && !(after.sold > before.sold)) continue;
             const gross = after.receipts + after.residualValue - before.receipts - before.residualValue;
             if (!(gross > 0)) continue;
-            const inputPrice = [...(require('./CraftProfitPolicy').requirements(recipe) || [])]
+            const inputPrice = [...(Profit.requirements(recipe) || [])]
                 .reduce((sum, [id, amount]) => sum + amount * positive(price(id)), 0);
             const learningPrice = knownRecipes.has(Number(recipe.recipeId)) ? 0 : positive(price(recipe.recipeItemId));
             const proxy = gross * Number(recipe.successRate ?? 100) / 100 - inputPrice - learningPrice;
@@ -440,6 +451,7 @@ function buildProjection(state, ctx, deps) {
             const previous = production.get(id);
             if (!previous || proxy > previous.proxy || proxy === previous.proxy && recipe.recipeId < previous.recipe.recipeId)
                 production.set(id, { recipe, gross, proxy, inputPrice: inputPrice + learningPrice, town: offer.town, trip });
+        }
         }
     }
     const producerFinalists = [...production.values()].sort((a, b) => b.proxy - a.proxy || a.recipe.recipeId - b.recipe.recipeId).slice(0, 3);
