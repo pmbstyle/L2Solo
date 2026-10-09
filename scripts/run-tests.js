@@ -1029,6 +1029,7 @@ const tests = [
     'tests/test_economy_context_publication.js',
     'tests/test_packed_interaction_memory.js',
     'tests/test_wish_cost_caches.js',
+    'tests/test_gear_threat.js',
     'tests/test_gear_plan_memo.js',
     'tests/test_wish_store_release.js',
     'tests/test_minimum_relations_pk.js',

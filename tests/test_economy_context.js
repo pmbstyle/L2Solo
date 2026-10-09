@@ -166,6 +166,34 @@ async function run() {
     assert.equal(typeof context.statsPacket.activityLeaf, 'number');
     assert(context.statsPacket.activityLeaf !== 0);
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
+    const physicalSpot = { id: 'gear-physical', npcEntries: [{ selfId: 130 }] };
+    const mixedSpot = { id: 'gear-mixed', npcEntries: [{ selfId: 130 }, { selfId: 264 }] };
+    const threatSpots = [physicalSpot, mixedSpot];
+    const threatBot = { ...base, characterId: 1901, spotId: physicalSpot.id,
+        stats: { ...base.stats, decisionSeq: 7, activityLeaf: 88,
+            targetCombat: { lastDefeatedNpcIds: [130] } } };
+    const threatDeps = { spots: threatSpots };
+    const physical = Economy.forState(threatBot, threatDeps);
+    assert.equal(physical.gearThreatMask, 1);
+    assert.equal(Economy.forState(threatBot, threatDeps), physical);
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 130];
+    assert.equal(Economy.forState(threatBot, threatDeps), physical, 'same applicability preserves context');
+    threatBot.spotId = mixedSpot.id;
+    const stillPhysical = Economy.forState(threatBot, threatDeps);
+    assert.equal(stillPhysical.gearThreatMask, 1, 'unobserved magic is not personal knowledge');
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 264];
+    const magical = Economy.forState(threatBot, threatDeps);
+    assert.equal(magical.gearThreatMask, 3);
+    assert.notEqual(magical, stillPhysical, 'own magic observation invalidates the whole projection');
+    assert.equal(magical.statsPacket.decisionSeq, physical.statsPacket.decisionSeq);
+    assert.equal(threatBot.stats.activityLeaf, 88, 'preparing threat never changes the saved activity');
+    assert.equal(threatBot.stats.decisionSeq, 7, 'preparing threat never starts a decision event');
+    threatBot.stats.targetCombat.lastDefeatedNpcIds = [130];
+    assert.equal(Economy.forState(threatBot, threatDeps).gearThreatMask, 1);
+    threatBot.stats.relations = [{ hostility: 1, targetId: 77 }];
+    assert.equal(Economy.forState(threatBot, threatDeps).gearThreatMask, 3, 'hostile intent prevents physical-only valuation');
+    Economy.forget(threatBot.characterId);
+    console.log('PASS contextual gear projection / own observation / unchanged tendency roll');
     const rich = { ...base, adena: 1e12 };
     const richContext = Economy.forState(rich);
     assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);

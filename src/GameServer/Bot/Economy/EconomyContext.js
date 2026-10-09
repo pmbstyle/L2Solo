@@ -1,5 +1,7 @@
 'use strict';
 
+const GearThreat = require('./GearThreat');
+
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
@@ -94,7 +96,7 @@ function inputKey(state, deps = {}) {
         stats.generatedCold, stats.race, stats.marketSellRetryAfter,
         Number(stats.marketSellRetryAfter || 0) > Number(deps.timestamp || Date.now()),
         invoke('GameServer/Bot/Economy/ItemDisposition').reservationInputKey(state), JSON.stringify(stats.clanMaterialDemand || null),
-        state.spotId, stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
+        state.spotId, deps.gearThreatMask ?? GearThreat.maskFor(state, deps), stats.huntEfficiency?.[0]?.at, deps.memory?.revision || stats.memoryRevision || 0,
         deps.inputKey || '', deps.mode || '', state.incomingPending, JSON.stringify(state.acceptedIncoming || null), Trip.key(state), deps.routeRows ? 'route_ready' : deps.tripCost ? 'route_given' : 'route_pending', stats.pk, stats.soulCrystalQuest, (stats.hennas || []).join(','),
         Math.floor(positive(stats.exp ?? state.exp) / Math.max(1, positive(state.level) ** 2 * 100)),
         deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
@@ -354,11 +356,14 @@ function forState(state = {}, deps = {}) {
     // A valid completed card survives planner-slot reuse or card eviction;
     // the same route is repriced with the current hour value, never a wallet.
     if (!deps.routeRows && held?.context.routeKey === Trip.key(state)) deps.routeRows = held.context.routeRows;
+    const gearThreat = GearThreat.prepare(state, deps, held?.gearThreat);
+    deps.gearThreatMask = gearThreat.mask;
     const key = inputKey(state, { ...deps, timestamp });
     if (held?.key === key && (isMainThread || held.context.state === state)
         && marketHolds(sourceBoard, held.reads, deps)) {
         if (deps.onSourceRead) for (const id of held.reads.keys()) deps.onSourceRead(id);
         if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
+        held.gearThreat = gearThreat;
         return remember(cache, actorKey, held).context;
     }
     const started = diagnostic ? performance.now() : 0;
@@ -392,7 +397,7 @@ function forState(state = {}, deps = {}) {
     });
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
     const Tendency = require('../AI/TendencyRoll');
-    const context = { inputKey: key, actorKey, state, timestamp, persona, board, hunt: base.hunt, price, buyback, calibration,
+    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
         survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena };
@@ -480,7 +485,7 @@ function forState(state = {}, deps = {}) {
     if (deps.rememberContext !== false && planningContexts < 64) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
             Diagnostics.count('context', 'eviction', 'capacity');
-        remember(cache, actorKey, { key, reads, context }, 64 - planningContexts);
+        remember(cache, actorKey, { key, reads, context, gearThreat }, 64 - planningContexts);
     }
     return context;
 }

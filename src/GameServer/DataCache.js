@@ -281,6 +281,7 @@ const DataCache = {
             ...validateModel(path + 'Skills/Switch/switch')
         ]);
 
+        invoke('GameServer/Npc/NpcSkills').prepareThreats(DataCache.npcs);
         utils.infoSuccess('Datapack', 'cached');
     },
 

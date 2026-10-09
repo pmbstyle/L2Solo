@@ -108,14 +108,15 @@ function wornReader(state) {
 }
 // What wearing `item` in its slot adds to the bot's build: remembered per
 // build and item (design 16.5), so a later review of the same build reuses it.
-function gearGain(state, item, timestamp = Date.now(), build = null) {
-    return gearGainReader(state, timestamp, build)(item);
+function gearGain(state, item, timestamp = Date.now(), build = null, threatMask = 3) {
+    return gearGainReader(state, timestamp, build, undefined, threatMask)(item);
 }
-function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state)) {
+function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state), threatMask = 3) {
+    threatMask = threatMask === 1 ? 1 : 3;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     build ||= Profile.buildGainsFor(state, timestamp);
     let inventoryEntries, withoutSlot, previousSlot;
-    return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
+    return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${threatMask}:${item.selfId}:${item.etc.slot}`, () => {
         const before = Profile.powerNumbers(build);
         const slot = Number(item.etc.slot);
         // Only a new native gain needs a hypothetical bag. Prepare its unchanged
@@ -135,7 +136,7 @@ function gearGainReader(state, timestamp, build, caster = require('./BotImprovem
         const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
         const defenceGain = Math.max(0, 1 - Number(before.pDef) / Math.max(1, Number(after.pDef)));
         const magicGain = Math.max(0, 1 - Number(before.mDef) / Math.max(1, Number(after.mDef)));
-        return { attack: attackGain, defence: Math.max(defenceGain, magicGain) };
+        return { attack: attackGain, defence: threatMask === 1 ? defenceGain : Math.max(defenceGain, magicGain) };
     });
 }
 // Damage per second in a 60-second rotation: each skill's reuse limits its
@@ -413,7 +414,7 @@ function buildProjection(state, ctx, deps) {
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
     const candidates = [];
-    const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic);
+    const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic, ctx.gearThreatMask ?? 3);
     for (const [slot, items] of gearCandidates(state, ctx, wornFor)) for (const item of items) {
         if (!Planner.considerable(item, state)) continue;
         const current = wornFor(slot);
