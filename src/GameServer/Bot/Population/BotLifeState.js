@@ -843,10 +843,13 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
-            statsJson = CASE WHEN json_type(bot_life_state.statsJson, '$.economyCommit') IS NULL
+            -- Native takeover/release/restore owns player membership. A late
+            -- actor snapshot cannot revive or remove that ownership marker.
+            statsJson = json_patch(json_remove(CASE WHEN json_type(bot_life_state.statsJson, '$.economyCommit') IS NULL
                 THEN json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.economyCommit')
                 ELSE json_set(json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs'),
-                    '$.economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')) END,
+                    '$.economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')) END, '$.playerPartyTakeover'),
+                json_object('playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'))),
             updatedAt = excluded.updatedAt
         WHERE ${TABLE}.simulationOwner = 'legacy_main'
           AND COALESCE(json_extract(${TABLE}.statsJson, '$.clanInventoryRevision'), 0)

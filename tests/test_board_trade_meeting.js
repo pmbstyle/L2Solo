@@ -72,6 +72,12 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.deepEqual(await held(), holdings, 'native player membership blocks custody even with no runtime session');
         const nativeTakenOver = (await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [ids[1]]]))[0];
         const departedSession = { actor: { fetchId: () => ids[1] }, coldLifeState: Life.acceptLifecycleRow(nativeTakenOver) };
+        const staleSoloStats = { ...departedSession.coldLifeState.stats };
+        delete staleSoloStats.playerPartyTakeover;
+        await Life.upsertState({ ...departedSession.coldLifeState, stats: staleSoloStats }, 'late_solo_snapshot_before_takeover');
+        assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, 9,
+            'a late solo lifecycle snapshot cannot remove current native player ownership');
+        const staleDepartureState = departedSession.coldLifeState;
         const queuedDeparture = Life.releasePlayerPartyTakeover(departedSession);
         departedSession.partyCompanion = true;
         await queuedDeparture;
@@ -85,6 +91,9 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         assert.equal(Life.cachedState(ids[1]).stats.playerPartyTakeover, undefined);
         assert.equal(departedSession.coldLifeState.stats.playerPartyTakeover, undefined,
             'later hot/cold snapshots cannot resurrect dismissed player ownership');
+        await Life.upsertState(staleDepartureState, 'late_snapshot_before_party_departure');
+        assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, null,
+            'a late lifecycle snapshot cannot resurrect retired native player ownership');
         parties[1] = await Database.prepareTradeParticipant(ids[1]);
         request.parties[1] = { ...parties[1], route: request.parties[1].route };
 
