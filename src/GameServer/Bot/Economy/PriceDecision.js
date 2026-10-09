@@ -15,7 +15,7 @@
 // only a delay), commitment the patience on the discount. Buying mirrors it.
 const TendencyRoll = require('../AI/TendencyRoll');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
-const { SELL } = require('../../AfkTrade/BoardIndex');
+const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
@@ -76,6 +76,48 @@ function saleOutcome({ units, applicableUnits, willingUnits, cheaperUnits, price
     return Number.isFinite(receipts) && Number.isFinite(residualValue)
         ? { known: true, sold, residual, receipts, residualValue }
         : { known: false, sold: NaN, residual: NaN, receipts: NaN, residualValue: NaN };
+}
+
+// The same finite willingness model serves an ask and a first production trial.
+function willingUnitsAt(belief, trader, { price, applicableUnits, landed = price, npcLanded = Infinity }) {
+    const width = PriceBelief.sigma(belief);
+    const centre = belief.mu + (trader.assertiveness - 0.5) * width;
+    const wants = 1 - phi((Math.log(price) - centre) / width);
+    const chosen = Number.isFinite(npcLanded) ? 1 - phi(Math.log(landed / npcLanded) / PERCEPTION) : 1;
+    return applicableUnits * wants * chosen;
+}
+
+// A public bid describes interest, never reserved money. Re-read its exact
+// native record so a withdrawn/edited bid cannot support a stale trial.
+function prospectiveExit(state, exit, { board, persona, timestamp = Date.now() } = {}) {
+    const unsupported = () => {
+        const { prospective, ...rest } = exit || {};
+        return rest;
+    };
+    const offer = exit?.offer;
+    const ownerId = Number(offer?.ownerId ?? offer?.sourceId);
+    const id = Number(offer?.selfId);
+    const revision = offer?.revision ?? offer?.expectedRevision;
+    if (!(exit?.conditional || offer?.conditional || offer?.custodyPolicy === 1)
+        || !board?.records || !Number.isSafeInteger(id) || id <= 0
+        || !Number.isSafeInteger(ownerId) || ownerId <= 0 || ownerId === Number(state?.characterId)
+        || Number(offer?.enchant || 0) || !Number.isSafeInteger(Number(offer?.count)) || Number(offer.count) <= 0
+        || !(Number(offer?.price) > 0) || !Number.isFinite(Number(offer.price))
+        || Number(exit.price) !== Number(offer.price) || Number(exit.count) !== Number(offer.count)) return unsupported();
+    const line = board.records.get(Number(offer.recordId))?.find(row => Number(row.lineId) === Number(offer.lineId));
+    if (!line || line.storeType !== BUY || line.custodyPolicy !== 1 || line.ownerId !== ownerId
+        || line.selfId !== id || Number(line.enchant || 0) || line.price !== Number(offer.price)
+        || line.count !== Number(offer.count) || line.revision !== revision) return unsupported();
+    persona ||= invoke('GameServer/Bot/AI/BotPersona').of(state);
+    if (!persona) return unsupported();
+    const belief = PriceBelief.prior(id, { board, characterId: Number(state.characterId), timestamp,
+        understanding: Number(persona.understanding ?? 0.3), marketTrades: state.marketTrades || {} });
+    if (!belief || !Number.isFinite(belief.mu) || !(PriceBelief.sigma(belief) > 0)) return unsupported();
+    const willingUnits = willingUnitsAt(belief, traderOf(persona), { price: line.price, applicableUnits: line.count });
+    if (!Number.isFinite(willingUnits) || willingUnits < 0) return unsupported();
+    return { ...exit, trial: true, repeatable: false, residualUnitValue: buyback(id), prospective: {
+        known: true, origin: 'public_bid', authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },
+        applicableUnits: line.count, willingUnits, observedAt: timestamp } };
 }
 
 // What the seller of `units` of an item in `town` competes with: { buyback,
@@ -152,7 +194,6 @@ function nearBest(candidates, rollKey) {
 function chooseAsk(belief, market, trader, rollKey, current = 0) {
     const width = PriceBelief.sigma(belief);
     const reference = Math.exp(belief.mu);
-    const centre = belief.mu + (trader.assertiveness - 0.5) * width;
     const known = market.known !== false && Number.isFinite(market.applicableUnits)
         && Number.isSafeInteger(market.units) && market.units >= 0 && Number.isFinite(market.delayHours)
         && market.delayHours >= 0 && !market.truncated;
@@ -162,17 +203,15 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
         return current > market.buyback ? { price: current, value: NaN, money: NaN, npc: false, npcValue, known: false }
             : { price: market.buyback, value: npcValue, money: market.buyback, npc: true, npcValue, known: false };
     }
-    const alternative = market.npcLanded;
     const valueAt = (price) => {
-        const wants = 1 - phi((Math.log(price) - centre) / width);
         const landed = price + market.ownTrip;
-        const chosen = Number.isFinite(alternative) ? 1 - phi(Math.log(landed / alternative) / PERCEPTION) : 1;
         let ahead = 0;
         for (const rival of market.rivals) if (rival.landed < landed) ahead += rival.units;
         // Finite rival stock occurs only in A. The infinite NPC alternative
         // keeps the existing perception assessment, never a second rival share.
         const outcome = saleOutcome({ units: market.units, applicableUnits: market.applicableUnits,
-            willingUnits: market.applicableUnits * wants * chosen, cheaperUnits: ahead, price,
+            willingUnits: willingUnitsAt(belief, trader, { price, applicableUnits: market.applicableUnits,
+                landed, npcLanded: market.npcLanded }), cheaperUnits: ahead, price,
             residualUnitValue: market.buyback, delayHours: market.delayHours, discountRate: trader.wait });
         if (!outcome.known) return null;
         const discount = Math.exp(-trader.wait * market.delayHours);
@@ -301,5 +340,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

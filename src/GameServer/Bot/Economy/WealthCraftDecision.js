@@ -38,8 +38,9 @@ function staticExits(recipe, template) {
 function exitsFor(state, recipe, template, trip, options) {
     const result = [];
     for (const offer of options.offersFor?.(recipe.productId, 3, state.characterId) || []) {
-        result.push({ type: 'afk', conditional: !!offer.conditional, price: Number(offer.price), count: Number(offer.count), offer,
-            town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false });
+        const exit = { type: 'afk', conditional: !!offer.conditional, price: Number(offer.price), count: Number(offer.count), offer,
+            town: offer.town, trip: trip(offer.town), tripDetails: trip.details?.(offer.town), repeatable: false };
+        result.push(require('./PriceDecision').prospectiveExit(state, exit, { board: options.board, timestamp: options.timestamp }));
     }
     for (const exit of (options.staticExits || staticExits)(recipe, template)) result.push({ ...exit,
         trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
@@ -145,7 +146,9 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
                 recipeStock: ownStock.get(Number(recipe.recipeItemId)),
                 ...(options.preparePurchase ? { preparePurchase: (itemId, missing) => options.preparePurchase(state, itemId, missing,
                     { npc: Number(itemId) !== Number(recipe.recipeItemId), cost: trip }) } : {}) } : {}),
-            existingOutput: Number(ownStock.get(Number(recipe.productId))?.count || 0) + Number(outputStock.get(Number(recipe.productId)) || 0) };
+            existingOutput: Number(ownStock.get(Number(recipe.productId))?.count || 0)
+                + Number(outputStock.get(Number(recipe.productId)) || 0)
+                + Number(state.acceptedIncoming?.[recipe.productId] || 0) };
         const candidate = yield* Policy.searchQuantity({ state: budgetState, recipe,
             planFor: (id, missing) => options.planPurchase?.(state, id, missing, { npc: true, cost: trip }),
             exits, ownedFor, context: recipeContext, mode });

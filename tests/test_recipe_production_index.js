@@ -23,6 +23,7 @@ assert.deepEqual(index.update(101), [], 'offered recipe alone is not product dem
 quotes.set('201:3', [{ price: 100, count: 1 }]);
 assert.deepEqual(index.update(201), Array.from({ length: 8 }, (_, at) => index.scopeFor(at + 2)));
 assert.deepEqual(ids(index, 1), []); assert.deepEqual(ids(index, 2), [1]);
+assert.deepEqual(ids(index, 3), [1, 3], 'public product demand admits recipes without a scroll SELL');
 const revision = index.revision(index.scopeFor(9));
 quotes.set('101:1', [{ price: 30, count: 3 }]);
 assert.deepEqual(index.update(101), []);
@@ -34,7 +35,8 @@ quotes.set('102:1', [{}]); quotes.set('202:3', [{}]); index.update(102);
 assert.deepEqual(ids(index, 4), [1, 3]); assert.deepEqual(ids(index, 5), [1, 2, 3]);
 quotes.delete('201:3'); index.update(201);
 assert.deepEqual(ids(index, 5), [2], 'product disappearance removes every reverse-indexed recipe');
-quotes.delete('102:1'); index.update(102); assert.deepEqual(ids(index, 9), []);
+quotes.delete('102:1'); index.update(102); assert.deepEqual(ids(index, 9), [2], 'missing scroll supply preserves preparatory product demand');
+quotes.delete('202:3'); index.update(202); assert.deepEqual(ids(index, 9), []);
 quotes.set('104:1', [{}]); quotes.set('204:3', [{}]); quotes.set('105:1', [{}]); quotes.set('205:3', [{}]);
 index.update(104); index.update(105); assert.deepEqual(ids(index, 9), [], 'common/out-of-skill recipes stay excluded');
 const staticBoard = { list: (id, side) => id === 101 && side === 1 ? [{}] : [] };

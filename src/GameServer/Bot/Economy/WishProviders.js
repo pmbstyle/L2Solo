@@ -241,24 +241,10 @@ function buildProjection(state, ctx, deps) {
         return best ? { kind: best.source.kind, activity: 'hunting', costHours: 1 / best.perHour,
             spotId: best.source.spot.id, npcId: best.source.reward.selfId, itemId: Number(id), amount: 1 } : null;
     };
-    const itemNode = (id, depth = 0) => {
-        const key = `item:${id}`;
-        if (nodes.some(node => node.key === key)) return key;
-        if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
-        preparingItems.add(key);
-        const observed = observedPurchase(id);
-        const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
-            available: !!observed || price(id) > 0, executable: !!observed,
-            ...(observed || { availableUnits: 0 }) }];
-        const drop = sourcePath(id);
-        if (drop) paths.push(drop);
-        const crystal = invoke('GameServer/Bot/Economy/BotImprovementPolicy').crystalPath(state, id, ctx, deps.spots || []);
-        if (crystal) paths.push(crystal);
-        const recipe = Recipes.resolveByProductId(id) || invoke('GameServer/Items/C4DualSwordCombinations').loadRecipes()
-            .find(row => Number(row.productId) === Number(id));
+    const craftPath = (recipe, id, depth = 0, ownOnly = false) => {
         const ownCapable = recipe && (recipe.kind === 'dual_sword_combine'
             || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
-        let workshop = recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
+        let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
         if (workshop && ownCapable && knownRecipes.has(Number(recipe.recipeId))) {
             const regen = Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp);
             const ownHours = Number(recipe.mpCost) > 0 && regen > 0 ? Number(recipe.mpCost) / regen * 3 / 3600 : 0;
@@ -301,7 +287,7 @@ function buildProjection(state, ctx, deps) {
             const cycleHours = workshop ? 1 / 3600
                 : recipe.kind === 'dual_sword_combine' ? Number(recipe.costHours || 1 / 3600) : recoveryHours;
             if (scrollAvailable && (learned || scrollKey) && Number.isFinite(cycleHours) && cycleHours > 0
-                && requirements.every(row => row.key) && grossRequirements.every(row => row.key)) paths.push({ kind: 'craft', activity: 'crafting',
+                && requirements.every(row => row.key) && grossRequirements.every(row => row.key)) return { kind: 'craft', activity: 'crafting',
                 itemId: Number(id), recipeId: recipe.recipeId,
                 ...(workshop ? { workshop, price: workshop.price, town: workshop.townName,
                     tripHours: workshop.tripHours, tripFees: workshop.tripFees,
@@ -310,12 +296,100 @@ function buildProjection(state, ctx, deps) {
                 ownInputOpportunityValue, costHours: cycleHours, productCount: Number(recipe.productCount || 1),
                 grossRequirements: [...grossRequirements,
                     ...(!learned && scrollAvailable ? [{ key: scrollKey, amount: 1, once: true }] : [])],
-                requirements });
+                requirements };
         }
+        return null;
+    };
+    const itemNode = (id, depth = 0) => {
+        const key = `item:${id}`;
+        if (nodes.some(node => node.key === key)) return key;
+        if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
+        preparingItems.add(key);
+        const observed = observedPurchase(id);
+        const paths = [{ kind: 'buy', activity: 'shopping', price: price(id), itemId: Number(id), amount: 1,
+            available: !!observed || price(id) > 0, executable: !!observed,
+            ...(observed || { availableUnits: 0 }) }];
+        const drop = sourcePath(id);
+        if (drop) paths.push(drop);
+        const crystal = invoke('GameServer/Bot/Economy/BotImprovementPolicy').crystalPath(state, id, ctx, deps.spots || []);
+        if (crystal) paths.push(crystal);
+        const recipe = Recipes.resolveByProductId(id) || invoke('GameServer/Items/C4DualSwordCombinations').loadRecipes()
+            .find(row => Number(row.productId) === Number(id));
+        const craft = craftPath(recipe, id, depth);
+        if (craft) paths.push(craft);
         add({ key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] });
         preparingItems.delete(key);
         return key;
     };
+    // A finite earning goal uses the existing resale certificate and input
+    // graph. The finished product is output, never a preparatory BUY leaf.
+    // Only finalists expand their recipe DAG; public candidates come from the
+    // worker's existing item->recipe index, not a per-actor catalogue scan.
+    const producerCandidates = function* () {
+        for (const id of knownRecipes) yield Recipes.resolveByRecipeId(id);
+        for (const row of rows(state)) if (require('./WealthCraftDecision').freeAmount(state, row) > 0) yield Recipes.resolve?.(Number(row.selfId));
+        yield* deps.producerRecipes || [];
+    };
+    const production = new Map(), seenProduction = new Set();
+    const serviceCraft = invoke('GameServer/Bot/Economy/CraftShopService');
+    if (ctx.board && ctx.hourAdena > 0 && serviceCraft.isServiceCrafter(state)
+        && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || '')))
+        for (const recipe of producerCandidates()) {
+        if (!recipe || seenProduction.has(Number(recipe.recipeId))) continue;
+        seenProduction.add(Number(recipe.recipeId));
+        if (!serviceCraft.canCraft(state, recipe)) continue;
+        const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
+        if (!Number.isSafeInteger(count) || count <= 0) continue;
+        const Price = require('./PriceDecision');
+        const stock = require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {});
+        const ownSales = (ctx.board.ownerLines?.(state.characterId) || []).filter(line => line.storeType === SELL
+            && line.custodyPolicy !== 1 && line.selfId === id && !Number(line.enchant || 0));
+        const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
+        if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
+        const asks = ctx.board.list(id, SELL);
+        for (const offer of ctx.board.list(id, 3).slice(0, 5)) {
+            if (Number(offer.ownerId) === Number(state.characterId) || Number(offer.enchant || 0)
+                || !(offer.count > 0) || !(offer.price > 0) || ownSales.some(line => line.price !== offer.price)) continue;
+            const trip = ctx.trip?.details?.(offer.town);
+            if (!trip?.known || ![trip.hours, trip.fees].every(value => Number.isFinite(value) && value >= 0)) continue;
+            let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
+            exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
+            const forecast = exit.prospective || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
+            if (!forecast?.known) continue;
+            const competitors = asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
+            let cheaperUnits = 0;
+            for (const line of competitors) if (!Number(line.enchant || 0) && line.price < offer.price) cheaperUnits += Number(line.count);
+            if (asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
+            const input = { ...forecast, cheaperUnits, price: offer.price, residualUnitValue: Number(exit.residualUnitValue ?? ctx.buyback(id)) };
+            const before = Price.saleOutcome({ ...input, units: oldUnits });
+            const after = Price.saleOutcome({ ...input, units: oldUnits + count });
+            if (!before.known || !after.known || exit.trial && !(after.sold > before.sold)) continue;
+            const gross = after.receipts + after.residualValue - before.receipts - before.residualValue;
+            if (!(gross > 0)) continue;
+            const inputPrice = [...(require('./CraftProfitPolicy').requirements(recipe) || [])]
+                .reduce((sum, [id, amount]) => sum + amount * positive(price(id)), 0);
+            const learningPrice = knownRecipes.has(Number(recipe.recipeId)) ? 0 : positive(price(recipe.recipeItemId));
+            const proxy = gross * Number(recipe.successRate ?? 100) / 100 - inputPrice - learningPrice;
+            // Independent price is a ranking proxy, not acquisition cost:
+            // the bounded DAG can expose a cheaper farm/component craft.
+            const previous = production.get(id);
+            if (!previous || proxy > previous.proxy || proxy === previous.proxy && recipe.recipeId < previous.recipe.recipeId)
+                production.set(id, { recipe, gross, proxy, inputPrice: inputPrice + learningPrice, town: offer.town, trip });
+        }
+    }
+    const producerFinalists = [...production.values()].sort((a, b) => b.proxy - a.proxy || a.recipe.recipeId - b.recipe.recipeId).slice(0, 3);
+    const produced = new Set();
+    for (const row of producerFinalists) {
+        const id = Number(row.recipe.productId);
+        if (produced.has(id) || produced.size >= 3) continue;
+        const path = craftPath(row.recipe, id, 0, true);
+        if (!path) continue;
+        produced.add(id);
+        root({ key: `resale:${id}`, need: 'power', object: { itemId: id, amount: Number(row.recipe.productCount || 1), kind: 'resale' },
+            valueHours: row.gross / ctx.hourAdena, price: row.inputPrice,
+            paths: [{ ...path, trial: true, repeatable: false, quoted: true,
+                town: row.town, tripHours: row.trip.hours, tripFees: row.trip.fees }] });
+    }
     // Paid enchant, SA and henna are objects of the same power queue.
     // Missing materials inherit that value; only a genuinely ready leaf applies.
     for (const improvement of invoke('GameServer/Bot/Economy/BotImprovementPolicy').opportunities(state, ctx)) {

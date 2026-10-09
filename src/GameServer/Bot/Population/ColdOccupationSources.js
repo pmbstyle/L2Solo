@@ -234,6 +234,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             }
             exit.cheaperUnits = cheaper;
             if (tailUnknown) exit.applicableUnits = NaN;
+            Object.assign(exit, require('../Economy/PriceDecision').prospectiveExit(state, exit, { board, timestamp }));
             yield 'exit';
         }
         return result;

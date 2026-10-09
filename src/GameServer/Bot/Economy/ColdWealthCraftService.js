@@ -86,6 +86,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
     // tail can change F(q), so the selected forecast remains unsupported.
     if (exit.type === 'afk' && asks.length > 5 && Number(asks[5].price) < exit.price
         && cheaperUnits < exit.count) return null;
+    exit = require('./PriceDecision').prospectiveExit(state, exit, { board, timestamp: Date.now() });
     const ownedFor = id => {
         const row = state.inventory?.[id];
         if (!row) return null;
@@ -100,6 +101,12 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         return { count: Number(id) === Number(recipe.productId) ? Math.max(0, count - Number(step.ownReserve || 0)) : count,
             unitValue: value };
     };
+    const ownOutput = board.ownerLines(state.characterId).filter(line => line.storeType === AfkTrade.SELL
+        && line.custodyPolicy !== 1 && line.selfId === Number(recipe.productId) && !Number(line.enchant || 0));
+    if (ownOutput.some(line => line.price !== Number(exit.price))) return null;
+    context.existingOutput = Number(ownedFor(Number(recipe.productId))?.count || 0)
+        + ownOutput.reduce((sum, line) => sum + Number(line.count), 0)
+        + Number(state.acceptedIncoming?.[recipe.productId] || 0);
     const planFor = (id, amount) => {
         if (learning && Number(id) === Number(recipe.recipeItemId)) {
             if (!scrollQuote || amount !== 1) return null;
@@ -170,6 +177,7 @@ function staticExits(recipe, template) {
 
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state)) {
     return require('./WealthCraftDecision').chooseOpportunity(state, knownRecipes, context, {
+        board: AfkTrade.boardIndex(), timestamp: context.timestamp,
         planPurchase: (...args) => invoke('GameServer/Bot/Economy/ColdMarketService').planPurchase(...args),
         offersFor: (id, side, characterId) => AfkTrade.offers(id, side, { characterId }), staticExits
     });

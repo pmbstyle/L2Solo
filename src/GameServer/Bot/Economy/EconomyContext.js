@@ -87,7 +87,7 @@ function inputKey(state, deps = {}) {
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
-        Providers.recipeIds(state, deps).join(','),
+        Providers.recipeIds(state, deps).join(','), deps.producerRevision ?? '',
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.clanId, state.party?.partyId, state.partyId,
         stats.generatedCold, stats.race, stats.marketSellRetryAfter,
@@ -140,6 +140,13 @@ function resolved(state, deps) {
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
+    if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
+    if (typeof deps.producerSource === 'function') {
+        const source = deps.producerSource(state, deps.board);
+        deps.producerRecipes = source?.recipes;
+        deps.producerRevision = source?.revision;
+        if (source?.scope != null) deps.onSourceScope?.(source.scope);
+    }
     if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
     if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
         const Workshops = require('./CraftWorkshopService');

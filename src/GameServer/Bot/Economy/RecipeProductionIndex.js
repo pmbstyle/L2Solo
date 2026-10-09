@@ -39,8 +39,7 @@ class RecipeProductionIndex {
     rowsFor(level) { return this.rows[Math.max(0, Math.min(9, Math.floor(Number(level) || 0)))].values(); }
     refresh(recipe, changed = new Set()) {
         if (!this.accept(recipe)) return changed;
-        const available = this.board.list(Number(recipe.recipeItemId), 1).length > 0
-            && (this.board.list(Number(recipe.productId), 3).length > 0 || this.fixedBuyer(recipe));
+        const available = this.board.list(Number(recipe.productId), 3).length > 0 || this.fixedBuyer(recipe);
         for (let level = Number(recipe.level); level <= 9; level++) {
             const rows = this.rows[level];
             if (available === rows.has(recipe)) continue;

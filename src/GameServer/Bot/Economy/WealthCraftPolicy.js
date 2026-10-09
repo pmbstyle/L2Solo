@@ -101,8 +101,19 @@ function basketFor(recipe, planFor, ownedFor = () => null, batches = 1, context 
 }
 function craftMargin(recipe, productPrice, basketCost) { return Profit.revenue(recipe, productPrice) - Number(basketCost); }
 function saleInput(exit, units, context) {
-    return { units, applicableUnits: exit.conditional || exit.offer?.conditional ? 0 : Number(exit.applicableUnits ?? exit.count),
-        willingUnits: Number(exit.willingUnits ?? exit.count), cheaperUnits: Number(exit.cheaperUnits || 0),
+    const conditional = exit.conditional || exit.offer?.conditional;
+    const snapshot = exit.prospective, authority = snapshot?.authority, offer = exit.offer;
+    const prospective = conditional && exit.trial === true && exit.repeatable !== true
+        && snapshot?.known === true && snapshot.origin === 'public_bid'
+        && authority?.recordId === Number(offer?.recordId) && authority?.lineId === Number(offer?.lineId)
+        && authority?.revision === (offer?.revision ?? offer?.expectedRevision)
+        && snapshot.applicableUnits === Number(exit.count) && Number(offer?.count) === Number(exit.count)
+        && Number(offer?.price) === Number(exit.price)
+        && Number.isFinite(snapshot.willingUnits) && snapshot.willingUnits >= 0
+        && snapshot.willingUnits <= snapshot.applicableUnits;
+    return { units, applicableUnits: conditional ? prospective ? Number(exit.applicableUnits ?? snapshot.applicableUnits) : 0
+        : Number(exit.applicableUnits ?? exit.count),
+        willingUnits: prospective ? snapshot.willingUnits : Number(exit.willingUnits ?? exit.count), cheaperUnits: Number(exit.cheaperUnits || 0),
         price: Number(exit.price), residualUnitValue: Number(exit.residualUnitValue ?? context.residualUnitValue ?? 0) };
 }
 function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor = () => null, context = {} }) {
@@ -110,6 +121,7 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const productCount = Number(recipe?.productCount) * batches;
     const mp = Number(recipe?.mpCost || 0) * batches;
     if (!recipe || exit.unknownJoint || !Number.isSafeInteger(batches) || batches < 1 || batches > MAX_BATCHES
+        || exit.trial === true && batches !== 1
         || !Number.isSafeInteger(productCount) || productCount <= 0 || !(successRate > 0 && successRate <= 1)
         || !Number.isFinite(mp) || mp < 0 || !basket || mp + Number(basket.extraMp || 0) > Number(state?.vitals?.mp || 0)
         || basket.cashCost + basket.actualCashFees > Number(state?.adena || 0)
@@ -136,6 +148,7 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const full = Price.saleOutcome(saleInput(exit, oldCount + productCount, context));
     yield 'success';
     if (!full.known) return null;
+    if (exit.trial === true && !(full.sold > without.sold)) return null;
     // One native command draws once, including a multi-batch command. Cap each
     // physical outcome before mixing, so 100 output at 60% against 10 sells 6.
     const receipts = full.receipts - without.receipts;

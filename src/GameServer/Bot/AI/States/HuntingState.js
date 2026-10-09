@@ -592,6 +592,12 @@ module.exports = {
 
         if (isSoloHunter(session) && Number(session.companionEquipmentRetryAt || 0) <= Date.now()) {
             const economy = economyForHunt(session, bot);
+            const wealthCraft = require('../../Economy/HotWealthCraftService');
+            if (wealthCraft.canStart(session, economy.network.activity)) {
+                wealthCraft.review(session, economy)
+                    .catch(error => utils.infoWarn('BotWealth', '%s', error.message));
+                return;
+            }
             if (economy.network.activity?.activity === 'improving') {
                 const state = MarketListingPolicy.actorState(session);
                 if (economy.network.activity.improvement?.kind !== 'enchant' && !invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state)) {
