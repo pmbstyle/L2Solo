@@ -1124,6 +1124,7 @@ async function init() {
     }
     await Database.initializeBoardPricing();
     const shops = await Database.fetchAfkTradeShops(null, { activeOnly: true });
+    await require('./GiranShopDistribution').restore(shops);
     shops.forEach((shop) => (kindOf(shop) === 'shop' ? spawnProjection(shop) : refreshRecord(shop)));
     if (shops.length) utils.infoSuccess('AfkTrade', 'restored %d board records', shops.length);
     // The market counters learn the board's last deals again (group E, E58).

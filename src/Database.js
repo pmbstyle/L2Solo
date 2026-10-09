@@ -4821,6 +4821,48 @@ const Database = {
         }, 'afk-trade:sell-to-shop'));
     },
 
+    // Startup redistribution: the complete physical bot-shop roster of a town
+    // moves atomically once. Refuse a stale roster/revision before any write.
+    // Custody, line ids, quantities, prices and owners' physical bags stay put.
+    relocateBotAfkTradeShops(town, placements, migrationKey, at = now()) {
+        if (typeof town !== 'string' || !town || typeof migrationKey !== 'string' || !migrationKey || !Array.isArray(placements)
+            || placements.some(loc => !loc || !Number.isSafeInteger(loc.id) || loc.id <= 0
+                || !Number.isSafeInteger(loc.ownerId) || loc.ownerId <= 0
+                || !Number.isSafeInteger(loc.expectedRevision) || loc.expectedRevision <= 0
+                || ['locX', 'locY', 'locZ'].some(key => !Number.isInteger(loc[key])
+                    || loc[key] < -0x80000000 || loc[key] > 0x7fffffff))
+            || new Set(placements.map(loc => loc.id)).size !== placements.length) {
+            return Promise.reject(new Error('invalid_bot_shop_placements'));
+        }
+        return inTransaction(() => {
+            if (one('SELECT value FROM world_meta WHERE key = ?', [migrationKey])) return { skipped: true };
+            const shops = all(`SELECT shops.id, shops.ownerId, shops.revision, shops.locX, shops.locY, shops.locZ, shops.updatedAt
+                FROM afk_trade_shops shops JOIN characters ON characters.id = shops.ownerId
+                WHERE shops.town = ? AND shops.kind = 'shop' AND shops.status = 'active'
+                    AND substr(characters.username, 1, 4) = 'bot_' ORDER BY shops.id`, [town]);
+            const byId = new Map(shops.map(shop => [Number(shop.id), shop]));
+            if (shops.length !== placements.length || placements.some(loc => {
+                const shop = byId.get(loc.id);
+                return !shop || Number(shop.ownerId) !== loc.ownerId || Number(shop.revision) !== loc.expectedRevision;
+            })) throw new Error('shop_changed');
+
+            let moved = 0;
+            const applied = placements.map(loc => {
+                const shop = byId.get(loc.id);
+                const changed = ['locX', 'locY', 'locZ'].some(key => Number(shop[key]) !== loc[key]);
+                if (changed) {
+                    write(`UPDATE afk_trade_shops SET locX = ?, locY = ?, locZ = ?,
+                        revision = revision + 1, updatedAt = ? WHERE id = ?`, [loc.locX, loc.locY, loc.locZ, at, loc.id]);
+                    moved++;
+                }
+                return { id: loc.id, locX: loc.locX, locY: loc.locY, locZ: loc.locZ,
+                    revision: Number(shop.revision) + Number(changed), updatedAt: changed ? at : Number(shop.updatedAt) };
+            });
+            write('INSERT INTO world_meta (key, value) VALUES (?, ?)', [migrationKey, String(at)]);
+            return { moved, placements: applied };
+        }, 'afk-trade:redistribute-bot-shops');
+    },
+
     fetchAfkTradeShops(ownerId = null, { activeOnly = true } = {}) {
         const where = [activeOnly ? "shops.status = 'active'" : '1 = 1'];
         const params = [];

@@ -394,6 +394,7 @@ const tests = [
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
     'tests/test_shop_place_pinning.js',
+    'tests/test_giran_shop_distribution.js',
     'tests/test_bot_oren_market.js',
     'tests/test_bot_hunters_village_market.js',
     'tests/test_bot_aden_market.js',
