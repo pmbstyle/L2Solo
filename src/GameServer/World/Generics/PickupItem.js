@@ -2,16 +2,6 @@ const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 
-function transmitPickup(session, selfId, amount) {
-    const textName   = { kind: ConsoleText.kind.  item, value: selfId };
-    const textAmount = { kind: ConsoleText.kind.number, value: amount };
-    amount > 1
-        ? (selfId === 57
-            ? ConsoleText.transmit(session, ConsoleText.caption.pickupAdenaAmount, [textAmount])
-            : ConsoleText.transmit(session, ConsoleText.caption.pickupAmountOf, [textName, textAmount]))
-        : ConsoleText.transmit(session, ConsoleText.caption.pickup, [textName]);
-}
-
 function pickupItem(session, actor, item) {
     if (!actor || session?.actor !== actor || !actor.backpack ||
         actor.isDead?.() || actor.fetchIsOnline?.() === false) return false;
@@ -43,14 +33,14 @@ function pickupItem(session, actor, item) {
     if (selfId === 57) {
         allocations.forEach((entry) => {
             this.purchaseItem(entry.session, selfId, entry.amount);
-            transmitPickup(entry.session, selfId, entry.amount);
+            ConsoleText.transmitPickup(entry.session, selfId, entry.amount);
         });
         return true;
     }
 
     const recipientSession = allocations[0].session;
     this.purchaseItem(recipientSession, selfId, amount, claimedItem.fetchPetData?.() ? { petData: claimedItem.fetchPetData() } : {});
-    transmitPickup(recipientSession, selfId, amount);
+    ConsoleText.transmitPickup(recipientSession, selfId, amount);
     return true;
 }
 

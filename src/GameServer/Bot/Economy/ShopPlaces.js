@@ -7,10 +7,10 @@
 // table is built once, on its first use: the height of every place comes from
 // geodata, and a place a hot bot cannot stand on is left out.
 //
-// Free places are kept in a min-heap of place numbers. Places are numbered from
-// the fill centre outward (Giran: the centre of its column; any other square:
-// the area centroid of its outline; ties by Y, then X), so the market grows as
-// one tight cluster around the centre. Taking or freeing a place is O(log n).
+// Free places are kept in a min-heap of place numbers. Giran's numbers spread
+// successive stores across the whole usable square; other towns fill from
+// their centre outward. The order is built once, never per store or review.
+// Taking or freeing a place is O(log n).
 //
 // Everything that stands on a square blocks the places closer than SPACING:
 // static merchants (at build), AFK shops (AfkTradeService projections), and the
@@ -30,6 +30,7 @@ const PLAZAS = Object.freeze({
     Giran: Object.freeze({
         boundary: rect(80911, 82947, 147662, 149550),
         margin: 60,
+        distribution: 'uniform',
         holes: Object.freeze([Object.freeze({ minX: 81667, maxX: 82174, minY: 148354, maxY: 148857, clearance: 80 })]),
         square: Object.freeze({ minX: 80911, maxX: 83750, minY: 147662, maxY: 149550 }),
         locZ: -3466
@@ -261,13 +262,40 @@ function fillCenter(town) {
 const occupants = new Map();
 let towns = null;
 
+// Each next place is farthest from the places already selected. This gives
+// even coverage for a partly occupied market as well as a full one, including
+// the column's cutout and geodata exclusions. Ties keep the centre/Y/X order.
+// O(n^2) once for Giran's small fixed grid; allocation still uses the heap.
+function spreadPlaces(candidates) {
+    const nearest = new Float64Array(candidates.length).fill(Infinity);
+    const ordered = [];
+    let next = 0;
+    while (ordered.length < candidates.length) {
+        const selected = candidates[next];
+        ordered.push(selected);
+        nearest[next] = -1;
+        let farthest = -1;
+        for (let i = 0; i < candidates.length; i++) {
+            if (nearest[i] < 0) continue;
+            const dx = candidates[i].locX - selected.locX;
+            const dy = candidates[i].locY - selected.locY;
+            nearest[i] = Math.min(nearest[i], dx * dx + dy * dy);
+            if (nearest[i] > farthest) {
+                farthest = nearest[i];
+                next = i;
+            }
+        }
+    }
+    return ordered;
+}
+
 function buildTown(town) {
     const Geo = invoke('GameServer/Geodata/GeodataEngine');
     const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
     const row = PLAZAS[town];
     const bounds = stallBounds(town);
     const center = fillCenter(town);
-    const candidates = [];
+    let candidates = [];
     for (let locX = bounds.minX; locX <= bounds.maxX; locX += SPACING) {
         for (let locY = bounds.minY; locY <= bounds.maxY; locY += SPACING) {
             if (!isStallArea(town, { locX, locY })) continue;
@@ -279,6 +307,7 @@ function buildTown(town) {
         }
     }
     candidates.sort((a, b) => a.distance - b.distance || a.locY - b.locY || a.locX - b.locX);
+    if (row.distribution === 'uniform') candidates = spreadPlaces(candidates);
     const count = candidates.length;
     const cols = Math.floor((bounds.maxX - bounds.minX) / SPACING) + 1;
     const rows = Math.floor((bounds.maxY - bounds.minY) / SPACING) + 1;
@@ -293,7 +322,7 @@ function buildTown(town) {
         zs: new Int32Array(count),
         blockers: new Uint16Array(count),
         inHeap: new Uint8Array(count),
-        // Place numbers ascend from the centre, so 0..n-1 is already a min-heap.
+        // Numbers ascend in allocation priority, so 0..n-1 is a min-heap.
         heap: Array.from({ length: count }, (_, index) => index)
     };
     candidates.forEach((loc, index) => {
@@ -413,7 +442,7 @@ function ensureBuilt(town) {
     return data;
 }
 
-// The free place nearest the fill centre, now held by `owner`, or null when
+// The next free place in allocation order, now held by `owner`, or null when
 // the town has no captured square or its square is full.
 function take(town, owner) {
     if (!hasPlaza(town)) return null;

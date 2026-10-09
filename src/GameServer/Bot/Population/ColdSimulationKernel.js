@@ -19,6 +19,7 @@ class DueHeap {
         this.values = [];
         this.positions = new WeakMap();
         this.decisionHeads = [];
+        this.playerHeads = [];
     }
 
     set(index, entry) {
@@ -32,17 +33,22 @@ class DueHeap {
     refreshDecision(index) {
         while (index >= 0) {
             let best = this.values[index]?.alarmKind === 'decision' ? this.values[index] : null;
+            let player = this.values[index]?.playerWaiting ? this.values[index] : null;
             for (const child of [index * 2 + 1, index * 2 + 2]) {
                 const candidate = child < this.values.length ? this.decisionHeads[child] : null;
                 if (candidate && (!best || this.compare(candidate, best) < 0)) best = candidate;
+                const waiting = child < this.values.length ? this.playerHeads[child] : null;
+                if (waiting && (!player || this.compare(waiting, player) < 0)) player = waiting;
             }
             this.decisionHeads[index] = best;
+            this.playerHeads[index] = player;
             if (!index) break;
             index = Math.floor((index - 1) / 2);
         }
     }
 
     peekDecision() { return this.decisionHeads[0] || null; }
+    peekPlayer() { return this.playerHeads[0] || null; }
 
     up(index) {
         const entry = this.values[index];
@@ -89,6 +95,7 @@ class DueHeap {
         this.positions.delete(entry);
         this.refreshDecision(this.values.length);
         this.decisionHeads.length = this.values.length;
+        this.playerHeads.length = this.values.length;
         if (index < this.values.length) {
             this.set(index, last);
             const parent = Math.floor((index - 1) / 2);
@@ -168,6 +175,14 @@ function partyIntegrityInvalid(context = {}, partySession = {}) {
 
 function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}, meetingPending = false) {
     const stateDue = Number(state.timing?.nextResolveAt || 0);
+    // Shared hunt/review snapshots may have advanced the personal timer.
+    // An accepted obligation keeps its own physical transition deadline,
+    // including when the merchant is also the party leader.
+    if (state.stats?.tradeMeeting) {
+        const transitionDue = state.activity === 'traveling' ? Number(state.stats.travel?.arrivalAt || 0)
+            : state.activity === 'resting' ? Number(state.stats.restUntil || 0) : 0;
+        return transitionDue > 0 ? transitionDue : stateDue > 0 ? stateDue : timestamp;
+    }
     // The party row is the durable scheduling authority for a party resolve.
     // A freshly assigned leader can briefly carry no personal due time, and
     // later leader snapshots can also lag behind an advanced party schedule.
@@ -300,6 +315,11 @@ function lifecycleKind(state = {}, context = {}) {
 
 function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
+}
+
+function playerWaitingTransition(state, context) {
+    return context?.playerWaiting === true && !!state?.stats?.tradeMeeting
+        && lifecycleKind(state, context) === 'resolver';
 }
 
 function priorityForResult(state, result) {
@@ -680,7 +700,8 @@ class ColdSimulationKernel {
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         const token = this.nextScheduleToken++;
         const heapEntry = { characterId: id, version: Number(version),
-            dueAt: Number(dueAt || this.now()), scheduleToken: token };
+            dueAt: Number(dueAt || this.now()), scheduleToken: token,
+            playerWaiting: playerWaitingTransition(this.states.get(id)?.state, this.states.get(id)?.context) };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
     }
@@ -861,7 +882,13 @@ class ColdSimulationKernel {
             if (!this.hasNormalCoverage(id) || this.scheduleTokens.get(id).dueAt > this.now()) this.requeue(id, this.now());
             return true;
         }
-        if (this.hasNormalCoverage(id)) return false;
+        if (this.hasNormalCoverage(id)) {
+            const scheduled = this.scheduleTokens.get(id);
+            if (scheduled.heapEntry.playerWaiting !== playerWaitingTransition(current.state, current.context)) {
+                this.schedule(id, current.version, scheduled.dueAt);
+            }
+            return false;
+        }
         if (this.hasAcceptedPartyGrant(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
         this.schedule(id, current.version, dueAt ?? this.dueAt(current.state, current.context));
         return true;
@@ -884,7 +911,8 @@ class ColdSimulationKernel {
         const candidates = [];
         let commandsSelected = 0;
         while (candidates.length + commandsSelected < limit && this.heap.size > 0) {
-            const head = this.heap.peek();
+            const waiting = this.heap.peekPlayer();
+            const head = waiting && waiting.dueAt <= timestamp ? waiting : this.heap.peek();
             if (head.kind === 'alarm') {
                 if (head.dueAt > timestamp) break;
                 if (head.alarmKind === 'decision') {
@@ -896,11 +924,12 @@ class ColdSimulationKernel {
                 continue;
             }
             if (!this.validHeapEntry(head)) {
-                this.heap.pop();
+                this.heap.remove(head);
                 continue;
             }
             if (Number(head.dueAt || 0) > timestamp) break;
-            const entry = this.heap.pop();
+            const entry = head;
+            this.heap.remove(entry);
             this.consumeHeapEntry(entry);
             const id = Number(entry.characterId);
             // A catalog page may race an ACK and carry a newer revision while
@@ -954,6 +983,13 @@ class ColdSimulationKernel {
                 const attachedMembers = members.filter((member) => (
                     String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
                 ));
+                // The enrolled participant queue releases this obligation.
+                // Do not claim the merchant as part of a shared hunt or let
+                // assembly/recovery rewrite its independent travel deadline.
+                if (members.some(member => member.stats?.tradeMeeting)) {
+                    this.requeue(id, timestamp + 30000);
+                    continue;
+                }
                 if (members.some(member => member.stats?.pvpEncounter)) {
                     this.requeue(id, timestamp + 1000);
                     continue;
@@ -1051,8 +1087,11 @@ class ColdSimulationKernel {
         if (attempt && (attempt.kind !== 'meeting' || attempt.commandId !== identity.commandId)) return false;
         if (!attempt) {
             const current = this.states.get(id);
-            if (!current || this.busy(id) || this.commanding.size >= 16
-                || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return false;
+            // Bilateral consent reads a separate, bounded owner slot. A full
+            // combat/commit window must not make every other merchant busy.
+            // The same owner's active writer remains fenced out.
+            if (!current || this.busy(id)
+                || [...this.commandStartedAt.values()].filter(value => value.kind === 'meeting').length >= 16) return false;
             attempt = { kind: 'meeting', commandId: identity.commandId, state: current.state,
                 version: current.version, frames: [], frameHashes: [], sent: false, startedAt: this.now() };
             this.commandStartedAt.set(id, attempt); this.commanding.add(id);
@@ -1129,6 +1168,9 @@ class ColdSimulationKernel {
         if (!attempt || this.commandStartedAt.get(id) !== attempt) return false;
         this.commandStartedAt.delete(id);
         this.commanding.delete(id);
+        // The due heap may have consumed this owner's token while consent
+        // held it. ACK, rejection and expiry must all restore its lifecycle.
+        if (attempt.kind === 'meeting' && !this.stopping) this.ensureScheduled(id);
         return true;
     }
 
@@ -1298,9 +1340,9 @@ class ColdSimulationKernel {
             // forever and creates a CAS/IPC retry storm.
             if (result.state) {
                 this.upsert(result);
-                if (Number(result.retryAfterMs) > 0) {
-                    this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs)));
-                }
+                // Partition refusals can carry the same overdue row forever.
+                // Give other owners their turn instead of retrying every tick.
+                this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs) || 1000));
             }
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
@@ -1833,7 +1875,8 @@ class ColdSimulationKernel {
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
-            const priority = projection?.durable ? 'P1' : priorityForResult(active.state, result);
+            const priority = playerWaitingTransition(active.state, active.context) ? 'P0'
+                : projection?.durable ? 'P1' : priorityForResult(active.state, result);
             const proposal = {
                 proposalId: `${active.grant.leaseId}:${active.grant.revision}`,
                 characterId: Number(characterId),
@@ -1852,7 +1895,7 @@ class ColdSimulationKernel {
                 ...(projection?.buffOffer ? { buffOffer: { ...projection.buffOffer,
                     providerRevision: active.grant.revision } } : {}),
                 result,
-                options: { allowLifecycle: true }
+                options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
             this.dirty.set(Number(characterId), proposal);

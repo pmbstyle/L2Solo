@@ -97,6 +97,23 @@ assert.deepStrictEqual(detail.items[0].sources, ['bot', 'fixed', 'player']);
 assert.deepStrictEqual(detail.items[0].towns, ['Giran']);
 assert.strictEqual(detail.transactions.recent.length, 1);
 
+const book = MarketSnapshot.afkStores([
+    { id: 1, ownerId: 11, ownerAccount: 'bot_a', storeType: 3, kind: 'buy_ad', custodyPolicy: 1,
+        town: 'Giran', locX: 83396, locY: 147904, expiresAt: now + 1000,
+        lines: [{ selfId: 1864, count: 22, price: 10000 }] },
+    { id: 2, ownerId: 12, ownerAccount: 'bot_b', storeType: 3, kind: 'shop', custodyPolicy: 0,
+        town: 'Dion', locX: 15000, locY: 140000, lines: [{ selfId: 1864, count: 3, price: 10 }] }
+], itemsById);
+assert.strictEqual(book[0].kind, 'buy_ad');
+assert.strictEqual(book[0].loc, null);
+assert.strictEqual(book[0].expiresAt, now + 1000);
+assert.strictEqual(book[1].loc.locX, 15000);
+const publicBook = MarketSnapshot.buildDetail({ states, stores: [...book, stores[2]], transactions, now, itemsById });
+assert.deepStrictEqual(publicBook.items[0].publicDemand, {
+    offers: 2, units: 25, reservedUnits: 3, conditionalUnits: 22, towns: { Giran: 22, Dion: 3 }
+}, 'public bids must be counted once, excluding unlimited fixed traders and private wishes');
+assert.strictEqual(publicBook.items[0].demand.fundedUnits, 0, 'a high bid must never be presented as guaranteed funding');
+
 const plannedStates = [...states, {
     characterId: 12,
     name: 'Crafter Two',

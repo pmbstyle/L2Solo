@@ -20,11 +20,15 @@
                 iconUrl: item.iconUrl || null,
                 side: store.side,
                 source: store.source,
+                kind: store.kind || 'shop',
+                conditional: !!store.conditional,
+                custodyPolicy: store.custodyPolicy ?? null,
+                expiresAt: store.expiresAt || null,
                 town: store.town || 'Unknown',
                 ownerName: store.ownerName || 'Unknown trader',
                 ownerId: store.ownerId || null,
                 title: store.title || '',
-                loc: store.loc || null,
+                loc: ['sell_ad', 'buy_ad', 'order'].includes(store.kind) ? null : store.loc || null,
                 count: Math.max(0, Number(line.count || 0)),
                 price: Math.max(0, Number(line.price || 0)),
                 enchant: Math.max(0, Number(line.enchant || 0))
@@ -44,6 +48,9 @@
         const query = String(filters.query || '').trim().toLowerCase().replace(/^#(?=\d)/, '');
         return offers.filter((offer) => {
             if (filters.side && offer.side !== filters.side) return false;
+            const announcement = ['sell_ad', 'buy_ad', 'order'].includes(offer.kind);
+            if (filters.listing === 'shops' && announcement) return false;
+            if (filters.listing === 'ads' && !announcement) return false;
             if (!sourceMatches(offer.source, filters.source || 'market')) return false;
             if (filters.town && filters.town !== 'all' && offer.town !== filters.town) return false;
             if (filters.category && filters.category !== 'all' && offer.category !== filters.category) return false;
@@ -95,7 +102,9 @@
 
     function summary(offers) {
         return {
-            shops: new Set(offers.map((offer) => offer.storeId)).size,
+            shops: new Set(offers.filter((offer) => !['sell_ad', 'buy_ad', 'order'].includes(offer.kind)).map((offer) => offer.storeId)).size,
+            announcements: new Set(offers.filter((offer) => ['sell_ad', 'buy_ad', 'order'].includes(offer.kind)).map((offer) => offer.storeId)).size,
+            traders: new Set(offers.map((offer) => offer.ownerId || offer.ownerName)).size,
             listings: offers.length,
             units: offers.reduce((total, offer) => total + offer.count, 0),
             items: new Set(offers.map((offer) => offer.selfId)).size

@@ -283,9 +283,13 @@ function sessionFor(accountId, row, items) {
         title: 'Soulshot: C-grade x1000', lines: [{ objectId: shotObject, selfId: 1464,
             name: 'Soulshot: C-grade', count: 1000, price: 1, stackable: true }] });
     await AfkTrade.buyFromShop(customerId, AfkTrade.findOwnerProjection(botId).actor.fetchPrivateStore(), 1464, 501);
-    assert(!AfkTrade.findOwnerProjection(botId), 'a residual shot lot below 500 must leave the market');
+    const remainderShop = AfkTrade.findOwnerProjection(botId);
+    assert(remainderShop, 'a positive residual lot remains listed until its owner reviews or closes it');
+    assert.strictEqual(remainderShop.shop.lines.find(line => line.selfId === 1464).count, 499,
+        'the current lot policy has no hard minimum of 500 shots');
+    await AfkTrade.stop(botId);
     assert.strictEqual((await Database.fetchItems(botId)).filter(row => row.selfId === 1464)
-        .reduce((sum, row) => sum + row.amount, 0), 499, 'the small remainder is returned intact to its owner');
+        .reduce((sum, row) => sum + row.amount, 0), 499, 'closing the shop returns the small remainder intact to its owner');
     await Database.createAccount('bot_shot_order', 'pw');
     const orderOwner = Number((await Database.createCharacter('bot_shot_order', character('ShotOrder'))).insertId);
     await Database.setItem(orderOwner, { selfId: 57, name: 'Adena', amount: 1000 });

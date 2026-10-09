@@ -71,6 +71,20 @@ worker.on('message', message => { if (message.type === 'command_request') { asse
         assert.deepEqual(proof.certificates, [request.lines[0].certificate]);
         assert(sent > 0 && received > 0); assert.equal(pages, 0); assert.equal(bytes, 0);
         assert.equal(coordinator.commandInflight.size, 0);
+        // A healthy worker can still have a blocked lifecycle tail. Expiry
+        // must release the preparation rather than leave the player waiting.
+        let expire, releaseBlocked;
+        coordinator.commandTail = new Promise(resolve => { releaseBlocked = resolve; });
+        const nativeTimeout = global.setTimeout;
+        global.setTimeout = callback => { expire = callback; return nativeTimeout(callback, 600000); };
+        let blocked;
+        try { blocked = coordinator.requestMeetingPreparation(1, { ...request, token: 'blocked-original-token' }); }
+        finally { global.setTimeout = nativeTimeout; }
+        const rejected = assert.rejects(blocked, /preparation_timeout/);
+        expire(); await rejected;
+        releaseBlocked(); await new Promise(resolve => setImmediate(resolve));
+        assert.equal(coordinator.commandInflight.size, 0);
+        assert.equal(pages, 0); assert.equal(bytes, 0);
         // Same frame is valid under both directions; a prefix is not a basket.
         const full = Codec.commandPages(request, frame => Protocol.envelope('command_request', 'e',
             { requests: [{ kind: 'meeting', characterId: 1, commandId: request.token, frame }] }, 'm'));

@@ -5,6 +5,7 @@
 // places filled from the centre outward, craft shops counted in every town,
 // a buy store on a full square not opening. The board (step 3.3) removed the
 // buy stall: a buy order is an ad with no place on a square.
+// 2026-10-09: Giran spreads shops across its usable square instead of clustering.
 // PIN_PRINT=1 prints the observed values instead of checking them.
 const assert = require('assert');
 
@@ -48,7 +49,7 @@ function areaSample(town) {
     return rows;
 }
 
-// Six stores in a row take the places nearest the fill centre, then the
+// Six stores in a row take the first places in the town's allocation order, then the
 // square fills up, and a freed place is the next one given out.
 function fillOrder(town) {
     ShopPlaces._resetForTests();
@@ -62,7 +63,7 @@ function fillOrder(town) {
     return { placed, total: ShopPlaces.places(town).length, taken, full, reused };
 }
 
-// Each occupant is put on the first place (nearest the centre) through the path
+// Each occupant is put on the first place through the path
 // the server uses; the result shows whether it counts (the store moves on to
 // the second place) or not (the store stays on the first).
 const SELF = 900;
@@ -130,7 +131,7 @@ async function observe() {
         towns[town] = {
             // changed: in the polygon towns the margin is kept from the real edge.
             area: areaSample(town),
-            // changed: places on one 40 grid, given out from the centre outward
+            // changed: places on one 40 grid, spread in Giran, otherwise from the centre
             // (phase 1: a random point, 40 apart in Giran and 60 elsewhere).
             fill: fillOrder(town),
             occupants: occupantCases(town),
@@ -179,26 +180,26 @@ const EXPECTED = {
             fill: {
                 placed: [
                     [81571, 148602, -3460],
-                    [81571, 148642, -3462],
-                    [81571, 148562, -3465],
-                    [81931, 148962, -3461],
-                    [81891, 148962, -3466],
-                    [81571, 148682, -3464]
+                    [82851, 149482, -3463],
+                    [82851, 147722, -3466],
+                    [80971, 149482, -3460],
+                    [80971, 147722, -3463],
+                    [82531, 148602, -3466]
                 ],
                 total: 1871,
                 taken: 1871,
                 full: null,
-                reused: [81931, 148962, -3461]
+                reused: [80971, 149482, -3460]
             },
             occupants: {
                 none: [81571, 148602, -3460],
-                afk_shop: [81571, 148642, -3462],
+                afk_shop: [82851, 149482, -3463],
                 crafter_other_town: [81571, 148602, -3460],
-                crafter_loc_from_state: [81571, 148642, -3462],
+                crafter_loc_from_state: [82851, 149482, -3463],
                 self_crafter: [81571, 148602, -3460],
-                crafting_same_town: [81571, 148642, -3462],
+                crafting_same_town: [82851, 149482, -3463],
                 hunting_on_point: [81571, 148602, -3460],
-                off_grid_shop: [81571, 148562, -3465],
+                off_grid_shop: [82851, 149482, -3463],
                 closed_again: [81571, 148602, -3460]
             },
             staticBlocks: []

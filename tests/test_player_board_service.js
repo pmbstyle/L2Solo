@@ -2,10 +2,11 @@
 const assert = require('node:assert/strict');
 const { BoardIndex, SELL, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { create } = require('../src/GameServer/AfkTrade/PlayerBoardService');
+global.utils = { infoWarn() {} };
 
 async function main() {
     const board = new BoardIndex();
-    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false;
+    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false, stagedReceipt = false, meetingX = 1000, prepareError;
     const merchant = { fetchId: () => 900000045, fetchLocX: () => 1000, fetchLocY: () => 0, fetchLocZ: () => 0 };
     const player = { accountId: 'player_board', actor: { fetchId: () => 8, fetchHp: () => 100,
         fetchClanId: () => 0, fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
@@ -22,19 +23,30 @@ async function main() {
     const shop = { characterId: 55, currentRegion: 'Dion', loc: { locX: 5000, locY: 0, locZ: 0 }, simulation: { revision: 2 } };
     const service = create({ afk: () => ({ isBoardReady: () => true, boardIndex: () => board,
         offerOf: (line) => line.ownerId === 47 ? null
-            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection, store: { locX: 1000, locY: 0, locZ: 0 } }),
+            : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection,
+                locX: meetingX, locY: 0, locZ: 0, store: { shopId: line.recordId } }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
-    meetings: () => ({ discard() {}, prepareTrade: async () => { prepares++; return { preparationId: 'prepared', total: 180 }; },
-        receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: !terminal, outcome: terminal ? 'completed' : 'accepted' } : null; },
+    meetings: () => ({ discard() {}, prepareTrade: async (id, store, item, count, options) => {
+        if (prepareError) throw prepareError;
+        prepares++;
+        if (options.preview !== true) {
+            assert.equal(options.token, 'prepared', 'fresh agreement preserves the original consent token');
+            assert.deepEqual(options.expectedPoint, { locX: 1000, locY: 0, locZ: 0 });
+        }
+        return { preparationId: 'prepared', total: 180, point: { locX: 1000, locY: 0, locZ: 0 } };
+    },
+        receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: !terminal, outcome: terminal ? 'completed' : 'accepted' }
+            : stagedReceipt ? { pending: true, outcome: 'preparing', preparationId: token } : null; },
         accept: async id => { assert.equal(id, 'prepared'); agreements++; if (lostAck) { durableReceipt = true; throw Error('reply_lost_after_commit'); } return { pending: true }; } }),
     life: () => ({ cachedState: (id) => ({ characterId: id, loc: { locX: 7000, locY: 0, locZ: 0 }, currentRegion: 'Dion' }) }),
     workshops: () => ({ boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', ownerId: 55, ownerName: 'Maker',
         town: 'Dion', loc: shop.loc, revision: 2, entries: [{ recipeId: 17, price: 150 }] }],
     lookup: () => ({ state: shop, recipe: { productId: 1835 }, price: 150 }), craft: async (owner, recipe, customer, options) => {
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 150]); crafts++;
+        assert.equal(options.expectedRevision, 2);
         return { product: { id: 91, amount: 1 } };
     } }), database: () => ({ fetchItems: async () => [{ id: 91, selfId: 1835, amount: 1 }] }),
-    response: () => ({ itemsList: (items) => items }) });
+    response: () => ({ itemsList: (items) => items, userInfo: () => [] }) });
     const listed = service.entries(player, { selfId: 1152, side: SELL });
     assert.equal(listed.entries.length, 1); assert.equal(listed.entries[0].price, 600);
     assert.equal(listed.entries[0].cursor.n, 2, 'own and unavailable lines count in the raw list cursor');
@@ -53,6 +65,16 @@ async function main() {
         lines: [{ lineId: 15, selfId: 1864, count: 10, price: 90 }] }, {});
     const conditional = { id: 5, lineId: 15, selfId: 1864, price: 90, revision: 4, amount: 2 };
     x = 7000; assert.equal((await service.answer(player, conditional)).action, 'meet');
+    assert.deepEqual((await service.answer(player, { ...conditional, locateOnly: true })).loc, { locX: 1000, locY: 0, locZ: 0 });
+    board.put({ ...record, id: 6, kind: 'buy_ad', storeType: BUY, custodyPolicy: 1,
+        lines: [{ lineId: 16, selfId: 1864, count: 10, price: 90 }] }, {});
+    const buyAd = { ...conditional, id: 6, lineId: 16 };
+    assert.equal((await service.answer(player, buyAd)).action, 'meet');
+    assert.deepEqual((await service.answer(player, { ...buyAd, locateOnly: true })).loc, { locX: 1000, locY: 0, locZ: 0 });
+    meetingX = NaN;
+    assert.equal((await service.answer(player, conditional)).reason, 'location_unavailable', 'invalid coordinates cannot bypass the distance check');
+    assert.equal((await service.answer(player, { ...buyAd, locateOnly: true })).reason, 'location_unavailable');
+    meetingX = 1000;
     assert.equal(prepares, 0); assert.equal(agreements, 0);
     x = 1000; assert.equal((await service.answer(player, conditional)).action, 'confirm_trade');
     assert.equal(prepares, 1); assert.equal(agreements, 0);
@@ -60,12 +82,15 @@ async function main() {
     assert.equal(agreements, 0);
     x = 1000; assert.equal((await service.answer(player, { ...conditional, amount: 3, confirmed: true })).reason, 'record_changed');
     assert.equal(agreements, 0);
+    stagedReceipt = true;
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).action, 'agreed');
-    assert.equal(agreements, 1); assert.equal(player.playerBoardPreparation, undefined);
+    assert.equal(agreements, 1, 'Agree must accept a staged preparation, not mistake it for an already reserved trade');
+    assert.equal(player.playerBoardPreparation, undefined);
+    stagedReceipt = false;
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
     await service.answer(player, conditional);
     lostAck = true;
-    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
+    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'trade_unavailable');
     assert(player.playerBoardPreparation, 'lost native reply preserves the original consent identity');
     board.remove(5);
     terminal = true;
@@ -73,6 +98,17 @@ async function main() {
     assert.equal(agreements, 2, 'receipt replay after quote removal never creates a second native acceptance');
     assert.equal(player.playerBoardPreparation, undefined);
     lostAck = false; durableReceipt = false;
+    prepareError = Error('trade_meeting_stock_changed');
+    assert.equal((await service.answer(player, buyAd)).reason, 'items_missing', 'the player sale names missing unequipped goods');
+    prepareError = Error('trade_meeting_worker_busy');
+    assert.equal((await service.answer(player, buyAd)).reason, 'merchant_busy');
+    prepareError = undefined;
+    await service.answer(player, buyAd);
+    board.put({ ...record, id: 6, kind: 'buy_ad', storeType: BUY, custodyPolicy: 1,
+        revision: 5, lines: [{ lineId: 16, selfId: 1864, count: 10, price: 95 }] }, {});
+    const beforeChangedPrice = agreements;
+    assert.equal((await service.answer(player, { ...buyAd, confirmed: true })).reason, 'record_changed');
+    assert.equal(agreements, beforeChangedPrice, 'fresh preparation cannot consent to a different displayed price');
     assert.equal((await service.answer(player, { ...conditional, amount: 0 })).reason, 'record_changed');
     assert.equal((await service.answer(player, { ...conditional, amount: 11 })).reason, 'record_changed');
     assert.equal((await service.answer(player, { ...conditional, amount: 1.5 })).reason, 'record_changed');
@@ -86,6 +122,19 @@ async function main() {
     assert.equal((await service.answer(player, { ...order, confirmed: true })).action, 'crafted'); assert.equal(crafts, 1);
     assert.equal(player.actor.backpack.fetchItems()[0].id, 91);
     assert.equal(service.entries({ ...player, accountId: 'bot_board' }).available, false);
+    // A native craft can finish after character selection changes. Its old
+    // character transaction must never replace the new character's backpack.
+    let finishCraft;
+    const originalActor = player.actor;
+    const switched = create({ workshops: () => ({ lookup: () => ({ state: shop, recipe: { productId: 1835 }, price: 150 }),
+        craft: () => new Promise(resolve => { finishCraft = resolve; }) }),
+        database: () => ({ fetchItems: async () => [{ id: 99, selfId: 1835, amount: 1 }] }),
+        response: () => ({ itemsList: () => { throw Error('old craft cannot redraw new inventory'); } }) });
+    const pendingCraft = switched.answer(player, { ...order, confirmed: true });
+    const newActor = { ...originalActor, backpack: { items: [{ id: 500 }] } };
+    player.actor = newActor; finishCraft({ product: { id: 99, amount: 1 } });
+    assert.equal((await pendingCraft).reason, 'player_unavailable');
+    assert.deepEqual(newActor.backpack.items, [{ id: 500 }]); player.actor = originalActor;
     console.log('Player board server contract: native index/read pages, current quote, own record, physical store interaction, workshop adapter and no remote purchase passed');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

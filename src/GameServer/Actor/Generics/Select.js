@@ -98,7 +98,7 @@ function openMerchantTradeWindow(session, merchant) {
 }
 
 function privateStoreTitle(actor) {
-    return actor.fetchPrivateStore?.()?.title || actor.fetchTitle();
+    return actor.fetchPrivateStore?.()?.title || actor.fetchTitle() || '';
 }
 
 function sendPrivateStoreMessage(session, actor) {

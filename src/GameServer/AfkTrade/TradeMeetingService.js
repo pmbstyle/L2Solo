@@ -3,6 +3,60 @@ const { randomUUID } = require('node:crypto');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
 const staged = new Map();
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
+const playerWaiters = new Map(); // Derived numeric references, retired with native commitments.
+const travelNotices = new Map(); // One private acknowledgement per enrolled bot/player commitment.
+function notifyPlayerTravel(row) {
+    if (row.state !== 'accepted') return;
+    for (const [id, other, suffix] of [[row.actorA, row.actorB, 'A'], [row.actorB, row.actorA, 'B']]) {
+        const state = life().cachedState(id), player = !life().cachedState(other) && sessionFor(other);
+        if (!state || !player?.actor || !player.dataSendToMe || travelNotices.get(id)?.has(row.id)) continue;
+        try {
+            const atPoint = loc => loc && Math.hypot(loc.locX - row.locX, loc.locY - row.locY, loc.locZ - row.locZ) <= 200;
+            const merchant = sessionFor(id)?.actor;
+            const loc = merchant ? { locX: merchant.fetchLocX(), locY: merchant.fetchLocY(), locZ: merchant.fetchLocZ() } : state.loc;
+            if (atPoint(loc) || !atPoint({ locX: player.actor.fetchLocX(), locY: player.actor.fetchLocY(), locZ: player.actor.fetchLocZ() })
+                || player.actor.isDead() || player.actor.fetchHp() <= 0) continue;
+            const travel = state.stats?.travel, route = JSON.parse(row[`route${suffix}`] || '{}'), timestamp = Date.now();
+            const finishingTrip = state.activity === 'traveling' && travel && travel.meetingId !== row.id && !atPoint(travel.to);
+            const remaining = travel && atPoint(travel.to) ? Math.max(0, travel.arrivalAt - timestamp)
+                : Math.max(0, Number(route.durationMs) || 0) + Math.max(0, Number(state.stats?.restUntil || 0) - timestamp);
+            let text = state.activity === 'resting' ? "All set! I'll recover first, then come to you."
+                : state.activity === 'fighting' ? "All set! I'll finish this fight, then come to you."
+                    : finishingTrip ? "All set! I'll finish this trip, then come to you."
+                    : "All set! I'm on my way to you.";
+            text += ' Wait at the meeting point.';
+            if (remaining > 0 && state.activity !== 'fighting' && !finishingTrip) text += remaining < 60000
+                ? ' About a minute.' : ` About ${Math.ceil(remaining / 60000)} min.`;
+            player.dataSendToMe(invoke('GameServer/Network/Response').speak({
+                fetchId: () => id, fetchName: () => state.name
+            }, { kind: 2, text }));
+            let notices = travelNotices.get(id);
+            if (!notices) travelNotices.set(id, notices = new Set());
+            notices.add(row.id);
+        } catch (error) { utils.infoWarn('AfkTrade', 'meeting travel message: %s', error.message); }
+    }
+}
+function trackPlayerWaiting(row) {
+    if (!row) return;
+    for (const [actor, other] of [[row.actorA, row.actorB], [row.actorB, row.actorA]]) {
+        const player = !life().cachedState(other) && sessionFor(other)?.actor;
+        const waiting = row.state === 'accepted' && life().cachedState(actor) && player
+            && !player.isDead() && player.fetchHp() > 0
+            && Math.hypot(player.fetchLocX() - row.locX, player.fetchLocY() - row.locY, player.fetchLocZ() - row.locZ) <= 200;
+        let refs = playerWaiters.get(actor);
+        const previous = !!refs?.size;
+        if (waiting) {
+            if (!refs) playerWaiters.set(actor, refs = new Set());
+            refs.add(row.id);
+        } else {
+            refs?.delete(row.id);
+            if (!refs?.size) playerWaiters.delete(actor);
+        }
+        if (previous !== !!playerWaiters.get(actor)?.size) {
+            coordinator()?.notifyState?.(life().cachedState(actor), { reason: 'player_meeting_wait', critical: true });
+        }
+    }
+}
 function enroll(actor, id) {
     let rows = enrolled.get(actor);
     if (!rows) enrolled.set(actor, rows = new Set());
@@ -11,6 +65,13 @@ function enroll(actor, id) {
 function unenroll(actor, id) {
     const rows = enrolled.get(actor); rows?.delete(id);
     if (!rows?.size) enrolled.delete(actor);
+    const notices = travelNotices.get(actor); notices?.delete(id);
+    if (!notices?.size) travelNotices.delete(actor);
+    const waiting = playerWaiters.get(actor);
+    if (waiting?.delete(id) && !waiting.size) {
+        playerWaiters.delete(actor);
+        coordinator()?.notifyState?.(life().cachedState(actor), { reason: 'player_meeting_wait', critical: true });
+    }
 }
 const queue = new Set();
 let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribeMarketLife, unsubscribePlayer, unsubscribeBoard;
@@ -21,7 +82,17 @@ const world = () => invoke('GameServer/World/World');
 const afk = () => invoke('GameServer/AfkTrade/AfkTradeService');
 const sessionFor = id => world().registeredActorById(Number(id))?.session || null;
 function acceptRows(result) {
-    for (const row of Object.values(result?.coldLifeRows || {})) life().acceptLifecycleRow(row);
+    trackPlayerWaiting(result?.meeting);
+    for (const row of Object.values(result?.coldLifeRows || {})) {
+        const previous = life().cachedState(row.characterId);
+        const state = life().acceptLifecycleRow(row);
+        // Native reserve/leg/arrival writes are authoritative publications.
+        // Cache adoption alone does not update the worker's lifecycle queue.
+        if (state?.phase === 'cold' && (state.simulation?.revision !== previous?.simulation?.revision
+            || state.phase !== previous?.phase || state.updatedAt !== previous?.updatedAt)) {
+            coordinator()?.notifyState?.(state, { reason: 'trade_meeting_native', critical: true });
+        }
+    }
 }
 async function syncActors(row) {
     for (const id of [row.actorA, row.actorB]) {
@@ -32,8 +103,10 @@ async function syncActors(row) {
             locX: anchor.locX, locY: anchor.locY, locZ: anchor.locZ, present: null } : undefined;
         if (!anchor || session.meetingTravel?.id === row.id && row.state !== 'accepted') session.meetingTravel = undefined;
         await afk().syncOnlineInventory(id, await db().fetchItems(id));
-        if (!life().cachedState(id) && row.state !== 'accepted') {
-            try { require('./PlayerBoardWindow').meetingResult(session, row); }
+        if (!life().cachedState(id)) {
+            try { require('./PlayerMeetingNotifications').notify(session, row); }
+            catch (error) { utils.infoWarn('AfkTrade', 'meeting chat presentation: %s', error.message); }
+            try { if (row.state !== 'accepted') require('./PlayerBoardWindow').meetingResult(session, row); }
             catch (error) { utils.infoWarn('AfkTrade', 'meeting status presentation: %s', error.message); }
         }
     }
@@ -141,6 +214,7 @@ async function accepted(result) {
     const row = result.meeting;
     enroll(row.actorA, row.id); enroll(row.actorB, row.id);
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
+    notifyPlayerTravel(row);
     wake(row.actorA); wake(row.actorB);
     return { pending: result.pending, meetingId: row.id, revision: row.revision,
         outcome: row.state, token: row.token, preparationId: row.token,
@@ -186,9 +260,16 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         sources.push({ source, count }); remainder -= count;
         if (!remainder || sources.length === 5) break;
     }
-    if (remainder) throw Error('trade_meeting_stock_changed');
+    if (remainder) {
+        if (record.storeType === 1 && db().reconcileConditionalSellAds) {
+            for (const ad of await db().reconcileConditionalSellAds(record.ownerId)) afk().refreshRecord(ad);
+        }
+        throw Error('trade_meeting_stock_changed');
+    }
     const destination = anchors[0] || record;
     const point = { locX: destination.locX, locY: destination.locY, locZ: destination.locZ };
+    if (options.expectedPoint && ['locX', 'locY', 'locZ'].some(key => options.expectedPoint[key] !== point[key]))
+        throw Error('trade_meeting_point_changed');
     const parties = sides.map((side, index) => {
         const actor = actors[index], state = life().cachedState(actor);
         let route;
@@ -203,13 +284,20 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         if (side.meetingId) route = { fee: 0, scroll: false, method: `meeting:${side.meetingId}`, durationMs: 0 };
         return { ...side, route, needRevision: side.revision };
     });
-    const request = { token: randomUUID(), actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
+    const token = options.token || randomUUID(), total = amount * line.price;
+    if (!Number.isSafeInteger(total) || total <= 0) throw Error('trade_meeting_integer');
+    const quote = { preparationId: token, token, town: record.town, point, amount, price: line.price, total };
+    // A human may read the quantity form for minutes while the bot keeps
+    // progressing. Only explicit agreement owns a fresh worker preparation.
+    if (options.preview === true) return quote;
+    const request = { token, actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
         town: record.town, point, parties, incoming: sides.map(side => side.acceptedIncoming || {}), lines: sources.map(({ source, count }) => ({ payer: buyerSide, itemId: source.id, selfId: itemId,
             enchant: line.enchant || 0, count, price: line.price, needAdId: 0, needAdRevision: 0, adId: record.id, adRevision: record.revision, certificate: null })) };
-    const token = stage(request), entry = staged.get(token);
+    stage(request);
+    const entry = staged.get(token);
     entry.ready = prepareActors(token).catch(error => { discard(token); throw error; });
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
-    return { preparationId: token, token, town: record.town, point, amount, price: line.price, total: amount * line.price };
+    return quote;
 }
 async function cancel(characterId) {
     const rows = db().fetchTradeMeetingsForOwner ? await db().fetchTradeMeetingsForOwner(Number(characterId))
@@ -245,7 +333,7 @@ function reset() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
-    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); queue.clear();
+    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
@@ -259,6 +347,7 @@ async function processMeeting(id, meetingId) {
     const row = await db().fetchTradeMeeting(meetingId);
     if (!enrolled.has(id)) return;
     if (!row) { unenroll(id, meetingId); return; }
+    trackPlayerWaiting(row);
     if (row.state !== 'accepted') {
         await syncActors(row);
         await afk().settleOwners([row.actorA, row.actorB]);
@@ -350,7 +439,7 @@ async function drain() {
     } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -378,6 +467,7 @@ async function init() {
         const rows = await db().recoverTradeMeetings(cursor);
         if (!rows.length) break;
         for (const row of rows) {
+            trackPlayerWaiting(row);
             for (const actor of [row.actorA, row.actorB]) {
                 const state = await db().fetchTradeMeetingOwnerState?.(actor);
                 if (state) life().acceptLifecycleRow(state);
@@ -389,5 +479,6 @@ async function init() {
     }
 }
 module.exports = { stage, discard, hasPreparation, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
+    isPlayerWaiting: id => !!playerWaiters.get(Number(id))?.size,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

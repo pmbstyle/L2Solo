@@ -34,15 +34,17 @@ function syncDirection(session, target = null) {
     // arrays. Replay the authoritative quest set, then the database target
     // last so Track points to it. Do not add an overlapping point twice.
     session.dataSendToMe(Response.radarControl(2, 2, 0, 0, 0));
-    for (const coords of session.questWaypoints?.values() || []) {
-        if (target && coords.join(':') === key(target)) continue;
-        session.dataSendToMe(Response.radarControl(0, 1, ...coords));
+    const points = new Map();
+    for (const coords of session.questWaypoints?.values() || []) points.set(coords.join(':'), coords);
+    for (const point of [session.nativeItemsWaypoint, session.playerBoardWaypoint, target]) if (point) {
+        points.delete(key(point)); points.set(key(point), [point.x, point.y, point.z]);
     }
-    if (target) session.dataSendToMe(Response.radarControl(0, 1, target.x, target.y, target.z));
+    for (const coords of points.values()) session.dataSendToMe(Response.radarControl(0, 1, ...coords));
 }
 function stop(session) {
-    if (session.nativeItemsWaypoint) syncDirection(session);
+    const tracked = session.nativeItemsWaypoint;
     session.nativeItemsWaypoint = null;
+    if (tracked) syncDirection(session, session.playerBoardWaypoint);
 }
 function track(session, place) {
     if (session.nativeItemsWaypoint && key(session.nativeItemsWaypoint) === key(place)) {
@@ -52,4 +54,4 @@ function track(session, place) {
     session.nativeItemsWaypoint = { x: place.x, y: place.y, z: place.z };
     syncDirection(session, place);
 }
-module.exports = { locations, stop, track, key };
+module.exports = { locations, stop, track, key, syncDirection };

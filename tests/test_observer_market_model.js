@@ -27,7 +27,7 @@ const data = {
 const offers = MarketModel.activeOffers(data);
 const sales = MarketModel.filterOffers(offers, { side: 'wts', source: 'market' });
 assert.strictEqual(sales.length, 3);
-assert.deepStrictEqual(MarketModel.summary(sales), { shops: 2, listings: 3, units: 9, items: 2 });
+assert.deepStrictEqual(MarketModel.summary(sales), { shops: 2, announcements: 0, traders: 2, listings: 3, units: 9, items: 2 });
 assert.deepStrictEqual(MarketModel.filterOffers(offers, { side: 'wtb', source: 'market' }).map((offer) => offer.ownerName), ['Buyer']);
 assert.deepStrictEqual(MarketModel.filterOffers(offers, { side: 'wts', source: 'fixed' }).map((offer) => offer.price), [1]);
 assert.deepStrictEqual(MarketModel.filterOffers(offers, { side: 'wts', source: 'players', town: 'Dion', query: 'player' }).map((offer) => offer.selfId), [10]);
@@ -48,3 +48,18 @@ const bids = MarketModel.groupOffers([
 assert.strictEqual(bids[0].best.price, 190);
 
 console.log('Observer market model checks passed');
+
+const mixed = MarketModel.activeOffers({ items: data.items, stores: [data.stores[1], {
+    id: 'afk:ad', source: 'afk_bot', side: 'wtb', kind: 'buy_ad', custodyPolicy: 1, conditional: true,
+    ownerName: 'Buyer', ownerId: 99, town: 'Giran', expiresAt: 1234,
+    loc: { locX: 80000, locY: 140000 }, items: [{ selfId: 10, count: 20, price: 1000 }]
+}] });
+const ad = mixed.find(offer => offer.kind === 'buy_ad');
+assert.strictEqual(ad.loc, null, 'a meeting town must not become the location of a physical stall');
+assert.strictEqual(ad.conditional, true, 'conditional execution must reach the UI');
+assert.strictEqual(ad.custodyPolicy, 1);
+assert.strictEqual(ad.expiresAt, 1234);
+assert.strictEqual(MarketModel.summary(mixed).shops, 1, 'announcements must not inflate physical shop counts');
+assert.strictEqual(MarketModel.summary(mixed).announcements, 1);
+assert.strictEqual(MarketModel.filterOffers(mixed, { listing: 'shops' }).length, 2);
+assert.deepStrictEqual(MarketModel.filterOffers(mixed, { listing: 'ads' }), [ad]);

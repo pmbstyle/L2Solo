@@ -43,6 +43,8 @@ const state = {
     detailLoading: false,
     detailError: null,
     detailRequest: 0,
+    profileCollections: {},
+    profileCollectionRequest: null,
     relationships: null,
     relationshipOwner: null,
     relationshipRequest: null,
@@ -127,10 +129,11 @@ function setApplicationView(route) {
     if (route.name === 'world' || route.name === 'actor') requestAnimationFrame(() => { renderSelected(); renderLabels(); renderPoints(); });
 }
 
-function updateProfileTabs() {
+function updateProfileTabs({ forceCollection = false } = {}) {
     const profile = document.body.dataset.view === 'profile';
     els.selectedInspector.querySelectorAll('[data-profile-panel]').forEach((panel) => {
-        panel.hidden = profile && panel.dataset.profilePanel !== state.profileTab;
+        const collection = ['inventory', 'warehouse', 'skills', 'pvp', 'board'].includes(panel.dataset.profilePanel);
+        panel.hidden = collection ? !profile || panel.dataset.profilePanel !== state.profileTab : profile && panel.dataset.profilePanel !== state.profileTab;
         if (!profile) { panel.removeAttribute('role'); panel.removeAttribute('aria-labelledby'); }
     });
     els.selectedInspector.querySelectorAll('[data-profile-tab]').forEach((tab) => {
@@ -138,6 +141,7 @@ function updateProfileTabs() {
         tab.setAttribute('aria-selected', String(selected));
         tab.tabIndex = selected ? 0 : -1;
     });
+    if (profile) loadProfileCollection({ force: forceCollection });
 }
 
 function saveMapPreferences() { mapControls?.save(); }
@@ -146,6 +150,7 @@ function focusMapDestination(value) { return mapControls?.focus(value); }
 function focusSelectedCharacter() { mapControls?.focusSelected(); }
 
 function clearActorSelection() {
+    resetProfileCollections();
     resetRelationships();
     state.selectedId = null;
     state.selectedRaidBossId = null;
@@ -2457,6 +2462,7 @@ function focusRaidBoss(id) {
     const boss = raidBossItems().find((item) => String(item.id) === String(id));
     if (!boss || boss.status !== 'alive' || !boss.loc) { openRaidBosses({ updateRoute: false }); return; }
     setApplicationView({ name: 'world' });
+    resetProfileCollections();
     state.selectedRaidBossId = boss.id;
     state.selectedId = null;
     state.clusterScope = null;
@@ -2633,9 +2639,9 @@ function renderMarket() {
     }).join('') : '<div class="list-empty">No bot stores open.</div>';
 
     const top = (market.topItems || [])[0];
-    const demand = top?.demand || {};
+    const demand = top?.publicDemand || {};
     els.marketTopItem.innerHTML = top
-        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} listed · ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded · ${number(demand.bots || 0)} planned`
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} listed · ${number(demand.units || 0)} publicly wanted · ${number(demand.conditionalUnits || 0)} conditional`
         : 'No active listings yet';
 
     const recent = (transactions.recentPeerTrades || []).slice(0, 3);
@@ -2719,6 +2725,7 @@ function reconcileSelectedActor() {
     const otherKind = currentKind === 'player' ? 'bot' : 'player';
     const actor = actorById(id, otherKind);
     if (!actor) {
+        resetProfileCollections();
         state.selectedId = null;
         state.detail = null;
         state.detailError = null;
@@ -2729,6 +2736,7 @@ function reconcileSelectedActor() {
 
     // A live character can move between the bot and player collections.
     // Preserve its selection while switching to the collection that still owns it.
+    resetProfileCollections();
     state.selectedId = { id: actor.id, kind: otherKind };
     state.detail = null;
     state.detailError = null;
@@ -3254,7 +3262,7 @@ function renderInspector() {
             <div class="inspector-name"><strong>${text(actor.isPk ? `PK ${actor.name}` : actor.name)}</strong><span>Lv ${number(actor.level, '?')} · ${text(family)} · ${text(roleLabel(actor.role || '—'))}</span></div>
             <span class="phase-badge ${text(actor.phase || 'cold')}">${text(displayActivity(actor))}</span>
         </div>
-        ${document.body.dataset.view === 'profile' ? `<div class="profile-tabs" role="tablist" aria-label="Profile sections">${['overview', 'equipment', 'relationships', 'progress'].filter((tab) => tab !== 'relationships' || state.selectedId?.kind === 'bot').map((tab) => `<button type="button" role="tab" id="profile-tab-${tab}" aria-controls="profile-panel-${tab}" aria-selected="${state.profileTab === tab}" data-profile-tab="${tab}">${tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>` : `<a class="app-button profile-quick-link" href="${Router.href({ name: 'actor', kind: state.selectedId.kind, id: state.selectedId.id })}" data-app-route>Open profile ↗</a>`}
+        ${document.body.dataset.view === 'profile' ? `<div class="profile-tabs" role="tablist" aria-label="Profile sections">${['overview', 'economy', 'equipment', 'inventory', 'warehouse', 'skills', 'pvp', 'board', 'relationships', 'progress'].filter((tab) => !['relationships', 'economy'].includes(tab) || state.selectedId?.kind === 'bot').map((tab) => `<button type="button" role="tab" id="profile-tab-${tab}" aria-controls="profile-panel-${tab}" aria-selected="${state.profileTab === tab}" data-profile-tab="${tab}">${tab === 'pvp' ? 'PvP' : tab[0].toUpperCase() + tab.slice(1)}</button>`).join('')}</div>` : `<a class="app-button profile-quick-link" href="${Router.href({ name: 'actor', kind: state.selectedId.kind, id: state.selectedId.id })}" data-app-route>Open profile ↗</a>`}
         <div data-profile-panel="overview" id="profile-panel-overview" role="tabpanel" aria-labelledby="profile-tab-overview">
         <div class="inspector-vitals">
             ${vitalBar('HP', actor.vitals, '#63d37b')}
@@ -3273,6 +3281,11 @@ function renderInspector() {
         ${renderBuild(build)}
         </div>
         <div data-profile-panel="equipment" id="profile-panel-equipment" role="tabpanel" aria-labelledby="profile-tab-equipment">${actor.equipment || actor.combat ? renderEquipment(actor.equipment, actor.combat) : '<p class="muted-copy">Equipment information is unavailable.</p>'}</div>
+        ${actor.economy ? `<div data-profile-panel="economy" id="profile-panel-economy" role="tabpanel" aria-labelledby="profile-tab-economy">${ProfileData.renderEconomy(actor.economy, { spot: actor.spot })}</div>` : ''}
+        ${['inventory', 'warehouse', 'skills', 'pvp', 'board'].map(section => {
+            const entry = state.profileCollections[section] || {};
+            return `<div data-profile-panel="${section}" id="profile-panel-${section}" role="tabpanel" aria-labelledby="profile-tab-${section}">${ProfileData.renderCollection(section, entry.data, { ...entry, ownerName: actor.name })}</div>`;
+        }).join('')}
         <div data-profile-panel="relationships" id="profile-panel-relationships" role="tabpanel" aria-labelledby="profile-tab-relationships">${renderRelationships(actor)}</div>
         <div data-profile-panel="progress" id="profile-panel-progress" role="tabpanel" aria-labelledby="profile-tab-progress">${renderProgress(actor)}</div>
     `;
@@ -3323,6 +3336,50 @@ function renderActorUpdates({ mapChanged = true } = {}) {
     renderSelected();
 }
 
+function resetProfileCollections() {
+    state.profileCollectionRequest?.abort();
+    state.profileCollectionRequest = null;
+    state.profileCollections = {};
+}
+
+async function loadProfileCollection({ force = false, offset = null } = {}) {
+    const selected = state.selectedId, section = state.profileTab;
+    if (!selected || document.body.dataset.view !== 'profile' || !['inventory', 'warehouse', 'skills', 'pvp', 'board'].includes(section)) return;
+    if (document.hidden || (!force && !state.live)) return;
+    const entry = state.profileCollections[section] ||= { at: 0, data: null, error: null, loading: false };
+    const ttl = ['skills', 'warehouse'].includes(section) ? 30000 : 10000;
+    if (!force && (entry.loading || Date.now() - entry.at < ttl)) return;
+    state.profileCollectionRequest?.abort();
+    const request = new AbortController();
+    state.profileCollectionRequest = request;
+    entry.request = request;
+    entry.loading = true;
+    entry.at = Date.now();
+    try {
+        const page = offset ?? entry.data?.offset ?? 0;
+        const response = await fetch(`/observer/api/actor/${selected.kind}/${Number(selected.id)}/${section}?offset=${page}&limit=100`, { signal: request.signal, cache: 'no-store' });
+        if (!response.ok) throw Error(`HTTP ${response.status}`);
+        const data = await response.json();
+        if (state.profileCollectionRequest !== request || Number(state.selectedId?.id) !== Number(selected.id) || state.selectedId?.kind !== selected.kind) return;
+        entry.data = data;
+        entry.error = null;
+    } catch (error) {
+        if (entry.request === request) {
+            if (error.name === 'AbortError') entry.at = 0;
+            else entry.error = error.message;
+        }
+    } finally {
+        if (entry.request === request) {
+            entry.loading = false;
+            entry.request = null;
+        }
+        if (state.profileCollectionRequest === request) {
+            state.profileCollectionRequest = null;
+            renderInspector();
+        }
+    }
+}
+
 async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showLoading = true) {
     if (!id || state.detailLoading) return;
     const requestId = ++state.detailRequest;
@@ -3352,6 +3409,7 @@ async function loadActorDetail(id, kind = state.selectedId?.kind || 'bot', showL
 }
 
 function selectActor(id, kind = 'bot', focus = false, updateRoute = true) {
+    resetProfileCollections();
     resetRelationships();
     const actorKind = ActorFilters.actorKind(id, kind, state.snapshot);
     state.selectedRaidBossId = null;
@@ -3392,6 +3450,7 @@ function focusCluster(cluster) {
         actorKeys: new Set(cluster.members.map(({ actor }) => actorKey(actor))),
         label: clusterLocation(cluster)
     };
+    resetProfileCollections();
     state.selectedId = null;
     state.detail = null;
     state.detailLoading = false;
@@ -3480,6 +3539,7 @@ async function loadWorldStatus(force = false) {
 async function refresh() {
     if (!state.live || document.hidden || state.refreshing) return;
     loadRelationships();
+    loadProfileCollection();
     state.refreshing = true;
     try {
         if (!state.snapshot) {
@@ -3887,8 +3947,11 @@ document.addEventListener('click', (event) => {
         renderRelationshipPanel(); return;
     }
     if (event.target.closest('[data-retry-relationships]')) { loadRelationships(true); return; }
+    if (event.target.closest('[data-profile-retry]')) { loadProfileCollection({ force: true }); return; }
+    const profilePage = event.target.closest('[data-profile-page]');
+    if (profilePage) { loadProfileCollection({ force: true, offset: Number(profilePage.dataset.profilePage) }); return; }
     const profileTab = event.target.closest('[data-profile-tab]');
-    if (profileTab) { state.profileTab = profileTab.dataset.profileTab; updateProfileTabs(); return; }
+    if (profileTab) { state.profileTab = profileTab.dataset.profileTab; updateProfileTabs({ forceCollection: !state.live }); return; }
     if (event.target.closest('[data-profile-map]')) {
         const selected = state.selectedId;
         setApplicationView({ name: 'world' });
@@ -3940,6 +4003,7 @@ els.filterStrip.addEventListener('click', (event) => {
     state.phase = button.dataset.phase;
     if (state.phase === 'raidbosses') {
         selectionCleared = Boolean(state.selectedId);
+        resetProfileCollections();
         state.selectedId = null;
         state.detail = null;
         state.detailError = null;
@@ -4042,7 +4106,7 @@ document.addEventListener('keydown', (event) => {
         const tabs = [...els.selectedInspector.querySelectorAll('[data-profile-tab]')];
         const index = tabs.indexOf(tab);
         const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-        state.profileTab = tabs[next].dataset.profileTab; updateProfileTabs(); tabs[next].focus(); return;
+        state.profileTab = tabs[next].dataset.profileTab; updateProfileTabs({ forceCollection: !state.live }); tabs[next].focus(); return;
     }
     if (document.querySelector('dialog[open]')) return;
     if (event.key === 'Escape' && state.raidBossOpen) {
