@@ -99,7 +99,7 @@ function create({ service = () => require('./PlayerBoardService'),
         body += Html.columns([
             Html.cell('<edit var="board_query" width=174 height=15 length=48>', { width: 184 }),
             Html.cell(Html.button('Search', 'board search $board_query', { width: 76 }), { width: 86 })
-        ]) + '<br1>';
+        ]) + '<br1>' + Html.spacer(6);
         body += Html.font('Search by item name. Click an item to compare offers.') + '<br>';
         if (query.selfId) body += Html.columns([
             Html.cell(Html.font(itemName(query.selfId), Html.COLOR.title), { width: 184 }),
