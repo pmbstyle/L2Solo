@@ -59,7 +59,11 @@ class RecipeProductionIndex {
         const changed = [];
         for (let level = 1; level <= 9; level++) {
             if (!this.rows[level].size) continue;
-            this.rows[level].clear(); this.revisions[level]++;
+            // Snapshot replacement clears public bids, while enabled authored
+            // buyers still support the same indexed recipes without board rows.
+            const rows = this.rows[level]; rows.clear();
+            for (const recipe of this.catalog.rows) if (recipe.level <= level && this.accept(recipe) && this.fixedBuyer(recipe)) rows.add(recipe);
+            this.revisions[level]++;
             changed.push(this.scopeFor(level));
         }
         return changed;

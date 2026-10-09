@@ -14,9 +14,10 @@ module.exports.nativeRecipeEarning = async (id, timestamp) => {
     const result = await occupationFor(entry.state, timestamp, entry.context, 'action');
     return { ...result, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
 };
-module.exports.nativeEconomyDecision = (id, timestamp) => {
+module.exports.nativeEconomyDecision = async (id, timestamp, nativeRoutes = false) => {
     const state = kernel.states.get(Number(id)).state;
-    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp });
+    const routeRows = nativeRoutes ? await occupationFor(state, timestamp, kernel.states.get(Number(id)).context, 'wish') : undefined;
+    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { timestamp, ...(nativeRoutes ? { routeRows } : {}) });
     const decision = require('./ColdEconomyDecision').capture(economy, state);
     // Inputs from this worker's own native catalogue and price counters. A
     // test can sum E1 independently; no supplied packet or altered context.
@@ -29,7 +30,7 @@ module.exports.nativeEconomyDecision = (id, timestamp) => {
         escape: { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: economy.price(736),
             usable: !invoke('GameServer/Karma').closesTowns(state.stats?.karma) }
     };
-    return { decision: { ...decision }, materials: decision.materials, statsPacket: economy.statsPacket, reserveInputs,
+    return { ...(nativeRoutes ? { watchList: economy.watchList } : {}), decision: { ...decision }, materials: decision.materials, statsPacket: economy.statsPacket, reserveInputs,
         queue: economy.network.queue.map(row => ({ key: row.key, materials: row.object?.materials || [], price: row.price, ratio: row.ratio, valueHours: row.valueHours, funded: row.funded, cumulativePrice: row.cumulativePrice, object: row.object })),
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
 };`;
@@ -42,12 +43,12 @@ loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.obse
 parentPort.on('message', async message => {
     if (!message.nativeEconomyDecision) return;
     try { parentPort.postMessage({ probeId: message.msgId,
-        value: await loaded.exports[message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp) }); }
+        value: await loaded.exports[message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp, message.nativeRoutes) }); }
     catch (error) { parentPort.postMessage({ probeId: message.msgId, error: error.stack }); }
 });`;
 
 module.exports = async function workerEconomyDecision(state, { context = {}, timestamp = Date.now(),
-    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false } = {}) {
+    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, nativeRoutes = false } = {}) {
     const epoch = `native:economy-decision:${state.characterId}`;
     const messages = [];
     const worker = new Worker(wrapper, { eval: true, workerData: { workerEpoch: epoch,
@@ -86,7 +87,7 @@ module.exports = async function workerEconomyDecision(state, { context = {}, tim
         send('snapshot_page', { rows: [{ state, context }, ...extraStates], ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'native-economy'), nativeEconomyDecision: true,
-            characterId: state.characterId, timestamp, recipeEarning });
+            characterId: state.characterId, timestamp, recipeEarning, nativeRoutes });
         const response = await wait(message => message.probeId === 'native-economy');
         if (response.error) throw Error(response.error);
         assert.deepEqual(response.value.forbiddenLoaded, [], 'native economy worker loads no World actor/network/database implementation');
