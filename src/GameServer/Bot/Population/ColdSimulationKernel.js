@@ -1041,8 +1041,11 @@ class ColdSimulationKernel {
         if (attempt && (attempt.kind !== 'meeting' || attempt.commandId !== identity.commandId)) return false;
         if (!attempt) {
             const current = this.states.get(id);
-            if (!current || this.busy(id) || this.commanding.size >= 16
-                || this.claiming.size + this.inFlight.size + this.commanding.size >= this.maxInFlight) return false;
+            // Bilateral consent reads a separate, bounded owner slot. A full
+            // combat/commit window must not make every other merchant busy.
+            // The same owner's active writer remains fenced out.
+            if (!current || this.busy(id)
+                || [...this.commandStartedAt.values()].filter(value => value.kind === 'meeting').length >= 16) return false;
             attempt = { kind: 'meeting', commandId: identity.commandId, state: current.state,
                 version: current.version, frames: [], frameHashes: [], sent: false, startedAt: this.now() };
             this.commandStartedAt.set(id, attempt); this.commanding.add(id);
@@ -1119,6 +1122,9 @@ class ColdSimulationKernel {
         if (!attempt || this.commandStartedAt.get(id) !== attempt) return false;
         this.commandStartedAt.delete(id);
         this.commanding.delete(id);
+        // The due heap may have consumed this owner's token while consent
+        // held it. ACK, rejection and expiry must all restore its lifecycle.
+        if (attempt.kind === 'meeting' && !this.stopping) this.ensureScheduled(id);
         return true;
     }
 

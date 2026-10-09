@@ -761,6 +761,8 @@ function requestPartyGoals(payload, msgId, admitted = false) {
 }
 
 function send(type, payload = {}, msgId = null, payloadBytes = null) {
+    const packed = require('./ColdStateWire').packPayload(type, payload);
+    if (packed !== payload) { payload = packed; payloadBytes = null; }
     const message = Protocol.envelope(type, epoch, payload, msgId);
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
     let valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
@@ -1133,7 +1135,9 @@ async function handle(message) {
         send('fault', { reason: valid.reason, msgId: message?.msgId || null });
         return;
     }
-    const payload = message.payload || {};
+    let payload;
+    try { payload = require('./ColdStateWire').unpackPayload(message.type, message.payload || {}); }
+    catch (error) { send('fault', { reason: error.message, msgId: message.msgId }); return; }
     switch (message.type) {
     case 'catalog_page':
         if (payload.catalog === 'npc_offers') {

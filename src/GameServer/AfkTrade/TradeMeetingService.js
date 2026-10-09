@@ -21,7 +21,16 @@ const world = () => invoke('GameServer/World/World');
 const afk = () => invoke('GameServer/AfkTrade/AfkTradeService');
 const sessionFor = id => world().registeredActorById(Number(id))?.session || null;
 function acceptRows(result) {
-    for (const row of Object.values(result?.coldLifeRows || {})) life().acceptLifecycleRow(row);
+    for (const row of Object.values(result?.coldLifeRows || {})) {
+        const previous = life().cachedState(row.characterId);
+        const state = life().acceptLifecycleRow(row);
+        // Native reserve/leg/arrival writes are authoritative publications.
+        // Cache adoption alone does not update the worker's lifecycle queue.
+        if (state?.phase === 'cold' && (state.simulation?.revision !== previous?.simulation?.revision
+            || state.phase !== previous?.phase || state.updatedAt !== previous?.updatedAt)) {
+            coordinator()?.notifyState?.(state, { reason: 'trade_meeting_native', critical: true });
+        }
+    }
 }
 async function syncActors(row) {
     for (const id of [row.actorA, row.actorB]) {

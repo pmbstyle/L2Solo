@@ -1,4 +1,5 @@
 'use strict';
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // The integration fixture verifies actual worker queue progress.
 const assert = require('node:assert/strict');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
@@ -12,10 +13,15 @@ const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'
 const HtmlLink = invoke('GameServer/Network/Request/HtmlLink');
 const seller = 730501, buyer = 730502;
 const point = { locX: 83396, locY: 147904, locZ: -3404 };
+const workerFaults = [];
 const waitFor = async (predicate, label) => {
     const deadline = Date.now() + 30000;
     while (!await predicate()) {
-        if (Date.now() > deadline) throw Error('timeout: ' + label);
+        if (Date.now() > deadline) {
+            const { worker, queue, snapshots } = Coordinator.snapshot();
+            console.error(JSON.stringify({ worker, queue, snapshots }));
+            throw Error('timeout: ' + label);
+        }
         await new Promise(resolve => setTimeout(resolve, 20));
     }
 };
@@ -30,6 +36,9 @@ const waitFor = async (predicate, label) => {
         for (const id of [seller, buyer]) await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 1000000, slot: 0 });
         await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
         await Database.setItem(seller, { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 });
+        await Database.execute([`WITH RECURSIVE stock(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM stock WHERE n<4160)
+            INSERT INTO items(selfId,name,amount,enchant,equipped,slot,characterId)
+            SELECT 952,'Magic Ring',1,n%7,0,0,? FROM stock`, [seller]]);
         await Life.init();
         await Life.upsertState({ characterId: seller, name: 'MeetingSeller', phase: 'cold', activity: 'hunting',
             level: 20, adena: 1000000, inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
@@ -49,6 +58,8 @@ const waitFor = async (predicate, label) => {
         await Database.execute(['UPDATE items SET equipped=1 WHERE id=?', [boots.id]]);
         await Life.upsertState({ ...Life.cachedState(seller),
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)) }, 'meeting_worn_item');
+        const rings = Life.cachedState(seller).inventory[952];
+        assert.equal(rings.instances.length, 4160);
         const [row] = await Database.execute(['SELECT * FROM characters WHERE id=?', [buyer]]);
         session = { accountId: 'quests', packets: [], socket: { write() {} }, fetchAccountId() { return this.accountId; },
             dataSendToMe(packet) { this.packets.push(packet); }, dataSendToOthers() {}, dataSendToMeAndOthers() {} };
@@ -59,6 +70,7 @@ const waitFor = async (predicate, label) => {
         await Meetings.init();
         Coordinator.pauseReasons.add('fixture');
         await Coordinator.start();
+        Coordinator.worker.on('message', message => { if (message.type === 'fault') workerFaults.push(message.payload.reason); });
         await waitFor(() => Coordinator.ready && Coordinator.snapshotsLoaded, 'worker startup');
         const html = () => session.packets.filter(packet => packet[0] === 0x0f).at(-1)?.subarray(5).toString('utf16le') || '';
         const click = async command => {
@@ -79,10 +91,12 @@ const waitFor = async (predicate, label) => {
         assert(html().includes('Checking the trade'), html());
         await waitFor(() => !session.playerBoardAgreePending, 'agreement result');
         assert(/Trade agreed|Trade completed/.test(html()), html());
-        await waitFor(async () => (await fixture.amount(buyer, 20)) === 1, 'completed player purchase');
+        await waitFor(async () => (await fixture.amount(buyer, 20)) === 1
+            && (await fixture.amount(seller, 57)) === 1000000 + 4079, 'completed player purchase');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079);
         assert.equal(await fixture.amount(seller, 57), 1000000 + 4079);
         assert.equal(await fixture.amount(seller, 20), 0);
+        assert.deepEqual(Life.cachedState(seller).inventory[952], rings, 'large physical bags survive worker consent and native custody publication');
         assert.equal(Meetings.counters().preparations, 0);
         Board.show(session, { side: 1, town: 'Giran' });
         const buyBoots = /action="bypass -h (board answer sell_ad \d+ \d+ 62 [^"]+)">/.exec(html())[1];
@@ -91,11 +105,40 @@ const waitFor = async (predicate, label) => {
         assert.equal(await Database.fetchAfkTradeShop(bootSale.shop.id), null, 'stale worn-item advertisement is removed');
         assert.equal((await Database.fetchItems(seller)).find(row => row.id === boots.id).equipped, 1);
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079, 'a rejected worn-item offer moves no adena');
-        console.log('PASS player HTML links, actual worker consent, native reservation and delivery conserve goods and adena');
+
+        // An accepted remote merchant finishes an overdue rest through the
+        // actual worker, starts the native leg and delivers to the waiting player.
+        const closed = await Database.closeBoardRecord(seller, sale.shop.id);
+        Afk.refreshRecord(closed.record);
+        await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
+        const remoteStock = (await Database.fetchItems(seller)).find(row => row.selfId === 20);
+        const remoteSale = await Database.createAfkTradeShop(seller, { kind: 'sell_ad', storeType: 1, town: 'Giran', ...point,
+            lines: [{ objectId: remoteStock.id, selfId: 20, count: 1, price: 4080 }] });
+        Afk.refreshRecord(remoteSale.shop);
+        const recoveredAt = Date.now() - 1000;
+        await Life.upsertState({ ...Life.cachedState(seller), activity: 'resting',
+            loc: { ...point, locX: point.locX + 400 },
+            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
+            vitals: { hp: 10, maxHp: 187, mp: 74, maxMp: 74 },
+            stats: { ...Life.cachedState(seller).stats, restUntil: recoveredAt },
+            timing: { lastResolvedAt: recoveredAt - 3600000, nextResolveAt: recoveredAt } }, 'resting_merchant_fixture');
+        Board.show(session, { side: 1, town: 'Giran' });
+        const remoteBuy = new RegExp('action="bypass -h (board answer sell_ad ' + remoteSale.shop.id + ' [^"]+)"').exec(html())[1];
+        await click(remoteBuy); await click('board agree');
+        await waitFor(() => !session.playerBoardAgreePending, 'resting merchant agreement');
+        assert(html().includes('Trade agreed'), html());
+        Coordinator.setPauseReason('fixture', false);
+        await waitFor(async () => (await fixture.amount(buyer, 20)) === 2
+            && (await fixture.amount(seller, 57)) === 1000000 + 4079 + 4080, 'rest, native travel and delivery');
+        assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080);
+        assert.equal(await fixture.amount(seller, 57), 1000000 + 4079 + 4080);
+        assert.deepEqual(Life.cachedState(seller).inventory[952], rings);
+        console.log('PASS player HTML links, large native bag, actual worker consent, overdue rest, native travel and conserved delivery');
     } finally {
         Meetings.reset();
         if (Coordinator.started) await Coordinator.stop();
         Afk._resetForTests();
         await fixture.close();
+        assert.deepEqual(workerFaults, [], 'large bags must not fault the worker during consent, travel or the next lifecycle command');
     }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

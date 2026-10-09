@@ -1,5 +1,6 @@
 const DiagnosticConfig = require('./PopulationConfig');
 const { collectionPagesWithBytes, PAGE_BYTES } = require('./ColdMessagePages');
+const StateWire = require('./ColdStateWire');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { Worker } = require('worker_threads');
@@ -262,6 +263,7 @@ class ColdSimulationCoordinator {
         this.snapshotInFlight = null;
         this.snapshotInFlightInitial = false;
         this.snapshotRefreshPending = false;
+        this.snapshotBootstrapPending = false;
         this.criticalSnapshotInFlight = null;
         this.snapshotLast = {
             mode: 'none',
@@ -444,8 +446,10 @@ class ColdSimulationCoordinator {
             : type === 'claim_ack' ? payload.rejected
                 : ['commit_ack', 'release_ack', 'command_ack'].includes(type) ? payload.results : [];
         for (const entry of entries || []) {
-            this.projectionRetention.remember(entry);
+            if (!entry?.state?.inventoryInstanceColumns) this.projectionRetention.remember(entry);
         }
+        const packed = StateWire.packPayload(type, payload);
+        if (packed !== payload) { payload = packed; bytes = null; }
         const message = Protocol.envelope(type, this.workerEpoch, payload, msgId);
         const valid = Protocol.validateEnvelope(message, 'main', { workerEpoch: this.workerEpoch, bytes });
         if (!valid.ok) {
@@ -620,6 +624,10 @@ class ColdSimulationCoordinator {
     }
 
     postCollections(type, collections = {}, msgId = null) {
+        for (const entries of Object.values(collections)) for (const entry of entries || []) {
+            if (!entry?.state?.inventoryInstanceColumns) this.projectionRetention.remember(entry);
+        }
+        collections = StateWire.packPayload(type, collections);
         const pages = collectionPagesWithBytes(type, this.workerEpoch, collections, msgId, (value) => {
             this.recordInvalid(`out_${type}_single_item_too_large`);
             return value?.state ? {
@@ -693,6 +701,13 @@ class ColdSimulationCoordinator {
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
         if (!valid.ok) {
             this.recordInvalid(`in_${valid.reason}`);
+            return;
+        }
+        try {
+            const payload = StateWire.unpackPayload(message.type, message.payload);
+            if (payload !== message.payload) message = { ...message, payload };
+        } catch (error) {
+            this.recordInvalid(`in_${message.type}_${error.message}`);
             return;
         }
         // A restarted worker numbers its requests from 1 again (claim:1,
@@ -1393,7 +1408,9 @@ class ColdSimulationCoordinator {
         for (const entry of entries) {
             if (rowsSent + page.length > 0 && Date.now() >= deadlineAt) break;
             await this.ensureCraftRecipes(entry.state || entry);
-            const row = this.snapshotEntry(entry.state || entry, index);
+            const source = this.snapshotEntry(entry.state || entry, index);
+            this.projectionRetention.remember(source);
+            const row = StateWire.packEntry(source);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
@@ -1450,7 +1467,9 @@ class ColdSimulationCoordinator {
             }
             const state = states[stateIndex];
             await this.ensureCraftRecipes(state);
-            const row = this.snapshotEntry(state, index);
+            const source = this.snapshotEntry(state, index);
+            this.projectionRetention.remember(source);
+            const row = StateWire.packEntry(source);
             const rowBytes = Protocol.byteLength([row]) - 2;
             const tooLarge = page.length > 0 && pageBytes + rowBytes + 1 > PAGE_BYTES;
             if (tooLarge || page.length >= pageSize) {
@@ -1563,7 +1582,7 @@ class ColdSimulationCoordinator {
     }
 
     async flushCriticalSnapshots() {
-        if (!this.worker || !this.ready || this.snapshotInFlightInitial) return false;
+        if (!this.worker || !this.ready || this.snapshotInFlightInitial || this.snapshotBootstrapPending) return false;
         if (this.criticalSnapshotInFlight) return this.criticalSnapshotInFlight;
 
         const job = (async () => {
@@ -1582,7 +1601,13 @@ class ColdSimulationCoordinator {
             return true;
         })();
         this.criticalSnapshotInFlight = job;
-        job.finally(() => { this.criticalSnapshotInFlight = null; }).catch(() => null);
+        job.finally(() => {
+            this.criticalSnapshotInFlight = null;
+            if (this.snapshotRefreshPending && this.started && !this.stopping) {
+                this.snapshotRefreshPending = false;
+                setImmediate(() => this.sendSnapshots(false).catch(error => this.recordError(error)));
+            }
+        }).catch(() => null);
         return job;
     }
 
@@ -1597,6 +1622,9 @@ class ColdSimulationCoordinator {
 
     async sendSnapshots(initial = false, continuation = false) {
         if (!this.worker || !this.ready) return false;
+        // Preserve bootstrap intent across a concurrent critical publication.
+        // An incremental continuation has no final initial-ready marker.
+        if (initial) this.snapshotBootstrapPending = true;
         await invoke('GameServer/Clan/ClanSocialRuntime').refresh();
         await invoke('GameServer/Clan/ClanSocialRuntime').enforceOne(this);
         invoke('GameServer/Clan/ClanSocialRuntime').send(this);
@@ -1604,9 +1632,15 @@ class ColdSimulationCoordinator {
             this.snapshotRefreshPending = true;
             return false;
         }
-        if (initial) {
+        if (this.snapshotBootstrapPending) {
+            this.snapshotBootstrapPending = false;
             DiagnosticConfig.developerDiagnostics && (this.counters.snapshotFullRuns += 1);
-            return this.startSnapshotJob('full', () => this.sendFullSnapshot());
+            return this.startSnapshotJob('full', async () => {
+                const result = await this.sendFullSnapshot();
+                if (!result?.ok) utils.infoWarn('ColdWorker', 'initial snapshot failed after %d states in %d pages',
+                    Number(result?.rowsSent || 0), Number(result?.pagesSent || 0));
+                return result;
+            });
         }
 
         if (!this.snapshotQueue.size()) return false;
