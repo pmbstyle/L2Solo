@@ -11,7 +11,7 @@ const kits = new Map();
 // Only a review's finalists are bounded; prices, holdings and funding are live.
 const GEAR_FINALISTS_PER_SLOT = 8;
 const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
-function gearCandidates(state, ctx = null) {
+function gearCandidates(state, ctx = null, wornFor = wornReader(state)) {
     const Data = invoke('GameServer/DataCache');
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     if (catalogSource !== Data.items) { catalogSource = Data.items; kits.clear(); }
@@ -51,7 +51,7 @@ function gearCandidates(state, ctx = null) {
         // The exported game-data view is also used to construct fixed kits;
         // it has no actor choice or expensive build evaluation.
         if (!ctx) { result.set(slot, allowed.map(at => kit.items[at])); continue; }
-        const current = [7, 14].includes(slot) ? worn(state, 7) || worn(state, 14) : worn(state, slot);
+        const current = [7, 14].includes(slot) ? wornFor(7) || wornFor(14) : wornFor(slot);
         const owned = current && Data.items && require('../../Item/ItemTemplateIndex').find(Data.items, current.selfId);
         const before = owned ? Planner.itemScore(owned, role, classId) : 0;
         const efficientByRank = new Map();
@@ -84,22 +84,41 @@ function gearCandidates(state, ctx = null) {
     return result;
 }
 function rows(state) { return Object.values(state.inventory || {}); }
-function worn(state, slot) {
-    return rows(state).find(row => (row.equipped || row.equippedCount > 0)
+function worn(state, slot, inventoryRows = rows(state)) {
+    return inventoryRows.find(row => (row.equipped || row.equippedCount > 0)
         && (Number(row.slot) === slot || row.equippedSlots?.includes(slot))) || null;
+}
+// This reader belongs to one synchronous review, never to a saved owner.
+// Keep the native first-row and equippedSlots rules, including jewellery sides.
+function wornReader(state) {
+    let inventoryRows;
+    const slots = new Map();
+    return slot => {
+        if (!slots.has(slot)) slots.set(slot, worn(state, slot, inventoryRows ||= rows(state)));
+        return slots.get(slot);
+    };
 }
 // What wearing `item` in its slot adds to the bot's build: remembered per
 // build and item (design 16.5), so a later review of the same build reuses it.
 function gearGain(state, item, timestamp = Date.now(), build = null) {
+    return gearGainReader(state, timestamp, build)(item);
+}
+function gearGainReader(state, timestamp, build, caster = require('./BotImprovementPolicy').isCaster(state)) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-    const caster = require('./BotImprovementPolicy').isCaster(state);
-    build = build || Profile.buildGainsFor(state, timestamp);
-    return Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
+    build ||= Profile.buildGainsFor(state, timestamp);
+    let inventoryEntries;
+    const withoutSlot = new Map();
+    return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${item.selfId}:${item.etc.slot}`, () => {
         const before = Profile.powerNumbers(build);
-        const inventory = Object.fromEntries(Object.entries(state.inventory || {}).map(([key, row]) => [key,
-            Number(row.slot) === Number(item.etc.slot) ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
-        inventory[item.selfId] = { selfId: Number(item.selfId), amount: 1, equipped: true,
-            equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
+        const slot = Number(item.etc.slot);
+        // Only a new native gain needs a hypothetical bag. Prepare its unchanged
+        // rows/removal once per slot, then give each candidate a fresh overlay.
+        // Cached gains allocate no bag; all scratch is released at review return.
+        if (!withoutSlot.has(slot)) withoutSlot.set(slot, Object.fromEntries((inventoryEntries ||= Object.entries(state.inventory || {}))
+            .map(([key, row]) => [key, Number(row.slot) === slot
+                ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row])));
+        const inventory = { ...withoutSlot.get(slot), [item.selfId]: { selfId: Number(item.selfId), amount: 1, equipped: true,
+            equippedCount: 1, slot, enchant: 0 } };
         const after = Profile.powerFor({ ...state, inventory }, timestamp, Profile.buildOptions(build, timestamp));
         const attack = caster ? 'mAtk' : 'pAtk';
         const attackGain = Math.max(0, Number(after[attack]) / Math.max(1, Number(before[attack])) - 1);
@@ -304,11 +323,12 @@ function buildProjection(state, ctx, deps) {
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
     const candidates = [];
-    for (const [slot, items] of gearCandidates(state, ctx)) for (const item of items) {
+    const wornFor = wornReader(state), gainFor = gearGainReader(state, timestamp, ownBuild, magic);
+    for (const [slot, items] of gearCandidates(state, ctx, wornFor)) for (const item of items) {
         if (!Planner.considerable(item, state)) continue;
-        if (Number(worn(state, slot)?.selfId) === Number(item.selfId)) continue;
-        const gain = gearGain(state, item, timestamp, ownBuild);
-        const current = worn(state, slot);
+        const current = wornFor(slot);
+        if (Number(current?.selfId) === Number(item.selfId)) continue;
+        const gain = gainFor(item);
         const currentPrice = current ? price(current.selfId) : 0;
         const market = invoke('GameServer/Bot/Economy/MarketCounters');
         const future = resale(price(item.selfId), { trend: market.moveOf(market.counterOf(item.selfId), ctx.timestamp),
