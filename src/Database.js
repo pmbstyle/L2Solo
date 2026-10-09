@@ -10430,6 +10430,38 @@ Object.assign(Database, {
             ORDER BY shops.ownerId LIMIT 32`).map(row => row.ownerId), 'board:intent-migration-page');
     },
     fetchAfkTradeShop(id) { return inTransaction(() => afkTradeShopUnsafe(Number(id)), 'board:record-read'); },
+    reconcileConditionalSellAds(ownerId) {
+        const id = Number(ownerId);
+        return withCharacterFlush(id, () => inTransaction(() => {
+            const changed = [], meetings = TradeMeetings.active(id);
+            const ads = all("SELECT * FROM afk_trade_shops WHERE ownerId=? AND kind='sell_ad' AND custodyPolicy=1 ORDER BY id", [id]);
+            for (const ad of ads) {
+                let updated = false;
+                for (const line of all('SELECT * FROM afk_trade_lines WHERE shopId=?', [ad.id])) {
+                    const available = Number(one(`SELECT COALESCE(SUM(amount),0) amount FROM items
+                        WHERE characterId=? AND selfId=? AND enchant=? AND equipped=0`, [id, line.selfId, line.enchant]).amount);
+                    // Goods already reserved for a meeting still back the ad
+                    // until native completion consumes its advertised count.
+                    const held = meetings.length ? Number(one(`SELECT COALESCE(SUM(heldCount),0) amount FROM board_trade_meeting_lines
+                        WHERE meetingId IN (${meetings.map(() => '?').join(',')}) AND sourceAdId=?
+                        AND selfId=? AND enchant=? AND custodyType='trade'`,
+                    [...meetings.map(row => row.id), ad.id, line.selfId, line.enchant]).amount) : 0;
+                    const count = Math.min(Number(line.count), available + held);
+                    if (count === Number(line.count)) continue;
+                    write('UPDATE afk_trade_lines SET count=?,updatedAt=? WHERE id=?', [count, now(), line.id]);
+                    updated = true;
+                }
+                if (!updated) continue;
+                write('UPDATE afk_trade_shops SET revision=revision+1,updatedAt=? WHERE id=?', [now(), ad.id]);
+                const current = afkTradeShopUnsafe(ad.id);
+                if (current.lines.every(line => line.count === 0)) {
+                    closeBoardRecordUnsafe(current);
+                    changed.push(closedRecord(current));
+                } else changed.push(current);
+            }
+            return changed;
+        }, 'board:conditional-stock'));
+    },
     prepareTradeParticipant(id) {
         return withCharacterFlush(id, () => inTransaction(() => {
             const slot = TradeMeetings.participant(Number(id)), row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);

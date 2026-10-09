@@ -17,6 +17,25 @@ function human(session) {
     return !!session?.actor && !String(session.accountId || '').startsWith('bot_')
         && !session.actor.isDead?.() && Number(session.actor.fetchHp?.() ?? 1) > 0;
 }
+function meetingFailure(error, playerId, line, phase) {
+    const reason = ({
+        trade_meeting_stock_changed: line.storeType === BUY ? 'items_missing' : 'stock_changed', inventory_item_changed: 'stock_changed',
+        economy_material_protected: 'stock_changed',
+        not_enough_adena: line.storeType === BUY ? 'merchant_declined' : 'insufficient_funds',
+        trade_meeting_player_at_point: 'player_at_point', trade_meeting_point_changed: 'meeting_point_changed',
+        trade_meeting_worker_unavailable: 'merchant_busy', trade_meeting_worker_busy: 'merchant_busy',
+        trade_meeting_preparation_busy: 'merchant_busy', trade_meeting_backpressure: 'merchant_busy',
+        trade_meeting_preparation_timeout: 'merchant_busy',
+        trade_meeting_authority_changed: 'merchant_changed', trade_meeting_stale_worker: 'merchant_changed',
+        trade_meeting_preparation_missing: 'merchant_changed', trade_meeting_preparation_discarded: 'merchant_changed',
+        trade_meeting_preparation_changed: 'merchant_changed', trade_meeting_source_retired: 'merchant_changed',
+        trade_meeting_need_changed: 'merchant_declined', trade_meeting_funding: 'merchant_declined',
+        economy_funding_missing: 'merchant_declined', economy_funding_changed: 'merchant_declined',
+        trade_meeting_quote_changed: 'record_changed'
+    })[error.message] || 'trade_unavailable';
+    utils.infoWarn('Board', 'player %d meeting %s record=%d: %s', playerId, phase, line.recordId, error.message);
+    return { ok: false, reason };
+}
 
 function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
     workshops = () => invoke('GameServer/Bot/Economy/CraftWorkshopService'),
@@ -116,10 +135,11 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 'customer adena changed': 'insufficient_funds', 'workshop price changed': 'record_changed' })[error.message] || 'craft_unavailable' }; }
         }
         const consent = session.playerBoardPreparation;
+        let saved;
         if (request.confirmed === true && consent && consent.id === request.id && consent.lineId === request.lineId
             && consent.amount === Number(request.amount ?? 1) && consent.price === Number(request.price)
             && consent.revision === request.revision) {
-            const saved = await meetings().receipt?.(consent.preparationId, playerId);
+            saved = await meetings().receipt?.(consent.preparationId, playerId);
             if (!current()) return { ok: false, reason: 'player_unavailable' };
             // A staged receipt is only a pending preparation. Explicit player
             // consent still has to call accept before any trade is reserved.
@@ -145,7 +165,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
             const owner = life().cachedState(line.ownerId);
             const loc = line.custodyPolicy === 1 ? meetingLoc
                 : offer.projection?.actor ? location(offer.projection.actor) : owner?.loc;
-            return loc ? { ok: true, action: 'locate', ownerName: offer.sourceName,
+            return loc ? { ok: true, action: 'locate', ownerName: offer.sourceName, conditional: line.custodyPolicy === 1,
                 town: line.custodyPolicy === 1 || offer.projection?.actor ? line.town : owner?.currentRegion || line.town, loc: { ...loc } }
                 : { ok: false, reason: 'location_unavailable' };
         }
@@ -159,26 +179,38 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 const prepared = session.playerBoardPreparation;
                 if (!prepared || prepared.id !== line.recordId || prepared.lineId !== line.lineId || prepared.amount !== amount
                     || prepared.price !== line.price || prepared.revision !== line.revision) return { ok: false, reason: 'record_changed' };
-                try { const result = await meetings().accept(prepared.preparationId, playerId);
+                try {
+                    if (saved?.outcome !== 'preparing') await meetings().prepareTrade(playerId, offer.store, line.selfId, amount,
+                        { lineId: line.lineId, expectedPrice: line.price, expectedRevision: line.revision,
+                            token: prepared.preparationId, expectedPoint: prepared.point });
+                    if (!current()) {
+                        meetings().discard(prepared.preparationId);
+                        return { ok: false, reason: 'player_unavailable' };
+                    }
+                    const result = await meetings().accept(prepared.preparationId, playerId);
                     if (!current()) return { ok: false, reason: 'player_unavailable' };
                     session.playerBoardPreparation = undefined;
                     return { ok: true, action: result.outcome === 'completed' || result.outcome === 'cancelled' ? result.outcome : 'agreed', ownerName: offer.sourceName, town: line.town, pending: result.pending }; }
-                catch (_) { return { ok: false, reason: 'record_changed' }; }
+                catch (error) {
+                    return meetingFailure(error, playerId, line, 'acceptance');
+                }
             }
             if (session.playerBoardPreparation) meetings().discard(session.playerBoardPreparation.preparationId);
             session.playerBoardPreparation = undefined;
             try {
                 const prepared = await meetings().prepareTrade(playerId, offer.store, line.selfId, amount,
-                    { lineId: line.lineId, expectedPrice: line.price, expectedRevision: line.revision });
+                    { lineId: line.lineId, expectedPrice: line.price, expectedRevision: line.revision, preview: true });
                 if (!current()) {
                     meetings().discard(prepared.preparationId);
                     return { ok: false, reason: 'player_unavailable' };
                 }
                 session.playerBoardPreparation = { ...request, amount, id: line.recordId, lineId: line.lineId,
-                    price: line.price, revision: line.revision, preparationId: prepared.preparationId };
+                    price: line.price, revision: line.revision, preparationId: prepared.preparationId, point: prepared.point };
                 return { ok: true, action: 'confirm_trade', ownerName: offer.sourceName, side: line.storeType,
                     amount, price: line.price, total: prepared.total, selfId: line.selfId, town: line.town };
-            } catch (_) { return { ok: false, reason: 'record_changed' }; }
+            } catch (error) {
+                return meetingFailure(error, playerId, line, 'preview');
+            }
         }
         const merchant = offer.projection?.actor;
         if (!merchant) {

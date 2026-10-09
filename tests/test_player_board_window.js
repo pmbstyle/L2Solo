@@ -224,6 +224,21 @@ async function main() {
     meetingWindow.meetingResult(session, { id: 8, state: 'cancelled' });
     assert.match(htmlVisible(packets.at(-1)), /Trade cancelled/);
 
+    let finishAgreement, agreementCalls = 0;
+    const waitingWindow = Window.create({ afk: () => afk, response: () => response, townOf: () => 'Giran',
+        service: () => ({ entries: () => ({ available: true, entries: [] }), answer: () => {
+            agreementCalls++; return new Promise(resolve => { finishAgreement = resolve; });
+        } }) });
+    session.playerBoardPreparation = { id: 9, amount: 1 };
+    const agreement = waitingWindow.handle(session, ['board', 'agree']);
+    assert.match(htmlVisible(packets.at(-1)), /Checking the trade/);
+    await waitingWindow.handle(session, ['board', 'agree']);
+    assert.equal(agreementCalls, 1, 'a second Agree click cannot reserve the same trade twice');
+    finishAgreement({ ok: false, reason: 'merchant_busy' });
+    await agreement;
+    assert.equal(session.playerBoardAgreePending, undefined);
+    assert.match(htmlVisible(packets.at(-1)), /merchant is busy/);
+
     const defaultShow = Window.show;
     const ActorGenerics = invoke(path.actor), originalAdmin = ActorGenerics.adminPanel;
     const Config = invoke('GameServer/Bot/Population/PopulationConfig'), oldChatLog = Config.devLogPlayerChat;

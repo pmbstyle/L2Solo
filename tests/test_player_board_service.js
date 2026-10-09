@@ -2,10 +2,11 @@
 const assert = require('node:assert/strict');
 const { BoardIndex, SELL, BUY } = require('../src/GameServer/AfkTrade/BoardIndex');
 const { create } = require('../src/GameServer/AfkTrade/PlayerBoardService');
+global.utils = { infoWarn() {} };
 
 async function main() {
     const board = new BoardIndex();
-    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false, stagedReceipt = false, meetingX = 1000;
+    let selects = 0, crafts = 0, x = 0, prepares = 0, agreements = 0, lostAck = false, durableReceipt = false, terminal = false, stagedReceipt = false, meetingX = 1000, prepareError;
     const merchant = { fetchId: () => 900000045, fetchLocX: () => 1000, fetchLocY: () => 0, fetchLocZ: () => 0 };
     const player = { accountId: 'player_board', actor: { fetchId: () => 8, fetchHp: () => 100,
         fetchClanId: () => 0, fetchLocX: () => x, fetchLocY: () => 0, fetchLocZ: () => 0,
@@ -25,7 +26,15 @@ async function main() {
             : ({ sourceName: `Trader${line.ownerId}`, itemName: `Item${line.selfId}`, projection: line.ref.projection,
                 locX: meetingX, locY: 0, locZ: 0, store: { shopId: line.recordId } }),
         buyFromShop() { throw Error('remote purchase forbidden'); }, sellToShop() { throw Error('remote sale forbidden'); } }),
-    meetings: () => ({ discard() {}, prepareTrade: async () => { prepares++; return { preparationId: 'prepared', total: 180 }; },
+    meetings: () => ({ discard() {}, prepareTrade: async (id, store, item, count, options) => {
+        if (prepareError) throw prepareError;
+        prepares++;
+        if (options.preview !== true) {
+            assert.equal(options.token, 'prepared', 'fresh agreement preserves the original consent token');
+            assert.deepEqual(options.expectedPoint, { locX: 1000, locY: 0, locZ: 0 });
+        }
+        return { preparationId: 'prepared', total: 180, point: { locX: 1000, locY: 0, locZ: 0 } };
+    },
         receipt: async (token, id) => { assert.equal(id, 8); return durableReceipt && token === 'prepared' ? { pending: !terminal, outcome: terminal ? 'completed' : 'accepted' }
             : stagedReceipt ? { pending: true, outcome: 'preparing', preparationId: token } : null; },
         accept: async id => { assert.equal(id, 'prepared'); agreements++; if (lostAck) { durableReceipt = true; throw Error('reply_lost_after_commit'); } return { pending: true }; } }),
@@ -80,7 +89,7 @@ async function main() {
     assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
     await service.answer(player, conditional);
     lostAck = true;
-    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'record_changed');
+    assert.equal((await service.answer(player, { ...conditional, confirmed: true })).reason, 'trade_unavailable');
     assert(player.playerBoardPreparation, 'lost native reply preserves the original consent identity');
     board.remove(5);
     terminal = true;
@@ -88,6 +97,17 @@ async function main() {
     assert.equal(agreements, 2, 'receipt replay after quote removal never creates a second native acceptance');
     assert.equal(player.playerBoardPreparation, undefined);
     lostAck = false; durableReceipt = false;
+    prepareError = Error('trade_meeting_stock_changed');
+    assert.equal((await service.answer(player, buyAd)).reason, 'items_missing', 'the player sale names missing unequipped goods');
+    prepareError = Error('trade_meeting_worker_busy');
+    assert.equal((await service.answer(player, buyAd)).reason, 'merchant_busy');
+    prepareError = undefined;
+    await service.answer(player, buyAd);
+    board.put({ ...record, id: 6, kind: 'buy_ad', storeType: BUY, custodyPolicy: 1,
+        revision: 5, lines: [{ lineId: 16, selfId: 1864, count: 10, price: 95 }] }, {});
+    const beforeChangedPrice = agreements;
+    assert.equal((await service.answer(player, { ...buyAd, confirmed: true })).reason, 'record_changed');
+    assert.equal(agreements, beforeChangedPrice, 'fresh preparation cannot consent to a different displayed price');
     assert.equal((await service.answer(player, { ...conditional, amount: 0 })).reason, 'record_changed');
     assert.equal((await service.answer(player, { ...conditional, amount: 11 })).reason, 'record_changed');
     assert.equal((await service.answer(player, { ...conditional, amount: 1.5 })).reason, 'record_changed');

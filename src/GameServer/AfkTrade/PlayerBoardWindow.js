@@ -80,6 +80,12 @@ function create({ service = () => require('./PlayerBoardService'),
         // body adds a duplicate plain heading instead of renaming the frame.
         return Html.page(Html.table([Html.row([Html.cell(body, { width: Html.WIDTH, align: 'left' })])]), { footer });
     }
+    function tradeDetails(rows) {
+        return Html.table(rows.map(([label, value]) => Html.row([
+            Html.cell(Html.esc(label), { width: 80, align: 'left' }),
+            Html.cell(value, { width: 190, align: 'left' })
+        ])));
+    }
     function towns(session, query) {
         const listed = query.side === 'workshop' ? workshops().boardRecords().map(shop => shop.town)
             : [...(afk().boardIndex().townItems.get(query.side)?.keys() || [])];
@@ -189,7 +195,8 @@ function create({ service = () => require('./PlayerBoardService'),
         if (result.action === 'store_opened') return result;
         if (result.ok && result.action === 'locate') {
             if (!track(session, result)) return show(session, query, 'The merchant location is unavailable.');
-            show(session, query, 'Merchant location marked on your radar.');
+            show(session, query, result.conditional ? 'Meeting point marked on your radar. The merchant comes after you agree.'
+                : 'Merchant location marked on your radar.');
         } else if (result.ok && ['meet', 'contact'].includes(result.action)) {
             const workshop = request.kind === 'workshop', marked = track(session, result);
             const body = Html.font(workshop ? 'Meet the crafter' : result.side === BUY ? 'Sell items' : 'Buy items', Html.COLOR.title) + '<br>'
@@ -211,17 +218,26 @@ function create({ service = () => require('./PlayerBoardService'),
         } else if (result.ok && result.action === 'confirm_trade') {
             const owner = text(result.ownerName, 'Merchant', 100);
             const verb = result.side === BUY ? 'Sell' : 'Buy';
-            const body = Html.font(verb + ' items', Html.COLOR.title) + '<br>' + Html.keyValueRows([
+            const body = Html.font(verb + ' items', Html.COLOR.title) + '<br>' + tradeDetails([
                 ['Item', Html.esc(itemName(result.selfId))], ['Quantity', amount(result.amount)],
                 ['Total', Html.font(amount(result.total) + ' a', Html.COLOR.title)], ['Merchant', Html.esc(owner)],
                 ['Town', Html.esc(text(result.town, 'the local town', 64))]
             ]) + '<br>'
-                + 'Your goods or payment will be held while you wait here.<br>'
-                + Html.columns([Html.cell('<edit var="board_quantity" width=100 height=15 length=16>', { width: 120 }),
-                    Html.cell(Html.button('Set quantity', 'board quantity $board_quantity', { width: 120 }))]) + '<br1>'
-                + Html.font('Enter a new quantity, or agree to the amount shown.');
+                + 'Agree to reserve the goods and payment.<br1>'
+                + 'Stay here until the merchant arrives.<br>'
+                + Html.columns([Html.cell('<edit var="board_quantity" width=150 height=15 length=16>', { width: 160 }),
+                    Html.cell(Html.button('Set quantity', 'board quantity $board_quantity', { width: 100 }), { width: 110 })]) + '<br1>' + Html.spacer(6)
+                + Html.font('Change the quantity above,') + '<br1>' + Html.font('or agree to the amount shown.');
             send(session, page(body, Html.actionFooter([
                 { label: 'Agree and wait', command: 'board agree' }, { label: 'Back', command: command(query, query.cursor) }])));
+        } else if (result.ok && result.action === 'agreed') {
+            send(session, page(Html.font('Trade agreed', Html.COLOR.title) + '<br>'
+                + 'Goods and payment are reserved.<br1>'
+                + 'Wait here for ' + Html.esc(text(result.ownerName, 'the merchant', 100)) + '.<br1>'
+                + 'Leaving the meeting point cancels the trade.<br>'
+                + Html.font('You will be notified when the trade completes.'), Html.actionFooter([
+                { label: 'Cancel trade', command: 'board cancel' },
+                { label: 'Market Board', command: command(query, query.cursor) }])));
         } else if (result.ok && result.action === 'confirm') {
             const name = itemName(result.productId), owner = text(result.ownerName, 'Merchant', 100);
             let body = Html.font('Confirm craft', Html.COLOR.title) + '<br>' + Html.keyValueRows([
@@ -238,6 +254,14 @@ function create({ service = () => require('./PlayerBoardService'),
             const message = !result.ok ? result.reason === 'record_changed' ? 'This offer has changed.'
                 : result.reason === 'own_record' ? 'You cannot answer your own offer.'
                     : ({ materials_missing: 'You do not have the required crafting materials.', insufficient_funds: 'You do not have enough adena.',
+                        stock_changed: 'The seller no longer has this item available. Worn items cannot be sold.',
+                        items_missing: 'You do not have enough unequipped items for this sale.',
+                        player_at_point: 'Stay at the meeting point and finish combat before agreeing.',
+                        meeting_point_changed: 'The meeting point changed. Open the offer again to see its location.',
+                        merchant_busy: 'The merchant is busy. Please try again shortly.',
+                        merchant_changed: 'The merchant is no longer ready for this trade. Please try again.',
+                        merchant_declined: 'The merchant cannot accept these terms now. No goods or payment were reserved.',
+                        trade_unavailable: 'The trade could not be agreed. Please try again.',
                         craft_unavailable: 'Crafting is unavailable. Check the materials and try again.', location_unavailable: 'The merchant location is unavailable.' })[result.reason] || 'This offer is unavailable.'
                 : result.action === 'crafted' ? 'Craft completed.'
                     : result.action === 'craft_failed' ? 'Crafting failed. Materials and the fee were spent; no item was produced.'
@@ -254,6 +278,7 @@ function create({ service = () => require('./PlayerBoardService'),
         const actor = session?.actor;
         try {
             if (!session?.actor) return;
+            if (session.playerBoardAgreePending) return;
             if (parts[1] === 'town') {
                 const query = session.playerBoardView || normalize(session), town = parts.slice(2).join(' ').trim();
                 if (town !== 'All towns' && !towns(session, query).includes(town)) return;
@@ -292,7 +317,14 @@ function create({ service = () => require('./PlayerBoardService'),
             }
             if (parts[1] === 'agree' && parts.length === 2) {
                 const prepared = session.playerBoardPreparation;
-                return prepared ? answer(session, { ...prepared, confirmed: true }) : show(session, session.playerBoardView || {}, 'This offer is unavailable.');
+                if (!prepared) return show(session, session.playerBoardView || {}, 'This offer is unavailable.');
+                session.playerBoardAgreePending = prepared;
+                send(session, page(Html.font('Checking the trade', Html.COLOR.title) + '<br>'
+                    + 'Checking goods and payment.<br1>'
+                    + 'Waiting for the merchant response.<br1>'
+                    + 'Please wait for the result.'));
+                try { return await answer(session, { ...prepared, confirmed: true }); }
+                finally { if (session.playerBoardAgreePending === prepared) session.playerBoardAgreePending = undefined; }
             }
             let request;
             const revision = value => value === '-' ? null : integer(value);

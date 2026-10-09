@@ -186,9 +186,16 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         sources.push({ source, count }); remainder -= count;
         if (!remainder || sources.length === 5) break;
     }
-    if (remainder) throw Error('trade_meeting_stock_changed');
+    if (remainder) {
+        if (record.storeType === 1 && db().reconcileConditionalSellAds) {
+            for (const ad of await db().reconcileConditionalSellAds(record.ownerId)) afk().refreshRecord(ad);
+        }
+        throw Error('trade_meeting_stock_changed');
+    }
     const destination = anchors[0] || record;
     const point = { locX: destination.locX, locY: destination.locY, locZ: destination.locZ };
+    if (options.expectedPoint && ['locX', 'locY', 'locZ'].some(key => options.expectedPoint[key] !== point[key]))
+        throw Error('trade_meeting_point_changed');
     const parties = sides.map((side, index) => {
         const actor = actors[index], state = life().cachedState(actor);
         let route;
@@ -203,13 +210,20 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         if (side.meetingId) route = { fee: 0, scroll: false, method: `meeting:${side.meetingId}`, durationMs: 0 };
         return { ...side, route, needRevision: side.revision };
     });
-    const request = { token: randomUUID(), actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
+    const token = options.token || randomUUID(), total = amount * line.price;
+    if (!Number.isSafeInteger(total) || total <= 0) throw Error('trade_meeting_integer');
+    const quote = { preparationId: token, token, town: record.town, point, amount, price: line.price, total };
+    // A human may read the quantity form for minutes while the bot keeps
+    // progressing. Only explicit agreement owns a fresh worker preparation.
+    if (options.preview === true) return quote;
+    const request = { token, actorA: actors[0], actorB: actors[1], seqA: sides[0].sequence, seqB: sides[1].sequence,
         town: record.town, point, parties, incoming: sides.map(side => side.acceptedIncoming || {}), lines: sources.map(({ source, count }) => ({ payer: buyerSide, itemId: source.id, selfId: itemId,
             enchant: line.enchant || 0, count, price: line.price, needAdId: 0, needAdRevision: 0, adId: record.id, adRevision: record.revision, certificate: null })) };
-    const token = stage(request), entry = staged.get(token);
+    stage(request);
+    const entry = staged.get(token);
     entry.ready = prepareActors(token).catch(error => { discard(token); throw error; });
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
-    return { preparationId: token, token, town: record.town, point, amount, price: line.price, total: amount * line.price };
+    return quote;
 }
 async function cancel(characterId) {
     const rows = db().fetchTradeMeetingsForOwner ? await db().fetchTradeMeetingsForOwner(Number(characterId))

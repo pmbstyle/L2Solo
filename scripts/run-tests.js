@@ -315,6 +315,7 @@ const tests = [
     'tests/test_static_buyer_fills_buy_ads.js',
     'tests/test_player_board_service.js',
     'tests/test_player_board_window.js',
+    'tests/test_player_board_meeting.js',
     'tests/test_skill_rules_resolve_cached.js',
     'tests/test_generated_population_appearance.js',
     'tests/test_bot_name_migration.js',

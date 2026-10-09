@@ -20,7 +20,7 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
                 const previous = (await Database.fetchAfkTradeShops(ids[side])).filter(ad => ad.kind === 'buy_ad');
                 await Database.replaceBoardRecords(ids[side], 'buy_ad', configs, { expected: Object.fromEntries(previous.map(ad => [ad.id, ad.revision])) });
                 const ads = await Database.fetchAfkTradeShops(ids[side]);
-                for (const line of bought) { const ad = ads.find(row => row.lines[0].selfId === line.selfId);
+                for (const line of bought) { const ad = ads.find(row => row.kind === 'buy_ad' && row.lines[0].selfId === line.selfId);
                     line.needAdId = ad.id; line.needAdRevision = ad.revision; line.certificate = JSON.parse(ad.lines[0].intentJson); line.certificate[1] = line.count; line.certificate[2] = line.price; }
             }
             return lines;
@@ -36,9 +36,12 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         }
         const parties = await Promise.all(ids.map(id => Database.prepareTradeParticipant(id)));
         const source = parties[1].inventory.find(row => row.selfId === 1867);
+        const advertised = await Database.createAfkTradeShop(ids[1], { kind: 'sell_ad', storeType: 1, town: 'Giran', ...point,
+            lines: [{ objectId: source.id, selfId: 1867, count: 20, price: 100 }] });
         const request = { token: 'native-meeting-one', actorA: ids[0], actorB: ids[1],
             seqA: parties[0].sequence, seqB: parties[1].sequence, town: 'Giran', point,
-            lines: await certify([{ payer: 0, itemId: source.id, selfId: 1867, count: 6, price: 100 }]),
+            lines: await certify([{ payer: 0, itemId: source.id, selfId: 1867, count: 6, price: 100,
+                adId: advertised.shop.id, adRevision: advertised.shop.revision }]),
             parties: parties.map(p => ({ ...p, route: { fee: 20, scroll: true, method: 'scroll', durationMs: 25000 } })) };
         const held = async () => {
             const rows = await Database.execute([`SELECT selfId,SUM(amount) amount FROM (
@@ -79,6 +82,8 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const result = attempts.find(attempt => attempt.status === 'fulfilled').value, id = result.meeting.id;
 
         assert(result.pending);
+        assert.deepEqual(await Database.reconcileConditionalSellAds(ids[1]), [], 'reserved meeting stock continues to back the seller advertisement');
+        assert.equal((await Database.fetchAfkTradeShop(advertised.shop.id)).lines[0].count, 20);
         assert.deepEqual(result.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 6 }, 'native owner slot exposes only accepted incoming trade goods');
         assert.deepEqual(result.coldLifeRows[ids[1]].acceptedIncoming, {}, 'outgoing goods and route scrolls are not incoming');
         Life.acceptLifecycleRow(result.coldLifeRows[ids[0]]);

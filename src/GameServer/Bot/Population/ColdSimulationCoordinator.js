@@ -481,6 +481,12 @@ class ColdSimulationCoordinator {
         let resolve, reject;
         const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
         Object.assign(promise, { meetingToken: token, epoch, worker, termsDigest: this.meetingTermsDigest(request), resolve, reject, frames: [], reservedPages: 0, reservedBytes: 0 });
+        promise.timer = setTimeout(() => {
+            this.post('command_ack', { results: [{ kind: 'meeting', characterId: id, commandId: token,
+                pageIndex: -1, ok: false, reason: 'preparation_timeout' }] });
+            this.finishMeetingPreparation(id, promise, null, Error('trade_meeting_preparation_timeout'));
+        }, 15000);
+        promise.timer.unref?.();
         if (held) held.meetingPending = promise; else this.commandInflight.set(id, promise);
         // This call may originate inside a lifecycle command. Its ACK must
         // release the worker owner before the read-only preparation starts.
@@ -512,6 +518,7 @@ class ColdSimulationCoordinator {
         const held = this.commandInflight.get(Number(id));
         if (promise.settled) return;
         promise.settled = true;
+        clearTimeout(promise.timer);
         if (held === promise) this.commandInflight.delete(Number(id)); else if (held?.meetingPending === promise) delete held.meetingPending;
         if (promise.reservedPages) require('../../AfkTrade/TradeMeetingService')
             .adjustTransportPages(-promise.reservedPages, -promise.reservedBytes);
