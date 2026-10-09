@@ -72,4 +72,42 @@ try {
     assert.equal(Disposition.isQuestItem({ selfId: gloves.selfId, kind: 'Armor.Wear' }), true);
 } finally { Data.items = catalog; }
 assert.equal(Planner.suitable(gloves, state, 'dps', 'none'), true);
+// Admission seam: leave the price choice fixed to distinguish catalog
+// rejection from inability to fund a native wish or a random bid outcome.
+const Buy = invoke('GameServer/Bot/Economy/BuyAdPolicy');
+const ColdBuy = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
+const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+const original = { spendable: Funding.spendable, traderContext: Listing.traderContext, bid: Pricing.bid };
+let priceChoices = 0;
+try {
+    Data.items = catalog.map(row => row.selfId === genuineQuest.selfId || row.selfId === 990
+        ? { ...row, template: { ...row.template, price: 37 } } : row);
+    Funding.spendable = () => 100000;
+    Listing.traderContext = () => ({ economy: { moneyPrice: .001, worth: () => 100 } });
+    Pricing.bid = () => { priceChoices++; return { price: 10, pricing: {} }; };
+    const goalFor = (id, type) => ({ type, target: { itemId: id, amount: 2, adena: 100 },
+        plan: { estimatedCost: 100 } });
+    for (const id of [990, genuineQuest.selfId]) for (const type of ['upgrade_gear', 'buy_craft_material']) {
+        const goal = goalFor(id, type);
+        assert.equal(Buy.bidFor(state, goal), null, 'positive quest price cannot admit a stale purchase goal');
+        assert.equal(ColdBuy.bidFor(state, goal), null, 'cold store shares canonical admission');
+        assert.deepEqual(Buy.linesFor(state, goal, { watchList: [] }), []);
+        assert.deepEqual(Buy.linesFor(state, null, { watchList: [{ itemId: id, amount: 2, worth: 100 }] }), [],
+            'stale watch rows cannot bypass the canonical kind');
+    }
+    assert.equal(priceChoices, 0, 'quest requests never reach monetary pricing');
+    for (const [id, type, count] of [[gloves.selfId, 'upgrade_gear', 1], [1864, 'buy_craft_material', 2]]) {
+        const quote = Buy.bidFor(state, goalFor(id, type));
+        assert.equal(quote.selfId, id);
+        assert.equal(quote.count, count);
+        assert.equal(quote.price, 10);
+    }
+    assert.equal(priceChoices, 2, 'ordinary gear/material requests reach the existing price owner');
+} finally {
+    Data.items = catalog;
+    Funding.spendable = original.spendable;
+    Listing.traderContext = original.traderContext;
+    Pricing.bid = original.bid;
+}
 console.log('Canonical quest equipment and trade exclusions passed');
