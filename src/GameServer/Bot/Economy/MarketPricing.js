@@ -113,6 +113,14 @@ function marketFor(selfId, ctx, { town = null, units = 1, enchant = 0 } = {}) {
     });
 }
 
+// A conditional stock quote declares a price, never guaranteed income.
+// Creation and review use the same evidence when finite demand is unknown.
+function stockQuotePrice(belief, market, allowed) {
+    const price = Math.round(Math.exp(belief.mu));
+    return allowed && !market.known && !market.truncated && !market.demand
+        && Number.isSafeInteger(price) && price > market.buyback ? price : null;
+}
+
 // Publication and every completed review checkpoint exactly this line's
 // state, even when its standing price remains among the near-best choices.
 function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0, enchant = 0,
@@ -149,10 +157,9 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, stock
     // a forecast: neither income nor a buyer/arrival/lifetime is invented.
     // Only the field advert owner enables this option; shops and production
     // continue to require the ordinary supported outcome.
-    const quotePrice = Math.round(Math.exp(belief.mu));
-    const quote = stockQuote && !smallLot && room > 0 && !market.known && !market.truncated
-        && ctx.ownStock?.known !== false
-        && !market.demand && Number.isSafeInteger(quotePrice) && quotePrice > market.buyback;
+    const quotePrice = stockQuotePrice(belief, market,
+        stockQuote && !smallLot && room > 0 && ctx.ownStock?.known !== false);
+    const quote = quotePrice !== null;
     if (quote) {
         ask = { ...ask, price: quotePrice, npc: false, money: NaN, value: NaN, stockQuote: true };
         priced.ask = ask;
@@ -236,19 +243,27 @@ function look(state, lines, ctx) {
         const rollKey = [line.storeType === BUY ? 'bid' : 'ask', ctx.characterId,
             line.lineId, line.selfId, counter.deals, line.fills || 0];
         let chosen;
+        let worth = line.pricing.worth;
         if (line.storeType === BUY) {
-            const worth = line.pricing.worth;
+            worth = typeof ctx.economy?.worth === 'function' ? ctx.economy.worth(line.selfId) : worth;
+            // An incomplete prepared graph cannot justify withdrawal or spend.
+            if (!Number.isFinite(worth) || worth < 0) continue;
             const cap = Math.floor(Math.min(worth, line.price + ctx.adena / Math.max(1, line.count)));
             chosen = PriceDecision.chooseBid(belief, market, ctx.trader, { worth, cap }, rollKey, line.price);
             if (!chosen) { withdrawals.push(move); continue; }
         }
         else {
             chosen = PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey, line.price);
-            if (!chosen.known) continue;
+            if (!chosen.known) {
+                const quote = stockQuotePrice(belief, market,
+                    line.custodyPolicy === 1 && ctx.ownStock?.known !== false);
+                if (quote === null) continue;
+                chosen = { ...chosen, price: quote, npc: false };
+            }
             if (chosen.npc) { withdrawals.push(move); continue; }
         }
         const pricing = lineState(line.selfId, ctx, { price: chosen.price, storeType: line.storeType,
-            worth: line.pricing.worth, fills: line.fills, enchant: line.enchant || 0,
+            worth, fills: line.fills, enchant: line.enchant || 0,
             count: line.count, sigma: PriceBelief.sigma(belief) });
         if (chosen.price !== line.price) reprices.push({ ...move, price: chosen.price, pricing });
     }
