@@ -45,6 +45,57 @@ function itemTemplate(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
+// A synchronous wish review compares many bags that keep most worn items.
+// Prepare each unchanged item once within that call, then discard the scope.
+// Combat/passive/buff calculations still run for every hypothetical build.
+const EQUIPMENT_PREPARATION_LIMIT = 512;
+let equipmentPreparation = null;
+function withEquipmentPreparation(work) {
+    if (equipmentPreparation) return work();
+    equipmentPreparation = { rows: new Map(), size: 0 };
+    try { return work(); }
+    finally { equipmentPreparation = null; }
+}
+
+function copyEquipmentEffect(effect) {
+    if (!effect) return effect;
+    const copy = { ...effect };
+    if (effect.stats) copy.stats = { ...effect.stats };
+    if (Array.isArray(effect.conditionalStats)) copy.conditionalStats = effect.conditionalStats
+        .map(entry => ({ ...entry, stats: { ...entry.stats } }));
+    return copy;
+}
+
+function preparedEquipment(template, selfId, objectId, enchant, slot) {
+    const rules = invoke('GameServer/Items/C4EnchantRules');
+    const effects = invoke('GameServer/Items/C4EquipmentItemSkills');
+    const scope = equipmentPreparation;
+    if (scope && (scope.items !== DataCache.items || scope.statBonus !== rules.statBonus
+        || scope.effectForItem !== effects.effectForItem)) {
+        scope.rows.clear(); scope.size = 0;
+        scope.items = DataCache.items; scope.statBonus = rules.statBonus; scope.effectForItem = effects.effectForItem;
+    }
+    const key = scope ? `${slot}:${enchant}:${objectId}` : null;
+    let prepared = scope?.rows.get(template)?.get(key);
+    if (!prepared) {
+        const adapter = { fetchSelfId: () => selfId, fetchId: () => objectId,
+            fetchEnchantLevel: () => enchant, fetchRank: () => template.etc?.rank,
+            fetchKind: () => template.template?.kind, fetchSlot: () => slot,
+            isWeapon: () => String(template.template?.kind || '').startsWith('Weapon.'),
+            isArmor: () => String(template.template?.kind || '').startsWith('Armor.') };
+        const stats = { ...template.stats };
+        for (const stat of ['pAtk', 'mAtk', 'pDef', 'mDef']) stats[stat] = number(stats[stat]) + rules.statBonus(adapter, stat);
+        prepared = { ...template, stats, etc: { ...(template.etc || {}), slot }, equipmentEffect: effects.effectForItem(adapter) };
+        if (scope && scope.size < EQUIPMENT_PREPARATION_LIMIT) {
+            if (!scope.rows.has(template)) scope.rows.set(template, new Map());
+            scope.rows.get(template).set(key, prepared); scope.size++;
+        }
+    }
+    // These rows stay private to profile construction. Only the effect enters
+    // the returned profile, and that boundary gives it an independent copy.
+    return prepared;
+}
+
 function equippedTemplates(state = {}) {
     return Object.values(state.inventory || {})
         .flatMap((item) => {
@@ -69,16 +120,8 @@ function equippedTemplates(state = {}) {
             return slots.map((slot) => {
                 const instance = item.instances?.find(row => row.equipped && number(row.slot) === slot);
                 const enchant = number(instance?.enchant, number(item.enchant));
-                const adapter = { fetchSelfId: () => number(item.selfId), fetchId: () => number(instance?.id, number(item.selfId)),
-                    fetchEnchantLevel: () => enchant, fetchRank: () => template.etc?.rank,
-                    fetchKind: () => template.template?.kind, fetchSlot: () => slot,
-                    isWeapon: () => String(template.template?.kind || '').startsWith('Weapon.'),
-                    isArmor: () => String(template.template?.kind || '').startsWith('Armor.') };
-                const rules = invoke('GameServer/Items/C4EnchantRules');
-                const stats = { ...template.stats };
-                for (const stat of ['pAtk', 'mAtk', 'pDef', 'mDef']) stats[stat] = number(stats[stat]) + rules.statBonus(adapter, stat);
-                return { ...template, stats, etc: { ...(template.etc || {}), slot },
-                    equipmentEffect: invoke('GameServer/Items/C4EquipmentItemSkills').effectForItem(adapter) };
+                const selfId = number(item.selfId), objectId = number(instance?.id, selfId);
+                return preparedEquipment(template, selfId, objectId, enchant, slot);
             });
         })
         .filter(Boolean);
@@ -496,7 +539,7 @@ function profileFor(state = {}, timestamp = Date.now(), options = {}) {
         // Only legacy states without inventory still depend on captured bonuses.
         effects: [...(saved?.effects || []).filter(effect => !capturedEquipmentEffect(effect, state)),
             ...C4ArmorSets.effectsForEquippedIds(new Set(equipped.map(item => Number(item.selfId)))),
-            ...equipped.map(item => item.equipmentEffect).filter(Boolean)],
+            ...equipped.map(item => equipmentPreparation ? copyEquipmentEffect(item.equipmentEffect) : item.equipmentEffect).filter(Boolean)],
         // An empty saved kit is still empty. Only class-only hypothetical
         // estimates (without a character owner) may use the eligibility tree.
         skills: Array.isArray(saved?.skills) && saved.skillSource !== 'tree' && saved.skillSource !== 'unresolved' ? saved.skills
@@ -910,7 +953,7 @@ function gainFor(entry, key, compute) {
 function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds.size, candidateIndex: candidateIndex.size }; }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, size,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, withEquipmentPreparation, size,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     spotSpawns, npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add

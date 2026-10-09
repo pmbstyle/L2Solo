@@ -182,7 +182,8 @@ function build(state, ctx, deps = {}) {
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('provider', 'request');
     const started = diagnostic ? performance.now() : 0;
-    const result = invoke('GameServer/Bot/AI/GearAcquisitionPlanner').withReadiness(() => buildProjection(state, ctx, deps));
+    const result = invoke('GameServer/Bot/Population/ColdCombatProfile').withEquipmentPreparation(() =>
+        invoke('GameServer/Bot/AI/GearAcquisitionPlanner').withReadiness(() => buildProjection(state, ctx, deps)));
     if (diagnostic) {
         Diagnostics.count('provider', 'build', 'context_miss');
         Diagnostics.duration('provider', performance.now() - started);
