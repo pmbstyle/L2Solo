@@ -233,12 +233,28 @@ function recoveryEntryLive(entry, state, timestamp, wake) {
 // one planner decision (see readinessScoped below). Within a
 // call the planner changes equipment only on copied states/inventories.
 let readinessScope = null;
+const MAX_SOURCE_ASSESSMENTS = 128;
+const SOURCE_ASSESSMENTS = Object.freeze({
+    missing_weapon: Object.freeze({ need: 'required', reason: 'missing_weapon' }),
+    unprepared_support: Object.freeze({ need: 'required', reason: 'unprepared_support' }),
+    underleveled: Object.freeze({ need: 'required', reason: 'underleveled' }),
+    tight_level_margin: Object.freeze({ need: 'preferred', reason: 'tight_level_margin' }),
+    solo_ready: Object.freeze({ need: 'solo_ok', reason: 'solo_ready' })
+});
+
+function readinessRecord(state) {
+    if (!readinessScope || !state || typeof state !== 'object') return null;
+    let record = readinessScope.get(state);
+    if (!record) {
+        record = { readiness: computeCombatReadiness(state), assessments: null };
+        readinessScope.set(state, record);
+    }
+    return record;
+}
 
 function combatReadiness(state = {}) {
-    if (!readinessScope || !state || typeof state !== 'object') return computeCombatReadiness(state);
-    let readiness = readinessScope.get(state);
-    if (!readiness) readinessScope.set(state, readiness = computeCombatReadiness(state));
-    return { ...readiness };
+    const record = readinessRecord(state);
+    return record ? { ...record.readiness } : computeCombatReadiness(state);
 }
 
 function computeCombatReadiness(state = {}) {
@@ -1583,8 +1599,25 @@ function partyNeedAssessmentForSource(state = {}, source = {}) {
     if (source?.sourceKind === 'raid' || source?.raidBoss === true) {
         return { need: 'required', reason: 'raid_roster_required' };
     }
-    const readiness = combatReadiness(state);
-    const targetLevel = Number(source?.npcLevel || source?.spotLevel || Infinity);
+    const record = readinessRecord(state);
+    const readiness = record ? record.readiness : computeCombatReadiness(state);
+    const targetLevel = sourceTargetLevel(source);
+    if (record?.assessments?.has(targetLevel)) return SOURCE_ASSESSMENTS[record.assessments.get(targetLevel)];
+    const reason = sourceAssessmentReason(readiness, targetLevel);
+    if (record) {
+        // Many items share the same target level. Keep only primitive answers
+        // in this decision's existing scope; overflow computes normally.
+        record.assessments ||= new Map();
+        if (record.assessments.size < MAX_SOURCE_ASSESSMENTS) record.assessments.set(targetLevel, reason);
+    }
+    return SOURCE_ASSESSMENTS[reason];
+}
+
+function sourceTargetLevel(source) {
+    return Number(source?.npcLevel || source?.spotLevel || Infinity);
+}
+
+function sourceAssessmentReason(readiness, targetLevel) {
     const margin = readiness.effectiveLevel - targetLevel;
 
     // A support with no weapon/armour cannot be treated as a safe solo farmer,
@@ -1593,11 +1626,11 @@ function partyNeedAssessmentForSource(state = {}, source = {}) {
     // still progress alone and merely advertise a preferred party.
     const unpreparedSupport = ['healer', 'buffer'].includes(readiness.role)
         && readiness.armorCount < 2;
-    if (!readiness.hasWeapon) return { need: 'required', reason: 'missing_weapon' };
-    if (unpreparedSupport) return { need: 'required', reason: 'unprepared_support' };
-    if (margin < -2) return { need: 'required', reason: 'underleveled' };
-    if (margin < 0) return { need: 'preferred', reason: 'tight_level_margin' };
-    return { need: 'solo_ok', reason: 'solo_ready' };
+    if (!readiness.hasWeapon) return 'missing_weapon';
+    if (unpreparedSupport) return 'unprepared_support';
+    if (margin < -2) return 'underleveled';
+    if (margin < 0) return 'tight_level_margin';
+    return 'solo_ready';
 }
 
 function partyNeedForSource(state = {}, source = {}) {
