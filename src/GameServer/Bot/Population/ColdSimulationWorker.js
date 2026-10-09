@@ -373,10 +373,17 @@ const occupationPlanner = new ColdOccupationPlanner({
         }
         if (input.mode === 'refresh') {
             const entry = kernel?.states.get(id);
+            // The plan was already sent; a source change does not re-request
+            // a refresh for the same native state (the next state does).
             if (meta.stale && entry?.state === input.sourceState && entry.context.economyPending) {
-                occupationPlanner.release(id); occupationOwnerChanged(id, true); return;
+                occupationPlanner.release(id); return;
             }
             if (!shuttingDown && entry?.state === input.sourceState && !meta.stale && workshop?.economyPlan) {
+                const hash = economyPlanHash(workshop.economyPlan);
+                // A paging refresh that repeats the plan already sent (by the
+                // commit or the last refresh) has nothing more to page.
+                if (input.pending && hash === entry.context.economyPlanHash) { entry.context.economyPending = 0; input.economy = null; return; }
+                entry.context.economyPlanHash = hash;
                 entry.context.economyPending = workshop.economyPlan.d || 0;
                 send('ready', { phase: 'economy_plan_ready', characterId: id,
                     authority: require('../Economy/EconomyCommit').authority(input.state), economyPlan: workshop.economyPlan,
@@ -453,9 +460,14 @@ function requestRoute(payload) {
     routeRequests.set(id, input);
     occupationPlanner.request(-id, input, { awaitResult: false });
 }
+const refreshedStates = new WeakSet();
+const economyPlanHash = plan => require('../Fnv1a').fnv1a32(JSON.stringify(plan));
 function occupationOwnerChanged(id, refresh = false) {
     const entry = kernel?.states.get(Number(id));
     if (!entry || entry.state.phase !== 'hot' && !refresh) return;
+    // One economy refresh per native state object.
+    if (refresh && refreshedStates.has(entry.state)) return;
+    if (refresh) refreshedStates.add(entry.state);
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state,
         timestamp: Date.now(), mode: refresh ? 'refresh' : 'occupation', pending: entry.context.economyPending || 0,
         buyOrderEscrow: entry.context.buyOrderEscrow || 0,
@@ -873,7 +885,7 @@ function startKernel(config = {}) {
                 { ...context, stock: economy.stock('shots'), economy }, 'action') : null;
             const economyPlan = preparedAction?.economyPlan || null;
             if (economyPlan?.d) { const owner = kernel.states.get(Number(projected.characterId));
-                if (owner) owner.context.economyPending = economyPlan.d; }
+                if (owner) { owner.context.economyPending = economyPlan.d; owner.context.economyPlanHash = economyPlanHash(economyPlan); } }
             const market = reviewMarket(projected, timestamp, economy);
             return {
                 state: projected,
@@ -967,6 +979,7 @@ function startKernel(config = {}) {
         const previousEntry = kernel.states.get(Number(id)), previous = previousEntry?.state;
         const result = nativeSet(id, entry);
         if (previous && entry.context.economyPending === undefined) entry.context.economyPending = previousEntry?.context?.economyPending || 0;
+        if (previous && entry.context.economyPlanHash === undefined) entry.context.economyPlanHash = previousEntry?.context?.economyPlanHash || 0;
         if (previous !== entry.state) {
             const route = routeRequests.get(Number(id));
             if (route?.native && route.sourceState !== entry.state) cancelRoute(id);
