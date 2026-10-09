@@ -957,11 +957,11 @@ function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0, s
 // the weapon takes per charge and how many charges the stock still covers.
 // Null when the bot holds none of that shot or its weapon takes none.
 function coldShotSupply(state, timestamp) {
-    const plan = ShotStock.planForState(state);
+    const plan = ShotStock.combatPlanForState(state);
     const key = String(plan.selfId);
     const left = plan.perAction > 0 ? Math.floor(Number(state.inventory?.[key]?.amount || 0) / plan.perAction) : 0;
     if (left <= 0 || ShotStock.usePolicy(state, { timestamp, plan }).usePerHour <= 0) return null;
-    return { key, perAction: plan.perAction, left, soulshot: plan.kind === 'soulshot',
+    return { key, timestamp, perAction: plan.perAction, left, soulshot: plan.kind === 'soulshot',
         spiritshot: plan.kind !== 'soulshot', blessedSpiritshot: plan.kind === 'blessedSpiritshot' };
 }
 
@@ -970,8 +970,10 @@ function coldShotSupply(state, timestamp) {
 // a normal attack (no skill) a soulshot. Returns the bot's shot supply when
 // it holds that kind, otherwise null (no bonus, nothing spent).
 function loadColdShot(fighter, skill) {
-    const shot = fighter.shot;
-    if (!shot || shot.left <= 0) return null;
+    let shot = fighter.shot;
+    if (!shot) return null;
+    if (shot.left <= 0) shot = fighter.shot = coldShotSupply(fighter.state, shot.timestamp);
+    if (!shot) return null;
     let kind = ShotStock.actionShotKind(false);
     if (skill) {
         const semantic = C4SkillRules.resolveCached(skill);

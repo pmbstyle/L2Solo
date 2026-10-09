@@ -222,7 +222,8 @@ function foundation(state, deps, persona, timestamp, price) {
     const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable, withoutShots,
         hourAdena: Hunt.huntHour(hunt, state), unitPrice: price(shotItemId) });
     const shotBenefit = shotPolicy.benefit;
-    const shotUse = positive(state.inventory?.[shotItemId]?.amount) > 0
+    const beginnerCurrent = ShotStock.beginnerAmount(state, shotPlan);
+    const shotUse = positive(state.inventory?.[shotItemId]?.amount) + beginnerCurrent > 0
         ? shotPolicy.usePerHour : shotPolicy.purchaseUsePerHour;
     const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
@@ -235,7 +236,7 @@ function foundation(state, deps, persona, timestamp, price) {
         // no slot, its refill uses one, and the shorter interval immediately
         // sells part of that refill back to the NPC. Existing stacks retain
         // the exact physical free-slot formula; zero-use stock reserves none.
-        const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount))
+        const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount) && !beginnerCurrent)
             + Number(potionUse > 0 && !positive(state.inventory?.[potionItemId]?.amount));
         let slotLimit = Floor.inventoryLimit(race);
         const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -291,7 +292,7 @@ function foundation(state, deps, persona, timestamp, price) {
         const shots = kind === 'shots';
         const itemId = shots ? shotItemId : potionItemId;
         const use = shots ? shotUse : potionUse;
-        const current = positive(state.inventory?.[itemId]?.amount);
+        const current = positive(state.inventory?.[itemId]?.amount) + (shots ? beginnerCurrent : 0);
         const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
         // Useful owned stock need not justify expensive replacement stock.
         const canRestock = !shots || shotPolicy.purchaseUsePerHour > 0;
@@ -304,7 +305,8 @@ function foundation(state, deps, persona, timestamp, price) {
         const benefitPerUnit = use > 0
             ? (shots ? shotBenefit : positive(bestTable?.deaths) * deathHours) / use : 0;
         const benefitHours = missing * benefitPerUnit;
-        return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: shotPolicy.usePerHour } : {}),
+        return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: shotPolicy.usePerHour, beginnerCurrent,
+                beginnerUsePerHour: shotPolicy.beginnerUsePerHour, paidUsePerHour: shotPolicy.paidUsePerHour } : {}),
             current, hours: use > 0 ? current / use : Infinity,
             targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId), benefitPerUnit, benefitHours,
             needed: use > 0 && current < survivalTarget };

@@ -1,3 +1,4 @@
+const BeginnerShots = require('../../Items/C4BeginnerShots');
 const LotPolicy = require('./MarketLotPolicy');
 const BoardRules = require('../../AfkTrade/BoardRules');
 const DataCache = invoke('GameServer/DataCache');
@@ -32,6 +33,7 @@ function classify(state, item) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
+    if (BeginnerShots.isRestricted(item.selfId)) return { action: 'ignore', reason: 'beginner_shot' };
     if (ItemDisposition.isQuestItem(item)) return { action: 'ignore', reason: 'quest_item' };
     if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId))
         return { action: 'ignore', reason: 'no_acquisition_source' };

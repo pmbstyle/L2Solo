@@ -2563,13 +2563,22 @@ const BotLifeState = {
         const consumeFacts = Config.developerDiagnostics === true ? [] : null;
         const shotActions = Math.max(0, Number(result.debug?.shotActions || 0));
         if (shotActions > 0) {
-            const shot = invoke('GameServer/Inventory/ShotStock').planForState({ ...state, inventory });
-            const stock = inventory[String(shot.selfId)];
-            if (stock && Number(stock.amount || 0) > 0) {
-                inventory[String(shot.selfId)] = { ...stock,
-                    amount: Math.max(0, Number(stock.amount) - shotActions * shot.perAction) };
-                if (consumeFacts) Consumption.fact(consumeFacts, shot.selfId, Number(stock.amount),
-                    inventory[String(shot.selfId)].amount, 0);
+            const Shots = invoke('GameServer/Inventory/ShotStock');
+            const shot = Shots.planForState(state);
+            const beginnerId = require('../../Items/C4BeginnerShots').selfIdFor(shot.kind, shot.rank);
+            // The private combat inventory already contains exact consumption,
+            // including beginner exhaustion followed by ordinary charges. Carry
+            // only those decreases, preserving this resolve's new loot.
+            for (const selfId of [shot.selfId, beginnerId].filter(Boolean)) {
+                const stock = inventory[String(selfId)], original = state.inventory?.[selfId];
+                if (!stock || !original) continue;
+                const remaining = result.patch?.inventory?.[selfId]?.amount;
+                const spent = Number.isFinite(remaining)
+                    ? Math.max(0, Number(original.amount) - remaining)
+                    : selfId === shot.selfId ? shotActions * shot.perAction : 0;
+                inventory[String(selfId)] = { ...stock, amount: Math.max(0, Number(stock.amount) - spent) };
+                if (consumeFacts && spent > 0) Consumption.fact(consumeFacts, selfId, Number(stock.amount),
+                    inventory[String(selfId)].amount, 0);
             }
         }
         // Cold combat drinks healing potions from the same stock. The fight

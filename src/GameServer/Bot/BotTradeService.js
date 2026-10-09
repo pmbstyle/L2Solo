@@ -1,3 +1,4 @@
+const BeginnerShots = require('../Items/C4BeginnerShots');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database = invoke('Database');
@@ -75,7 +76,7 @@ function resolveInventoryItem(backpack, identifier) {
 }
 
 function isSafeOfferItem(item) {
-    if (!item || item.fetchPetLocked?.() || item.fetchEquipped?.()) return false;
+    if (!item || BeginnerShots.isRestricted(item.fetchSelfId?.()) || item.fetchPetLocked?.() || item.fetchEquipped?.()) return false;
     const kind = String(item.fetchKind?.() || '');
     if (kind === 'Other.Quest' || kind.endsWith('.Quest')) return false;
     if (item.model?.quest === true || item.model?.reserved === true) return false;

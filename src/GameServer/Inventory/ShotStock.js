@@ -8,6 +8,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
+const BeginnerShots = require('../Items/C4BeginnerShots');
 const DEFAULT_TARGET_AMOUNT = 1000;
 const PURCHASE_TARGET_AMOUNT = 3000;
 const WEAPON_SLOTS = new Set([7, 14]);
@@ -41,8 +42,8 @@ const BLESSED_SPIRITSHOT_BY_RANK = {
 
 // Quest rewards use these no-grade variants. They carry the same charge
 // skills as the shop shots, but are separate item ids and must remain usable.
-const BEGINNER_SOULSHOT_IDS = [5789];
-const BEGINNER_SPIRITSHOT_IDS = [5790];
+const BEGINNER_SOULSHOT_IDS = [BeginnerShots.SOULSHOT];
+const BEGINNER_SPIRITSHOT_IDS = [BeginnerShots.SPIRITSHOT];
 const SOULSHOT_IDS = Object.values(SOULSHOT_BY_RANK);
 const SPIRITSHOT_IDS = Object.values(SPIRITSHOT_BY_RANK);
 const BLESSED_SPIRITSHOT_IDS = Object.values(BLESSED_SPIRITSHOT_BY_RANK);
@@ -119,6 +120,30 @@ function planForState(state) {
     return { ...plan, perAction: Math.max(0, Number(count) || 0) };
 }
 
+function starterPlanFor(classId) {
+    const plan = planFor({ classId });
+    const grant = BeginnerShots.grant(plan.kind);
+    return { ...plan, ...grant, name: itemName(grant.selfId), price: 0 };
+}
+
+// Creation-only caller; resuming existing generated bots never calls this.
+function ensureStarterStock(characterId, classId) {
+    const plan = starterPlanFor(classId);
+    return ensureCharacterStock(characterId, { classId, plan, targetAmount: plan.amount });
+}
+
+function beginnerAmount(state, plan = planForState(state)) {
+    const selfId = BeginnerShots.selfIdFor(plan.kind, plan.rank);
+    return selfId ? Math.max(0, Number(state.inventory?.[selfId]?.amount) || 0) : 0;
+}
+
+function combatPlanForState(state) {
+    const plan = planForState(state);
+    const selfId = BeginnerShots.selfIdFor(plan.kind, plan.rank);
+    return selfId && plan.perAction > 0 && beginnerAmount(state, plan) >= plan.perAction
+        ? { ...plan, selfId, name: itemName(selfId), price: 0 } : plan;
+}
+
 // A shared bounded encounter decision; never builds the wish graph or reads SQL.
 // The stock review supplies its existing table/hunt reads. Combat preparation
 // can read the same static table and at most eight of the owner's hunt samples.
@@ -138,11 +163,16 @@ function usePolicy(state, prepared = {}) {
     }
     const rawUse = plan.perAction > 0 ? Math.max(0, Number(best?.shots) || 0) : 0;
     const benefit = Math.max(0, 1 - Math.max(0, Number(without?.exp) || 0) / Math.max(1, Number(best?.exp) || 0));
-    const buyback = invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
+    const buyback = BeginnerShots.isRestricted(plan.selfId) ? 0
+        : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
     const affordableUse = cost => rawUse > 0 && Number(hour) > 0 && benefit >= rawUse * cost / hour ? rawUse : 0;
-    const usePerHour = affordableUse(buyback);
-    return { itemId: plan.selfId, rawUse, benefit, usePerHour,
-        purchaseUsePerHour: usePerHour > 0 ? affordableUse(Number(prepared.unitPrice ?? Infinity)) : 0 };
+    const paidUsePerHour = affordableUse(buyback);
+    const beginnerUsePerHour = affordableUse(0);
+    const usePerHour = beginnerAmount(state, plan) >= plan.perAction && plan.perAction > 0
+        ? beginnerUsePerHour : paidUsePerHour;
+    return { itemId: plan.selfId, rawUse, benefit, usePerHour, beginnerUsePerHour, paidUsePerHour,
+        purchaseUsePerHour: !BeginnerShots.isRestricted(plan.selfId) && paidUsePerHour > 0
+            ? affordableUse(Number(prepared.unitPrice ?? Infinity)) : 0 };
 }
 
 // The shots a bot keeps, by selfId: its own shot up to the amount a restock
@@ -153,7 +183,7 @@ function usePolicy(state, prepared = {}) {
 function keptAmounts(state, basics = null) {
     // The stock rule needs no wish network (L25).
     const stock = (basics || invoke('GameServer/Bot/Economy/EconomyContext').basics(state)).stock('shots');
-    return { [stock.itemId]: stock.target };
+    return { [stock.itemId]: Math.max(0, stock.target - (stock.beginnerCurrent || 0)) };
 }
 
 function planFor({ classId, rank = 'none' } = {}) {
@@ -228,12 +258,18 @@ function autoInputs(actor, held) {
     const classId = actor.fetchClassId?.(), level = actor.fetchLevel?.();
     const weaponId = actor.backpack?.paperdoll?.[7]?.selfId || actor.backpack?.paperdoll?.[14]?.selfId;
     const equipmentRevision = actor.backpack?.equipmentRevision;
+    const weapon = actor.backpack?.fetchEquippedWeapon?.();
+    const shotKind = classWantsSpiritshots(classId) ? 'spiritshot' : 'soulshot';
+    const beginnerId = BeginnerShots.selfIdFor(shotKind, weaponRankFromActor(actor));
+    const beginner = beginnerId ? actor.backpack?.fetchItemFromSelfId?.(beginnerId) : null;
+    const charge = shotKind === 'soulshot' ? weapon?.fetchSoulshot?.() : weapon?.fetchSpiritshot?.();
+    const beginnerReady = !!beginner && Number(beginner.fetchAmount?.()) >= Math.max(1, Number(charge) || 1);
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
-        && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
-    return { classId, level, weaponId, equipmentRevision, spotId, partyId, role, huntAt };
+        && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
+    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt };
 }
 function refreshAutoShot(actor) {
     const held = autoUse.get(actor), inputs = autoInputs(actor, held);
@@ -255,10 +291,15 @@ function enableAutoShot(actor, options = {}) {
     const allowed = Number(stock.itemId) === plan.selfId && (stock.ownedUsePerHour ?? stock.usePerHour) > 0;
     // Auto mode may outlive an empty stack; native charging still requires
     // physical units. A useful gift need not justify buying replacement stock.
-    if (allowed) enabled.add(plan.selfId);
+    const beginnerId = BeginnerShots.selfIdFor(plan.kind, plan.rank);
+    const inputs = options.inputs || autoInputs(actor);
+    if (inputs.beginnerReady && (stock.beginnerUsePerHour ?? stock.usePerHour) > 0) enabled.add(beginnerId);
+    if (allowed && (stock.paidUsePerHour ?? stock.usePerHour) > 0) enabled.add(plan.selfId);
     actor.autoSoulshots = enabled;
-    autoUse.set(actor, options.inputs || autoInputs(actor));
-    return allowed && actor.backpack.fetchItemFromSelfId?.(plan.selfId) ? plan : null;
+    autoUse.set(actor, inputs);
+    const activeId = enabled.has(beginnerId) ? beginnerId : allowed ? plan.selfId : null;
+    return activeId && actor.backpack.fetchItemFromSelfId?.(activeId)
+        ? { ...plan, selfId: activeId, name: itemName(activeId), price: itemPrice(activeId) } : null;
 }
 
 function planForRows(rows, classId) {
@@ -375,13 +416,14 @@ function restockPlan(value, options = {}) {
     const actor = !!value?.backpack;
     const plan = options.plan || (actor ? planForActor(value) : planForState(value));
     const inventory = options.inventory || (actor ? null : value?.inventory);
-    const currentAmount = inventory
+    let currentAmount = inventory
         ? Number(inventory[String(plan.selfId)]?.amount || 0)
         : shotAmount(value, plan);
     const adena = Math.max(0, Number(options.adena ?? (actor
         ? value.backpack.fetchItemFromSelfId?.(57)?.fetchAmount?.() : value?.adena) ?? 0) || 0);
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = actor ? Economy.stateForActor(value) : value;
+    currentAmount += beginnerAmount(state, plan);
     const coldMain = require('node:worker_threads').isMainThread && state?.phase === 'cold';
     const context = options.context || (coldMain ? Economy.basics(state) : Economy.forState(state));
     const stock = context.stock('shots');
@@ -559,6 +601,10 @@ module.exports = {
     planForActor,
     planForActorKind,
     planForState,
+    starterPlanFor,
+    ensureStarterStock,
+    beginnerAmount,
+    combatPlanForState,
     actionShotKind,
     kindForSelfId,
     isCompatibleWithActor,

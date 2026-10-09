@@ -324,10 +324,7 @@ function ensureBaseLoadout(characterId, classId, adena, level = 1, starterShots 
         .then((progression) => {
             const resolvedClassId = Number(progression?.classId || classId);
             return ensureAdena(characterId, adena)
-                .then(() => starterShots ? ShotStock.ensureCharacterStock(characterId, {
-                    classId: resolvedClassId,
-                    targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT
-                }) : null)
+                .then(() => starterShots ? ShotStock.ensureStarterStock(characterId, resolvedClassId) : null)
                 .then(() => ({ classId: resolvedClassId }));
         });
 }

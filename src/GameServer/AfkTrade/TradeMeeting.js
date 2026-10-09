@@ -1,4 +1,5 @@
 'use strict';
+const BeginnerShots = require('../Items/C4BeginnerShots');
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
@@ -22,7 +23,7 @@ function canonical(request) {
             adId: requireSafe(line.adId || 0), adRevision: requireSafe(line.adRevision || 0),
             needAdId: requireSafe(line.needAdId || 0), needAdRevision: requireSafe(line.needAdRevision || 0),
             certificate: line.certificate || null };
-        if (row.selfId === 57) throw Error('trade_meeting_terms');
+        if (row.selfId === 57 || BeginnerShots.isRestricted(row.selfId)) throw Error('trade_meeting_terms');
         requireSafe(row.count * row.price);
         if (row.certificate) {
             const intent = Intent.decode(row.certificate);

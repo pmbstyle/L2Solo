@@ -1,3 +1,4 @@
+const BeginnerShots = require('../../Items/C4BeginnerShots');
 const ClanCrafting = require('../../Clan/ClanCraftingPolicy');
 const DataCache = invoke('GameServer/DataCache');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
@@ -464,7 +465,7 @@ function saleCandidates(state, options = {}) {
         const rawEquippedCount = Number(item?.equippedCount ?? (item?.equipped ? 1 : 0));
         const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
         const sellableAmount = Math.max(0, amount - equippedCount - Number(reserved[selfId] || 0));
-        if (!selfId || selfId === 57 || sellableAmount <= 0) return [];
+        if (!selfId || selfId === 57 || BeginnerShots.isRestricted(selfId) || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
         // Unsupported stock stays owned; neither a board sale nor NPC cleanup

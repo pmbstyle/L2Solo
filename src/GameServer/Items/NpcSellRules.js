@@ -1,7 +1,9 @@
+const BeginnerShots = require('./C4BeginnerShots');
 // Use the same eligibility rule for offers and the final inventory mutation.
 // A stale SellList must not make a protected item sellable.
 function canSell(item) {
     return !!item
+        && !BeginnerShots.isRestricted(item.fetchSelfId?.())
         && item.fetchKind?.() !== 'Other.Quest'
         && Number(item.fetchClass2?.()) !== 3
         && !item.fetchPetLocked?.()

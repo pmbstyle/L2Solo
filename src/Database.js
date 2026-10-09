@@ -1,3 +1,4 @@
+const BeginnerShots = require('./GameServer/Items/C4BeginnerShots');
 const fs = require('fs');
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 const path = require('path');
@@ -3439,6 +3440,7 @@ function validBoardRecord(kind, storeType, rows) {
 function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false } = {}) {
     const kind = config.kind;
     const storeType = BoardRules.storeTypeFor(kind, config.storeType);
+    if (rows.some(line => BeginnerShots.isRestricted(line.selfId))) throw Error('beginner_shot_not_tradable');
     const owner = one('SELECT id, race FROM characters WHERE id = ?', [characterId]);
     if (!owner) throw new Error('afk_trade_owner_missing');
     const timestamp = now();
@@ -6264,7 +6266,7 @@ const Database = {
             if (!entries.length) throw new Error('empty inventory transfer');
 
             const sources = entries.map((entry) => {
-                if (!entry.fromCharacterId || !entry.toCharacterId || !entry.sourceItemId || !entry.selfId || entry.amount <= 0) {
+                if (!entry.fromCharacterId || !entry.toCharacterId || !entry.sourceItemId || !entry.selfId || BeginnerShots.isRestricted(entry.selfId) || entry.amount <= 0) {
                     throw new Error('invalid inventory transfer');
                 }
                 const source = one('SELECT id, selfId, name, amount, enchant, equipped, slot, petData FROM items WHERE id = ? AND characterId = ?', [entry.sourceItemId, entry.fromCharacterId]);

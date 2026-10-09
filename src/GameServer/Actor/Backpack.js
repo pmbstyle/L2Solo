@@ -1,3 +1,4 @@
+const BeginnerShots = require('../Items/C4BeginnerShots');
 const DiagnosticConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const ConsumptionDiagnostics = require('../Bot/Economy/ConsumptionDiagnostics');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
@@ -191,6 +192,7 @@ class Backpack extends BackpackModel {
     }
 
     dropItem(session, id, amount, locX, locY, locZ) {
+        if (BeginnerShots.isRestricted(this.fetchItemRaw(id)?.fetchSelfId?.())) return;
         const petData = this.fetchItemRaw(id)?.fetchPetData?.();
         this.deleteItem(session, id, amount, (selfId) => {
             World.spawnItem(session, selfId, amount, {

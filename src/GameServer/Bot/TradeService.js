@@ -1,3 +1,4 @@
+const BeginnerShots = require('../Items/C4BeginnerShots');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Database  = invoke('Database');
@@ -42,6 +43,7 @@ function nativeStoreItems(store) {
 // Preview and queued execution share this gate so neither buyer selection
 // nor a direct/stale arrival can liquidate gear through a static buyer.
 function acceptsSellerItem(actor, storeItem, inventoryItem) {
+    if (BeginnerShots.isRestricted(storeItem.selfId)) return false;
     if (storeItem[staticPriceSource] && isBotActor(actor)
         && require('./Economy/ProductionPolicy').buyersDisabled()) return false;
     return !storeItem[staticPriceSource] || !isBotActor(actor)
@@ -125,7 +127,7 @@ function fetchAdena(actor) {
 }
 
 function isSellableInventoryItem(item) {
-    return item && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
+    return item && !BeginnerShots.isRestricted(item.fetchSelfId?.()) && !item.fetchPetLocked?.() && !item.fetchEquipped() && item.fetchSelfId() !== 57;
 }
 
 // The copies a sale to a buy store may take: not reserved by the bot's
@@ -341,6 +343,7 @@ function previewSaleToStore(actor, store, options = {}) {
 }
 
 async function buyFromStore(actor, store, selfId, qty, options = {}) {
+    if (BeginnerShots.isRestricted(selfId)) throw new Error("Beginner shots cannot be traded.");
     if (!store || store.storeType !== 1) {
         throw new Error("This store is not selling items.");
     }
