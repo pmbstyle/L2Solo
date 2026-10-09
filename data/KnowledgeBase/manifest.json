@@ -113,7 +113,7 @@
   },
   "schemaVersion": 1,
   "sha256": {
-    "items.json": "967e8a3a32c0e2a030d09486ab0dc85367c76cd93289ae34bb021c31ad3280a6",
+    "items.json": "3726ee899fd82015b18432388c060bff6893faa92a63a6e1f05d3c510f0097d5",
     "mobs.json": "62ebd26cf99fcf6c47cabbd0aee54e05ec911c30ef5cdfabc549878e87609cc6",
     "skills.json": "406403a6b80d5583d5e8eec3887e462346b1a2127b1cde9e8fe8efe66480074e",
     "spawns.json": "34a5a4cfcb4704686bf9241ddf6bd68fb42c69ae6abcf931c1e963113a1c58c5"

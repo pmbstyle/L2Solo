@@ -147627,7 +147627,7 @@
   {
     "grade": "none",
     "id": 990,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Mandragora Essence",
     "sources": {
       "drops": [],
@@ -147635,31 +147635,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 990,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Mandragora Essence",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 991,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Royen's Key",
     "sources": {
       "drops": [],
@@ -147667,31 +147660,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 991,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Royen's Key",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 992,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Shilen's 1st Mark",
     "sources": {
       "drops": [],
@@ -147699,31 +147685,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 992,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Shilen's 1st Mark",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 993,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Shilen's 2nd Mark",
     "sources": {
       "drops": [],
@@ -147731,31 +147710,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 993,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Shilen's 2nd Mark",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 994,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Eye of Abyss",
     "sources": {
       "drops": [],
@@ -147763,31 +147735,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 994,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Eye of Abyss",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 995,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Wanted Poster",
     "sources": {
       "drops": [],
@@ -147795,31 +147760,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 995,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Wanted Poster",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 996,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Alex's Dagger",
     "sources": {
       "drops": [],
@@ -147827,31 +147785,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 996,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Alex's Dagger",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 997,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Pinter's Bill",
     "sources": {
       "drops": [],
@@ -147859,31 +147810,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 997,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Pinter's Bill",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 998,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Book of Aklantoth - Part 1",
     "sources": {
       "drops": [],
@@ -147891,31 +147835,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 998,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Book of Aklantoth - Part 1",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 999,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Book of Aklantoth - Part 2",
     "sources": {
       "drops": [],
@@ -147923,31 +147860,24 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 999,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Book of Aklantoth - Part 2",
-        "price": 37
+        "price": 0
       }
     }
   },
   {
     "grade": "none",
     "id": 1000,
-    "kind": "Armor.Wear",
+    "kind": "Other.Quest",
     "name": "Book of Aklantoth - Part 3",
     "sources": {
       "drops": [],
@@ -147955,24 +147885,17 @@
     },
     "template": {
       "etc": {
-        "cristals": 0,
-        "rank": "none",
-        "slot": 9
+        "consumable": false,
+        "stackable": true
       },
       "selfId": 1000,
-      "stats": {
-        "evasion": 0,
-        "mDef": 0,
-        "maxMp": 0,
-        "pDef": 9
-      },
       "template": {
-        "class1": 1,
-        "class2": 1,
-        "kind": "Armor.Wear",
-        "mass": 60,
+        "class1": 4,
+        "class2": 3,
+        "kind": "Other.Quest",
+        "mass": 0,
         "name": "Book of Aklantoth - Part 3",
-        "price": 37
+        "price": 0
       }
     }
   },
