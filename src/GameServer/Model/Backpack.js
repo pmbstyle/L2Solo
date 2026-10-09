@@ -33,6 +33,10 @@ class BackpackModel {
 
     // Set
 
+    equipmentChanged() {
+        this.equipmentRevision = Number(this.equipmentRevision || 0) + 1;
+    }
+
     equipPaperdoll(slot, id, selfId) {
         const equip = this.equipment;
 
@@ -41,6 +45,7 @@ class BackpackModel {
         }
 
         this.paperdoll[slot] = { id: id, selfId: selfId };
+        this.equipmentChanged();
         this.visibleLook = null; // Social/VisibleStrength
     }
 
@@ -52,6 +57,7 @@ class BackpackModel {
         }
 
         this.paperdoll[slot] = {};
+        this.equipmentChanged();
         this.visibleLook = null; // Social/VisibleStrength
     }
 

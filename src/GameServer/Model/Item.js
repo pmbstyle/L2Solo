@@ -32,10 +32,18 @@ class ItemModel {
         for (const item of items) inventoryOwners.set(item, binding);
     }
 
+    touchEquipment() {
+        const binding = inventoryOwners.get(this);
+        if (binding && inventoryBindings.get(binding.backpack) === binding
+            && binding.backpack.items === binding.items && binding.items.length === binding.count
+            && binding.members.has(this)) binding.backpack.equipmentChanged?.();
+    }
+
     setEnchantLevel(data) {
         const next = Math.max(0, Number(data) || 0);
         const changed = this.model.enchant !== next;
         this.model.enchant = next;
+        if (changed && this.model.equipped) this.touchEquipment();
         const binding = inventoryOwners.get(this);
         if (changed && binding && inventoryBindings.get(binding.backpack) === binding
             && binding.backpack.items === binding.items && binding.items.length === binding.count

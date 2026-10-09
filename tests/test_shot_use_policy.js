@@ -66,6 +66,44 @@ try {
         assert.equal(snapshots, 1, 'a level change refreshes once even for a party follower without a held wish review');
         Backpack.prototype.fetchAutoShot.call(actor.backpack, actor, 'soulshot');
         assert.equal(snapshots, 1);
+        // Equipment changes invalidate own hunt samples even without a follower hold.
+        const BackpackModel = invoke('GameServer/Model/Backpack');
+        const Item = invoke('GameServer/Item/Item');
+        const gear = new Item(900, { selfId: 23, amount: 1, equipped: false, slot: 10 });
+        const pack = new BackpackModel({});
+        pack.items = [gear]; Item.bindInventory(pack);
+        actor.backpack = pack;
+        const huntIncome = Hunt.huntIncome;
+        const initialSignature = Hunt.signature(state);
+        Hunt.huntIncome = s => ({ perHour: Hunt.signature(s) === initialSignature ? 10000 : 1000 });
+        Economy.stateForActor = () => {
+            snapshots++;
+            const inventory = { ...state.inventory };
+            if (gear.fetchEquipped()) inventory[23] = { selfId: 23, amount: 1, equipped: true,
+                slot: 10, enchant: gear.fetchEnchantLevel() };
+            return { ...state, inventory };
+        };
+        try {
+            benefit = .05;
+            Shots.enableAutoShot(actor);
+            assert.ok(actor.autoSoulshots.has(1835));
+            snapshots = 0;
+            pack.equipPaperdoll(10, 900, 23); gear.setEquipped(true);
+            Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
+            assert.equal(snapshots, 1, 'armor equip refreshes a follower once');
+            assert.equal(actor.autoSoulshots.size, 0, 'invalidated own income no longer funds shot use');
+            gear.setEnchantLevel(1);
+            Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
+            assert.equal(snapshots, 2, 'equipped enchant refreshes once');
+            gear.setEnchantLevel(1); gear.setAmount(2);
+            Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
+            assert.equal(snapshots, 2, 'same enchant and stack consumption do not refresh equipment policy');
+            pack.unequipPaperdoll(10); gear.setEquipped(false);
+            Backpack.prototype.fetchAutoShot.call(pack, actor, 'soulshot');
+            assert.equal(snapshots, 3, 'armor removal refreshes once');
+            assert.ok(actor.autoSoulshots.has(1835), 'original equipment restores the usable own sample');
+        } finally { Hunt.huntIncome = huntIncome; }
+        benefit = .01;
         const Events = invoke('GameServer/Bot/AI/DecisionEvents');
         actor.autoSoulshots.add(1835);
         const denied = Economy.basics(state, deps).stock('shots');

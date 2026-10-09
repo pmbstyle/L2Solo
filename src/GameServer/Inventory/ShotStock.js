@@ -227,12 +227,13 @@ function autoInputs(actor, held) {
     const session = actor.session, state = session?.coldLifeState, stats = state?.stats;
     const classId = actor.fetchClassId?.(), level = actor.fetchLevel?.();
     const weaponId = actor.backpack?.paperdoll?.[7]?.selfId || actor.backpack?.paperdoll?.[14]?.selfId;
+    const equipmentRevision = actor.backpack?.equipmentRevision;
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
-        && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
-    return { classId, level, weaponId, spotId, partyId, role, huntAt };
+        && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
+    return { classId, level, weaponId, equipmentRevision, spotId, partyId, role, huntAt };
 }
 function refreshAutoShot(actor) {
     const held = autoUse.get(actor), inputs = autoInputs(actor, held);

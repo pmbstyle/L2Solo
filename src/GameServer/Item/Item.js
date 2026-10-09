@@ -17,11 +17,15 @@ class Item extends ItemModel {
     // Set (Weapon & Armor)
 
     setEquipped(data) {
+        const changed = this.model.equipped !== data;
         this.model.equipped = data;
+        if (changed) this.touchEquipment();
     }
 
     setSlot(data) {
+        const changed = this.model.slot !== data;
         this.model.slot = data;
+        if (changed && this.model.equipped) this.touchEquipment();
     }
 
     // Get (Weapon & Armor)
