@@ -135,20 +135,25 @@ function value(spotId, role, level, shots = true) {
     const kills = Math.min(row[t.f.kph] * ratio('kph'), spotCap) * pull;
     if (!(kills > 0)) return null;
     const rates = ProgressionRates.profile();
-    const exp = row[t.f.exp] * ratio('exp') * expGapFactor(gap);
-    const busy = row[t.f.busy] * ratio('busy');
+    // One lookup has fixed curve/gap/rates: XP and SP share their ratio,
+    // adena and loot share theirs, and combat/shots/potions share busy.
+    // Keep the original multiplication order and return a fresh result.
+    const expRatio = ratio('exp'), busyRatio = ratio('busy'), adenaRatio = ratio('adena');
+    const gapFactor = expGapFactor(gap), lootFactor = lootRateFactor(t.spots[s], rates.drop);
+    const exp = row[t.f.exp] * expRatio * gapFactor;
+    const busy = row[t.f.busy] * busyRatio;
     return {
         kills,
         deaths: kills * Math.max(0, row[t.f.deaths] + at(curve.deaths, t.gaps, gap) - at(curve.deaths, t.gaps, refGap)),
         exp: kills * exp * rates.exp,
-        sp: kills * row[t.f.sp] * ratio('exp') * expGapFactor(gap) * rates.sp,
-        adena: kills * row[t.f.adena] * ratio('adena') * rates.adena,
+        sp: kills * row[t.f.sp] * expRatio * gapFactor * rates.sp,
+        adena: kills * row[t.f.adena] * adenaRatio * rates.adena,
         // Loot follows the adena curve: same drop groups and deep-blue rule.
-        loot: kills * row[t.f.loot] * ratio('adena') * rates.drop * lootRateFactor(t.spots[s], rates.drop),
-        shots: kills * row[t.f.shots] * ratio('busy'),
-        potions: kills * row[t.f.potions] * ratio('busy'),
+        loot: kills * row[t.f.loot] * adenaRatio * rates.drop * lootFactor,
+        shots: kills * row[t.f.shots] * busyRatio,
+        potions: kills * row[t.f.potions] * busyRatio,
         stacks: t.f.stacks < 0 || row[t.f.stacks] === null ? null
-            : kills * row[t.f.stacks] * lootRateFactor(t.spots[s], rates.drop),
+            : kills * row[t.f.stacks] * lootFactor,
         busyShare: Math.min(1, kills * busy / 3600)
     };
 }
