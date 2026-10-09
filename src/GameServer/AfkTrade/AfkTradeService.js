@@ -98,11 +98,15 @@ function entryStore(entry) {
 
 // A record leaves the offer index and the board table (its id is kept on the
 // entry: a shop's projection may have carried an older record).
+function markProjectionChanged(projection) {
+    changedOwners.add(Number(projection.shop.ownerId));
+    for (const line of projection.boardRow?.[6] || []) changedItemIds.add(line[1]);
+}
+
 function unindexProjection(projection) {
     const recordId = projection?.indexedRecordId;
     if (!recordId) return;
-    changedOwners.add(Number(projection.shop.ownerId));
-    for (const line of projection.boardRow?.[6] || []) changedItemIds.add(line[1]);
+    markProjectionChanged(projection);
     board.remove(recordId);
     TableChannel.shared.changed('board', { key: recordId, removed: true });
     projection.indexedRecordId = null;
@@ -403,7 +407,11 @@ function refreshProjection(shop) {
     const store = projectionStore(shop);
     const titleChanged = actor.fetchPrivateStore()?.title !== store.title;
     invalidateTradeWindows(actor);
-    unindexProjection(projection);
+    markProjectionChanged(projection);
+    // ARCH-NOTE: same-record replacement stays indexed until BoardIndex.put
+    // can compare the exact old/new native lines as one logical mutation.
+    if (Number(projection.indexedRecordId) !== Number(shop.id)
+        || ![SELL, BUY].includes(Number(store.storeType)) || !store.items.length) unindexProjection(projection);
     forgetEntry(projection);
     projection.shop = shop;
     if (store.botOwned) {
@@ -459,9 +467,16 @@ function refreshRecord(shop) {
 function refreshRecordEntry(shop) {
     if (!shop) return null;
     if (kindOf(shop) === 'shop') return refreshProjection(shop);
-    dropAd(shop.id);
-    if (shop.status !== 'active' || !(shop.lines || []).some((line) => Number(line.count) > 0)) return null;
-    const entry = { shop, store: projectionStore(shop), actor: null, indexedRecordId: null };
+    if (shop.status !== 'active' || !(shop.lines || []).some((line) => Number(line.count) > 0)) {
+        dropAd(shop.id); return null;
+    }
+    const store = projectionStore(shop);
+    const previous = entriesById.get(Number(shop.id));
+    // Keep the old indexed row for atomic native replacement; removals still
+    // use dropAd and retain their existing table/owner notification.
+    if (![SELL, BUY].includes(Number(store.storeType)) || !store.items.length) dropAd(shop.id);
+    else if (previous && !previous.actor) { markProjectionChanged(previous); forgetEntry(previous); }
+    const entry = { shop, store, actor: null, indexedRecordId: null };
     indexProjection(entry);
     rememberEntry(entry);
     return entry;
