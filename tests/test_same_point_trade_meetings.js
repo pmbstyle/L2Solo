@@ -90,6 +90,8 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.deepEqual((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming, { 1867: 8 });
         const plans = await Database.execute(["EXPLAIN QUERY PLAN SELECT id FROM board_trade_meetings WHERE actorA=? AND state='accepted' ORDER BY id LIMIT 8", [ids[0]]]);
         assert(plans.some(row => row.detail.includes('board_trade_meetings_actor_a')), 'owner lookup uses the compound index');
+        await Database.cancelTradeMeeting(accepted[0], 'fixture');
+        await assert.rejects(accept(await prepare(ids[1], 1)), /backpressure/, 'terminal receipts still awaiting cleanup count toward retained owner bound');
         for (const meeting of accepted) {
             await Database.cancelTradeMeeting(meeting, 'fixture');
             for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(meeting, actor); }

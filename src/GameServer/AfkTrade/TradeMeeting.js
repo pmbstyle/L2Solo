@@ -49,9 +49,10 @@ function create(io) {
     const meeting = id => one('SELECT * FROM board_trade_meetings WHERE id=?', [requireSafe(id, true)]);
     const ids = row => [row.actorA, row.actorB];
     // Two indexed bounded arms: an actor's commitments never scan the world.
-    function active(id) {
-        return all(`SELECT * FROM board_trade_meetings WHERE actorA=? AND state='accepted'
-            UNION ALL SELECT * FROM board_trade_meetings WHERE actorB=? AND state='accepted'
+    function active(id, includeTerminal = false) {
+        const stateFilter = includeTerminal ? '' : " AND state='accepted'";
+        return all(`SELECT * FROM board_trade_meetings WHERE actorA=?${stateFilter}
+            UNION ALL SELECT * FROM board_trade_meetings WHERE actorB=?${stateFilter}
             ORDER BY id LIMIT ${MAX_COMMITMENTS}`, [id, id]);
     }
     const samePoint = (a, b) => a.town === b.town && ['locX', 'locY', 'locZ'].every(k => a[k] === b[k]);
@@ -99,7 +100,7 @@ function create(io) {
             if (slot.nextSequence !== sequences[side]) throw Error('trade_meeting_participant_changed');
             requireSafe(slot.nextSequence + 1, true);
             const party = request.parties[side], commitments = active(id), existing = commitments[0];
-            if (commitments.length >= MAX_COMMITMENTS) throw Error('trade_meeting_backpressure');
+            if (active(id, true).length >= MAX_COMMITMENTS) throw Error('trade_meeting_backpressure');
             if (existing) {
                 if (!samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
                 if (party.route.method !== `meeting:${existing.id}` || party.route.fee !== 0
