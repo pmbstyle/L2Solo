@@ -42,6 +42,7 @@ function classify(state, item) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
+    if (ItemDisposition.isQuestItem(item)) return { action: 'ignore', reason: 'quest_item' };
     if (!LotPolicy.viable(item)) return { action: 'warehouse', reason: 'small_material_lot' };
     if (ItemDisposition.isNpcOnlyItem(item)) {
         return { action: 'npc', reason: 'npc_only_item' };

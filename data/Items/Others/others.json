@@ -14357,5 +14357,49 @@
         "stackable": true,
         "consumable": false
     }
+},{
+    "selfId": 990,
+    "template": {"kind": "Other.Quest", "name": "Mandragora Essence", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 991,
+    "template": {"kind": "Other.Quest", "name": "Royen's Key", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 992,
+    "template": {"kind": "Other.Quest", "name": "Shilen's 1st Mark", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 993,
+    "template": {"kind": "Other.Quest", "name": "Shilen's 2nd Mark", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 994,
+    "template": {"kind": "Other.Quest", "name": "Eye of Abyss", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 995,
+    "template": {"kind": "Other.Quest", "name": "Wanted Poster", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 996,
+    "template": {"kind": "Other.Quest", "name": "Alex's Dagger", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 997,
+    "template": {"kind": "Other.Quest", "name": "Pinter's Bill", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 998,
+    "template": {"kind": "Other.Quest", "name": "Book of Aklantoth - Part 1", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 999,
+    "template": {"kind": "Other.Quest", "name": "Book of Aklantoth - Part 2", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
+},{
+    "selfId": 1000,
+    "template": {"kind": "Other.Quest", "name": "Book of Aklantoth - Part 3", "class1": 4, "class2": 3, "mass": 0, "price": 0},
+    "etc": { "stackable": true, "consumable": false }
 }
 ]

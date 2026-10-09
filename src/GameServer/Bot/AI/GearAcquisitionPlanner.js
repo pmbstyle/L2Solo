@@ -91,6 +91,9 @@ function catalogNpc(selfId) {
 
 function isRealCatalogItem(item = {}) {
     const selfId = Number(item.selfId || 0);
+    // Catalog classification wins over old inventory/worker projections.
+    if (item.template?.kind === 'Other.Quest'
+        || catalogItem(selfId)?.template?.kind === 'Other.Quest') return false;
     const name = String(item.template?.name || '').trim();
     // A loaded row is not automatically a usable game item.  The datapack has
     // legacy placeholder rows (for example, the D-grade weapon named "0").
@@ -329,6 +332,7 @@ function considerable(item, state = {}, role = roleFor(state)) {
 // A profession change can leave a sword on a polearm fighter or a dagger on
 // an archer. Such a weapon must neither satisfy nor outscore the new kit.
 function ownedItemFitsBuild(item, role, classId) {
+    if (!isRealCatalogItem(item)) return false;
     // Starter clothes remain a usable no-grade baseline before masteries;
     // graded body armor must match the profession's chosen armor profile.
     if ([10, 11, 15].includes(Number(item.etc?.slot))
@@ -342,6 +346,7 @@ function ownedItemFitsBuild(item, role, classId) {
 }
 
 function isSlotUpgrade(item, ownedItems, role, classId) {
+    if (!isRealCatalogItem(item)) return false;
     const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
     const rank = String(item.etc?.rank || 'none').toLowerCase();
     const score = itemScore(item, role, classId);

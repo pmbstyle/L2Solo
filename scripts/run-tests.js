@@ -458,6 +458,7 @@ const tests = [
     'tests/test_bot_leveling_routes.js',
     'tests/test_bot_market_opportunity.js',
     'tests/test_bot_market_listing_policy.js',
+    'tests/test_bot_quest_item_eligibility.js',
     'tests/test_group_f_player_pricing.js',
     'tests/test_group_f_bot_routing.js',
     'tests/test_group_f_companion_board_line.js',

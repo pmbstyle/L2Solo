@@ -43,6 +43,12 @@ function templateFor(selfId) {
     return templateIndex.get(Number(selfId)) || null;
 }
 
+// Canonical quest classification cannot be overridden by a saved gear kind.
+function isQuestItem(item, template = templateFor(item?.selfId)) {
+    return template?.template?.kind === 'Other.Quest'
+        || item?.kind === 'Other.Quest' || item?.template?.kind === 'Other.Quest';
+}
+
 function priceFor(state, item, template) {
     const basePrice = Number(template?.template?.price || 0);
     if (basePrice <= 0) return 0;
@@ -170,6 +176,7 @@ function isSpareConsumable(item, template = templateFor(item?.selfId)) {
 }
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
+    if (isQuestItem(item, template)) return false;
     if (isEquipmentItem(item, template)) return false;
     if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(item?.selfId))) return false;
     if (isMarketRecipeItem(item)) return false;
@@ -456,6 +463,7 @@ function saleCandidates(state, options = {}) {
         if (!selfId || selfId === 57 || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
+        if (isQuestItem(item, template)) return [];
         const kind = kindFor(item, template);
         const npcOnly = isNpcOnlyItem(item, template);
         if (options.onlyNpc === true && !npcOnly) return [];
@@ -544,6 +552,7 @@ function npcLiquidationCandidates(state, options = {}) {
 // value. Gear is worth retaining only once it has crossed out of the starter
 // trash band, leaving cheap no-grade drops for liquidation.
 function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
+    if (isQuestItem(item, template)) return false;
     const selfId = Number(item?.selfId || 0);
     const amount = Number(item?.amount || 0);
     const kind = item?.kind || template?.template?.kind || '';
@@ -596,6 +605,7 @@ module.exports = {
     isBelowCGrade,
     isClanProgressionItem,
     isNpcOnlyItem,
+    isQuestItem,
     isRecipeItem,
     recipeProductRank,
     isMarketRecipeItem,

@@ -2479,61 +2479,6 @@
     "stats": { "pDef": 69, "mDef": 0, "evasion": -8, "maxMp": 0 },
     "etc": { "slot": 8, "rank": "none", "cristals": 0 }
 },{
-    "selfId": 990,
-    "template": { "kind": "Armor.Wear", "name": "Mandragora Essence", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 991,
-    "template": { "kind": "Armor.Wear", "name": "Royen's Key", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 992,
-    "template": { "kind": "Armor.Wear", "name": "Shilen's 1st Mark", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 993,
-    "template": { "kind": "Armor.Wear", "name": "Shilen's 2nd Mark", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 994,
-    "template": { "kind": "Armor.Wear", "name": "Eye of Abyss", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 995,
-    "template": { "kind": "Armor.Wear", "name": "Wanted Poster", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 996,
-    "template": { "kind": "Armor.Wear", "name": "Alex's Dagger", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 997,
-    "template": { "kind": "Armor.Wear", "name": "Pinter's Bill", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 998,
-    "template": { "kind": "Armor.Wear", "name": "Book of Aklantoth - Part 1", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 999,
-    "template": { "kind": "Armor.Wear", "name": "Book of Aklantoth - Part 2", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
-    "selfId": 1000,
-    "template": { "kind": "Armor.Wear", "name": "Book of Aklantoth - Part 3", "class1": 1, "class2": 1, "mass": 60, "price": 37 },
-    "stats": { "pDef": 9, "mDef": 0, "evasion": 0, "maxMp": 0 },
-    "etc": { "slot": 9, "rank": "none", "cristals": 0 }
-},{
     "selfId": 1100,
     "template": { "kind": "Armor.Fabric", "name": "Cotton Tunic", "class1": 1, "class2": 1, "mass": 2120, "price": 2430 },
     "stats": { "pDef": 21, "mDef": 0, "evasion": 0, "maxMp": 38 },
