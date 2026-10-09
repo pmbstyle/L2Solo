@@ -3284,7 +3284,7 @@ function renderInspector() {
         ${actor.economy ? `<div data-profile-panel="economy" id="profile-panel-economy" role="tabpanel" aria-labelledby="profile-tab-economy">${ProfileData.renderEconomy(actor.economy, { spot: actor.spot })}</div>` : ''}
         ${['inventory', 'warehouse', 'skills', 'pvp', 'board'].map(section => {
             const entry = state.profileCollections[section] || {};
-            return `<div data-profile-panel="${section}" id="profile-panel-${section}" role="tabpanel" aria-labelledby="profile-tab-${section}">${ProfileData.renderCollection(section, entry.data, entry)}</div>`;
+            return `<div data-profile-panel="${section}" id="profile-panel-${section}" role="tabpanel" aria-labelledby="profile-tab-${section}">${ProfileData.renderCollection(section, entry.data, { ...entry, ownerName: actor.name })}</div>`;
         }).join('')}
         <div data-profile-panel="relationships" id="profile-panel-relationships" role="tabpanel" aria-labelledby="profile-tab-relationships">${renderRelationships(actor)}</div>
         <div data-profile-panel="progress" id="profile-panel-progress" role="tabpanel" aria-labelledby="profile-tab-progress">${renderProgress(actor)}</div>

@@ -14,7 +14,6 @@
     const wish = row => row?.item ? item(row.item) : escape(({ stock: 'Restock', henna: 'Install henna', enchant: 'Enchant equipment',
         sa: 'Install special ability', book: 'Learn skill', level: 'Reach level', care: 'Help character', scores: 'Settle score' })[row?.kind] || label(row?.kind))
         + (row?.name || row?.reference ? `${row?.kind === 'stock' ? ' ' : ' · '}${escape(row.name || row.reference)}` : '');
-    const cell = (name, value) => `<div><span>${escape(name)}</span><strong>${value}</strong></div>`;
     const wholeNumber = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
     const adena = value => value == null || !Number.isFinite(Number(value)) ? '—' : `${wholeNumber.format(Number(value))} <span class="economy-unit">A</span>`;
     const reason = value => ({ superseded: 'Replaced by a newer wish', source_unavailable: 'No source available',
@@ -77,18 +76,60 @@
                 ${economy.dormant.map(row => `<div class="economy-deferred-row"><div><strong>${wish(row)}</strong><span>${escape(reason(row.reason) || 'Deferred')}</span></div><span>${adena(row.estimatedPrice)}</span></div>`).join('')}</article>` : ''}
         </section>`;
     }
-    function renderCollection(section, data, { loading = false, error = null } = {}) {
+    const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const relativeFormat = new Intl.RelativeTimeFormat('en-US', { numeric: 'auto' });
+    const validTime = value => Number.isFinite(Number(value)) && Number(value) > 0 && !Number.isNaN(new Date(Number(value)).getTime());
+    function timestamp(value) {
+        if (!validTime(value)) return '—';
+        const date = new Date(Number(value));
+        return `<time datetime="${date.toISOString()}" title="${escape(date.toLocaleString())}">${escape(dateFormat.format(date))}</time>`;
+    }
+    function age(value, reference) {
+        if (!validTime(value) || !validTime(reference)) return '';
+        const seconds = (Number(value) - Number(reference)) / 1000;
+        const [unit, scale] = Math.abs(seconds) >= 86400 ? ['day', 86400] : Math.abs(seconds) >= 3600 ? ['hour', 3600] : ['minute', 60];
+        return escape(relativeFormat.format(Math.trunc(seconds / scale), unit));
+    }
+    function renderPvp(data, { loading, ownerName }) {
+        const totals = data.totals || {}, encounter = data.lastEncounter;
+        // Background outcomes describe both sides; they do not identify who retreated or died.
+        const result = ({ retreated: ['Retreat', 'A side withdrew from the encounter.'],
+            killed: ['Kill recorded', 'The encounter ended with a casualty.'], defeated: ['Side defeated', 'One side had no fighters left.'],
+            disengaged: ['Disengaged', 'Combat ended without a casualty.'], fighting: ['Fighting', 'The saved encounter was still in progress.'],
+            pvp_expired: ['Ended', 'The encounter reached its time limit.'], pvp_interrupted: ['Interrupted', 'The encounter was interrupted.'] })[encounter?.outcome]
+            || [label(encounter?.outcome), 'Saved background combat result.'];
+        const enemies = data.enemies || [], incidents = data.incidents || [];
+        const owner = escape(ownerName || 'this character');
+        return `<div class="pvp-profile">
+            <header class="pvp-heading"><div><h3>PvP & rivals</h3><p>Combat totals and the opponents this character remembers.</p></div>
+                <span class="pvp-updated" title="${data.source === 'live_actor' ? 'Live character state' : 'Saved character state'}">${loading ? 'Refreshing…' : 'Updated'} ${timestamp(data.generatedAt)}</span></header>
+            <dl class="pvp-totals">${fact('PvP kills', number(totals.pvp))}${fact('PK kills', number(totals.pk))}${fact('Karma', number(totals.karma))}</dl>
+            <div class="pvp-detail-grid">
+                <article class="pvp-card pvp-encounter"><h4>Last background encounter</h4>
+                    ${encounter ? `<strong class="pvp-outcome">${escape(result[0])}</strong><p>${escape(result[1])}</p>
+                        <div class="pvp-encounter-date">${timestamp(encounter.at)}<span>${age(encounter.at, data.generatedAt)}</span></div>`
+                    : '<p class="pvp-empty">No background encounter recorded yet.</p>'}
+                </article>
+                <article class="pvp-card pvp-enemies"><header><h4>Remembered enemies</h4><p>Opponents who attacked or killed ${owner}.</p></header>
+                    ${enemies.length ? `<ul class="pvp-enemy-list">${enemies.map(row => `<li><div class="pvp-enemy-identity"><strong>${escape(row.name || `Character #${row.id}`)}</strong>
+                        ${validTime(row.lastSeenAt) ? `<span>Last incident ${timestamp(row.lastSeenAt)}</span>` : ''}</div>
+                        <dl class="pvp-enemy-metrics">${fact('Deaths caused', number(row.kills))}${fact('Attack records', number(row.attacks))}</dl></li>`).join('')}</ul>
+                        <p class="pvp-memory-note">Up to 3 enemies remembered · attack records capped at 3 per enemy.</p>` : '<p class="pvp-empty">No remembered enemies.</p>'}
+                </article>
+            </div>
+            ${incidents.length ? `<article class="pvp-card"><h4>Recent combat roles</h4><ul class="pvp-incident-list">${incidents.map(row => `<li><div><strong>${escape(({ aggression: 'Aggressor', provoked: 'Provoked aggressor', defense: 'Defender' })[row.responsibility] || label(row.responsibility))}</strong>
+                ${row.opponentId ? `<span>Against character #${Number(row.opponentId)}</span>` : ''}</div>${timestamp(row.at)}</li>`).join('')}</ul></article>` : ''}
+        </div>`;
+    }
+    function renderCollection(section, data, { loading = false, error = null, ownerName = '' } = {}) {
         const names = { inventory: 'Inventory', warehouse: 'Personal warehouse', skills: 'Learned skills', pvp: 'PvP', board: 'Board listings' };
-        let html = `<section class="inspector-block profile-data"><h3>${names[section]}</h3>`;
+        let html = `<section class="inspector-block profile-data">${section === 'pvp' && data ? '' : `<h3>${names[section]}</h3>`}`;
         if (error) html += `<p class="detail-error">Refresh failed: ${escape(error)}</p>`;
         if (!data) return html + `<p>${loading ? 'Loading…' : 'Open this tab to load data.'}</p>${error ? '<button type="button" data-profile-retry>Retry</button>' : ''}</section>`;
-        html += `<p>${escape(label(data.source))} · observed ${escape(new Date(data.generatedAt).toLocaleTimeString())}${loading ? ' · refreshing' : ''}</p>`;
         if (section === 'pvp') {
-            html += `<div class="detail-grid">${cell('PvP', number(data.totals.pvp))}${cell('PK', number(data.totals.pk))}${cell('Karma', number(data.totals.karma))}</div>`;
-            if (data.lastEncounter) html += `<p>Last background encounter: ${escape(label(data.lastEncounter.outcome))} · ${escape(new Date(data.lastEncounter.at).toLocaleString())}</p>`;
-            html += `<h3>Remembered enemies</h3>${data.enemies.length ? `<ul>${data.enemies.map(row => `<li>${escape(row.name || `#${row.id}`)} · ${number(row.kills)} deaths caused · ${number(row.attacks)} remembered attacks</li>`).join('')}</ul>` : '<p>No remembered enemies.</p>'}`;
-            if (data.incidents.length) html += `<h3>Recent responsibility records</h3><ul>${data.incidents.map(row => `<li>${escape(label(row.responsibility))}${row.opponentId ? ` · #${Number(row.opponentId)}` : ''} · ${escape(new Date(row.at).toLocaleString())}</li>`).join('')}</ul>`;
+            html += renderPvp(data, { loading, ownerName });
         } else {
+            html += `<p>${escape(label(data.source))} · observed ${escape(new Date(data.generatedAt).toLocaleTimeString())}${loading ? ' · refreshing' : ''}</p>`;
             const columns = section === 'skills' ? ['Skill', 'Level', 'Type'] : section === 'board' ? ['Item', 'Offer', 'Town', 'Units', 'Price', 'Execution'] : ['Item', 'Amount', 'Enchant', 'Equipped'];
             html += `<p>${number(data.total)} ${section === 'skills' ? 'learned skills' : 'entries'}</p><div class="profile-table-scroll"><table class="profile-data-table"><thead><tr>${columns.map(name => `<th>${name}</th>`).join('')}</tr></thead><tbody>`;
             html += data.rows.map(row => `<tr>${(section === 'skills' ? [escape(row.name || `#${row.selfId}`), number(row.level), row.passive ? 'Passive' : 'Active']

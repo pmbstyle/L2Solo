@@ -49,7 +49,16 @@ assert.match(UI.renderEconomy(economy), /Amounts are priorities only/);
     assert.equal(pvp.totals.pvp, 1, 'PvP must be available with developer diagnostics disabled');
     assert.equal(pvp.lastEncounter, null, 'an empty combat clock is not a completed encounter');
     assert.equal(pvp.incidents[0].responsibility, 'defense');
-    assert.match(UI.renderCollection('pvp', pvp), /defense · #42/);
+    assert.match(UI.renderCollection('pvp', pvp), /Defender[\s\S]*Against character #42/);
+    const combatHtml = UI.renderCollection('pvp', { ...pvp, generatedAt: 1791554915038,
+        lastEncounter: { at: 1790943012537, outcome: 'retreated' },
+        enemies: [{ name: '<Messerheld>', kills: 1, attacks: 3, lastSeenAt: 1790506769091 }] }, { ownerName: '<Bic4kci>' });
+    assert.match(combatHtml, /Opponents who attacked or killed &lt;Bic4kci&gt;/);
+    assert.match(combatHtml, /&lt;Messerheld&gt;/);
+    assert.match(combatHtml, /Deaths caused<\/dt><dd>1/);
+    assert.match(combatHtml, /A side withdrew/); // The shared outcome cannot identify which side retreated.
+    assert.match(combatHtml, /7 days ago/); // Fetch time is not the time of the saved encounter.
+    assert.match(combatHtml, /attack records capped at 3/);
     assert.equal(await list('bot', 2, 'skills'), null);
     await assert.rejects(list('bot', 1, 'warehouse', { limit: 1000 }), /invalid_profile_collection/);
     await assert.rejects(list('bot', 1, 'warehouse', { offset: -1 }), /invalid_profile_collection/);
