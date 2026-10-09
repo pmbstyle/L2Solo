@@ -146,6 +146,11 @@ function buyOffer(state, offer, options = {}) {
             return { state: buyer, purchased: units > 0, units, spent, hot: done.hot,
                 offer, sellerState: null, economyCommand: trade.economyCommand };
         }).catch((error) => {
+            // Either side already has a meeting in preparation: the offer did
+            // not change. Like a pending meeting, no cooldown is set and the
+            // goal stays; the next review asks again.
+            if (error?.message === 'trade_meeting_preparation_busy') return { state: LifeState.cachedState(state.characterId) || state,
+                pending: true, purchased: false, units: 0, spent: 0, reason: 'trade_meeting_preparation_busy' };
             utils.infoWarn('BotMarket', 'AFK market purchase failed for %s: %s', state.name, error.message);
             return { state: LifeState.cachedState(state.characterId) || state, purchased: false, reason: 'offer_changed' };
         });

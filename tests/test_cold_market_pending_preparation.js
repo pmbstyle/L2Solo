@@ -5,7 +5,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const root=require('node:path').resolve(__dirname,'..');
 const Service=require(root+'/src/GameServer/AfkTrade/TradeMeetingService');
-let listener,current,prepared,writes=[];
+let listener,current,prepared,writes=[],offerChanged=0;
 let goal={type:'upgrade_gear',status:'active',target:{itemId:48,itemName:'Short Gloves'},plan:{marketTown:'Elven Village'}};
 const offer={sourceType:'afk_bot_store',selfId:48,price:75,store:{shopId:770},town:'Elven Village'};
 const dependencies={
@@ -18,6 +18,7 @@ const dependencies={
  upsertState:async(next,reason)=>{writes.push(reason);current={...next,simulation:{...next.simulation,revision:next.simulation.revision+1}};listener({characterId:current.characterId});return current;}
  },
  'GameServer/Bot/Economy/MarketOpportunity':{bestOffer:()=>offer,botCanBuy:()=>true,fixedStoreOffers:()=>[],npcOffersAll:()=>[]},
+ 'GameServer/Bot/Economy/MarketTelemetry':{offerChanged:()=>{offerChanged++;},noOffer:()=>{},purchaseFailed:()=>{}},
  'GameServer/Bot/Economy/PurchaseFunding':{budget:()=>1000,spendable:()=>1000,nativeTerms:()=>({})},
  'GameServer/Bot/Goals/GoalState':{snapshot:()=>({current:goal})},
  'GameServer/Bot/Economy/ColdMarketTradeChat':{maybeAnnounceWanted:state=>({state,announced:false})},
@@ -44,7 +45,22 @@ vm.runInNewContext(fs.readFileSync(root+'/src/GameServer/Bot/Economy/ColdMarketS
  assert.deepEqual(writes,[], 'preparing a trade must not write a failure or return state');
  assert.equal(Service.counters().preparations,1);
  assert.equal(result.pending,true); assert.equal(result.state.activity,'shopping'); assert.equal(result.state.stats.marketRetryAfter,undefined);
- assert.equal(Service.hasPreparation(1),true); assert.equal(Service.hasPreparation(2),true); assert.equal(Service.hasPreparation(3),false); Service.discard(prepared); assert.equal(Service.hasPreparation(1),false);
+ assert.equal(Service.hasPreparation(1),true); assert.equal(Service.hasPreparation(2),true); assert.equal(Service.hasPreparation(3),false);
+ // A second buyer of the same seller meets the first preparation: busy is
+ // not a changed offer, so no cooldown, telemetry or goal loss follows.
+ const firstBuyer=current,shop=dependencies['GameServer/AfkTrade/AfkTradeService'].buyFromShop;
+ dependencies['GameServer/AfkTrade/AfkTradeService'].buyFromShop=async()=>{
+  const party={phase:'cold',revision:0,sequence:1,needRevision:0,ownerId:'legacy_main',leaseId:null,hotAt:0,route:{fee:0,scroll:false,method:'walk',durationMs:0}};
+  Service.stage({token:'offline-second',actorA:2,actorB:3,seqA:1,seqB:1,town:'Elven Village',point:{locX:0,locY:0,locZ:0},parties:[party,{...party}],lines:[{payer:1,itemId:100,selfId:48,count:1,price:75}]});
+ };
+ current={...firstBuyer,characterId:3,name:'SecondBuyer'};
+ const busy=await sandbox.module.exports.tryPurchase(current,goal);
+ assert.equal(busy.pending,true); assert.equal(busy.reason,'trade_meeting_preparation_busy');
+ assert.equal(busy.state.stats.marketRetryAfter,undefined); assert.equal(offerChanged,0); assert.deepEqual(writes,[]);
+ assert.equal(dependencies['GameServer/Bot/Goals/GoalState'].snapshot().current,goal,'the second buyer keeps its goal');
+ assert.equal(Service.hasPreparation(3),false);
+ dependencies['GameServer/AfkTrade/AfkTradeService'].buyFromShop=shop; current=firstBuyer;
+ Service.discard(prepared); assert.equal(Service.hasPreparation(1),false);
 
  goal={type:'buy_craft_material',status:'active',target:{itemId:48,amount:1},plan:{marketTown:'Elven Village',r:1}};
  let next=await sandbox.module.exports.tryPurchase(current,goal);
