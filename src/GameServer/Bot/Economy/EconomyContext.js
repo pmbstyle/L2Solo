@@ -135,13 +135,21 @@ function watchedBoard(board, watch) {
         ...(board.heads ? { heads: (selfId, ...rest) => { watch(selfId); return board.heads(selfId, ...rest); } } : {})
     });
 }
+function defaultProducerSource(state, board) {
+    const index = require('../Population/ColdOccupationSources').recipeIndex(board);
+    const level = require('./CraftEligibility').craftLevelFor(state), scope = index.scopeFor(level);
+    return { recipes: index.rowsFor(level), scope, revision: index.revision(scope) };
+}
 function resolved(state, deps) {
     deps = { ...runtime, ...deps };
     if (typeof deps.board === 'function') deps.board = deps.board();
+    if (!deps.board && isMainThread) deps.board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
     if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
     if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
+    if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = require('../Population/ColdOccupationSources').fixedBuyerOffersFor;
+    if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
     if (typeof deps.producerSource === 'function') {
         const source = deps.producerSource(state, deps.board);
         deps.producerRecipes = source?.recipes;

@@ -347,19 +347,24 @@ function buildProjection(state, ctx, deps) {
         const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
         if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
         const asks = ctx.board.list(id, SELL);
-        for (const offer of ctx.board.list(id, 3).slice(0, 5)) {
+        const publicOffers = ctx.board.list(id, 3).slice(0, 5);
+        const product = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
+        const fixedOffers = String(product?.template?.kind || '').startsWith('Other.Material')
+            ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
+        for (const offer of [...publicOffers, ...fixedOffers]) {
             if (Number(offer.ownerId) === Number(state.characterId) || Number(offer.enchant || 0)
                 || !(offer.count > 0) || !(offer.price > 0) || ownSales.some(line => line.price !== offer.price)) continue;
             const trip = ctx.trip?.details?.(offer.town);
             if (!trip?.known || ![trip.hours, trip.fees].every(value => Number.isFinite(value) && value >= 0)) continue;
+            const fixed = offer.type === 'static';
             let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
-            exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
+            if (!fixed) exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
             const forecast = exit.prospective || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
             if (!forecast?.known) continue;
-            const competitors = asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
+            const competitors = fixed ? [] : asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
             let cheaperUnits = 0;
             for (const line of competitors) if (!Number(line.enchant || 0) && line.price < offer.price) cheaperUnits += Number(line.count);
-            if (asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
+            if (!fixed && asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
             const input = { ...forecast, cheaperUnits, price: offer.price, residualUnitValue: Number(exit.residualUnitValue ?? ctx.buyback(id)) };
             const before = Price.saleOutcome({ ...input, units: oldUnits });
             const after = Price.saleOutcome({ ...input, units: oldUnits + count });
