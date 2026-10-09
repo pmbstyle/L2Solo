@@ -86,8 +86,8 @@ async function run() {
             `wealth craft with karma ${karma}`);
     }
     assert.strictEqual(Service.eligible({ ...state, level: 36, stats: { ...state.stats, classId: 56 } }), true);
-    assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, classId: 55 } }), false,
-        'a Bounty Hunter has Create Item but does not craft');
+    assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, classId: 55 } }), true,
+        'a Bounty Hunter can evaluate production within its retained craft skill');
     assert.strictEqual(Service.eligible({ ...state, level: 78, stats: { ...state.stats, classId: 118 } }), true,
         'a Maestro crafts for profit like a Warsmith');
     recipe.level = 8;

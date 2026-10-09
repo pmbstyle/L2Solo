@@ -152,7 +152,11 @@ async function run() {
     assert.strictEqual(ItemDisposition.recipeDisposition({ ...craftState, classId: 28, stats: { classId: 28 } },
         leatherItem, []).action, 'market', 'a non-crafter may offer a material recipe on the market');
     assert.strictEqual(ItemDisposition.recipeDisposition({ characterId: 7003, level: 40, classId: 55, stats: { classId: 55 } },
-        leatherItem, []).action, 'market', 'a Bounty Hunter may sell a recipe but cannot learn it for production');
+        leatherItem, []).action, 'learn', 'a Bounty Hunter may learn a recipe within its retained craft skill');
+    const broadSword = { selfId: 1786, amount: 1, kind: 'Other.Recipe' };
+    assert.strictEqual(ItemDisposition.canLearnRecipe({ classId: 53, level: 4 }, broadSword), false);
+    assert.strictEqual(ItemDisposition.canLearnRecipe({ classId: 53, level: 5 }, broadSword), true);
+    assert.strictEqual(ItemDisposition.canLearnRecipe({ classId: 53, level: 16, craftLevel: 0 }, broadSword), false);
     learned.length = 0;
     const materialCrafter = { ...craftState, characterId: 7002, inventory: { 1814: leatherItem } };
     const learnedMaterial = await LifeState.learnCraftableRecipes(materialCrafter, { recipeIds: [leatherRecipe.recipeId] });

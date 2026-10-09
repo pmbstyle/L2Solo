@@ -1,12 +1,12 @@
 'use strict';
 const DataCache = invoke('GameServer/DataCache');
-const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
 // ARCH-NOTE: native clan planning on saved members reached FirstPrice and
 // failed because its CraftShopService facade lacked craftLevelFor. Share the
 // original eligibility bodies/cache; do not duplicate the Create Item formula.
 function isServiceCrafter(state = {}) {
-    return BotRoles.isCrafterClass(state);
+    const level = craftLevelFor(state);
+    return Number.isFinite(level) && level > 0;
 }
 
 // Craft level = the Create Item level the class line has learned by this
@@ -37,10 +37,10 @@ function craftLevelFor(state = {}) {
     return row[level];
 }
 
-// Whether this character crafts the recipe: only crafter classes craft, even
-// when another dwarf has Create Item from its class line.
+// Create Item capability is shared by every class that has the skill.
 function canCraft(state = {}, recipe = {}) {
-    return isServiceCrafter(state) && craftLevelFor(state) >= Number(recipe.level || 0);
+    const level = craftLevelFor(state), required = Number(recipe.level);
+    return Number.isFinite(level) && Number.isFinite(required) && required > 0 && level >= required;
 }
 
 module.exports = { isServiceCrafter, craftLevelFor, canCraft };

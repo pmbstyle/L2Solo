@@ -232,4 +232,23 @@ const sharedTrials = new network.WishNetwork().build({ actorKey: 'shared-produce
 assert.equal(sharedTrials.activity?.rootKey, 'resale:501');
 assert(!sharedTrials.queue.some(row => row.key === 'resale:502'),
     'profitability is checked again when the first trial takes shared physical stock');
-console.log('PASS finite producer graph: partial inputs, native conditional forecast, direct materials, own output, incoming/protected stock, funding, unknown book/farm and demand retirement');
+// Use the real capability reader at the producer-root boundary. A beginner
+// must reach scroll/material intentions, not just pass a standalone skill test.
+const nativeCraft = invoke('GameServer/Bot/Economy/CraftEligibility');
+invoke('GameServer/DataCache').skillTree = JSON.parse(fs.readFileSync(path.join(__dirname, '../data/Skills/Tree/tree.json')));
+serviceCraft.isServiceCrafter = nativeCraft.isServiceCrafter;
+serviceCraft.canCraft = nativeCraft.canCraft;
+state.classId = 53; state.level = 5; state.inventory = {}; state.stats = {}; state.acceptedIncoming = {};
+adapters['GameServer/DataCache'].experience = Array.from({ length: 40 }, (_, level) => level * 100);
+recipe.level = 1;
+put(20, 101, 1, 100, 3); put(21, 202, 10, 1); put(27, 401, 1, 1);
+const beginnerDeps = { knownRecipes: [], producerRecipes: [recipe] };
+const beginner = prepare({ deps: beginnerDeps });
+assert(beginner.projection.roots.includes('resale:101'));
+assert(beginner.watch.some(row => row.itemId === 401), 'the native capable beginner asks for its unknown recipe scroll');
+assert(beginner.watch.some(row => row.itemId === 202), 'the same producer asks for missing physical materials');
+state.level = 4;
+assert(!prepare({ deps: beginnerDeps }).projection.roots.includes('resale:101'));
+state.level = 5; state.craftLevel = 0;
+assert(!prepare({ deps: beginnerDeps }).projection.roots.includes('resale:101'), 'native unlearned zero wins over the tree');
+console.log('PASS finite producer graph: partial inputs, native conditional forecast, direct materials, own output, incoming/protected stock, funding, unknown book/farm and demand retirement / beginner native skill -> scroll and material intentions');

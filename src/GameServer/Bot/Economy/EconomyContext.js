@@ -56,6 +56,7 @@ function stateForActor(actor, session = actor?.session) {
     }
     const hotKit = invoke('GameServer/Bot/Population/ColdCombatProfile').capture(actor);
     const state = { ...stored, characterId: actor.fetchId?.(), level: actor.fetchLevel?.(), inventory, physicalInventory,
+        craftLevel: actor.backpack?.fetchDwarvenCraftLevel?.(actor) ?? stored.craftLevel,
         acceptedIncoming: current?.acceptedIncoming || stored.acceptedIncoming || {},
         incomingPending: current ? current.incomingPending === true : stored.incomingPending === true,
         adena: actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0,
@@ -85,7 +86,7 @@ function inputKey(state, deps = {}) {
     // A native bag change, own sample or relation revision is an input event.
     // No timing poll, no world-wide counter: the board and the market are
     // inputs only through the items the bot read (see `market` in forState).
-    return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
+    return [state.level, stats.classId, state.craftLevel ?? stats.dwarvenCraftLevel, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
         Providers.recipeIds(state, deps).join(','), deps.producerRevision ?? '',
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),

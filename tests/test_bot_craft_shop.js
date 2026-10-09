@@ -46,15 +46,30 @@ async function run() {
     assert.strictEqual(CraftShopService.craftLevelFor({ level: 60, stats: { classId: 0 } }), 0,
         'a class without Create Item has no craft level');
     const levelOneRecipe = { level: 1 };
-    assert.strictEqual(CraftShopService.canCraft({ level: 40, stats: { classId: 55 } }, levelOneRecipe), false,
-        'a Bounty Hunter has Create Item 1 but only crafter classes craft');
+    assert.strictEqual(CraftShopService.canCraft({ level: 40, stats: { classId: 55 } }, levelOneRecipe), true,
+        'a Bounty Hunter may use its retained Create Item 1');
     assert.strictEqual(CraftShopService.canCraft({ level: 36, stats: { classId: 56 } }, { level: 4 }), true);
     assert.strictEqual(CraftShopService.canCraft({ level: 36, stats: { classId: 56 } }, { level: 5 }), false,
         'a crafter needs the recipe level');
     assert.strictEqual(CraftShopService.canCraft({ level: 41, stats: { classId: 57 } }, { level: 4 }), true);
-    // Crafter classes: spoiler dwarves and Dwarven Fighters never craft.
+    // Physical crafting capability follows the skill, not a profession list.
     [[53, 30], [54, 40], [55, 60], [117, 78]].forEach(([classId, level]) => assert.strictEqual(
-        CraftShopService.isServiceCrafter({ level, stats: { classId } }), false, `class ${classId} is not a crafter class`));
+        CraftShopService.isServiceCrafter({ level, stats: { classId } }), true, `class ${classId} retains Create Item`));
+    for (const level of [1, 4, 5, 9, 16, 19]) {
+        const beginner = { classId: 53, level };
+        assert.strictEqual(CraftShopService.isServiceCrafter(beginner), level >= 5);
+        assert.strictEqual(CraftShopService.canCraft(beginner, levelOneRecipe), level >= 5);
+        assert.strictEqual(CraftShopService.canCraft(beginner, { level: 2 }), false);
+    }
+    for (const craftLevel of [0, -1, NaN, Infinity]) {
+        assert.strictEqual(CraftShopService.isServiceCrafter({ ...artisan, craftLevel }), false);
+        assert.strictEqual(CraftShopService.canCraft({ ...artisan, craftLevel }, levelOneRecipe), false);
+    }
+    assert.strictEqual(CraftShopService.canCraft({ ...artisan, stats: { classId: 56, dwarvenCraftLevel: 0 } }, levelOneRecipe), false,
+        'an authoritative unlearned skill must override the class tree');
+    for (const level of [0, -1, NaN, Infinity, undefined]) {
+        assert.strictEqual(CraftShopService.canCraft(artisan, { level }), false, 'invalid recipes cannot be crafted');
+    }
     assert.strictEqual(CraftShopService.isServiceCrafter({ classId: 57, level: 70 }), true, 'a top-level class id counts too');
     const maestro = { level: 78, stats: { classId: 118 } };
     // C4: Maestro is the third craft class and keeps crafting after its third profession.

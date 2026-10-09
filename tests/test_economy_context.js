@@ -25,6 +25,22 @@ async function run() {
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const capture = Profile.capture;
+    try {
+        Profile.capture = () => ({});
+        let craftLevel = 0;
+        const actor = { fetchId: () => 999001, fetchLevel: () => 16, fetchClassId: () => 53,
+            backpack: { fetchItems: () => [], fetchDwarvenCraftLevel: () => craftLevel } };
+        const session = { coldLifeState: { craftLevel: 1, stats: { dwarvenCraftLevel: 1 } } };
+        const unlearned = Economy.stateForActor(actor, session);
+        assert.equal(unlearned.craftLevel, 0, 'native hot zero overrides stored cold capability');
+        craftLevel = 1;
+        const learned = Economy.stateForActor(actor, session);
+        assert.equal(learned.craftLevel, 1);
+        assert.notEqual(Economy.inputKey(unlearned), Economy.inputKey(learned), 'learning invalidates the planning inputs');
+        assert.notEqual(Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 0 } }),
+            Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 1 } }));
+    } finally { Profile.capture = capture; }
     const Board = invoke('GameServer/AfkTrade/BoardIndex').BoardIndex;
     const board = new Board();
     const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();

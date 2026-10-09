@@ -39,7 +39,7 @@ function seedDatabase() {
     insertCharacter.run(5300005, 'bot_pop_order', 'OrderMage', 22, 53, 0);
     insertCharacter.run(5300006, 'bot_pop_order', 'OrderCrafter', 57, 49, 0);
     seed.prepare('INSERT INTO clans(id, name, level, leaderId) VALUES (6300001, ?, 3, 5300001)').run('OrderClan');
-    // A Bounty Hunter outside the clan: Create Item 1, but not a crafter class.
+    // A Bounty Hunter outside the clan retains Create Item 1.
     seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp,
         sex, face, hair, hairColor, locX, locY, locZ) VALUES (5300007, 'bot_pop_order', 'OrderSpoiler', 55, 4, 60, 500, 250,
         0, 0, 0, 0, 83400, 148600, -3400)`).run();
@@ -114,8 +114,8 @@ async function main() {
         assert.strictEqual(queued.actionType, 'goal_plan', 'blocked crafts must be reviewed when roster or stock changes');
         const spoilerPlan = await CraftOrders.planFor({ id: 0, itemId: 1879, memberIds: [5300002, 5300007] },
             { id: 6300001, state: { memberIds: [] } }, 2, { source: null });
-        assert.strictEqual(spoilerPlan.craft.crafterName, null, 'a spoiler with Create Item is not a clan crafter');
-        assert.strictEqual(spoilerPlan.reasonCode, 'clan_craft_crafter_unavailable');
+        assert.strictEqual(spoilerPlan.craft.crafterName, 'OrderSpoiler', 'a spoiler with sufficient Create Item is a capable clan provider');
+        assert.notStrictEqual(spoilerPlan.reasonCode, 'clan_craft_crafter_unavailable');
 
         await stock(1870, 6); await stock(1871, 6); await stock(recipe.recipeItemId, 1);
         const created = await OrderService.create(await projection(), { itemId: 1879, amount: 2, strategy: 'craft', memberIds: members });
