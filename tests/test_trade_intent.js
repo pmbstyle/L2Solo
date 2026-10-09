@@ -2,7 +2,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const modulePath = '../src/GameServer/Bot/Economy/TradeIntent';
 const Intent = require(modulePath);
-const keys = ['power:101:7', 'stock:shots', 'stock:potions', 'book:123', 'enchant:123:4',
+const keys = ['power:101:7', 'stock:shots', 'stock:potions', 'stock:scrolls', 'book:123', 'enchant:123:4',
     'sa:123:555', 'henna:10', 'status:101', 'resale:101'];
 for (const key of keys) {
     const row = { key, itemId: 202, amount: 6, price: 11, recipeId: 301, valueHours: 2, valueRate: .01 };
@@ -68,3 +68,34 @@ const nonQuantitativeNpc = { ...network, plans: new Map([['item:101', nativeNpcP
 assert.deepEqual(loaded.exports.project({}, nonQuantitativeNpc, projection, () => 100).map(row => row.itemId), [202],
     'native NPC finished-good purchase is omitted while existing craft alternatives still project their inputs');
 console.log('PASS public intention source ownership: selected NPC omitted, alternative inputs traversed, future and player quotes retained, unchanged native queue and three-slot bound');
+
+// A supported scroll need must not defer unrelated gear intentions or bid review.
+for (const [key, category] of [['stock:shots', 1], ['stock:potions', 2], ['stock:scrolls', 3]]) {
+    assert.deepEqual(Intent.rootTuple(key), [2, category, 0]);
+    assert.equal(Intent.rootKey(2, category, 0), key);
+}
+assert.throws(() => Intent.rootKey(2, 4, 0));
+const scrollWish = preparedRoot('stock:scrolls', 736, plannedPurchase('afk', true, true));
+const mixedPrepared = { quantityPrepared: true, queue: [
+    preparedRoot('power:462:11', 462, plannedPurchase('afk', true, true)), scrollWish
+] };
+const mixedBefore = JSON.stringify(mixedPrepared);
+const mixedRows = Intent.project({}, mixedPrepared, {}, () => 124, 40);
+assert.deepEqual(mixedRows.map(row => row.itemId), [462, 736]);
+for (const row of mixedRows) assert.equal(Intent.decode(Intent.encode({ ...row, price: 100 })).key, row.key);
+assert.equal(JSON.stringify(mixedPrepared), mixedBefore);
+assert.deepEqual(Intent.project({}, { quantityPrepared: true, queue: [
+    mixedPrepared.queue[0], preparedRoot('stock:scrolls', 736, nativeNpcPlan)
+] }, {}, () => 124, 40).map(row => row.itemId), [462], 'NPC scroll purchase does not block peer gear or duplicate the NPC job');
+assert.equal(Intent.project({}, { quantityPrepared: true, queue: [
+    mixedPrepared.queue[0], { ...scrollWish, key: 'stock:food' }
+] }, {}, () => 124, 40), null, 'unknown identities still defer instead of granting unsupported spending');
+const scrollProjection = { nodes: [
+    ...projection.nodes,
+    { key: 'stock:scrolls', paths: [{ requirements: [{ key: 'item:736', amount: 10 }] }] },
+    { key: 'item:736', paths: [{ kind: 'buy' }] }
+] };
+const legacyScrollQueue = { queue: [...network.queue, { key: 'stock:scrolls', object: { itemId: 736 }, valueHours: 1, ratio: .01 }] };
+assert.equal(loaded.exports.project({ inventory: { 736: { amount: 4 } }, acceptedIncoming: { 736: 2 } },
+    legacyScrollQueue, scrollProjection, () => 124, 40).find(row => row.itemId === 736).amount, 4);
+console.log('PASS scroll identity preserves existing codes, mixed gear projection, NPC ownership and physical quantity allocation');
