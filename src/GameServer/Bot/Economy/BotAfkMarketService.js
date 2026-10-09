@@ -644,13 +644,24 @@ async function executePlan(state, plan, { step, beforeWrite = () => {}, prepared
         return { state: await require('./ColdShotEconomyService').execute(state, shot) };
     });
     if (require('../../AfkTrade/TradeMeetingService').hasPreparation(ownerId)) return { state, pending: true };
-    for (const lineId of (plan.withdraw || []).slice(0, 8)) await run(async () => {
-        const line = AfkTrade.boardIndex().ownerLines(ownerId).find(row => row.lineId === Number(lineId));
-        if (!line || line.storeType !== AfkTrade.SELL) throw Error('economy_plan_line_changed');
-        const result = await AfkTrade.repriceBotLines(ownerId, [], { withdrawals: [{
-            lineId: line.lineId, recordId: line.recordId, expectedRevision: line.revision, expectedPrice: line.price, expectedCount: line.count
-        }], canCommitReview: () => { beforeWrite(); return true; } });
-        if (result.skipped) throw Error('economy_plan_line_changed');
+    if (plan.withdraw?.length) await run(async () => {
+        const own = new Map(AfkTrade.boardIndex().ownerLines(ownerId).map(line => [line.lineId, line]));
+        const withdrawals = [];
+        let invalid = false;
+        for (const lineId of new Set(plan.withdraw.slice(0, 8).map(Number))) {
+            const line = own.get(lineId);
+            // The earlier board review or a fill may already have removed it.
+            // Its absence is the completed intent, not another stock return.
+            if (!line) continue;
+            if (line.storeType !== AfkTrade.SELL) { invalid = true; continue; }
+            withdrawals.push({ lineId: line.lineId, recordId: line.recordId,
+                expectedRevision: line.revision, previousPricing: line.pricing ? { ...line.pricing } : null });
+        }
+        // Use the same native batch writer as a board review: one transaction,
+        // one inventory publication and one fence per original record snapshot.
+        const result = withdrawals.length ? await AfkTrade.repriceBotLines(ownerId, [], { withdrawals,
+            canCommitReview: () => { beforeWrite(); return true; } }) : { changed: 0, skipped: 0 };
+        if (invalid || result.skipped) throw Error('economy_plan_line_changed');
         return result;
     });
     if (plan.sell?.length) await run(async () => {
