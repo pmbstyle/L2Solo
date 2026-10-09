@@ -3137,9 +3137,11 @@ const PopulationService = {
             if (meeting) {
                 return meeting.memberResults.reduce((chain, entry) => chain.then(() =>
                     LifeState.applyResolve(entry.state, entry.result)), Promise.resolve()).then(() =>
-                    BackgroundPartyState.createOrUpdate({ ...party, nextResolveAt: meeting.nextResolveAt,
+                    BackgroundPartyState.createOrUpdate({ ...party, ...meeting.partyPatch, nextResolveAt: meeting.nextResolveAt,
                         stats: { ...party.stats, ...meeting.partyPatch.stats } })).then(updatedParty =>
-                    ({ ok: true, party: updatedParty || party, debug: meeting.debug }));
+                    (meeting.partyPatch.status === 'dissolved'
+                        ? LifeState.clearParty(party.partyId, meeting.partyPatch.stats.partyBreakReason) : Promise.resolve())
+                        .then(() => ({ ok: true, party: updatedParty || party, debug: meeting.debug })));
             }
 
             if (partySessionExpired(party, startedAt)

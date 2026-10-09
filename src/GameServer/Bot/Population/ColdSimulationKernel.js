@@ -1662,7 +1662,7 @@ class ColdSimulationKernel {
             const memoryGroup = raid || paidHelp || resolution.atomic || (resolution.memberResults || []).some(({ result }) => result.memoryEvents?.length)
                 ? { id: `hunt:${run.grants.get(Number(run.party.leaderId))?.leaseId}`,
                     memberIds: resolution.memberResults.map(({ state }) => Number(state.characterId)) } : null;
-            if (raid || paidHelp) {
+            if (raid || paidHelp || resolvedParty.status === 'dissolved') {
                 resolvedParty.updatedAt = Math.max(startedAt, Number(run.party.updatedAt) + 1);
                 memoryGroup.partyChanges = [{ partyId: run.party.partyId, memberIds: run.party.memberIds,
                     expectedUpdatedAt: run.party.updatedAt, updatedAt: resolvedParty.updatedAt,

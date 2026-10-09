@@ -119,22 +119,66 @@ async function main() {
     assert.equal(selected.filter(message => message.type === 'claim_request').length, claimCount,
         'expired session review cannot restart the same held group work before its transition');
 
+    const victoryParty = { ...party, stats: { ...party.stats, objective: { sourceKind: 'raid', raidBossTemplateId: 10484 },
+        raidEncounter: { status: 'defeated', bossTemplateId: 10484, defeatedAt: at - 1000 } } };
+    for (const arrivalAt of [at - 1000, at + 10000]) {
+        const raidMembers = members.map(state => state.characterId === 1 ? state : { ...state,
+            stats: { ...state.stats, travel: { ...state.stats.travel, arrivalAt } } });
+        const terminal = Resolver.resolveMeetingLifecycle({ party: victoryParty, members: raidMembers, timestamp: at });
+        assert.equal(terminal.debug.reason, 'raid_already_defeated');
+        assert.equal(terminal.partyPatch.status, 'dissolved');
+        assert.equal(terminal.nextResolveAt, null);
+        assert(terminal.memberResults.every(({ result }) => result.materialize.exp === 0 && result.materialize.items.length === 0));
+        assert.deepEqual(terminal.memberResults[1].result.patch, {}, 'terminal raid grants no reward or replacement journey');
+        const raidMessages = [];
+        const terminalKernel = new ColdSimulationKernel({ now: () => at,
+            resolveSolo: () => { throw Error('completed roster resolves under group ownership'); },
+            resolveParty: input => Resolver.resolve(input),
+            projectResolve: (state, resolution) => ({ ...state, ...resolution.patch }),
+            emit: (type, payload) => raidMessages.push({ type, payload }) });
+        for (const state of raidMembers) {
+            terminalKernel.upsert({ state, context: {} });
+            terminalKernel.inFlight.set(state.characterId, { state, grant: grants.get(state.characterId),
+                partyId: party.partyId, claimRequestId: requestId });
+        }
+        terminalKernel.partyRuns.set(party.partyId, { party: victoryParty, members: raidMembers, grants,
+            requestId, spot: null, route: { needed: true, travelMs: 60000, spotId: 'wrong-spot' } });
+        await terminalKernel.resolvePartyGrant(party.partyId);
+        const raidBatch = raidMessages.find(message => message.type === 'proposal_batch');
+        assert(raidBatch, JSON.stringify(raidMessages));
+        const detached = raidBatch.payload.proposals.find(entry => entry.characterId === 2);
+        assert.equal(detached.nextState.party.partyId, null, 'native worker detachment releases completed raid membership');
+        assert.deepEqual(detached.nextState.stats.travel, raidMembers[1].stats.travel, 'future and due personal legs survive detachment');
+        assert.deepEqual(detached.nextState.stats.tradeMeeting, [7, 1]);
+        assert.equal(detached.atomicGroup.partyChanges[0].status, 'dissolved', 'terminal row is in the same fenced atomic group');
+        assert.equal(raidBatch.payload.proposals.find(entry => entry.partyResolution).partyResolution.party.status, 'dissolved');
+    }
+
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
     const saved = [];
-    const originals = [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate];
+    const originals = [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate, Life.clearParty];
     try {
         Life.statesForParty = async () => members;
         Life.applyResolve = async (state, resolution) => { const next = { ...state, ...resolution.patch }; saved.push(next); return next; };
         Parties.createOrUpdate = async next => next;
+        const releases = [];
+        Life.clearParty = async (...args) => releases.push(args);
         const legacy = await Population.resolveBackgroundParty(party);
         assert.equal(legacy.debug.reason, 'party_meeting_lifecycle');
         assert.deepEqual(saved[1].loc, to);
         assert.equal(saved[1].activity, 'shopping');
         assert.equal(saved[1].party.partyId, party.partyId);
+        saved.length = 0;
+        const legacyVictory = await Population.resolveBackgroundParty(victoryParty);
+        assert.equal(legacyVictory.party.status, 'dissolved');
+        assert.equal(legacyVictory.debug.reason, 'raid_already_defeated');
+        assert.deepEqual(releases, [[party.partyId, 'raid_defeated']], 'legacy path uses native member release');
+        assert.deepEqual(saved[1].stats.travel, members[1].stats.travel);
+        assert.deepEqual(saved[1].stats.tradeMeeting, [7, 1]);
     } finally {
-        [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate] = originals;
+        [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate, Life.clearParty] = originals;
     }
     assert.equal(Resolver.resolveMeetingLifecycle({ party, members: members.map(state => ({ ...state, stats: {} })), timestamp: at }), null,
         'the terminal meeting event restores the ordinary party path');

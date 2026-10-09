@@ -93,9 +93,28 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
     }));
 }
 
+function completedRaidResult(party, members, completed, timestamp) {
+    return {
+        memberResults: members.map(state => ({ state, result: {
+            patch: {}, events: [], memoryEvents: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000
+        } })), events: [], nextResolveAt: null,
+        partyPatch: { status: 'dissolved', nextResolveAt: null, stats: {
+            raidEncounter: completed, pveEncounter: null, restUntil: null,
+            partyBreakReason: 'raid_defeated', dissolvedAt: timestamp, lastResolveAt: timestamp
+        } },
+        debug: { reason: 'raid_already_defeated', fights: 0, wins: 0,
+            raidBossTemplateId: completed.bossTemplateId }
+    };
+}
+
 const BackgroundPartyResolver = {
     resolveMeetingLifecycle({ party, members, timestamp = Date.now(), episodeId = null, assessRelationship = null }) {
         if (!party || !members?.length || !Assembly.meetingPending(members)) return null;
+        // A confirmed hot victory is terminal even if a personal agreement is held.
+        if (party.stats?.objective?.sourceKind === 'raid' && party.stats?.raidEncounter?.status === 'defeated') {
+            return { ...completedRaidResult(party, members, party.stats.raidEncounter, timestamp), atomic: true };
+        }
         // Membership survives a paid personal journey. The roster owner
         // advances finite transitions without replacing the meeting leg.
         const revival = require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
@@ -152,18 +171,7 @@ const BackgroundPartyResolver = {
         const completed = party.stats?.raidEncounter?.status === 'defeated'
             ? party.stats.raidEncounter : raidSnapshot;
         if (raidObjective && completed?.status === 'defeated') {
-            return {
-                memberResults: members.map(state => ({ state, result: {
-                    patch: {}, events: [], memoryEvents: [],
-                    materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000
-                } })), events: [], nextResolveAt: null,
-                partyPatch: { status: 'dissolved', nextResolveAt: null, stats: {
-                    raidEncounter: completed, pveEncounter: null, restUntil: null,
-                    partyBreakReason: 'raid_defeated', dissolvedAt: timestamp, lastResolveAt: timestamp
-                } },
-                debug: { reason: 'raid_already_defeated', fights: 0, wins: 0,
-                    raidBossTemplateId: completed.bossTemplateId }
-            };
+            return completedRaidResult(party, members, completed, timestamp);
         }
 
         if (raidObjective && spot.raidWorldAvailable === false) {
