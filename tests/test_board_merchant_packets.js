@@ -15,6 +15,10 @@ const Database = invoke('Database');
 const World = invoke('GameServer/World/World');
 const Purchase = invoke('GameServer/Network/Request/Purchase');
 const Sell = invoke('GameServer/Network/Request/Sell');
+const BoardWindow = invoke('GameServer/AfkTrade/PlayerBoardWindow');
+const PrivateStoreBuy = invoke('GameServer/Network/Request/PrivateStoreBuy');
+const PrivateStoreSell = invoke('GameServer/Network/Request/PrivateStoreSell');
+const HtmlLink = invoke('GameServer/Network/Request/HtmlLink');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-board-merchant-packets.sqlite');
 const VARNISH = 1865;
 
@@ -71,6 +75,7 @@ function packet(values) {
     Database.init();
     DataCache.init();
     World.user = { sessions: [], revision: 0 };
+    await AfkTrade.init();
 
     const seller = await player('bot_e43_seller', 'E43Seller', [{ selfId: VARNISH, amount: 5 }]);
     const buyer = await player('bot_e43_buyer', 'E43Buyer', [{ selfId: 57, amount: 1000 }]);
@@ -108,12 +113,51 @@ function packet(values) {
     }
     assert.deepStrictEqual(failures, [], 'E43: an AFK projection trades only through the board');
 
+    // Follow the board's actual Buy/Sell links into Select and the native
+    // store packets, then submit the C4 transaction payloads to SQLite.
+    const click = async (side, label) => {
+        BoardWindow.show(customer.session, { side, town: 'Giran' });
+        const reply = customer.session.sent.at(-1);
+        assert.equal(reply[0], 0x0f);
+        const html = reply.toString('utf16le', 5, reply.length - 6);
+        const command = new RegExp('action="bypass -h (board answer [^"]+)"><font[^>]*>' + label + '</font>').exec(html)[1];
+        customer.session.sent = [];
+        HtmlLink(customer.session, Buffer.concat([Buffer.from([0x21]), Buffer.from(command + '\0', 'utf16le')]));
+        await new Promise(resolve => setImmediate(resolve));
+    };
+    await click(AfkTrade.SELL, 'Buy');
+    const sellList = customer.session.sent.find(row => row[0] === 0x9b);
+    assert(sellList, 'Buy opens the native seller list');
+    assert.equal(sellList.readInt32LE(13), 1, 'the native seller list has a purchasable row');
+    let projection = AfkTrade.findOwnerProjection(seller.id);
+    const lot = projection.actor.fetchPrivateStore().items[0];
+    const purchase = packet([projection.actor.fetchId(), 1, lot.objectId, 2, lot.price]);
+    purchase[0] = 0x79;
+    await PrivateStoreBuy(customer.session, purchase);
+    assert.equal(await amount(customer.id, VARNISH), 7);
+    assert.equal(await amount(customer.id, 57), 978);
+    assert.equal((await Database.fetchAfkTradeShops(seller.id))[0].lines[0].count, 1);
+
+    await click(AfkTrade.BUY, 'Sell');
+    assert(customer.session.sent.some(row => row[0] === 0xb8), 'Sell opens the native buyer list');
+    projection = AfkTrade.findOwnerProjection(buyer.id);
+    const inventory = customer.session.actor.backpack.fetchItemFromSelfId(VARNISH);
+    const request = Buffer.alloc(29);
+    request[0] = 0x96;
+    [projection.actor.fetchId(), 1, inventory.fetchId(), VARNISH].forEach((value, index) => request.writeInt32LE(value, 1 + index * 4));
+    request.writeInt32LE(2, 21); request.writeInt32LE(7, 25);
+    await PrivateStoreSell(customer.session, request);
+    assert.equal(await amount(customer.id, VARNISH), 5);
+    assert.equal(await amount(customer.id, 57), 992);
+    assert.equal((await Database.fetchAfkTradeShops(buyer.id))[0].lines[0].count, 1);
+
     AfkTrade._resetForTests();
     await Database.close();
     clean();
-    console.log('Board: the NPC trade packets never trade an AFK projection (E43)');
+    console.log('Board: native Buy/Sell links open stores and settle C4 packets; NPC packets cannot bypass escrow (E43)');
 })().catch(async (error) => {
     console.error(error);
+    AfkTrade._resetForTests();
     try { await Database.close(); } catch (_) { /* cleanup only */ }
     clean();
     process.exitCode = 1;

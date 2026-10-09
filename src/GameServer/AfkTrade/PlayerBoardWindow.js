@@ -151,6 +151,13 @@ function create({ service = () => require('./PlayerBoardService'),
         session.dataSendToMe(response().npcHtml(session.actor.fetchId(), html));
         return html;
     }
+    function track(session, result) {
+        const loc = result.loc, coords = [loc?.locX, loc?.locY, loc?.locZ].map(Number);
+        if (!loc || !coords.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 2000000)) return false;
+        session.playerBoardWaypoint = { x: coords[0], y: coords[1], z: coords[2], name: text(result.ownerName, 'Merchant', 100) };
+        waypoints().syncDirection(session, session.playerBoardWaypoint);
+        return true;
+    }
     function show(session, input = {}, message = '') {
         if (!session?.actor) return null;
         const query = normalize(session, input);
@@ -181,11 +188,26 @@ function create({ service = () => require('./PlayerBoardService'),
         const query = session.playerBoardView || normalize(session);
         if (result.action === 'store_opened') return result;
         if (result.ok && result.action === 'locate') {
-            const loc = result.loc, coords = [loc?.locX, loc?.locY, loc?.locZ].map(Number);
-            if (!coords.every(n => Number.isSafeInteger(n) && Math.abs(n) <= 2000000)) return show(session, query, 'The merchant location is unavailable.');
-            session.playerBoardWaypoint = { x: coords[0], y: coords[1], z: coords[2], name: text(result.ownerName, 'Merchant', 100) };
-            waypoints().syncDirection(session, session.playerBoardWaypoint);
+            if (!track(session, result)) return show(session, query, 'The merchant location is unavailable.');
             show(session, query, 'Merchant location marked on your radar.');
+        } else if (result.ok && ['meet', 'contact'].includes(result.action)) {
+            const workshop = request.kind === 'workshop', marked = track(session, result);
+            const body = Html.font(workshop ? 'Meet the crafter' : result.side === BUY ? 'Sell items' : 'Buy items', Html.COLOR.title) + '<br>'
+                + Html.keyValueRows([
+                    ['Item', Html.esc(itemName(workshop ? result.productId : request.selfId))],
+                    [workshop ? 'Fee' : 'Price each', Html.font(amount(request.price) + ' a', Html.COLOR.title)],
+                    ['Merchant', Html.esc(text(result.ownerName, 'Merchant', 100))],
+                    ['Town', Html.esc(text(result.town, 'the local town', 64))]
+                ]) + '<br>'
+                + (result.action === 'contact' ? 'This advertisement has no private shop. Contact the merchant to arrange the trade.'
+                    : result.conditional ? 'Go to the meeting point, then click Try again to choose a quantity. The merchant comes after you agree to the trade.'
+                        : workshop ? 'Go to the crafter, then click Try again to review the materials and confirm crafting.'
+                            : 'Go to the private shop, then click Try again to open its trade window.') + '<br>'
+                + Html.font(marked ? 'The location is marked on your radar.' : 'The merchant location is unavailable.', Html.COLOR.warn);
+            send(session, page(body, Html.actionFooter([
+                ...(result.action === 'meet' ? [{ label: 'Try again', command: 'board answer ' + requestOf(request) }] : []),
+                { label: 'Back', command: command(query, query.cursor) }
+            ])));
         } else if (result.ok && result.action === 'confirm_trade') {
             const owner = text(result.ownerName, 'Merchant', 100);
             const verb = result.side === BUY ? 'Sell' : 'Buy';

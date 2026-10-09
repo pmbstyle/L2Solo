@@ -91,10 +91,11 @@ async function main() {
     assert.equal(session.playerBoardView.side, SELL); assert.equal(session.playerBoardView.town, 'Giran');
     const sellRequest = { kind: 'shop', id: 1, lineId: 1, selfId: 100, price: 18, revision: 4 };
     assert.equal((await window.answer(session, sellRequest)).action, 'meet');
-    assert.match(htmlVisible(packets.at(-1)), /Kerrigan sells in Giran\./);
+    assert.match(htmlVisible(packets.at(-1)), /Buy items.*Merchant.*Kerrigan.*Town.*Giran.*Go to the private shop.*marked on your radar/);
+    const retry = /action="bypass -h (board answer [^"]+)"><font[^>]*>Try again<\/font>/.exec(packets.at(-1))[1];
     x = 1000;
     const before = packets.length;
-    assert.equal((await window.answer(session, sellRequest)).action, 'store_opened');
+    assert.equal((await window.handle(session, retry.split(' '))).action, 'store_opened');
     assert.equal(selects, 2); assert.equal(packets.length, before, 'the normal store window is not replaced by another HTML page');
     const beforeLocation = packets.length;
     session.questWaypoints = new Map([['quest', [1, 2, 3]]]);
@@ -111,7 +112,7 @@ async function main() {
     window.show(session, { side: BUY, town: 'Dion' });
     assert.match(packets.at(-1), /board answer buy_ad 2 2 1864 18 4/);
     assert.equal((await window.handle(session, ['board', 'answer', 'buy_ad', '2', '2', '1864', '18', '4'])).action, 'contact');
-    assert.match(htmlVisible(packets.at(-1)), /Mirella buys Coal in Dion\. Meet there\./);
+    assert.match(htmlVisible(packets.at(-1)), /Sell items.*Item.*Coal.*Merchant.*Mirella.*Town.*Dion.*Contact the merchant/);
     visits = 0;
     await window.handle(session, ['board', 'search', 'Coal']);
     assert.match(packets.at(-1), /board list buy Dion 1864 -/);
@@ -126,10 +127,10 @@ async function main() {
     await window.handle(session, ['board', 'town', 'Dion']);
     board.put(record(3, 1835, { kind: 'sell_ad', ownerId: 45 }), {});
     assert.equal((await window.handle(session, ['board', 'answer', 'sell_ad', '3', '3', '1835', '18', '4'])).action, 'contact');
-    assert.match(htmlVisible(packets.at(-1)), /Kerrigan sells in Dion\./);
+    assert.match(htmlVisible(packets.at(-1)), /Buy items.*Merchant.*Kerrigan.*Town.*Dion.*Contact the merchant/);
     board.put(record(4, 1864, { kind: 'order', storeType: BUY, ownerId: 46, town: 'Dion' }), {});
     assert.equal((await window.handle(session, ['board', 'answer', 'order', '4', '4', '1864', '18', '4'])).action, 'contact');
-    assert.match(htmlVisible(packets.at(-1)), /Mirella buys Coal in Dion\. Meet there\./);
+    assert.match(htmlVisible(packets.at(-1)), /Sell items.*Item.*Coal.*Merchant.*Mirella.*Town.*Dion.*Contact the merchant/);
     window.show(session, { side: SELL, town: 'Giran' });
     board.put({ ...sell, revision: 5, lines: [{ ...sell.lines[0], price: 19 }] }, {});
     assert.equal((await window.answer(session, sellRequest)).reason, 'record_changed');
@@ -139,7 +140,7 @@ async function main() {
     window.show(session, { side: 'workshop' });
     const order = { kind: 'workshop', ownerId: 55, recipeId: 17, price: 1200, revision: 2 };
     assert.equal((await window.answer(session, order)).action, 'meet');
-    assert.match(htmlVisible(packets.at(-1)), /Brokk crafts Soulshot: C-grade in Giran\. Meet there\./);
+    assert.match(htmlVisible(packets.at(-1)), /Meet the crafter.*Soulshot: C-grade.*Brokk.*Giran.*Go to the crafter.*marked on your radar/);
     x = 5000;
     assert.equal((await window.answer(session, order)).action, 'confirm'); assert.equal(crafts, 0); assert.equal(adena, 5000);
     assert.match(htmlVisible(packets.at(-1)), /Product.*Soulshot: C-grade.*Fee.*1,200 a.*Crafter.*Brokk/);

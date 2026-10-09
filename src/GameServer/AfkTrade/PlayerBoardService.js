@@ -121,7 +121,9 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
             && consent.revision === request.revision) {
             const saved = await meetings().receipt?.(consent.preparationId, playerId);
             if (!current()) return { ok: false, reason: 'player_unavailable' };
-            if (saved) {
+            // A staged receipt is only a pending preparation. Explicit player
+            // consent still has to call accept before any trade is reserved.
+            if (saved && ['accepted', 'completed', 'cancelled'].includes(saved.outcome)) {
                 session.playerBoardPreparation = undefined;
                 return { ok: true, action: saved.outcome === 'completed' || saved.outcome === 'cancelled' ? saved.outcome : 'agreed', pending: saved.pending };
             }
@@ -146,7 +148,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         if (line.custodyPolicy === 1) {
             const loc = { locX: Number(offer.store.locX), locY: Number(offer.store.locY), locZ: Number(offer.store.locZ) };
             if (distance(session.actor, loc) > SHOP_RANGE) return { ok: true, action: 'meet', ownerId: line.ownerId,
-                ownerName: offer.sourceName, side: line.storeType, town: line.town, loc };
+                ownerName: offer.sourceName, side: line.storeType, town: line.town, loc, conditional: true };
             const amount = Number(request.amount ?? 1);
             if (!Number.isSafeInteger(amount) || amount <= 0 || amount > line.count) return { ok: false, reason: 'record_changed' };
             if (request.confirmed === true) {
