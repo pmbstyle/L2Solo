@@ -1776,7 +1776,10 @@ class ColdSimulationCoordinator {
                 ...candidate,
                 state,
                 options: {
-                    allowParty: candidate.purpose?.kind === 'party',
+                    // Native meeting custody may retain party membership.
+                    // Its finite travel/recovery still belongs to this actor.
+                    allowParty: candidate.purpose?.kind === 'party'
+                        || candidate.purpose?.kind === 'resolver' && !!state.stats?.tradeMeeting,
                     allowLifecycle: ['party', 'resolver'].includes(candidate.purpose?.kind)
                 }
             });

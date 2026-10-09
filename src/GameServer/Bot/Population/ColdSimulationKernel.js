@@ -175,6 +175,14 @@ function partyIntegrityInvalid(context = {}, partySession = {}) {
 
 function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}) {
     const stateDue = Number(state.timing?.nextResolveAt || 0);
+    // Shared hunt/review snapshots may have advanced the personal timer.
+    // An accepted obligation keeps its own physical transition deadline,
+    // including when the merchant is also the party leader.
+    if (state.stats?.tradeMeeting) {
+        const transitionDue = state.activity === 'traveling' ? Number(state.stats.travel?.arrivalAt || 0)
+            : state.activity === 'resting' ? Number(state.stats.restUntil || 0) : 0;
+        return transitionDue > 0 ? transitionDue : stateDue > 0 ? stateDue : timestamp;
+    }
     // The party row is the durable scheduling authority for a party resolve.
     // A freshly assigned leader can briefly carry no personal due time, and
     // later leader snapshots can also lag behind an advanced party schedule.
@@ -965,6 +973,13 @@ class ColdSimulationKernel {
                 const attachedMembers = members.filter((member) => (
                     String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
                 ));
+                // The enrolled participant queue releases this obligation.
+                // Do not claim the merchant as part of a shared hunt or let
+                // assembly/recovery rewrite its independent travel deadline.
+                if (members.some(member => member.stats?.tradeMeeting)) {
+                    this.requeue(id, timestamp + 30000);
+                    continue;
+                }
                 if (members.some(member => member.stats?.pvpEncounter)) {
                     this.requeue(id, timestamp + 1000);
                     continue;
@@ -1869,7 +1884,7 @@ class ColdSimulationKernel {
                 ...(projection?.buffOffer ? { buffOffer: { ...projection.buffOffer,
                     providerRevision: active.grant.revision } } : {}),
                 result,
-                options: { allowLifecycle: true }
+                options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
             this.dirty.set(Number(characterId), proposal);

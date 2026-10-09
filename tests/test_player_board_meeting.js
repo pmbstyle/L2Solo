@@ -14,8 +14,8 @@ const HtmlLink = invoke('GameServer/Network/Request/HtmlLink');
 const seller = 730501, buyer = 730502;
 const point = { locX: 83396, locY: 147904, locZ: -3404 };
 const workerFaults = [];
-const waitFor = async (predicate, label) => {
-    const deadline = Date.now() + 30000;
+const waitFor = async (predicate, label, timeoutMs = 30000) => {
+    const deadline = Date.now() + timeoutMs;
     while (!await predicate()) {
         if (Date.now() > deadline) {
             const { worker, queue, snapshots } = Coordinator.snapshot();
@@ -133,6 +133,7 @@ const waitFor = async (predicate, label) => {
         Afk.refreshRecord(remoteSale.shop);
         const recoveredAt = Date.now() - 1000;
         await Life.upsertState({ ...Life.cachedState(seller), activity: 'resting',
+            party: { partyId: 'retained-meeting-party' },
             loc: { ...point, locX: point.locX + 400 },
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
             vitals: { hp: 10, maxHp: 187, mp: 74, maxMp: 74 },
@@ -165,6 +166,8 @@ const waitFor = async (predicate, label) => {
             && (await fixture.amount(seller, 57)) === 1000000 + 4079 + 4080, 'rest, native travel and delivery');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080);
         assert.equal(await fixture.amount(seller, 57), 1000000 + 4079 + 4080);
+        assert.equal(Life.cachedState(seller).party.partyId, 'retained-meeting-party',
+            'real worker claims and commits finish the individual obligation without erasing party membership');
         await waitFor(() => !Meetings.isPlayerWaiting(seller), 'retired waiting-player priority');
         await waitFor(() => boughtBucklers() === 2, 'second delivered item receipt');
         assert.equal(status().filter(text => /Trade completed/.test(text)).length, 2);
@@ -178,6 +181,7 @@ const waitFor = async (predicate, label) => {
         await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
         const merchantArrival = Date.now() + 150000;
         await Life.upsertState({ ...Life.cachedState(seller), activity: 'traveling',
+            party: { partyId: null },
             loc: { ...point, locX: point.locX + 400 },
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
             stats: { ...Life.cachedState(seller).stats, restUntil: null, travel: {
@@ -204,6 +208,50 @@ const waitFor = async (predicate, label) => {
         assert.equal(pickups().length, 2, 'returning reserved payment on cancellation is not new loot');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080, 'cancelling the priority transition refunds native escrow');
         assert.equal(await fixture.amount(seller, 20), 1, 'cancellation returns the reserved item');
+
+        // The reported field merchant retained a party while its paid SoE
+        // was due. Exercise that same route with authored C4 gatekeepers.
+        const oldNpc = World.npc;
+        const npcIndex = require('../src/GameServer/World/NpcObjectIndex');
+        World.npc = { spawns: [7848, 7233].map(selfId => {
+            const loc = Data.npcSpawns.flatMap(zone => zone.spawns || [])
+                .find(spawn => spawn.selfId === selfId).coords[0];
+            return { fetchId: () => selfId, fetchSelfId: () => selfId,
+                fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ };
+        }) };
+        npcIndex.reset(World); World.npc.spawns.forEach(npc => npcIndex.add(World, npc));
+        try {
+            await Database.setItem(seller, { selfId: 736, name: 'Scroll of Escape', amount: 2, slot: 0 });
+            await Life.upsertState({ ...Life.cachedState(seller), activity: 'hunting',
+                party: { partyId: 'retained-meeting-party' },
+                loc: { locX: 120937, locY: -5280, locZ: -3784 }, currentRegion: 'Aden',
+                inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
+                stats: { ...Life.cachedState(seller).stats, restUntil: null, travel: null },
+                timing: { lastResolvedAt: Date.now(), nextResolveAt: Date.now() + 3600000 } }, 'field_merchant_fixture');
+            Board.show(session, { side: 1, town: 'Giran' });
+            await click(new RegExp('action="bypass -h (board answer sell_ad ' + cancelSale.shop.id + ' [^"]+)"').exec(html())[1]);
+            await click('board agree');
+            await waitFor(() => !session.playerBoardAgreePending, 'field merchant agreement');
+            await waitFor(() => Life.cachedState(seller).stats.travel?.meetingId, 'native SoE leg');
+            const [fieldMeeting] = await Database.fetchTradeMeetingsForOwner(buyer);
+            assert.equal(JSON.parse(fieldMeeting.legA).scroll, true);
+            assert.equal(await fixture.amount(seller, 736), 1, 'native custody consumes the held scroll once');
+            assert.equal(await fixture.amount(buyer, 20), 2, 'goods stay reserved while the merchant is travelling');
+            Coordinator.setPauseReason('fixture', false);
+            await waitFor(async () => await fixture.amount(buyer, 20) === 3
+                && await fixture.amount(seller, 57) === 1000000 + 4079 + 4080 + 4081 - 20400,
+            'SoE, two gatekeepers and native delivery', 45000);
+            assert.equal(await fixture.amount(seller, 736), 1, 'later legs never consume another scroll');
+            assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080 - 4081);
+            assert.equal(await fixture.amount(seller, 57), 1000000 + 4079 + 4080 + 4081 - 20400,
+                'each authored gatekeeper fee is charged once and custody pays the seller once');
+            await waitFor(() => boughtBucklers() === 3, 'field purchase standard receipt');
+            assert.equal(status().filter(text => /Trade completed/.test(text)).length, 3);
+            assert.equal(Life.cachedState(seller).party.partyId, 'retained-meeting-party');
+        } finally {
+            World.npc = oldNpc;
+            npcIndex.reset(World); oldNpc?.spawns?.forEach(npc => npcIndex.add(World, npc));
+        }
         console.log('PASS player HTML links, large native bag, worker consent, rest, native travel, conserved delivery and cancelled priority');
     } finally {
         Meetings.reset();

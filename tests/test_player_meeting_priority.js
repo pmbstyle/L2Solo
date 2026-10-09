@@ -82,6 +82,39 @@ function addParty(kernel, dueAt) {
     future.advance(1000);
     assert.equal(future.kernel.dueCandidates(future.now(), 1)[0].characterId, 30);
 
+    for (const leader of [false, true]) {
+        const grouped = fixture(8), merchant = { ...state(30, 500000, true), activity: 'traveling',
+            party: { partyId: 'meeting-party' },
+            stats: { tradeMeeting: [43, 1], travel: { arrivalAt: 99000 } } };
+        const peer = { ...state(31, 1000), party: { partyId: 'meeting-party' } };
+        const party = { partyId: 'meeting-party', leaderId: leader ? 30 : 31,
+            memberIds: [30, 31], nextResolveAt: 500000, stats: { sessionReview: { nextAt: 500001 } } };
+        grouped.kernel.upsert({ state: merchant, context: { playerWaiting: true,
+            isPartyLeader: leader, party, partyMembers: [merchant, peer] } });
+        grouped.kernel.upsert({ state: peer, context: { isPartyLeader: !leader, party,
+            partyMembers: [merchant, peer] } });
+        const candidates = grouped.kernel.dueCandidates(grouped.now(), 8);
+        assert.deepEqual(candidates.map(row => [row.characterId, row.purpose.kind]), [[30, 'resolver']],
+            'a grouped merchant uses its overdue physical arrival, including when it leads the party');
+        assert.equal(grouped.kernel.partyRuns.size, 0, 'the hunt must not acquire or rewrite a meeting participant');
+    }
+
+    const suspended = fixture(8);
+    const busyMerchant = { ...state(30, 101000, true), party: { partyId: 'waiting-hunt' } };
+    const waitingLeader = { ...state(31, 1000), party: { partyId: 'waiting-hunt' } };
+    const waitingParty = { partyId: 'waiting-hunt', leaderId: 31, memberIds: [30, 31], nextResolveAt: 1000 };
+    suspended.kernel.upsert({ state: busyMerchant, context: { playerWaiting: true } });
+    suspended.kernel.upsert({ state: waitingLeader, context: { isPartyLeader: true,
+        party: waitingParty, partyMembers: [busyMerchant, waitingLeader] } });
+    assert.deepEqual(suspended.kernel.dueCandidates(suspended.now(), 8), [],
+        'an old hunt cannot claim a merchant whose independent recovery has not finished');
+    assert.equal(suspended.kernel.states.get(30).state.timing.nextResolveAt, 101000);
+    suspended.advance(30000);
+    suspended.kernel.upsert({ state: { ...busyMerchant, activity: 'grouped', stats: {} }, context: {} });
+    assert.deepEqual(suspended.kernel.dueCandidates(suspended.now(), 8)
+        .map(row => [row.characterId, row.purpose.kind]), [[30, 'party'], [31, 'party']],
+    'the retained party resumes its ordinary atomic hunt after the obligation clears');
+
     for (const waitingAtEnd of [false, true]) {
         const refresh = fixture(1), merchant = state(30, 99000, true);
         refresh.kernel.upsert({ state: state(1, 1000), context: {} });
