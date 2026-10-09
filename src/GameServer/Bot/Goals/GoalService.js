@@ -32,26 +32,27 @@ function reviewDecision(state, existing, options, timestamp) {
     const activeMarketGoal = isMarketGoal(existing?.current);
     if (existing?.current?.nextReviewAt > timestamp && existing.current.status === 'active'
         && !marketCandidate && !activeMarketGoal
-        && Number.isSafeInteger(existing.inputHash) && candidates[0]?.inputHash === existing.inputHash) return { result: existing, unchanged: true, goal: null, candidates };
+        && Number.isSafeInteger(existing.inputHash) && candidates[0]?.inputHash === existing.inputHash) return { result: existing, unchanged: true, goal: null, candidates, economy };
 
     const goal = GoalPlanner.plan(candidates, timestamp);
     if (!goal) {
         if (existing?.current?.type === 'sell_inventory'
             && ['planned', 'active', 'blocked'].includes(existing.current.status)
             && economy && !economy.intentPending && !economy.routePending && !state.incomingPending) {
-            return { result: null, unchanged: false, candidates,
+            return { result: null, unchanged: false, candidates, economy,
                 goal: { ...existing.current, status: 'abandoned', reviewedAt: timestamp, nextReviewAt: timestamp } };
         }
-        return { result: null, unchanged: true, goal: null, candidates };
+        return { result: null, unchanged: true, goal: null, candidates, economy };
     }
     if (existing?.current?.type === goal.type) goal.createdAt = existing.current.createdAt;
-    return { result: null, unchanged: false, goal, candidates };
+    return { result: null, unchanged: false, goal, candidates, economy };
 }
 
-// A review hands back the needs it evaluated (not stored), so the AFK market
-// reconcile that follows does not evaluate them again.
-function withCandidates(snapshot, candidates) {
-    return snapshot ? { ...snapshot, candidates } : null;
+// A review hands back the needs it evaluated and the economy it read (not
+// stored), so the AFK market reconcile and the market trip that follow do not
+// evaluate them again for the same state.
+function withCandidates(snapshot, candidates, economy) {
+    return snapshot ? { ...snapshot, candidates, economy } : null;
 }
 
 const GoalService = {
@@ -86,10 +87,10 @@ const GoalService = {
 
         const choose = (existing) => {
             const decision = reviewDecision(state, existing, options, timestamp);
-            if (decision.unchanged) return withCandidates(decision.result, decision.candidates);
+            if (decision.unchanged) return withCandidates(decision.result, decision.candidates, decision.economy);
             return GoalState.set(state.characterId, decision.goal, { inputHash: decision.candidates[0]?.inputHash }).then(saved => {
                 if (saved) invoke('GameServer/Bot/AI/BotClanChat').onGoal(state, saved.current, existing?.current, timestamp);
-                return withCandidates(saved, decision.candidates);
+                return withCandidates(saved, decision.candidates, decision.economy);
             });
         };
 
@@ -126,7 +127,7 @@ const GoalService = {
                 }
                 return decisions.map(({ state, decision }) => withCandidates(
                     decision.unchanged ? decision.result : savedById.get(Number(state.characterId)) || null,
-                    decision.candidates));
+                    decision.candidates, decision.economy));
             });
         });
     }

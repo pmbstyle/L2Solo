@@ -373,8 +373,8 @@ function joinedBackgroundParty(state) {
 // WTB, or beginMarketTravel would refuse) and starts from the refunded
 // state. If the order cannot be withdrawn, the bot does not leave; a caller
 // that holds the pre-refund state must not apply it after a refund.
-async function marketTravelWithRefund(state, goal, timestamp = Date.now()) {
-    const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp);
+async function marketTravelWithRefund(state, goal, timestamp = Date.now(), economy = null) {
+    const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp, { economy });
     if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
     const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
@@ -515,7 +515,8 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         const need = currentMember === current ? cleanupNeeded : PartyMarketBreak.memberNeed(party, currentMember, timestamp);
         if (!canTakePartyMarketBreak(party, members, currentMember, timestamp, need)) continue;
         const travel = GoalExecutor.beginMarketTravel(currentMember,
-            PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp, need), timestamp);
+            PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp, need), timestamp,
+            { economy: currentMember === current ? goalSnapshot?.economy : null });
         if (!travel) continue;
         const detached = await LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, timestamp, need),
             'market_break', { ownerHandoff: true });
@@ -3086,7 +3087,7 @@ const PopulationService = {
                 if (!current || current !== state) return null;
                 const remote = await BotAfkMarketService.reconcile(current, snapshot?.current, snapshot?.candidates);
                 if (remote.changed) return remote.state;
-                const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current);
+                const travel = GoalExecutor.beginMarketTravel(current, snapshot?.current, Date.now(), { economy: snapshot?.economy });
                 if (!travel) return null;
                 const startedAt = Config.developerDiagnostics ? Date.now() : 0;
                 const saved = await LifeState.upsertState(travel, 'reconciled_market_travel');
@@ -3314,7 +3315,8 @@ const PopulationService = {
                         return [...activeMembers, currentMember];
                     }
                     const travel = GoalExecutor.beginMarketTravel(currentMember,
-                        PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, Date.now(), need));
+                        PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, Date.now(), need), Date.now(),
+                        { economy: currentMember === member ? goalSnapshot?.economy : null });
                     if (!travel) return [...activeMembers, currentMember];
                     return LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, Date.now(), need), 'market_break').then((departed) => {
                         if (departed) marketDeparture = departed;
@@ -3461,7 +3463,7 @@ const PopulationService = {
                     ? LifeState.upsertState(cleanupTrip, 'inventory_cleanup_market_travel').then((saved) => saved || updatedState)
                     : recoveredForMarket
                     ? GoalService.review(updatedState).then(async (goalSnapshot) => {
-                        const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current);
+                        const travelState = await marketTravelWithRefund(updatedState, goalSnapshot?.current, Date.now(), goalSnapshot?.economy);
                         return travelState
                             ? LifeState.upsertState(travelState, 'goal_market_travel_after_recovery').then((saved) => saved || travelState)
                             : LifeState.cachedState(updatedState.characterId) || updatedState;
@@ -3780,7 +3782,8 @@ const PopulationService = {
                         const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
                         const current = remote.state || marketState;
                         const travelState = tripEdge || SurvivalFloor.forState(current)?.action === 'unload'
-                            ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current) : null;
+                            ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current, Date.now(),
+                                { economy: current === marketState ? goalSnapshot?.economy : null }) : null;
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
                     });
                     });
@@ -3831,7 +3834,7 @@ const PopulationService = {
                 if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                     return { ok: false, reason: 'state_changed', state: current };
                 }
-                const travel = await marketTravelWithRefund(current, goal?.current);
+                const travel = await marketTravelWithRefund(current, goal?.current, Date.now(), goal?.economy);
                 const latest = LifeState.cachedState(state.characterId) || current;
                 if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
                 if (travel) {

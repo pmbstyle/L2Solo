@@ -22,8 +22,8 @@ function marketTown(name = 'Giran') {
 }
 
 // A bot with karma travels only to Floran: ColdTrip.townPlan refuses the
-// other towns.
-function beginMarketTravel(state, goal, timestamp = Date.now()) {
+// other towns. economy: the caller's economy of this same state, if it has one.
+function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null } = {}) {
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     if (BotErrands.busyWith(state, MARKET_TRIP_BUSY_FLAGS)) return null;
     const buyingGear = goal.type === 'upgrade_gear'
@@ -50,7 +50,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
             if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
         }
         if (!invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
-            { timestamp })) return null;
+            economy ? { timestamp, economy } : { timestamp })) return null;
     }
 
     // A sale goes where its goal says (the town the shop opens in), else to
