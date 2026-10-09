@@ -13,9 +13,9 @@ const line = { ownerId: 42, lineId: 7, recordId: 8, selfId: 1864, price: 120000,
     storeType: 1, revision: 4, pricing: { seenCounter: 3, seenAt: at - 4 * 3600000 } };
 const counter = { deals: 4, move: 0.05 };
 const ctx = { characterId: 42, timestamp: at, understanding: 0.3, hour: 76797 };
-const saved = { counter: Counters.counter, move: Counters.moveOf, roll: Roll.roll, look: Pricing.look };
+const saved = { itemDeals: Counters.itemDeals, counter: Counters.counter, move: Counters.moveOf, roll: Roll.roll, look: Pricing.look };
 try {
-    Counters.counter = () => counter;
+    Counters.counter = () => counter; Counters.itemDeals = () => ({ deals: 4 });
     Counters.moveOf = () => 0.05;
     const rich = Look.attention(state, line, ctx);
     assert.equal(rich.value, 14400);
@@ -28,8 +28,8 @@ try {
     assert.equal(rich.value, 2 * Look.attention(funded, line, ctx).value);
     assert.equal(Look.attention(state, line, { ...ctx, hour: 0 }).probability, 1);
     assert.equal(Look.attention(state, { ...line, price: 0 }, { ...ctx, hour: 0 }).probability, 0);
-    assert.equal(Look.attention(state, { ...line, pricing: { ...line.pricing, seenCounter: 4 } }, ctx), null);
-    const seen = new Map();
+    assert.equal(Look.attention(state, { ...line, pricing: { ...line.pricing, seenCounter: 4, seenItem: 4 } }, ctx), null);
+    const seen = new Look.SeenLines();
     const rolls = [], examined = [];
     Roll.roll = (...parts) => { rolls.push(parts); return 0; };
     Pricing.look = (_, lines) => { examined.push(lines.map(x => x.lineId)); return null; };
@@ -43,8 +43,8 @@ try {
     const next = { ...line, lineId: 9 };
     Pricing.look = () => ({ reprices: [{ lineId: 9, pricing: { seenCounter: 4, seenAt: at } }], withdrawals: [] });
     assert.equal(Pricing.lookOwn(state, [next], ctx, seen).reprices[0].pricing.seenAt, at);
-    assert(!seen.has(7), 'removed line loses its worker look entry');
-    assert(!seen.has(9), 'proposed reprice waits for its native commit rather than suppressing a retry');
+    assert.equal(seen.get(7), undefined, 'removed line loses its worker look entry');
+    assert(seen.get(9), 'attempted reprice stays bounded until its native receipt');
     const many = Array.from({ length: 14 }, (_, i) => ({ ...line, lineId: 100 + i }));
     Pricing.look = () => null;
     const oldRolls = rolls.length;
@@ -53,25 +53,25 @@ try {
         const count = rolls.length;
         Pricing.lookOwn(state, many, { ...ctx, timestamp: at + step * 60000 }, seen);
         assert(rolls.length - count <= 8);
-        assert(seen.size <= 8);
+        assert(seen.size <= 14);
         for (const [, , key] of rolls.slice(count)) all.add(key.split(':')[0]);
     }
     assert.equal(all.size, 14, 'owners with the existing 14-line cap eventually inspect every line');
     assert(rolls.length > oldRolls);
 } finally {
-    Counters.counter = saved.counter; Counters.moveOf = saved.move; Roll.roll = saved.roll; Pricing.look = saved.look;
+    Counters.itemDeals = saved.itemDeals; Counters.counter = saved.counter; Counters.moveOf = saved.move; Roll.roll = saved.roll; Pricing.look = saved.look;
 }
 console.log('PASS own board look value, named rolls, no-change memory and fixed eight-line budget');
 
 const packed = new Look.SeenLines();
 for (let id = 1; id <= 8; id++) packed.set(id, { deals: id * 2, at: at });
-assert.equal(packed.byteLength, 192);
+assert.equal(packed.byteLength, 4352);
 assert.equal(packed.size, 8);
 assert.deepEqual(packed.get(4), { deals: 8, at: at });
 packed.set(9, { deals: Number.MAX_SAFE_INTEGER, at: at + 1 });
-assert.equal(packed.get(1), undefined);
-assert.deepEqual([...packed.keys()], [2,3,4,5,6,7,8,9]);
+assert(packed.get(1), 'the ninth observation no longer evicts the first');
+assert.deepEqual([...packed.keys()], [1,2,3,4,5,6,7,8,9]);
 assert.equal(packed.get(9).deals, Number.MAX_SAFE_INTEGER);
 for (const id of [...packed.keys()]) packed.delete(id);
 assert.equal(packed.size, 0);
-console.log('Packed owner observations preserve exact numbers in 192 B: PASS');
+console.log('Packed owner observations preserve exact numbers in 4352 B: PASS');

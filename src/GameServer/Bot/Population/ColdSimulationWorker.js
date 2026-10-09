@@ -478,6 +478,12 @@ function changedItems(previous, next) {
         occupationPlanner.sourceChanged(id); occupationPlanner.scopeChanged(MarketCounters.counterOf(id));
     }
 }
+boardIndex.setOwnerChangeObserver((previous, next, board) => {
+    const owner = previous[0]?.ownerId, current = next[0]?.ownerId;
+    for (const id of owner === current ? [owner] : [owner, current]) if (id) {
+        require('../Economy/BoardLook').consumeOwnProjection(kernel?.lookSeen.get(id), previous, next, board, id);
+    }
+});
 tables.watch('board', {
     reset: () => { publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); occupationPlanner.resetSources(); },
     put: (key, row) => {
@@ -502,7 +508,7 @@ tables.watch('board', {
 MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);
 tables.watch('market', {
-    reset: () => occupationPlanner.resetSources(),
+    reset: () => { occupationPlanner.resetSources(); kernel?.lookSeen.clear(); },
     put: key => {
         if (String(key).startsWith('i:')) occupationPlanner.sourceChanged(Number(String(key).slice(2)));
         else if (String(key).startsWith('c:')) occupationPlanner.scopeChanged(String(key).slice(2));

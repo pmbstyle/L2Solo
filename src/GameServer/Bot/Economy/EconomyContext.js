@@ -402,7 +402,6 @@ function forState(state = {}, deps = {}) {
         return value?.exp > 0 ? [Math.max(0, row.exp) / row.cycleMs * 3600000 / value.exp] : [];
     });
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
-    const Tendency = require('../AI/TendencyRoll');
     const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
@@ -460,9 +459,9 @@ function forState(state = {}, deps = {}) {
     const urgent = network.gap || network.queue.find(row => row.key === network.focus?.[0]) || network.queue[0];
     context.gapHorizonHours = !urgent ? 0 : urgent.key === 'stock:shots' ? base.stock('shots').targetHours
         : urgent.key === 'stock:potions' ? base.stock('potions').targetHours : projection.horizon;
-    context.itemUsefulness = id => (network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0)
-        * (knowledgeEnabled ? 1 + (1 - Number(persona.understanding ?? 0.3))
-            * (2 * Tendency.roll('usefulness', state.characterId, id) - 1) : 1);
+    context.itemUsefulness = id => require('../Population/ColdEconomyDecision').personalUsefulness(
+        network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0,
+        state, persona.understanding, knowledgeEnabled, id);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
     context.watchList = require('./TradeIntent').project(state, network, projection, id => context.worth(id) ?? price(id));
     context.intentPending = context.watchList === null;
@@ -499,7 +498,7 @@ function survivalReserve(state = {}) {
     return Array.isArray(state.stats?.money) ? positive(state.stats.money[2]) : basics(state).survivalReserve;
 }
 function forActor(actor, session, deps = {}) { return forState(stateForActor(actor, session), deps); }
-function craftIncome(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
+function craftIncome(state) {
     // The guarded worker publication is the only production income reader on
     // main. A missing result leaves the independently supported hunt baseline.
     if (isMainThread) {

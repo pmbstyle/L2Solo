@@ -63,7 +63,7 @@ try {
         'one new visit inspects the unanswered buy line without any deal');
     Pricing.lookOwn(visited, lines, context, seenLines);
     assert.strictEqual(inspected.length, 1, 'same visit is never consumed twice');
-    assert.strictEqual(seenLines.size, 1);
+    assert.strictEqual(seenLines.size, 2, 'both unchanged owned rows retain their exact baseline');
     assert.strictEqual(seenLines.townVisit, 1);
     Pricing.lookOwn(visited, lines, context, new Look.SeenLines());
     assert.strictEqual(inspected.length, 1, 'worker restart does not invent a historical visit');

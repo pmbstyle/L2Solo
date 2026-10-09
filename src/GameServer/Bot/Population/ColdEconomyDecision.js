@@ -282,6 +282,23 @@ function capture(economy, state, seen = state) {
     return decision;
 }
 
+// Shared error adjustment of an already prepared usefulness scalar. Neither
+// the compact-card reader nor the full worker builds a second wish graph.
+function personalUsefulness(value, state, understanding, enabled, id) {
+    return value * (enabled ? 1 + (1 - Number(understanding ?? .3))
+        * (2 * require('../AI/TendencyRoll').roll('usefulness', state.characterId, id) - 1) : 1);
+}
+function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabled) {
+    if (!decision || decision.stale || !(moneyPrice > 0)) return NaN;
+    const data = decision.data, count = decision.counts & 63;
+    if (!data || data.byteLength > MAX_BYTES) return NaN;
+    const pairs = new Float32Array(data, 28, count * 2);
+    for (let n = 0; n < pairs.length; n += 2) if (pairs[n] === Number(id)) {
+        return personalUsefulness(pairs[n + 1], state, understanding, enabled, id) / moneyPrice;
+    }
+    return NaN;
+}
+
 function view(state, decision, deps = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const base = Economy.basics(state, deps), packet = state.stats?.money;
@@ -294,8 +311,7 @@ function view(state, decision, deps = {}) {
         return null;
     };
     const enabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
-    const itemUsefulness = id => (known(id) || 0) * (enabled ? 1 + (1 - Number(base.persona.understanding ?? .3))
-        * (2 * require('../AI/TendencyRoll').roll('usefulness', state.characterId, id) - 1) : 1);
+    const itemUsefulness = id => personalUsefulness(known(id) || 0, state, base.persona.understanding, enabled, id);
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     return { ...base, state, hourAdena, moneyPrice, survivalReserve: valid ? Number(packet[2]) : base.survivalReserve,
@@ -424,5 +440,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { capture, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
+module.exports = { personalUsefulness, preparedCardWorth, capture, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
     unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

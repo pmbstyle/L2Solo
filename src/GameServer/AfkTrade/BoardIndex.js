@@ -120,13 +120,18 @@ function offerFields(line, town = null) {
 }
 
 let indexSerial = 0;
+function nextSerial() {
+    if (indexSerial === Number.MAX_SAFE_INTEGER) throw new Error('board_revision_exhausted');
+    return ++indexSerial;
+}
 class BoardIndex {
     // groupOf(selfId): the group of an item whose open sell lines are counted
     // (the market counters, MarketCounters.counterOf); none by default.
     constructor({ groupOf = null } = {}) {
         // itemId -> changes of its lines; a reader that looked at an item
         // knows whether that item's lines changed since (itemRevision).
-        this.serial = ++indexSerial;
+        this.serial = nextSerial();
+        this.ownerChangeObserver = null;
         this.epoch = 0;
         this.itemChanges = new Map();
         this.itemFingerprints = new Map();
@@ -148,7 +153,8 @@ class BoardIndex {
     }
 
     clear() {
-        this.epoch++;
+        if (this.epoch === Number.MAX_SAFE_INTEGER) { this.serial = nextSerial(); this.epoch = 0; }
+        else this.epoch++;
         this.itemChanges.clear();
         this.itemFingerprints.clear();
         this.groupFingerprints.clear();
@@ -162,7 +168,9 @@ class BoardIndex {
 
     // A token that changes whenever a line of this item is put or removed.
     itemRevision(selfId) {
-        return `${this.serial}.${this.epoch}.${this.itemChanges.get(Number(selfId)) || 0}`;
+        const value = this.itemChanges.get(Number(selfId)) || 0;
+        return typeof value === 'number' ? `${this.serial}.${this.epoch}.${value}`
+            : `${this.serial}.${this.epoch}.${value.generation}.${value.changes}`;
     }
 
     // Shared public content digest survives different main/worker index epochs.
@@ -189,8 +197,47 @@ class BoardIndex {
         if (this.groupOf) this.changeFingerprint(this.groupFingerprints, this.groupOf(line.selfId), hash, step);
     }
 
-    itemChanged(selfId) {
-        this.itemChanges.set(selfId, (this.itemChanges.get(selfId) || 0) + 1);
+    // Local numeric reads never allocate/parse an opaque cross-reader token.
+    writeItemRevision(selfId, target, offset = 0) {
+        const value = this.itemChanges.get(Number(selfId)) || 0;
+        target[offset] = this.serial; target[offset + 1] = this.epoch;
+        target[offset + 2] = typeof value === 'number' ? 0 : value.generation;
+        target[offset + 3] = typeof value === 'number' ? value : value.changes;
+        return true;
+    }
+
+    setOwnerChangeObserver(observer) { this.ownerChangeObserver = observer || null; }
+
+    itemChanged(selfId, increments = 1) {
+        const value = this.itemChanges.get(selfId) || 0;
+        const changes = typeof value === 'number' ? value : value.changes;
+        const generation = typeof value === 'number' ? 0 : value.generation;
+        if (changes > Number.MAX_SAFE_INTEGER - increments) {
+            if (generation === Number.MAX_SAFE_INTEGER) throw new Error('board_revision_exhausted');
+            this.itemChanges.set(selfId, { generation: generation + 1, changes: increments });
+        } else if (typeof value === 'number') this.itemChanges.set(selfId, changes + increments);
+        else value.changes += increments;
+    }
+
+    // Preflight every item before mutating any indexed line. Replacement is
+    // one logical observation, though its change count includes remove+put.
+    changeItems(previous, next) {
+        const increments = new Map();
+        for (const lines of [previous, next]) for (const line of lines) {
+            if (!(Number(line.count) > 0)) continue;
+            const id = Number(line.selfId);
+            increments.set(id, (increments.get(id) || 0) + 1);
+        }
+        for (const [id, count] of increments) {
+            const value = this.itemChanges.get(id);
+            if (value && typeof value !== 'number' && value.generation === Number.MAX_SAFE_INTEGER
+                && value.changes > Number.MAX_SAFE_INTEGER - count) throw new Error('board_revision_exhausted');
+        }
+        for (const [id, count] of increments) this.itemChanged(id, count);
+    }
+
+    ownerChanged(previous, next) {
+        if (this.ownerChangeObserver) this.ownerChangeObserver(previous, next, this);
     }
 
     townItem(storeType, town, selfId, present) {
@@ -232,10 +279,12 @@ class BoardIndex {
     // with each line (the main thread's board entry). Replaces the record.
     put(record, ref = null) {
         const id = Number(record.id);
-        this.remove(id);
+        const previous = this.records.get(id) || EMPTY;
         const storeType = Number(record.storeType);
         const items = this.sides.get(storeType);
-        if (!items) return;
+        this.changeItems(previous, items ? record.lines || EMPTY : EMPTY);
+        this.remove(id, true);
+        if (!items) { this.ownerChanged(previous, EMPTY); return; }
         const indexed = [];
         for (const source of record.lines || []) {
             const count = Number(source.count);
@@ -273,28 +322,28 @@ class BoardIndex {
             insert(item.all, line);
             insert(town, line);
             indexed.push(line);
-            this.itemChanged(line.selfId);
             this.fingerprintLine(line, 1);
             this.countGroup(line, 1);
             this.countPricedOwner(line, 1);
         }
-        if (!indexed.length) return;
+        if (!indexed.length) { this.ownerChanged(previous, indexed); return; }
         this.records.set(id, indexed);
         const ownerId = Number(record.ownerId);
         if (!this.owners.has(ownerId)) this.owners.set(ownerId, new Set());
         this.owners.get(ownerId).add(id);
+        this.ownerChanged(previous, indexed);
     }
 
-    remove(recordId) {
+    remove(recordId, replacing = false) {
         const id = Number(recordId);
         const indexed = this.records.get(id);
         if (!indexed) return;
+        if (!replacing) this.changeItems(indexed, EMPTY);
         this.records.delete(id);
         const owned = this.owners.get(indexed[0].ownerId);
         owned?.delete(id);
         if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
-            this.itemChanged(line.selfId);
             this.fingerprintLine(line, -1);
             this.countGroup(line, -1);
             this.countPricedOwner(line, -1);
@@ -315,6 +364,7 @@ class BoardIndex {
                 this.townItem(line.storeType, '*', line.selfId, false);
             }
         }
+        if (!replacing) this.ownerChanged(indexed, EMPTY);
     }
 
     // The sorted lines of one item on one side: in `town` (a record without a

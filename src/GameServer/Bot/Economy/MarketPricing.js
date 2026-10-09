@@ -34,6 +34,15 @@ function traderContext(state, deps = {}) {
         knowledgeEnabled: deps.knowledgeEnabled ?? PriceLearning.knowledgeEnabled(),
         trader,
         economy,
+        preparedWorth: deps.preparedWorth || (economy.network?.demands && economy.projection?.values
+            ? id => economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
+                ? economy.worth(id) : NaN : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
+        preparedBuffer: deps.preparedBuffer || null,
+        preparedValue: economy.network?.demands && economy.projection?.values ? id => {
+            const key = `item:${id}`;
+            return economy.network.demands.has(key) ? economy.network.demands.get(key)
+                : economy.projection.values.has(Number(id)) ? economy.projection.values.get(Number(id)) : NaN;
+        } : null,
         moneyPrice: economy.moneyPrice,
         hour,
         adena,
@@ -261,7 +270,8 @@ function look(state, lines, ctx) {
         let chosen;
         let worth = line.pricing.worth;
         if (line.storeType === BUY) {
-            worth = typeof ctx.economy?.worth === 'function' ? ctx.economy.worth(line.selfId) : worth;
+            worth = Object.hasOwn(ctx, 'preparedWorth') ? ctx.preparedWorth?.(line.selfId) ?? NaN
+                : typeof ctx.economy?.worth === 'function' ? ctx.economy.worth(line.selfId) : worth;
             // An incomplete prepared graph cannot justify withdrawal or spend.
             if (!Number.isFinite(worth) || worth < 0) continue;
             const cap = Math.floor(Math.min(worth, line.price + ctx.adena / Math.max(1, line.count)));

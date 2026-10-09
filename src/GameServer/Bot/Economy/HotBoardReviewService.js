@@ -60,9 +60,19 @@ class HotBoardReviewService {
         this.inFlight = this.inFlight || null;
         this.unsubscribers = [];
         this.lookOwners = new Map();
+        this.board.setOwnerChangeObserver((previous, next, board) => {
+            const owner = previous[0]?.ownerId, current = next[0]?.ownerId;
+            for (const id of owner === current ? [owner] : [owner, current]) if (id) {
+                require('./BoardLook').consumeOwnProjection(this.lookOwners.get(id)?.boardLookSeen,
+                    previous, next, board, id);
+            }
+        });
         try {
             this.unsubscribers.push(this.afk.subscribeBoardChanges(change => {
                 for (const id of change.ownerIds || []) this.ownerChanged(id, 'line', change.revision ?? null);
+            }));
+            this.unsubscribers.push(require('./MarketCounters').subscribeChanges(change => {
+                if (change.reset) for (const id of [...this.lookOwners.keys()]) this.forgetLook(id);
             }));
             this.unsubscribers.push(this.world.subscribeUserChanges(id => this.ownerChanged(id, 'user')));
             this.unsubscribers.push(this.life.subscribeMarketReviewChanges(id => this.ownerChanged(id, 'review')));
@@ -153,12 +163,16 @@ class HotBoardReviewService {
             const persona = invoke('GameServer/Bot/AI/BotPersona').of(state), packet = state.stats?.money;
             // A natural look consumes accepted scalar prices of time/money.
             // It cannot build a whole hunt/stock/recipe forecast on main.
+            const prepared = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided?.(state);
+            const readyWorth = id => require('../Population/ColdEconomyDecision').preparedCardWorth(prepared,
+                id, state, Number(packet?.[1]), persona.understanding, invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled());
             const economy = { persona, hourAdena: Number(packet?.[0]), moneyPrice: Number(packet?.[1]),
-                gapHorizonHours: NaN };
+                gapHorizonHours: NaN, worth: readyWorth };
             const Look = require('./BoardLook'), lines = this.board.ownerLines(id);
             const mask = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.feasibilityFor(state);
             const ctx = this.pricing.traderContext(state, { economy, persona, board: this.board,
                 npcOffersFor: selfId => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId),
+                preparedWorth: readyWorth, preparedBuffer: prepared?.data,
                 canSell: Look.feasibilityPredicate(state, lines, mask) });
             // The cursor is attached to the native hot session, so >8 lines
             // advance on successive natural breaks without a polling timer.
@@ -199,6 +213,7 @@ class HotBoardReviewService {
         this.generation++;
         for (const unsubscribe of this.unsubscribers) unsubscribe();
         this.dispatcher.cancel(this.dispatchKey);
+        this.board.setOwnerChangeObserver(null);
         this.events.clear();
         for (const id of this.lookOwners.keys()) this.forgetLook(id);
         this.scheduled = false;
