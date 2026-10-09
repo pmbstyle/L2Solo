@@ -166,7 +166,7 @@ function partyIntegrityInvalid(context = {}, partySession = {}) {
     return attachedCount < minSize || attachedCount !== declaredMemberIds.length;
 }
 
-function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}) {
+function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySession = {}, meetingPending = false) {
     const stateDue = Number(state.timing?.nextResolveAt || 0);
     // The party row is the durable scheduling authority for a party resolve.
     // A freshly assigned leader can briefly carry no personal due time, and
@@ -176,7 +176,7 @@ function nextDueAt(state = {}, timestamp = Date.now(), context = {}, partySessio
         : 0;
     const due = partyDue > 0 ? partyDue : stateDue;
     if (partyIntegrityInvalid(context, partySession)) return timestamp;
-    const sessionExpiry = partySessionExpiryAt(state, context, partySession);
+    const sessionExpiry = meetingPending ? 0 : partySessionExpiryAt(state, context, partySession);
     if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
     return due > 0 ? due : Math.max(0, Number(state.updatedAt || timestamp));
 }
@@ -249,6 +249,8 @@ let C4Unseal, PartyMarketBreak, ClanPartyDuty;
 
 function lifecycleKind(state = {}, context = {}) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
+    // Paid personal journeys retain the existing group writer.
+    if (state.partyId || state.party?.partyId) return context.isPartyLeader ? 'party' : 'party_member';
     if (state.stats?.tradeMeeting) return ['traveling', 'dead', 'resting', 'fighting'].includes(state.activity) ? 'resolver' : 'event_driven';
     // A solo bot washing karma (ColdKarmaPolicy.active) is planned by the
     // resolver. The test is repeated here: ColdKarmaPolicy loads spot modules.
@@ -548,6 +550,14 @@ class ColdSimulationKernel {
         };
     }
 
+    dueAt(state, context = {}, timestamp = this.now()) {
+        // Compact catalog members carry no stats. Read the current roster
+        // locally; no additional snapshot fields or population scan.
+        const meetingPending = !!state.stats?.tradeMeeting
+            || (context.party?.memberIds || []).some(id => this.states.get(Number(id))?.state.stats?.tradeMeeting);
+        return nextDueAt(state, timestamp, context, this.partySession, meetingPending);
+    }
+
     upsert(entry = {}) {
         let state = entry.state || entry;
         const characterId = Number(state?.characterId || 0);
@@ -585,8 +595,8 @@ class ColdSimulationKernel {
             return false;
         }
         if (current && incomingRevision === currentRevision
-            && nextDueAt(current.state, this.now(), current.context, this.partySession)
-                === nextDueAt(state, this.now(), entry.context || {}, this.partySession)
+            && this.dueAt(current.state, current.context)
+                === this.dueAt(state, entry.context || {})
             && lifecycleKind(current.state, current.context) === lifecycleKind(state, entry.context || {})) {
             // A full catalog refresh normally changes only context. Keep the
             // existing heap version so ten-second refreshes do not accumulate
@@ -853,7 +863,7 @@ class ColdSimulationKernel {
         }
         if (this.hasNormalCoverage(id)) return false;
         if (this.hasAcceptedPartyGrant(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
-        this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now(), current.context, this.partySession));
+        this.schedule(id, current.version, dueAt ?? this.dueAt(current.state, current.context));
         return true;
     }
 
@@ -1488,10 +1498,11 @@ class ColdSimulationKernel {
                 return;
             }
 
+            const meetingPending = require('./PartyHuntingAssembly').meetingPending(run.members);
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
-            const equipmentBridgeReview = !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
+            const equipmentBridgeReview = !meetingPending && !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
                 && run.members.some(member => this.equipmentBridgeReason?.(member) || this.requiresWeaponBridge?.(member));
-            if (!rescuing && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
+            if (!meetingPending && !rescuing && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
                 || require('./ClanEquipmentPartyPolicy').needsReview(run.party, run.members, startedAt)
                 || equipmentBridgeReview)) {
                 const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
@@ -1516,7 +1527,7 @@ class ColdSimulationKernel {
             }
 
             const partyTravel = run.party.stats?.travel;
-            if (partyTravel?.reason === 'party_spot_replan') {
+            if (!meetingPending && partyTravel?.reason === 'party_spot_replan') {
                 const arrivalAt = Number(partyTravel.arrivalAt || 0);
                 if (arrivalAt > startedAt) {
                     const waitingMembers = run.members.map((state) => ({
@@ -1575,7 +1586,7 @@ class ColdSimulationKernel {
                 return;
             }
 
-            if (!rescuing && run.route?.needed) {
+            if (!meetingPending && !rescuing && run.route?.needed) {
                 const arrivalAt = startedAt + Math.max(1000, Number(run.route.travelMs) || HUNTING_TRAVEL_MS);
                 const travellingMembers = run.members.map((state) => (
                     beginHuntingTrip(state, run.route, startedAt)
@@ -1630,7 +1641,7 @@ class ColdSimulationKernel {
                 timestamp: startedAt
             };
             const raids = require('./ColdRaidEncounter');
-            const raid = run.spot?.raidBoss === true;
+            const raid = !meetingPending && run.spot?.raidBoss === true;
             let staged = null;
             if (raid) {
                 raidStepId = `raid:${run.grants.get(Number(run.party.leaderId))?.leaseId}`;
@@ -1671,7 +1682,7 @@ class ColdSimulationKernel {
             }
             let requirementMs = 0, lastRequirementPlanMs = 0;
             let requirementProgress = this.partyRequirementProgress.get(String(run.party.partyId));
-            if (run.requirementRefresh && !requirementProgress) {
+            if (!meetingPending && run.requirementRefresh && !requirementProgress) {
                 requirementProgress = new Set();
                 this.partyRequirementProgress.set(String(run.party.partyId), requirementProgress);
             }
@@ -1691,7 +1702,7 @@ class ColdSimulationKernel {
                         resolvedParty.stats?.objective
                     );
                 }
-                if (run.requirementRefresh && this.planPartyRequirement && projectedState
+                if (!meetingPending && run.requirementRefresh && this.planPartyRequirement && projectedState
                     && resolvedParty.status !== 'dissolved' && !requirementProgress.has(id)
                     && requirementMs + lastRequirementPlanMs < 20) {
                     const planningStarted = performance.now();
@@ -1737,13 +1748,13 @@ class ColdSimulationKernel {
                     options: { allowParty: true, allowLifecycle: true },
                     partyResolution: id === Number(run.party.leaderId) ? {
                         partyId: run.party.partyId,
-                        reviewGoals: true,
+                        reviewGoals: !meetingPending,
                         party: resolvedParty
                     } : null
                 };
                 proposals.push(proposal);
             }
-            if (run.requirementRefresh) {
+            if (!meetingPending && run.requirementRefresh) {
                 const leader = proposals.find(proposal => proposal.partyResolution);
                 if (leader) {
                     leader.partyResolution.memberPlans = memberPlans;
@@ -2219,10 +2230,10 @@ class ColdSimulationKernel {
         const now = this.now();
         const due = [...this.states.values()].filter((entry) => (
             isSchedulableKind(lifecycleKind(entry.state, entry.context))
-            && nextDueAt(entry.state, now, entry.context, this.partySession) <= now
+            && this.dueAt(entry.state, entry.context, now) <= now
         ));
         const oldestDueAt = due.reduce((oldest, entry) => (
-            Math.min(oldest, nextDueAt(entry.state, now, entry.context, this.partySession))
+            Math.min(oldest, this.dueAt(entry.state, entry.context, now))
         ), now);
         const oldestDirtyAt = [...this.dirty.values()].reduce((oldest, proposal) => (
             Math.min(oldest, Number(proposal.enqueuedAt || now))

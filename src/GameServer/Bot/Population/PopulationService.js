@@ -3133,6 +3133,15 @@ const PopulationService = {
                 return dissolveBackgroundParty(party, reason, members.length);
             }
 
+            const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp: startedAt });
+            if (meeting) {
+                return meeting.memberResults.reduce((chain, entry) => chain.then(() =>
+                    LifeState.applyResolve(entry.state, entry.result)), Promise.resolve()).then(() =>
+                    BackgroundPartyState.createOrUpdate({ ...party, nextResolveAt: meeting.nextResolveAt,
+                        stats: { ...party.stats, ...meeting.partyPatch.stats } })).then(updatedParty =>
+                    ({ ok: true, party: updatedParty || party, debug: meeting.debug }));
+            }
+
             if (partySessionExpired(party, startedAt)
                 || require('./ClanEquipmentPartyPolicy').needsReview(party, members, startedAt)) {
                 return commitPartyReview(party, members, startedAt);

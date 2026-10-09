@@ -447,6 +447,7 @@ const tests = [
     'tests/test_bot_background_rest.js',
     'tests/test_bot_background_party_rest.js',
     'tests/test_cold_party_assembly.js',
+    'tests/test_party_meeting_lifecycle.js',
     'tests/test_party_arrival_points_slope.js',
     'tests/test_party_shared_target_outgrown.js',
     'tests/test_bot_party_gear_loot.js',

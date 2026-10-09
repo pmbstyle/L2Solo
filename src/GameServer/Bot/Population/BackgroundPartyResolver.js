@@ -1,4 +1,5 @@
 const PveEncounter = require('./ColdPveEncounter');
+const Assembly = require('./PartyHuntingAssembly');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -93,8 +94,39 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
 }
 
 const BackgroundPartyResolver = {
+    resolveMeetingLifecycle({ party, members, timestamp = Date.now(), episodeId = null, assessRelationship = null }) {
+        if (!party || !members?.length || !Assembly.meetingPending(members)) return null;
+        // Membership survives a paid personal journey. The roster owner
+        // advances finite transitions without replacing the meeting leg.
+        const revival = require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
+        if (revival) return revival;
+        const idleAt = timestamp + 30000;
+        const memberResults = members.map(state => {
+            let result;
+            if (state.activity === 'dead' || state.vitals.hp <= 0) {
+                result = BackgroundResolver.resolveDeathRecovery(state, timestamp);
+            } else if (state.activity === 'resting') {
+                const elapsedMs = Math.max(0, timestamp - Number(state.timing?.lastResolvedAt || timestamp));
+                result = BackgroundResolver.resolveRest(state, elapsedMs, timestamp);
+                if (!state.stats?.tradeMeeting && result.patch?.activity === 'hunting')
+                    result = { ...result, patch: { ...result.patch, activity: 'grouped' } };
+            } else if (state.stats?.tradeMeeting && state.activity === 'traveling') {
+                result = BackgroundResolver.resolveSolo({ state, spot: null, timestamp });
+            } else {
+                result = { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: idleAt };
+            }
+            return { state, result };
+        });
+        const nextResolveAt = Math.min(...memberResults.map(({ result }) => Number(result.nextResolveAt) || idleAt));
+        return { atomic: true, memberResults, events: [], nextResolveAt,
+            partyPatch: { stats: { lastResolveAt: timestamp } },
+            debug: { reason: 'party_meeting_lifecycle', fights: 0, wins: 0 } };
+    },
+
     resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
         episodeId = null, assessRelationship = null }) {
+        const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp, episodeId, assessRelationship });
+        if (meeting) return meeting;
         if (!party || !members?.length || !spot) {
             return {
                 memberResults: [],

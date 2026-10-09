@@ -7,6 +7,10 @@ function nearby(members) {
         && Math.abs(member.loc.locZ - anchor.locZ) <= 200);
 }
 
+function meetingPending(members) {
+    return members.some(member => !!member.stats?.tradeMeeting);
+}
+
 function ready(party, members, spot) {
     // Non-grid profiles have caller-defined geometry. Production hunting
     // sectors use the shared grid and dungeon partition classification.
@@ -16,4 +20,4 @@ function ready(party, members, spot) {
         && !member.stats?.travel && SpotService.containsLocation(spot, member.loc));
 }
 
-module.exports = { ready, nearby };
+module.exports = { ready, nearby, meetingPending };
