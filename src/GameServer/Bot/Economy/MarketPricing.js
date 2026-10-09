@@ -9,6 +9,7 @@ const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 const Valuation = require('./EconomicValuation');
 const Profit = require('./CraftProfitPolicy');
+const { npcOwnsPurchase } = require('./TradeIntent');
 
 // A bot as a trader: its persona's parameters, its hour and its money, its
 // trips, and what its thread knows of the board. deps: { board, persona,
@@ -41,6 +42,7 @@ function traderContext(state, deps = {}) {
         demandFor: deps.demandFor || economy.demandFor || null,
         ownStock: deps.ownStock || economy.ownStock || null,
         canSell: deps.canSell || null,
+        canBuy: line => Number(line.enchant || 0) > 0 || !npcOwnsPurchase(economy, line.selfId),
         derivedDemandValue: deps.derivedDemandValue ?? economy.derivedDemandValue,
         derivedDemandSupported: deps.derivedDemandSupported ?? economy.derivedDemandSupported,
         tripCost: trip || null,
@@ -203,6 +205,7 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, stock
 
 // A buy ad keeps authored worth with its line; the next ad starts fresh.
 function bid(selfId, ctx, { units = 1, worth, cap, rollKey }) {
+    if (ctx.canBuy?.({ selfId, enchant: 0 }) === false) return null;
     const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
     worth = ctx.economy?.worth(selfId) ?? worth;
@@ -227,6 +230,7 @@ function look(state, lines, ctx) {
         const move = { recordId: line.recordId, lineId: line.lineId, selfId: line.selfId,
             expectedRevision: line.revision, previousPricing: { ...line.pricing } };
         if (line.storeType === SELL && ctx.canSell?.(line) === false) { withdrawals.push(move); continue; }
+        if (line.storeType === BUY && ctx.canBuy?.(line) === false) { withdrawals.push(move); continue; }
         const belief = beliefFor(line.selfId, ctx, line.enchant || 0);
         if (!belief) continue;
         PriceBelief.learn(belief, PriceBelief.lineObservations(line, belief, ctx));

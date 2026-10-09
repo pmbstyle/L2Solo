@@ -8,6 +8,14 @@ const integer = n => Number.isSafeInteger(n) && n >= 0;
 // A selected executable NPC quote already has a native purchase owner.
 // Public BUY ads describe alternative player supply, not a duplicate NPC job.
 const nativeNpc = plan => plan?.sourceType === 'npc' && plan.quoted === true && plan.executable === true;
+// Only completed preparation can retire public supply. A different root may
+// still project player supply for the same item, so keep that alternative.
+function npcOwnsPurchase(economy, selfId) {
+    return !economy?.intentPending && !economy?.routePending
+        && nativeNpc(economy?.network?.plans?.get?.(`item:${Number(selfId)}`))
+        && Array.isArray(economy.watchList)
+        && !economy.watchList.some(row => Number(row.itemId) === Number(selfId));
+}
 function rootTuple(key) {
     const parts = String(key).split(':'), kind = roots.indexOf(parts[0]);
     if (kind < 1) throw Error('trade_intent_unknown_root');
@@ -127,4 +135,4 @@ function preparedProject(network, worth, limit) {
     }
     return result.slice(0, limit);
 }
-module.exports = { rootTuple, rootKey, encode, decode, project };
+module.exports = { rootTuple, rootKey, encode, decode, project, npcOwnsPurchase };

@@ -83,7 +83,8 @@ function inputsFor(state, line, ctx) {
     // Adena prices are whole units; an unchanged affordable ceiling is not
     // another economic edge. Unknown prepared usefulness is not zero.
     const worth = line.storeType === 3 ? ctx.economy?.worth?.(line.selfId) : null;
-    const value = line.storeType === 3 && typeof ctx.economy?.worth === 'function'
+    const value = line.storeType === 3 && ctx.canBuy?.(line) === false ? 0
+        : line.storeType === 3 && typeof ctx.economy?.worth === 'function'
         ? Number.isFinite(worth) && worth >= 0 ? Math.floor(worth) : -1 : Number(feasible);
     return [revision, Number(line.count), units, value];
 }
