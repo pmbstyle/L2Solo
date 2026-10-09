@@ -377,8 +377,7 @@ class ColdEconomyDecisions {
         if (diagnostic) Diagnostics.count('ready_card', 'request');
         const id = Number(state?.characterId);
         const decision = this.byId.get(id);
-        if (decision && (decision.held || !decision.stale && decision.updatedAt === Number(state?.updatedAt || 0)
-            && decision.key === stateKey(state))) {
+        if (this.matches(state, decision)) {
             if (diagnostic) { this.hits += 1; Diagnostics.count('ready_card', 'hit', decision.held ? 'held_command' : 'same_inputs'); }
             return decision;
         }
@@ -391,6 +390,15 @@ class ColdEconomyDecisions {
     }
 
     // A miss waits for the next worker decision.
+    matches(state, decision) {
+        return !!decision && (decision.held || !decision.stale && decision.updatedAt === Number(state?.updatedAt || 0)
+            && decision.key === stateKey(state));
+    }
+    // Observer inspection shares admission rules without affecting hit counters.
+    inspect(state) {
+        const decision = this.byId.get(Number(state?.characterId));
+        return this.matches(state, decision) ? decision : null;
+    }
     activity(state) { return this.decided(state)?.activity || null; }
     hold(id, decision) { if (decision) this.byId.set(Number(id), compact({ ...compact(decision), held: true })); }
     release(id) { const decision = this.byId.get(Number(id)); if (decision) { decision.held = false; decision.stale = true; } }

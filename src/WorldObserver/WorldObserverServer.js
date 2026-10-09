@@ -10,6 +10,8 @@ const { searchPlayers } = require('./CharacterSearch');
 const { createKnowledgeBaseService } = require('./KnowledgeBaseService');
 const { createJsonResponseCache, sendCachedJson } = require('./JsonResponseCache');
 const marketJson = createJsonResponseCache(() => marketSnapshot());
+const ActorEconomy = require('./ActorEconomyProjection');
+const { createActorCollections } = require('./ActorCollections');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
@@ -1641,6 +1643,54 @@ function compactActorClan(subject) {
     };
 }
 
+function observerItem(selfId) {
+    const meta = knowledgeBaseService().itemOverview(Number(selfId));
+    return { selfId: Number(selfId), name: meta?.name || `Item ${selfId}`,
+        iconUrl: meta?.iconUrl || null, grade: meta?.grade || null };
+}
+
+function observerWishName(kind, reference) {
+    if (kind === 'henna') {
+        const symbol = invoke('GameServer/Henna/HennaRules').symbol(reference);
+        return symbol ? ['STR', 'DEX', 'CON', 'INT', 'WIT', 'MEN'].filter(stat => Number(symbol[stat]))
+            .map(stat => `${stat} ${Number(symbol[stat]) > 0 ? '+' : ''}${symbol[stat]}`).join(' · ') : null;
+    }
+    if (kind === 'book') {
+        const book = invoke('GameServer/Skills/SkillBookCatalog').bookFor(reference);
+        return book ? observerItem(book).name.replace(/^Spellbook:\s*/i, '') : null;
+    }
+    return null;
+}
+
+function actorEconomy(state, session = null) {
+    const decisionStats = { ...state?.stats, ...session?.decisionStats };
+    const held = session && session.economySeq === Number(decisionStats.decisionSeq || 0) ? session.heldEconomy?.statsPacket : null;
+    const stats = { ...decisionStats, ...held };
+    const decision = !session && state ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.inspect(state) : null;
+    const activity = held ? session.heldEconomy.network?.activity : decision?.activity;
+    return ActorEconomy.project({ ...state, stats,
+        adena: session?.actor?.backpack?.fetchTotalAdena?.() ?? state?.adena }, { itemFor: observerItem, wishName: observerWishName, activity });
+}
+
+async function collectionSubject(kind, id) {
+    if (!Number.isSafeInteger(id) || id <= 0) return null;
+    if (kind === 'bot') {
+        const session = invoke('GameServer/Bot/BotManager').findSessionById(id);
+        const state = session?.coldLifeState || await invoke('GameServer/Bot/Population/BotLifeState').findByCharacterId(id);
+        return session?.actor || state ? { actor: session?.actor || null, state, session } : null;
+    }
+    const session = realPlayerSessions().find(row => Number(row.actor?.fetchId?.()) === id);
+    if (session?.actor) return { actor: session.actor, state: null, session };
+    const rows = await Database.execute(['SELECT id, username FROM characters WHERE id = ?', [id]], 'observer:profile-owner');
+    return rows[0] && !/^(bot_|afk_trade_)/.test(rows[0].username) ? { actor: null, state: null } : null;
+}
+
+const actorCollection = createActorCollections({ subjectFor: collectionSubject,
+    execute: query => Database.execute(query, 'observer:profile-collection'), itemFor: observerItem,
+    shopsFor: id => Database.fetchAfkTradeShops(id, { activeOnly: true }),
+    enemiesFor: subject => invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(
+        subject.session?.pvpEnemyMemory || subject.state?.stats?.pvpEnemies) });
+
 function compactHotDetail(status, session) {
     const context = (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? BotBrainContext.compactStatus(session, status, '', {
         includeInventory: false,
@@ -1650,6 +1700,8 @@ function compactHotDetail(status, session) {
     return {
         ...compactHotBot(status, pkIds, session),
         kind: 'bot',
+        economy: actorEconomy(session.coldLifeState || invoke('GameServer/Bot/Population/BotLifeState').cachedState(status.id), session),
+        pvp: session.actor?.fetchPvp?.(), pk: session.actor?.fetchPk?.(), karma: session.actor?.fetchKarma?.(),
         clan: compactActorClan(session?.actor),
         vitals: fullVitals(status.vitals),
         movement: status.movement || null,
@@ -1793,6 +1845,8 @@ function compactColdDetail(state, leaderState = null) {
     return {
         ...compact,
         kind: 'bot',
+        economy: actorEconomy(state),
+        pvp: state.pvp, pk: state.pk, karma: state.karma ?? stats.karma,
         enemies: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Bot/AI/BotEnemyMemory').normalize(stats.pvpEnemies) : null,
         interactionMemory: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Social/InteractionMemoryRuntime').inspect(Number(state.characterId)) : null,
         clan: compactActorClan(state),
@@ -1835,7 +1889,7 @@ function compactColdDetail(state, leaderState = null) {
         } : null,
         plan: compactColdPlan(state),
         travel: stats.travel || null,
-        goal: stats.goal || null,
+        goal: stats.acquisitionGoal || stats.goal || null,
         persona: BotPersona.of(state),
         updatedAt: state.updatedAt || 0
     };
@@ -2242,7 +2296,7 @@ async function botDetail(characterId) {
     const BotManager = invoke('GameServer/Bot/BotManager');
     const hotSession = BotManager.findSessionById(id);
     if (hotSession?.actor) {
-        await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
+        if (PopulationConfig.developerDiagnostics) await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
         const status = BotManager.getBotStatus(hotSession);
         return status?.available ? compactHotDetail(status, hotSession) : null;
     }
@@ -2250,7 +2304,7 @@ async function botDetail(characterId) {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const state = await LifeState.findByCharacterId(id);
     if (!state) return null;
-    await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
+    if (PopulationConfig.developerDiagnostics) await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([id]);
 
     const leaderId = Number(state.party?.leaderId || state.stats?.leaderId || 0) || null;
     let leaderState = leaderId === id ? state : null;
@@ -2270,8 +2324,8 @@ async function botDetail(characterId) {
             leaderState = await LifeState.findByCharacterId(leaderId);
         }
     }
-    const rows = await Database.execute(['SELECT karma FROM characters WHERE id = ?', [id]]);
-    return compactColdDetail({ ...state, karma: Number(rows[0]?.karma || 0) }, leaderState);
+    const rows = await Database.execute(['SELECT karma, pvp, pk FROM characters WHERE id = ?', [id]]);
+    return compactColdDetail({ ...state, karma: Number(rows[0]?.karma || 0), pvp: rows[0]?.pvp, pk: rows[0]?.pk }, leaderState);
 }
 
 async function actorDetail(kind, characterId) {
@@ -2801,6 +2855,16 @@ function route(request, response) {
         return;
     }
 
+    const collectionMatch = url.pathname.match(/^\/observer\/api\/actor\/(bot|player)\/(\d+)\/(inventory|warehouse|skills|pvp|board)$/);
+    if (collectionMatch) {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return; }
+        actorCollection(collectionMatch[1], Number(collectionMatch[2]), collectionMatch[3], {
+            offset: Number(url.searchParams.get('offset') || 0), limit: Number(url.searchParams.get('limit') || 100)
+        }).then(data => sendJson(response, data || { error: 'Character not found' }, data ? 200 : 404))
+            .catch(error => sendJson(response, { error: error.message }, error.message === 'invalid_profile_collection' ? 400 : 500));
+        return;
+    }
+
     const actorMatch = url.pathname.match(/^\/observer\/api\/actor\/(bot|player)\/(\d+)$/);
     if (actorMatch) {
         actorDetail(actorMatch[1], actorMatch[2])
@@ -2916,6 +2980,7 @@ const WorldObserverServer = {
     worldStatus,
     marketSnapshot,
     marketHistorySnapshot,
+    actorCollection,
     observerCacheTtl,
     snapshotCacheStats() {
         if (!(invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true)) return { enabled: false };

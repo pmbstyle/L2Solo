@@ -303,6 +303,13 @@ button { cursor: pointer; }
 .profile-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
 .profile-tabs button { padding: 9px 14px; border: 1px solid transparent; border-radius: 7px; color: var(--muted); background: transparent; font-size: 12px; }
 .profile-tabs button[aria-selected="true"] { color: var(--gold); border-color: var(--line); background: var(--accent-bg); }
+.profile-table-scroll { overflow-x: auto; }
+.profile-data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.profile-data-table th, .profile-data-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+.profile-data-table th { color: var(--muted); font-weight: 500; }
+.profile-data-paging { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
+.profile-data-paging button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--gold); background: var(--accent-bg); }
+.profile-data-paging button:disabled { opacity: .4; }
 body[data-view="overview"], body[data-view="characters"], body[data-view="parties"], body[data-view="dungeon"], body[data-view="profile"] { overflow: auto; }
 body[data-view="overview"] .observer-shell, body[data-view="characters"] .observer-shell, body[data-view="parties"] .observer-shell, body[data-view="dungeon"] .observer-shell { display: none; }
 body[data-view="profile"] .observer-shell { display: block; height: auto; max-width: 1120px; margin: 0 auto; padding: 28px; }
