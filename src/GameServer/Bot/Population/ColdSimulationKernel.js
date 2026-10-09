@@ -19,6 +19,7 @@ class DueHeap {
         this.values = [];
         this.positions = new WeakMap();
         this.decisionHeads = [];
+        this.playerHeads = [];
     }
 
     set(index, entry) {
@@ -32,17 +33,22 @@ class DueHeap {
     refreshDecision(index) {
         while (index >= 0) {
             let best = this.values[index]?.alarmKind === 'decision' ? this.values[index] : null;
+            let player = this.values[index]?.playerWaiting ? this.values[index] : null;
             for (const child of [index * 2 + 1, index * 2 + 2]) {
                 const candidate = child < this.values.length ? this.decisionHeads[child] : null;
                 if (candidate && (!best || this.compare(candidate, best) < 0)) best = candidate;
+                const waiting = child < this.values.length ? this.playerHeads[child] : null;
+                if (waiting && (!player || this.compare(waiting, player) < 0)) player = waiting;
             }
             this.decisionHeads[index] = best;
+            this.playerHeads[index] = player;
             if (!index) break;
             index = Math.floor((index - 1) / 2);
         }
     }
 
     peekDecision() { return this.decisionHeads[0] || null; }
+    peekPlayer() { return this.playerHeads[0] || null; }
 
     up(index) {
         const entry = this.values[index];
@@ -89,6 +95,7 @@ class DueHeap {
         this.positions.delete(entry);
         this.refreshDecision(this.values.length);
         this.decisionHeads.length = this.values.length;
+        this.playerHeads.length = this.values.length;
         if (index < this.values.length) {
             this.set(index, last);
             const parent = Math.floor((index - 1) / 2);
@@ -298,6 +305,11 @@ function lifecycleKind(state = {}, context = {}) {
 
 function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
+}
+
+function playerWaitingTransition(state, context) {
+    return context?.playerWaiting === true && !!state?.stats?.tradeMeeting
+        && lifecycleKind(state, context) === 'resolver';
 }
 
 function priorityForResult(state, result) {
@@ -670,7 +682,8 @@ class ColdSimulationKernel {
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         const token = this.nextScheduleToken++;
         const heapEntry = { characterId: id, version: Number(version),
-            dueAt: Number(dueAt || this.now()), scheduleToken: token };
+            dueAt: Number(dueAt || this.now()), scheduleToken: token,
+            playerWaiting: playerWaitingTransition(this.states.get(id)?.state, this.states.get(id)?.context) };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
         this.heap.push(heapEntry);
     }
@@ -851,7 +864,13 @@ class ColdSimulationKernel {
             if (!this.hasNormalCoverage(id) || this.scheduleTokens.get(id).dueAt > this.now()) this.requeue(id, this.now());
             return true;
         }
-        if (this.hasNormalCoverage(id)) return false;
+        if (this.hasNormalCoverage(id)) {
+            const scheduled = this.scheduleTokens.get(id);
+            if (scheduled.heapEntry.playerWaiting !== playerWaitingTransition(current.state, current.context)) {
+                this.schedule(id, current.version, scheduled.dueAt);
+            }
+            return false;
+        }
         if (this.hasAcceptedPartyGrant(id) || !isSchedulableKind(lifecycleKind(current.state, current.context))) return false;
         this.schedule(id, current.version, dueAt ?? nextDueAt(current.state, this.now(), current.context, this.partySession));
         return true;
@@ -874,7 +893,8 @@ class ColdSimulationKernel {
         const candidates = [];
         let commandsSelected = 0;
         while (candidates.length + commandsSelected < limit && this.heap.size > 0) {
-            const head = this.heap.peek();
+            const waiting = this.heap.peekPlayer();
+            const head = waiting && waiting.dueAt <= timestamp ? waiting : this.heap.peek();
             if (head.kind === 'alarm') {
                 if (head.dueAt > timestamp) break;
                 if (head.alarmKind === 'decision') {
@@ -886,11 +906,12 @@ class ColdSimulationKernel {
                 continue;
             }
             if (!this.validHeapEntry(head)) {
-                this.heap.pop();
+                this.heap.remove(head);
                 continue;
             }
             if (Number(head.dueAt || 0) > timestamp) break;
-            const entry = this.heap.pop();
+            const entry = head;
+            this.heap.remove(entry);
             this.consumeHeapEntry(entry);
             const id = Number(entry.characterId);
             // A catalog page may race an ACK and carry a newer revision while
@@ -1294,9 +1315,9 @@ class ColdSimulationKernel {
             // forever and creates a CAS/IPC retry storm.
             if (result.state) {
                 this.upsert(result);
-                if (Number(result.retryAfterMs) > 0) {
-                    this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs)));
-                }
+                // Partition refusals can carry the same overdue row forever.
+                // Give other owners their turn instead of retrying every tick.
+                this.requeue(id, this.now() + Math.max(1000, Number(result.retryAfterMs) || 1000));
             }
             if (result.purpose?.kind === 'party') {
                 const run = this.partyRuns.get(String(result.purpose.partyId));
@@ -1828,7 +1849,8 @@ class ColdSimulationKernel {
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
-            const priority = projection?.durable ? 'P1' : priorityForResult(active.state, result);
+            const priority = playerWaitingTransition(active.state, active.context) ? 'P0'
+                : projection?.durable ? 'P1' : priorityForResult(active.state, result);
             const proposal = {
                 proposalId: `${active.grant.leaseId}:${active.grant.revision}`,
                 characterId: Number(characterId),

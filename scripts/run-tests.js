@@ -44,6 +44,7 @@ const tests = [
     'tests/test_npc_passive_retaliation.js',
     'tests/test_town_npc_immortality.js',
     'tests/test_player_transition_recovery.js',
+    'tests/test_player_meeting_priority.js',
     'tests/test_heine_npcs.js',
     'tests/test_goddard_rune_npcs.js',
     'tests/test_player_move_destination_height.js',

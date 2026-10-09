@@ -127,13 +127,40 @@ const waitFor = async (predicate, label) => {
         await click(remoteBuy); await click('board agree');
         await waitFor(() => !session.playerBoardAgreePending, 'resting merchant agreement');
         assert(html().includes('Trade agreed'), html());
+        assert.equal(Meetings.isPlayerWaiting(seller), true, 'accepted custody prioritizes the merchant while the human waits at the point');
+        assert.equal(Coordinator.contextFor(Life.cachedState(seller)).playerWaiting, true,
+            'the real coordinator carries waiting-player priority into the worker context');
         Coordinator.setPauseReason('fixture', false);
         await waitFor(async () => (await fixture.amount(buyer, 20)) === 2
             && (await fixture.amount(seller, 57)) === 1000000 + 4079 + 4080, 'rest, native travel and delivery');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080);
         assert.equal(await fixture.amount(seller, 57), 1000000 + 4079 + 4080);
+        await waitFor(() => !Meetings.isPlayerWaiting(seller), 'retired waiting-player priority');
         assert.deepEqual(Life.cachedState(seller).inventory[952], rings);
-        console.log('PASS player HTML links, large native bag, actual worker consent, overdue rest, native travel and conserved delivery');
+
+        Coordinator.setPauseReason('fixture', true);
+        const remoteClosed = await Database.closeBoardRecord(seller, remoteSale.shop.id);
+        Afk.refreshRecord(remoteClosed.record);
+        await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
+        await Life.upsertState({ ...Life.cachedState(seller), activity: 'resting',
+            loc: { ...point, locX: point.locX + 400 },
+            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
+            stats: { ...Life.cachedState(seller).stats, restUntil: Date.now() + 60000 },
+            timing: { lastResolvedAt: Date.now(), nextResolveAt: Date.now() + 60000 } }, 'cancelled_merchant_fixture');
+        const cancelStock = (await Database.fetchItems(seller)).find(row => row.selfId === 20);
+        const cancelSale = await Database.createAfkTradeShop(seller, { kind: 'sell_ad', storeType: 1, town: 'Giran', ...point,
+            lines: [{ objectId: cancelStock.id, selfId: 20, count: 1, price: 4081 }] });
+        Afk.refreshRecord(cancelSale.shop);
+        Board.show(session, { side: 1, town: 'Giran' });
+        await click(new RegExp('action="bypass -h (board answer sell_ad ' + cancelSale.shop.id + ' [^"]+)"').exec(html())[1]);
+        await click('board agree');
+        await waitFor(() => !session.playerBoardAgreePending, 'cancellable merchant agreement');
+        assert.equal(Meetings.isPlayerWaiting(seller), true);
+        await click('board cancel');
+        await waitFor(() => !Meetings.isPlayerWaiting(seller), 'cancelled waiting-player priority');
+        assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080, 'cancelling the priority transition refunds native escrow');
+        assert.equal(await fixture.amount(seller, 20), 1, 'cancellation returns the reserved item');
+        console.log('PASS player HTML links, large native bag, worker consent, rest, native travel, conserved delivery and cancelled priority');
     } finally {
         Meetings.reset();
         if (Coordinator.started) await Coordinator.stop();

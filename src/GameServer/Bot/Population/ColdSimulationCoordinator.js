@@ -1248,6 +1248,7 @@ class ColdSimulationCoordinator {
         const leaf = !party ? this.economyDecisions.activity(state) : null;
         const workshop = this.economyDecisions.workshopFor(state);
         const context = {
+            playerWaiting: require('../../AfkTrade/TradeMeetingService').isPlayerWaiting?.(state.characterId) === true,
             // The public workshop is capped at 16 entries, not the recipe
             // book. Hydrated knowledge travels as one catalogue bitset.
             ...recipeKnowledgeFor(state),
