@@ -319,6 +319,8 @@ const tests = [
     'tests/test_player_board_service.js',
     'tests/test_player_board_window.js',
     'tests/test_player_board_meeting.js',
+    'tests/test_player_board_crafting.js',
+    'tests/test_player_board_sale.js',
     'tests/test_meeting_worker_admission.js',
     'tests/test_skill_rules_resolve_cached.js',
     'tests/test_generated_population_appearance.js',

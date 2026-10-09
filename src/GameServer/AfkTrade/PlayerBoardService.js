@@ -106,6 +106,7 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
         const current = () => session.actor === actor;
         const playerId = Number(session.actor.fetchId());
         if (request.kind === 'workshop') {
+            if (session.playerBoardCraftPending) return { ok: false, reason: 'craft_busy' };
             const ownerId = Number(request.ownerId), recipeId = Number(request.recipeId);
             if (ownerId === playerId) return { ok: false, reason: 'own_record' };
             const quote = workshops().lookup(ownerId, recipeId, { characterId: playerId,
@@ -123,16 +124,23 @@ function create({ afk = () => invoke('GameServer/AfkTrade/AfkTradeService'),
                 productId: quote.recipe?.productId, productCount: quote.recipe?.productCount || 1,
                 successRate: quote.recipe?.successRate,
                 materials: (quote.recipe?.materials || []).map(row => ({ selfId: row.selfId, amount: row.amount })) };
+            const pending = { actor, ownerId, recipeId };
+            session.playerBoardCraftPending = pending;
             try {
-                const result = await workshops().craft(ownerId, recipeId, playerId, { expectedPrice: Number(request.price) });
+                const result = await workshops().craft(ownerId, recipeId, playerId, {
+                    expectedPrice: Number(request.price), expectedRevision: Number(request.revision) });
                 const rows = await database().fetchItems(playerId);
                 if (!current()) return { ok: false, reason: 'player_unavailable' };
                 session.actor.backpack.items = [];
                 for (const row of rows) session.actor.backpack.insertItem(row.id, row.selfId, row);
                 session.dataSendToMe(response().itemsList(session.actor.backpack.fetchItems()));
-                return { ok: true, action: result.product ? 'crafted' : 'craft_failed', product: result.product || null };
+                session.dataSendToMe(response().userInfo(session.actor));
+                return { ok: true, action: result.product ? 'crafted' : 'craft_failed', product: result.product || null,
+                    received: result.product ? { selfId: quote.recipe.productId, amount: quote.recipe.productCount || 1 } : null };
             } catch (error) { return { ok: false, reason: ({ 'workshop materials missing': 'materials_missing',
-                'customer adena changed': 'insufficient_funds', 'workshop price changed': 'record_changed' })[error.message] || 'craft_unavailable' }; }
+                'customer craft material changed': 'materials_missing', 'customer adena changed': 'insufficient_funds',
+                'workshop ownership changed': 'record_changed', 'workshop price changed': 'record_changed' })[error.message] || 'craft_unavailable' }; }
+            finally { if (session.playerBoardCraftPending === pending) session.playerBoardCraftPending = undefined; }
         }
         const consent = session.playerBoardPreparation;
         let saved;

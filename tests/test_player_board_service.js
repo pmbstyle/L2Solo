@@ -43,9 +43,10 @@ async function main() {
         town: 'Dion', loc: shop.loc, revision: 2, entries: [{ recipeId: 17, price: 150 }] }],
     lookup: () => ({ state: shop, recipe: { productId: 1835 }, price: 150 }), craft: async (owner, recipe, customer, options) => {
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 150]); crafts++;
+        assert.equal(options.expectedRevision, 2);
         return { product: { id: 91, amount: 1 } };
     } }), database: () => ({ fetchItems: async () => [{ id: 91, selfId: 1835, amount: 1 }] }),
-    response: () => ({ itemsList: (items) => items }) });
+    response: () => ({ itemsList: (items) => items, userInfo: () => [] }) });
     const listed = service.entries(player, { selfId: 1152, side: SELL });
     assert.equal(listed.entries.length, 1); assert.equal(listed.entries[0].price, 600);
     assert.equal(listed.entries[0].cursor.n, 2, 'own and unavailable lines count in the raw list cursor');

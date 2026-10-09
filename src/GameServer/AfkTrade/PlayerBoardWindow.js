@@ -198,6 +198,7 @@ function create({ service = () => require('./PlayerBoardService'),
             show(session, query, result.conditional ? 'Meeting point marked on your radar. The merchant comes after you agree.'
                 : 'Merchant location marked on your radar.');
         } else if (result.ok && ['meet', 'contact'].includes(result.action)) {
+            if (request.kind === 'workshop' && request.confirmed) session.dataSendToMe(response().systemMessage.text('Move closer to the crafter before crafting.'));
             const workshop = request.kind === 'workshop', marked = track(session, result);
             const body = Html.font(workshop ? 'Meet the crafter' : result.side === BUY ? 'Sell items' : 'Buy items', Html.COLOR.title) + '<br>'
                 + Html.keyValueRows([
@@ -262,6 +263,7 @@ function create({ service = () => require('./PlayerBoardService'),
                         merchant_changed: 'The merchant is no longer ready for this trade. Please try again.',
                         merchant_declined: 'The merchant cannot accept these terms now. No goods or payment were reserved.',
                         trade_unavailable: 'The trade could not be agreed. Please try again.',
+                        craft_busy: 'A craft is already in progress. Please wait for its result.',
                         craft_unavailable: 'Crafting is unavailable. Check the materials and try again.', location_unavailable: 'The merchant location is unavailable.' })[result.reason] || 'This offer is unavailable.'
                 : result.action === 'crafted' ? 'Craft completed.'
                     : result.action === 'craft_failed' ? 'Crafting failed. Materials and the fee were spent; no item was produced.'
@@ -270,7 +272,10 @@ function create({ service = () => require('./PlayerBoardService'),
                     : result.action === 'agreed' ? 'Agreed. Wait here for the merchant. Leaving cancels the trade.'
                     : request.kind === 'workshop' ? `${owner} crafts ${itemName(result.productId)} in ${town}. Meet there.`
                         : `${owner} ${result.side === BUY ? 'buys ' + itemName(request.selfId) + ' in ' + town + '. Meet there.' : 'sells in ' + town + '.'}`;
-            if (!result.ok && request.confirmed && request.kind !== 'workshop') session.dataSendToMe(response().systemMessage.text(message));
+            if (request.confirmed && (request.kind === 'workshop' || !result.ok)) session.dataSendToMe(response().systemMessage.text(message));
+            if (result.ok && result.action === 'crafted' && result.received) {
+                invoke('GameServer/ConsoleText').transmitPickup(session, result.received.selfId, result.received.amount);
+            }
             show(session, query, message);
         }
         return result;
@@ -279,7 +284,7 @@ function create({ service = () => require('./PlayerBoardService'),
         const actor = session?.actor;
         try {
             if (!session?.actor) return;
-            if (session.playerBoardAgreePending) return;
+            if (session.playerBoardAgreePending || session.playerBoardCraftPending) return;
             if (parts[1] === 'town') {
                 const query = session.playerBoardView || normalize(session), town = parts.slice(2).join(' ').trim();
                 if (town !== 'All towns' && !towns(session, query).includes(town)) return;
@@ -340,11 +345,13 @@ function create({ service = () => require('./PlayerBoardService'),
                 id: integer(parts[3]), lineId: integer(parts[4]), selfId: integer(parts[5]), price: integer(parts[6]), revision: revision(parts[7]) };
             if (!request || Object.entries(request).some(([key, value]) => key !== 'revision' && value === null)) return;
             if (parts[1] === 'locate') request.locateOnly = true;
+            if (request.kind === 'workshop' && request.confirmed) session.dataSendToMe(response().systemMessage.text('Craft in progress. Checking materials and payment.'));
             return await answer(session, request);
         } catch (error) {
             utils.infoWarn('Board', 'player board request failed: %s', error.message);
             if (session?.actor !== actor) return;
             if (parts[1] === 'agree') session.dataSendToMe(response().systemMessage.text('The trade could not be agreed. Please try again.'));
+            if (parts[1] === 'craft') session.dataSendToMe(response().systemMessage.text('The craft could not be completed. Please try again.'));
             return show(session, session.playerBoardView || {}, 'This offer is unavailable.');
         }
     }

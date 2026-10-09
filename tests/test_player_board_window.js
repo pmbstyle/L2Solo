@@ -27,9 +27,10 @@ const workshop = { boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', o
     craft: async (owner, recipe, customer, options) => {
         if (craftError) throw craftError;
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 1200]);
+        assert.equal(options.expectedRevision, 2);
         crafts++; adena -= options.expectedPrice; return { product: craftSucceeded ? { id: 91, amount: 1 } : null };
     } };
-const response = { npcHtml: (_id, html) => html, itemsList: rows => rows,
+const response = { npcHtml: (_id, html) => html, itemsList: rows => rows, userInfo: () => [],
     systemMessage: invoke('GameServer/Network/Response').systemMessage };
 const service = createService({ afk: () => afk, workshops: () => workshop,
     life: () => ({ cachedState: () => ({ currentRegion: 'Dion', loc: { locX: 7000, locY: 0, locZ: 0 } }) }),
