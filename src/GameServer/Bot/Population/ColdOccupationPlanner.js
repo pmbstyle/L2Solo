@@ -13,9 +13,9 @@ const CURSOR_FIELDS = ['stage', 'row', 'ingredient', 'quote', 'edge', 'recipe', 
 class ColdOccupationPlanner {
     constructor({ capture, create, step, result, ownCurrent = () => true, sameInput = (left, right) => left === right,
         sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
-        onSlots = () => {}, publish = () => {}, now = () => performance.now(),
+        onSlots = () => {}, publish = () => {}, onPublishError = () => {}, now = () => performance.now(),
         schedule = callback => setImmediate(callback) } = {}) {
-        Object.assign(this, { capture, create, step, result, ownCurrent, sameInput, sourceToken, sourceScope, sourceScopeToken, onSlots, publish, now, schedule });
+        Object.assign(this, { capture, create, step, result, ownCurrent, sameInput, sourceToken, sourceScope, sourceScopeToken, onSlots, publish, onPublishError, now, schedule });
         this.slots = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.scopes = new Map();
         this.scopeDependencies = new Map();
@@ -162,12 +162,17 @@ class ColdOccupationPlanner {
     }
 
     finish(entry, value) {
+        if (entry.done || this.slots.get(entry.id) !== entry) return;
         entry.done = true; entry.value = value ?? (entry.input.mode === 'action' ? null : unknownWorkshop());
         entry.work = null; entry.captured = null; entry.validation = null;
         // Completion retains compact scalar evidence only, never an owner
         // inventory/recipe graph. The input reference is native lifetime-bound.
         entry.resolve(entry.value); entry.resolve = null; entry.promise = null;
-        this.publish(entry.id, entry.input, entry.value);
+        try { this.publish(entry.id, entry.input, entry.value); }
+        catch (error) {
+            entry.error = String(error?.message || error);
+            this.onPublishError(error, entry.id, entry.input);
+        }
     }
 
     unit(entry) {
@@ -220,9 +225,9 @@ class ColdOccupationPlanner {
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
                 if (duration > SLICE_MS) DiagnosticConfig.developerDiagnostics && (this.stats.overBudgetUnits++);
                 units++; DiagnosticConfig.developerDiagnostics && (this.stats.units++);
-                if (entry.done || !this.slots.has(id)) break;
+                if (entry.done || this.slots.get(id) !== entry) break;
             }
-            if (!entry.done && this.slots.has(id)) this.ready.add(id);
+            if (!entry.done && this.slots.get(id) === entry) this.ready.add(id);
             if (units >= MAX_UNITS || this.now() - started >= SLICE_MS) break;
         }
         DiagnosticConfig.developerDiagnostics && (this.stats.portions++); DiagnosticConfig.developerDiagnostics && (this.stats.maxPortionUnits = Math.max(this.stats.maxPortionUnits, units));

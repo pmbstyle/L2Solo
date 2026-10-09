@@ -331,7 +331,7 @@ function worthwhileTravel(state, plan, options = {}) {
         : options.r !== undefined && Number.isFinite(rate) && rate >= 0
             ? { ...context, itemUsefulness: () => rate * plan.cost / plan.units } : {
                 ...context, itemUsefulness: id => {
-                    const known = Number(context.itemUsefulness(id));
+                    const known = Number(context.itemUsefulness?.(id));
                     if (known > 0) return known;
                     // Mandatory stock may have no discretionary wish row;
                     // its marginal benefit is still the shared stock input.

@@ -44,8 +44,35 @@ function normalizeItemLookup(value) {
         .replace(/^grade_([a-z])_soulshot$/, 'soulshot_$1_grade');
 }
 
-function npcOffers(selfId, town) {
-    if (!require('./ProductionPolicy').allowsNpcShot(selfId)) return [];
+// NPC stock is catalogue data. Keep a bounded per-item projection rather
+// than rescanning every town during each listing/warehouse decision. Prices
+// follow the current progression multiplier; actor funds and public offers
+// are still read by their own admission paths.
+const NPC_OFFER_LIMIT = 256;
+const npcOfferItems = new Map();
+let npcOfferInputs = null;
+let npcOfferTowns = null;
+function npcOfferCache(selfId) {
+    const inputs = [DataCache.npcSpawns, DataCache.npcs, DataCache.items,
+        invoke('GameServer/ProgressionRates').profile().multiplier,
+        TownNpcCatalog.rowsForTown, TownNpcCatalog.sellersByTown, NpcShopBuyLists.rowForNpc];
+    if (!npcOfferInputs || !inputs.every((value, at) => value === npcOfferInputs[at])) {
+        npcOfferInputs = inputs;
+        npcOfferItems.clear();
+        npcOfferTowns = Object.keys(TownNpcCatalog.sellersByTown());
+    }
+    const id = Number(selfId);
+    let held = npcOfferItems.get(id);
+    if (!held) {
+        held = { towns: new Map(), all: null };
+        if (npcOfferItems.size >= NPC_OFFER_LIMIT) npcOfferItems.delete(npcOfferItems.keys().next().value);
+    } else npcOfferItems.delete(id);
+    npcOfferItems.set(id, held);
+    return held;
+}
+
+function npcTownOffers(selfId, town, held) {
+    if (held.towns.has(town)) return held.towns.get(town);
     const offers = [];
     const seen = new Set();
     TownNpcCatalog.rowsForTown(town).forEach((seller) => {
@@ -71,11 +98,23 @@ function npcOffers(selfId, town) {
             available: price > 0
         });
     });
+    for (const offer of offers) Object.freeze(offer);
+    Object.freeze(offers);
+    if (npcOfferTowns.includes(town)) held.towns.set(town, offers);
     return offers;
 }
 
+function npcOffers(selfId, town) {
+    if (!require('./ProductionPolicy').allowsNpcShot(selfId)) return [];
+    return npcTownOffers(selfId, town, npcOfferCache(selfId)).map(offer => ({ ...offer }));
+}
+
 function npcOffersAll(selfId) {
-    return Object.keys(TownNpcCatalog.sellersByTown()).flatMap((town) => npcOffers(selfId, town));
+    if (!require('./ProductionPolicy').allowsNpcShot(selfId)) return [];
+    const held = npcOfferCache(selfId);
+    held.all ||= Object.freeze(npcOfferTowns.flatMap(town => npcTownOffers(selfId, town, held)));
+    // Preserve callers' ownership of the returned array and rows.
+    return held.all.map(offer => ({ ...offer }));
 }
 
 // Group F: ordinary NPC shops stay; configured city supply remains only for

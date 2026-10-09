@@ -171,6 +171,10 @@ function changeWorkshop(key, row) {
         workshopRevisions.set(productId, (workshopRevisions.get(productId) || 0) + 1); occupationPlanner.sourceChanged(productId); }
 }
 const occupationPlanner = new ColdOccupationPlanner({
+    onPublishError: (error, characterId, input) => send('fault', {
+        reason: 'occupation_publication_failed', characterId, mode: input.mode,
+        stack: String(error?.stack || error).slice(0, 4096)
+    }),
     sourceToken: (id, input) => input?.mode === 'meeting'
         ? `${boardIndex.groupFingerprint(MarketCounters.counterOf(id))}|${MarketCounters.revisionOf(MarketCounters.counterOf(id))}|${digestToken(workshopScopeDigests.get(MarketCounters.counterOf(id)))}`
         : `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}:${workshopRevisions.get(id) || 0}`,
@@ -761,6 +765,9 @@ function send(type, payload = {}, msgId = null, payloadBytes = null) {
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
     let valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
     if (!valid.ok && economyDiagnostics.omitAggregatesOnOverflow(message, valid.reason)) {
+        valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
+    }
+    if (!valid.ok && valid.reason === 'message_too_large' && Protocol.omitPlannedStates(message)) {
         valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch });
     }
     if (!valid.ok) {

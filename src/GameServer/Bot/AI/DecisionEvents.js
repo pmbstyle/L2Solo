@@ -47,9 +47,11 @@ function hold(session, actor, context) {
     // Keep only the decision. Native actor state is read when executing an improvement.
     const leaf = context.network.activity;
     const activity = leaf ? { key: leaf.key, ...new (require('../Population/ColdEconomyDecision').CompactActivity)(leaf),
+        ...(Number.isFinite(leaf.valueHours) ? { valueHours: leaf.valueHours } : {}),
         ...(leaf.items ? { items: leaf.items } : {}), ...(leaf.improvement ? { improvement: leaf.improvement } : {}) } : null;
     session.heldEconomy = { network: { activity }, statsPacket: context.statsPacket,
-        riskWeight: context.riskWeight };
+        riskWeight: context.riskWeight, moneyPrice: context.moneyPrice,
+        ...(context.inputKey ? { inputKey: require('../Fnv1a').fnv1a32(context.inputKey).toString(16) } : {}) };
     session.decisionMarks = marksFor(session, actor);
     if (DiagnosticConfig.developerDiagnostics) {
         if (!reportedAt) reportedAt = Date.now();
