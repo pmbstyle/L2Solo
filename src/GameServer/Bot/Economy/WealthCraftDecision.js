@@ -46,7 +46,7 @@ function exitsFor(state, recipe, template, trip, options) {
         trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
     return result;
 }
-function eligible(state, { buyOrderEscrow = 0, ownLines = [], now = Date.now() } = {}) {
+function eligible(state, { ownLines = [], now = Date.now() } = {}) {
     if (!state || state.phase !== 'cold' || !['hunting', 'resting', 'shopping'].includes(state.activity)
         || require('../Population/CombinedErrandPolicy').pending(state, now).length
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
@@ -54,7 +54,6 @@ function eligible(state, { buyOrderEscrow = 0, ownLines = [], now = Date.now() }
     if (!CraftShopService.isServiceCrafter(state) || CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
         && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
-    if (Number(buyOrderEscrow) > 0) return false;
     const previous = state.stats?.wealthCraft;
     if (previous?.outcome === 'waiting_for_buyer') {
         const id = Number(previous.productId);

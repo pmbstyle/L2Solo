@@ -81,6 +81,15 @@ async function run() {
     LifeEvents.record = async () => null;
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    const pledge = { id: 980010, ownerId: state.characterId, ownerName: state.name,
+        ownerAccount: state.accountName, kind: 'buy_ad', storeType: AfkTrade.BUY,
+        status: 'active', town: 'Giran', revision: 1, escrowAdena: 1,
+        expiresAt: 0, appearance: {}, lines: [{ id: 9800100, selfId: 1867, count: 1, price: 1, enchant: 0 }] };
+    AfkTrade.refreshRecord(pledge);
+    const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
+    assert.strictEqual(Market.buyOrderEscrow(state.characterId), 1);
+    assert.strictEqual(Service.eligible(state), true,
+        'positive off-wallet escrow leaves independent craft eligible');
     for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
         assert.strictEqual(Service.eligible({ ...state, stats: { ...state.stats, karma } }), !blocked,
             `wealth craft with karma ${karma}`);
@@ -168,6 +177,15 @@ async function run() {
     assert.strictEqual(purchases.length, 0);
     assert.strictEqual(crafted, false);
     assert.strictEqual(sold, false);
+    const stalePurse = { ...state, adena: 1, stats: { ...state.stats, money: [360000, .0000001, 0, 0] } };
+    const stale = await Service.execute(stalePurse, { ...unit, template: DataCache.items[0], r: ratio });
+    assert.strictEqual(stale.crafted, false, 'native input acquisition rereads the current purse');
+    assert.strictEqual(stale.state.adena, 1);
+    assert.strictEqual(stale.state.vitals.mp, 100);
+    assert.strictEqual(purchases.length, 0);
+    assert.strictEqual(crafted, false);
+    assert.strictEqual(Market.buyOrderEscrow(state.characterId), 1,
+        'a refused stale craft never releases or consumes the accepted pledge');
     const result = await Service.tryCraft(state, 1000000);
     const repeat = await Service.tryCraft(state, 1000001);
     for (const current of [result, repeat]) {

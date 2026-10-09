@@ -9,6 +9,10 @@ const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const state = { characterId: 900003, phase: 'cold', activity: 'hunting', level: 60,
     adena: 100000, vitals: { mp: 1000 }, inventory: {}, stats: { classId: 57, money: [1000, .001, 0, 0] } };
 const context = { hourAdena: 1000, moneyPrice: .001, mpPerHour: 1000 };
+assert.equal(Decision.eligible(state, { buyOrderEscrow: 1 }), true,
+    'an off-wallet buy pledge does not prohibit crafting with the remaining purse');
+assert.equal(Decision.eligible({ ...state, party: { partyId: 'active' } }, { buyOrderEscrow: 1 }), false,
+    'independent crafting still requires a valid transfer from the party owner');
 const recipe = { type: 'dwarven', recipeId: 20, recipeItemId: 1804, level: 1,
     productId: 1463, productCount: 100, successRate: 60, mpCost: 1,
     materials: [{ selfId: 1458, amount: 1 }] };
@@ -59,8 +63,15 @@ const recurring = Policy.chooseQuantity({ state, recipe: deterministic,
     context, mode: 'occupation' });
 assert(recurring?.incomePerHour > 0);
 assert(Funding.forOpportunity(state, finite.valuation) > 0);
+const purseBefore = structuredClone(state);
+assert.equal(Funding.forOpportunity(state, finite.valuation),
+    Funding.spendable(state, 0, { r: finite.valueHours / finite.basket.cashCost }),
+    'craft funding uses the physical purse without adding or subtracting held escrow');
+assert.deepEqual(state, purseBefore, 'valuation does not release accepted buy pledges or change holdings');
 const poor = { ...state, adena: 1 };
 assert.equal(Policy.opportunityFor(poor, recipe, purchase, [exit], undefined, context), null);
+assert(Funding.forOpportunity(poor, finite.valuation) < finite.basket.cashCost,
+    'a stale profitable candidate cannot fund inputs from an insufficient current purse');
 const recipeOwner = { ...state, inventory: { 1804: { selfId: 1804, amount: 1 } } };
 const learning = Decision.recipePaths(recipeOwner, recipe, { route: finite, sale: { price: 10 }, context });
 assert.equal(learning.best.kind, 'learn');
