@@ -112,6 +112,10 @@ async function run() {
         }))
     });
     assert(retaken.ok, JSON.stringify(retaken));
+    assert.equal(await Database.releasePlayerPartyTakeover({ characterId: 101, playerId: 9001, partyId,
+        isDetached: () => false }), null, 'a reattached runtime actor cannot retire its native membership');
+    assert.equal(JSON.parse((await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=101']))[0].statsJson)
+        .playerPartyTakeover.playerId, 9001);
     await Database.execute(["UPDATE bot_life_state SET phase='cold' WHERE characterId IN (101,102)", []]);
     const restoredCold = await Database.restoreTakenOverBackgroundParty({ partyId, playerId: 9001 });
     assert(restoredCold.ok, JSON.stringify(restoredCold));

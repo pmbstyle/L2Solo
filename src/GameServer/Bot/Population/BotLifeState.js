@@ -1670,6 +1670,39 @@ const BotLifeState = {
         await Promise.all(ids.map(id => pendingWrites.get(Number(id)) || Promise.resolve()));
     },
 
+    releasePlayerPartyTakeover(session) {
+        const id = Number(session?.actor?.fetchId?.());
+        const takeover = session?.coldLifeState?.stats?.playerPartyTakeover
+            || cache.get(id)?.stats?.playerPartyTakeover;
+        if (!takeover?.playerId || session.partyCompanion || session.followPlayerSession) return Promise.resolve(null);
+        // Later hot/cold snapshots must not revive an ownership marker whose
+        // departure is already queued. Earlier writes settle before the patch.
+        for (const key of ['coldLifeState', 'coldMarketState', 'coldCraftState']) {
+            if (!session[key]?.stats?.playerPartyTakeover) continue;
+            const stats = { ...session[key].stats, leaderId: null };
+            delete stats.playerPartyTakeover;
+            session[key] = { ...session[key], stats };
+        }
+        const previous = pendingWrites.get(id) || Promise.resolve();
+        const next = previous.then(() => Database.releasePlayerPartyTakeover({
+            characterId: id, playerId: takeover.playerId, partyId: takeover.partyId,
+            isDetached: () => !session.partyCompanion && !session.followPlayerSession && !session.hotBackgroundPartyId
+        })).then((row) => {
+            if (!row) return null;
+            const snapshot = this.acceptLifecycleRow(row);
+            if (!session.partyCompanion && !session.followPlayerSession) session.coldLifeState = snapshot;
+            return snapshot;
+        }).catch((error) => {
+            utils.infoWarn('BotLife', 'failed to release player party for %s: %s', id, error.message);
+            return null;
+        });
+        const tracked = next.finally(() => {
+            if (pendingWrites.get(id) === tracked) pendingWrites.delete(id);
+        });
+        pendingWrites.set(id, tracked);
+        return next;
+    },
+
     // Accept a row another transaction wrote for this bot, unless the cache already
     // holds a newer cold revision of it.
     acceptNewerLifecycleRow(row) {

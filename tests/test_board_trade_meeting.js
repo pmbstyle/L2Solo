@@ -66,11 +66,28 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
             await assert.rejects(Database.acceptTradeMeeting(request), /party_busy/);
             assert.deepEqual(await held(), holdings, 'party rejection reserves neither goods, fare nor Adena');
         }
-        await Database.execute(["UPDATE bot_life_state SET partyId=NULL,phase='cold',statsJson=json_set(statsJson,'$.playerPartyTakeover.playerId',9) WHERE characterId=?", [ids[1]]]);
+        await Database.execute(["UPDATE bot_life_state SET partyId=NULL,phase='cold',statsJson=json_set(statsJson,'$.playerPartyTakeover',json('{\"playerId\":9,\"partyId\":\"old-takeover\"}')) WHERE characterId=?", [ids[1]]]);
         assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, 9);
         await assert.rejects(Database.acceptTradeMeeting(request), /party_busy/);
         assert.deepEqual(await held(), holdings, 'native player membership blocks custody even with no runtime session');
-        await Database.execute(["UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.playerPartyTakeover') WHERE characterId=?", [ids[1]]]);
+        const nativeTakenOver = (await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [ids[1]]]))[0];
+        const departedSession = { actor: { fetchId: () => ids[1] }, coldLifeState: Life.acceptLifecycleRow(nativeTakenOver) };
+        const queuedDeparture = Life.releasePlayerPartyTakeover(departedSession);
+        departedSession.partyCompanion = true;
+        await queuedDeparture;
+        assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, 9,
+            'a runtime reattachment while departure is queued keeps its native admission fence');
+        departedSession.partyCompanion = false;
+        departedSession.coldLifeState = Life.cachedState(ids[1]);
+        await Life.releasePlayerPartyTakeover(departedSession);
+        assert.equal((await Database.prepareTradeParticipant(ids[1])).playerPartyId, null,
+            'the departure publication clears native player ownership before fresh solo acceptance');
+        assert.equal(Life.cachedState(ids[1]).stats.playerPartyTakeover, undefined);
+        assert.equal(departedSession.coldLifeState.stats.playerPartyTakeover, undefined,
+            'later hot/cold snapshots cannot resurrect dismissed player ownership');
+        parties[1] = await Database.prepareTradeParticipant(ids[1]);
+        request.parties[1] = { ...parties[1], route: request.parties[1].route };
+
         await assert.rejects(Database.acceptTradeMeeting(request, { freshPreparation: true, validatePreparation: () => false }), /preparation_changed/);
         assert.deepEqual(await held(), holdings, 'worker source invalidation after native flush moves no assets');
         for (const changed of [{ ownerId: 'stale_owner' }, { leaseId: 'stale_lease' }, { hotAt: 1 }, { revision: parties[0].revision + 1 }]) {

@@ -12,6 +12,8 @@ const Response = invoke('GameServer/Network/Response');
 const Journal = invoke('GameServer/Bot/AI/BotEventJournal');
 const Panel = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
+const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const { partyTradeAllowed } = require('../src/GameServer/Bot/Population/PartyAdmission');
 
 const saved = [];
 function replace(object, key, value) {
@@ -113,6 +115,12 @@ try {
     });
     assert.strictEqual(refused.reason, 'player_party_not_empty', 'a second takeover cannot merge into an existing player party');
 
+    const released = [];
+    replace(Life, 'releasePlayerPartyTakeover', async (session) => {
+        released.push(session.actor.fetchId());
+        delete session.coldLifeState.stats.playerPartyTakeover;
+        return session.coldLifeState;
+    });
     let restoreRequest = null;
     replace(Takeover, 'restoreAutonomousParty', async (request) => {
         restoreRequest = request;
@@ -127,6 +135,26 @@ try {
     assert.strictEqual(restoreRequest.playerId, 9001);
     assert.deepStrictEqual(restoreRequest.companionSessions, roster);
     assert(roster.every((session) => session.partyCompanion === false && session.followPlayerSession === null));
+    assert.deepStrictEqual(released, [], 'whole-roster restoration retains its native identity until restoration commits');
+    const reattach = () => {
+        states.forEach(state => { state.stats.playerPartyTakeover = { partyId, playerId: 9001 }; });
+        roster.forEach(session => { session.hotBackgroundPartyId = partyId; });
+        assert(Companion.attachRoster(leader, roster, { expectedBackgroundPartyId: partyId, lifeStates: states }).ok);
+    };
+    reattach();
+    assert(Companion.detach(leader, roster[0], { rebuildWindow: false, refreshPanel: false }));
+    assert(partyTradeAllowed('trade', roster[0].coldLifeState, roster[0]), 'an individually dismissed bot can start a new personal trade');
+    assert(!partyTradeAllowed('trade', roster[1].coldLifeState, roster[1]), 'the remaining player companion stays protected');
+    assert(Companion.detachAll(leader, { restoreAutonomousParty: false, rebuildWindow: false, refreshPanel: false }));
+    assert.deepStrictEqual(released, [101, 102]);
+    assert(roster.every(session => partyTradeAllowed('trade', session.coldLifeState, session)),
+        'detachAll without autonomous restoration retires every player ownership marker');
+    reattach();
+    replace(Takeover, 'restoreAutonomousParty', async () => ({ ok: false, reason: 'member_changed' }));
+    assert.equal(Companion.detachAll(leader, { rebuildWindow: false, refreshPanel: false }), 2);
+    await leader.partyTakeoverRestorePromise;
+    assert.deepStrictEqual(released, [101, 102, 101, 102], 'failed restoration also retires current player ownership');
+
 } finally {
     while (saved.length) saved.pop()();
 }

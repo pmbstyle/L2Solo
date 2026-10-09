@@ -5875,6 +5875,30 @@ const Database = {
         }, 'bot-life:party-takeover');
     },
 
+    releasePlayerPartyTakeover(request = {}) {
+        const id = Number(request.characterId);
+        const playerId = Number(request.playerId);
+        if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(playerId) || playerId <= 0) {
+            return Promise.resolve(null);
+        }
+        return inTransaction(() => {
+            // Reattachment can happen while the departure waits behind writes.
+            if (!request.isDetached?.()) return null;
+            const row = coldSimulationRow(id);
+            const stats = parsedObject(row?.statsJson) || {};
+            if (!row || row.partyId || Number(stats.playerPartyTakeover?.playerId) !== playerId
+                || stats.playerPartyTakeover?.partyId !== request.partyId
+                || String(row.simulationOwner || LEGACY_SIMULATION_OWNER) !== LEGACY_SIMULATION_OWNER
+                || row.simulationLeaseId) return null;
+            delete stats.playerPartyTakeover;
+            stats.leaderId = null;
+            write(`UPDATE bot_life_state SET statsJson = ?, updatedAt = ?,
+                simulationRevision = simulationRevision + 1 WHERE characterId = ?`,
+            [JSON.stringify(stats), Math.max(now(), Number(row.updatedAt) + 1), id]);
+            return coldSimulationRow(id);
+        }, 'bot-life:player-party-release');
+    },
+
     restoreTakenOverBackgroundParty(request = {}) {
         const partyId = String(request.partyId || '');
         const playerId = Number(request.playerId || 0);
