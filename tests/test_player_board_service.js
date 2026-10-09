@@ -86,6 +86,19 @@ async function main() {
     assert.equal((await service.answer(player, { ...order, confirmed: true })).action, 'crafted'); assert.equal(crafts, 1);
     assert.equal(player.actor.backpack.fetchItems()[0].id, 91);
     assert.equal(service.entries({ ...player, accountId: 'bot_board' }).available, false);
+    // A native craft can finish after character selection changes. Its old
+    // character transaction must never replace the new character's backpack.
+    let finishCraft;
+    const originalActor = player.actor;
+    const switched = create({ workshops: () => ({ lookup: () => ({ state: shop, recipe: { productId: 1835 }, price: 150 }),
+        craft: () => new Promise(resolve => { finishCraft = resolve; }) }),
+        database: () => ({ fetchItems: async () => [{ id: 99, selfId: 1835, amount: 1 }] }),
+        response: () => ({ itemsList: () => { throw Error('old craft cannot redraw new inventory'); } }) });
+    const pendingCraft = switched.answer(player, { ...order, confirmed: true });
+    const newActor = { ...originalActor, backpack: { items: [{ id: 500 }] } };
+    player.actor = newActor; finishCraft({ product: { id: 99, amount: 1 } });
+    assert.equal((await pendingCraft).reason, 'player_unavailable');
+    assert.deepEqual(newActor.backpack.items, [{ id: 500 }]); player.actor = originalActor;
     console.log('Player board server contract: native index/read pages, current quote, own record, physical store interaction, workshop adapter and no remote purchase passed');
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -19,13 +19,15 @@ const afk = { isBoardReady: () => true, boardIndex: () => board, itemName: id =>
     offerOf: line => { visits++; return { sourceName: line.ownerId === 46 ? 'Mirella' : 'Kerrigan',
         itemName: afk.itemName(line.selfId), projection: line.ref?.projection }; } };
 const shop = { characterId: 55, name: 'Brokk', currentRegion: 'Giran', loc: { locX: 5000, locY: 0, locZ: 0 }, simulation: { revision: 2 } };
-let craftPrice = 1200;
+let craftPrice = 1200, craftSucceeded = true, craftError = null;
 const workshop = { boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', ownerId: 55, ownerName: 'Brokk',
     town: 'Giran', loc: shop.loc, revision: 2, entries: [{ recipeId: 17, price: craftPrice }] }],
-    lookup: () => ({ state: shop, recipe: { productId: 1459 }, price: craftPrice }),
+    lookup: () => ({ state: shop, recipe: { productId: 1459, productCount: 250, successRate: 60,
+        materials: [{ selfId: 1864, amount: 10 }] }, price: craftPrice }),
     craft: async (owner, recipe, customer, options) => {
+        if (craftError) throw craftError;
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 1200]);
-        crafts++; adena -= options.expectedPrice; return { product: { id: 91, amount: 1 } };
+        crafts++; adena -= options.expectedPrice; return { product: craftSucceeded ? { id: 91, amount: 1 } : null };
     } };
 const response = { npcHtml: (_id, html) => html, itemsList: rows => rows };
 const service = createService({ afk: () => afk, workshops: () => workshop,
@@ -63,19 +65,29 @@ async function main() {
     const back = board.previousCursor(SELL, { town: 'Giran', cursor: pageOne.next });
     assert.deepEqual(service.entries(session, { side: SELL, town: 'Giran', cursor: back, limit: 20 }).entries.map(row => row.lineId),
         pageOne.entries.map(row => row.lineId), 'Previous seeks directly to the preceding page');
-    const pageTwoHtml = window.show(session, { side: SELL, town: 'Giran', cursor: pageOne.next });
+    visits = 0;
+    const windowFirst = window.show(session, { side: SELL, town: 'Giran' });
+    assert(visits <= Window.PAGE_SIZE + 1, 'native HTML reads its six offers and a lookahead');
+    const nextCommand = /action="bypass -h (board list [^"]+)"><font[^>]*>Next<\/font>/.exec(windowFirst)[1];
+    await window.handle(session, nextCommand.split(' '));
+    const pageTwoHtml = packets.at(-1);
     const previousLink = /action="bypass -h (board list [^"]+)"><font[^>]*>Previous<\/font>/.exec(pageTwoHtml);
     assert(previousLink);
     await window.handle(session, previousLink[1].split(' '));
     assert.deepEqual([...packets.at(-1).matchAll(/board answer shop (\d+) /g)].map(match => Number(match[1])),
-        pageOne.entries.map(row => row.id));
+        [...windowFirst.matchAll(/board answer shop (\d+) /g)].map(match => Number(match[1])));
 
     board.clear();
     const sell = record(1, 100, { ownerId: 45 });
+    sell.lines[0].enchant = 3;
     board.put(sell, { projection: { actor: merchant } });
     board.put(record(2, 1864, { kind: 'buy_ad', storeType: BUY, ownerId: 46, town: 'Dion' }), {});
     const first = window.show(session, {}); assertHtml(first);
-    assert.match(htmlVisible(first), /Soulshot: D-grade.*2,000.*18 a each.*Kerrigan.*Giran/);
+    assert.match(htmlVisible(first), /Soulshot: D-grade.*18 a each.*2,000.*Kerrigan.*Giran/);
+    assert.match(first, /combobox var="board_town"/);
+    assert.match(first, /board search \$board_query/);
+    assert.match(htmlVisible(first), /\+3 Soulshot: D-grade/);
+    assert(!/Your town|answer<\/font>/.test(first), 'navigation and actions have clear player-facing labels');
     assert.equal(session.playerBoardView.side, SELL); assert.equal(session.playerBoardView.town, 'Giran');
     const sellRequest = { kind: 'shop', id: 1, lineId: 1, selfId: 100, price: 18, revision: 4 };
     assert.equal((await window.answer(session, sellRequest)).action, 'meet');
@@ -84,11 +96,34 @@ async function main() {
     const before = packets.length;
     assert.equal((await window.answer(session, sellRequest)).action, 'store_opened');
     assert.equal(selects, 2); assert.equal(packets.length, before, 'the normal store window is not replaced by another HTML page');
+    const beforeLocation = packets.length;
+    session.questWaypoints = new Map([['quest', [1, 2, 3]]]);
+    session.nativeItemsWaypoint = { x: 4, y: 5, z: 6 };
+    await window.handle(session, ['board', 'locate', 'shop', '1', '1', '100', '18', '4']);
+    assert.equal(selects, 2, 'Location only marks the current shop; it cannot open or buy from it');
+    assert.deepEqual([session.playerBoardWaypoint.x, session.playerBoardWaypoint.y, session.playerBoardWaypoint.z], [1000,0,0]);
+    const markers = packets.slice(beforeLocation).filter(p => Buffer.isBuffer(p) && p[0] === 0xeb);
+    assert.deepEqual(markers.map(p => [1,5,9,13,17].map(o => p.readInt32LE(o))),
+        [[2,2,0,0,0],[0,1,1,2,3],[0,1,4,5,6],[0,1,1000,0,0]], 'board, item and quest markers coexist');
+    await window.handle(session, ['board', 'untrack']);
+    assert.equal(session.playerBoardWaypoint, undefined); assert.deepEqual(session.nativeItemsWaypoint, { x: 4, y: 5, z: 6 });
     x = 0;
     window.show(session, { side: BUY, town: 'Dion' });
     assert.match(packets.at(-1), /board answer buy_ad 2 2 1864 18 4/);
     assert.equal((await window.handle(session, ['board', 'answer', 'buy_ad', '2', '2', '1864', '18', '4'])).action, 'contact');
     assert.match(htmlVisible(packets.at(-1)), /Mirella buys Coal in Dion\. Meet there\./);
+    visits = 0;
+    await window.handle(session, ['board', 'search', 'Coal']);
+    assert.match(packets.at(-1), /board list buy Dion 1864 -/);
+    assert.equal(visits, 0, 'name search uses unique indexed items rather than scanning every offer');
+    await window.handle(session, ['board', 'search', 'Soulshot:', 'D-grade']);
+    assert.match(htmlVisible(packets.at(-1)), /No matching items/);
+    await window.handle(session, ['board', 'town', 'All', 'towns']);
+    assert.equal(session.playerBoardView.town, null);
+    board.put(record(20, 1864, { storeType: BUY, town: 'Dark Elven Village' }));
+    await window.handle(session, ['board', 'town', 'Dark', 'Elven', 'Village']);
+    assert.equal(session.playerBoardView.town, 'Dark Elven Village');
+    await window.handle(session, ['board', 'town', 'Dion']);
     board.put(record(3, 1835, { kind: 'sell_ad', ownerId: 45 }), {});
     assert.equal((await window.handle(session, ['board', 'answer', 'sell_ad', '3', '3', '1835', '18', '4'])).action, 'contact');
     assert.match(htmlVisible(packets.at(-1)), /Kerrigan sells in Dion\./);
@@ -107,18 +142,41 @@ async function main() {
     assert.match(htmlVisible(packets.at(-1)), /Brokk crafts Soulshot: C-grade in Giran\. Meet there\./);
     x = 5000;
     assert.equal((await window.answer(session, order)).action, 'confirm'); assert.equal(crafts, 0); assert.equal(adena, 5000);
-    assert.match(htmlVisible(packets.at(-1)), /Craft Soulshot: C-grade for 1,200 a from Brokk\?/);
+    assert.match(htmlVisible(packets.at(-1)), /Product.*Soulshot: C-grade.*Fee.*1,200 a.*Crafter.*Brokk/);
+    assert.match(htmlVisible(packets.at(-1)), /Quantity.*250.*Success.*60%.*10.*Coal/);
+    assert.match(htmlVisible(packets.at(-1)), /spent even if crafting fails/);
     assert.match(packets.at(-1), /board craft 55 17 1200 2/);
     craftPrice = 1300;
     assert.equal((await window.answer(session, { ...order, confirmed: true })).reason, 'record_changed'); assert.equal(crafts, 0); assert.equal(adena, 5000);
     craftPrice = 1200;
     await window.handle(session, ['board', 'craft', '55', '17', '1200', '2']);
     assert.equal(crafts, 1); assert.equal(adena, 3800); assert.equal(actor.backpack.items[0].selfId, 1459);
+    craftSucceeded = false;
+    assert.equal((await window.answer(session, { ...order, confirmed: true })).action, 'craft_failed');
+    assert.equal(crafts, 2); assert.equal(adena, 2600);
+    assert.match(htmlVisible(packets.at(-1)), /Crafting failed.*no item was produced/);
+    craftSucceeded = true; craftError = Error('workshop materials missing');
+    assert.equal((await window.answer(session, { ...order, confirmed: true })).reason, 'materials_missing');
+    assert.match(htmlVisible(packets.at(-1)), /required crafting materials/);
+    craftError = Error('customer adena changed');
+    assert.equal((await window.answer(session, { ...order, confirmed: true })).reason, 'insufficient_funds');
+    assert.match(htmlVisible(packets.at(-1)), /not have enough adena/);
+    craftError = null;
+    await window.handle(session, ['board', 'search', 'Soulshot:', 'C-grade']);
+    assert.match(packets.at(-1), /board list workshop Giran 1459 -/);
 
     board.clear();
     for (let id = 1; id <= 24; id++) board.put(record(id, 100), {});
     const originalName = afk.itemName;
     afk.itemName = () => 'Long <&> product '.repeat(100);
+    const clippedFirst = window.show(session, { side: SELL, town: 'Giran' });
+    const clippedNext = /action="bypass -h (board list [^"]+)"><font[^>]*>Next<\/font>/.exec(clippedFirst);
+    assert(clippedNext);
+    await window.handle(session, clippedNext[1].split(' '));
+    const clippedBack = /action="bypass -h (board list [^"]+)"><font[^>]*>Previous<\/font>/.exec(packets.at(-1));
+    await window.handle(session, clippedBack[1].split(' '));
+    assert.deepEqual([...packets.at(-1).matchAll(/board answer shop (\d+) /g)].map(m => m[1]),
+        [...clippedFirst.matchAll(/board answer shop (\d+) /g)].map(m => m[1]), 'Previous returns to the actual HTML-clipped page');
     const shown = [];
     let query = { side: SELL, town: 'Giran' };
     do {
@@ -129,6 +187,15 @@ async function main() {
     } while (query);
     assert.deepEqual(shown, Array.from({ length: 24 }, (_, i) => i + 1), 'HTML-size cuts continue at the first unseen row');
     afk.itemName = originalName;
+    board.clear();
+    for (let id = 1; id <= 24; id++) board.put(record(id, 100, { ownerId: id % 2 ? 8 : 45 }), {});
+    const hiddenFirst = window.show(session, { side: SELL, town: 'Giran' });
+    const hiddenNext = /action="bypass -h (board list [^"]+)"><font[^>]*>Next<\/font>/.exec(hiddenFirst);
+    await window.handle(session, hiddenNext[1].split(' '));
+    const hiddenBack = /action="bypass -h (board list [^"]+)"><font[^>]*>Previous<\/font>/.exec(packets.at(-1));
+    await window.handle(session, hiddenBack[1].split(' '));
+    assert.deepEqual([...packets.at(-1).matchAll(/board answer shop (\d+) /g)].map(m => m[1]),
+        [...hiddenFirst.matchAll(/board answer shop (\d+) /g)].map(m => m[1]), 'own hidden offers cannot shift Previous to a different page');
 
     let selectedAmount = 1, cancelled = 0;
     const meetingWindow = Window.create({ afk: () => afk, workshops: () => workshop, response: () => response,
@@ -143,7 +210,7 @@ async function main() {
     assert.match(packets.at(-1), /edit var="board_quantity"/);
     assert.match(packets.at(-1), /board quantity \$board_quantity/);
     await meetingWindow.handle(session, ['board', 'quantity', '7']);
-    assert.equal(selectedAmount, 7); assert.match(htmlVisible(packets.at(-1)), /Buy 7 Coal for 126 a/);
+    assert.equal(selectedAmount, 7); assert.match(htmlVisible(packets.at(-1)), /Item.*Coal.*Quantity.*7.*Total.*126 a/);
     await meetingWindow.handle(session, ['board', 'quantity', '0']); assert.equal(selectedAmount, 7);
     session.tradeMeetingPresence = { id: 7 };
     assert.match(meetingWindow.show(session), /board cancel/);
