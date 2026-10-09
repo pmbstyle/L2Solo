@@ -21,6 +21,7 @@ const tests = [
     'tests/test_clan_goal_recovery.js',
     'tests/test_clan_read_indexes.js',
     'tests/test_bot_market_destinations.js',
+    'tests/test_npc_offer_catalog_reuse.js',
     'tests/test_market_store_history.js',
     'tests/test_bot_market_price_alignment.js',
     'tests/test_clan_hall_auctions.js',

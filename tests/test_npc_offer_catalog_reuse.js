@@ -1,0 +1,40 @@
+'use strict';
+const assert = require('node:assert/strict');
+const data = { npcSpawns: [], npcs: [], items: [{ selfId: 178, template: { name: 'Sword' } }] };
+let rate = 1, allowed = true, lookups = 0, townBuilds = 0;
+let sellers = { Giran: [{ npcSelfId: 1, name: 'Trader', locX: 1, locY: 2, locZ: 3 }],
+    Dion: [{ npcSelfId: 2, name: 'Trader', locX: 4, locY: 5, locZ: 6 }] };
+const townCatalog = { rowsForTown: town => sellers[town] || [], sellersByTown: () => { townBuilds++; return sellers; } };
+const shops = { rowForNpc: (npc, id) => { lookups++; return id === 178 ? { selfId: id, price: npc * 100 * rate } : null; } };
+const filename = require.resolve('../src/GameServer/Bot/Economy/TownNpcCatalog');
+require.cache[filename] = { id: filename, filename, loaded: true, exports: townCatalog };
+const policyFile = require.resolve('../src/GameServer/Bot/Economy/ProductionPolicy');
+require.cache[policyFile] = { id: policyFile, filename: policyFile, loaded: true, exports: { allowsNpcShot: () => allowed } };
+global.invoke = name => ({ 'GameServer/DataCache': data, 'GameServer/World/World': {},
+    'GameServer/World/Generics/NpcShopBuyLists': shops, 'GameServer/Bot/MerchantStoreConfigs': {},
+    'GameServer/AfkTrade/AfkTradeService': {}, 'GameServer/ProgressionRates': { profile: () => ({ multiplier: rate }) } })[name] || {};
+const Offers = require('../src/GameServer/Bot/Economy/MarketOpportunity');
+const expected = Offers.npcOffersAll(178);
+for (let at = 0; at < 10000; at++) assert.deepEqual(Offers.npcOffersAll(178), expected);
+assert.equal(lookups, 2, 'ten thousand reads project each seller once');
+assert.equal(townBuilds, 1, 'the town catalogue is grouped once');
+const changed = Offers.npcOffersAll(178);
+changed[0].price = 0; changed.pop();
+assert.deepEqual(Offers.npcOffersAll(178), expected, 'caller mutation cannot poison shared stock');
+assert.deepEqual(Offers.npcOffers(178, 'Giran'), [expected[0]]);
+allowed = false; assert.deepEqual(Offers.npcOffersAll(178), []);
+allowed = true; assert.deepEqual(Offers.npcOffersAll(178), expected, 'policy is checked on every read');
+rate = 10; assert.equal(Offers.npcOffersAll(178)[0].price, 1000, 'rate changes reprice stock');
+sellers = { Dion: sellers.Dion };
+data.npcSpawns = []; assert.equal(Offers.npcOffersAll(178).length, 1, 'replacement spawns rebuild towns');
+data.items = [{ selfId: 178, template: { name: 'New Sword' } }];
+assert.equal(Offers.npcOffersAll(178)[0].itemName, 'New Sword');
+shops.rowForNpc = () => null;
+assert.deepEqual(Offers.npcOffersAll(178), [], 'replacement shop source invalidates stock');
+let builds = 0;
+shops.rowForNpc = (npc, id) => { builds++; return { selfId: id, price: 10 }; };
+Offers.npcOffersAll(178);
+for (let id = 10000; id < 10256; id++) Offers.npcOffersAll(id);
+const before = builds; Offers.npcOffersAll(178);
+assert.equal(builds, before + 1, 'bounded catalogue eviction recomputes the same source');
+console.log('PASS NPC offer catalogue: 10000 reads, two seller projections, current rates/policy/catalogue, mutation isolation and eviction');
