@@ -199,12 +199,16 @@ function foundation(state, deps, persona, timestamp, price) {
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
     const bestTable = spotTable || Table.best(tableRole, state.level, true);
-    const { selfId: shotItemId, perAction: shotPerAction } = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    const shotPlan = ShotStock.planForState(state);
+    const shotItemId = shotPlan.selfId;
     const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const rawShots = shotPerAction > 0 ? positive(bestTable?.shots) : 0;
     const withoutShots = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-    const shotBenefit = Math.max(0, 1 - positive(withoutShots?.exp) / Math.max(1, positive(bestTable?.exp)));
-    const shotUse = shotBenefit < rawShots * price(shotItemId) / Hunt.huntHour(hunt, state) ? 0 : rawShots;
+    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable, withoutShots,
+        hourAdena: Hunt.huntHour(hunt, state), unitPrice: price(shotItemId) });
+    const shotBenefit = shotPolicy.benefit;
+    const shotUse = positive(state.inventory?.[shotItemId]?.amount) > 0
+        ? shotPolicy.usePerHour : shotPolicy.purchaseUsePerHour;
     const potionUse = positive(bestTable?.potions);
     let bagHours = 2;
     const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
@@ -273,16 +277,20 @@ function foundation(state, deps, persona, timestamp, price) {
         const itemId = shots ? shotItemId : potionItemId;
         const use = shots ? shotUse : potionUse;
         const current = positive(state.inventory?.[itemId]?.amount);
-        const target = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
+        const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * targetHours));
+        // Useful owned stock need not justify expensive replacement stock.
+        const canRestock = !shots || shotPolicy.purchaseUsePerHour > 0;
+        const target = canRestock ? wantedTarget : Math.min(current, wantedTarget);
         // Forecast consumption may be fractional; both purchase tranches use
         // the same whole-unit survival stock so their sum remains executable.
-        const survivalTarget = Math.ceil(use);
+        const survivalTarget = canRestock ? Math.ceil(use) : Math.min(current, Math.ceil(use));
         const survivalMissing = Math.max(0, survivalTarget - current);
         const missing = Math.max(0, target - Math.max(current, survivalTarget));
         const benefitPerUnit = use > 0
             ? (shots ? shotBenefit : positive(bestTable?.deaths) * deathHours) / use : 0;
         const benefitHours = missing * benefitPerUnit;
-        return { itemId: Number(itemId), usePerHour: use, current, hours: use > 0 ? current / use : Infinity,
+        return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: shotPolicy.usePerHour } : {}),
+            current, hours: use > 0 ? current / use : Infinity,
             targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId), benefitPerUnit, benefitHours,
             needed: use > 0 && current < survivalTarget };
     };

@@ -55,7 +55,7 @@ Economy.forActor = (bot, current) => {
         previous: { focus: stats.wishFocus || current.heldEconomy?.statsPacket.wishFocus },
         wallet, hourAdena: 100, roots: ['hunt'],
         nodes: [{ key: 'hunt', need: 'power', valueHours: 1, paths: [{ activity: 'hunting', costHours: 1 }] }] });
-    return { network: result, statsPacket: { decisionSeq: result.decisionSeq, activityLeaf: result.activityLeaf,
+    return { stock: () => ({ itemId: 1835, usePerHour: 0 }), network: result, statsPacket: { decisionSeq: result.decisionSeq, activityLeaf: result.activityLeaf,
         wishFocus: result.focus, money: [100, .01, 0, 0] } };
 };
 const tick = () => Hunting.tick(session, actor, {}, { say() {} });

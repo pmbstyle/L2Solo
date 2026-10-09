@@ -956,11 +956,11 @@ function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0, s
 // the kind and grade hot auto shots load (ShotStock.planForState), how many
 // the weapon takes per charge and how many charges the stock still covers.
 // Null when the bot holds none of that shot or its weapon takes none.
-function coldShotSupply(state) {
+function coldShotSupply(state, timestamp) {
     const plan = ShotStock.planForState(state);
     const key = String(plan.selfId);
     const left = plan.perAction > 0 ? Math.floor(Number(state.inventory?.[key]?.amount || 0) / plan.perAction) : 0;
-    if (left <= 0) return null;
+    if (left <= 0 || ShotStock.usePolicy(state, { timestamp, plan }).usePerHour <= 0) return null;
     return { key, perAction: plan.perAction, left, soulshot: plan.kind === 'soulshot',
         spiritshot: plan.kind !== 'soulshot', blessedSpiritshot: plan.kind === 'blessedSpiritshot' };
 }
@@ -1111,7 +1111,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
         readyAt: Number(pending?.botReadyAt || 0),
         soulCrystalMark: pending?.soulCrystalMark || null,
-        shot: coldShotSupply(fightState),
+        shot: coldShotSupply(fightState, timestamp),
         shotActions: 0,
         skillUses: 0,
         heals: 0,
@@ -1364,7 +1364,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             readyAt: Number(pending?.readyAt?.[state.characterId] || 0),
             soulCrystalMark: pending?.soulCrystalMarks?.[state.characterId] || null,
             actions: 0,
-            shot: coldShotSupply(fighterState),
+            shot: coldShotSupply(fighterState, timestamp),
             shotActions: 0,
             skillUses: 0,
             heals: 0,

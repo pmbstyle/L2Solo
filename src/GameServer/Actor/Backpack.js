@@ -169,6 +169,7 @@ class Backpack extends BackpackModel {
     }
 
     fetchAutoShot(actor, kind) {
+        if (actor.session?.botSession === true) ShotStock.refreshAutoShot(actor);
         const enabled = actor.autoSoulshots;
         if (!enabled) return null;
         for (const selfId of enabled) {

@@ -133,7 +133,7 @@ const botPhysicalActor = {
     backpack,
     autoSoulshots: new Set([2509])
 };
-assert.strictEqual(ShotStock.enableAutoShot(botPhysicalActor).selfId, 1835, 'a physical bot should enable its compatible Soulshot without a client hotbar request');
+assert.strictEqual(ShotStock.enableAutoShot(botPhysicalActor, { stock: { itemId: 1835, usePerHour: 100 } }).selfId, 1835, 'a physical bot should enable its compatible Soulshot without a client hotbar request');
 assert.deepStrictEqual([...botPhysicalActor.autoSoulshots], [1835], 'a physical bot should clear an incompatible caster auto-shot');
 
 const bladeDancerActor = {
@@ -143,7 +143,7 @@ const bladeDancerActor = {
 };
 assert.strictEqual(ShotStock.planFor({ classId: 34, rank: 'none' }).kind, 'soulshot', 'Bladedancer should use physical Soulshots');
 assert.strictEqual(ShotStock.planFor({ classId: 34, rank: 'c' }).selfId, 1464, 'Bladedancer should select the matching C-grade Soulshot');
-assert.strictEqual(ShotStock.enableAutoShot(bladeDancerActor).selfId, 1835, 'Bladedancer should enable Soulshots for dual swords');
+assert.strictEqual(ShotStock.enableAutoShot(bladeDancerActor, { stock: { itemId: 1835, usePerHour: 100 } }).selfId, 1835, 'Bladedancer should enable Soulshots for dual swords');
 assert.deepStrictEqual([...bladeDancerActor.autoSoulshots], [1835], 'Bladedancer should clear an incompatible Spiritshot');
 
 const swordSingerActor = {
@@ -153,7 +153,7 @@ const swordSingerActor = {
 };
 assert.strictEqual(ShotStock.planFor({ classId: 21, rank: 'none' }).kind, 'soulshot', 'Sword Singer should use physical Soulshots');
 assert.strictEqual(ShotStock.planFor({ classId: 21, rank: 'c' }).selfId, 1464, 'Sword Singer should select the matching C-grade Soulshot');
-assert.strictEqual(ShotStock.enableAutoShot(swordSingerActor).selfId, 1835, 'Sword Singer should enable Soulshots for melee weapons');
+assert.strictEqual(ShotStock.enableAutoShot(swordSingerActor, { stock: { itemId: 1835, usePerHour: 100 } }).selfId, 1835, 'Sword Singer should enable Soulshots for melee weapons');
 assert.deepStrictEqual([...swordSingerActor.autoSoulshots], [1835], 'Sword Singer should clear an incompatible Spiritshot');
 
 const botCasterBackpack = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
@@ -162,7 +162,7 @@ botCasterBackpack.items = [
     item(8, { selfId: 2509, kind: 'Other.Shot', amount: 10 })
 ];
 const botCasterActor = { fetchClassId: () => 10, backpack: botCasterBackpack };
-assert.strictEqual(ShotStock.enableAutoShot(botCasterActor).selfId, 2509, 'a caster bot should enable its compatible Spiritshot without a client hotbar request');
+assert.strictEqual(ShotStock.enableAutoShot(botCasterActor, { stock: { itemId: 2509, usePerHour: 100 } }).selfId, 2509, 'a caster bot should enable its compatible Spiritshot without a client hotbar request');
 assert.strictEqual(botCasterBackpack.fetchAutoSpiritshot(botCasterActor).selfId, 2509, 'the spell combat path should see the bot-enabled Spiritshot');
 
 const attack = new Attack();
