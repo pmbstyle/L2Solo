@@ -291,8 +291,8 @@ function prepareWarehouseStop(session, bot, town, BotAI) {
 function workshopTarget(session, bot) {
     const physical = LifeState.cachedState(bot.fetchId()) || session.coldLifeState;
     const plan = session.coldLifeState?.stats?.equipmentPlan || physical?.stats?.equipmentPlan;
-    const saved = physical && { ...physical, stats: { ...physical.stats, equipmentPlan: plan } };
     if (plan?.strategy !== 'craft' || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;
+    const saved = physical && { ...physical, stats: { ...physical.stats, equipmentPlan: plan } };
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
     const ColdCraft = invoke('GameServer/Bot/Economy/ColdCraftingService');
     const state = { ...saved, inventory: LifeState.inventorySummaryFromItems(bot.backpack.fetchItems()) };
@@ -392,7 +392,9 @@ module.exports = {
             session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
         }
 
-        const paidCraft = !session.companionShopping && workshopTarget(session, bot);
+        // ARCH-NOTE: a held workshop target is not rebuilt each tick; a stale
+        // station revision fails the craft, which clears the phase and retries.
+        const paidCraft = !session.companionShopping && session.shoppingServicePhase !== 'workshop' && workshopTarget(session, bot);
         if (paidCraft) { session.shoppingTarget = paidCraft; session.shoppingServicePhase = 'workshop'; }
         if (session.shoppingServicePhase !== 'workshop' && prepareEquipmentMarketStop(session, bot, closestTown, BotAI) && !session.companionShopping) return;
         if (session.shoppingServicePhase !== 'workshop') prepareWarehouseStop(session, bot, closestTown, BotAI);

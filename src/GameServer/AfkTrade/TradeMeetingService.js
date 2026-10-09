@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const staged = new Map();
+const preparedActors = new Map(); // actor -> staged token; one preparation per actor.
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
 const playerWaiters = new Map(); // Derived numeric references, retired with native commitments.
 const travelNotices = new Map(); // One private acknowledgement per enrolled bot/player commitment.
@@ -126,15 +127,14 @@ function stage(request) {
     const id = request.token;
     staged.set(id, { frames, revisions: request.parties.map(party => party.revision),
         bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });
+    for (const actor of [request.actorA, request.actorB]) preparedActors.set(Number(actor), id);
     pages += count;
     return id;
 }
 // Preparations already hold the bounded participant set; callers use it to
 // avoid changing their own consent while bilateral worker checks are pending.
 function hasPreparation(characterId) {
-    const id = Number(characterId);
-    for (const entry of staged.values()) if (entry.actors.includes(id)) return true;
-    return false;
+    return preparedActors.has(Number(characterId));
 }
 function canJoinParty(characterId, state = life().cachedState(characterId), session = sessionFor(characterId)) {
     const current = life()?.cachedState?.(characterId) || state;
@@ -144,6 +144,7 @@ function discard(id) {
     const entry = staged.get(id);
     if (entry) {
         pages -= entry.pages; staged.delete(id);
+        for (const actor of entry.actors) if (preparedActors.get(Number(actor)) === id) preparedActors.delete(Number(actor));
         entry.cancelled = true;
         if (entry.ready) coordinator()?.cancelMeetingPreparation?.(id);
     }
@@ -341,7 +342,7 @@ function reset() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
-    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
+    staged.clear(); preparedActors.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;

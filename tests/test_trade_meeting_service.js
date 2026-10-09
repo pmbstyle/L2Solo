@@ -44,6 +44,8 @@ function request(n) {
         assert.equal(Service.stage(request(0)), id, 'identical staging retry owns no additional pages');
         assert.throws(() => Service.stage({ ...request(0), town: 'Dion' }), /consent_changed/);
         assert.throws(() => Service.stage({ ...request(0), token: 'different' }), /preparation_busy/);
+        assert.equal(Service.hasPreparation(1), true); assert.equal(Service.hasPreparation('2'), true);
+        assert.equal(Service.hasPreparation(3), false, 'an actor outside the staged pair has no preparation');
         revision = 1; lifeListener({ characterId: 1 });
         await assert.rejects(Service.accept(id), /preparation_missing/);
         revision = 0;
@@ -58,6 +60,7 @@ function request(n) {
         assert.throws(() => Service.stage(request(n)), /backpressure/);
         boardListener({ reset: true });
         assert.equal(Service.counters().pages, 0);
+        assert.equal(Service.hasPreparation(1), false, 'discarded preparations release their actors');
         assert.equal(Service.counters().preparations, 0);
         const original = request(0);
         native.fetchTradeMeetingByToken = async token => token === original.token
