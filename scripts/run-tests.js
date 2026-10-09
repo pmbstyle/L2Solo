@@ -297,6 +297,7 @@ const tests = [
     'tests/test_static_merchant_pricing.js',
     'tests/test_bot_gear_acquisition.js',
     'tests/test_bot_gear_readiness_scope.js',
+    'tests/test_bot_source_assessment_scope.js',
     'tests/test_bot_equipment_transition_recovery.js',
     'tests/test_bot_dual_sword_combine.js',
     'tests/test_bot_dual_sword_database.js',
@@ -981,6 +982,7 @@ const tests = [
     'tests/test_cold_persona_cache.js',
     'tests/test_wish_gain_zero_cache.js',
     'tests/test_wish_spot_value_memo.js',
+    'tests/test_wish_source_assessment_scope.js',
     'tests/test_wish_source_yields.js',
     'tests/test_cold_competition_owner_storage.js',
     'tests/test_stock_bag_fill_interval.js',
@@ -1061,6 +1063,8 @@ const optionalGeodataTests = new Set([
 const geodataOnly = process.argv.includes('--geodata');
 // Disposable recovery and market fixtures use the default configuration.
 const defaultConfigTests = new Set([
+    'tests/test_bot_source_assessment_scope.js',
+    'tests/test_wish_source_assessment_scope.js',
     'tests/test_bot_wtb_cached_survival_floor.js',
     'tests/test_bot_wtb_recovery_floor.js',
     'tests/test_cold_pvp_checkpoint_deadline.js',
