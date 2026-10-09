@@ -3,6 +3,10 @@ require('../src/Global');
 const Executor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Towns = invoke('GameServer/World/TownRespawn');
+// This test checks where the trip goes, not whether the purchase is worth it:
+// the worth-the-trip gate (needs a board offer and the experience table) is
+// covered by test_acquisition_trip_value.js, so the fixture lets it pass.
+invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase = () => true;
 const state = { characterId: 7, name: 'Buyer', level: 40, phase: 'cold', activity: 'hunting',
     currentRegion: 'Field', loc: { locX: 80000, locY: 170000, locZ: -3500 }, stats: {}, timing: {},
     // Town trips are paid (N2): a Scroll of Escape and the gatekeeper fee.
