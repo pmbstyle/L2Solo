@@ -29,7 +29,8 @@ const workshop = { boardRecords: () => [{ id: 'workshop_55', kind: 'workshop', o
         assert.deepEqual([owner, recipe, customer, options.expectedPrice], [55, 17, 8, 1200]);
         crafts++; adena -= options.expectedPrice; return { product: craftSucceeded ? { id: 91, amount: 1 } : null };
     } };
-const response = { npcHtml: (_id, html) => html, itemsList: rows => rows };
+const response = { npcHtml: (_id, html) => html, itemsList: rows => rows,
+    systemMessage: invoke('GameServer/Network/Response').systemMessage };
 const service = createService({ afk: () => afk, workshops: () => workshop,
     life: () => ({ cachedState: () => ({ currentRegion: 'Dion', loc: { locX: 7000, locY: 0, locZ: 0 } }) }),
     database: () => ({ fetchItems: async () => [{ id: 91, selfId: 1459, amount: 1 }] }), response: () => response });
@@ -232,12 +233,20 @@ async function main() {
     session.playerBoardPreparation = { id: 9, amount: 1 };
     const agreement = waitingWindow.handle(session, ['board', 'agree']);
     assert.match(htmlVisible(packets.at(-1)), /Checking the trade/);
+    const checkingMessages = packets.filter(packet => Buffer.isBuffer(packet) && packet[0] === 0x64).length;
+    assert.match(packets.at(-2).subarray(13).toString('utf16le'), /Trade in progress.*Checking goods/);
     await waitingWindow.handle(session, ['board', 'agree']);
     assert.equal(agreementCalls, 1, 'a second Agree click cannot reserve the same trade twice');
+    assert.equal(packets.filter(packet => Buffer.isBuffer(packet) && packet[0] === 0x64).length, checkingMessages);
     finishAgreement({ ok: false, reason: 'merchant_busy' });
     await agreement;
     assert.equal(session.playerBoardAgreePending, undefined);
     assert.match(htmlVisible(packets.at(-1)), /merchant is busy/);
+    assert.match(packets.at(-2).subarray(13).toString('utf16le'), /merchant is busy/, 'declined agreement also reaches system chat');
+    const disconnected = { ...session, dataSendToMe() { throw Error('socket closed'); } };
+    await assert.rejects(waitingWindow.handle(disconnected, ['board', 'agree']), /socket closed/);
+    assert.equal(disconnected.playerBoardAgreePending, undefined, 'failed progress delivery must release the pending request');
+    assert.equal(agreementCalls, 1, 'a disconnected player does not start a new merchant approval');
 
     const defaultShow = Window.show;
     const ActorGenerics = invoke(path.actor), originalAdmin = ActorGenerics.adminPanel;

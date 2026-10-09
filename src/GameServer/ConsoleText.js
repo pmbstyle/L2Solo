@@ -43,6 +43,15 @@ const ConsoleText = {
         session.dataSendToMe(
             ServerResponse.consoleText(textId, params)
         );
+    },
+
+    transmitPickup(session, selfId, amount) {
+        const item = { kind: ConsoleText.kind.item, value: selfId };
+        const count = { kind: ConsoleText.kind.number, value: amount };
+        if (amount > 1) {
+            if (selfId === 57) ConsoleText.transmit(session, ConsoleText.caption.pickupAdenaAmount, [count]);
+            else ConsoleText.transmit(session, ConsoleText.caption.pickupAmountOf, [item, count]);
+        } else ConsoleText.transmit(session, ConsoleText.caption.pickup, [item]);
     }
 };
 

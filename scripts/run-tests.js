@@ -46,6 +46,7 @@ const tests = [
     'tests/test_player_transition_recovery.js',
     'tests/test_player_meeting_priority.js',
     'tests/test_trade_meeting_chat.js',
+    'tests/test_player_meeting_notifications.js',
     'tests/test_heine_npcs.js',
     'tests/test_goddard_rune_npcs.js',
     'tests/test_player_move_destination_height.js',

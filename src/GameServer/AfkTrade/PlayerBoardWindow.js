@@ -270,6 +270,7 @@ function create({ service = () => require('./PlayerBoardService'),
                     : result.action === 'agreed' ? 'Agreed. Wait here for the merchant. Leaving cancels the trade.'
                     : request.kind === 'workshop' ? `${owner} crafts ${itemName(result.productId)} in ${town}. Meet there.`
                         : `${owner} ${result.side === BUY ? 'buys ' + itemName(request.selfId) + ' in ' + town + '. Meet there.' : 'sells in ' + town + '.'}`;
+            if (!result.ok && request.confirmed && request.kind !== 'workshop') session.dataSendToMe(response().systemMessage.text(message));
             show(session, query, message);
         }
         return result;
@@ -319,11 +320,14 @@ function create({ service = () => require('./PlayerBoardService'),
                 const prepared = session.playerBoardPreparation;
                 if (!prepared) return show(session, session.playerBoardView || {}, 'This offer is unavailable.');
                 session.playerBoardAgreePending = prepared;
-                send(session, page(Html.font('Checking the trade', Html.COLOR.title) + '<br>'
-                    + 'Checking goods and payment.<br1>'
-                    + 'Waiting for the merchant response.<br1>'
-                    + 'Please wait for the result.'));
-                try { return await answer(session, { ...prepared, confirmed: true }); }
+                try {
+                    session.dataSendToMe(response().systemMessage.text('Trade in progress. Checking goods and payment.'));
+                    send(session, page(Html.font('Checking the trade', Html.COLOR.title) + '<br>'
+                        + 'Checking goods and payment.<br1>'
+                        + 'Waiting for the merchant response.<br1>'
+                        + 'Please wait for the result.'));
+                    return await answer(session, { ...prepared, confirmed: true });
+                }
                 finally { if (session.playerBoardAgreePending === prepared) session.playerBoardAgreePending = undefined; }
             }
             let request;
@@ -340,6 +344,7 @@ function create({ service = () => require('./PlayerBoardService'),
         } catch (error) {
             utils.infoWarn('Board', 'player board request failed: %s', error.message);
             if (session?.actor !== actor) return;
+            if (parts[1] === 'agree') session.dataSendToMe(response().systemMessage.text('The trade could not be agreed. Please try again.'));
             return show(session, session.playerBoardView || {}, 'This offer is unavailable.');
         }
     }
