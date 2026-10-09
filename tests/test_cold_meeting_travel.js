@@ -31,7 +31,7 @@ global.invoke = name => ({
 new Function('require', 'module', fs.readFileSync(require.resolve('../src/GameServer/AfkTrade/TradeMeetingService'), 'utf8'))(
     name => name.includes('TravelRoutes') ? { between: () => ({ start, route: { fee: step?.fee || 0, steps: step ? [step] : [] } }) }
         : name.includes('NpcObjectIndex') ? { nearTemplate: () => ({ fetchLocX: () => start.locX, fetchLocY: () => 0, fetchLocZ: () => 0 }) }
-        : name.includes('TradeIntent') ? {} : require(name), loaded);
+        : name.includes('TradeIntent') ? {} : require('node:module').createRequire(require.resolve('../src/GameServer/AfkTrade/TradeMeetingService'))(name), loaded);
 const service = loaded.exports;
 const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolve => setImmediate(resolve)); };
 (async () => {

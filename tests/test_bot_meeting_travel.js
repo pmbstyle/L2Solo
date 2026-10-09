@@ -59,6 +59,12 @@ Routes.between = position => ({ start: { locX: position.locX < 1000 ? 0 : 1400, 
         assert.deepEqual(acknowledgements, [1, 2]);
         assert.deepEqual(paid, [100, 200], 'a delivered but unacknowledged hop never pays again');
         assert.equal(moves.at(-1).to.locX, 2000);
+        meeting.routeA = JSON.stringify({ fee: 0, scroll: false, method: 'meeting:99' });
+        x = 0; session.meetingTravel = undefined;
+        const departures = teleports.length;
+        await Travel.requestMeeting(session, actor, meeting, 0);
+        assert.equal(teleports.length, departures, 'promoted shared route walks without a new teleport');
+        assert.equal(moves.at(-1).to.locX, 2000);
         nativeMode = true;
         const timers = [];
         global.setTimeout = callback => { timers.push(callback); return 0; };
