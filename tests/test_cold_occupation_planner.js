@@ -96,6 +96,26 @@ scopeVersion++; validating.unit(validating.slots.get(1));
 assert.equal(validating.slots.get(1).dirty, true, 'scope token is checked before publishing');
 validating.resetSources(); validating.stop(); assert.equal(validating.scopeDependencies.size, 0);
 
+// A board row change on item A rechecks A's readers and the category's
+// meeting representative, not every item read in the category.
+const itemTokens = new Map([[11, 0], [12, 0]]), groupTokens = new Map([['c1', 0]]);
+let tokenReads = 0;
+const grouped = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
+    sourceScope: id => id === 11 || id === 12 ? 'c1' : null,
+    sourceToken: (id, input) => { tokenReads++; return input.mode === 'meeting' ? groupTokens.get('c1') : itemTokens.get(id); },
+    capture: (id, input, read) => { for (const item of input.items) read(item); return input; },
+    create: () => ({ units: 0 }), step: cursor => ++cursor.units === 100, result: () => ({ known: true }) });
+grouped.request(1, { mode: 'occupation', items: [12] }, { awaitResult: false });
+grouped.request(2, { mode: 'meeting', items: [12, 11] }, { awaitResult: false });
+grouped.portion();
+assert.deepEqual([...grouped.slots.get(2).reads.keys()], [12], 'meeting reads collapse to one category representative');
+itemTokens.set(11, 1); groupTokens.set('c1', 1); tokenReads = 0;
+grouped.sourceChanged(11); grouped.groupChanged('c1');
+assert.equal(grouped.slots.get(1).dirty, false, 'a board change on item A keeps a reader of item B valid');
+assert.equal(grouped.slots.get(2).dirty, true, 'the category (meeting) reader is invalidated');
+assert.equal(tokenReads, 2, 'only the representative owners are rechecked');
+grouped.stop(); assert.equal(grouped.representatives.size, 0);
+
 const state = { characterId: 7, updatedAt: 1000, level: 30, activity: 'hunting',
     adena: 100, vitals: { mp: 50 }, inventory: {}, stats: { classId: 1 } };
 for (const workshop of [{ known: false }, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 },

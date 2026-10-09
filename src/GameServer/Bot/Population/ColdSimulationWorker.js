@@ -139,7 +139,7 @@ let boardReplacing = false;
 const routeRequests = new Map();
 let nativeRouteSequence = 0;
 const publicWorkshopIndex = new (require('../Economy/PublicWorkshopIndex').PublicWorkshopIndex)();
-const publicWorkshopKeys = new Map(), workshopRevisions = new Map(), workshopDigests = new Map(), workshopScopeDigests = new Map(), meetingRepresentatives = new Map();
+const publicWorkshopKeys = new Map(), workshopRevisions = new Map(), workshopDigests = new Map(), workshopScopeDigests = new Map();
 const digestToken = value => value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
 function workshopsFor(recipeId, state) { return publicWorkshopIndex.candidates(recipeId, Number(state?.characterId || 0)); }
 function changeWorkshop(key, row) {
@@ -168,7 +168,7 @@ function changeWorkshop(key, row) {
             scoped.xor = (scoped.xor ^ hash) >>> 0; scoped.sum = (scoped.sum + step * hash) >>> 0; scoped.count += step; };
         if (previous) updateScope(scalar(previous), -1); if (row) updateScope(row, 1);
         if (scoped.count) workshopScopeDigests.set(scope, scoped); else workshopScopeDigests.delete(scope);
-        occupationPlanner.scopeChanged(scope);
+        occupationPlanner.groupChanged(scope);
         workshopRevisions.set(productId, (workshopRevisions.get(productId) || 0) + 1); occupationPlanner.sourceChanged(productId); }
 }
 const occupationPlanner = new ColdOccupationPlanner({
@@ -200,12 +200,7 @@ const occupationPlanner = new ColdOccupationPlanner({
     onSlots: count => invoke('GameServer/Bot/Economy/EconomyContext').setPlanningContexts?.(count),
     capture: (id, input, read, readScope) => {
         const book = require('../Economy/RecipeBookCodec').unpack(input.recipeBook);
-        const observedRead = input.mode === 'meeting' ? itemId => {
-            const scope = MarketCounters.counterOf(itemId);
-            if (!meetingRepresentatives.has(scope)) meetingRepresentatives.set(scope, itemId);
-            read(meetingRepresentatives.get(scope));
-        } : read;
-        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read: observedRead, readScope,
+        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read, readScope,
             knownRecipes: book || input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
             recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries),
             buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
@@ -476,7 +471,7 @@ function changedItems(previous, next) {
     for (const id of ids) {
         const admission = OccupationSources.recipeIndex(boardIndex);
         for (const scope of admission.update(id)) occupationPlanner.scopeChanged(scope);
-        occupationPlanner.sourceChanged(id); occupationPlanner.scopeChanged(MarketCounters.counterOf(id));
+        occupationPlanner.sourceChanged(id); occupationPlanner.groupChanged(MarketCounters.counterOf(id));
     }
 }
 boardIndex.setOwnerChangeObserver((previous, next, board) => {

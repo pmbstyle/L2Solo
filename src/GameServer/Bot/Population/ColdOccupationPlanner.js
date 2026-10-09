@@ -19,6 +19,9 @@ class ColdOccupationPlanner {
         this.slots = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.scopes = new Map();
         this.scopeDependencies = new Map();
+        // Meeting readers share one representative item per category: their
+        // token is the category fingerprint, not one item's revision.
+        this.representatives = new Map();
         this.scheduled = false; this.stopped = false;
         this.stats = { portions: 0, units: 0, yields: 0, capacityDeferrals: 0, invalidations: 0,
             staleOwners: 0, unchanged: 0, maxUnitMs: 0, overBudgetUnits: 0, maxPortionUnits: 0 };
@@ -85,6 +88,20 @@ class ColdOccupationPlanner {
             let items = this.scopes.get(scope); if (!items) this.scopes.set(scope, items = new Set());
             items.add(id);
         }
+    }
+
+    readGroup(entry, id) {
+        const scope = this.sourceScope(Number(id));
+        if (scope === null) return this.read(entry, id);
+        if (!this.representatives.has(scope)) this.representatives.set(scope, Number(id));
+        this.read(entry, this.representatives.get(scope));
+    }
+
+    // A board row change in a category: per-item readers are rechecked by
+    // sourceChanged(item); only the category representative is rechecked here.
+    groupChanged(scope) {
+        const id = this.representatives.get(scope);
+        if (id !== undefined) this.sourceChanged(id);
     }
 
     // Producer dispatch names an item; it never walks all owners or a board.
@@ -156,7 +173,8 @@ class ColdOccupationPlanner {
     initialise(entry) {
         this.removeDependencies(entry);
         entry.reads = new Map(); entry.dirty = false; entry.cursor.fill(0);
-        entry.captured = this.capture(entry.id, entry.input, id => this.read(entry, id), scope => this.readScope(entry, scope));
+        const read = entry.input.mode === 'meeting' ? id => this.readGroup(entry, id) : id => this.read(entry, id);
+        entry.captured = this.capture(entry.id, entry.input, read, scope => this.readScope(entry, scope));
         entry.work = this.create(entry.captured);
         entry.validation = null;
     }
@@ -258,7 +276,7 @@ class ColdOccupationPlanner {
     stop() {
         this.stopped = true;
         for (const id of [...this.slots.keys(), ...this.waiting.keys()]) this.cancel(id);
-        this.ready.clear(); this.dependencies.clear(); this.scopes.clear(); this.scopeDependencies.clear();
+        this.ready.clear(); this.dependencies.clear(); this.scopes.clear(); this.scopeDependencies.clear(); this.representatives.clear();
     }
     snapshot() { if (!DiagnosticConfig.developerDiagnostics) return { enabled: false }; return { ...this.stats, contexts: this.slots.size, pending: this.waiting.size,
         active: this.ready.size, dependencies: this.dependencies.size, cursorBytes: (this.slots.size + this.waiting.size) * 128 }; }
