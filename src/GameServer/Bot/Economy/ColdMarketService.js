@@ -605,11 +605,12 @@ async function acquireMaterials(state, requirements) {
         if (!plan || current.activity !== 'shopping' || plan.town !== current.currentRegion) {
             const bought = await acquire(current, requirement.selfId, missing, options);
             current = bought.state || current; spent += Number(bought.spent || 0); units += Number(bought.units || 0);
-            if (bought.hot || bought.traveling || current.stats?.marketErrand) return { ...bought, state: current, ready: false, spent, units };
+            if (bought.pending || bought.hot || bought.traveling || current.stats?.marketErrand) return { ...bought, state: current, ready: false, spent, units };
             continue;
         }
         const board = await buyHere(current, plan, { deferRealNpc: true });
         current = board.state; spent += board.spent; units += board.units;
+        if (board.pending) return { ...board, state: current, ready: false, spent, units };
         if (board.hot) return { state: current, ready: false, hot: true, spent, units };
         const left = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
         const offer = options.npc === false ? null
@@ -640,6 +641,7 @@ async function buyErrand(state, options = {}) {
         { ...terms, money: purchaseMoney(state, { ...terms, selfId: errand.selfId }) });
     const bought = plan ? await buyHere(state, plan, { ...options, goal: goalForErrand(state, errand),
         ...(!options.skipNpc && !plan.lines?.length ? { errand } : {}) }) : { state, units: 0, hot: false };
+    if (bought.pending) return { ...bought, purchased: bought.units > 0 };
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
     const rest = Math.max(0, Number(errand.amount) - Number(bought.units || 0));
     if (Diagnostics.active()) purchaseObservation(state, errand.selfId, errand.amount, plan?.money, 'errand_result', rest === 0 ? 'filled' : !plan ? 'no_source' : 'partial',
@@ -673,7 +675,7 @@ const ColdMarketService = {
             return acquire(state, errand.selfId, errand.amount, { money: errand.money ?? Infinity,
                 maxPrice: errand.maxPrice ?? Infinity, purpose: errand.purpose, towns: [errand.town],
                 ...savedRoute(errand), ...fundingTerms(errand) })
-                .then((result) => ({ state: result.state, purchased: result.bought, reason: 'market_errand_town' }));
+                .then((result) => ({ ...result, purchased: result.bought, reason: 'market_errand_town' }));
         }
         const expectedBenefit = goal?.plan?.expectedBenefit;
         const activeGearPurchase = goal?.type === 'upgrade_gear'
@@ -785,6 +787,7 @@ const ColdMarketService = {
         { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt }, autoEquip: true })
             .then(bought => ({ ...bought, purchased: bought.units > 0 })) : buyOffer(state, offer);
         return execution.then((bought) => {
+            if (bought.pending) return bought;
             if (!bought.purchased) {
                 return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
@@ -809,7 +812,7 @@ const ColdMarketService = {
             const next = await buyErrand(CombinedErrands.withPending(current, [errand,
                 ...CombinedErrands.pending(current).filter(other => CombinedErrands.key(other) !== CombinedErrands.key(errand))]), { deferRealNpc: true });
             current = next?.state || current;
-            if (next?.reason === 'bot_went_hot') return current;
+            if (next?.pending || next?.reason === 'bot_went_hot') return current;
         }
         const plan = ShotStock.planForState(current);
         const localPrices = staticOffers(plan.selfId).filter(offer => offer.town === current.currentRegion);
@@ -822,7 +825,7 @@ const ColdMarketService = {
             if (purchase) {
                 const bought = await buyHere(current, purchase, { deferRealNpc: true });
                 current = bought.state;
-                if (bought.hot) return current;
+                if (bought.pending || bought.hot) return current;
             }
         }
         // Board deals remain at their own owner. Their current NPC remainders,

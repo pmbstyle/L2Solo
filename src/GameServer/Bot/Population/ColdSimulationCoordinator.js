@@ -2038,6 +2038,7 @@ class ColdSimulationCoordinator {
     }
 
     async reviewCommittedEconomy(state, beforeWrite, decisionOverride) {
+        if (require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return LifeState.cachedState(state.characterId) || state;
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;

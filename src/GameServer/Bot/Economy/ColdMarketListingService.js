@@ -132,7 +132,9 @@ function open(state, options = {}) {
     // the buy ads it answers here, the NPC sale, the board's listings.
     const market = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(state, options);
     const initialMarket = market;
-    return BuyStoreService.sellToBestBuyer(state, town?.name, { answers: market.answers }).then((dynamicBuyerSale) => StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
+    return BuyStoreService.sellToBestBuyer(state, town?.name, { answers: market.answers }).then((dynamicBuyerSale) => {
+    if (dynamicBuyerSale.pending) return { ...dynamicBuyerSale, listed: false };
+    return StaticBuyerService.sell(dynamicBuyerSale.state || state, town?.name).then((buyerSale) => {
     const saleState = buyerSale.state || dynamicBuyerSale.state || state;
     return LifeState.applyNpcLiquidation(saleState, market.npc, {
         source: 'pre_market_junk',
@@ -193,7 +195,8 @@ function open(state, options = {}) {
         });
     });
     });
-    }));
+    });
+    });
     });
 }
 

@@ -250,6 +250,7 @@ async function execute(state, opportunity) {
                 quoteDepth: 5, sourcePlan: purchase } }));
         const bought = await ColdMarket.acquireMaterials(current, inputs);
         current = bought.state || current; spent += Number(bought.spent || 0);
+        if (bought.pending) return { state: current, crafted: false, pending: true, spent };
         if (bought.hot) return { state: current, crafted: false, reason: 'bot_went_hot', spent };
         if (!bought.ready && (bought.traveling || current.stats?.marketErrand)) {
             return { state: current, crafted: false, reason: 'buying_trip', spent };
@@ -437,6 +438,7 @@ async function acquireRecipe(state, opportunity) {
             maxPrice: Number(purchase.cost), quoteDepth: 5, sourcePlan: purchase
         });
         current = result.state || current; spent += Number(result.spent || 0);
+        if (result.pending) return { state: current, ready: false, pending: true, spent };
         if (result.hot || current.phase !== 'cold') return { state: current, ready: false, spent, reason: 'bot_went_hot' };
         if (!free()) return { state: current, ready: false, spent,
             reason: result.traveling || current.stats?.marketErrand ? 'buying_trip' : 'recipe_unavailable' };

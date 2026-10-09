@@ -355,7 +355,8 @@ async function craftAtWorkshop(session, bot, target) {
 module.exports = {
     workshopTarget, craftAtWorkshop,
     tick(session, bot, Generics, BotAI) {
-        if (session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
+        if (require('../../../AfkTrade/TradeMeetingService').hasPreparation(bot.fetchId())
+            || session.coldLifeState?.stats?.tradeMeeting || invoke('GameServer/Bot/Population/BotLifeState').cachedState(bot.fetchId())?.stats?.tradeMeeting) {
             return;
         }
         invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 2);

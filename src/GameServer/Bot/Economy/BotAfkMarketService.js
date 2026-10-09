@@ -621,7 +621,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
 async function executePlan(state, plan, { step, beforeWrite = () => {}, preparedState = state } = {}) {
-    if (state.stats?.tradeMeeting) return { state, pending: true };
+    if (state.stats?.tradeMeeting || require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
     const authority = require('./EconomyCommit').authority(preparedState);
     const stillPrepared = () => {
@@ -643,6 +643,7 @@ async function executePlan(state, plan, { step, beforeWrite = () => {}, prepared
         }
         return { state: await require('./ColdShotEconomyService').execute(state, shot) };
     });
+    if (require('../../AfkTrade/TradeMeetingService').hasPreparation(ownerId)) return { state, pending: true };
     for (const lineId of (plan.withdraw || []).slice(0, 8)) await run(async () => {
         const line = AfkTrade.boardIndex().ownerLines(ownerId).find(row => row.lineId === Number(lineId));
         if (!line || line.storeType !== AfkTrade.SELL) throw Error('economy_plan_line_changed');

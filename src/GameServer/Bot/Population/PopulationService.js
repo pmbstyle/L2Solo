@@ -3355,6 +3355,9 @@ const PopulationService = {
     },
 
     resolveColdState(state, workerRequest = null, options = {}) {
+        if (require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) {
+            return Promise.resolve({ ok: true, pending: true, state });
+        }
         if (workerRequest?.precomputedPlan?.statsPacket) options = { ...options, statsPacket: workerRequest.precomputedPlan.statsPacket };
         const startedAt = Date.now();
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
@@ -3702,6 +3705,7 @@ const PopulationService = {
                         .then((marketResult) => ({ marketLifecycle, marketResult, goal: goalSnapshot?.current || null }))))
                 .then(({ marketLifecycle, marketResult, goal }) => {
                     const purchasedState = marketResult.state || marketLifecycle.state || updatedState;
+                    if (marketResult.pending) return purchasedState;
                     // The bot was activated while the market step ran (the activation fence waits
                     // 500 ms at most): its row is the actor's now; nothing cold is written over it.
                     const hotRow = LifeState.hotRow(purchasedState.characterId);
@@ -3734,9 +3738,11 @@ const PopulationService = {
                         : Promise.resolve({ state: purchasedState, listed: false });
                     const marketStatePromise = listingPromise.then((listingResult) => {
                         const listingState = listingResult.state || purchasedState;
+                        if (listingResult.pending) return listingState;
                         if (listingResult.listed && listingState.activity !== 'shopping') return listingState;
                         return ColdMarketService.finishTownErrands(listingState).then((restockedState) => {
                             if (LifeState.hotRow(restockedState.characterId)) return LifeState.hotRow(restockedState.characterId);
+                            if (require('../../AfkTrade/TradeMeetingService').hasPreparation(restockedState.characterId)) return restockedState;
                             const returnState = GoalExecutor.finishMarketVisit(restockedState);
                             return returnState
                                 ? LifeState.upsertState(returnState, 'market_visit_complete').then((saved) => saved || returnState)
@@ -3744,7 +3750,9 @@ const PopulationService = {
                         });
                     });
                     return marketStatePromise.then((persistedState) => persistedState || purchasedState)
-                        .then((marketState) => GoalService.review(marketState, { spot }).catch((err) => {
+                        .then((marketState) => {
+                        if (require('../../AfkTrade/TradeMeetingService').hasPreparation(marketState.characterId)) return marketState;
+                        return GoalService.review(marketState, { spot }).catch((err) => {
                         utils.infoWarn('BotGoals', 'goal review failed for %s: %s', marketState.name, err.message);
                         return null;
                     }).then(async (goalSnapshot) => {
@@ -3753,7 +3761,8 @@ const PopulationService = {
                         const travelState = tripEdge || SurvivalFloor.forState(current)?.action === 'unload'
                             ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current) : null;
                         return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
-                    }));
+                    });
+                    });
                 }).then((finalState) => {
                     const craftEvents = CraftTelemetry.progressEvents(state, acquisitionPlan, updatedState);
                     return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
@@ -3769,7 +3778,8 @@ const PopulationService = {
                     };
                 });
         }).then(async outcome => {
-            if (outcome?.ok && !options.workerAdmission) {
+            if (outcome?.ok && !options.workerAdmission
+                && !require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) {
                 const current = LifeState.cachedState(state.characterId) || outcome.state;
                 if (current) {
                     const trained = await LifeState.reviewTrainingAfterCommit(current);

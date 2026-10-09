@@ -43,6 +43,13 @@ function stage(request) {
     pages += count;
     return id;
 }
+// Preparations already hold the bounded participant set; callers use it to
+// avoid changing their own consent while bilateral worker checks are pending.
+function hasPreparation(characterId) {
+    const id = Number(characterId);
+    for (const entry of staged.values()) if (entry.actors.includes(id)) return true;
+    return false;
+}
 function discard(id) {
     const entry = staged.get(id);
     if (entry) {
@@ -355,6 +362,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { stage, discard, hasPreparation, accept, cancel, receipt, prepareTrade, trade, wake, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };
