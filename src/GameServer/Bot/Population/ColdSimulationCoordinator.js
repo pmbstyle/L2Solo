@@ -2054,6 +2054,8 @@ class ColdSimulationCoordinator {
                     Metrics.recordPartyDissolution();
                 } else {
                     Metrics.recordPartyResolve();
+                    // ARCH-NOTE: the commit still awaits the worker goal review;
+                    // a busy worker now answers at once with the current objective.
                     if (entry.proposal.partyResolution.reviewGoals
                         && this.population?.reconcileWorkerPartyGoals) {
                         await this.population.reconcileWorkerPartyGoals(party, Number(entry.proposal.enqueuedAt || Date.now()))

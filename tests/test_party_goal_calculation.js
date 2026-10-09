@@ -20,6 +20,9 @@ const party = { partyId: 'goal-calculation', memberIds: [701, 702], leaderId: 70
     const deps = { timestamp, spots: [], nodes: [], routeRows: [], workshop: { known: true } };
     const contexts = members.map(member => Economy.forState(member, deps));
     const before = Policy.joint(party, members, { context: Policy.groupContext(party, members, deps) });
+    assert.equal(Calculation.sameSource(members[0], structuredClone(members[0])), true, 'equal identity is the same source');
+    assert.equal(Calculation.sameSource(members[0], { ...members[0], updatedAt: Number(members[0].updatedAt || 0) + 1 }), false);
+    assert.equal(Calculation.sameSource(members[0], { ...members[0], simulation: { ...members[0].simulation, leaseId: 'other' } }), false);
     let preparations = 0;
     const groupsBefore = Economy.size().groups;
     const after = await Calculation.calculate(party, members, async member => {

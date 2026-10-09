@@ -24,9 +24,14 @@ function decide(state, peers, options = {}) {
             peers.map(peer => peer.characterId).join(':'), state.stats?.partyRequest?.requestedAt || state.updatedAt) });
 }
 
+// Goals that wait for the wish engine keep the party's current objective.
+function pending(party, members) {
+    return { objective: party.stats?.objective, memberGoals: members.map(declaration) };
+}
+
 function joint(party, members, { context = null } = {}) {
+    if (context?.routePending) return pending(party, members);
     const goals = members.map(declaration);
-    if (context?.routePending) return { objective: party.stats?.objective, memberGoals: goals };
     // The same wish engine merges members' actual wishes. Its selected leaf
     // carries a native route; a shopping/crafting leaf does not teleport a party.
     const activity = context?.network?.activity;
@@ -63,4 +68,4 @@ function itemNeed(state, item, projected) {
     return positive(require('./ColdEconomyDecision').economyFor(current).itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, joint, participation, groupContext, decide, formingMembers, itemNeed };
+module.exports = { declaration, pending, joint, participation, groupContext, decide, formingMembers, itemNeed };

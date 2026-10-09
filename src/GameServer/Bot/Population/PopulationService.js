@@ -463,6 +463,9 @@ async function jointPartyGoals(party, members, timestamp, options = {}) {
         return Policy.joint(party, members, { context: Policy.groupContext(party, members, { timestamp }) });
     const result = await ColdSimulationCoordinator.requestPartyGoals(party, members, { timestamp,
         onWorkerWait: ms => { options.workerWaitMs = Number(options.workerWaitMs || 0) + ms; } });
+    // Two other parties hold the worker's goal slots: keep the current
+    // objective now; the next party resolve reviews the goals again.
+    if (result.reason === 'party_goal_busy') return Policy.pending(party, members);
     return result.ok && require('./PartyGoalCalculation').matches(members, result.sources) ? result.joint : null;
 }
 

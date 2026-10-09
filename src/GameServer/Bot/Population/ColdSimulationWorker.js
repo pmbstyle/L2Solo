@@ -702,6 +702,9 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         send('party_goal_result', { ok: false, reason: 'worker_not_ready' }, msgId);
         return;
     }
+    // ARCH-NOTE: the 2-job cap stays; a busy answer keeps the party's current
+    // objective on main (PopulationService.jointPartyGoals) and the next
+    // party resolve asks again.
     if (!admitted && partyGoalJobs >= 2) {
         send('party_goal_result', { ok: false, reason: 'party_goal_busy' }, msgId);
         return;
@@ -724,7 +727,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         // with an older worker wallet, inventory or equipment plan.
         const members = payload.members.map(member => {
             const native = kernel.states.get(member.characterId)?.state;
-            return native && JSON.stringify(native) === JSON.stringify(member) ? native : member;
+            return native && Calculation.sameSource(native, member) ? native : member;
         });
         preparedMembers = members;
         if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');

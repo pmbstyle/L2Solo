@@ -2,13 +2,24 @@
 
 // Complete group inputs are process-local. Only source versions and the joint
 // policy's small stats packet cross back to the main thread.
-function sources(members) {
-    return members.map(state => ({ characterId: Number(state.characterId),
+function source(state) {
+    return { characterId: Number(state.characterId),
         updatedAt: Number(state.updatedAt || 0), phase: state.phase,
         partyId: String(state.party?.partyId || state.partyId || ''),
         ownerId: String(state.simulation?.ownerId || 'legacy_main'),
         revision: Number(state.simulation?.revision || 0),
-        leaseId: String(state.simulation?.leaseId || '') }));
+        leaseId: String(state.simulation?.leaseId || '') };
+}
+
+function sources(members) {
+    return members.map(source);
+}
+
+// Two snapshots of one actor with the same source identity are the same input.
+function sameSource(left, right) {
+    const a = source(left), b = source(right);
+    for (const key in a) if (a[key] !== b[key]) return false;
+    return true;
 }
 
 function matches(members, expected) {
@@ -40,4 +51,4 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     return policy.joint(party, members, { context });
 }
 
-module.exports = { sources, matches, validMembers, calculate };
+module.exports = { sources, sameSource, matches, validMembers, calculate };

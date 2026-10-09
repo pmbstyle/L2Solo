@@ -74,6 +74,13 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     Population.nextProtectedPartyFormationAt = 0;
     assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), members), []);
     assert.equal(writes, count); assert.equal(announcements, 1, 'unavailable worker causes no fallback or announcement');
+    Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
+    Population.nextProtectedPartyFormationAt = 0;
+    const busyFormed = await Population.formProtectedRequiredParty(Date.now(), members);
+    assert.equal(busyFormed.length, 1, 'a busy worker does not fail formation');
+    assert.equal(busyFormed[0].stats.objective.spotId, 'goal-spot', 'formation keeps its own objective');
+    assert.equal(busyFormed[0].stats.memberGoals.length, 2);
+    assert.equal(announcements, 2);
 
     const active = { ...formed[0], status: 'active', updatedAt: timestamp,
         startedAt: timestamp - 600000, stats: { ...formed[0].stats, fightsWon: 10, lastProgressAt: timestamp,
