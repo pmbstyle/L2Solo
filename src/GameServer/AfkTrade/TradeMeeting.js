@@ -246,8 +246,10 @@ function create(io) {
             if (position?.characterId !== actors[side] || !position.alive || !position.available) return;
             if (Math.hypot(position.locX - row.locX, position.locY - row.locY, position.locZ - row.locZ) <= 200) mask |= 1 << side;
         });
-        write('UPDATE board_trade_meetings SET arrivalMask=? WHERE id=?', [mask, id]);
-        return mask === 3 ? terminal(id, true, 'arrived') : result(meeting(id));
+        // Each wake re-checks presence; only a changed arrival is written.
+        const changed = mask !== Number(row.arrivalMask);
+        if (changed) write('UPDATE board_trade_meetings SET arrivalMask=? WHERE id=?', [mask, id]);
+        return mask === 3 ? terminal(id, true, 'arrived') : result(changed ? meeting(id) : row);
     }
     function acknowledge(id, actorId) {
         const row = meeting(id);

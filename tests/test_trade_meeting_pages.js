@@ -67,4 +67,19 @@ try {
     assert.throws(() => Service.stage(request(16)), /backpressure/);
 } finally { Service.reset(); }
 assert.equal(Service.counters().pages, 0);
+{
+    // A wake with unchanged presence writes nothing; a changed arrival writes once.
+    const row = { id: 7, state: 'accepted', actorA: 1, actorB: 2, locX: 0, locY: 0, locZ: 0, arrivalMask: 0 };
+    const writes = [];
+    const meetings = Native.create({ one: () => ({ ...row }), all: () => [],
+        write: (sql, params) => { writes.push(sql); if (sql.includes('arrivalMask')) row.arrivalMask = params[0]; } });
+    const away = { alive: true, available: true, locX: 1000, locY: 0, locZ: 0 };
+    const here = { alive: true, available: true, locX: 0, locY: 0, locZ: 0 };
+    meetings.present(7, [{ ...away, characterId: 1 }, { ...away, characterId: 2 }]);
+    assert.equal(writes.length, 0, 'unchanged absence is not written');
+    meetings.present(7, [{ ...here, characterId: 1 }, { ...away, characterId: 2 }]);
+    assert.equal(writes.length, 1);
+    assert.equal(meetings.present(7, [{ ...here, characterId: 1 }, { ...away, characterId: 2 }]).meeting.arrivalMask, 1);
+    assert.equal(writes.length, 1, 'unchanged arrival is not written again');
+}
 console.log('Meeting frames:', frames.map(frame => Buffer.byteLength(JSON.stringify(frame))), 'exact round trip, duplicates, refusal and global release passed');
