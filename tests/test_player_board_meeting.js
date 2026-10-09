@@ -73,6 +73,11 @@ const waitFor = async (predicate, label) => {
         Coordinator.worker.on('message', message => { if (message.type === 'fault') workerFaults.push(message.payload.reason); });
         await waitFor(() => Coordinator.ready && Coordinator.snapshotsLoaded, 'worker startup');
         const html = () => session.packets.filter(packet => packet[0] === 0x0f).at(-1)?.subarray(5).toString('utf16le') || '';
+        const tells = () => session.packets.filter(packet => packet[0] === 0x4a).map(packet => ({
+            sender: packet.readInt32LE(1), kind: packet.readInt32LE(5),
+            name: packet.subarray(9).toString('utf16le').split('\0')[0],
+            text: packet.subarray(9).toString('utf16le').split('\0')[1]
+        }));
         const click = async command => {
             const before = session.packets.filter(packet => packet[0] === 0x0f).length;
             HtmlLink(session, Buffer.concat([Buffer.from([0x21]), Buffer.from(command + '\0', 'utf16le')]));
@@ -96,12 +101,14 @@ const waitFor = async (predicate, label) => {
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079);
         assert.equal(await fixture.amount(seller, 57), 1000000 + 4079);
         assert.equal(await fixture.amount(seller, 20), 0);
+        assert.deepEqual(tells(), [], 'a merchant already at the point does not claim to be on the way');
         assert.deepEqual(Life.cachedState(seller).inventory[952], rings, 'large physical bags survive worker consent and native custody publication');
         assert.equal(Meetings.counters().preparations, 0);
         Board.show(session, { side: 1, town: 'Giran' });
         const buyBoots = /action="bypass -h (board answer sell_ad \d+ \d+ 62 [^"]+)">/.exec(html())[1];
         await click(buyBoots);
         assert(html().includes('Worn items cannot be sold'), html());
+        assert.deepEqual(tells(), [], 'rejected stock sends no private promise');
         assert.equal(await Database.fetchAfkTradeShop(bootSale.shop.id), null, 'stale worn-item advertisement is removed');
         assert.equal((await Database.fetchItems(seller)).find(row => row.id === boots.id).equipped, 1);
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079, 'a rejected worn-item offer moves no adena');
@@ -130,23 +137,38 @@ const waitFor = async (predicate, label) => {
         assert.equal(Meetings.isPlayerWaiting(seller), true, 'accepted custody prioritizes the merchant while the human waits at the point');
         assert.equal(Coordinator.contextFor(Life.cachedState(seller)).playerWaiting, true,
             'the real coordinator carries waiting-player priority into the worker context');
+        assert.equal(tells().length, 1, 'the accepted remote merchant privately acknowledges the reservation');
+        assert.equal(tells()[0].sender, seller);
+        assert.equal(tells()[0].kind, 2, 'meeting acknowledgement uses the private C4 chat channel');
+        assert.equal(tells()[0].name, 'MeetingSeller');
+        assert.match(tells()[0].text, /recover first.*Wait at the meeting point.*About/);
+        const [remoteMeeting] = await Database.fetchTradeMeetingsForOwner(buyer);
+        await Meetings.receipt(remoteMeeting.token, buyer);
+        await Meetings.receipt(remoteMeeting.token, buyer);
+        assert.equal(tells().length, 1, 'receipt retries and quantity-window refreshes never repeat the acknowledgement');
         Coordinator.setPauseReason('fixture', false);
         await waitFor(async () => (await fixture.amount(buyer, 20)) === 2
             && (await fixture.amount(seller, 57)) === 1000000 + 4079 + 4080, 'rest, native travel and delivery');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080);
         assert.equal(await fixture.amount(seller, 57), 1000000 + 4079 + 4080);
         await waitFor(() => !Meetings.isPlayerWaiting(seller), 'retired waiting-player priority');
+        assert.equal(tells().length, 1, 'worker lifecycle transitions do not spam the waiting player');
         assert.deepEqual(Life.cachedState(seller).inventory[952], rings);
 
         Coordinator.setPauseReason('fixture', true);
         const remoteClosed = await Database.closeBoardRecord(seller, remoteSale.shop.id);
         Afk.refreshRecord(remoteClosed.record);
         await Database.setItem(seller, { selfId: 20, name: 'Buckler', amount: 1, slot: 8 });
-        await Life.upsertState({ ...Life.cachedState(seller), activity: 'resting',
+        const merchantArrival = Date.now() + 150000;
+        await Life.upsertState({ ...Life.cachedState(seller), activity: 'traveling',
             loc: { ...point, locX: point.locX + 400 },
             inventory: Life.inventorySummaryFromItems(await Database.fetchItems(seller)),
-            stats: { ...Life.cachedState(seller).stats, restUntil: Date.now() + 60000 },
-            timing: { lastResolvedAt: Date.now(), nextResolveAt: Date.now() + 60000 } }, 'cancelled_merchant_fixture');
+            stats: { ...Life.cachedState(seller).stats, restUntil: null, travel: {
+                from: { ...point, locX: point.locX + 400 }, to: point,
+                reason: 'market_sale_inventory', method: 'walk', arrivalActivity: 'shopping',
+                arrivalEvent: 'arrived_town', startedAt: Date.now(), arrivalAt: merchantArrival
+            } },
+            timing: { lastResolvedAt: Date.now(), nextResolveAt: merchantArrival } }, 'cancelled_merchant_fixture');
         const cancelStock = (await Database.fetchItems(seller)).find(row => row.selfId === 20);
         const cancelSale = await Database.createAfkTradeShop(seller, { kind: 'sell_ad', storeType: 1, town: 'Giran', ...point,
             lines: [{ objectId: cancelStock.id, selfId: 20, count: 1, price: 4081 }] });
@@ -156,6 +178,8 @@ const waitFor = async (predicate, label) => {
         await click('board agree');
         await waitFor(() => !session.playerBoardAgreePending, 'cancellable merchant agreement');
         assert.equal(Meetings.isPlayerWaiting(seller), true);
+        assert.equal(tells().length, 2, 'a separate accepted trade receives its own private acknowledgement');
+        assert.match(tells()[1].text, /on my way.*About 3 min/, 'an existing trip reports its remaining time rather than restarting the route estimate');
         await click('board cancel');
         await waitFor(() => !Meetings.isPlayerWaiting(seller), 'cancelled waiting-player priority');
         assert.equal(await fixture.amount(buyer, 57), 1000000 - 4079 - 4080, 'cancelling the priority transition refunds native escrow');

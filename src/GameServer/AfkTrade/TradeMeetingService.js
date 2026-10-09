@@ -4,6 +4,38 @@ const { MAX_COMMITMENTS } = require('./TradeMeeting');
 const staged = new Map();
 const enrolled = new Map(); // At most eight numeric references per actor; no custody/terms.
 const playerWaiters = new Map(); // Derived numeric references, retired with native commitments.
+const travelNotices = new Map(); // One private acknowledgement per enrolled bot/player commitment.
+function notifyPlayerTravel(row) {
+    if (row.state !== 'accepted') return;
+    for (const [id, other, suffix] of [[row.actorA, row.actorB, 'A'], [row.actorB, row.actorA, 'B']]) {
+        const state = life().cachedState(id), player = !life().cachedState(other) && sessionFor(other);
+        if (!state || !player?.actor || !player.dataSendToMe || travelNotices.get(id)?.has(row.id)) continue;
+        try {
+            const atPoint = loc => loc && Math.hypot(loc.locX - row.locX, loc.locY - row.locY, loc.locZ - row.locZ) <= 200;
+            const merchant = sessionFor(id)?.actor;
+            const loc = merchant ? { locX: merchant.fetchLocX(), locY: merchant.fetchLocY(), locZ: merchant.fetchLocZ() } : state.loc;
+            if (atPoint(loc) || !atPoint({ locX: player.actor.fetchLocX(), locY: player.actor.fetchLocY(), locZ: player.actor.fetchLocZ() })
+                || player.actor.isDead() || player.actor.fetchHp() <= 0) continue;
+            const travel = state.stats?.travel, route = JSON.parse(row[`route${suffix}`] || '{}'), timestamp = Date.now();
+            const finishingTrip = state.activity === 'traveling' && travel && travel.meetingId !== row.id && !atPoint(travel.to);
+            const remaining = travel && atPoint(travel.to) ? Math.max(0, travel.arrivalAt - timestamp)
+                : Math.max(0, Number(route.durationMs) || 0) + Math.max(0, Number(state.stats?.restUntil || 0) - timestamp);
+            let text = state.activity === 'resting' ? "All set! I'll recover first, then come to you."
+                : state.activity === 'fighting' ? "All set! I'll finish this fight, then come to you."
+                    : finishingTrip ? "All set! I'll finish this trip, then come to you."
+                    : "All set! I'm on my way to you.";
+            text += ' Wait at the meeting point.';
+            if (remaining > 0 && state.activity !== 'fighting' && !finishingTrip) text += remaining < 60000
+                ? ' About a minute.' : ` About ${Math.ceil(remaining / 60000)} min.`;
+            player.dataSendToMe(invoke('GameServer/Network/Response').speak({
+                fetchId: () => id, fetchName: () => state.name
+            }, { kind: 2, text }));
+            let notices = travelNotices.get(id);
+            if (!notices) travelNotices.set(id, notices = new Set());
+            notices.add(row.id);
+        } catch (error) { utils.infoWarn('AfkTrade', 'meeting travel message: %s', error.message); }
+    }
+}
 function trackPlayerWaiting(row) {
     if (!row) return;
     for (const [actor, other] of [[row.actorA, row.actorB], [row.actorB, row.actorA]]) {
@@ -33,6 +65,8 @@ function enroll(actor, id) {
 function unenroll(actor, id) {
     const rows = enrolled.get(actor); rows?.delete(id);
     if (!rows?.size) enrolled.delete(actor);
+    const notices = travelNotices.get(actor); notices?.delete(id);
+    if (!notices?.size) travelNotices.delete(actor);
     const waiting = playerWaiters.get(actor);
     if (waiting?.delete(id) && !waiting.size) {
         playerWaiters.delete(actor);
@@ -178,6 +212,7 @@ async function accepted(result) {
     const row = result.meeting;
     enroll(row.actorA, row.id); enroll(row.actorB, row.id);
     await syncActors(row).catch(error => utils.infoWarn('AfkTrade', 'meeting inventory presentation: %s', error.message));
+    notifyPlayerTravel(row);
     wake(row.actorA); wake(row.actorB);
     return { pending: result.pending, meetingId: row.id, revision: row.revision,
         outcome: row.state, token: row.token, preparationId: row.token,
@@ -296,7 +331,7 @@ function reset() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
-    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); queue.clear();
+    staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
@@ -402,7 +437,7 @@ async function drain() {
     } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); playerWaiters.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
