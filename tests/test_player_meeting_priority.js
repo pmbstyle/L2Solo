@@ -94,9 +94,9 @@ function addParty(kernel, dueAt) {
         grouped.kernel.upsert({ state: peer, context: { isPartyLeader: !leader, party,
             partyMembers: [merchant, peer] } });
         const candidates = grouped.kernel.dueCandidates(grouped.now(), 8);
-        assert.deepEqual(candidates.map(row => [row.characterId, row.purpose.kind]), [[30, 'resolver']],
-            'a grouped merchant uses its overdue physical arrival, including when it leads the party');
-        assert.equal(grouped.kernel.partyRuns.size, 0, 'the hunt must not acquire or rewrite a meeting participant');
+        assert.deepEqual(candidates.map(row => [row.characterId, row.purpose.kind]), [[30, 'party'], [31, 'party']],
+            'an existing grouped merchant uses its physical deadline under the atomic group writer');
+        assert.equal(grouped.kernel.partyRuns.size, 1, 'there is one group owner, not an independent merchant writer');
     }
 
     const suspended = fixture(8);
@@ -107,13 +107,37 @@ function addParty(kernel, dueAt) {
     suspended.kernel.upsert({ state: waitingLeader, context: { isPartyLeader: true,
         party: waitingParty, partyMembers: [busyMerchant, waitingLeader] } });
     assert.deepEqual(suspended.kernel.dueCandidates(suspended.now(), 8), [],
-        'an old hunt cannot claim a merchant whose independent recovery has not finished');
+        'the group lifecycle waits for the actual recovery deadline without shortening it');
     assert.equal(suspended.kernel.states.get(30).state.timing.nextResolveAt, 101000);
     suspended.advance(30000);
     suspended.kernel.upsert({ state: { ...busyMerchant, activity: 'grouped', stats: {} }, context: {} });
     assert.deepEqual(suspended.kernel.dueCandidates(suspended.now(), 8)
         .map(row => [row.characterId, row.purpose.kind]), [[30, 'party'], [31, 'party']],
     'the retained party resumes its ordinary atomic hunt after the obligation clears');
+
+    const changed = fixture(8);
+    const lateMerchant = { ...state(30, 500000, true), activity: 'traveling',
+        party: { partyId: 'changed-meeting-party' },
+        stats: { tradeMeeting: [44, 1], travel: { arrivalAt: 101000 } } };
+    const changedLeader = { ...state(31, 500000), party: { partyId: 'changed-meeting-party' } };
+    const changedParty = { partyId: 'changed-meeting-party', leaderId: 31,
+        memberIds: [30, 31], nextResolveAt: 500000 };
+    changed.kernel.upsert({ state: lateMerchant, context: { party: changedParty } });
+    changed.kernel.upsert({ state: changedLeader, context: { isPartyLeader: true, party: changedParty } });
+    assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 101000);
+    const arrivedMerchant = { ...lateMerchant, stats: { ...lateMerchant.stats,
+        travel: { arrivalAt: 99000 } } };
+    changed.kernel.upsert({ state: arrivedMerchant, context: { party: changedParty } });
+    assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 99000,
+        'a new member transition updates its existing leader token without a catalog refresh');
+    const token = changed.kernel.scheduleTokens.get(31).token;
+    changed.kernel.upsert({ state: { ...arrivedMerchant }, context: { party: changedParty } });
+    assert.equal(changed.kernel.scheduleTokens.get(31).token, token,
+        'unchanged member observations do not repeatedly reschedule the group');
+    changed.kernel.upsert({ state: { ...arrivedMerchant, activity: 'grouped', stats: {} },
+        context: { party: changedParty } });
+    assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 500000,
+        'a cleared obligation restores the native group deadline');
 
     for (const waitingAtEnd of [false, true]) {
         const refresh = fixture(1), merchant = state(30, 99000, true);

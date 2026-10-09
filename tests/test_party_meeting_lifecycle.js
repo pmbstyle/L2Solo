@@ -72,7 +72,7 @@ async function main() {
         kernel.inFlight.set(state.characterId, { state, grant: grants.get(state.characterId), partyId: party.partyId, claimRequestId: requestId });
     }
     const context = { isPartyLeader: true, party: { ...party, nextResolveAt: at + 10000 } };
-    assert.equal(kernel.dueAt(members[0], context), at + 10000, 'expired session review does not spin while a paid journey holds the roster');
+    assert.equal(kernel.dueAt(members[0], context), at, 'a later group timer does not postpone the due paid arrival');
     kernel.partyRuns.set(party.partyId, { party, members, grants, requestId, requirementRefresh: true,
         spot: null, route: { needed: true, travelMs: 60000, spotId: 'wrong-spot', to: { locX: 9000, locY: 0, locZ: 0 } } });
     await kernel.resolvePartyGrant(party.partyId);
@@ -89,7 +89,8 @@ async function main() {
     assert(!batch.payload.proposals.some(entry => entry.partyResolution?.memberPlans));
 
     const selected = [];
-    const selector = new ColdSimulationKernel({ now: () => at,
+    let selectorAt = at;
+    const selector = new ColdSimulationKernel({ now: () => selectorAt,
         resolveSolo: () => { throw Error('no personal claim for a group meeting'); },
         resolveParty: input => Resolver.resolve(input),
         projectResolve: (state, resolution) => ({ ...state, ...resolution.patch }),
@@ -98,6 +99,10 @@ async function main() {
         stats: { ...state.stats, travel: { ...state.stats.travel, arrivalAt: at + 10000 } } });
     for (const state of future) selector.upsert({ state, context: { party, partyMembers: future,
         isPartyLeader: state.characterId === party.leaderId } });
+    selector.tick();
+    assert(!selected.some(message => message.type === 'claim_request'),
+        'expired session review cannot shorten a future physical meeting leg');
+    selectorAt += 10000;
     selector.tick();
     const claim = selected.find(message => message.type === 'claim_request');
     assert(claim && claim.payload.candidates.length === 2);
@@ -108,11 +113,27 @@ async function main() {
     const selectedBatch = selected.find(message => message.type === 'proposal_batch');
     assert(selectedBatch, JSON.stringify(selected));
     const continuedParty = selectedBatch.payload.proposals.find(entry => entry.partyResolution).partyResolution.party;
-    assert.equal(continuedParty.nextResolveAt, at + 10000, 'real group flow waits for the next finite transition');
+    assert.equal(continuedParty.nextResolveAt, selectorAt, 'physical arrival publishes the native next-pass deadline');
     selector.onCommitAck({ results: selectedBatch.payload.proposals.map(proposal => ({
         ok: true, characterId: proposal.characterId, inputToken: proposal.token, proposalId: proposal.proposalId,
         state: { ...proposal.nextState, timing: { ...proposal.nextState.timing, nextResolveAt: proposal.result.nextResolveAt } },
         context: { party: continuedParty, partyMembers: future, isPartyLeader: proposal.characterId === party.leaderId }
+    })) });
+    selector.tick();
+    const afterArrivalClaim = selected.filter(message => message.type === 'claim_request').at(-1);
+    assert.notEqual(afterArrivalClaim, claim, 'the native next-pass transition is admitted once');
+    selector.onClaimAck({ grants: afterArrivalClaim.payload.candidates.map(candidate => ({
+        ...grants.get(candidate.characterId), revision: 2, ok: true, purpose: candidate.purpose
+    })) }, afterArrivalClaim.msgId);
+    await selector.resolveChain;
+    const idleBatch = selected.filter(message => message.type === 'proposal_batch').at(-1);
+    const idleParty = idleBatch.payload.proposals.find(proposal => proposal.partyResolution).partyResolution.party;
+    assert.equal(idleParty.nextResolveAt, selectorAt + 30000, 'a held completed leg returns to finite lifecycle scheduling');
+    assert(idleBatch.payload.proposals.every(proposal => proposal.result.materialize.exp === 0));
+    selector.onCommitAck({ results: idleBatch.payload.proposals.map(proposal => ({ ok: true,
+        characterId: proposal.characterId, inputToken: proposal.token, proposalId: proposal.proposalId,
+        state: { ...proposal.nextState, timing: { ...proposal.nextState.timing, nextResolveAt: proposal.result.nextResolveAt } },
+        context: { party: idleParty, isPartyLeader: proposal.characterId === party.leaderId }
     })) });
     const claimCount = selected.filter(message => message.type === 'claim_request').length;
     for (let i = 0; i < 100; i++) selector.tick();
@@ -141,6 +162,8 @@ async function main() {
             terminalKernel.inFlight.set(state.characterId, { state, grant: grants.get(state.characterId),
                 partyId: party.partyId, claimRequestId: requestId });
         }
+        assert.equal(terminalKernel.dueAt(raidMembers[0], { isPartyLeader: true, party: victoryParty }), at,
+            'terminal raid settlement is not delayed by a future personal leg');
         terminalKernel.partyRuns.set(party.partyId, { party: victoryParty, members: raidMembers, grants,
             requestId, spot: null, route: { needed: true, travelMs: 60000, spotId: 'wrong-spot' } });
         await terminalKernel.resolvePartyGrant(party.partyId);

@@ -575,7 +575,35 @@ class ColdSimulationKernel {
         // locally; no additional snapshot fields or population scan.
         const meetingPending = !!state.stats?.tradeMeeting
             || (context.party?.memberIds || []).some(id => this.states.get(Number(id))?.state.stats?.tradeMeeting);
+        if (meetingPending && context.isPartyLeader) {
+            if (context.party?.stats?.objective?.sourceKind === 'raid'
+                && context.party.stats?.raidEncounter?.status === 'defeated') return timestamp;
+            // Existing accepted meetings keep the group writer. Its deadline
+            // is the next physical transition, not a later hunt/review timer.
+            let transitionDue = Infinity;
+            for (const id of context.party?.memberIds || []) {
+                const member = Number(id) === Number(state.characterId) ? state : this.states.get(Number(id))?.state;
+                if (!member || !(member.stats?.tradeMeeting || ['resting', 'dead'].includes(member.activity))) continue;
+                if (!['traveling', 'resting', 'dead', 'fighting'].includes(member.activity)) continue;
+                const due = nextDueAt(member, timestamp, {}, this.partySession, true);
+                if (due > 0) transitionDue = Math.min(transitionDue, due);
+            }
+            if (Number.isFinite(transitionDue)) return transitionDue;
+        }
         return nextDueAt(state, timestamp, context, this.partySession, meetingPending);
+    }
+
+    refreshPartyMeetingLeader(characterId, previous) {
+        const current = this.states.get(characterId);
+        const party = current?.context?.party || previous?.context?.party;
+        if (!party || Number(party.leaderId) === characterId) return;
+        if (previous && current.state.activity === previous.state.activity
+            && !!current.state.stats?.tradeMeeting === !!previous.state.stats?.tradeMeeting
+            && nextDueAt(current.state, this.now(), {}, this.partySession, true)
+                === nextDueAt(previous.state, this.now(), {}, this.partySession, true)) return;
+        const leaderId = Number(party.leaderId), leader = this.states.get(leaderId);
+        if (!leader || this.busy(leaderId) || lifecycleKind(leader.state, leader.context) !== 'party') return;
+        this.schedule(leaderId, leader.version, this.dueAt(leader.state, leader.context));
     }
 
     upsert(entry = {}) {
@@ -612,6 +640,7 @@ class ColdSimulationKernel {
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
+            this.refreshPartyMeetingLeader(characterId, current);
             return false;
         }
         if (current && incomingRevision === currentRevision
@@ -633,6 +662,7 @@ class ColdSimulationKernel {
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
+            this.refreshPartyMeetingLeader(characterId, current);
             return true;
         }
         const version = Number(this.versions.get(characterId) || 0) + 1;
@@ -645,6 +675,7 @@ class ColdSimulationKernel {
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId);
+        this.refreshPartyMeetingLeader(characterId, current);
         return true;
     }
 
@@ -983,13 +1014,8 @@ class ColdSimulationKernel {
                 const attachedMembers = members.filter((member) => (
                     String(member.party?.partyId || member.partyId || '') === String(party?.partyId || '')
                 ));
-                // The enrolled participant queue releases this obligation.
-                // Do not claim the merchant as part of a shared hunt or let
-                // assembly/recovery rewrite its independent travel deadline.
-                if (members.some(member => member.stats?.tradeMeeting)) {
-                    this.requeue(id, timestamp + 30000);
-                    continue;
-                }
+                // Existing accepted meetings advance through the same atomic
+                // group lifecycle; their finite transitions never enter hunt.
                 if (members.some(member => member.stats?.pvpEncounter)) {
                     this.requeue(id, timestamp + 1000);
                     continue;
