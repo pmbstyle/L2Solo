@@ -48,6 +48,9 @@ function itemTemplate(selfId) {
 function equippedTemplates(state = {}) {
     return Object.values(state.inventory || {})
         .flatMap((item) => {
+            // Unequipped rows always produced no slots. Do not resolve their
+            // templates on every hypothetical gear/skill profile calculation.
+            if (!item?.equipped) return [];
             const template = itemTemplate(item?.selfId);
             if (!template) return [];
             const amount = Math.max(0, number(item.amount, item?.equipped ? 1 : 0));
