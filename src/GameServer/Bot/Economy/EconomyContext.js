@@ -142,33 +142,37 @@ function defaultProducerSource(state, board) {
     const level = require('./CraftEligibility').craftLevelFor(state), scope = index.scopeFor(level);
     return { recipes: index.rowsFor(level), scope, revision: index.revision(scope) };
 }
-function resolved(state, deps) {
+function resolved(state, deps, production = true) {
     deps = { ...runtime, ...deps };
     if (typeof deps.board === 'function') deps.board = deps.board();
     if (!deps.board && isMainThread) deps.board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
     if (typeof deps.spots === 'function') deps.spots = deps.spots();
     if (typeof deps.memory === 'function') deps.memory = deps.memory(state.characterId);
-    if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
-    if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
-    if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = require('../Population/ColdOccupationSources').fixedBuyerOffersFor;
-    if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
-    if (typeof deps.producerSource === 'function') {
-        const source = deps.producerSource(state, deps.board);
-        deps.producerRecipes = source?.recipes;
-        deps.producerRevision = source?.revision;
-        if (source?.scope != null) deps.onSourceScope?.(source.scope);
+    // Stock, survival and own shot-use readers need only the hunt foundation.
+    // Production sources and recipe books belong to the full wish review.
+    if (production) {
+        if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
+        if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
+        if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = require('../Population/ColdOccupationSources').fixedBuyerOffersFor;
+        if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
+        if (typeof deps.producerSource === 'function') {
+            const source = deps.producerSource(state, deps.board);
+            deps.producerRecipes = source?.recipes;
+            deps.producerRevision = source?.revision;
+            if (source?.scope != null) deps.onSourceScope?.(source.scope);
+        }
+        if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
+        if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
+            const Workshops = require('./CraftWorkshopService');
+            deps.workshops = Workshops.publicForRecipe;
+            deps.workshopRevision = Workshops.publicRecipeDigest;
+        }
+        if (isMainThread && !Object.hasOwn(deps, 'knownRecipes')) {
+            const Workshops = require('./CraftWorkshopService');
+            if (Workshops.bookFor(state.characterId) !== null) deps.knownRecipes = Workshops.cachedRecipes(state.characterId);
+        }
+        if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     }
-    if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
-    if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
-        const Workshops = require('./CraftWorkshopService');
-        deps.workshops = Workshops.publicForRecipe;
-        deps.workshopRevision = Workshops.publicRecipeDigest;
-    }
-    if (isMainThread && !Object.hasOwn(deps, 'knownRecipes')) {
-        const Workshops = require('./CraftWorkshopService');
-        if (Workshops.bookFor(state.characterId) !== null) deps.knownRecipes = Workshops.cachedRecipes(state.characterId);
-    }
-    if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     if (!deps.npcOffersFor && isMainThread) deps.npcOffersFor = id => {
         const Sources = require('../Population/ColdOccupationSources');
@@ -328,7 +332,7 @@ function foundation(state, deps, persona, timestamp, price) {
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
 }
 function basics(state = {}, deps = {}) {
-    deps = resolved(state, deps);
+    deps = resolved(state, deps, false);
     const timestamp = Number(deps.timestamp || Date.now());
     const persona = personaOf(state, deps);
     const board = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);

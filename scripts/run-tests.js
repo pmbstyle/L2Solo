@@ -25,6 +25,7 @@ const tests = [
     'tests/test_sparse_numeric_storage.js',
     'tests/test_wish_equipment_preparation.js',
     'tests/test_cold_plan_withdrawal_batch.js',
+    'tests/test_economy_basics_dependencies.js',
     'tests/test_market_store_history.js',
     'tests/test_bot_market_price_alignment.js',
     'tests/test_clan_hall_auctions.js',
