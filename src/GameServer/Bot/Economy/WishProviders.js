@@ -4,6 +4,7 @@ const { trait, stageHours, resale } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
+const Equipment = require('../AI/BotEquipmentCompatibility');
 let catalogSource = null;
 let sourceRevision = -1;
 const kits = new Map();
@@ -56,7 +57,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         // The exported game-data view is also used to construct fixed kits;
         // it has no actor choice or expensive build evaluation.
         if (!ctx) { result.set(slot, allowed.map(at => kit.items[at])); continue; }
-        const current = [7, 14].includes(slot) ? wornFor(7) || wornFor(14) : wornFor(slot);
+        const current = replacementWorn(wornFor, slot);
         const owned = current && Data.items && require('../../Item/ItemTemplateIndex').find(Data.items, current.selfId);
         const before = owned ? Planner.itemScore(owned, role, classId) : 0;
         const efficientByRank = new Map();
@@ -112,6 +113,23 @@ function wornReader(state) {
         return slots.get(slot);
     };
 }
+function replacementWorn(wornFor, slot) {
+    return Equipment.isWeaponSlot(slot) ? wornFor(7) || wornFor(14) : wornFor(slot);
+}
+function replacementConflict(row, slot) {
+    // Non-weapon gain keeps its existing paired jewellery/body semantics.
+    if (!Equipment.isWeaponSlot(slot)) return Number(row.slot) === slot;
+    if (!row.equipped && !(row.equippedCount > 0)) return false;
+    if (row.equippedSlots?.length) {
+        for (const wornSlot of row.equippedSlots) {
+            if (Equipment.equipmentReplacementConflict(slot, wornSlot)) return true;
+        }
+        return false;
+    }
+    const wornSlot = row.slot || require('../../Item/ItemTemplateIndex')
+        .find(invoke('GameServer/DataCache').items, row.selfId)?.etc?.slot;
+    return Equipment.equipmentReplacementConflict(slot, wornSlot);
+}
 // What wearing `item` in its slot adds to the bot's build: remembered per
 // build and item (design 16.5), so a later review of the same build reuses it.
 function gearGain(state, item, timestamp = Date.now(), build = null, threatMask = 3) {
@@ -121,10 +139,35 @@ function gearGainReader(state, timestamp, build, caster = require('./BotImprovem
     threatMask = threatMask === 1 ? 1 : 3;
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     build ||= Profile.buildGainsFor(state, timestamp);
-    let inventoryEntries, withoutSlot, previousSlot;
+    let inventoryEntries, withoutSlot, previousSlot, ownWeapon;
+    const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+    const role = Planner.roleFor(state), classId = Number(state.stats?.classId || state.classId || 0);
+    const entries = () => inventoryEntries ||= Object.entries(state.inventory || {});
+    const selectedWeapon = item => {
+        if (!Planner.equipmentCandidate(item, state, role)) return false;
+        if (ownWeapon === undefined) {
+            ownWeapon = null;
+            const Data = invoke('GameServer/DataCache');
+            const Index = require('../../Item/ItemTemplateIndex');
+            // The same native comparison, once per review, includes weapons
+            // received but not yet reconciled. Known material slots need no lookup.
+            for (const [key, row] of entries()) {
+                if (!(Number(row.amount) > 0) || Number(row.slot) > 0 && !Equipment.isWeaponSlot(row.slot)) continue;
+                const owned = Index.find(Data.items, row.selfId);
+                if (Equipment.isWeaponSlot(owned?.etc?.slot) && Planner.equipmentCandidate(owned, state, role)
+                    && Planner.equipmentItemBetter(owned, ownWeapon?.item, role, classId)) ownWeapon = { key, item: owned };
+            }
+        }
+        if (!ownWeapon || Planner.equipmentItemBetter(item, ownWeapon.item, role, classId)) return true;
+        // Native receipt keys are integer template ids: an equally scored,
+        // equally priced newly inserted lower key is encountered first.
+        return Number(item.selfId) < Number(ownWeapon.key)
+            && !Planner.equipmentItemBetter(ownWeapon.item, item, role, classId);
+    };
     return item => Profile.gainFor(build, `${caster ? 'm' : 'p'}:gear:${threatMask}:${item.selfId}:${item.etc.slot}`, () => {
         const before = Profile.powerNumbers(build);
         const slot = Number(item.etc.slot);
+        if (Equipment.isWeaponSlot(slot) && !selectedWeapon(item)) return { attack: 0, defence: 0 };
         // Only a new native gain needs a hypothetical bag. Prepare its unchanged
         // rows/removal for the current slot, then give each candidate a fresh
         // overlay. Candidates are grouped by slot: keep one base, not one bag
@@ -132,7 +175,7 @@ function gearGainReader(state, timestamp, build, caster = require('./BotImprovem
         if (!withoutSlot || previousSlot !== slot) {
             previousSlot = slot;
             withoutSlot = Object.fromEntries((inventoryEntries ||= Object.entries(state.inventory || {}))
-                .map(([key, row]) => [key, Number(row.slot) === slot
+                .map(([key, row]) => [key, replacementConflict(row, slot)
                     ? { ...row, equipped: false, equippedCount: 0, equippedSlots: [] } : row]));
         }
         const inventory = { ...withoutSlot, [item.selfId]: { selfId: Number(item.selfId), amount: 1, equipped: true,
@@ -435,7 +478,7 @@ function buildProjection(state, ctx, deps) {
         || positive(state.inventory?.[id]?.amount) > 0 || !!observedPurchase(id);
     for (const [slot, items] of gearCandidates(state, ctx, wornFor, acquisitionAllowed)) for (const item of items) {
         if (!Planner.considerable(item, state)) continue;
-        const current = wornFor(slot);
+        const current = replacementWorn(wornFor, slot);
         if (Number(current?.selfId) === Number(item.selfId)) continue;
         const gain = gainFor(item);
         const currentPrice = current ? price(current.selfId) : 0;

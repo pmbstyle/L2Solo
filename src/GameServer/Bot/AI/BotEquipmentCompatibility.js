@@ -256,7 +256,26 @@ function weaponHintFor(role, classId) {
     return profileFor(role, classId).weaponHint;
 }
 
+// A weapon occupies one shared group; a two-handed weapon also clears the
+// shield. These are paperdoll rules, independent of class or economic policy.
+function isWeaponSlot(slot) {
+    const value = Number(slot || 0);
+    return value === 7 || value === 14;
+}
+function equipmentSlotKey(slot) {
+    const value = Number(slot || 0);
+    return isWeaponSlot(value) ? 'weapon' : String(value);
+}
+function equipmentReplacementConflict(slot, wornSlot) {
+    const next = Number(slot || 0), worn = Number(wornSlot || 0);
+    return next === worn || isWeaponSlot(next) && isWeaponSlot(worn)
+        || next === 14 && worn === 8;
+}
+
 module.exports = {
+    isWeaponSlot,
+    equipmentSlotKey,
+    equipmentReplacementConflict,
     armorKindFor,
     armorStyleFor,
     allowsTwoHandedWeapon,

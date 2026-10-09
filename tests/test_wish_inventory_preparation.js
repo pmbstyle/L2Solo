@@ -13,11 +13,11 @@ const filename = require.resolve('../src/GameServer/Bot/Economy/WishProviders');
 const source = fs.readFileSync(filename, 'utf8');
 // Native full provider, with only the two per-review scratch readers bypassed.
 // Reference gains still go through the common physical combat/armour/skill rules.
-let uncached = source.replace(/function wornReader\(state\) \{[\s\S]*?\n\}\n\/\/ What wearing/, `function wornReader(state) {
+let uncached = source.replace(/function wornReader\(state\) \{[\s\S]*?\n\}\nfunction replacementWorn/, `function wornReader(state) {
     return slot => rows(state).find(row => (row.equipped || row.equippedCount > 0)
         && (Number(row.slot) === slot || row.equippedSlots?.includes(slot))) || null;
 }
-// What wearing`);
+function replacementWorn`);
 uncached = uncached.replace('if (!withoutSlot || previousSlot !== slot)', 'if (true)')
     .replace('(inventoryEntries ||= Object.entries(state.inventory || {}))', 'Object.entries(state.inventory || {})');
 assert.notEqual(uncached, source, 'reference bypass must apply');

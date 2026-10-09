@@ -140,14 +140,14 @@ function forClan(clan, inputs = {}) {
         // hour and horizon. Compute its network-free fallback only on demand,
         // at most once in this clan review; retain no additional member cache.
         let fallback;
-        const basics = () => fallback ??= Economy.basics(member, { persona: member.persona });
+        const basics = () => fallback ??= Economy.basics(member, { persona: member.persona, timestamp: inputs.timestamp });
         const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics().hunt.expPerHour, basics().persona);
         const clanItemUsefulness = id => {
             if (!ItemSources.hasSource(id)) return 0;
             if (Number(id) === Number(numbers?.plan?.itemId)) return positive(numbers.plan.valueHours);
             const item = require('../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
             if (!item?.etc?.slot) return 0;
-            const gain = require('../Bot/Economy/WishProviders').gearGain(member, item);
+            const gain = require('../Bot/Economy/WishProviders').gearGain(member, item, basics().timestamp);
             return Math.max(0, (gain.attack + gain.defence * basics().deathHours) * clanHorizon);
         };
         return { persona: member.persona || basics().persona, clanHorizon,

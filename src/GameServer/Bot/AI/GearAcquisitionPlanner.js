@@ -35,7 +35,7 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
 const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
-const WEAPON_SLOTS = new Set([7, 14]);
+const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
 // Saved plans older than this version are re-planned (BotLifeState, ClanEquipmentPlanner).
@@ -153,11 +153,6 @@ function equippedSlotsFor(entry = {}, fallbackSlot = 0) {
     return slots.slice(0, Math.min(amount, slots.length));
 }
 
-function equipmentSlotKey(slot) {
-    const value = Number(slot || 0);
-    if (WEAPON_SLOTS.has(value)) return 'weapon';
-    return String(value);
-}
 
 function isCraftService(state = {}) {
     return state.activity === 'crafting'
@@ -209,7 +204,7 @@ function missingRequiredDualSword(state = {}, role = roleFor(state), classId = c
 function itemScore(item, role, classId) {
     const stats = item.stats || {};
     const slot = Number(item.etc?.slot || 0);
-    if (WEAPON_SLOTS.has(slot)) return BotWeaponCompatibility.scoreWeapon(stats.pAtk, stats.mAtk, role, classId);
+    if (BotEquipmentCompatibility.isWeaponSlot(slot)) return BotWeaponCompatibility.scoreWeapon(stats.pAtk, stats.mAtk, role, classId);
     if (JEWEL_SLOTS.has(slot)) return Number(stats.mDef || 0);
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
 }
@@ -220,7 +215,7 @@ function rankIndex(rank) {
 }
 
 function recoveryWake(state = {}) {
-    const weapon = equippedInventoryItems(state.inventory).find(item => WEAPON_SLOTS.has(Number(item.etc?.slot)));
+    const weapon = equippedInventoryItems(state.inventory).find(item => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot)));
     return [Number(state.level || 1), weapon ? rankIndex(weapon.etc?.rank) : -1, state.party?.partyId ? 1 : 0];
 }
 
@@ -268,7 +263,7 @@ function computeCombatReadiness(state = {}) {
     const interimState = interimClassId
         ? { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } }
         : null;
-    const weapon = equipped.find((item) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+    const weapon = equipped.find((item) => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
         && (suitable(item, state, role, item.etc?.rank)
             || (interimState && suitable(item, interimState, roleFor(interimState), item.etc?.rank))));
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
@@ -303,7 +298,7 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     const kind = item.template?.kind || '';
     const slot = Number(item.etc?.slot || 0);
     const classId = classIdFor(state);
-    if (WEAPON_SLOTS.has(slot)) return BotWeaponCompatibility.isSuitableWeapon(
+    if (BotEquipmentCompatibility.isWeaponSlot(slot)) return BotWeaponCompatibility.isSuitableWeapon(
         kind,
         item.template?.name,
         item.stats?.pAtk,
@@ -341,14 +336,14 @@ function ownedItemFitsBuild(item, role, classId) {
     // A retail starter weapon the class profile does not list (a caster's gloves)
     // is good enough to fight with (combatReadiness), not to keep: the kit buys
     // the class's own weapon first.
-    if (WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+    if (BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
         && BotEquipmentCompatibility.isStarterWeaponKind(item.template?.kind || '', classId)) return false;
     return suitable(item, { classId }, role, item.etc?.rank);
 }
 
 function isSlotUpgrade(item, ownedItems, role, classId) {
     if (!isRealCatalogItem(item)) return false;
-    const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
+    const slot = BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
     const rank = String(item.etc?.rank || 'none').toLowerCase();
     const score = itemScore(item, role, classId);
     const price = Number(item.template?.price || 0);
@@ -357,7 +352,7 @@ function isSlotUpgrade(item, ownedItems, role, classId) {
     // expensive progression tier.
     return !ownedItems.some((owned) => (
         ownedItemFitsBuild(owned, role, classId)
-        && (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
+        && (BotEquipmentCompatibility.isWeaponSlot(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         && String(owned.etc?.rank || 'none').toLowerCase() === rank
         && (itemScore(owned, role, classId) > score
             || (itemScore(owned, role, classId) === score && Number(owned.template?.price || 0) >= price))
@@ -366,17 +361,17 @@ function isSlotUpgrade(item, ownedItems, role, classId) {
 
 function slotPriority(item) {
     const slot = Number(item?.etc?.slot || 0);
-    if (WEAPON_SLOTS.has(slot)) return 8;
+    if (BotEquipmentCompatibility.isWeaponSlot(slot)) return 8;
     if (ARMOR_SLOTS.has(slot)) return 4;
     return JEWEL_SLOTS.has(slot) ? 1 : 0;
 }
 
 function currentSlotScore(item, ownedItems = [], role, classId) {
-    const slot = WEAPON_SLOTS.has(Number(item?.etc?.slot || 0)) ? 'weapon' : Number(item?.etc?.slot || 0);
+    const slot = BotEquipmentCompatibility.isWeaponSlot(Number(item?.etc?.slot || 0)) ? 'weapon' : Number(item?.etc?.slot || 0);
     return ownedItems
         .filter((owned) => ownedItemFitsBuild(owned, role, classId))
         .filter((owned) => (
-            (WEAPON_SLOTS.has(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
+            (BotEquipmentCompatibility.isWeaponSlot(Number(owned.etc?.slot || 0)) ? 'weapon' : Number(owned.etc?.slot || 0)) === slot
         ))
         .reduce((best, owned) => Math.max(best, itemScore(owned, role, classId)), 0);
 }
@@ -426,7 +421,7 @@ function shortlistCandidates(candidates = [], options = {}) {
     if (options.recipeId) return candidates;
     const offset = Math.max(0, Math.floor(Number(options.shortlistOffset || 0)));
     const bySlot = candidates.reduce((groups, candidate) => {
-        const slot = WEAPON_SLOTS.has(Number(candidate.item.etc?.slot || 0))
+        const slot = BotEquipmentCompatibility.isWeaponSlot(Number(candidate.item.etc?.slot || 0))
             ? 'weapon'
             : String(candidate.item.etc?.slot || 0);
         groups[slot] = groups[slot] || [];
@@ -471,15 +466,23 @@ function opportunityScore(candidate, state, options = {}, precomputedEffort = un
     return (slotPriority(candidate.item) * improvement) / normalizedEffort;
 }
 
+function equipmentCandidate(item, state, role = roleFor(state)) {
+    return !!item && rankIndex(item.etc?.rank) <= rankIndex(gradeForLevel(state.level))
+        && suitable(item, state, role, item.etc?.rank);
+}
+function equipmentItemBetter(item, current, role, classId) {
+    return !current || itemScore(item, role, classId) > itemScore(current, role, classId)
+        || itemScore(item, role, classId) === itemScore(current, role, classId)
+            && Number(item.template?.price || 0) < Number(current.template?.price || 0);
+}
+
 function equipInventoryUpgrades(state = {}, inventory = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
-    const allowedRank = rankIndex(gradeForLevel(state.level));
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
         const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
-        const rank = rankIndex(item?.etc?.rank);
-        return item && rank <= allowedRank && suitable(item, state, role, item.etc?.rank) ? [{ entry, item }] : [];
+        return equipmentCandidate(item, state, role) ? [{ entry, item }] : [];
     });
     const pairGroup = (item) => {
         const slot = Number(item.etc?.slot || 0);
@@ -489,9 +492,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
     const best = ordinaryCandidates.reduce((selected, candidate) => {
         const key = equipmentSlotKey(candidate.item.etc?.slot);
         const current = selected.get(key);
-        if (!current || itemScore(candidate.item, role, classId) > itemScore(current.item, role, classId)
-            || itemScore(candidate.item, role, classId) === itemScore(current.item, role, classId)
-                && Number(candidate.item.template?.price || 0) < Number(current.item.template?.price || 0)) {
+        if (equipmentItemBetter(candidate.item, current?.item, role, classId)) {
             selected.set(key, candidate);
         }
         return selected;
@@ -540,12 +541,13 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
             }
         });
     }
-    best.forEach(({ entry, item }, key) => {
+    best.forEach(({ entry, item }) => {
         const slot = Number(item.etc?.slot || 0);
         Object.values(next).forEach((owned) => {
             const ownedItem = ItemTemplateIndex.find(DataCache.items, owned.selfId);
-            const ownedKey = ownedItem ? equipmentSlotKey(ownedItem.etc?.slot) : String(owned.slot || 0);
-            if (ownedKey === key && Number(owned.selfId) !== Number(entry.selfId)) setUnequipped(owned);
+            const ownedSlot = Number(ownedItem?.etc?.slot || owned.slot || 0);
+            if (equipmentReplacementConflict(slot, ownedSlot)
+                && Number(owned.selfId) !== Number(entry.selfId)) setUnequipped(owned);
         });
         if (slot === 15) {
             [10, 11].forEach((blockedSlot) => Object.values(next).forEach((owned) => {
@@ -633,7 +635,7 @@ function preferredTarget(state = {}, options = {}) {
             || isSlotUpgrade(item, ownedItems, role, classId));
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
-        WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+        BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
         && ownedItemFitsBuild(item, role, classId)
         && rankIndex(item.etc?.rank) >= rankIndex(requiredRank)
     ));
@@ -641,8 +643,8 @@ function preferredTarget(state = {}, options = {}) {
     // covered, fill the rest of the kit before considering another weapon of
     // the same grade.
     const weaponFirst = !hasCurrentGradeWeapon || missingDualSword
-        ? allCandidates.filter(({ item }) => WEAPON_SLOTS.has(Number(item.etc?.slot || 0)))
-        : allCandidates.filter(({ item }) => !WEAPON_SLOTS.has(Number(item.etc?.slot || 0)));
+        ? allCandidates.filter(({ item }) => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0)))
+        : allCandidates.filter(({ item }) => !BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0)));
     const progressionCandidates = options.wishTargetId ? allCandidates : weaponFirst.length ? weaponFirst : allCandidates;
     const cap = progressionPriceCap(requiredRank, state.level);
     const affordable = progressionCandidates.filter(({ item }) => options.wishTargetId || Number(item.template?.price || 0) <= cap);
@@ -855,7 +857,7 @@ function desiredNpcSlots(state = {}, plan = BotGear.planFor({ classId: classIdFo
 function itemMatchesDesiredSlot(item, desiredSlot) {
     const slot = Number(item?.etc?.slot || 0);
     const wanted = Number(desiredSlot || 0);
-    if (WEAPON_SLOTS.has(slot) && WEAPON_SLOTS.has(wanted)) return true;
+    if (BotEquipmentCompatibility.isWeaponSlot(slot) && BotEquipmentCompatibility.isWeaponSlot(wanted)) return true;
     if ([1, 2].includes(slot) && [1, 2].includes(wanted)) return true;
     if ([4, 5].includes(slot) && [4, 5].includes(wanted)) return true;
     return slot === wanted;
@@ -864,8 +866,8 @@ function itemMatchesDesiredSlot(item, desiredSlot) {
 function equippedItemAtSlot(state = {}, slot) {
     const wanted = Number(slot || 0);
     return equippedInventoryItems(state.inventory).find((item) => (
-        ownedItemFitsBuild(item, roleFor(state), classIdFor(state)) && (WEAPON_SLOTS.has(wanted)
-            ? WEAPON_SLOTS.has(Number(item.etc?.slot || 0))
+        ownedItemFitsBuild(item, roleFor(state), classIdFor(state)) && (BotEquipmentCompatibility.isWeaponSlot(wanted)
+            ? BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
             : Number(item.etc?.slot || 0) === wanted
                 // Full-body armour occupies both paperdoll body slots. Treat
                 // it as the current chest/legs item while evaluating the NPC
@@ -955,7 +957,7 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
     if (rankIndex(gradeForLevel(state.level)) > rankIndex('d')) return null;
     const role = roleFor(state);
     const starterWeapon = BotGear.planFor({ classId, level: 1 }).items
-        .find((item) => WEAPON_SLOTS.has(Number(item.slot)));
+        .find((item) => BotEquipmentCompatibility.isWeaponSlot(Number(item.slot)));
     const starterTemplate = catalogItem(starterWeapon?.selfId);
     const currentWeapon = equippedItemAtSlot(state, 7);
     const hasUpgradedWeapon = currentWeapon && (rankIndex(currentWeapon.etc?.rank) > rankIndex('none')
@@ -1032,7 +1034,7 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         return dual && (!armed || dualSwordFunded(dual, state, options)) ? dual : null;
     }
     if (armed || !GearLifecycle.isGearFocusActive(state)) return null;
-    const slot = desiredNpcSlots(state).find((entry) => WEAPON_SLOTS.has(entry));
+    const slot = desiredNpcSlots(state).find((entry) => BotEquipmentCompatibility.isWeaponSlot(entry));
     if (!slot) return null;
     const role = roleFor(state);
     const classId = classIdFor(state);
@@ -1120,7 +1122,7 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
     // same-slot market replacements.
     if (!considerable(failedTarget, state, role)
         || !isSlotUpgrade(failedTarget, ownedItems, role, classId)) return null;
-    const failedSlot = WEAPON_SLOTS.has(Number(failedTarget.etc?.slot || 0))
+    const failedSlot = BotEquipmentCompatibility.isWeaponSlot(Number(failedTarget.etc?.slot || 0))
         ? 'weapon'
         : Number(failedTarget.etc?.slot || 0);
     const excluded = excludedTargetIds(options);
@@ -1129,7 +1131,7 @@ function marketRecoveryPlanForTarget(state = {}, targetId, options = {}) {
         .filter((item) => Number(item.selfId) !== Number(targetId))
         .filter((item) => !excluded.has(Number(item.selfId)))
         .filter((item) => {
-            const slot = WEAPON_SLOTS.has(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
+            const slot = BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0)) ? 'weapon' : Number(item.etc?.slot || 0);
             return slot === failedSlot;
         })
         .filter((item) => considerable(item, state, role))
@@ -2484,7 +2486,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 // One decision outside this module (a wish review) that judges a bot against
 // many sources shares its readiness the same way.
