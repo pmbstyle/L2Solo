@@ -2633,9 +2633,9 @@ function renderMarket() {
     }).join('') : '<div class="list-empty">No bot stores open.</div>';
 
     const top = (market.topItems || [])[0];
-    const demand = top?.demand || {};
+    const demand = top?.publicDemand || {};
     els.marketTopItem.innerHTML = top
-        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} listed · ${number(top.wtbUnits || 0)} wanted · ${number(demand.fundedUnits || 0)} funded · ${number(demand.bots || 0)} planned`
+        ? `Most active <strong>${text(top.name)}</strong> · ${number(top.wtsUnits || 0)} listed · ${number(demand.units || 0)} publicly wanted · ${number(demand.conditionalUnits || 0)} conditional`
         : 'No active listings yet';
 
     const recent = (transactions.recentPeerTrades || []).slice(0, 3);

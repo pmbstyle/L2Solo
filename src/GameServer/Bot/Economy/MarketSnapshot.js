@@ -1,7 +1,5 @@
-const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MerchantStoreConfigs = invoke('GameServer/Bot/MerchantStoreConfigs');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
-const MarketDemandIndex = invoke('GameServer/Bot/Economy/MarketDemandIndex');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const DataCache = invoke('GameServer/DataCache');
@@ -49,11 +47,11 @@ function addItem(items, line, side, town) {
 function snapshot() {
     const byTown = {};
     const items = new Map();
-    const states = LifeState.allStates(5000);
-    const now = Date.now();
-    const signalsByItem = MarketDemandIndex.indexSignals(states, now);
     const dynamicStores = AfkTrade.activeShops().filter((shop) => String(shop.ownerAccount || '').startsWith('bot_'))
-        .map((shop) => ({ storeType: shop.storeType, town: shop.town, items: shop.lines || [] }));
+        .map((shop) => ({ storeType: shop.storeType, side: Number(shop.storeType) === 3 ? 'wtb' : 'wts',
+            source: 'afk_bot', kind: shop.kind || 'shop', custodyPolicy: shop.custodyPolicy,
+            conditional: Number(shop.custodyPolicy) === 1, town: shop.town, items: shop.lines || [] }));
+    const bids = publicBuyOffers(dynamicStores);
     dynamicStores.forEach((store) => {
         const side = Number(store.storeType || 1) === 3 ? 'wtb' : 'wts';
         const town = store.town || 'Unknown';
@@ -78,23 +76,11 @@ function snapshot() {
     const rankedItems = Array.from(items.values()).sort((left, right) => (
         (right.wtbUnits + right.wtsUnits) - (left.wtbUnits + left.wtsUnits) || left.selfId - right.selfId
     )).slice(0, 20).map((item) => {
-        const demand = MarketDemandIndex.demandFor(item.selfId, {
-            signals: signalsByItem.get(item.selfId) || [],
-            now,
-            unitPrice: Number.isFinite(item.minimumWtsPrice) ? item.minimumWtsPrice : 0
-        });
         return {
             ...item,
             minimumWtsPrice: Number.isFinite(item.minimumWtsPrice) ? item.minimumWtsPrice : null,
             maximumWtbPrice: item.maximumWtbPrice || null,
-            demand: {
-                bots: demand.bots,
-                readyBots: demand.readyBots,
-                fundedBots: demand.fundedBots,
-                units: demand.units,
-                readyUnits: demand.readyUnits,
-                fundedUnits: demand.fundedUnits
-            }
+            publicDemand: bids.get(item.selfId) || emptyPublicDemand()
         };
     });
     return {
@@ -144,18 +130,19 @@ function normalizeStoreItems(items = [], itemsById = cachedItemsById(), priceFor
     }).filter(Boolean);
 }
 
-function storeRow({ id, source, ownerId = null, ownerName, storeType, title = '', town = null, loc = null, items = [], conditional = false }) {
+function storeRow({ id, source, ownerId = null, ownerName, storeType, title = '', town = null, loc = null,
+    items = [], conditional = false, kind = 'shop', custodyPolicy = null, expiresAt = null }) {
     const type = Number(storeType) === 3 ? 3 : 1;
     return {
         id: String(id),
-        source: String(source), conditional: !!conditional,
+        source: String(source), conditional: !!conditional, kind, custodyPolicy, expiresAt,
         ownerId: Number(ownerId) || null,
         ownerName: ownerName || 'Unknown trader',
         storeType: type,
         side: type === 3 ? 'wtb' : 'wts',
         title: String(title || ''),
         town: town || 'Unknown',
-        loc: loc ? {
+        loc: loc && !['sell_ad', 'buy_ad', 'order'].includes(kind) ? {
             locX: Number(loc.locX || 0),
             locY: Number(loc.locY || 0),
             locZ: Number(loc.locZ || 0)
@@ -219,6 +206,9 @@ function afkStores(shops, itemsById) {
         return [storeRow({
             id: `afk:${Number(shop.id)}`,
             conditional: shop.custodyPolicy === 1,
+            kind: shop.kind || 'shop',
+            custodyPolicy: shop.custodyPolicy ?? null,
+            expiresAt: shop.expiresAt || null,
             source: String(shop.ownerAccount || '').startsWith('bot_') ? 'afk_bot' : 'afk_player',
             ownerId: shop.ownerId,
             ownerName: shop.ownerName,
@@ -231,23 +221,34 @@ function afkStores(shops, itemsById) {
     });
 }
 
-function demandItemIds(states) {
-    const ids = new Set();
-    (states || []).forEach((state) => {
-        const wanted = Number(state?.stats?.marketWanted?.itemId || 0);
-        const target = Number(state?.stats?.equipmentPlan?.target?.selfId || 0);
-        if (wanted > 0) ids.add(wanted);
-        if (target > 0) ids.add(target);
-        (state?.stats?.equipmentPlan?.materials || []).forEach((material) => {
-            if (Number(material?.selfId || 0) > 0 && Number(material?.missing || 0) > 0) ids.add(Number(material.selfId));
-        });
-    });
-    return ids;
+function emptyPublicDemand() {
+    return { offers: 0, units: 0, reservedUnits: 0, conditionalUnits: 0, towns: {} };
+}
+
+// The Observer aggregates the public book once. Private wishes are not bids,
+// and a quoted willingness to pay is not an escrow reservation.
+function publicBuyOffers(stores) {
+    const bids = new Map();
+    for (const store of stores) {
+        if (store.side !== 'wtb' || store.source === 'fixed') continue;
+        for (const line of store.items || []) {
+            const id = Number(line.selfId), units = Number(line.count);
+            if (!(id > 0 && units > 0 && Number(line.price) > 0)) continue;
+            const bid = bids.get(id) || emptyPublicDemand();
+            bid.offers++;
+            bid.units += units;
+            if (store.conditional) bid.conditionalUnits += units;
+            else if (store.custodyPolicy === 0) bid.reservedUnits += units;
+            if (store.town) bid.towns[store.town] = (bid.towns[store.town] || 0) + units;
+            bids.set(id, bid);
+        }
+    }
+    return bids;
 }
 
 function buildDetail({ states = [], stores = [], transactions = MarketTelemetry.transactions(), history = null, now = Date.now(), itemsById = cachedItemsById() } = {}) {
     const items = new Map();
-    const signalsByItem = MarketDemandIndex.indexSignals(states, now);
+    const bids = publicBuyOffers(stores);
     const ensure = (selfId) => {
         const id = Number(selfId);
         if (!items.has(id)) {
@@ -290,7 +291,6 @@ function buildDetail({ states = [], stores = [], transactions = MarketTelemetry.
         });
     });
 
-    demandItemIds(states).forEach(ensure);
     const durableHistory = history?.scope ? history : null;
     const durableItemTotals = durableHistory?.byItem || transactions.byItem || [];
     const tradeTotals = new Map(durableItemTotals.map((entry) => [Number(entry.selfId), entry]));
@@ -308,18 +308,14 @@ function buildDetail({ states = [], stores = [], transactions = MarketTelemetry.
     });
 
     items.forEach((item) => {
-        const demand = MarketDemandIndex.demandFor(item.selfId, {
-            signals: signalsByItem.get(item.selfId) || [],
-            now,
-            unitPrice: Number(item.wts.minPrice || 0)
-        });
+        const demand = bids.get(item.selfId) || emptyPublicDemand();
+        item.publicDemand = demand;
+        // Retain the legacy shape for older clients, without claiming funding.
         item.demand = {
-            bots: demand.bots,
-            readyBots: demand.readyBots,
-            fundedBots: demand.fundedBots,
+            scope: 'public_buy_offers', bots: 0, readyBots: 0, fundedBots: 0,
             units: demand.units,
-            readyUnits: demand.readyUnits,
-            fundedUnits: demand.fundedUnits,
+            readyUnits: demand.units,
+            fundedUnits: 0,
             towns: demand.towns
         };
         const totals = tradeTotals.get(item.selfId);
@@ -382,10 +378,9 @@ function buildDetail({ states = [], stores = [], transactions = MarketTelemetry.
 
 async function detail() {
     const itemsById = cachedItemsById();
-    const states = LifeState.allStates(5000);
     const historyPath = Database.stats().historyPath;
     const [afk, history, storeHistory] = await Promise.all([
-        Database.fetchAfkTradeShops(null, { activeOnly: true }).catch(() => []),
+        Database.fetchAfkTradeShops(null, { activeOnly: true }),
         (historyPath ? MarketTradeOverviewReader.read(historyPath) : Database.fetchMarketTradeOverview())
             .catch(() => null),
         Database.fetchMarketStoreHistory().catch(() => null)
@@ -395,7 +390,7 @@ async function detail() {
         ...playerStores(World.user?.sessions || [], itemsById),
         ...afkStores(afk, itemsById)
     ];
-    return { ...buildDetail({ states, stores, transactions: MarketTelemetry.transactions(), history, itemsById }), storeHistory,
+    return { ...buildDetail({ stores, transactions: MarketTelemetry.transactions(), history, itemsById }), storeHistory,
         economy: { counters: MarketEconomyOverview.counterIndices(MarketCounters),
             adena: history?.economy || null } };
 }

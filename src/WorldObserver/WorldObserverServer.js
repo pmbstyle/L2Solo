@@ -8,6 +8,8 @@ const ITEM_ICON_MANIFEST_PATH = path.join(ITEM_ICON_CATALOG_DIR, 'index.json');
 const KNOWLEDGE_BASE_DIR = path.join(__dirname, '..', '..', 'data', 'KnowledgeBase');
 const { searchPlayers } = require('./CharacterSearch');
 const { createKnowledgeBaseService } = require('./KnowledgeBaseService');
+const { createJsonResponseCache, sendCachedJson } = require('./JsonResponseCache');
+const marketJson = createJsonResponseCache(() => marketSnapshot());
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const BotServiceIdentity = invoke('GameServer/Bot/AI/BotServiceIdentity');
@@ -2556,8 +2558,8 @@ function route(request, response) {
             response.end();
             return;
         }
-        marketSnapshot()
-            .then((data) => sendJson(response, data))
+        marketJson()
+            .then((entry) => sendCachedJson(request, response, entry))
             .catch((err) => sendJson(response, { error: err.message }, 500));
         return;
     }

@@ -843,6 +843,7 @@ const tests = [
         'tests/test_world_observer_ui_language.js',
       'tests/test_world_observer_world_state.js',
     'tests/test_world_observer_equipment.js',
+    'tests/test_world_observer_json_cache.js',
     'tests/test_world_observer_clans.js',
     'tests/test_world_npc_grid.js',
     'tests/test_npc_object_index.js',
