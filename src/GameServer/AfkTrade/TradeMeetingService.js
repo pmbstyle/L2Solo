@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto');
 const staged = new Map();
 const enrolled = new Map(); // Numeric participant reference, never custody/terms.
 const queue = new Set();
-let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribePlayer, unsubscribeBoard;
+let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubscribeLife, unsubscribeMarketLife, unsubscribePlayer, unsubscribeBoard;
 const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const db = () => invoke('Database');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
@@ -225,8 +225,8 @@ function presenceChanged(session) {
     marker.present = present; marker.atWaypoint = atWaypoint; wake(actor.fetchId());
 }
 function reset() {
-    unsubscribeLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
-    unsubscribeLife = unsubscribePlayer = unsubscribeBoard = undefined;
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
+    unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
     staged.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); queue.clear();
 }
@@ -328,7 +328,7 @@ async function drain() {
     } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -339,6 +339,10 @@ async function init() {
         }
         wake(id);
     });
+    // Cold commit/reflection publishes authority changes without republishing
+    // general life snapshots. Continue the enrolled meeting on that event too;
+    // the existing Set coalesces both sources and native presence decides arrival.
+    unsubscribeMarketLife = life().subscribeMarketReviewChanges(wake);
     unsubscribeBoard = afk().subscribeBoardChanges(change => {
         const owners = new Set((change.ownerIds || []).map(Number));
         for (const [key, entry] of staged) if (change.reset || entry.actors.some(id => owners.has(id))) discard(key);
