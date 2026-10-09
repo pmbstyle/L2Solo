@@ -18,7 +18,7 @@ const state = { characterId: 1, level: 40, inventory: {}, stats: { recipes: [301
 const board = new BoardIndex();
 const persona = { primaryDrive: 'progression', understanding: 1,
     traits: { commitment: 0, caution: 0, ambition: 0 } };
-let allowCraft = false, ownCraft = true, spotReads = 0;
+let allowCraft = false, ownCraft = true;
 const adapters = {
     'GameServer/DataCache': { items: [item] },
     'GameServer/Progression/ProgressionCap': { effectiveLevelCap: () => 40 },
@@ -64,20 +64,10 @@ const provider = load('WishProviders.js' , name => {
 }, invokeAdapter);
 const context = { timestamp: 1, persona, board, hunt: { perHour: 100, expPerHour: 0 }, deathHours: 0,
     price: id => id === 101 ? 100 : 1, buyback: () => 0,
-    stock: () => ({ itemId: 900, missing: 0 }), spotValue: () => { spotReads++; return {}; } };
+    stock: () => ({ itemId: 900, missing: 0 }), spotValue: () => ({}) };
 const preparedTrip = town => town === 'Giran' ? 0 : Infinity;
 preparedTrip.details = town => ({ known: town === 'Giran', hours: 0, fees: 0 });
 context.trip = preparedTrip;
-function run(craft, extra = {}) {
-    allowCraft = craft;
-    const projection = provider.build(state, { ...context, ...extra.context }, { board, ...(extra.deps || {}) });
-    const result = new network.WishNetwork().build({ actorKey: 'character:1', inputKey: String(craft),
-        characterId: 1, nodes: projection.nodes, roots: projection.roots,
-        wallet: extra.wallet ?? 1000, hourAdena: 100, persona, remembered: false });
-    return { publicOffers: 0, nodes: projection.nodes, focus: result.focus,
-        queue: result.queue.map(row => ({ key: row.key, funded: row.funded, price: row.price })),
-        plans: [...result.plans], activity: result.activity, spotReads };
-}
 
 const intent = require('../src/GameServer/Bot/Economy/TradeIntent');
 adapters['GameServer/Bot/AI/GearAcquisitionPlanner'].considerable = () => false;

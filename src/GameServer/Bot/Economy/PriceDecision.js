@@ -91,7 +91,8 @@ function willingUnitsAt(belief, trader, { price, applicableUnits, landed = price
 // native record so a withdrawn/edited bid cannot support a stale trial.
 function prospectiveExit(state, exit, { board, persona, timestamp = Date.now() } = {}) {
     const unsupported = () => {
-        const { prospective, ...rest } = exit || {};
+        const rest = { ...exit };
+        delete rest.prospective;
         return rest;
     };
     const offer = exit?.offer;

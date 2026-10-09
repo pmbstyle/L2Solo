@@ -4,6 +4,9 @@
 // of the wish graph, never a second wallet or a persistent acquisition plan.
 const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status', 'resale'];
 const integer = n => Number.isSafeInteger(n) && n >= 0;
+// A selected executable NPC quote already has a native purchase owner.
+// Public BUY ads describe alternative player supply, not a duplicate NPC job.
+const nativeNpc = plan => plan?.sourceType === 'npc' && plan.quoted === true && plan.executable === true;
 function rootTuple(key) {
     const parts = String(key).split(':'), kind = roots.indexOf(parts[0]);
     if (kind < 1) throw Error('trade_intent_unknown_root');
@@ -77,7 +80,7 @@ function project(state, network, projection, worth, limit = 3) {
             const id = key.startsWith('item:') ? Number(key.slice(5)) : 0;
             const remaining = id ? claim(id, amount, local) : amount;
             if (!remaining) return;
-            if (id) add(id, remaining, value, recipeId);
+            if (id && !nativeNpc(network.plans?.get(key))) add(id, remaining, value, recipeId);
             // Buy/drop sources need the same item. Traverse its single
             // transformation, whose own/paid executors share these inputs.
             const available = (node.paths || []).filter(path => path.available !== false);
@@ -109,7 +112,7 @@ function preparedProject(network, worth, limit) {
         const visit = (key, plan, value, recipeId = 0, depth = 0) => {
             if (!plan || depth > 4 || !(plan.missingAmount > 0)) return;
             const id = key.startsWith('item:') ? Number(key.slice(5)) : 0;
-            if (id && value > 0) {
+            if (id && value > 0 && !nativeNpc(plan)) {
                 const previous = rows.get(id);
                 rows.set(id, { itemId: id, amount: plan.missingAmount + (previous?.amount || 0), worth: worth(id),
                     kind: wish.object?.kind, key: wish.key, recipeId, valueHours: value + (previous?.valueHours || 0), valueRate: wish.ratio });

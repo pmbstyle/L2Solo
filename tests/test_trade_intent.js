@@ -44,3 +44,27 @@ const batchesProjection = { nodes: projection.nodes.map(node => node.key === 'po
     : node.key === 'item:101' ? { ...node, paths: node.paths.map(path => path.kind === 'craft' ? { ...path, productCount: 2 } : path) } : node) };
 assert.equal(loaded.exports.project({ inventory: {} }, network, batchesProjection, () => 100)[1].amount, 30, 'five outputs at two per batch require three complete input batches');
 console.log('trade intention codec, batch rounding, repeated input and single stock allocation pass');
+
+const plannedPurchase = (sourceType, quoted, executable, count = 1) => ({ kind: 'buy', activity: 'shopping',
+    sourceType, quoted, executable, missingAmount: count, availableUnits: executable ? count : 0, requirements: [] });
+const preparedRoot = (key, itemId, child) => ({ key, object: { itemId }, valueHours: 1, ratio: .1,
+    plan: { missingAmount: 1, requirements: [{ key: `item:${itemId}`, amount: child.missingAmount, plan: child }] } });
+const nativeNpcPlan = plannedPurchase('npc', true, true);
+const projectedQueue = [preparedRoot('power:101:7', 101, plannedPurchase(undefined, false, false)),
+    preparedRoot('henna:501', 300, nativeNpcPlan), preparedRoot('henna:502', 301, nativeNpcPlan),
+    { key: 'resale:501', object: { itemId: 501, kind: 'resale' }, valueHours: 1, ratio: .1,
+        plan: { kind: 'craft', recipeId: 401, missingAmount: 1,
+            requirements: [{ key: 'item:202', amount: 10, plan: plannedPurchase(undefined, false, false, 10) }] } },
+    preparedRoot('stock:shots', 303, plannedPurchase('afk', true, true))];
+const preparedNetwork = { quantityPrepared: true, queue: projectedQueue };
+const beforeProjection = JSON.stringify(preparedNetwork);
+assert.deepEqual(Intent.project({}, preparedNetwork, {}, () => 100).map(row => row.itemId), [101, 202, 303],
+    'two native NPC jobs leave existing three public slots for future/player supply and producer inputs');
+assert.equal(JSON.stringify(preparedNetwork), beforeProjection, 'public projection does not change queue, funding or native action');
+assert.equal(Intent.project({}, { quantityPrepared: true,
+    queue: [preparedRoot('henna:501', 300, plannedPurchase('npc', false, false))] }, {}, () => 100)[0].itemId, 300,
+    'unknown/unexecutable NPC annotation cannot hide an intended future acquisition');
+const nonQuantitativeNpc = { ...network, plans: new Map([['item:101', nativeNpcPlan]]) };
+assert.deepEqual(loaded.exports.project({}, nonQuantitativeNpc, projection, () => 100).map(row => row.itemId), [202],
+    'native NPC finished-good purchase is omitted while existing craft alternatives still project their inputs');
+console.log('PASS public intention source ownership: selected NPC omitted, alternative inputs traversed, future and player quotes retained, unchanged native queue and three-slot bound');
