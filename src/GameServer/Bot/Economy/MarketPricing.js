@@ -10,6 +10,7 @@ const PriceLearning = invoke('GameServer/Bot/Economy/PriceLearning');
 const Valuation = require('./EconomicValuation');
 const Profit = require('./CraftProfitPolicy');
 const { npcOwnsPurchase } = require('./TradeIntent');
+const { MAX_INSPECTED } = require('./ReadyTradeChoice');
 
 // A bot as a trader: its persona's parameters, its hour and its money, its
 // trips, and what its thread knows of the board. deps: { board, persona,
@@ -58,7 +59,10 @@ function traderContext(state, deps = {}) {
 function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0,
     reference = 0, caution = 0 } = {}) {
     let best = null;
-    for (const line of ctx.board?.list(selfId, BUY) || []) {
+    // Keep finite quantities among the observed candidates: a lower bid for
+    // five units can beat the top bid for only one unit in the same town.
+    const lines = (ctx.board?.list(selfId, BUY) || []).slice(0, MAX_INSPECTED);
+    for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
         const outcome = PriceDecision.saleOutcome({ units, applicableUnits: line.count, willingUnits: line.count,
             cheaperUnits: 0, price: line.price, residualUnitValue });
@@ -95,11 +99,11 @@ function beliefFor(selfId, ctx, enchant = 0) {
         / (belief.K + quotes.length), K:belief.K + quotes.length };
 }
 // A fresh ask for this choice; nothing is read from saved item memory.
-function priceForSale(selfId, ctx, { town = null, units = 1, enchant = 0, rollKey }) {
+function priceForSale(selfId, ctx, { town = null, units = 1, enchant = 0, current = 0, rollKey }) {
     const belief = beliefFor(selfId, ctx, enchant);
     if (!belief) return null;
     const market = marketFor(selfId, ctx, { town, units, enchant });
-    return { belief, market, ask: PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey) };
+    return { belief, market, ask: PriceDecision.chooseAsk(belief, market, ctx.trader, rollKey, current) };
 }
 
 function marketFor(selfId, ctx, { town = null, units = 1, enchant = 0 } = {}) {
@@ -149,9 +153,10 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
 // answering a bid returns its physical line/count, including partial demand.
 // smallLot: a lot too small for the board (MarketLotPolicy) that the author
 // keeps for a bulk lot: keeping it or a buy ad only.
-function disposition(item, ctx, { town = null, room = 1, smallLot = false, stockQuote = false, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, smallLot = false, stockQuote = false, standingPrice = 0, rollKey }) {
     const units = Math.max(1, Number(item.count) || 1);
-    const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0, rollKey: [...rollKey, 'ask'] });
+    const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0,
+        current: standingPrice, rollKey: [...rollKey, 'ask'] });
     if (!priced) return { action: 'keep', priced: null, gain: 0 };
     let { ask } = priced;
     const { market, belief } = priced;
@@ -163,7 +168,7 @@ function disposition(item, ctx, { town = null, room = 1, smallLot = false, stock
         stockQuote && !smallLot && room > 0 && ctx.ownStock?.known !== false);
     const quote = quotePrice !== null;
     if (quote) {
-        ask = { ...ask, price: quotePrice, npc: false, money: NaN, value: NaN, stockQuote: true };
+        ask = { ...ask, price: standingPrice || quotePrice, npc: false, money: NaN, value: NaN, stockQuote: true };
         priced.ask = ask;
     }
     const useful = ctx.economy?.worth?.(item.selfId);

@@ -94,6 +94,22 @@ function evaluate(state, options = {}) {
         }
         const keptKey = `${item.selfId}:${item.enchant || 0}`;
         if (kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId))) {
+            // Only unreserved conditional stock can answer from the field.
+            // Reuse the sale decision, preserving the held ask unless it
+            // actually chooses the opposite bid. Backed custody stays native.
+            if (options.conditionalKept?.has(keptKey) && ctx.board?.first(item.selfId, 3,
+                { excludeOwner: ctx.characterId, enchant: item.enchant || 0 })) {
+                const chosen = MarketPricing.disposition(item, ctx, {
+                    town: state.currentRegion, room: roomFor(item, options.stored), stockQuote: true,
+                    standingPrice: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
+                    rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
+                });
+                if (chosen.action === 'ad') {
+                    decisions.push({ action: 'ad', reason: 'expected_value', item, priced: chosen.priced,
+                        gain: chosen.gain, answer: chosen.answer });
+                    continue;
+                }
+            }
             decisions.push({ action: 'list', reason: 'kept_line', item: { ...item, price: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
                 marketReason: 'kept_line' } });
             keptLines += 1;

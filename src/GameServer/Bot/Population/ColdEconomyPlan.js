@@ -62,6 +62,15 @@ function* measured(iterator) {
 }
 function* prepareNative(state, economy, options) {
     const Listing = require('../Economy/MarketListingPolicy');
+    const Ready = require('../Economy/ReadyTradeChoice');
+    const canAct = !economy.intentPending && !economy.routePending
+        && !['dead', 'resting', 'traveling', 'crafting'].includes(state.activity)
+        && !state.stats?.tradeMeeting && !state.incomingPending
+        && !invoke('GameServer/Bot/Population/SurvivalFloor').forState(state, Number(options.now) || Date.now());
+    const purchase = canAct ? Ready.purchase(state, economy, options.board) : null;
+    // Taking a selected quote precedes pricing/publishing another offer.
+    // Only native acceptance reserves it; a rejection retains the old board.
+    if (purchase) return { take: purchase, sell: [], withdraw: [], travel: null };
     const own = options.board?.ownerLines(Number(state.characterId)) || [];
     const kept = new Map(own.filter(line => line.storeType === SELL)
         .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
@@ -73,7 +82,14 @@ function* prepareNative(state, economy, options) {
             instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
     }
     const saleState = { ...state, inventory };
-    const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true, slots: Listing.BOARD_SLOTS, kept, stored: new Map() });
+    const conditionalKept = new Set(own.filter(line => line.storeType === SELL && line.custodyPolicy === 1)
+        .map(line => `${line.selfId}:${line.enchant || 0}`));
+    for (const line of own) if (line.storeType === SELL && line.custodyPolicy !== 1)
+        conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
+    const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true,
+        slots: Listing.BOARD_SLOTS, kept, conditionalKept, stored: new Map() });
+    const answer = canAct && economy.network?.activity?.activity !== 'shopping' ? Ready.sale(sale.answers) : null;
+    if (answer) return { take: answer, sell: [], withdraw: [], travel: null };
     const Town = invoke('GameServer/Bot/Economy/MarketTownPolicy');
     const ctx = Listing.traderContext(state, { ...options, economy });
     const townOptions = { context: ctx, tripCost: options.tripCost || ctx.tripCost, timestamp: options.now,

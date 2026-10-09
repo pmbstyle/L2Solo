@@ -132,7 +132,12 @@ function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, 
     const trip = (where) => (tripCost ? Math.min(Number(tripCost(where)) || 0, Number.MAX_SAFE_INTEGER) : 0);
     const rivals = [];
     let truncated = false;
-    for (const line of board ? board.list(id, SELL) : []) {
+    // Bound attention as well as retained rivals. Uninspected mixed enchants
+    // or own rows make the forecast unknown, never invented free liquidity.
+    const source = board ? board.list(id, SELL) : [];
+    const observed = source.slice(0, 2 * RIVALS_SEEN);
+    truncated = source.length > observed.length;
+    for (const line of observed) {
         if (line.ownerId === Number(ownerId) || Number(line.enchant || 0) !== Number(enchant)) continue;
         if (rivals.length < RIVALS_SEEN) rivals.push({ landed: line.price + trip(line.town), units: line.count,
             origin: 'public_ask', authority: { recordId: line.recordId, lineId: line.lineId, revision: line.revision },

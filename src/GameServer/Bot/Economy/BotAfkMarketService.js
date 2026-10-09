@@ -67,6 +67,9 @@ function canTradeRemotely(state, goal) {
         // WTB (NeedsEvaluator keeps NG/D gear on that plan); in town the bot
         // still takes a cheaper listing if one is there.
         if (goal.plan?.sourceType === 'npc') return false;
+        // A selected executable player quote has a physical purchase owner.
+        // Publishing a bid is not completion of that purchase.
+        if (goal.plan?.sourceType === 'afk' && goal.plan?.priceSource === 'offer') return false;
         const existing = linesOf(buyAds(state.characterId));
         const reserved = buyOrderEscrow(state.characterId);
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, reserved) };
@@ -615,7 +618,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // Executes only the worker's quoted lines. The native writers validate
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
-async function executePlan(state, plan, { step, beforeWrite = () => {}, preparedState = state } = {}) {
+async function executePlan(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state } = {}) {
     if (state.stats?.tradeMeeting || require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
     const authority = require('./EconomyCommit').authority(preparedState);
@@ -628,6 +631,31 @@ async function executePlan(state, plan, { step, beforeWrite = () => {}, prepared
         state = LifeState.cachedState(ownerId) || result?.state || state;
         return result;
     };
+    if (plan.take) {
+        if (!stillPrepared()) return { state, tradeDeferred: true };
+        const Ready = require('./ReadyTradeChoice');
+        const line = Ready.resolve(plan.take, AfkTrade.boardIndex(), ownerId);
+        if (!line) return { state, tradeDeferred: true };
+        const offer = AfkTrade.offerOf(line);
+        if (!offer) return { state, tradeDeferred: true };
+        const result = await run(async () => {
+            if (!stillPrepared()) return { state, tradeDeferred: true };
+            try {
+                const trade = plan.take[0] === AfkTrade.SELL ? AfkTrade.buyFromShop : AfkTrade.sellToShop;
+                return await trade(ownerId, offer.store, line.selfId, plan.take[2], {
+                    lineId: line.lineId, expectedRevision: line.revision, expectedPrice: line.price, coldState: state
+                });
+            } catch (error) {
+                // A counterpart may change its need, wallet, stock or route
+                // during bilateral preparation. Keep the old records; do not
+                // turn rejection into new consent or an immediate retry loop.
+                if (/^(trade_meeting_|economy_|afk_trade_|board_|not_enough_adena)/.test(error.message))
+                    return { state, tradeDeferred: true, reason: error.message };
+                throw error;
+            }
+        });
+        return { ...result, state: LifeState.cachedState(ownerId) || state };
+    }
     if (plan.shot) await run(async () => {
         const shot = require('./ShotCraftPolicy').unpackStep(plan.shot);
         if (shot.wealth) {
