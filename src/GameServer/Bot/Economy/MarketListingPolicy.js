@@ -8,8 +8,6 @@ const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 
-const MARKET_GEAR_MIN_BASE_PRICE = ItemDisposition.NPC_LIQUIDATION_MAX_UNIT_PRICE;
-const NPC_SURPLUS_GEAR_MAX_BASE_PRICE = 50000;
 
 let newbieItemSource = null;
 let newbieItemIds = new Set();
@@ -27,34 +25,17 @@ function isGear(item = {}) {
     return String(item.kind || '').startsWith('Weapon.') || String(item.kind || '').startsWith('Armor.');
 }
 
-function surplusGearDecision(item, reason) {
-    const ordinary = item.npcComparable !== false && Number(item.enchant || 0) <= 0;
-    const common = isGear(item) && ordinary
-        && Number(item.basePrice || 0) <= NPC_SURPLUS_GEAR_MAX_BASE_PRICE;
-    return { action: common ? 'npc' : 'warehouse', reason };
-}
-
-// The author's hard rules for what never enters the board: an invalid item,
-// a lot too small to list, NPC-only junk, the starter kit, cheap C+ gear.
-// Anything else is the market's: { action:
-// 'market' }, priced and placed by the one expected-value decision.
+// Physical and quest rules remain hard constraints. All other candidates
+// go through the shared expected-value decision after ItemDisposition has
+// reserved equipped items, personal stock and outstanding obligations.
 function classify(state, item) {
     if (!item || Number(item.selfId || 0) <= 0 || Number(item.count || 0) <= 0) {
         return { action: 'ignore', reason: 'invalid_item' };
     }
     if (ItemDisposition.isQuestItem(item)) return { action: 'ignore', reason: 'quest_item' };
-    if (!LotPolicy.viable(item)) return { action: 'warehouse', reason: 'small_material_lot' };
+    if (!LotPolicy.viable(item)) return { action: 'ignore', reason: 'invalid_item' };
     if (ItemDisposition.isNpcOnlyItem(item)) {
         return { action: 'npc', reason: 'npc_only_item' };
-    }
-    if (starterItemIds().has(Number(item.selfId))) {
-        return isGear(item) ? surplusGearDecision(item, 'starter_kit')
-            : { action: 'npc', reason: 'starter_kit' };
-    }
-    const lowGradeGear = isGear(item)
-        && ItemDisposition.gradeIndex(item.rank) < ItemDisposition.gradeIndex('c');
-    if (isGear(item) && !lowGradeGear && Number(item.basePrice || 0) <= MARKET_GEAR_MIN_BASE_PRICE) {
-        return surplusGearDecision(item, 'low_value_gear');
     }
     return { action: 'market', reason: 'market' };
 }
@@ -107,13 +88,7 @@ function evaluate(state, options = {}) {
     let keptLines = 0;
     for (const item of candidates) {
         const hard = classify(state, item);
-        // A lot too small to list still answers a buy ad that asks for it:
-        // the lot rule is the board's, the ad's buyer chose the amount.
-        const smallLotAnswer = hard.reason === 'small_material_lot'
-            ? MarketPricing.bestAnswer(item.selfId, ctx, { units: item.count, enchant: item.enchant }) : null;
-        const smallLot = Boolean(smallLotAnswer) && (Number.isFinite(smallLotAnswer.valueHours)
-            ? smallLotAnswer.valueHours : smallLotAnswer.net) > 0;
-        if (hard.action !== 'market' && !smallLot) {
+        if (hard.action !== 'market') {
             decisions.push({ ...hard, item });
             continue;
         }
@@ -126,12 +101,11 @@ function evaluate(state, options = {}) {
         }
         const town = MarketTownPolicy.targetTownForItems(state, [item], options);
         const chosen = MarketPricing.disposition(item, ctx, {
-            town, room: roomFor(item, options.stored), smallLot, stockQuote: options.stockQuotes === true,
+            town, room: roomFor(item, options.stored), stockQuote: options.stockQuotes === true,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
         const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action,
-            reason: smallLot && chosen.action === 'keep' ? hard.reason
-                : chosen.priced?.ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
+            reason: chosen.priced?.ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
             priced: chosen.priced, gain: chosen.gain, answer: chosen.answer,
             // Attention to a free quote uses its possible spread, never expected receipts.
             slotWeight: chosen.priced?.ask?.stockQuote
@@ -204,7 +178,6 @@ function npcSaleForActor(session) {
 
 module.exports = {
     BOARD_SLOTS,
-    MARKET_GEAR_MIN_BASE_PRICE,
     classify,
     evaluate,
     isGear,

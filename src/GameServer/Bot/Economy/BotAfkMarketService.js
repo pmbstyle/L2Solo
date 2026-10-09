@@ -9,7 +9,6 @@ const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
-const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LotPolicy = require('./MarketLotPolicy');
 const { marketStoreTitle, marketBuyStoreTitle } = invoke('GameServer/Bot/Economy/MarketStoreTitle');
@@ -133,10 +132,6 @@ function appearance(row, items) {
         items: items.filter((item) => Number(item.equipped) === 1)
             .map((item) => ({ ...item, equipped: true }))
     };
-}
-
-function minimumResourceLotValue() {
-    return BotEconomyPricing.scalePrice(LotPolicy.MIN_BASE_VALUE);
 }
 
 function viableSellLine(line) {
@@ -800,7 +795,7 @@ async function applyReview(ownerId, review = {}, { coldAuthority = null, hotAuth
     return { changed: result.changed, updated: result.updated || 0 };
 }
 
-module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, canTradeRemotely, desiredSide, listOnBoard, minimumResourceLotValue, openBuyAd,
+module.exports = { executePlan, applyReview, buyOrderEscrow, buyLines, reconcileBuyAds, canTradeRemotely, desiredSide, listOnBoard, openBuyAd,
     saleDecision,
     pruneResourceLots, reconcile, rememberInventory, viableSellLine, withdraw, withdrawBuyAds,
     _resetForTests() { reviewedInventory.clear(); pending.clear(); } };
