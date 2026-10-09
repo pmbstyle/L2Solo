@@ -73,6 +73,42 @@ function run(craft, extra = {}) {
         plans: [...result.plans], activity: result.activity, spotReads };
 }
 const buy = run(false), craft = run(true);
+const savedBook = state.stats.recipes;
+state.stats.recipes = [];
+const nativeBook = run(true, { deps: { knownRecipes: [{ recipeId: 301 }] } });
+const nativeCraft = nativeBook.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
+assert(nativeCraft, 'prepared native book enables ingredient collection without a second recipe scroll');
+assert.equal(nativeCraft.requiresRecipeLearning, false);
+assert.equal(nativeCraft.requirements.length, 1);
+assert.equal(nativeCraft.requirements[0].key, 'item:202');
+assert.equal(run(true).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false,
+    'no invented recipe knowledge when neither native nor compatibility book contains it');
+state.stats.recipes = savedBook;
+assert.equal(run(true, { deps: { knownRecipes: [] } }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false,
+    'an authoritative empty book overrides a stale compatibility book');
+assert.deepEqual(provider.recipeIds(state, { knownRecipes: [301, { recipeId: 301 }, 302, 0, NaN] }), [301, 302]);
+let safeScroll = true, scrollKind = 'drop', raidScroll = false;
+const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
+planner.sourceIndexFor = () => new Map([[401, [{ kind: scrollKind, totalCount: 1, sourceCount: 1,
+    spot: { id: 'scroll-source', raidBoss: raidScroll }, reward: { selfId: 501 } }]]]);
+planner.sourceYieldReaderFor = () => () => ({ expectedYield: 1 });
+planner.soloSafeForSource = () => safeScroll;
+adapters['GameServer/Bot/AI/BotRoles'] = { isSpoiler: () => false };
+const farmScroll = () => run(true, { deps: { knownRecipes: [], spots: [{}] },
+    context: { spotValue: () => ({ kills: 1000 }) } });
+const farmedBook = farmScroll();
+const preparingRecipe = farmedBook.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
+assert(preparingRecipe?.requiresRecipeLearning, 'known safe scroll drop admits recipe preparation with no scroll seller');
+assert(preparingRecipe.requirements.some(row => row.key === 'item:401' && row.amount === 1));
+assert.equal(farmedBook.activity.activity, 'hunting');
+assert.equal(farmedBook.activity.itemId, 401, 'the acquisition leaf farms the actual scroll, not the product');
+const hasCraft = result => result.nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft');
+safeScroll = false;
+assert.equal(hasCraft(farmScroll()), false, 'unsafe recipe sources cannot create an executable craft acquisition path');
+safeScroll = true; raidScroll = true;
+assert.equal(hasCraft(farmScroll()), false, 'a raid scroll source is not a solo route');
+raidScroll = false; scrollKind = 'spoil';
+assert.equal(hasCraft(farmScroll()), false, 'a crafter cannot obtain a spoil-only recipe by ordinary hunting');
 assert.equal(buy.activity, null, 'known price with no offer preserves wish without shopping');
 assert(buy.queue.length && buy.focus, 'unknown future supply does not erase the desired gear');
 assert.equal(craft.activity, null, 'missing ingredient forecast cannot execute shopping/craft');

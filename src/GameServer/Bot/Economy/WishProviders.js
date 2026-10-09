@@ -84,6 +84,14 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state)) {
     return result;
 }
 function rows(state) { return Object.values(state.inventory || {}); }
+// The prepared native book is authority, including an empty learned book.
+// Workshop entries are a capped public offer, not the complete recipe book.
+function recipeIds(state, deps = {}) {
+    const book = Array.isArray(deps.knownRecipes) ? deps.knownRecipes
+        : [...(state.stats?.recipes || state.recipes || []), ...(state.stats?.workshop?.entries || [])];
+    return [...new Set(book.map(entry => Number(entry?.recipeId ?? entry)))]
+        .filter(id => Number.isSafeInteger(id) && id > 0).sort((a, b) => a - b);
+}
 function worn(state, slot, inventoryRows = rows(state)) {
     return inventoryRows.find(row => (row.equipped || row.equippedCount > 0)
         && (Number(row.slot) === slot || row.equippedSlots?.includes(slot))) || null;
@@ -210,8 +218,7 @@ function buildProjection(state, ctx, deps) {
     // existing 16,384-entry yield bound and atlas counts, no per-bot retention.
     // Shared-host offline result only; not a live throughput/budget claim.
     const sourceYield = sourceIndex ? Planner.sourceYieldReaderFor(state.level) : null;
-    const knownRecipes = new Set([...(state.stats?.recipes || state.recipes || []), ...(state.stats?.workshop?.entries || [])]
-        .map(entry => Number(entry?.recipeId ?? entry)));
+    const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
     const purchaseFor = require('./WishPurchaseEvidence').reader(state, ctx, deps);
     const purchases = new Map();
@@ -283,6 +290,7 @@ function buildProjection(state, ctx, deps) {
                     }
                 }
             }
+            if (!scrollAvailable) scrollAvailable = !!sourcePath(recipe.recipeItemId);
             const scrollKey = !learned && scrollAvailable ? itemNode(recipe.recipeItemId, depth + 1) : null;
             if (!learned && !ownedScroll && scrollAvailable) requirements.push({ key: scrollKey, amount: 1 });
             // A physical attempt consumes one whole batch, including failure.
@@ -533,4 +541,4 @@ function personalCraftPlan(state, context) {
         materials: finalRecipe.materials.map(row => ({ ...row })), craftProviders: providers,
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network' };
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { GEAR_FINALISTS_PER_SLOT, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

@@ -87,6 +87,7 @@ function inputKey(state, deps = {}) {
     // inputs only through the items the bot read (see `market` in forState).
     return [state.level, stats.classId, items, positive(state.adena), stats.decisionSeq, stats.activityLeaf, stats.visitEvery?.[0], stats.visitEvery?.[1],
         deps.workshop?.recipeId, deps.workshop?.productId, deps.workshop?.incomePerHour, deps.workshop?.cycleHours,
+        Providers.recipeIds(state, deps).join(','),
         Number(state.vitals?.mp), positive(deps.buyOrderEscrow),
         Math.floor(positive(stats.frustration) * 10), stats.karma, stats.clanId, state.clanId, state.party?.partyId, state.partyId,
         stats.generatedCold, stats.race, stats.marketSellRetryAfter,
@@ -144,6 +145,10 @@ function resolved(state, deps) {
         const Workshops = require('./CraftWorkshopService');
         deps.workshops = Workshops.publicForRecipe;
         deps.workshopRevision = Workshops.publicRecipeDigest;
+    }
+    if (isMainThread && !Object.hasOwn(deps, 'knownRecipes')) {
+        const Workshops = require('./CraftWorkshopService');
+        if (Workshops.bookFor(state.characterId) !== null) deps.knownRecipes = Workshops.cachedRecipes(state.characterId);
     }
     if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
