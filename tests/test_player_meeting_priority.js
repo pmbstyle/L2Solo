@@ -117,25 +117,25 @@ function addParty(kernel, dueAt) {
 
     const changed = fixture(8);
     const lateMerchant = { ...state(30, 500000, true), activity: 'traveling',
-        party: { partyId: 'changed-meeting-party' },
+        party: { partyId: 'changed-meeting-party', leaderId: 31 },
         stats: { tradeMeeting: [44, 1], travel: { arrivalAt: 101000 } } };
-    const changedLeader = { ...state(31, 500000), party: { partyId: 'changed-meeting-party' } };
+    const changedLeader = { ...state(31, 500000), party: { partyId: 'changed-meeting-party', leaderId: 31 } };
     const changedParty = { partyId: 'changed-meeting-party', leaderId: 31,
         memberIds: [30, 31], nextResolveAt: 500000 };
-    changed.kernel.upsert({ state: lateMerchant, context: { party: changedParty } });
+    changed.kernel.upsert({ state: lateMerchant, context: {} });
     changed.kernel.upsert({ state: changedLeader, context: { isPartyLeader: true, party: changedParty } });
     assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 101000);
     const arrivedMerchant = { ...lateMerchant, stats: { ...lateMerchant.stats,
         travel: { arrivalAt: 99000 } } };
-    changed.kernel.upsert({ state: arrivedMerchant, context: { party: changedParty } });
+    changed.kernel.upsert({ state: arrivedMerchant, context: {} });
     assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 99000,
         'a new member transition updates its existing leader token without a catalog refresh');
     const token = changed.kernel.scheduleTokens.get(31).token;
-    changed.kernel.upsert({ state: { ...arrivedMerchant }, context: { party: changedParty } });
+    changed.kernel.upsert({ state: { ...arrivedMerchant }, context: {} });
     assert.equal(changed.kernel.scheduleTokens.get(31).token, token,
         'unchanged member observations do not repeatedly reschedule the group');
     changed.kernel.upsert({ state: { ...arrivedMerchant, activity: 'grouped', stats: {} },
-        context: { party: changedParty } });
+        context: {} });
     assert.equal(changed.kernel.scheduleTokens.get(31).dueAt, 500000,
         'a cleared obligation restores the native group deadline');
 

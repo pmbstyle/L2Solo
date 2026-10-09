@@ -595,13 +595,18 @@ class ColdSimulationKernel {
 
     refreshPartyMeetingLeader(characterId, previous) {
         const current = this.states.get(characterId);
-        const party = current?.context?.party || previous?.context?.party;
-        if (!party || Number(party.leaderId) === characterId) return;
+        // Followers receive no party context: their native membership points
+        // to the already indexed leader. Never scan the population to find it.
+        const membership = current?.state?.party;
+        const leaderId = Number(membership?.leaderId || current?.context?.party?.leaderId);
+        if (!leaderId || leaderId === characterId) return;
+        const leader = this.states.get(leaderId), party = leader?.context?.party;
+        if (!party || String(membership?.partyId || '') !== String(party.partyId || '')
+            || !(party.memberIds || []).some(id => Number(id) === characterId)) return;
         if (previous && current.state.activity === previous.state.activity
             && !!current.state.stats?.tradeMeeting === !!previous.state.stats?.tradeMeeting
             && nextDueAt(current.state, this.now(), {}, this.partySession, true)
                 === nextDueAt(previous.state, this.now(), {}, this.partySession, true)) return;
-        const leaderId = Number(party.leaderId), leader = this.states.get(leaderId);
         if (!leader || this.busy(leaderId) || lifecycleKind(leader.state, leader.context) !== 'party') return;
         this.schedule(leaderId, leader.version, this.dueAt(leader.state, leader.context));
     }
