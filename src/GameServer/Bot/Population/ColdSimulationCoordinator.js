@@ -1928,7 +1928,7 @@ class ColdSimulationCoordinator {
             if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
         });
         await this.step('raidSettlement', id, async () => {
-            if (committed.raidPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
+            if (committedPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
                 await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
             }
         });

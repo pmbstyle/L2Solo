@@ -3140,7 +3140,9 @@ const PopulationService = {
                     BackgroundPartyState.createOrUpdate({ ...party, ...meeting.partyPatch, nextResolveAt: meeting.nextResolveAt,
                         stats: { ...party.stats, ...meeting.partyPatch.stats } })).then(updatedParty =>
                     (meeting.partyPatch.status === 'dissolved'
-                        ? LifeState.clearParty(party.partyId, meeting.partyPatch.stats.partyBreakReason) : Promise.resolve())
+                        ? require('./ColdRaidWorldBridge').settle(updatedParty || party)
+                            .catch(error => utils.infoWarn('RaidBoss', 'cold raid settlement failed for %s: %s', party.partyId, error?.message || error))
+                            .then(() => LifeState.clearParty(party.partyId, meeting.partyPatch.stats.partyBreakReason)) : Promise.resolve())
                         .then(() => ({ ok: true, party: updatedParty || party, debug: meeting.debug })));
             }
 

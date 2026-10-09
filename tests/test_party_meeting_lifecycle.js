@@ -157,9 +157,29 @@ async function main() {
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+    const Bridge = require('../src/GameServer/Bot/Population/ColdRaidWorldBridge');
+    const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
+    const originalSettle = Bridge.settle;
+    const settlements = [];
     const saved = [];
     const originals = [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate, Life.clearParty];
     try {
+        Bridge.settle = async input => { settlements.push(input); return { ok: true }; };
+        for (const committed of [{ partyRow: { partyId: party.partyId, updatedAt: at } },
+            { raidPartyRow: { partyId: party.partyId, updatedAt: at }, raidRespawnAt: at + 60000 }]) {
+            const coordinator = new ColdSimulationCoordinator();
+            const stop = new Error('stop after settlement step');
+            let settled = false;
+            coordinator.step = async (name, id, work) => {
+                if (settled) throw stop;
+                if (name === 'raidSettlement') { await work(); settled = true; }
+            };
+            const count = settlements.length;
+            await assert.rejects(coordinator.afterCommit({ nextState: members[0], proposal: {
+                partyResolution: { party: victoryParty } } }, committed), error => error === stop);
+            assert.equal(settlements.length, count + 1, 'native postcommit bridge retries defeat for terminal partyRow as well as raidPartyRow');
+            assert.equal(settlements.at(-1), victoryParty);
+        }
         Life.statesForParty = async () => members;
         Life.applyResolve = async (state, resolution) => { const next = { ...state, ...resolution.patch }; saved.push(next); return next; };
         Parties.createOrUpdate = async next => next;
@@ -177,7 +197,9 @@ async function main() {
         assert.deepEqual(releases, [[party.partyId, 'raid_defeated']], 'legacy path uses native member release');
         assert.deepEqual(saved[1].stats.travel, members[1].stats.travel);
         assert.deepEqual(saved[1].stats.tradeMeeting, [7, 1]);
+        assert.equal(settlements.at(-1).status, 'dissolved', 'legacy terminal cleanup also retries guarded world settlement');
     } finally {
+        Bridge.settle = originalSettle;
         [Life.statesForParty, Life.applyResolve, Parties.createOrUpdate, Life.clearParty] = originals;
     }
     assert.equal(Resolver.resolveMeetingLifecycle({ party, members: members.map(state => ({ ...state, stats: {} })), timestamp: at }), null,
