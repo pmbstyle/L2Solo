@@ -205,8 +205,10 @@ function best(role, level, shots = true, metric = 'exp') {
     const key = `${role}:${level}:${Boolean(shots)}:${metric}`;
     if (bestRows.has(key)) return bestRows.get(key);
     let bestRow = null;
-    for (const spot of load().spots) {
-        const row = value(spot[0], role, level, shots);
+    // A whole-table scan reads each spot once: it bypasses the per-bot memo.
+    const t = load(), rates = ProgressionRates.profile();
+    for (const spot of t.spots) {
+        const row = computeValue(t, rates, spot[0], role, level, shots);
         if (row && (!bestRow || (metric === 'income' ? row.adena + row.loot > bestRow.adena + bestRow.loot : row.exp > bestRow.exp))) bestRow = { ...row, spotId: spot[0] };
     }
     bestRows.set(key, bestRow);
