@@ -376,6 +376,7 @@ async function processMeeting(id, meetingId) {
     }
     const arrived = await db().arriveTradeMeeting(row.id); acceptRows(arrived);
     if (arrived?.meeting.state !== 'accepted') { await syncActors(arrived.meeting);
+        for (const ad of arrived.closed || []) afk().refreshRecord(ad);
         for (const actor of [row.actorA, row.actorB]) for (const ad of await db().fetchAfkTradeShops(actor)) afk().refreshRecord(ad);
         wake(id); return; }
     const side = row.actorA === id ? 0 : 1;

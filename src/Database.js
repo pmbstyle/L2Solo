@@ -1663,6 +1663,15 @@ function applySchemaMigrations() {
         CREATE INDEX board_trade_meetings_actor_a ON board_trade_meetings(actorA,state,id);
         CREATE INDEX board_trade_meetings_actor_b ON board_trade_meetings(actorB,state,id);
     `)]);
+    // A meeting fill left its record active at count 0 until it closed like
+    // every other fill (E198). Such a record holds nothing: it is deleted.
+    migrations.push([65, () => {
+        const empty = connection.prepare(`SELECT id FROM afk_trade_shops s WHERE status = 'active' AND custodyPolicy = 1
+            AND escrowAdena = 0 AND NOT EXISTS (SELECT 1 FROM afk_trade_lines l WHERE l.shopId = s.id AND l.count > 0)`).all();
+        const lines = connection.prepare('DELETE FROM afk_trade_lines WHERE shopId = ?');
+        const shops = connection.prepare('DELETE FROM afk_trade_shops WHERE id = ?');
+        for (const { id } of empty) { lines.run(id); shops.run(id); }
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -10394,6 +10403,11 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
             sellerName: seller?.name || null, buyerCharacterId: buyerId, buyerName: buyer?.name || null }, { unique: true });
         learnBoardTradeUnsafe({ selfId: line.selfId, unitPrice: line.price, quantity: line.count,
             sellerCharacterId: sellerId, buyerCharacterId: buyerId }, [[sellerId, seller], [buyerId, buyer]]);
+        if (ad?.custodyPolicy !== 1) return null;
+        // A filled record closes like every other fill; the caller drops it
+        // from board memory.
+        const filled = afkTradeShopUnsafe(ad.id);
+        return completeAfkTradeIfFilledUnsafe(ad.id, at, isBotOwnerUnsafe(ad.ownerId)) ? closedRecord(filled) : null;
     },
     startTrip: (id, meeting, side, receipt) => {
         const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);

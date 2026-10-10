@@ -83,6 +83,14 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         await assert.rejects(accept(await advertised()), /quote_changed/, 'one advertisement cannot promise its remaining units twice');
         await Database.cancelTradeMeeting(quoted, 'fixture');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(quoted, actor); }
+        // A meeting that takes the whole advertised count closes the record
+        // like every other fill: nothing stays on the board at count 0.
+        const filled = (await accept(await advertised())).meeting.id;
+        const sold = await Database.arriveTradeMeeting(filled);
+        assert.equal(sold.meeting.state, 'completed');
+        assert.equal((await Database.fetchAfkTradeShops(ids[1])).some(row => row.id === ad.id), false, 'a filled advertisement is closed');
+        assert.deepEqual(sold.closed.map(row => [row.id, row.status, row.lines[0].count]), [[ad.id, 'filled', 0]], 'the closed record reaches board memory');
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(filled, actor); }
         const accepted = [];
         for (let i = 0; i < 8; i++) accepted.push((await accept(await prepare(ids[1], 1))).meeting.id);
         await assert.rejects(accept(await prepare(ids[1], 1)), /backpressure/);
@@ -98,6 +106,19 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         }
         assert.equal((await Database.prepareTradeParticipant(ids[0])).meetingId, null);
         await assert.rejects(accept(secondRequest), /participant_changed/);
+        // A world saved before that fix holds such records; they close once.
+        const sellAd = async seller => {
+            const stock = (await Database.fetchItems(seller)).find(row => row.selfId === 1867);
+            await Database.replaceBoardRecords(seller, 'sell_ad', [{ storeType: 1, title: 'Fixture sale', town: 'Giran', ...point,
+                lines: [{ objectId: stock.id, selfId: 1867, name: 'Animal Skin', count: 2, price: 100, stackable: true }] }], { expected: {} });
+            return (await Database.fetchAfkTradeShops(seller)).find(row => row.kind === 'sell_ad');
+        };
+        const empty = await sellAd(ids[1]), kept = await sellAd(ids[2]);
+        await Database.execute(['UPDATE afk_trade_lines SET count=0 WHERE shopId=?', [empty.id]]);
+        await Database.execute(['DELETE FROM schema_migrations WHERE version=65']);
+        await Database.close(); Database.init();
+        assert.equal(await Database.fetchAfkTradeShop(empty.id), null, 'an old filled record is deleted');
+        assert.equal((await Database.fetchAfkTradeShop(kept.id)).lines[0].count, 2, 'a record with stock stays');
         console.log('PASS native shared point: separate escrow/incoming, one trip, incompatible/duplicate rollback, independent completion/cancellation, anchor promotion, receipt order, bounded indexed group');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

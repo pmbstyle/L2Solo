@@ -218,13 +218,14 @@ function create(io) {
         const row = meeting(id);
         if (!row) throw Error('trade_meeting_missing');
         if (row.state !== 'accepted') return result(row);
-        const actors = ids(row), changed = [];
+        const actors = ids(row), changed = [], closed = [];
         const lines = all('SELECT * FROM board_trade_meeting_lines WHERE meetingId=? ORDER BY ordinal', [id]);
         for (const line of lines) {
             if (!line.heldCount) continue;
             const owner = completed && line.custodyType === 'trade' ? line.payer : 1 - line.payer;
             credit(actors[owner], line, line.heldCount, now()); changed.push(line.selfId);
-            if (completed && line.custodyType === 'trade') io.completed?.(row, line);
+            const record = completed && line.custodyType === 'trade' ? io.completed?.(row, line) : null;
+            if (record) closed.push(record);
         }
         actors.forEach((actor, side) => {
             const own = side ? 'B' : 'A', other = side ? 'A' : 'B';
@@ -235,7 +236,7 @@ function create(io) {
             routeReserveA=0,routeReserveB=0,reason=? WHERE id=?`, [completed ? 'completed' : 'cancelled', String(reason).slice(0, 80), id]);
         io.stopTrip?.(row);
         const next = meeting(id);
-        return result(next, fence(next, changed));
+        return { ...result(next, fence(next, changed)), closed };
     }
     function present(id, positions) {
         const row = meeting(id);
