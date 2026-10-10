@@ -1315,6 +1315,9 @@ if (process.argv.includes('--list')) {
 
 fs.mkdirSync('tmp', { recursive: true });
 const keepGoing = process.argv.includes('--keep-going');
+// A test that leaves a worker or timer alive never exits; without a bound one
+// such file holds the whole run until the CI job limit. A timeout is a failure.
+const timeoutMs = Number(process.env.L2NODE_TEST_TIMEOUT_MS) > 0 ? Number(process.env.L2NODE_TEST_TIMEOUT_MS) : 10 * 60 * 1000;
 const failedTests = [];
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
@@ -1326,8 +1329,16 @@ for (const testFile of selectedTests) {
     const result = spawnSync(process.execPath, ['--require', path.resolve(__dirname, '../tests/helpers/databaseIsolation.js'), testFile], {
         cwd: process.cwd(),
         env,
-        stdio: 'inherit'
+        stdio: 'inherit',
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL'
     });
+    if (result.error?.code === 'ETIMEDOUT' || result.signal) {
+        console.log(`\nTIMEOUT after ${Math.round(timeoutMs / 1000)} s or killed (${result.signal || result.error.code}): ${testFile}`);
+        if (!keepGoing) process.exit(1);
+        failedTests.push(testFile);
+        continue;
+    }
 
     if (result.status !== 0) {
         if (!keepGoing) process.exit(result.status || 1);
