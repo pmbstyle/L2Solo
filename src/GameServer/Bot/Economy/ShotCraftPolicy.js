@@ -217,8 +217,9 @@ function nativeShotOptions(state, index, context) {
         const exits = [];
         for (const quote of index.offersFor(Number(recipe.productId), 3, owner.characterId)) {
             if (!(quote.price > 0) || !(quote.count > 0)) continue;
+            // The whole ask list, own lines included: the recheck reads the raw board list.
             const { cheaperUnits, limit } = require('./PriceDecision').exitCompetition(
-                index.offersFor(Number(recipe.productId), 1, owner.characterId),
+                index.offersFor(Number(recipe.productId), 1),
                 { ownerId: owner.characterId, price: Number(quote.price), enchant: Number(quote.enchant || 0), count: Number(quote.count) });
             yield 'quote';
             exits.push({ type: 'afk', conditional: !!quote.conditional, price: Number(quote.price), count: Number(quote.count), cheaperUnits,

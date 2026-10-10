@@ -35,4 +35,18 @@ const asks = [1, 2, 3, 4, 5, 6].map(price => ({ price, count: 1, ownerId: price 
 assert.deepEqual(Price.exitCompetition(asks, { ownerId: 5, price: 10, count: 9 }), { cheaperUnits: 4, limit: true });
 assert.deepEqual(Price.exitCompetition(asks, { ownerId: 5, price: 10, count: 4 }), { cheaperUnits: 4, limit: false });
 assert.deepEqual(Price.exitCompetition(asks, { ownerId: 5, price: 3, count: 9 }), { cheaperUnits: 1, limit: false });
-console.log('PASS task4 shared quotes: depth-capped cheapest town, exit competition limit');
+
+// The shot planner (worker: the index's quotes) and its recheck (main: the
+// raw board list) read the same asks: one own ask among the first five takes
+// an inspected slot on both sides and is never competition.
+const { ShotMarketIndex } = require('../src/GameServer/Bot/Economy/ShotMarketIndex');
+const boardLines = [1, 2, 3, 4, 5, 6].map((price, at) => ({ storeType: 1, botOwned: true, recordId: 10 + at, lineId: 1,
+    revision: 1, selfId: 7, town: 'Giran', price, count: 2, enchant: 0, ownerId: price === 2 ? 5 : 3 }));
+const shotIndex = new ShotMarketIndex({ board: () => ({ list: () => boardLines }) });
+for (const [price, count] of [[10, 9], [10, 20], [6, 9], [3, 9]]) {
+    const exit = { ownerId: 5, price, count };
+    assert.deepEqual(Price.exitCompetition(shotIndex.offersFor(7, 1), exit), Price.exitCompetition(boardLines, exit),
+        `worker and recheck agree at ${price} x ${count}`);
+}
+assert.deepEqual(Price.exitCompetition(shotIndex.offersFor(7, 1), { ownerId: 5, price: 10, count: 9 }), { cheaperUnits: 8, limit: true });
+console.log('PASS task4 shared quotes: depth-capped cheapest town, exit competition limit, one ask list for planner and recheck');

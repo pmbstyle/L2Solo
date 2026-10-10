@@ -125,15 +125,16 @@ function prospectiveExit(state, exit, { board, persona, timestamp = Date.now(), 
 // The asks of one board list a trader inspects.
 const QUOTE_DEPTH = 5;
 
-// The cheaper competition a seller meets at a bid price: the first
-// QUOTE_DEPTH asks of the board list that are foreign, of the same enchant
-// and below it. `tail`: the sixth ask is cheaper too, so the competition
-// behind the inspected ones is unknown.
+// The cheaper competition a seller meets at a bid price: of the first
+// QUOTE_DEPTH asks of the whole board list (the seller's own included, as
+// every trader sees it), those foreign, of the same enchant and below it.
+// `tail`: the sixth ask is cheaper too, so the competition behind the
+// inspected ones is unknown. Board lines carry ownerId, quotes sourceId.
 function cheaperAsks(asks, { ownerId, price, enchant = 0 }) {
     let cheaperUnits = 0;
     for (let at = 0; at < asks.length && at < QUOTE_DEPTH; at++) {
         const line = asks[at];
-        if (Number(line.ownerId) !== Number(ownerId) && Number(line.enchant || 0) === Number(enchant)
+        if (Number(line.ownerId ?? line.sourceId) !== Number(ownerId) && Number(line.enchant || 0) === Number(enchant)
             && line.price < price) cheaperUnits += Number(line.count);
     }
     return { cheaperUnits, tail: asks.length > QUOTE_DEPTH && asks[QUOTE_DEPTH].price < price };
