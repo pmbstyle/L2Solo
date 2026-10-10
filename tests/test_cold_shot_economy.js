@@ -44,8 +44,15 @@ async function measuredEconomy(state, now) {
     const context = Economy.forState(state, { timestamp: now });
     return Life.upsertState({ ...state, stats: { ...state.stats, ...context.statsPacket } }, 'native_craft_money');
 }
+// MVP-1: money waits only behind a path with a step now, so a native review
+// reads the bot's prepared town routes, as the live worker does.
+function preparedRoutes(state) {
+    const steps = require('../src/GameServer/Bot/Economy/EconomicTrip').prepare(state);
+    let next; do next = steps.next(); while (!next.done);
+    return next.value;
+}
 async function nativeEconomy(state, now) {
-    return Life.upsertState({ ...state, stats: { ...state.stats, ...Economy.forState(state, { timestamp: now }).statsPacket } },
+    return Life.upsertState({ ...state, stats: { ...state.stats, ...Economy.forState(state, { timestamp: now, routeRows: preparedRoutes(state) }).statsPacket } },
         'native_stock_money');
 }
 async function sell(state, id, price) {
@@ -77,7 +84,15 @@ async function images(ids) {
         let buyer = await seed([cash(1000000), { selfId: 129, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }], { name: 'Buyer' });
         // Publish the same funded native shots signal the retained lifecycle
         // publishes in production. An allStates mock cannot populate the index.
-        const buyerContext = Economy.forState(buyer, { timestamp: now });
+        // MVP-1: the buyer's shots are funded only behind a step now, so its
+        // review sees a finite D-shot seller; the seller leaves before
+        // production, so only the funded signal remains.
+        const shotSeller = await seed([{ selfId: 1463, name: 'Soulshot: D-grade', amount: 2000 }], { name: 'ShotSeller' });
+        const shotLot = (await Database.fetchItems(shotSeller.characterId)).find(row => Number(row.selfId) === 1463);
+        const shotShop = await Afk.publishBot(shotSeller.characterId, { kind: 'shop', storeType: Afk.SELL, town: 'Giran', title: 'Seed shots',
+            lines: [{ objectId: shotLot.id, selfId: 1463, name: shotLot.name, count: 2000, price: 40, enchant: 0, stackable: true, slot: 0 }] });
+        const buyerContext = Economy.forState(buyer, { timestamp: now, routeRows: preparedRoutes(buyer) });
+        await Afk.closeBotRecord(shotSeller.characterId, shotShop.id);
         const packet = buyerContext.statsPacket;
         buyer = await Life.upsertState({ ...buyer, stats: { ...buyer.stats, ...packet, shotDemand: { itemId: 1463, amount: 1000,
             maxSpend: Funding.spendable({ ...buyer, stats: { ...buyer.stats, ...packet } }, 0,
@@ -234,7 +249,10 @@ async function images(ids) {
         assert(purchases[0][1] > 0);assert.equal(failed.adena, 51000 - purchases[0][1] * 100);
         assert.equal(held(await Database.fetchItems(failedBuyer.characterId), 1463), 200 + purchases[0][1]);
 
-        const fieldLoc = { locX: -14000, locY: 130000, locZ: -3000 };
+        // MVP-1: the money price comes only from wishes with a step now, so a
+        // short walk to Gludio pays for the batch; this field is far enough
+        // (about 0.09 h) that the journey cannot pay.
+        const fieldLoc = { locX: -45000, locY: 110000, locZ: -3000 };
         let hunter = await nativeEconomy(await seed(fighterItems, { classId: 1, name: 'Field', town: 'Gludio', loc: fieldLoc }), now);
         hunter = await Life.upsertState({ ...hunter, activity: 'hunting' }, 'native_field_restock');
         const fieldBefore = await images([hunter.characterId]);purchases.length = 0;

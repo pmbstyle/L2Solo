@@ -202,7 +202,9 @@ async function checkMissingSpotRecovery() {
         assert.strictEqual(selectedGoal.target.itemId, leaf.itemId);
         assert.strictEqual(selectedGoal.target.amount, Math.max(1, Math.ceil(leaf.amount)));
         assert(Number.isFinite(selectedGoal.plan.estimatedCost) && selectedGoal.plan.estimatedCost > 0);
-        const queuePosition = native.queue.findIndex(row => row.key === leaf.rootKey);
+        // MVP-1: the packet has rows only for funded wishes (in queue order);
+        // an unsupported wish before the root keeps its place without a row.
+        const queuePosition = native.queue.filter(row => row.funded).findIndex(row => row.key === leaf.rootKey);
         assert(queuePosition >= 0 && queuePosition < 8, 'the selected root has an exact native funded money triplet');
         const ratio = native.statsPacket.money[4 + queuePosition * 3];
         assert(Number.isFinite(ratio) && ratio >= native.statsPacket.money[1]);

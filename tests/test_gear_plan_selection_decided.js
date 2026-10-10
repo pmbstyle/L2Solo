@@ -39,6 +39,16 @@ function stubPlanner() {
     });
 }
 
+// MVP-1: a gear wish without a prepared route is never the activity; these
+// checks pin the selection once the economy has chosen gear.
+function gearEconomy() {
+    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { spots: [], timestamp: at });
+    const gear = economy.network.queue.find(wish => wish.object?.slot);
+    assert(gear, 'fixture: the economy has a gear wish');
+    return { ...economy, network: { ...economy.network,
+        activity: { ...economy.network.activity, activity: 'hunting', kind: 'money', rootKey: gear.key } } };
+}
+
 function run() {
     const original = { ...Planner };
     const excluded = SpotRiskPolicy.excludedSpotIdsForStates;
@@ -46,7 +56,7 @@ function run() {
         // Backoff spots are excluded from the plan's source search.
         stubPlanner();
         SpotRiskPolicy.excludedSpotIdsForStates = () => new Set(['backoff-spot']);
-        GearPlanSelection.selectAcquisitionPlan(state, null, { spots: [], timestamp: at });
+        GearPlanSelection.selectAcquisitionPlan(state, null, { spots: [], timestamp: at, preparedEconomy: gearEconomy() });
         const planned = calls.find((call) => call.name === 'planFor');
         assert(planned?.args[1].excludedSpotIds.has('backoff-spot'), 'a spot under backoff is excluded from the source search');
         SpotRiskPolicy.excludedSpotIdsForStates = excluded;
@@ -54,7 +64,7 @@ function run() {
         // A blocked plan is replaced, its failed target excluded.
         stubPlanner();
         const blocked = { status: 'blocked', strategy: 'direct_drop', target: { selfId: 69, slot: 7 }, next: { npcId: 20001 } };
-        const replaced = GearPlanSelection.selectAcquisitionPlan(state, blocked, { spots: [], timestamp: at });
+        const replaced = GearPlanSelection.selectAcquisitionPlan(state, blocked, { spots: [], timestamp: at, preparedEconomy: gearEconomy() });
         const replacement = calls.find((call) => call.name === 'replacementPlanFor');
         assert(replacement, 'a blocked plan is replaced');
         assert.deepStrictEqual(replacement.args[3].excludedTargetIds, [69], 'the replacement excludes the failed target');

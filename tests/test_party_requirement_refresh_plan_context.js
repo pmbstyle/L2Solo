@@ -129,9 +129,20 @@ async function main() {
         stats: { lastRequirementRefreshAt: 0, objective: null } };
     await PopulationService.refreshBackgroundPartyRequirements([party]);
     assert.strictEqual(replacementOptions.length, 0, 'marking a refresh does not plan on main');
+    // MVP-1: a gear wish without a prepared route is never the money activity,
+    // so the failing member's economy is pinned to its gear wish (the fixture
+    // has no spots or quotes); the craft member keeps its own review.
+    const gearEconomy = (state) => {
+        const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { spots: [], occupancy: {}, timestamp: now });
+        const gear = economy.network.queue.find(wish => wish.object?.slot);
+        assert(gear, 'fixture: the failing member wishes for gear');
+        return { ...economy, network: { ...economy.network,
+            activity: { ...economy.network.activity, activity: 'hunting', kind: 'money', rootKey: gear.key } } };
+    };
     const selections = [failingMember, craftMember].map(state => ({ characterId: state.characterId,
         plan: require('../src/GameServer/Bot/Population/PartyRequirementRefresh').plan(state,
-            { spots: [], occupancy: {}, timestamp: now }).acquisitionPlan }));
+            { spots: [], occupancy: {}, timestamp: now,
+                ...(state === failingMember ? { preparedEconomy: gearEconomy(state) } : {}) }).acquisitionPlan }));
     await PopulationService.applyWorkerPartyRequirements(party, { memberPlans: selections, requirementRefreshedAt: now });
 
     assert.strictEqual(replacementOptions.length, 1, 'fixture: the failing drop route must be replaced');

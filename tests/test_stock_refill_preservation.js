@@ -77,6 +77,13 @@ async function run() {
         console.log('NATIVE_STOCK_TARGET', JSON.stringify({ characterId: id, level: 40, classId: 1, weaponId: SWORD,
             target: before.target, targetHours: before.targetHours, usePerHour: before.usePerHour,
             perAction: Shot.planForState(empty).perAction, unitPrice }));
+        // MVP-1: the stock wish is funded over the shot's survival kit only by a
+        // path with a step now, the NPC quote over prepared town routes (the
+        // worker prepares them before a review; here the bot's own rows).
+        const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
+        const steps = EconomicTrip.prepare(empty); let prepared;
+        do prepared = steps.next(); while (!prepared.done);
+        Economy.forState(Economy.stateForActor(actor), { routeRows: prepared.value });
         const purchase = await Shot.purchaseActorRestock(actor, { town: 'Giran', potionUnitPrice: 0 });
         assert.equal(purchase.ok, true);
         assert.equal(purchase.delta, before.target, 'the paid physical purchase reaches the native target from an absent stack');
