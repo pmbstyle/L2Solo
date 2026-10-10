@@ -789,6 +789,9 @@ function sendHtml(response) {
             line-height: 1.4;
         }
 
+        #wipeMessage { min-height: 18px; overflow-wrap: anywhere; }
+        #wipeMessage.error { color: var(--red); }
+
         input {
             width: 100%;
             height: 42px;
@@ -1055,6 +1058,7 @@ function sendHtml(response) {
                 <p id="wipePrompt">Type WIPE BOTS to confirm.</p>
                 <input id="wipeConfirmation" type="text" autocomplete="off" spellcheck="false" placeholder="Confirmation">
                 <button id="wipe" class="danger" type="button">Permanently wipe selected data</button>
+                <p id="wipeMessage" role="status" aria-live="polite"></p>
             </div>
         </details>
 
@@ -1086,6 +1090,7 @@ function sendHtml(response) {
         const wipeConfirmationInput = document.getElementById('wipeConfirmation');
         const wipePromptEl = document.getElementById('wipePrompt');
         const wipeButton = document.getElementById('wipe');
+        const wipeMessage = document.getElementById('wipeMessage');
         const saveForm = document.getElementById('saveForm');
         const saveNameInput = document.getElementById('saveName');
         const saveGameButton = document.getElementById('saveGame');
@@ -1100,6 +1105,7 @@ function sendHtml(response) {
         let pendingProgressionRate = progressionRateSelect.value || 'x1';
         let hasPendingProgressionRate = false;
         let logAutoScroll = true;
+        let localWipeOperation = false;
 
         function titleCase(value) {
             return value.charAt(0).toUpperCase() + value.slice(1);
@@ -1117,10 +1123,11 @@ function sendHtml(response) {
         function updateWipeControls(phase) {
             const expected = wipeConfirmations[wipeScopeSelect.value] || '';
             wipePromptEl.textContent = 'Type ' + expected + ' to confirm.';
-            const stopped = phase === 'stopped' && !lastState.saveOperation && !localSaveOperation;
+            const stopped = phase === 'stopped' && !lastState.saveOperation && !localSaveOperation && !localWipeOperation;
             wipeScopeSelect.disabled = !stopped;
             wipeConfirmationInput.disabled = !stopped;
             wipeButton.disabled = !stopped || wipeConfirmationInput.value.trim() !== expected;
+            wipeButton.textContent = localWipeOperation ? 'Wiping…' : 'Permanently wipe selected data';
         }
 
         function isLogAtBottom() {
@@ -1161,7 +1168,7 @@ function sendHtml(response) {
         }
 
         function updateSaveControls() {
-            const operation = localSaveOperation || lastState.saveOperation;
+            const operation = localSaveOperation || lastState.saveOperation || (localWipeOperation ? 'wipe' : null);
             const available = lastState.phase === 'stopped' && !operation;
             saveNameInput.disabled = !available;
             saveGameButton.disabled = !available;
@@ -1325,9 +1332,14 @@ function sendHtml(response) {
         });
 
         wipeButton.addEventListener('click', async () => {
+            if (localWipeOperation) return;
             const scope = wipeScopeSelect.value;
             const confirmation = wipeConfirmationInput.value.trim();
             if (!window.confirm('Permanently wipe ' + scope + '? This cannot be undone.')) return;
+            localWipeOperation = true;
+            wipeMessage.className = '';
+            wipeMessage.textContent = 'Wiping selected world data…';
+            updateSaveControls();
             try {
                 const data = await request('/api/wipe', {
                     method: 'POST',
@@ -1335,9 +1347,14 @@ function sendHtml(response) {
                     body: JSON.stringify({ scope, confirmation })
                 });
                 wipeConfirmationInput.value = '';
+                wipeMessage.textContent = 'Wiped ' + data.lastWipe.characters + ' characters and ' + data.lastWipe.accounts + ' accounts.';
                 render(data);
             } catch (err) {
-                logEl.textContent = err.message;
+                wipeMessage.className = 'error';
+                wipeMessage.textContent = err.message;
+            } finally {
+                localWipeOperation = false;
+                await refresh();
             }
         });
 
@@ -1511,7 +1528,11 @@ async function route(request, response) {
 
         const release = acquireDatabaseAccess(databasePath());
         let result;
-        try { result = await WorldWipe.wipe(scope); } finally { release(); }
+        try { result = await WorldWipe.wipe(scope); }
+        catch (error) {
+            appendLog('launcher', `world wipe failed: scope=${scope}, error=${error.message}`);
+            throw error;
+        } finally { release(); }
         state.lastWipe = { ...result, at: Date.now() };
         appendLog('launcher', `world wipe completed: scope=${scope}, characters=${result.characters}, accounts=${result.accounts}`);
         sendJson(response, publicState());

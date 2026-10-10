@@ -132,6 +132,31 @@ function pruneLifeEventsByWeight(connection, characterId) {
         )`).run(characterId, characterId);
 }
 
+function wipeWorldHistory(connection, { all, ids = [], clanIds = [] }) {
+    if (all) {
+        [...MOVED_TABLES, 'clan_actions'].forEach((table) => connection.exec(`DELETE FROM ${table}`));
+        return;
+    }
+    if (ids.length) {
+        const placeholders = ids.map(() => '?').join(', ');
+        for (const [table, column] of [['bot_life_events', 'characterId'], ['afk_trade_events', 'ownerId'],
+            ['market_store_events', 'characterId']]) {
+            connection.prepare(`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`).run(...ids);
+        }
+        connection.prepare(`UPDATE afk_trade_events SET counterpartyId = NULL WHERE counterpartyId IN (${placeholders})`).run(...ids);
+        connection.prepare(`DELETE FROM market_trades WHERE sellerCharacterId IN (${placeholders}) OR buyerCharacterId IN (${placeholders})`)
+            .run(...ids, ...ids);
+        connection.prepare(`DELETE FROM pvp_conflicts WHERE initiatorId IN (${placeholders}) OR targetId IN (${placeholders})`)
+            .run(...ids, ...ids);
+    }
+    if (clanIds.length) {
+        const placeholders = clanIds.map(() => '?').join(', ');
+        for (const table of ['clan_goal_events', 'clan_actions']) {
+            connection.prepare(`DELETE FROM ${table} WHERE clanId IN (${placeholders})`).run(...clanIds);
+        }
+    }
+}
+
 // A routine event (rest, hunt) updates the bot's latest one of the same type
 // within 30 minutes instead of adding a row. Returns true when a row was added.
 function writeLifeEvent(connection, characterId, event) {
@@ -163,6 +188,9 @@ function writeLifeEvent(connection, characterId, event) {
 
 // One function per outbox kind: (connection, payload, outboxId).
 const APPLY = {
+    // A reset is ordered after pending events, so they cannot restore wiped
+    // history. The world retains this instruction until history commits it.
+    world_wipe: wipeWorldHistory,
     market_trade(connection, row) {
         Statements.prepare(connection, insertSql('market_trades', MARKET_TRADE_COLUMNS))
             .run(...values(row, MARKET_TRADE_COLUMNS));
@@ -245,6 +273,7 @@ function transfer(history, world, limit = 1000) {
             } catch (error) {
                 history.exec('ROLLBACK TO history_row');
                 history.exec('RELEASE history_row');
+                if (row.kind === 'world_wipe') throw error;
                 errors.push(`${row.kind}#${row.id}: ${error.message}`);
             }
         });
@@ -380,5 +409,6 @@ module.exports = {
     pathFor,
     retention,
     setMeta,
-    transfer
+    transfer,
+    wipeWorldHistory
 };

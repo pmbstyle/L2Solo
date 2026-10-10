@@ -58,42 +58,48 @@ function previewWithConnection(db, scope) {
     };
 }
 
-// The world's foreign keys used to delete these history rows with their
-// character or clan; the history file has no foreign keys, so the wipe does it.
-function wipeHistoryWithConnection(history, { all, ids = [], clanIds = [] }) {
+function hasTable(db, table) {
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+}
+
+function wipeMeetings(db, ids, all) {
+    if (!hasTable(db, 'board_trade_participants')) return;
     if (all) {
-        ['bot_life_events', 'afk_trade_events', 'clan_goal_events', 'clan_actions']
-            .forEach((table) => history.exec(`DELETE FROM ${table}`));
+        ['board_trade_meeting_lines', 'board_trade_meetings', 'board_trade_participants']
+            .forEach((table) => db.exec(`DELETE FROM ${table}`));
         return;
     }
-    if (ids.length) {
-        const placeholders = ids.map(() => '?').join(', ');
-        history.prepare(`DELETE FROM bot_life_events WHERE characterId IN (${placeholders})`).run(...ids);
-        history.prepare(`DELETE FROM afk_trade_events WHERE ownerId IN (${placeholders})`).run(...ids);
-        history.prepare(`UPDATE afk_trade_events SET counterpartyId = NULL WHERE counterpartyId IN (${placeholders})`).run(...ids);
-    }
-    if (clanIds.length) {
-        const placeholders = clanIds.map(() => '?').join(', ');
-        history.prepare(`DELETE FROM clan_goal_events WHERE clanId IN (${placeholders})`).run(...clanIds);
-        history.prepare(`DELETE FROM clan_actions WHERE clanId IN (${placeholders})`).run(...clanIds);
-    }
+    if (!ids.length) return;
+    const placeholders = ids.map(() => '?').join(', ');
+    const meetings = `SELECT id FROM board_trade_meetings WHERE actorA IN (${placeholders}) OR actorB IN (${placeholders})`;
+    const mixedTrade = db.prepare(`SELECT 1 FROM board_trade_meetings
+        WHERE state NOT IN ('completed', 'cancelled')
+        AND ((actorA IN (${placeholders}) AND actorB NOT IN (${placeholders}))
+            OR (actorB IN (${placeholders}) AND actorA NOT IN (${placeholders}))) LIMIT 1`).get(...ids, ...ids, ...ids, ...ids);
+    if (mixedTrade) throw new Error('Cancel active trades between bots and players before wiping one group, or wipe both groups.');
+    db.prepare(`UPDATE board_trade_participants SET meetingId = NULL WHERE meetingId IN (${meetings})`).run(...ids, ...ids);
+    db.prepare(`DELETE FROM board_trade_meeting_lines WHERE meetingId IN (${meetings})`).run(...ids, ...ids);
+    db.prepare(`DELETE FROM board_trade_meetings WHERE id IN (${meetings})`).run(...ids, ...ids);
+    db.prepare(`DELETE FROM board_trade_participants WHERE characterId IN (${placeholders})`).run(...ids);
 }
 
 function wipeWithConnection(db, scope, onWiped = null) {
     const normalizedScope = validateScope(scope);
     const target = targetClause(normalizedScope);
-    const preview = previewWithConnection(db, normalizedScope);
-    const ids = db.prepare(`SELECT id FROM characters WHERE ${target.sql}`).all(...target.params).map((row) => Number(row.id)).filter(Boolean);
-    let clanIds = [];
-
+    let preview, wiped;
     db.exec('BEGIN IMMEDIATE');
     try {
+        preview = previewWithConnection(db, normalizedScope);
+        const ids = db.prepare(`SELECT id FROM characters WHERE ${target.sql}`).all(...target.params).map((row) => Number(row.id)).filter(Boolean);
+        let clanIds = [];
+        wipeMeetings(db, ids, normalizedScope === 'all');
         if (normalizedScope === 'all') {
-            [
-                'bot_life_state', 'bot_goal_state', 'bot_personas', 'bot_social_memory',
-                'character_recipes', 'character_quests', 'warehouse_items', 'macros',
-                'shortcuts', 'skills', 'items', 'bot_background_parties', 'clan_crests', 'clans'
-            ].forEach((table) => db.exec(`DELETE FROM ${table}`));
+            // Character-owned rows use ON DELETE CASCADE, including migrated
+            // interaction memory. Independent world projections need cleanup.
+            for (const table of ['bot_background_parties', 'bot_raid_encounters', 'social_entities',
+                'social_projection_cursors', 'clans', 'clan_crests', 'history_outbox']) {
+                if (hasTable(db, table)) db.exec(`DELETE FROM ${table}`);
+            }
         }
         if (ids.length) {
             const placeholders = ids.map(() => '?').join(', ');
@@ -108,17 +114,28 @@ function wipeWithConnection(db, scope, onWiped = null) {
         }
         if (normalizedScope === 'bots') db.exec('DELETE FROM bot_background_parties');
         db.prepare(`DELETE FROM accounts WHERE ${target.sql}`).run(...target.params);
+        wiped = { all: normalizedScope === 'all', ids: normalizedScope === 'all' ? [] : ids, clanIds };
+        if (hasTable(db, 'history_outbox')) {
+            wiped.outboxId = Number(db.prepare('INSERT INTO history_outbox(kind, payload) VALUES (?, ?)')
+                .run('world_wipe', JSON.stringify(wiped)).lastInsertRowid);
+        }
         db.exec('COMMIT');
-        onWiped?.({ all: normalizedScope === 'all', ids, clanIds });
-        return preview;
     } catch (error) {
         db.exec('ROLLBACK');
         throw error;
     }
+    // A history failure cannot roll back an already committed world. Its
+    // outbox instruction is replayed on the next history-worker start.
+    try { onWiped?.(wiped); } catch (error) {
+        throw new Error(`World data was wiped, but history cleanup is pending: ${error.message}`, { cause: error });
+    }
+    return preview;
 }
 
 function withConnection(work) {
-    const db = new DatabaseSync(readDatabaseConfig().databasePath, { timeout: 5000 });
+    const { databasePath } = readDatabaseConfig();
+    if (!fs.existsSync(databasePath)) throw new Error('No game database found.');
+    const db = new DatabaseSync(databasePath, { timeout: 5000 });
     db.exec('PRAGMA foreign_keys = ON');
     try {
         return work(db);
@@ -128,15 +145,28 @@ function withConnection(work) {
 }
 
 function preview(scope) { return withConnection((db) => previewWithConnection(db, scope)); }
-function wipeHistory(wiped) {
+function wipeHistory(db, wiped) {
     const { historyPath } = readDatabaseConfig();
     if (!fs.existsSync(historyPath)) return;
-    const history = new DatabaseSync(historyPath, { timeout: 5000 });
-    try { wipeHistoryWithConnection(history, wiped); } finally { history.close(); }
+    const history = HistoryStore.open(historyPath);
+    try {
+        if (wiped.outboxId) {
+            while (HistoryStore.cursor(history) < wiped.outboxId) {
+                const transferred = HistoryStore.transfer(history, db);
+                if (!transferred.moved && !transferred.failed) throw new Error('History reset instruction was not found.');
+            }
+            db.prepare('DELETE FROM history_outbox WHERE id <= ?').run(HistoryStore.cursor(history));
+        } else {
+            history.exec('BEGIN IMMEDIATE');
+            try { HistoryStore.wipeWorldHistory(history, wiped); history.exec('COMMIT'); }
+            catch (error) { history.exec('ROLLBACK'); throw error; }
+        }
+    } finally { history.close(); }
 }
-function wipe(scope) { return withConnection((db) => wipeWithConnection(db, scope, wipeHistory)); }
+async function wipe(scope) { return withConnection((db) => wipeWithConnection(db, scope, (wiped) => wipeHistory(db, wiped))); }
 
-module.exports = { validateScope, targetClause, previewWithConnection, wipeWithConnection, wipeHistoryWithConnection, preview, wipe };
+module.exports = { validateScope, targetClause, previewWithConnection, wipeWithConnection,
+    wipeHistoryWithConnection: HistoryStore.wipeWorldHistory, preview, wipe };
 
 if (require.main === module) {
     const argument = process.argv.find((value) => value.startsWith('--scope='));
