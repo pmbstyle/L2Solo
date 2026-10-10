@@ -101,8 +101,9 @@ function hasShop(characterId) {
 // caller has just made it (a goal review). Near death the evaluation only
 // asks to recover and judges nothing else, so the order waits like a rest.
 function standingBuyNeed(state, lines, candidates) {
-    const items = new Set(lines.filter((line) => Number(line.count) > 0
-        && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)).map((line) => Number(line.selfId)));
+    // Own buy-ad lines passed source admission when they opened (BuyAdPolicy);
+    // saved ones from before that rule close at board start.
+    const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
     if (!items.size) return false;
     const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
     // ARCH-NOTE: NeedsEvaluator's native survival floor carries rest/revive
@@ -671,8 +672,9 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (!stillPrepared()) return { state, tradeDeferred: true };
         const Ready = require('./ReadyTradeChoice');
         const line = Ready.resolve(plan.take, AfkTrade.boardIndex(), ownerId);
-        if (!line || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId))
-            return { state, tradeDeferred: true };
+        // The tuple's item passed source admission where it was made: a wish
+        // network item node (purchase) or the sale classification (answer).
+        if (!line) return { state, tradeDeferred: true };
         const offer = AfkTrade.offerOf(line);
         if (!offer) return { state, tradeDeferred: true };
         const result = await run(async () => {
@@ -726,8 +728,9 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     });
     if (plan.sell?.length) await run(async () => {
         const ctx = ListingPolicy.traderContext(state);
-        const listings = plan.sell.slice(0, 8)
-            .filter(row => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(row[0])).map(([selfId, count, price]) => {
+        // Listings come from MarketListingPolicy.evaluate: sale candidates
+        // and classify already admitted their sources.
+        const listings = plan.sell.slice(0, 8).map(([selfId, count, price]) => {
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
             const bag = state.inventory?.[selfId], copies = (bag?.instances || []).filter(row => !row.equipped && row.amount > 0);
             const enchants = new Set([...copies.map(row => Number(row.enchant || 0)),
@@ -763,8 +766,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
-        const wanted = (plan.buyAds || []).slice(0, 3)
-            .filter(row => invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(row[0])).map(row => {
+        // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
+        const wanted = (plan.buyAds || []).slice(0, 3).map(row => {
             const [selfId, count, price] = row;
             const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money

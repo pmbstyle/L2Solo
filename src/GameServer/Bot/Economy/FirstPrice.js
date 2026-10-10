@@ -231,7 +231,7 @@ const CACHE_MS = 60 * 60 * 1000;
 const cache = new Map();
 function cachedFirstPrice(itemId, options = {}, depth = 0) {
     const id = Number(itemId);
-    if (!Sources.hasSource(id)) return null;
+    // priceOf admits the source; an item without one is kept as a null price.
     const kept = cache.get(id);
     const clock = Date.now();
     if (kept && clock - kept.at < CACHE_MS) return kept.value;
