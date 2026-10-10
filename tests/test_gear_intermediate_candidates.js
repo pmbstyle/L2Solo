@@ -96,6 +96,9 @@ board.put({ id: 1, ownerId: 999, storeType: 1, kind: 'sell_ad', town: 'Dion', re
 const cheapC = Providers.build(original, ctx, { ...deps, board });
 assert(cheapC.nodes.some(row => row.need === 'power' && row.object?.itemId === c.selfId),
     'a current cheap C offer can beat the intermediate; grade is not the order');
+const gearRoots = cheapC.nodes.filter(row => row.key.startsWith('power:'));
+assert(gearRoots.length && gearRoots.every(row => row.benefitPerHour > 0 && row.horizonHours === gearRoots[0].horizonHours),
+    'MVP-4: gear roots carry a benefit per hour over one horizon H');
 assert(Planner.marketPlanForTarget(original, d.selfId, exactOptions), 'native recovery accepts own D grade');
 console.log(JSON.stringify({ nativeWish: activeWish.key, selectedItem: item.selfId, grade: item.etc.rank,
     spentQuote: selected.market.price, finalists: [...shortlist.values()].reduce((n, rows) => n + rows.length, 0) }));

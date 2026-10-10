@@ -239,7 +239,7 @@ class WishNetwork {
                     return { kind: 'owned', requestedAmount: requested, missingAmount: 0, awaitingIncoming: incomingHeld > 0,
                         executable: incomingHeld === 0, supported: true, resolved: true, successProbability: 1, branches: 1,
                         requirements: [], tripEntries: [], height: 0,
-                        basePrice: 0, price: 0, baseEffort: ownValue > 0 ? ownValue * adenaToHours : 0,
+                        basePrice: 0, price: 0, baseHours: 0, hours: 0, baseEffort: ownValue > 0 ? ownValue * adenaToHours : 0,
                         effort: ownValue > 0 ? ownValue * adenaToHours : 0 };
                 }
             }
@@ -271,13 +271,18 @@ class WishNetwork {
                 let executable = path.executable !== false;
                 // Own step now: a seller, NPC, recipe, workshop capacity, farm.
                 let supported = executable && Number(path.availableUnits ?? Infinity) !== 0, resolved = true;
-                let probability = 1, branches = 1, onceCash = 0, onceEffort = 0;
+                let probability = 1, branches = 1, onceCash = 0, onceEffort = 0, onceHours = 0;
+                // MVP-4: elapsed hours until the output is ready, in sequence:
+                // own labour, inputs, trips. Waiting for accepted incoming has
+                // no native delivery time. ARCH-NOTE: counted as zero.
+                let hours = nonnegative(path.costHours) * units;
                 const trip = path.quoted && trips.get(tripKey(path));
                 const tripEntries = trip ? [trip.index] : [];
                 let quoted = !!path.quoted;
                 if (valuation) {
                     price = nonnegative(valuation.cashNow);
                     effort = Math.max(0, Number(path.ownBenefitHours || 0) - valuation.valueHours);
+                    hours = nonnegative(valuation.cycleHours);
                 }
                 const requirements = [];
                 const inputs = allocation ? path.grossRequirements || path.requirements || [] : path.requirements || [];
@@ -298,8 +303,9 @@ class WishNetwork {
                     probability *= Number(child.successProbability ?? 1) ** childBatches;
                     branches *= mergedBranches(Number(child.branches || 1), childBatches);
                     const childPrice = child.basePrice * (allocation ? 1 : amount), childEffort = child.baseEffort * (allocation ? 1 : amount);
-                    if (requirement.once) { onceCash += childPrice; onceEffort += childEffort; }
-                    else { price += childPrice; effort += childEffort; }
+                    const childHours = nonnegative(child.baseHours) * (allocation ? 1 : amount);
+                    if (requirement.once) { onceCash += childPrice; onceEffort += childEffort; onceHours += childHours; }
+                    else { price += childPrice; effort += childEffort; hours += childHours; }
                     awaitingIncoming ||= !!child.awaitingIncoming;
                     for (const index of child.tripEntries) if (!tripEntries.includes(index)) tripEntries.push(index);
                     quoted ||= child.quoted;
@@ -310,22 +316,22 @@ class WishNetwork {
                 if (untilSuccess) {
                     // ARCH-NOTE: expected attempts 1/p repeat the cash, consumed
                     // inputs and labour of one attempt; the trip is made once.
-                    price /= successProbability; effort /= successProbability;
+                    price /= successProbability; effort /= successProbability; hours /= successProbability;
                 } else if (successProbability < 1) {
                     // One native attempt: the parent step runs only when every
                     // child succeeded, so that branch splits into own outcomes.
                     probability *= successProbability ** units;
                     branches += mergedBranches(2, units) - 1;
                 }
-                price += onceCash; effort += onceEffort;
+                price += onceCash; effort += onceEffort; hours += onceHours;
                 resolved &&= branches <= MAX_BRANCHES;
-                const basePrice = price, baseEffort = effort;
-                price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries);
+                const basePrice = price, baseEffort = effort, baseHours = hours;
+                price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries); hours += tripValue(tripEntries, 'hours');
                 if (allocation) for (const [id, count] of local.used) alternativeUse.set(id, Math.max(alternativeUse.get(id) || 0, count));
                 if (available) choices.push({ ...path, executable, supported, resolved, branches, quoted, tripEntries,
                     successProbability: probability, attemptProbability: successProbability, untilSuccess,
                     ...(allocation ? { requestedAmount: requested, missingAmount: amount, batches: units, awaitingIncoming } : {}),
-                    basePrice, baseEffort, price, effort, requirements, height });
+                    basePrice, baseEffort, baseHours, price, effort, hours, requirements, height });
                 else if (diagnostic) Diagnostics.count('network', 'path_refused', 'missing_requirement');
             }
             // MVP-1: executable, then supported (saving, preparation, incoming),
@@ -359,15 +365,32 @@ class WishNetwork {
             return node?.object?.kind === 'resale' && node.paths?.some(path => path.kind === 'craft'
                 && path.trial === true && path.repeatable === false);
         };
+        // MVP-4: one horizon H per root; a benefit per hour starts when the
+        // path is ready (funding delay at net income, then the path's hours).
+        // An unknown delay keeps the interest unresolved: no money, no gap.
+        const spendable = Math.max(0, nonnegative(wallet) - nonnegative(survivalReserve));
+        const value = (wish, node, plan) => {
+            const base = nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress)));
+            wish.resolved = plan?.resolved !== false;
+            wish.readyHours = 0;
+            if (plan && nonnegative(node.benefitPerHour) > 0) {
+                const delay = Valuation.fundingDelay({ requiredCash: wish.price, spendableCash: spendable, incomePerHour: hourAdena });
+                const ready = Valuation.readyBenefit({ valueHours: base, benefitPerHour: node.benefitPerHour,
+                    horizonHours: node.horizonHours, delayHours: delay === null ? null : delay + nonnegative(plan.hours) });
+                if (ready === null) wish.resolved = false;
+                else { wish.readyHours = delay + nonnegative(plan.hours); wish.valueHours = ready * Number(plan.successProbability ?? 1); return; }
+            }
+            wish.valueHours = plan ? base * Number(plan.successProbability ?? 1) : 0;
+        };
         const wishes = roots.map(key => {
             const node = byKey.get(key);
             if (!node || !NEEDS.includes(node.need)) throw new TypeError('invalid_wish_root');
             const plan = solve(key, 0, 1, null, finiteProduction(key));
             plans.set(key, plan);
-            const remaining = 1 - Math.min(1, nonnegative(node.progress));
-            return { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false, resolved: plan?.resolved !== false,
-                valueHours: nonnegative(node.valueHours) * remaining * Number(plan?.successProbability ?? 1),
+            const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false,
                 price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
+            value(wish, node, plan);
+            return wish;
         }).filter(wish => wish.valueHours > 0 && wish.plan
             && (!finiteProduction(wish.key) || wish.valueHours > wish.effort));
         if (stockFor) {
@@ -379,9 +402,8 @@ class WishNetwork {
                 const allocation = { rootKey: wish.key, used: new Map(used) };
                 const plan = solve(wish.key, 0, 1, allocation, finiteProduction(wish.key));
                 wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
-                wish.supported = plan?.supported !== false; wish.resolved = plan?.resolved !== false;
-                const node = byKey.get(wish.key);
-                wish.valueHours = plan ? nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress))) * Number(plan.successProbability ?? 1) : 0;
+                wish.supported = plan?.supported !== false;
+                value(wish, byKey.get(wish.key), plan);
                 // Shared stock can change the full path's cost. A finite
                 // earning trial never funds a route whose effort consumes its
                 // entire expected benefit; rejected trials claim no stock.

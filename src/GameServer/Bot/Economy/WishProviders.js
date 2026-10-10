@@ -557,7 +557,8 @@ function buildProjection(state, ctx, deps) {
         values.set(Number(candidate.item.selfId), candidate.value * powerWeight);
         root({ key: `power:${candidate.item.selfId}:${candidate.slot}`, need: 'power',
             object: { itemId: Number(candidate.item.selfId), slot: candidate.slot }, price: price(candidate.item.selfId),
-            valueHours: candidate.value * powerWeight, paths: [{ requirements: [{ key, amount: 1 }] }] });
+            valueHours: candidate.value * powerWeight, benefitPerHour: (candidate.gain.attack + candidate.gain.defence * ctx.deathHours) * powerWeight,
+            horizonHours: horizon, paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
     for (const book of invoke('GameServer/Skills/SkillBookCatalog').missingBooks(state)) {
         if (nodes.length >= 36) break;
@@ -573,7 +574,8 @@ function buildProjection(state, ctx, deps) {
         const key = itemNode(book.selfId); if (!key) continue;
         values.set(book.selfId, value);
         root({ key: `book:${book.skillId}`, need: 'power', object: { itemId: book.selfId, skillId: book.skillId, kind: 'book' },
-            price: price(book.selfId), valueHours: value, paths: [{ requirements: [{ key, amount: 1 }] }] });
+            price: price(book.selfId), valueHours: value, benefitPerHour: (gain.attack + gain.defence * ctx.deathHours) * powerWeight,
+            horizonHours: horizon, paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
     if (rare && statusWeight > 0) {

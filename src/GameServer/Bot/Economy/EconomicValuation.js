@@ -70,6 +70,25 @@ function acquisition(context, plan, route) {
         cycleHours: Number(route?.hours) }]);
 }
 
+// MVP-4: hours spent earning a cash shortfall at the net income rate. No
+// shortfall waits nothing even without income; a shortfall without income is
+// unknown (null), never free time.
+function fundingDelay({ requiredCash = 0, spendableCash = 0, incomePerHour = 0 } = {}) {
+    const shortfall = positive(requiredCash) - positive(spendableCash);
+    if (!(shortfall > 0)) return 0;
+    const income = Number(incomePerHour);
+    return Number.isFinite(income) && income > 0 && Number.isFinite(shortfall) ? shortfall / income : null;
+}
+// A benefit earned per hour over the horizon H starts only when the goal is
+// ready: the part lost to the delay is benefitPerHour x min(H, delay).
+function readyBenefit({ valueHours = 0, benefitPerHour = 0, horizonHours = Infinity, delayHours = 0 } = {}) {
+    const delay = Number(delayHours);
+    if (delayHours === null || !Number.isFinite(delay) || delay < 0) return null;
+    const horizon = Number(horizonHours);
+    return Math.max(0, positive(valueHours) - positive(benefitPerHour)
+        * Math.min(Number.isFinite(horizon) && horizon >= 0 ? horizon : Infinity, delay));
+}
+
 function riskWeight(state, persona) {
     return (1 + trait(persona, 'caution')) / (0.5 + trait(persona, 'resilience'))
         * (1 + positive(state.stats?.frustration));
@@ -120,4 +139,4 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
 module.exports = { riskWeight, stageHours, deathHours, karmaHours, pkDropValue, resale, progressStats, trait,
-    opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT };
+    opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };

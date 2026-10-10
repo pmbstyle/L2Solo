@@ -29,6 +29,9 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const context = Economy.forState(mage);
 assert(context.projection.nodes.some(node => node.key === 'book:1184' && node.valueHours > 0),
     'a second actual Sorcerer nuke has a positive spellbook wish');
+const book = context.projection.nodes.find(node => node.key === 'book:1184');
+assert(book.benefitPerHour > 0 && Math.abs(book.benefitPerHour * book.horizonHours - book.valueHours) < 1e-6 * book.valueHours,
+    'MVP-4: the spellbook benefit per hour over the common horizon H');
 Economy.reset();
 assert.equal(invoke('Database').isReady(), false);
 console.log('Attack spellbooks: finite rotation, native second nuke and actual positive wish passed');
