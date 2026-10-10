@@ -302,9 +302,11 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             else if (diagnostic) Diagnostics.count('network', 'path_refused', 'missing_requirement');
         }
         // MVP-1: executable, then supported (saving, preparation, incoming),
-        // then effort. Finite production plans its future source first.
+        // then effort. Finite production plans its cheapest future source:
+        // an unsupported purchase keeps the trial's queue place and WTB row
+        // without cash, never a costlier step now.
         choices.sort((a, b) => planning
-            ? Number(b.supported) - Number(a.supported) || a.effort - b.effort || Number(b.executable) - Number(a.executable) || a.price - b.price
+            ? a.effort - b.effort || Number(b.supported) - Number(a.supported) || Number(b.executable) - Number(a.executable) || a.price - b.price
             : Number(b.executable) - Number(a.executable) || Number(b.supported) - Number(a.supported) || a.effort - b.effort || a.price - b.price);
         const best = choices[0] || null;
         if (allocation && best) {
