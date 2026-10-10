@@ -32,9 +32,9 @@ function mainPublication() {
     const original = state(901), first = Economy.forState(original, deps);
     const cloned = structuredClone(original); cloned.updatedAt++;
     const replaced = Economy.forState(cloned, deps);
-    assert.strictEqual(replaced, first, 'main actor snapshots retain their existing economic input cache contract');
+    assert.strictEqual(replaced.plan, first.plan, 'main actor snapshots retain their existing economic input cache contract');
     assert.deepEqual(visible(replaced), visible(first), 'same economic facts retain exactly the native decision');
-    assert.strictEqual(Economy.forState(cloned, deps), replaced, 'same canonical state still caches');
+    assert.strictEqual(Economy.forState(cloned, deps).plan, replaced.plan, 'same canonical state still caches');
 
     const kernel = new ColdSimulationKernel({ resolveSolo: () => null, now: () => timestamp });
     const members = [state(911), state(912), state(913), state(914)];
@@ -50,10 +50,10 @@ function mainPublication() {
     const rebuilt = Economy.forState(current, deps);
     assert.strictEqual(rebuilt.state, current); assert.notStrictEqual(rebuilt, group);
     kernel.upsert({ state: current, context: { fresh: true } });
-    assert.strictEqual(Economy.forState(current, deps), rebuilt, 'context-only routing changes preserve the same state cache');
+    assert.strictEqual(Economy.forState(current, deps).plan, rebuilt.plan, 'context-only routing changes preserve the same state cache');
     const stale = { ...current, simulation: { ...current.simulation, revision: 1 } };
     assert.equal(kernel.upsert({ state: stale, context: { stalePage: true } }), false);
-    assert.strictEqual(Economy.forState(current, deps), rebuilt, 'rejected old snapshots do not evict the canonical context');
+    assert.strictEqual(Economy.forState(current, deps).plan, rebuilt.plan, 'rejected old snapshots do not evict the canonical context');
     kernel.remove(913);
     assert.equal(Economy.size().groups, 0, 'member removal releases a group even without party fields in its state');
     assert.equal(Profile.size().ownerBuilds, before - 1, 'actual removal still releases its build owner');
@@ -75,12 +75,12 @@ module.exports.publicationProbe = async stage => {
         const first = Economy.forState(current,options),clone = structuredClone(current);
         clone.updatedAt++;
         const fresh = Economy.forState(clone,options);
-        assert.notStrictEqual(fresh,first,'worker identity backstop cannot retain an old canonical input');
+        assert.notStrictEqual(fresh.plan,first.plan,'worker identity backstop cannot retain an old canonical input');
         assert.strictEqual(fresh.state,clone);
         assert.deepEqual(fresh.statsPacket,first.statsPacket);
         assert.deepEqual(fresh.network.activity,first.network.activity);
         Economy.forgetContext(current.characterId,'party_query_release',current);
-        assert.strictEqual(Economy.forState(clone,options),fresh,'old query cleanup cannot evict a newer state');
+        assert.strictEqual(Economy.forState(clone,options).plan,fresh.plan,'old query cleanup cannot evict a newer state');
         Economy.forgetContext(clone.characterId,'party_query_release',clone);
         assert.equal(Economy.size().context,0,'a private query snapshot releases its context and graph');
         Economy.setPlanningContexts(64);
@@ -92,7 +92,7 @@ module.exports.publicationProbe = async stage => {
         Economy.setPlanningContexts(0);
         const canonical = Economy.forState(current,options);
         Economy.forState(clone,{...options,rememberContext:false});
-        assert.strictEqual(Economy.forState(current,options),canonical,'private preparation preserves the canonical card');
+        assert.strictEqual(Economy.forState(current,options).plan,canonical.plan,'private preparation preserves the canonical card');
         const group = Economy.forGroup({id:'worker-publication',adena:200},members,options);
         assert.equal(Economy.size().groups,1);
         module.exports.previous = group.state;

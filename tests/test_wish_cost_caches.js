@@ -229,33 +229,33 @@ check('a wish review is rebuilt only by changes on items it read (design 16.5)',
             resilience: .5, ambition: .5, empathy: .5, sociability: .5, assertiveness: .5 }, understanding: .8 } },
         timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
     const context = Economy.forState(state, deps);
-    assert.equal(Economy.forState(state, deps), context);
+    assert.equal(Economy.forState(state, deps).plan, context.plan);
     // a line and a deal of an item nobody here looked at
     const unread = 1 + Math.max(...Data.items.map(item => Number(item.selfId)));
     board.put({ id: 11, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: unread, count: 1, price: 10 }] });
-    assert.equal(Economy.forState(state, deps), context, 'another item on the board rebuilds nobody');
+    assert.equal(Economy.forState(state, deps).plan, context.plan, 'another item on the board rebuilds nobody');
     // an item the review priced while it was built
     const wished = context.network.queue.map(wish => Number(wish.object?.itemId)).find(Boolean);
     assert.ok(wished, 'fixture: a wished item');
     board.put({ id: 12, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: wished, count: 1, price: 10 }] });
     const rebuilt = Economy.forState(state, deps);
-    assert.notEqual(rebuilt, context, 'a line of a wished item rebuilds');
-    assert.equal(Economy.forState(state, deps), rebuilt);
+    assert.notEqual(rebuilt.plan, context.plan, 'a line of a wished item rebuilds');
+    assert.equal(Economy.forState(state, deps).plan, rebuilt.plan);
     // a deal in the counter of an item the review read
     Counters.deal(wished, 1000, 1, Date.now(), 7, null, 8);
     const afterDeal = Economy.forState(state, deps);
-    assert.notEqual(afterDeal, rebuilt, 'a deal in the counter of a read item rebuilds');
+    assert.notEqual(afterDeal.plan, rebuilt.plan, 'a deal in the counter of a read item rebuilds');
     // an item first read later through the context (worth) joins the watched items
     const lazy = Data.items.map(item => Number(item.selfId)).find(id => id > 1000 && id !== wished && afterDeal.price(id) >= 0);
-    assert.equal(Economy.forState(state, deps), afterDeal);
+    assert.equal(Economy.forState(state, deps).plan, afterDeal.plan);
     board.put({ id: 13, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: lazy, count: 1, price: 10 }] });
-    assert.notEqual(Economy.forState(state, deps), afterDeal, 'a later price read is watched too');
+    assert.notEqual(Economy.forState(state, deps).plan, afterDeal.plan, 'a later price read is watched too');
     // a later board look through the context (a market look) does not widen the review's inputs
     const held = Economy.forState(state, deps);
     const looked = Data.items.map(item => Number(item.selfId)).find(id => id > 2000 && id !== wished && id !== lazy);
     held.board.first(looked, SELL);
     board.put({ id: 14, kind: 'shop', storeType: SELL, ownerId: 7, lines: [{ lineId: 1, selfId: looked, count: 1, price: 10 }] });
-    assert.equal(Economy.forState(state, deps), held, 'a board look after the review is not its input');
+    assert.equal(Economy.forState(state, deps).plan, held.plan, 'a board look after the review is not its input');
 });
 
 check('basics() and stockFor() give what forState gives, without building a network', () => {
@@ -298,7 +298,7 @@ check('a party composition keeps no proposed groups; a real group is kept until 
     assert.equal(Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps), real, 'a real group is kept');
     Economy.forgetGroup('bgp_test');
     assert.notEqual(Economy.forGroup({ partyId: 'bgp_test', adena: 1000 }, members, deps), real, 'an ended group is gone');
-    assert.equal(Economy.forState(members[0], deps), own, 'group reviews never evict a bot\'s own');
+    assert.equal(Economy.forState(members[0], deps).plan, own.plan, 'group reviews never evict a bot\'s own');
 });
 
 check('93 packed candidates fit under 4 KB, candidate and entry caps do not grow', () => {

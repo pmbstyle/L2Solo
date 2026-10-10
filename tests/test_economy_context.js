@@ -82,7 +82,7 @@ async function run() {
             assert(context.projection.moneyPaths.some(row => row.kind === 'production' && row.incomePerHour > 0),
                 'profitable crafting remains a repeatable money path');
             peers.get(902).stats.production.revenue = 900;
-            assert.equal(Economy.forState(crafter, deps), context, 'another producer sale cannot rebuild this bot');
+            assert.equal(Economy.forState(crafter, deps).plan, context.plan, 'another producer sale cannot rebuild this bot');
             assert.equal(peerReads, 0);
             assert.equal(invoke('GameServer/Bot/Economy/CraftWorkshopService').producerStatus, undefined);
             console.log('PASS producer rank removed / 0 peer reads / production money path / own inputs only');
@@ -165,7 +165,7 @@ async function run() {
     assert.equal(typeof context.statsPacket.decisionSeq, 'number');
     assert.equal(typeof context.statsPacket.activityLeaf, 'number');
     assert(context.statsPacket.activityLeaf !== 0);
-    assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
+    assert.equal(Economy.forState(base).plan, context.plan, 'unchanged own inputs reuse the complete context');
     // MVP-6 Bounds: a gear candidate's reads wait in its scope; only a kept
     // scope becomes an input, so a rejected candidate's market cannot rebuild.
     const ScopedProviders = invoke('GameServer/Bot/Economy/WishProviders');
@@ -183,9 +183,9 @@ async function run() {
         const scopedContext = Economy.forState(scoped, scopedDeps());
         assert(sources.has(990001) && !sources.has(990002), 'only the kept scope subscribes its sources');
         revisions.set(990002, 1);
-        assert.equal(Economy.forState(scoped, scopedDeps()), scopedContext, 'a rejected candidate\'s market change keeps the context');
+        assert.equal(Economy.forState(scoped, scopedDeps()).plan, scopedContext.plan, 'a rejected candidate\'s market change keeps the context');
         revisions.set(990001, 1);
-        assert.notEqual(Economy.forState(scoped, scopedDeps()), scopedContext, 'an admitted candidate\'s source becoming known rebuilds');
+        assert.notEqual(Economy.forState(scoped, scopedDeps()).plan, scopedContext.plan, 'an admitted candidate\'s source becoming known rebuilds');
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
     // An item the purchase reader finds no offer for is still an input: the
@@ -204,10 +204,10 @@ async function run() {
         const absent = { ...base, characterId: 906 };
         const absentContext = Economy.forState(absent, absentDeps());
         assert(sources.has(ABSENT), 'an item with no offer is an input of the review');
-        assert.equal(Economy.forState(absent, absentDeps()), absentContext, 'no offer change keeps the context');
+        assert.equal(Economy.forState(absent, absentDeps()).plan, absentContext.plan, 'no offer change keeps the context');
         absentBoard.put({ id: 1, ownerId: 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
             lines: [{ lineId: 2, selfId: ABSENT, count: 1, price: 100 }] });
-        assert.notEqual(Economy.forState(absent, absentDeps()), absentContext, 'a first offer for an absent item rebuilds');
+        assert.notEqual(Economy.forState(absent, absentDeps()).plan, absentContext.plan, 'a first offer for an absent item rebuilds');
     } finally { ScopedProviders.build = build; }
     console.log('PASS absent item is an input');
     const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
@@ -225,12 +225,12 @@ async function run() {
         const shopDeps = () => ({ workshops: Workshop.publicForRecipe,
             workshopRevision: () => Workshop.publicRecipeDigest(shopRecipe.productId) });
         const shopContext = Economy.forState(base, shopDeps());
-        assert.equal(Economy.forState(base, shopDeps()), shopContext);
+        assert.equal(Economy.forState(base, shopDeps()).plan, shopContext.plan);
         shopSaved({ vitals: { ...shopOwner.vitals, mp: shopRecipe.mpCost * 6 } });
-        assert.equal(Economy.forState(base, shopDeps()), shopContext,
+        assert.equal(Economy.forState(base, shopDeps()).plan, shopContext.plan,
             'a workshop owner save without an offer change keeps the customer cache hit');
         shopSaved({ vitals: { ...shopOwner.vitals, mp: shopRecipe.mpCost * 2 } });
-        assert.notEqual(Economy.forState(base, shopDeps()), shopContext, 'halved capacity is an offer change');
+        assert.notEqual(Economy.forState(base, shopDeps()).plan, shopContext.plan, 'halved capacity is an offer change');
     } finally { Workshop.remove(shopOwner.characterId); }
     const physicalSpot = { id: 'gear-physical', npcEntries: [{ selfId: 130 }] };
     const mixedSpot = { id: 'gear-mixed', npcEntries: [{ selfId: 130 }, { selfId: 264 }] };
@@ -241,16 +241,16 @@ async function run() {
     const threatDeps = { spots: threatSpots };
     const physical = Economy.forState(threatBot, threatDeps);
     assert.equal(physical.gearThreatMask, 1);
-    assert.equal(Economy.forState(threatBot, threatDeps), physical);
+    assert.equal(Economy.forState(threatBot, threatDeps).plan, physical.plan);
     threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 130];
-    assert.equal(Economy.forState(threatBot, threatDeps), physical, 'same applicability preserves context');
+    assert.equal(Economy.forState(threatBot, threatDeps).plan, physical.plan, 'same applicability preserves context');
     threatBot.spotId = mixedSpot.id;
     const stillPhysical = Economy.forState(threatBot, threatDeps);
     assert.equal(stillPhysical.gearThreatMask, 1, 'unobserved magic is not personal knowledge');
     threatBot.stats.targetCombat.lastDefeatedNpcIds = [130, 264];
     const magical = Economy.forState(threatBot, threatDeps);
     assert.equal(magical.gearThreatMask, 3);
-    assert.notEqual(magical, stillPhysical, 'own magic observation invalidates the whole projection');
+    assert.notEqual(magical.plan, stillPhysical.plan, 'own magic observation invalidates the whole projection');
     assert.equal(magical.statsPacket.decisionSeq, physical.statsPacket.decisionSeq);
     assert.equal(threatBot.stats.activityLeaf, 88, 'preparing threat never changes the saved activity');
     assert.equal(threatBot.stats.decisionSeq, 7, 'preparing threat never starts a decision event');
@@ -271,7 +271,7 @@ async function run() {
         > PriceDecision.traderOf({ traits: { commitment: 1 } }, richContext).wait);
 
     assert.equal(richContext.hourAdena, context.hourAdena, 'wallet cannot change repeatable income');
-    assert.notEqual(richContext, context, 'native wallet changes invalidate funding');
+    assert.notEqual(richContext.plan, context.plan, 'native wallet changes invalidate funding');
     console.log('PASS shared network hour / funding / input cache / bounded native gear');
 
     const stock = context.stock('shots');

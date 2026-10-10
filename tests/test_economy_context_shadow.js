@@ -29,7 +29,7 @@ const original = { count: Diagnostics.count, duration: Diagnostics.duration, ena
 Config.developerDiagnostics = false; Economy.reset();
 for (const key of Object.keys(original)) Diagnostics[key] = () => { throw Error(`off reached ${key}`); };
 const offFirst = Economy.forState(state(), deps);
-assert.strictEqual(Economy.forState(state(), deps), offFirst);
+assert.strictEqual(Economy.forState(state(), deps).plan, offFirst.plan);
 Economy.setPlanningContexts(64); Economy.setPlanningContexts(0);
 Economy.forState(state(), deps); Economy.forgetContext(901, 'state_publication');
 Economy.forState(state(), { ...deps, rememberContext: false });
@@ -52,7 +52,7 @@ assert.deepEqual(delta(before, shadow()), { 'context:shadow:not_retained:same_ke
 assert.deepEqual(second.statsPacket, first.statsPacket, 'counting never changes the decision');
 
 before = shadow(); clock += 40000;
-assert.strictEqual(Economy.forState(republished, deps), second, 'a hit is not a rebuild');
+assert.strictEqual(Economy.forState(republished, deps).plan, second.plan, 'a hit is not a rebuild');
 assert.deepEqual(delta(before, shadow()), {});
 before = shadow(); clock += 2000;
 Economy.forgetContext(901, 'owner_release');

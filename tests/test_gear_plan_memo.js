@@ -25,13 +25,13 @@ try {
         const state = { characterId: id, level: 30, adena: 1000, phase: 'cold', activity: 'hunting',
             stats: { classId: 0 }, inventory: {}, loc: { locX: 0, locY: 0 }, timing: {} };
         const context = Economy.forState(state, deps);
-        context.network = { focus: ['probe'], queue: [{ key: 'probe', funded: true, object: { itemId: 2, slot: 7 } }],
+        context.plan.network = { focus: ['probe'], queue: [{ key: 'probe', funded: true, object: { itemId: 2, slot: 7 } }],
             activity: { rootKey: 'probe', key: 'probe-market', activity: 'shopping' } };
         const options = { spots, timestamp: deps.timestamp, planningOptions: { board } };
         const first = Selection.selectAcquisitionPlan(state, null, options);
         const memo = context.gearPlanMemo;
         assert.ok(memo, 'the context owns its gear memo');
-        assert.equal(first.economy, context);
+        assert.equal(first.economy.plan, context.plan);
         assert.deepEqual(Selection.selectAcquisitionPlan(state, null, options).acquisitionPlan, first.acquisitionPlan);
         assert.equal(calls, id, 'one planner call per unchanged context/key');
         assert.equal(context.gearPlanMemo, memo);
@@ -44,7 +44,7 @@ try {
         stats: { classId: 0 }, inventory: {}, loc: { locX: 0, locY: 0 }, timing: {} };
     const context = Economy.forState(state, deps);
     assert.equal(context.gearPlanMemo, undefined);
-    context.network = { focus: ['probe'], queue: [{ key: 'probe', funded: true, object: { itemId: 2, slot: 7 } }],
+    context.plan.network = { focus: ['probe'], queue: [{ key: 'probe', funded: true, object: { itemId: 2, slot: 7 } }],
         activity: { rootKey: 'probe', key: 'probe-market', activity: 'shopping' } };
     Selection.selectAcquisitionPlan(state, null, { spots, timestamp: deps.timestamp, planningOptions: { board } });
     assert.equal(calls, 51, 'reset releases the memo along with its context');
