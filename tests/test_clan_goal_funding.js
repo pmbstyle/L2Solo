@@ -6,10 +6,12 @@ const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 
 // A clan production goal is a purchase the member and the clan can pay now:
-// the member's funds above its reserve plus the clan's free money. The clan buys
-// the item for the member at once; the member pays what it can, the clan the
-// rest. An unaffordable NPC weapon (the planner's saving target) is no clan
-// route, so the goal does not lock on it. A finished goal picks the next one at once.
+// the member's funds above its reserve plus the clan's free money. The clan funds
+// the item at once and the member buys it on the one purchase path (б5): it goes
+// to the seller's town on a clan errand and buys there on arrival; the member
+// pays what it can, the clan the rest. An unaffordable NPC weapon (the planner's
+// saving target) is no clan route, so the goal does not lock on it. A finished
+// goal picks the next one at once.
 const rootDir = path.resolve(__dirname, '..');
 const databasePath = path.join(rootDir, 'tmp', 'test-clan-goal-funding.sqlite');
 const Database = invoke('Database');
@@ -20,6 +22,7 @@ const Equipment = invoke('GameServer/Clan/ClanEquipmentService');
 const Goals = invoke('GameServer/Clan/ClanGoalService');
 const Actions = invoke('GameServer/Clan/ClanActionService');
 const { planForMember } = require('../src/GameServer/Clan/ClanEquipmentPlanner');
+const CombinedErrands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
 
 const LEADER = 4900001, POOR = 4900002, GLADIATOR = 4900022;
 
@@ -64,7 +67,7 @@ async function main() {
             seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
                 locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, 1, 0, 40, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, ?)`).run(id, `Fund${id}`, clanId);
             seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-                currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', ?, ?, ?, 1)`)
+                currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, 40, ?, 'hunting', 'cold', 'Ant fields', 82000, 148000, -3400, ?, ?, ?, 1)`)
                 .run(id, `Fund${id}`, adena, id === leaderId ? 'party-busy' : null, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: adena } }), JSON.stringify({ classId: 1,
                     ...(id === POOR ? { money: [77000, 2e-5, 15000, 1200000, 4e-5, 20000, 1463] } : {}),
                     ...(id === POOR + 10 ? { money: [77000, 0, 15000, 0] } : {}) }));
@@ -85,9 +88,9 @@ async function main() {
         seed.prepare(`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor,
             locX, locY, locZ, clanId) VALUES (?, 'bot_pop_funding', ?, ?, 0, ?, 500, 250, 0, 0, 0, 0, 82000, 148000, -3400, 93)`).run(id, `Fund${id}`, classId, level);
         seed.prepare(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, adena, activity, phase,
-            currentRegion, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, ?, 20000, 'hunting', 'cold', 'Ant fields', ?, ?, ?, 1)`)
+            currentRegion, locX, locY, locZ, partyId, inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_funding', ?, ?, 20000, 'hunting', 'cold', 'Ant fields', 82000, 148000, -3400, ?, ?, ?, 1)`)
             .run(id, `Fund${id}`, level, partyId, JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 20000 }, [weapon]: { ...held, selfId: Number(weapon) } }),
-                JSON.stringify({ classId, role: 'dps' }));
+                JSON.stringify({ classId, role: 'dps', money: [77000, 0, 15000, 0] }));
         seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (57, 'Adena', 20000, 0, 0, 0, ?)`).run(id);
         seed.prepare(`INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES (?, 'Weapon', 1, 0, 1, 7, ?)`).run(weapon, id);
     }
@@ -96,6 +99,17 @@ async function main() {
     Database.init();
     await Database.initClanHalls();
     await LifeState.init();
+    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
+    // The member reaches the errand's town (the author's market trip ends
+    // there) and buys its errand on arrival, as the cold resolve does.
+    const arrive = async (id) => {
+        const state = await LifeState.findByCharacterId(id);
+        const travel = state.stats.travel;
+        assert.strictEqual(travel?.townName, state.stats.marketErrand?.town, 'the member travels to its errand\'s town');
+        const arrived = await LifeState.upsertState({ ...state, activity: 'shopping', currentRegion: travel.townName, loc: travel.to,
+            stats: { ...state.stats, travel: null } }, 'clan_goal_funding_arrival');
+        return Market.tryPurchase(arrived, { type: 'market_errand', status: 'active' });
+    };
     try {
         const clan = await Goals.clanProjectionById(91);
         const result = await Equipment.resolveClan(clan, null);
@@ -103,8 +117,23 @@ async function main() {
         assert.strictEqual(result.goal.target.memberId, POOR, 'the clan equips the member without a weapon');
         const price = Number(result.selection.plan.market.price);
         const weaponId = Number(result.selection.plan.target.selfId);
-        const [owned] = await Database.execute(['SELECT COUNT(*) AS n FROM items WHERE characterId = ? AND selfId = ?', [POOR, weaponId]]);
-        assert.strictEqual(Number(owned.n), 1, 'the clan bought the weapon for the member');
+        const owned = async () => Number((await Database.execute(['SELECT COUNT(*) AS n FROM items WHERE characterId = ? AND selfId = ?',
+            [POOR, weaponId]]))[0].n);
+        // No NPC sells from afar: the member leaves for the seller's town.
+        const leaving = await LifeState.findByCharacterId(POOR);
+        assert.strictEqual(leaving.activity, 'traveling', 'the member goes to the seller\'s town');
+        assert.strictEqual(leaving.stats.marketErrand?.purpose, 'clan');
+        assert.strictEqual(Number(leaving.stats.marketErrand?.selfId), weaponId);
+        assert.strictEqual(leaving.stats.marketErrand?.town, result.selection.plan.market.town, 'to the town the plan was priced in');
+        assert.strictEqual(await owned(), 0, 'nothing is bought before the member stands in the town');
+        // A review while it is on its way neither pays nor sends it again.
+        const [credited] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 91 AND selfId = 57']);
+        const onTheWay = await Equipment.resolveClan(await Goals.clanProjectionById(91), result.goal);
+        const [still] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 91 AND selfId = 57']);
+        assert.strictEqual(Number(still.n), Number(credited.n), `the clan pays once (${onTheWay.assignment?.purchase?.code})`);
+        const bought = await arrive(POOR);
+        assert.strictEqual(bought.purchased, true, `the member buys its errand on arrival (${bought.reason})`);
+        assert.strictEqual(await owned(), 1, 'the clan bought the weapon for the member');
         const [left] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 91 AND selfId = 57']);
         const [poor] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [POOR]]);
         const clanPaid = 3000000 - Number(left.n);
@@ -112,19 +141,16 @@ async function main() {
         assert(price > 10000, `the goal needs the clan (${price})`);
         assert.strictEqual(memberPaid, 0, 'the clan purchase preserves money earmarked for the member\'s unpaid own wish');
         assert.strictEqual(clanPaid, price - memberPaid, 'the clan pays the rest');
-        const after = await LifeState.findByCharacterId(POOR);
-        assert.strictEqual(after.activity, 'hunting', 'the member keeps hunting where it is');
-        assert.strictEqual(after.currentRegion, 'Ant fields');
+        assert.strictEqual(CombinedErrands.pending(bought.state).length, 0, 'the errand is done');
 
-        // A purchase that fails gives the clan its part back.
-        const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-        const buyOffer = Market.buyOffer;
-        Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
+        // A purchase that neither happens nor leaves gives the clan its part back.
+        const acquire = Market.acquire;
+        Market.acquire = async (state) => ({ state, bought: false, units: 0, traveling: false, reason: 'test_sold_out' });
         let failed;
         try {
             failed = await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
         } finally {
-            Market.buyOffer = buyOffer;
+            Market.acquire = acquire;
         }
         const [kept] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         const [own] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = 57', [POOR + 10]]);
@@ -143,12 +169,12 @@ async function main() {
             if (reason === 'clan_equipment_goal') goalWrites += 1;
             return upsertState.call(LifeState, state, reason, ...rest);
         };
-        Market.buyOffer = async () => ({ purchased: false, reason: 'test_sold_out' });
+        Market.acquire = async (state) => ({ state, bought: false, units: 0, traveling: false, reason: 'test_sold_out' });
         try {
             const again = await Equipment.resolveClan(await Goals.clanProjectionById(92), failed.goal);
             assert.notStrictEqual(Number(again.selection.plan.market.reserve), reserveBefore, 'fixture: the saved operating reserve moved');
         } finally {
-            Market.buyOffer = buyOffer;
+            Market.acquire = acquire;
             LifeState.upsertState = upsertState;
         }
         assert.strictEqual(goalWrites, 0, 'the same goal is not rewritten for a moved reserve');
@@ -157,23 +183,29 @@ async function main() {
         await Database.execute(["UPDATE bot_life_state SET simulationOwner = 'cold_simulation_owner' WHERE characterId = ?", [POOR + 10]]);
         LifeState.acceptLifecycleRow((await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [POOR + 10]]))[0]);
         let buys = 0;
-        Market.buyOffer = async (...args) => { buys += 1; return buyOffer(...args); };
+        Market.acquire = async (...args) => { buys += 1; return acquire(...args); };
         try {
             await Equipment.resolveClan(await Goals.clanProjectionById(92), null);
         } finally {
-            Market.buyOffer = buyOffer;
+            Market.acquire = acquire;
         }
         assert.strictEqual(buys, 0, 'no purchase is tried for a worker-owned member');
         const [untouched] = await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM clan_warehouse_items WHERE clanId = 92 AND selfId = 57']);
         assert.strictEqual(Number(untouched.n), 3000000, 'no money moves for a worker-owned member');
 
-        // The clan buys both blades of a dual sword in one review.
+        // The clan funds both blades of a dual sword in one review; the member buys them on one errand.
         const bladeId = Number(dual.target.selfId);
         const blades = async () => Number((await Database.execute(['SELECT COALESCE(SUM(amount), 0) AS n FROM items WHERE characterId = ? AND selfId = ?',
             [GLADIATOR, bladeId]]))[0].n);
-        const first = await Equipment.resolveClan(await Goals.clanProjectionById(93), null, { selectedCandidate: { memberId: GLADIATOR } });
+        // The clan brain picks the Gladiator from its candidate list (the
+        // production review passes the listed ids with the pick).
+        const first = await Equipment.resolveClan(await Goals.clanProjectionById(93), null,
+            { selectedCandidate: { id: 'dual', memberId: GLADIATOR }, candidateIds: ['dual'] });
         assert.strictEqual(first.goal?.target?.memberId, GLADIATOR, JSON.stringify(first.reason || first.code));
-        assert.strictEqual(await blades(), 2, 'the clan bought both blades at once');
+        const errand = (await LifeState.findByCharacterId(GLADIATOR)).stats.marketErrand;
+        assert.strictEqual(Number(errand?.amount), 2, 'one errand for both blades');
+        assert.strictEqual((await arrive(GLADIATOR)).purchased, true);
+        assert.strictEqual(await blades(), 2, 'the clan bought both blades on one trip');
 
         // The goal is done: the completion event picks the next goal at once.
         await Database.execute([`UPDATE clan_simulation_clans SET stateJson = json_set(stateJson, '$.productionGoal', json(?)) WHERE clanId = 91`,

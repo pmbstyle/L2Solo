@@ -6,6 +6,7 @@ const Database = invoke('Database');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ComponentProgress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Policy = invoke('GameServer/Clan/ClanEquipmentPolicy');
@@ -403,54 +404,72 @@ function goalPurchaseFailed(code, result = {}) {
     return { ...result, ok: false, code };
 }
 
-// The clan buys a market goal item for its beneficiary at once, where the
-// beneficiary stands (ColdMarketService.buyOffer with keepActivity: no trip,
-// goal or activity change): the member pays its funds above its reserve, the clan the rest from
-// its free money; a purchase that fails returns the clan's part. Only a free cold
-// member the main thread owns (not in a party, hunting or resting); others wait
-// for the next review.
-async function buyGoalCopy(memberId, plan, clan) {
+// The clan buys a market goal item for its beneficiary on the one purchase
+// path of a cold bot (б5, ColdMarketService.acquire, as ClanMarketService
+// buys): the clan credits the member the price above its free money, and the
+// member buys in the seller's town, at once when it stands there, else on a
+// clan errand it goes on and buys on arrival (a real NPC sells only to a bot in
+// its town). A purchase that neither happens nor leaves returns the clan's part.
+// Only a free cold member the main thread owns (not in a party, hunting or
+// resting) and not already on its errand for this item; others wait for the
+// next review.
+async function buyGoalCopy(memberId, plan, clan, amount = 1) {
     let state = await LifeState.findByCharacterId(memberId);
     if (!state || state.phase !== 'cold' || state.partyId || state.party?.partyId
         || String(state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
         || !['hunting', 'resting'].includes(state.activity)) return { ok: false, code: 'member_busy' };
+    const selfId = number(plan.target?.selfId);
+    if (CombinedErrands.pending(state).some((errand) => errand.purpose === 'clan'
+        && number(errand.tag?.clanId) === number(clan.id) && number(errand.selfId) === selfId)) {
+        recordReason('clan_goal_market_buyer_traveling');
+        return { ok: false, code: 'market_buyer_traveling', traveling: true };
+    }
     // The offer the plan was priced on: the planner's own search over every
     // town (a hunting member's region is its hunting ground, not a town), at
     // no more than the planned price.
     const offer = GearAcquisitionPlanner.marketOfferForTarget(plan.target, state, { maxMarketPrice: number(plan.market?.price) });
     if (!offer) return goalPurchaseFailed('market_no_offer');
-    offer.buyerCharacterId = memberId;
-    offer.equipSlot = number(plan.target?.slot) || undefined;
-    const blocker = LifeState.marketPurchaseBlocker(state, offer, 1);
+    const blocker = LifeState.marketPurchaseBlocker(state,
+        { ...offer, buyerCharacterId: memberId, equipSlot: number(plan.target?.slot) || undefined }, amount);
     if (blocker) return goalPurchaseFailed(blocker);
-    const clanPart = Math.max(0, Math.ceil(number(offer.price)) - PurchaseFunding.spendable(state, 0, { itemId: plan.target.selfId }));
+    const price = Math.ceil(number(offer.price)) * amount;
+    // The treasury part excludes the member's money earmarked for its own
+    // unpaid wishes, as the errand's own funding check (purpose 'clan') does.
+    const clanPart = Math.max(0, price - Math.floor(PurchaseFunding.spendable(state, 0, { free: true })));
     if (clanPart > 0) {
         const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
         if (!paid.ok) return goalPurchaseFailed(paid.code, paid);
         state = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(memberId);
     }
-    const bought = await invoke('GameServer/Bot/Economy/ColdMarketService').buyOffer(state, offer, { keepActivity: true });
-    if (bought.purchased) return { ok: true, purchase: bought };
-    recordReason(bought.reason || 'clan_goal_purchase_failed');
+    const placed = { price: number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
+    const purchase = await invoke('GameServer/Bot/Economy/ColdMarketService').acquire(state, selfId, amount, {
+        towns: offer.town ? [offer.town] : null, maxPrice: number(offer.price), npc: offer.sourceType === 'npc',
+        purpose: 'clan', money: price, free: true, clanPart, tag: { clanId: number(clan.id), offer: placed, clanPart }
+    });
+    if (purchase.bought) return { ok: true, purchase };
+    if (purchase.traveling || purchase.pending) {
+        recordReason('clan_goal_market_buyer_traveling');
+        return { ok: true, traveling: true, purchase };
+    }
+    const code = purchase.reason || 'clan_goal_purchase_failed';
+    recordReason(code);
     if (clanPart > 0) {
         const back = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: -clanPart, kind: 'clan_goal_purchase_refund', moveMark: false });
         if (back.ok) LifeState.acceptNewerLifecycleRow(back.row);
         else recordReason(`clan_goal_refund_${back.code}`);
     }
-    return { ok: false, code: bought.reason || 'clan_goal_purchase_failed' };
+    return { ok: false, code };
 }
 
 // A goal combined from several copies of one item (the blades of a dual sword)
-// is bought whole in one review: the clan funded the whole combination, and a
+// is bought whole on one errand: the clan funded the whole combination, and a
 // first blade worn in the weapon slot already reads as a fulfilled goal.
 async function buyGoalItem(memberId, plan, clan) {
     const copies = ComponentProgress.componentRequirement(plan)?.amount || 1;
-    let result = await buyGoalCopy(memberId, plan, clan);
-    for (let bought = 1; result.ok && bought < copies; bought++) {
-        if (ComponentProgress.componentAcquired(await LifeState.findByCharacterId(memberId), plan)) break;
-        result = await buyGoalCopy(memberId, plan, clan);
-    }
-    return result;
+    if (copies === 1) return buyGoalCopy(memberId, plan, clan);
+    const state = await LifeState.findByCharacterId(memberId);
+    const owned = number(state?.inventory?.[String(plan.target?.selfId)]?.amount);
+    return buyGoalCopy(memberId, plan, clan, Math.max(1, copies - owned));
 }
 
 async function assignPartyObjective(member, clan, goal, plan, priority = 'preferred') {
