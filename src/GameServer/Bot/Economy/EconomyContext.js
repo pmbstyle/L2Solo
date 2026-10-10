@@ -210,13 +210,12 @@ function resolved(state, deps, production = true) {
 function personaOf(state, deps) {
     return deps.persona || invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
 }
-function pricing(state, persona, board, timestamp, deps, read = () => {}) {
+function pricing(state, persona, board, timestamp, deps, read = () => {}, prices = new Map()) {
     const Belief = invoke('GameServer/Bot/Economy/PriceBelief');
-    const prices = new Map();
     const knowledgeEnabled = deps.knowledgeEnabled ?? invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
         marketTrades: state.marketTrades, knowledgeEnabled, board, timestamp };
-    return { knowledgeEnabled, price: id => {
+    return { knowledgeEnabled, prices, price: id => {
         read(id);
         if (!prices.has(Number(id))) {
             const belief = Belief.prior(id, priceCtx);
@@ -400,7 +399,9 @@ function forState(state = {}, deps = {}) {
     const gearThreat = GearThreat.prepare(state, deps, held?.gearThreat);
     deps.gearThreatMask = gearThreat.mask;
     const key = inputKey(state, { ...deps, timestamp });
-    if (held?.key === key && (isMainThread || held.stateRef.deref() === state)
+    // A caller that needs the member's graph nodes (a worker group solve)
+    // builds unless the held entry kept them (the main thread keeps them).
+    if (held?.key === key && (isMainThread || held.stateRef.deref() === state) && (!deps.withNodes || held.projection)
         && marketHolds(sourceBoard, held.reads, deps)) {
         if (deps.onSourceRead) for (const id of held.reads.keys()) deps.onSourceRead(id);
         if (diagnostic) {
@@ -414,14 +415,15 @@ function forState(state = {}, deps = {}) {
         // A late price read of a held plan joins its inputs, as in its build.
         const late = id => { id = Number(id); if (held.reads.has(id)) return;
             held.reads.set(id, marketToken(sourceBoard, id, deps)); deps.onSourceRead?.(id); };
-        return view(state, held.plan, deps, { board: sourceBoard, read: late });
+        return view(state, held.plan, deps, { board: sourceBoard, read: late, projection: held.projection });
     }
     const started = diagnostic ? performance.now() : 0;
     // Identity replacement is the worker's technical safety backstop, not an
     // economic event. An input-key mismatch is named as a dependency change;
     // it does not claim which historical event caused it.
     const diagnosticReason = !diagnostic ? null : !held ? 'not_retained' : held.key !== key
-        ? 'input_dependency_changed' : !isMainThread && held.stateRef.deref() !== state ? 'state_publication' : 'used_market_changed';
+        ? 'input_dependency_changed' : !isMainThread && held.stateRef.deref() !== state ? 'state_publication'
+        : deps.withNodes && !held.projection ? 'nodes_needed' : 'used_market_changed';
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     let shadowSame = false, previousPlan = null, shadowEntry = null;
     if (diagnostic) {
@@ -450,17 +452,14 @@ function forState(state = {}, deps = {}) {
         reads.set(id, marketToken(sourceBoard, id, deps)); deps.onSourceRead?.(id);
     };
     const watch = id => { if (building) read(id); };
-    const Data = invoke('GameServer/DataCache');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const persona = personaOf(state, deps);
     const board = watchedBoard(sourceBoard, watch);
     // A price is remembered, so every price read counts, also a late one
     // through context.price: its item joins the review's inputs.
-    const { price, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read);
+    const { price, prices, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read);
     const base = foundation(state, deps, persona, timestamp, price);
-    const buyback = id => invoke('GameServer/Items/NpcSellRules')
-        .npcBuyPrice(Number(ItemIndex.find(Data.items, id)?.template?.price || 0));
     const own = Hunt.sampledRows(state, timestamp, deps.mode);
     const calibrations = own.flatMap(row => {
         const value = Table.value(row.spotId, base.tableRole, state.level, true);
@@ -502,15 +501,12 @@ function forState(state = {}, deps = {}) {
             const plan = planHash(context.network); shadowEntry.plan = plan;
             if (previousPlan !== null) Diagnostics.count('context', 'shadow_plan', `${shadowSame ? 'same_key' : 'new_key'}:${plan === previousPlan ? 'same_plan' : 'new_plan'}`);
         }
-        return view(state, planOf(context, base, { key, market: null, tripHour }), deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip });
+        return view(state, planOf(context, base, { key, market: null, tripHour, prices }), deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip });
     }
     // One stock reader for the provider's gear witnesses and the network
     // build; the projection is read lazily once it exists (stock roots).
     context.wallet = positive(state.adena) + positive(deps.buyOrderEscrow);
-    context.stockFor = (id, rootKey) => ({ owned: rootKey.startsWith('stock:')
-        && context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId === id
-        ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
-    incoming: positive(state.acceptedIncoming?.[id]) });
+    context.stockFor = stockReader(state, rootKey => context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId);
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
     context.projection = projection;
@@ -537,10 +533,8 @@ function forState(state = {}, deps = {}) {
     const urgent = network.gap || network.queue.find(row => row.key === network.focus?.[0]) || network.queue[0];
     context.gapHorizonHours = !urgent ? 0 : urgent.key === 'stock:shots' ? base.stock('shots').targetHours
         : urgent.key === 'stock:potions' ? base.stock('potions').targetHours : projection.horizon;
-    context.itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
-        network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0,
-        state, persona.understanding, knowledgeEnabled, id);
-    context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
+    Object.assign(context, valueReaders(state, network, projection.values, persona, knowledgeEnabled,
+        base.kitCost, () => context.statsPacket.money));
     context.watchList = invoke('GameServer/Bot/Economy/TradeIntent').project(state, network, projection, id => context.worth(id) ?? price(id));
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
@@ -548,11 +542,6 @@ function forState(state = {}, deps = {}) {
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         money: Funding.packetFor(network, context.hourAdena, base.survivalReserve) };
-    context.purchaseBudget = id => {
-        const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
-        return Funding.spendable({ ...state, stats: { ...state.stats, money: context.statsPacket.money } }, 0,
-            Funding.stockTerms(wish, id, base.kitCost(id)));
-    };
     building = false;
 
     if (diagnostic) {
@@ -569,13 +558,16 @@ function forState(state = {}, deps = {}) {
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         revision: state.simulation?.revision, wallet: positive(state.adena), escrow: positive(deps.buyOrderEscrow),
         available: network.available, reserve: base.survivalReserve, wishKey: network.focus?.[0] });
-    const plan = planOf(context, base, { key, market, tripHour, projection, knowledgeEnabled });
+    const plan = planOf(context, base, { key, market, tripHour, projection, knowledgeEnabled, prices });
     if (deps.rememberContext !== false && planningContexts < 64) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts) {
             Diagnostics.count('context', 'eviction', 'capacity');
             noteRelease(cache.keys().next().value, 'capacity');
         }
-        remember(cache, actorKey, { key, reads, plan, stateRef: new WeakRef(state), gearThreat }, 64 - planningContexts);
+        // The main thread keeps the graph nodes as before (its group solve
+        // reads them on a hit); the worker keeps the plan only (perf C1).
+        remember(cache, actorKey, { key, reads, plan, stateRef: new WeakRef(state), gearThreat,
+            projection: isMainThread ? projection : null }, 64 - planningContexts);
     }
     return view(state, plan, deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip, projection });
 }
@@ -632,7 +624,18 @@ function compactNetwork(network) {
     for (const key of unresolved) if (!plans.has(key) && all.has(key)) plans.set(key, trim(all.get(key)));
     return { ...network, queue, gap: !network.gap ? network.gap : at >= 0 ? queue[at] : row(network.gap), activity, plans };
 }
-function planOf(context, base, { key, market, tripHour, projection = null, knowledgeEnabled }) {
+// The build's prices of what the plan's own numbers were made from (the
+// kit, the queue, the watch list): a later view starts from them, so its
+// stock rows and kit costs agree with the plan's reserve and money packet.
+// Other items are priced by the view (~8 of ~140 prices per bot are kept).
+function planPrices(prices, kit, context) {
+    const ids = [736, kit.shots.itemId, kit.potions.itemId,
+        ...(context.network?.queue || []).map(row => row.object?.itemId), ...(context.watchList || []).map(row => row.itemId)];
+    const kept = new Map();
+    for (const id of ids) if (prices.has(Number(id))) kept.set(Number(id), prices.get(Number(id)));
+    return kept;
+}
+function planOf(context, base, { key, market, tripHour, projection = null, knowledgeEnabled, prices }) {
     const stockRoots = new Map();
     for (const node of projection?.nodes || [])
         if (node.key.startsWith('stock:') && !stockRoots.has(node.key)) stockRoots.set(node.key, node.object?.itemId);
@@ -645,7 +648,34 @@ function planOf(context, base, { key, market, tripHour, projection = null, knowl
         network: compactNetwork(context.network), moneyPrice: context.moneyPrice, gapHorizonHours: context.gapHorizonHours,
         watchList: context.watchList, intentPending: context.intentPending, statsPacket: context.statsPacket,
         wallet: context.wallet, horizonHours: context.horizonHours, values: projection?.values, stockRoots, knowledgeEnabled,
-        gearPlanMemo: undefined };
+        prices: planPrices(prices, base.kit, context), gearPlanMemo: undefined };
+}
+// What a review's stock reader, usefulness, worth and purchase budget read:
+// one copy for the build and every later view of its plan.
+function stockReader(state, rootItem) {
+    return (id, rootKey) => ({ owned: rootKey.startsWith('stock:') && rootItem(rootKey) === id
+        ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
+    incoming: positive(state.acceptedIncoming?.[id]) });
+}
+function valueReaders(state, network, values, persona, knowledgeEnabled, kitCost, money) {
+    const itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
+        network.demands.get(`item:${id}`) || values.get(Number(id)) || 0,
+        state, persona.understanding, knowledgeEnabled, id);
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    return { itemUsefulness,
+        worth: id => network.moneyPrice > 0 ? itemUsefulness(id) / network.moneyPrice : null,
+        purchaseBudget: id => {
+            const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
+            return Funding.spendable({ ...state, stats: { ...state.stats, money: money() } }, 0,
+                Funding.stockTerms(wish, id, kitCost(id)));
+        } };
+}
+// Spot values are read inside a build (providers); a later view makes its
+// reader only when asked.
+function lazySpotValue(state, plan, deps) {
+    let reader;
+    return (...args) => (reader ||= invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
+        { ...deps, timestamp: plan.timestamp, persona: plan.persona, deathHours: plan.deathHours }))(...args);
 }
 const buyback = id => invoke('GameServer/Items/NpcSellRules')
     .npcBuyPrice(Number(ItemIndex.find(invoke('GameServer/DataCache').items, id)?.template?.price || 0));
@@ -654,7 +684,8 @@ const buyback = id => invoke('GameServer/Items/NpcSellRules')
 // a later view makes its own from the plan. The state is the caller's, held
 // only by this view. Functions read the plan, never a build scope.
 function view(state, plan, deps, built = {}) {
-    const price = built.price || pricing(state, plan.persona, built.board, plan.timestamp, deps, built.read).price;
+    // A later view starts from the build's prices of the plan's own items.
+    const price = built.price || pricing(state, plan.persona, built.board, plan.timestamp, deps, built.read, new Map(plan.prices)).price;
     const { stock, kitCost } = built.kit || kitReader(plan.kit, price,
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     const network = plan.network;
@@ -666,8 +697,7 @@ function view(state, plan, deps, built = {}) {
         hourAdena: plan.hourAdena, workshop: plan.workshop, routeKey: plan.routeKey, routeRows: plan.routeRows,
         routePending: plan.routePending,
         trip: built.trip || deps.tripCost || Trip.preparedReader(plan.routeRows || [], { hourAdena: plan.tripHour }),
-        spotValue: built.spotValue || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-            { ...deps, timestamp: plan.timestamp, persona: plan.persona, deathHours: plan.deathHours }),
+        spotValue: built.spotValue || lazySpotValue(state, plan, deps),
         network, moneyPrice: plan.moneyPrice, gapHorizonHours: plan.gapHorizonHours, watchList: plan.watchList,
         intentPending: plan.intentPending, statsPacket: plan.statsPacket };
     // The plan is the identity of one decision for memos kept beside it
@@ -679,23 +709,13 @@ function view(state, plan, deps, built = {}) {
         return context;
     }
     context.wallet = plan.wallet;
-    context.stockFor = (id, rootKey) => ({ owned: rootKey.startsWith('stock:') && plan.stockRoots.get(rootKey) === id
-        ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
-    incoming: positive(state.acceptedIncoming?.[id]) });
+    context.stockFor = stockReader(state, rootKey => plan.stockRoots.get(rootKey));
     // A later view has the usefulness values only; a group solve that needs
     // the members' nodes rebuilds them (forGroup).
     context.projection = built.projection || { values: plan.values };
     context.horizonHours = plan.horizonHours;
-    context.itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
-        network.demands.get(`item:${id}`) || plan.values.get(Number(id)) || 0,
-        state, plan.persona.understanding, plan.knowledgeEnabled, id);
-    context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-    context.purchaseBudget = id => {
-        const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
-        return Funding.spendable({ ...state, stats: { ...state.stats, money: context.statsPacket.money } }, 0,
-            Funding.stockTerms(wish, id, kitCost(id)));
-    };
+    Object.assign(context, valueReaders(state, network, plan.values, plan.persona, plan.knowledgeEnabled,
+        kitCost, () => context.statsPacket.money));
     return context;
 }
 function survivalReserve(state = {}) {
@@ -718,7 +738,7 @@ function forGroup(group, members, deps = {}) {
     const selected = (members || []).slice(0, 9);
     const prepared = deps.memberContexts;
     if (prepared !== undefined && (!Array.isArray(prepared) || prepared.length !== selected.length
-        || prepared.some((context, i) => !context || context.state !== selected[i])))
+        || prepared.some((context, i) => !context?.projection?.nodes || context.state !== selected[i])))
         throw new Error('party_member_context_mismatch');
     const contexts = prepared || selected.map(state => forState(state, { ...deps, caller: 'groupContext' }));
     const first = contexts[0];
@@ -744,10 +764,10 @@ function forGroup(group, members, deps = {}) {
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
-    // A member's later view keeps only its usefulness values: its nodes come
-    // from a build of the same state that is not kept (perf C1).
+    // A worker member's later view keeps only its usefulness values: the
+    // same call that made it builds again asking for the nodes (perf C1).
     const sources = contexts.map((context, i) => context.projection?.nodes ? context.projection
-        : forState(selected[i], { ...deps, caller: 'groupContext', rememberContext: false }).projection);
+        : forState(selected[i], { ...deps, caller: 'groupContext', withNodes: true }).projection);
     for (let i = 0; i < contexts.length; i++) {
         const source = sources[i];
         const prefix = `${i}:`;

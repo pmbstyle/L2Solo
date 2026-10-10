@@ -771,7 +771,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
                 timestamp, spots: planningSpots, board: boardReady(),
                 occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows,
                 rememberContext: kernel.states.get(member.characterId)?.state === member,
-                buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal' });
+                buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal', withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy && partyMembersAvailable(members));
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
             send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);

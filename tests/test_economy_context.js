@@ -325,6 +325,13 @@ async function run() {
     assert(group.network.queue.length > 0 && group.actorKey === 'group:44');
     assert.equal(Economy.forGroup({ id: 44, wallet: 100, playedHours: 4 }, [base, sampled]), group);
     assert(group.network.queue.every(wish => /^\d+:/.test(wish.key)), 'actual member graphs share one group queue');
+    // perf C1: members that hit give the group the same graph as fresh builds.
+    const groupDigest = g => JSON.stringify([g.inputKey, g.network.focus, g.network.activity?.key,
+        g.network.queue.map(wish => [wish.key, wish.funded, wish.price, wish.valueHours])]);
+    const fromHits = Economy.forGroup({ id: 'proposal:44', wallet: 100, playedHours: 4 }, [base, sampled]);
+    Economy.forget(base.characterId); Economy.forget(sampled.characterId);
+    const fromBuilds = Economy.forGroup({ id: 'proposal:44', wallet: 100, playedHours: 4 }, [base, sampled]);
+    assert.equal(groupDigest(fromHits), groupDigest(fromBuilds), 'a group of held member reviews equals one of fresh builds');
     console.log('PASS real member providers reuse one group engine / purse');
 
     const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
