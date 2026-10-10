@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
 const pendingCold = new Map(), pendingHot = new WeakMap();
 let improvementDeferred = 0;

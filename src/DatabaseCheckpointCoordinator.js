@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 
 const path = require('path');
 const { Worker } = require('worker_threads');

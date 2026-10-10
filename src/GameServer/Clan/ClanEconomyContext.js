@@ -1,5 +1,5 @@
-const ItemSources = require('../Items/ItemAcquisitionCatalog');
 'use strict';
+const ItemSources = require('../Items/ItemAcquisitionCatalog');
 
 const { WishNetwork } = require('../Bot/Economy/WishNetwork');
 const HallPolicy = require('../ClanHall/Policy');

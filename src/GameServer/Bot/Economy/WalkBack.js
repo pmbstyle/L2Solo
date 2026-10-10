@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('../Population/PopulationConfig');
 const Trip = require('../Population/ColdTrip');
 const Routes = require('../Travel/TravelRoutes');
 let source, entries = new Map(), catalogs = new WeakMap(), builds = 0, missing = 0, buildMs = 0;

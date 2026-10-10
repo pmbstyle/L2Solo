@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('./PopulationConfig');
 const { tablePagesWithBytes, streamedTablePageWithBytes } = require('./ColdMessagePages');
 
 const REMOVED = Symbol('removed');

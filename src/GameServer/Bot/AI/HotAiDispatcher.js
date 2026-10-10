@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('../Population/PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('../Population/PopulationConfig');
 
 const { performance } = require('perf_hooks');
 

@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('./PopulationConfig');
 
 const { performance } = require('node:perf_hooks');
 const { unknownWorkshop } = require('./ColdEconomyDecision');

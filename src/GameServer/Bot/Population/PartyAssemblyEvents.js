@@ -1,5 +1,5 @@
-const DiagnosticConfig = require('./PopulationConfig');
 'use strict';
+const DiagnosticConfig = require('./PopulationConfig');
 
 const SAFETY_INTERVAL_MS = 30 * 60000;
 
