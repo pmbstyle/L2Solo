@@ -27,7 +27,7 @@ function setPlanningContexts(count) {
     planningContexts = Math.max(0, Math.min(64, Math.floor(Number(count) || 0)));
     while (cache.size > 64 - planningContexts) {
         const key = cache.keys().next().value; cache.delete(key); engine.forget(key, 'planning_capacity');
-        if (Diagnostics.active()) Diagnostics.count('context', 'eviction', 'planning_capacity');
+        if (Diagnostics.active()) { Diagnostics.count('context', 'eviction', 'planning_capacity'); noteRelease(key, 'planning_capacity'); }
     }
 }
 // Groups apart, so a party composition that weighs many candidate groups
@@ -36,11 +36,22 @@ function setPlanningContexts(count) {
 // a proposed composition (`proposal:` party id) is built and not kept.
 const groups = new Map();
 const GROUP_LIMIT = 256;
-// Shadow count (perf item 1, diagnostics only): the hash of each actor's last
-// input key, to count rebuilds whose inputs equal the bot's previous request
-// (a retained context would have served them). It never decides anything.
+// Shadow count (perf item 1, diagnostics only): per actor the hash of its last
+// input key, when that build ran and what released its context since, to count
+// rebuilds whose inputs equal the bot's previous request (a retained context
+// would have served them), how long after it, and what dropped the context
+// (perf B1: only a short gap is reachable within the worker's memory budget).
+// It never decides anything.
 const lastKeyHashes = new Map();
 const LAST_KEY_LIMIT = 8192;
+const GAP_BUCKETS = [[1000, 'lt1s'], [5000, '1_5s'], [15000, '5_15s'], [30000, '15_30s'], [60000, '30_60s'], [120000, '60_120s']];
+const gapBucket = ms => GAP_BUCKETS.find(([limit]) => ms < limit)?.[1] || 'ge120s';
+// A build forState did not keep stays 'unkept': a later release of an older
+// kept context of the same actor is not its release.
+function noteRelease(actorKey, reason) {
+    const last = lastKeyHashes.get(actorKey);
+    if (last && last.released !== 'unkept') last.released = reason;
+}
 const positive = value => Math.max(0, Number(value) || 0);
 
 function stateForActor(actor, session = actor?.session) {
@@ -375,7 +386,12 @@ function forState(state = {}, deps = {}) {
     if (held?.key === key && (isMainThread || held.context.state === state)
         && marketHolds(sourceBoard, held.reads, deps)) {
         if (deps.onSourceRead) for (const id of held.reads.keys()) deps.onSourceRead(id);
-        if (diagnostic) Diagnostics.count('context', 'hit', 'same_inputs');
+        if (diagnostic) {
+            Diagnostics.count('context', 'hit', 'same_inputs');
+            // The gap is measured from the last use, as the cache keeps by last use.
+            const last = lastKeyHashes.get(actorKey);
+            if (last) last.at = Date.now();
+        }
         held.gearThreat = gearThreat;
         return remember(cache, actorKey, held).context;
     }
@@ -387,9 +403,16 @@ function forState(state = {}, deps = {}) {
         ? 'input_dependency_changed' : !isMainThread && held.context.state !== state ? 'state_publication' : 'used_market_changed';
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     if (diagnostic) {
-        const hash = fnv1a32(key);
-        Diagnostics.count('context', 'shadow', `${diagnosticReason}:${lastKeyHashes.get(actorKey) === hash ? 'same_key' : 'new_key'}`);
-        remember(lastKeyHashes, actorKey, hash, LAST_KEY_LIMIT);
+        const hash = fnv1a32(key), last = lastKeyHashes.get(actorKey), at = Date.now();
+        const same = last?.hash === hash;
+        Diagnostics.count('context', 'shadow', `${diagnosticReason}:${same ? 'same_key' : 'new_key'}`);
+        if (same) {
+            Diagnostics.count('context', 'shadow_gap', gapBucket(Math.max(0, at - last.at)));
+            // 'capacity' (LRU), 'planning_capacity', 'unkept' (forState did not keep it) or the owner's forgetContext reason.
+            if (diagnosticReason === 'not_retained') Diagnostics.count('context', 'shadow_released', last.released || 'unknown');
+        }
+        const kept = deps.rememberContext !== false && planningContexts < 64;
+        remember(lastKeyHashes, actorKey, { hash, at, released: kept ? null : 'unkept' }, LAST_KEY_LIMIT);
     }
     const reads = new Map();
     let building = true;
@@ -513,8 +536,10 @@ function forState(state = {}, deps = {}) {
         revision: state.simulation?.revision, wallet: positive(state.adena), escrow: positive(deps.buyOrderEscrow),
         available: network.available, reserve: base.survivalReserve, wishKey: network.focus?.[0] });
     if (deps.rememberContext !== false && planningContexts < 64) {
-        if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts)
+        if (diagnostic && !cache.has(actorKey) && cache.size >= 64 - planningContexts) {
             Diagnostics.count('context', 'eviction', 'capacity');
+            noteRelease(cache.keys().next().value, 'capacity');
+        }
         remember(cache, actorKey, { key, reads, context, gearThreat }, 64 - planningContexts);
     }
     return context;
@@ -635,7 +660,7 @@ function forgetContext(id, reason = 'explicit_invalidation', expectedState = nul
     id = Number(id);
     const key = `character:${id}`;
     if (expectedState && cache.get(key)?.context.state !== expectedState) return;
-    if (cache.delete(key) && Diagnostics.active()) Diagnostics.count('context', 'eviction', reason);
+    if (cache.delete(key) && Diagnostics.active()) { Diagnostics.count('context', 'eviction', reason); noteRelease(key, reason); }
     engine.forget(key, reason);
     for (const [groupKey, held] of groups) {
         if (held.members.some(member => Number(member.state.characterId) === id)) {
