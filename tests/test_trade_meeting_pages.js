@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+require('../src/Global');
 const Codec = require('../src/GameServer/AfkTrade/TradeMeetingCodec');
 const Native = require('../src/GameServer/AfkTrade/TradeMeeting');
 const Service = require('../src/GameServer/AfkTrade/TradeMeetingService');
