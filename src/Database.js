@@ -10407,7 +10407,8 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         // A filled record closes like every other fill; the caller drops it
         // from board memory.
         const filled = afkTradeShopUnsafe(ad.id);
-        return completeAfkTradeIfFilledUnsafe(ad.id, at, isBotOwnerUnsafe(ad.ownerId)) ? closedRecord(filled) : null;
+        return completeAfkTradeIfFilledUnsafe(ad.id, at, BoardRules.isBotAccount(filled.ownerAccount))
+            ? closedRecord(filled) : null;
     },
     startTrip: (id, meeting, side, receipt) => {
         const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [id]);

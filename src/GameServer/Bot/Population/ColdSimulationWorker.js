@@ -233,7 +233,8 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (shared && Number(shared[1]) !== Number(input.state.stats?.tradeMeeting?.[0])) throw Error('trade_meeting_route_changed');
             own.route = shared ? { fee: 0, scroll: false, method: own.route.method, durationMs: 0 }
                 : { fee: routePlan.route.fee, scroll: !!routePlan.scroll, method: routePlan.method, durationMs: routePlan.durationMs };
-            let total = own.route.fee, spendable = Infinity, sellerDecision = null;
+            let total = own.route.fee, valueRate = Infinity, sellerDecision = null;
+            const survival = new Map();
             const required = new Map(), sold = new Map();
             for (const line of request.lines) if (line.payer === side) required.set(line.selfId, (required.get(line.selfId) || 0) + line.count);
             else sold.set(line.selfId, (sold.get(line.selfId) || 0) + line.count);
@@ -245,10 +246,10 @@ const occupationPlanner = new ColdOccupationPlanner({
                     if (!intent) throw Error('trade_meeting_need_changed');
                     line.certificate = require('../Economy/TradeIntent').encode({ ...intent, amount: line.count, price: line.price, valueHours: intent.valueHours * line.count / intent.amount });
                     line.needAdId = line.needAdRevision = 0; own.needRevision = own.revision;
-                    // Survival first (the kit's cost), the rest by the wish's rank,
-                    // as every other restock purchase (PurchaseFunding.stockAllowance).
-                    spendable = Math.min(spendable, require('../Economy/PurchaseFunding').spendable(input.state,
-                        input.buyOrderEscrow || 0, { r: intent.valueRate, survivalCost: economy.kitCost?.(line.selfId, line.price) || 0 }));
+                    // Survival first (each item's kit cost once), the rest by the
+                    // wish's rank, as every other restock (PurchaseFunding.stockAllowance).
+                    valueRate = Math.min(valueRate, intent.valueRate);
+                    survival.set(line.selfId, Math.round(economy.kitCost?.(line.selfId, line.price) || 0));
                     total += line.count * line.price;
                 } else {
                     const item = input.state.inventory?.[line.selfId];
@@ -267,6 +268,10 @@ const occupationPlanner = new ColdOccupationPlanner({
                 }
                 yield 'funding';
             }
+            // The native accept checks the same terms (TradeMeeting funding).
+            own.survivalCost = [...survival.values()].reduce((a, b) => a + b, 0);
+            const spendable = survival.size ? require('../Economy/PurchaseFunding').spendable(input.state,
+                input.buyOrderEscrow || 0, { r: valueRate, survivalCost: own.survivalCost }) : Infinity;
             if (!Number.isSafeInteger(total) || total > spendable || own.route.fee > Number(input.state.adena || 0))
                 throw Error('trade_meeting_funding');
             request.dependencies = [...occupationPlanner.slots.get(ownId).reads.keys()].map(id => {

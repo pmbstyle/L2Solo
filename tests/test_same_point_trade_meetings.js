@@ -106,6 +106,15 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         }
         assert.equal((await Database.prepareTradeParticipant(ids[0])).meetingId, null);
         await assert.rejects(accept(secondRequest), /participant_changed/);
+        // Stock below the survival line is paid from the survival reserve
+        // first: the accept checks the buyer worker's kit cost (E198).
+        const wallet = await funds(ids[0]);
+        await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.money[2]',?) WHERE characterId=?", [wallet - 100, ids[0]]]);
+        await assert.rejects(accept(await prepare()), /economy_funding_changed/, 'free cash above the reserve cannot pay 220');
+        const kit = await prepare(); kit.parties[0].survivalCost = 200;
+        const survival = (await accept(kit)).meeting.id;
+        await Database.cancelTradeMeeting(survival, 'fixture');
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(survival, actor); }
         // A world saved before that fix holds such records; they close once.
         const sellAd = async seller => {
             const stock = (await Database.fetchItems(seller)).find(row => row.selfId === 1867);

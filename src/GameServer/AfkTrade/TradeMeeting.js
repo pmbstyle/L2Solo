@@ -41,7 +41,8 @@ function canonical(request) {
             || ![party.ownerId, party.leaseId].every(value => value === null || ascii(value) && Buffer.byteLength(value) <= 80)
             || !safe(party.sequence, true) || party.sequence !== (side ? seqB : seqA)) throw Error('trade_meeting_authority');
         return { revision: party.revision, sequence: party.sequence,
-            phase: party.phase, ownerId: party.ownerId, leaseId: party.leaseId, hotAt: party.hotAt, route: { fee: route.fee, scroll: route.scroll, method: route.method, durationMs: route.durationMs }, needRevision: requireSafe(party.needRevision) };
+            phase: party.phase, ownerId: party.ownerId, leaseId: party.leaseId, hotAt: party.hotAt, route: { fee: route.fee, scroll: route.scroll, method: route.method, durationMs: route.durationMs }, needRevision: requireSafe(party.needRevision),
+            survivalCost: requireSafe(party.survivalCost || 0) };
     });
     return { token, actorA, actorB, seqA, seqB, town, point: { locX: point.locX, locY: point.locY, locZ: point.locZ }, lines: basket, parties: sides };
 }
@@ -133,7 +134,8 @@ function create(io) {
             if (life && fresh && request.lines.some(line => line.payer === side && !line.certificate)) throw Error('trade_meeting_need_changed');
             const outgoing = sum(totals[side], party.route.fee);
             if (life) funding(id, { row: life }, outgoing, { r: Math.min(...request.lines.filter(line => line.payer === side)
-                .map(line => line.certificate ? Intent.decode(line.certificate).valueRate : Infinity)), free: totals[side] === 0 });
+                .map(line => line.certificate ? Intent.decode(line.certificate).valueRate : Infinity)), free: totals[side] === 0,
+                survivalCost: party.survivalCost });
             // A public bid is evidence of the owner's need, not collateral.
             for (const line of request.lines.filter(line => line.payer === side && line.adId)) {
                 const ad = one('SELECT * FROM afk_trade_shops WHERE id=?', [line.adId]);
