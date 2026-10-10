@@ -129,6 +129,10 @@ raidScroll = false; scrollKind = 'spoil';
 assert.equal(hasCraft(farmScroll()), false, 'a crafter cannot obtain a spoil-only recipe by ordinary hunting');
 assert.equal(buy.activity, null, 'known price with no offer preserves wish without shopping');
 assert(buy.queue.length && buy.focus, 'unknown future supply does not erase the desired gear');
+// A reference estimate is not an offer: the purchase cannot execute and the
+// wish keeps its queue place without money.
+assert.equal(buy.plans.find(([key]) => key === 'item:101')[1].executable, false, 'an estimate without an offer cannot pay');
+assert.equal(buy.queue[0].funded, false, 'an unexecutable purchase draws no money');
 assert.equal(craft.activity, null, 'missing ingredient forecast cannot execute shopping/craft');
 assert.equal(craft.plans.find(([key]) => key === 'item:202')[1].executable, false);
 assert.equal(spotReads, 0, 'gear gain still has no hypothetical best-spot evaluation');

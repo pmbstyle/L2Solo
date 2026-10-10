@@ -135,6 +135,14 @@ assert.equal(prepared.result.activity.activity, 'shopping');
 assert.equal(prepared.result.activity.amount, 4, 'only finite available material supply executes');
 assert.equal(prepared.projection.moneyPaths.some(path => path.kind === 'production'), false);
 assert.equal(prepared.result.hourAdena, 100);
+// Unpriced interest (the bot's own WTB signal) creates no money and no
+// revenue: the producer root keeps the value of the priced bids alone.
+const producerValue = () => prepare().projection.nodes.find(row => row.key === 'resale:101')?.valueHours;
+const unpriced = producerValue();
+state.stats.marketWanted = { itemId: 101, itemName: 'product', lastTradeAdAt: 1, lastMissingAt: 1 };
+assert(unpriced > 0);
+assert.equal(producerValue(), unpriced, 'an own wanted signal does not change the producer root value');
+delete state.stats.marketWanted;
 supported = false;
 assert(!prepare().projection.roots.includes('resale:101'), 'an unsupported conditional forecast admits no production');
 supported = true;
