@@ -25,9 +25,35 @@ function selectedPreset() {
     return normalizePreset(process.env.L2NODE_PROGRESSION_RATE || options.default.General?.progressionPreset);
 }
 
+// The profile is a pure function of the rate variable and the [General] rate
+// keys, both changeable at runtime (the clan planning worker, tests). Keep the
+// last answer while those raw inputs are equal; it is frozen because every
+// caller shares it.
+const PROFILE_KEYS = ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate',
+    'questRewardRate', 'questAdenaRate', 'questExpRate', 'questSpRate'];
+let lastProfile = null, lastEnv, lastGeneral = null;
+const lastValues = new Array(PROFILE_KEYS.length);
+
 function profile() {
-    const preset = PRESETS[selectedPreset()];
+    const env = process.env.L2NODE_PROGRESSION_RATE;
     const general = options.default.General || {};
+    if (lastProfile && env === lastEnv && general === lastGeneral && sameProfileValues(general)) return lastProfile;
+    lastProfile = Object.freeze(buildProfile(env, general));
+    lastEnv = env;
+    lastGeneral = general;
+    for (let index = 0; index < PROFILE_KEYS.length; index++) lastValues[index] = general[PROFILE_KEYS[index]];
+    return lastProfile;
+}
+
+function sameProfileValues(general) {
+    for (let index = 0; index < PROFILE_KEYS.length; index++) {
+        if (general[PROFILE_KEYS[index]] !== lastValues[index]) return false;
+    }
+    return true;
+}
+
+function buildProfile(env, general) {
+    const preset = PRESETS[normalizePreset(env || general.progressionPreset)];
     const multiplier = preset.multiplier;
 
     return {
