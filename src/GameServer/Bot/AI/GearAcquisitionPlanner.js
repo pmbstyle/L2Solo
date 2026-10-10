@@ -2126,7 +2126,9 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         let trip = { known: true, hours: 0, fees: 0 }, town = null;
         if (String(entry.spot.id) !== String(current)) {
             town = entry.spot.center ? (yield* require('../Economy/EconomicTrip').regionalTown(entry.spot.center))?.name : null;
-            if (town && !trips.has(town)) trips.set(town, yield* require('../Economy/EconomicTrip').details(state, town));
+            // A caller with prepared routes (the wish) passes its own reader.
+            if (town && !trips.has(town)) trips.set(town, options.trip ? options.trip.details(town)
+                : yield* require('../Economy/EconomicTrip').details(state, town));
             trip = town ? trips.get(town) : { known: false };
         }
         if (!trip?.known) { fact.status = 'unknown'; fact.reason = 'route'; continue; }

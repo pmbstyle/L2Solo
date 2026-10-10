@@ -33,7 +33,6 @@ const adapters = {
     'GameServer/Items/C4RecipeItems': { resolveByProductId: id => allowCraft && id === 101 ? recipe : null, resolveByRecipeId: id => id === 301 ? recipe : null },
     'GameServer/Items/C4DualSwordCombinations': { loadRecipes: () => [] },
     'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft },
-    'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
     // No sellable inventory: the liquidation money path stays out of these routes.
@@ -48,6 +47,27 @@ Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandid
     'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
     'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
     'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) } });
+// Task 2 readers: MP per hour, exit value, combat profile and spoil
+// eligibility come from their own modules (one reader each).
+Object.assign(adapters, {
+    'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+        exitValue: function* () { return 0; } },
+    'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
+adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ maxMp: 1000 });
+// The farm path reads Planner.sourceFacts (its hunt rules are pinned in
+// test_source_facts.js); this stand-in maps the fixture's index rows by
+// the same reasons: raid, spoil skill, solo safety.
+adapters['GameServer/Bot/AI/GearAcquisitionPlanner'].sourceFacts = function* (state, itemId, units, options) {
+    const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
+    const rows = planner.sourceIndexFor?.(options.spots)?.get(Number(itemId)) || [];
+    return rows.map(entry => {
+        const reason = entry.spot.raidBoss ? 'raid' : entry.kind === 'spoil' && !options.spoiler ? 'spoil_skill'
+            : !planner.soloSafeForSource() ? 'party_needed' : null;
+        const perHour = Number(options.spotValue(entry.spot)?.kills || 0) * planner.sourceYieldReaderFor()().expectedYield;
+        return { kind: entry.kind, spotId: entry.spot.id, npcId: entry.reward?.selfId, itemId: Number(itemId), units,
+            status: reason ? 'ineligible' : 'ready', reason, perHour, hours: units / perHour, netHourCost: 1 };
+    });
+};
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const tendency = { MIN: 0.02, roll: () => 0.5 };
@@ -97,8 +117,8 @@ const nativeBook = run(true, { deps: { knownRecipes: [{ recipeId: 301 }] } });
 const nativeCraft = nativeBook.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
 assert(nativeCraft, 'prepared native book enables ingredient collection without a second recipe scroll');
 assert.equal(nativeCraft.requiresRecipeLearning, false);
-assert.equal(nativeCraft.requirements.length, 1);
-assert.equal(nativeCraft.requirements[0].key, 'item:202');
+assert.equal(nativeCraft.grossRequirements.length, 1);
+assert.equal(nativeCraft.grossRequirements[0].key, 'item:202');
 assert.equal(run(true).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false,
     'no invented recipe knowledge when neither native nor compatibility book contains it');
 state.stats.recipes = savedBook;
@@ -117,7 +137,7 @@ const farmScroll = () => run(true, { deps: { knownRecipes: [], spots: [{}] },
 const farmedBook = farmScroll();
 const preparingRecipe = farmedBook.nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
 assert(preparingRecipe?.requiresRecipeLearning, 'known safe scroll drop admits recipe preparation with no scroll seller');
-assert(preparingRecipe.requirements.some(row => row.key === 'item:401' && row.amount === 1));
+assert(preparingRecipe.grossRequirements.some(row => row.key === 'item:401' && row.amount === 1 && row.once));
 assert.equal(farmedBook.activity.activity, 'hunting');
 assert.equal(farmedBook.activity.itemId, 401, 'the acquisition leaf farms the actual scroll, not the product');
 const hasCraft = result => result.nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft');

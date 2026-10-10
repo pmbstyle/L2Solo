@@ -16,20 +16,31 @@ const originalRate = process.env.L2NODE_PROGRESSION_RATE;
 const originalRewards = Data.npcRewards;
 const originalRandom = Math.random;
 const subject = Providers.build;
-const filename = require.resolve('../src/GameServer/Bot/Economy/WishProviders');
-const reference = new Module(filename, module);
-reference.filename = filename; reference.paths = Module._nodeModulePaths(path.dirname(filename));
-let source = fs.readFileSync(filename, 'utf8');
-assert(source.includes('const total = source.totalCount, own = source.sourceCount;'));
-assert(source.includes('const yieldPerKill = sourceYield(source, id).expectedYield;'));
-source = source.replace('const total = source.totalCount, own = source.sourceCount;', `const counts = source.spot.npcEntries || [];
-    const total = counts.reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0);
-    const own = counts.filter(npc => Number(npc.selfId) === Number(source.reward.selfId))
-        .reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0);`)
-    .replace('const yieldPerKill = sourceYield(source, id).expectedYield;', `const yieldPerKill = Planner.itemDropYield(source.reward, id, source.kind,
-        { npcLevel: source.npcLevel, killerLevel: state.level }).expectedYield;`)
-    .replace('    const sourceYield = sourceIndex ? Planner.sourceYieldReaderFor(state.level) : null;', '');
-reference._compile(source, filename);
+// The wish's farm path reads Planner.sourceFacts (Task 2). The reference is
+// a planner copy whose facts compute the yield directly and count the spot's
+// NPC rows, so the cached yields and atlas counts must give a byte-equal wish.
+const plannerFile = require.resolve('../src/GameServer/Bot/AI/GearAcquisitionPlanner');
+const plannerCopy = new Module(plannerFile, module);
+plannerCopy.filename = plannerFile; plannerCopy.paths = Module._nodeModulePaths(path.dirname(plannerFile));
+const cachedYield = '        const source = materializeSource(entry, itemId, killerLevel, ratesKey);\n';
+const atlasShare = '            * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));\n';
+let source = fs.readFileSync(plannerFile, 'utf8');
+assert(source.includes(cachedYield) && source.includes(atlasShare));
+source = source.replace(cachedYield, `${cachedYield}        if (source) source.expectedYield = itemDropYield(entry.reward, itemId, entry.kind,
+            { npcLevel: source.npcLevel, killerLevel }).expectedYield;
+`).replace(atlasShare, `            * (entry.spot.npcEntries || []).filter(npc => Number(npc.selfId) === Number(entry.reward.selfId))
+                .reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0)
+            / Math.max(1, (entry.spot.npcEntries || []).reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0));
+`);
+plannerCopy._compile(source, plannerFile);
+const reference = { exports: { build(...args) {
+    const cached = Planner.sourceFacts;
+    Planner.sourceFacts = plannerCopy.exports.sourceFacts;
+    try { return subject(...args); } finally { Planner.sourceFacts = cached; }
+} } };
+// Farm facts need a known route to the spot's town (Task 2, D6).
+const preparedTrip = () => 0;
+preparedTrip.details = () => ({ known: true, hours: .25, fees: 0 });
 const digestible = value => JSON.stringify(value, (_, row) => row instanceof Map ? [...row] : row);
 const timestamp = 1791335800000;
 function review(build, state, deps) {
@@ -140,18 +151,18 @@ try {
         const state = structuredClone(crafter);
         state.stats.classId = classId;
         state.stats.role = classId === 55 ? 'spoiler' : classId === 8 ? 'nuker' : 'crafter';
-        const deps = { spots: nativeSpots, board, timestamp, occupancy: new Map(), npcOffersFor: () => [] };
+        const deps = { spots: nativeSpots, board, timestamp, occupancy: new Map(), npcOffersFor: () => [], tripCost: preparedTrip };
         const baseline = review(reference.exports.build, structuredClone(state), deps);
         const optimized = review(subject, structuredClone(state), deps);
         assert.deepEqual(optimized.output, baseline.output);
         assert.equal(digestible(optimized.output), digestible(baseline.output), 'whole projection/network/packet/watch is byte-equal');
         projections++;
     }
-    const emptyDeps = { spots: [], board, timestamp, occupancy: new Map(), npcOffersFor: () => [] };
+    const emptyDeps = { spots: [], board, timestamp, occupancy: new Map(), npcOffersFor: () => [], tripCost: preparedTrip };
     assert.deepEqual(review(subject, structuredClone(crafter), emptyDeps).output,
         review(reference.exports.build, structuredClone(crafter), emptyDeps).output);
     process.env.L2NODE_PROGRESSION_RATE = 'x10';
-    const deps = { spots: nativeSpots, board, timestamp, occupancy: new Map(), npcOffersFor: () => [] };
+    const deps = { spots: nativeSpots, board, timestamp, occupancy: new Map(), npcOffersFor: () => [], tripCost: preparedTrip };
     const prepared = review(subject, structuredClone(crafter), deps).ctx;
     // Optional small, interleaved native provider replay. No world/server run,
     // no injected timing in production, no assertion about live improvement.

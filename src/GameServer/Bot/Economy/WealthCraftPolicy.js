@@ -1,5 +1,6 @@
 'use strict';
 const Profit = require('./CraftProfitPolicy');
+const { remainingQuantity } = require('./WishNetwork');
 const Valuation = require('./EconomicValuation');
 const Price = require('./PriceDecision');
 const MAX_BATCHES = 64;
@@ -20,7 +21,8 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
         const stock = (selfId === entry ? context.recipeStock : ownedFor(selfId)) || {};
         const available = count(Math.max(0, Number(stock.count ?? 0) - Number(allocated.get(selfId) || 0)));
         if (!Number.isFinite(available)) return null;
-        const ownCount = Math.min(missing, available);
+        // The Core quantity reader subtracts held units once, as for a wish.
+        const ownCount = needed - remainingQuantity({ required: needed, freePhysical: available }).toOrder;
         if (ownCount) {
             const unitValue = Number(stock.unitValue);
             if (!Number.isFinite(unitValue) || unitValue < 0) return null;
@@ -73,7 +75,7 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
     if (entry) processingHours += Number(context.learningHours || 0);
     const cost = cashCost + ownedValue + tripEquivalent;
     return Number.isFinite(cost) ? { purchases, owned, cashCost, ownedValue, actualCashFees, travelHours,
-        processingHours, extraMp, residualValue, tripTowns: trips, unknownTrip, repeatableInputs, cost: Math.ceil(cost), batches } : null;
+        processingHours, extraMp, residualValue, tripTowns: trips, unknownTrip, repeatableInputs, cost: Math.ceil(cost), batches, facts } : null;
 }
 function drain(iterator) { let step; do { step = iterator.next(); } while (!step.done); return step.value; }
 function basketFor(recipe, planFor, ownedFor = () => null, batches = 1, context = {}) {
@@ -98,9 +100,13 @@ function saleInput(exit, units, context) {
         price: Number(exit.price), residualUnitValue: Number(exit.residualUnitValue ?? context.residualUnitValue ?? 0) };
 }
 function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor = () => null, context = {} }) {
-    const successRate = Number(recipe?.successRate) / 100;
+    // Chance, MP and labour of the basket's own craft facts, the reader the
+    // wish network prices the same craft by.
+    const facts = basket?.facts?.batches === batches ? basket.facts
+        : Profit.craftFacts(recipe, { batches, mpPerHour: context.mpPerHour });
+    const successRate = facts.successProbability;
     const productCount = Number(recipe?.productCount) * batches;
-    const mp = Number(recipe?.mpCost || 0) * batches;
+    const mp = Number(facts.mp);
     if (!recipe || exit.unknownJoint || !Number.isSafeInteger(batches) || batches < 1 || batches > MAX_BATCHES
         || exit.trial === true && batches !== 1
         || !Number.isSafeInteger(productCount) || productCount <= 0 || !(successRate > 0 && successRate <= 1)
@@ -111,7 +117,7 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const hourAdena = Number(context.hourAdena ?? context.hunt?.perHour);
     const moneyPrice = Number(context.moneyPrice ?? (hourAdena > 0 ? 1 / hourAdena : NaN));
     if (!Number.isFinite(moneyPrice) || moneyPrice <= 0) return null;
-    const mpHours = mp ? mp / Number(context.mpPerHour) : 0;
+    const mpHours = Number(facts.labourHours);
     if (!Number.isFinite(mpHours) || mpHours < 0) return null;
     const activeHours = Number(context.activeCraftHours || 0) * batches + Number(basket.processingHours || 0);
     const shopHours = Number(exit.shopHours || 0), exitDetails = exit.tripDetails || context.trip?.details?.(exit.town);

@@ -259,7 +259,7 @@ function buildProjection(state, ctx, deps) {
     const ownBuild = Profile.buildGainsFor(state, timestamp);
     let beforeBook = null, beforeBookRate = null;
     const magic = require('./BotImprovementPolicy').isCaster(state);
-    const Recipes = invoke('GameServer/Items/C4RecipeItems');
+    const Recipes = invoke('GameServer/Items/C4RecipeItems'), Profit = require('./CraftProfitPolicy');
     // `nodes` is the current target: the real projection, or one gear
     // candidate's scratch arena while it is evaluated (MVP-6).
     let nodes = [], scratch = false;
@@ -305,7 +305,18 @@ function buildProjection(state, ctx, deps) {
     // 124.56 -> 27.28 ms; nine complete projections byte-equal. Reuse the
     // existing 16,384-entry yield bound and atlas counts, no per-bot retention.
     // Shared-host offline result only; not a live throughput/budget claim.
-    const sourceYield = sourceIndex ? Planner.sourceYieldReaderFor(state.level) : null;
+    const spotValue = spot => {
+        if (!sourceValues.has(spot)) sourceValues.set(spot, ctx.spotValue(spot));
+        return sourceValues.get(spot);
+    };
+    // Task 2 readers: one combat profile, spoil eligibility, MP rate and trip
+    // map per build, shared by every farm and craft fact; they die at return.
+    let combat = null, spoiler;
+    const profile = () => combat ??= Profile.profileFor(state, timestamp, Profile.buildOptions(ownBuild, timestamp));
+    const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');
+    const mpPerHour = Occupation.mpPerHour(state);
+    const executor = state.phase === 'hot' ? 'hot' : 'cold';
+    const sourceTrips = new Map(), farmFacts = new Map();
     const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
     const purchaseFor = require('./WishPurchaseEvidence').reader(state, ctx, deps);
@@ -314,50 +325,48 @@ function buildProjection(state, ctx, deps) {
         if (!purchases.has(id)) purchases.set(id, purchaseFor(id));
         return purchases.get(id);
     };
+    // The farm or spoil path reads GearAcquisitionPlanner.sourceFacts: the
+    // hunt rules the bot hunts by (D4-D6), an hour at its net cost (D7). The
+    // trip is one row per town in the network, never once per unit.
     const sourcePath = id => {
-        let best = null;
-        for (const source of sourceIndex?.get(Number(id)) || []) {
-            if (source.spot.raidBoss || (source.kind === 'spoil' && !invoke('GameServer/Bot/AI/BotRoles').isSpoiler(state))) continue;
-            if (!Planner.soloSafeForSource(state, source)) continue;
-            const total = source.totalCount, own = source.sourceCount;
-            if (!sourceValues.has(source.spot)) sourceValues.set(source.spot, ctx.spotValue(source.spot));
-            const rate = sourceValues.get(source.spot);
-            const yieldPerKill = sourceYield(source, id).expectedYield;
-            const perHour = positive(rate?.kills) * positive(yieldPerKill) * own / Math.max(1, total);
-            if (perHour > 0 && (!best || perHour > best.perHour)) best = { source, perHour };
+        if (!sourceIndex?.has(Number(id))) return null;
+        if (!farmFacts.has(Number(id))) {
+            if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
+                spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, profile());
+            const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue, occupancy: deps.occupancy,
+                trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp });
+            let step;
+            do step = steps.next(); while (!step.done);
+            let best = null;
+            const diagnostic = Diagnostics.active();
+            for (const fact of step.value) {
+                if (diagnostic) Diagnostics.count('provider', 'source_fact', fact.status === 'ready' ? 'ready' : fact.reason);
+                if (fact.status === 'ready' && (!best || fact.costHours < best.costHours)) best = fact;
+            }
+            if (diagnostic) Diagnostics.count('provider', 'source_path', best ? 'ready' : step.value.length ? 'refused' : 'no_source');
+            farmFacts.set(Number(id), best);
         }
-        return best ? { kind: best.source.kind, activity: 'hunting', costHours: 1 / best.perHour,
-            spotId: best.source.spot.id, npcId: best.source.reward.selfId, itemId: Number(id), amount: 1 } : null;
+        const best = farmFacts.get(Number(id));
+        return best ? { kind: best.kind, activity: 'hunting', costHours: best.hours * best.netHourCost,
+            spotId: best.spotId, npcId: best.npcId, itemId: Number(id), amount: 1,
+            ...(best.town ? { town: best.town, tripHours: best.tripHours, tripFees: best.tripFees } : {}) } : null;
     };
+    // The craft path reads CraftProfitPolicy.craftFacts, as the producer
+    // does: gross inputs only (the network's stock reader subtracts held and
+    // incoming units once), native commands and labour hours. Held inputs are
+    // valued by the network at their exit value, never here.
     const craftPath = (recipe, id, depth = 0, ownOnly = false) => {
         if (!Sources.allowsRecipe(recipe)) return null;
-        const ownCapable = recipe && (recipe.kind === 'dual_sword_combine'
-            || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
+        const dual = recipe?.kind === 'dual_sword_combine';
+        const ownCapable = recipe && (dual || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
+        const own = ownCapable ? Profit.craftFacts(recipe, { batches: 1, executor, mpCapacity: profile().maxMp, mpPerHour }) : null;
         let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
-        if (workshop && ownCapable && knownRecipes.has(Number(recipe.recipeId))) {
-            const regen = Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp);
-            const ownHours = Number(recipe.mpCost) > 0 && regen > 0 ? Number(recipe.mpCost) / regen * 3 / 3600 : 0;
-            const ownCost = ownHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0);
-            if (Number.isFinite(ownCost) && ownCost <= workshop.cost) workshop = null;
-        }
+        if (workshop && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
+            && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
         if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < 36) {
-            const combined = require('./CraftProfitPolicy').requirements(recipe) || new Map();
             const freeAmount = require('./WealthCraftDecision').freeAmount;
-            const requirements = [];
-            const grossRequirements = [];
-            let ownInputOpportunityValue = 0;
-            for (const [selfId, amount] of combined) {
-                const owned = Math.min(amount, freeAmount(state, state.inventory?.[selfId] || {}));
-                ownInputOpportunityValue += owned * positive(price(selfId));
-                const missing = amount - owned;
-                const materialKey = itemNode(selfId, depth + 1);
-                grossRequirements.push({ key: materialKey, amount });
-                if (missing > 0) requirements.push({ key: materialKey, amount: missing });
-            }
-            const learned = !!workshop || recipe.kind === 'dual_sword_combine' || knownRecipes.has(Number(recipe.recipeId));
-            const ownedScroll = freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
-            if (!learned && ownedScroll) ownInputOpportunityValue += positive(price(recipe.recipeItemId));
-            let scrollAvailable = learned || ownedScroll;
+            const learned = !!workshop || dual || knownRecipes.has(Number(recipe.recipeId));
+            let scrollAvailable = learned || freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
             const scrollBoard = ctx.board || deps.board;
             if (!scrollAvailable && scrollBoard) {
                 for (const line of scrollBoard.list(recipe.recipeItemId, 1)) {
@@ -367,26 +376,29 @@ function buildProjection(state, ctx, deps) {
                 }
             }
             if (!scrollAvailable) scrollAvailable = !!sourcePath(recipe.recipeItemId);
-            const scrollKey = !learned && scrollAvailable ? itemNode(recipe.recipeItemId, depth + 1) : null;
-            if (!learned && !ownedScroll && scrollAvailable) requirements.push({ key: scrollKey, amount: 1 });
-            // A physical attempt consumes one whole batch, including failure.
-            // Its chance reduces the finite root benefit once; inputs are not
-            // divided by expected yield. No imagined commissioned service.
-            const regen = Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp);
-            const recoveryHours = positive(recipe.mpCost) > 0 && regen > 0 ? positive(recipe.mpCost) / regen * 3 / 3600 : NaN;
-            const cycleHours = workshop ? 1 / 3600
-                : recipe.kind === 'dual_sword_combine' ? Number(recipe.costHours || 1 / 3600) : recoveryHours;
-            if (scrollAvailable && (learned || scrollKey) && Number.isFinite(cycleHours) && cycleHours > 0
-                && requirements.every(row => row.key) && grossRequirements.every(row => row.key)) return { kind: 'craft', activity: 'crafting',
-                itemId: Number(id), recipeId: recipe.recipeId,
-                ...(workshop ? { workshop, price: workshop.price, town: workshop.townName,
+            if (!scrollAvailable) return null;
+            const facts = workshop ? Profit.craftFacts(recipe, { batches: 1, executor: 'workshop',
+                capacityBatches: workshop.capacityBatches, fee: workshop.price, recipeInput: 0 })
+                : Profit.craftFacts(recipe, { batches: 1, executor, mpCapacity: profile().maxMp, mpPerHour,
+                    recipeInput: learned ? 0 : recipe.recipeItemId });
+            if (facts.status !== 'ready') return null;
+            // A physical attempt consumes one whole command, including failure.
+            // Its chance reduces the finite root benefit once per command;
+            // inputs are not divided by expected yield.
+            const cycleHours = workshop ? 1 / 3600 : dual ? Number(recipe.costHours || 1 / 3600) : facts.labourHours;
+            if (!(cycleHours > 0)) return null;
+            const grossRequirements = [];
+            for (const [selfId, amount] of facts.gross) {
+                const key = itemNode(selfId, depth + 1);
+                if (!key) return null;
+                grossRequirements.push({ key, amount, ...(facts.once.has(selfId) ? { once: true } : {}) });
+            }
+            return { kind: 'craft', activity: 'crafting', itemId: Number(id), recipeId: recipe.recipeId,
+                ...(workshop ? { workshop, price: facts.fee, town: workshop.townName,
                     tripHours: workshop.tripHours, tripFees: workshop.tripFees,
-                    executable: workshop.capacityBatches > 0, availableUnits: workshop.capacityBatches * Number(recipe.productCount || 1), quoted: true } : {}),
-                requiresRecipeLearning: !learned, successProbability: Number(recipe.successRate ?? 100) / 100,
-                ownInputOpportunityValue, costHours: cycleHours, productCount: Number(recipe.productCount || 1),
-                grossRequirements: [...grossRequirements,
-                    ...(!learned && scrollAvailable ? [{ key: scrollKey, amount: 1, once: true }] : [])],
-                requirements };
+                    executable: workshop.capacityBatches > 0, availableUnits: workshop.capacityBatches * facts.productCount, quoted: true } : {}),
+                requiresRecipeLearning: !learned, successProbability: facts.successProbability, perCommand: facts.perCommand,
+                costHours: cycleHours, productCount: facts.productCount, grossRequirements };
         }
         return null;
     };
@@ -430,7 +442,16 @@ function buildProjection(state, ctx, deps) {
             .find(row => Number(row.productId) === Number(id));
         const craft = craftPath(recipe, id, depth);
         if (craft) paths.push(craft);
-        const node = { key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] };
+        // Held units are worth what the bot gets selling them now (Q1 A);
+        // only an item the bot holds needs that value.
+        let exitValue;
+        if (positive(state.inventory?.[id]?.amount) > 0) {
+            const steps = Occupation.exitValue(state, id, ctx.board || deps.board);
+            let step;
+            do step = steps.next(); while (!step.done);
+            exitValue = step.value;
+        }
+        const node = { key, object: Number(id), price: price(id), ...(exitValue === undefined ? {} : { exitValue }), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] };
         descriptors.set(key, node);
         if (scratch && readScope) builtBy.set(key, readScope);
         add(node);
@@ -731,7 +752,7 @@ function buildProjection(state, ctx, deps) {
         if (nodes.length >= 36) break;
         const gain = Profile.gainFor(ownBuild, `${magic ? 'm' : 'p'}:skill:${book.skillId}:${book.level}`, () => {
             if (!beforeBook) {
-                beforeBook = Profile.profileFor(state, timestamp, Profile.buildOptions(ownBuild, timestamp));
+                beforeBook = profile();
                 beforeBookRate = attackRate(beforeBook);
             }
             return skillGain(state, book, beforeBook, beforeBookRate, timestamp, ownBuild);
@@ -876,12 +897,16 @@ function knownWorkshop(recipe, state, ctx, deps) {
     let best = null;
     for (const row of deps.workshops(Number(recipe.recipeId), state) || []) {
         if (Number(row.characterId) === Number(state.characterId)
-            || Number(row.recipeId) !== Number(recipe.recipeId) || !(Number(row.capacityBatches) > 0)
+            || Number(row.recipeId) !== Number(recipe.recipeId)
             || !Number.isSafeInteger(Number(row.price)) || Number(row.price) < 0
             || ![row.loc?.locX, row.loc?.locY, row.loc?.locZ].every(Number.isFinite)) continue;
+        // The same craft facts as an own craft: capacity bounds one command.
+        const facts = require('./CraftProfitPolicy').craftFacts(recipe, { batches: 1, executor: 'workshop',
+            capacityBatches: row.capacityBatches, fee: Number(row.price) });
+        if (facts.status !== 'ready') continue;
         const route = trip.details(row.townName);
         if (!route?.known || !Number.isFinite(route.hours) || !Number.isFinite(route.fees)) continue;
-        const cost = Number(row.price) + route.fees + route.hours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0);
+        const cost = facts.fee + route.fees + route.hours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0);
         if (!best || cost < best.cost || cost === best.cost && Number(row.characterId) < best.characterId)
             best = { ...row, characterId: Number(row.characterId), cost,
                 tripHours: route.hours, tripFees: route.fees };

@@ -223,21 +223,24 @@ function capture(economy, state, seen = state) {
             if (id > 0 && amount > 0) missing.set(id, Math.max(missing.get(id) || 0, amount));
         }
     }
-    const visit = (key, amount = 1, depth = 0) => {
+    // A quantity-prepared network (a stock reader) holds whole remaining
+    // amounts per root, stock and incoming subtracted once; craft paths
+    // carry gross inputs, so its stockless plans are no missing amounts.
+    const prepared = !!economy?.network?.quantityPrepared;
+    const visit = (key, amount = 1, depth = 0, given = null) => {
         if (depth > 8) return;
-        const plan = economy?.network?.plans?.get(key);
+        const plan = prepared ? given : economy?.network?.plans?.get(key);
         if (!plan) return;
         if (plan.kind === 'craft') for (const row of plan.requirements || []) {
             if (row.key?.startsWith('item:') && row.amount > 0) {
                 const id = Number(row.key.slice(5));
-                // Provider requirements are already net of owned stock.
-                const gap = Math.max(0, row.amount * amount);
+                const gap = prepared ? Math.max(0, Number(row.plan?.missingAmount || 0)) : Math.max(0, row.amount * amount);
                 if (gap > 0) missing.set(id, Math.max(missing.get(id) || 0, gap));
             }
         }
-        for (const row of plan.requirements || []) visit(row.key, amount * row.amount, depth + 1);
+        for (const row of plan.requirements || []) visit(row.key, amount * row.amount, depth + 1, row.plan);
     };
-    for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1));
+    for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1), 0, wish.plan);
     const activity = leaf ? new CompactActivity(leaf) : null;
     if (activity?.activity === 'shopping') activity.heldAtDecision = Math.max(0, Number(seen?.inventory?.[activity.itemId]?.amount || 0));
     if (activity?.activity === 'shopping' && wish?.key === leaf.rootKey && wish.funded && Number(wish.ratio) > 0)

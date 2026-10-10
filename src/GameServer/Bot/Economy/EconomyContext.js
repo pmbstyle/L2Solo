@@ -5,7 +5,7 @@ const GearThreat = require('./GearThreat');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
-const { WishNetwork, remember, admitRoots } = require('./WishNetwork');
+const { WishNetwork, remember, admitRoots, remainingQuantity } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
 const Diagnostics = require('./EconomyDiagnostics');
 const { fnv1a32 } = require('../Fnv1a');
@@ -557,10 +557,32 @@ function forGroup(group, members, deps = {}) {
     for (let i = 0; i < contexts.length; i++) {
         const source = contexts[i].projection;
         const prefix = `${i}:`;
+        // The group solve has no stock reader: a member's path with gross
+        // inputs only (Task 2 readers) orders what the member does not hold
+        // for one batch, and pays its held units at their exit value.
+        const held = new Map(source.nodes.map(node => [node.key, node]));
+        const missing = path => {
+            const requirements = [];
+            let ownValue = 0;
+            for (const row of path.grossRequirements) {
+                const id = row.key.startsWith('item:') ? Number(row.key.slice(5)) : 0;
+                const stock = id ? contexts[i].stockFor?.(id, '') || {} : {};
+                const order = remainingQuantity({ required: row.amount, freePhysical: positive(stock.owned),
+                    acceptedIncoming: positive(stock.incoming) }).toOrder;
+                const node = held.get(row.key);
+                ownValue += (row.amount - order) * positive(Number.isFinite(node?.exitValue) ? node.exitValue : node?.price);
+                if (order > 0) requirements.push({ ...row, amount: order });
+            }
+            return { requirements, ownInputOpportunityValue: positive(path.ownInputOpportunityValue) + ownValue };
+        };
         for (const node of source.nodes) nodes.push({ ...node, key: prefix + node.key,
-            paths: (node.paths || []).map(path => ({ ...path, ...(path.quoted ? { tripScope: contexts[i].actorKey } : {}), requirements: (path.requirements || [])
+            paths: (node.paths || []).map(path => {
+                const own = path.requirements || !path.grossRequirements ? null : missing(path);
+                return { ...path, ...own, ...(path.town ? { tripScope: contexts[i].actorKey } : {}),
+                requirements: (own?.requirements || path.requirements || [])
                 .map(row => ({ ...row, key: prefix + row.key })),
-                ...(path.grossRequirements ? { grossRequirements: path.grossRequirements.map(row => ({ ...row, key: prefix + row.key })) } : {}) })) });
+                ...(path.grossRequirements ? { grossRequirements: path.grossRequirements.map(row => ({ ...row, key: prefix + row.key })) } : {}) };
+            }) });
         roots.push(...source.roots.map(key => prefix + key));
     }
     const byKey = new Map(nodes.map(node => [node.key, node]));

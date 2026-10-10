@@ -32,7 +32,6 @@ const adapters = {
     'GameServer/Items/C4RecipeItems': { resolveByProductId: id => allowCraft && id === 101 ? recipe : null, resolveByRecipeId: id => id === 301 ? recipe : null },
     'GameServer/Items/C4DualSwordCombinations': { loadRecipes: () => [] },
     'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft, isServiceCrafter: () => true },
-    'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
     'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
@@ -46,6 +45,27 @@ Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandid
     'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
     'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
     'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) } });
+// Task 2 readers: MP per hour, exit value, combat profile and spoil
+// eligibility come from their own modules (one reader each).
+Object.assign(adapters, {
+    'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+        exitValue: function* () { return 0; } },
+    'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
+adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ maxMp: 1000 });
+// The farm path reads Planner.sourceFacts (its hunt rules are pinned in
+// test_source_facts.js); this stand-in maps the fixture's index rows by
+// the same reasons: raid, spoil skill, solo safety.
+adapters['GameServer/Bot/AI/GearAcquisitionPlanner'].sourceFacts = function* (state, itemId, units, options) {
+    const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
+    const rows = planner.sourceIndexFor?.(options.spots)?.get(Number(itemId)) || [];
+    return rows.map(entry => {
+        const reason = entry.spot.raidBoss ? 'raid' : entry.kind === 'spoil' && !options.spoiler ? 'spoil_skill'
+            : !planner.soloSafeForSource() ? 'party_needed' : null;
+        const perHour = Number(options.spotValue(entry.spot)?.kills || 0) * planner.sourceYieldReaderFor()().expectedYield;
+        return { kind: entry.kind, spotId: entry.spot.id, npcId: entry.reward?.selfId, itemId: Number(itemId), units,
+            status: reason ? 'ineligible' : 'ready', reason, perHour, hours: units / perHour, netHourCost: 1 };
+    });
+};
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const tendency = { MIN: 0.02, roll: () => 0.5 };

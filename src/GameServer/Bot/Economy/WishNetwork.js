@@ -11,6 +11,11 @@ const MAX_DEPTH = 4;
 // (EconomicValuation.OUTCOME_LIMIT); a larger composition is unresolved.
 const MAX_BRANCHES = 8;
 const nonnegative = value => Math.max(0, Number(value) || 0);
+// Native commands for `batches`: a path without perCommand runs one batch each.
+const commands = (batches, perCommand) => Math.ceil(batches / (Number(perCommand) >= 1 ? Number(perCommand) : 1));
+// A trip is one row per town: a quoted seller or workshop, or a farm spot
+// away from the bot (its hours and fees are paid once, not per unit).
+const travels = path => !!path.town && (path.quoted || path.activity === 'hunting');
 
 // The one quantity reader (MVP-3). Accepted incoming is a native obligation:
 // it removes the amount to order, not the amount still to deliver.
@@ -141,7 +146,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     const trips = new Map(), tripRows = [];
     const tripKey = path => `${path.tripScope || ''}|${path.town}`;
     for (const node of nodes) for (const path of node.paths || []) {
-        if (path.quoted && path.town && !trips.has(tripKey(path))) {
+        if (travels(path) && !trips.has(tripKey(path))) {
             const row = { index: tripRows.length, fees: nonnegative(path.tripFees), hours: nonnegative(path.tripHours) };
             trips.set(tripKey(path), row); tripRows.push(row);
         }
@@ -202,7 +207,9 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             const owned = requested - remaining.toExecute;
             incomingHeld = remaining.toExecute - remaining.toOrder;
             amount = remaining.toOrder;
-            ownValue = owned * nonnegative(node.price);
+            // Held units are worth their exit value (Q1 A); nodes built
+            // without that reader (groups, clan) keep their own price.
+            ownValue = owned * nonnegative(Number.isFinite(node.exitValue) ? node.exitValue : node.price);
             allocation.used.set(itemId, prior + owned + incomingHeld);
             if (!amount) {
                 visiting.delete(key);
@@ -246,7 +253,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             // own labour, inputs, trips. Waiting for accepted incoming has
             // no native delivery time. ARCH-NOTE: counted as zero.
             let hours = nonnegative(path.costHours) * units;
-            const trip = path.quoted && trips.get(tripKey(path));
+            const trip = travels(path) && trips.get(tripKey(path));
             const tripEntries = trip ? [trip.index] : [];
             let quoted = !!path.quoted;
             if (valuation) {
@@ -255,7 +262,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 hours = nonnegative(valuation.cycleHours);
             }
             const requirements = [];
-            const inputs = allocation ? path.grossRequirements || path.requirements || [] : path.requirements || [];
+            const inputs = allocation ? path.grossRequirements || path.requirements || [] : path.requirements || path.grossRequirements || [];
             // Exact once-per-path inputs (a recipe scroll) are paid once,
             // never per attempt; consumed inputs of one attempt are the rest.
             const untilSuccess = !planning && path.kind === 'craft' && successProbability > 0 && successProbability < 1
@@ -269,11 +276,14 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 supported &&= child.supported !== false;
                 resolved &&= child.resolved !== false;
                 // A per-unit child (no stock allocation) repeats its batch.
+                // One stockless child plan is one batch of its path (E192):
+                // its cost repeats per batch, its chance per native command.
                 const childBatches = allocation ? 1 : Math.ceil(amount / Number(child.productCount || 1));
-                probability *= Number(child.successProbability ?? 1) ** childBatches;
-                branches *= mergedBranches(Number(child.branches || 1), childBatches);
-                const childPrice = child.basePrice * (allocation ? 1 : amount), childEffort = child.baseEffort * (allocation ? 1 : amount);
-                const childHours = nonnegative(child.baseHours) * (allocation ? 1 : amount);
+                const childDraws = allocation ? 1 : commands(childBatches, child.perCommand);
+                probability *= Number(child.successProbability ?? 1) ** childDraws;
+                branches *= mergedBranches(Number(child.branches || 1), childDraws);
+                const childPrice = child.basePrice * childBatches, childEffort = child.baseEffort * childBatches;
+                const childHours = nonnegative(child.baseHours) * childBatches;
                 if (requirement.once) { onceCash += childPrice; onceEffort += childEffort; onceHours += childHours; }
                 else { price += childPrice; effort += childEffort; hours += childHours; }
                 awaitingIncoming ||= !!child.awaitingIncoming;
@@ -290,8 +300,9 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             } else if (successProbability < 1) {
                 // One native attempt: the parent step runs only when every
                 // child succeeded, so that branch splits into own outcomes.
-                probability *= successProbability ** units;
-                branches += mergedBranches(2, units) - 1;
+                // E190: one draw per native command (D3), not per batch.
+                probability *= successProbability ** commands(units, path.perCommand);
+                branches += mergedBranches(2, commands(units, path.perCommand)) - 1;
             }
             price += onceCash; effort += onceEffort; hours += onceHours;
             resolved &&= branches <= MAX_BRANCHES;
@@ -459,11 +470,15 @@ class WishNetwork {
             // MVP-4: the ready delay follows the cash the allocated path needs,
             // so a root is judged after allocation, as admission judges it; an
             // unquoted market price before it is no reason to drop the root.
+            // Paths carry gross inputs, so the stockless pass prices held
+            // inputs as purchases. Priority reads each root alone against all
+            // free stock; that solve is the allocation while nothing is claimed.
+            const alone = new Map(wishes.map(wish => [wish, solver.allocate(wish, new Map())]));
             wishes = wishes.filter(wish => wish.plan && wish.fullValueHours > 0);
             const used = new Map();
             const priority = [...wishes].sort((a, b) => b.fullValueHours / Math.max(1, b.price) - a.fullValueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
             for (const wish of priority) {
-                const claimed = solver.allocate(wish, used);
+                const claimed = used.size ? solver.allocate(wish, used) : alone.get(wish);
                 if (wish.valueHours > 0) for (const [id, count] of claimed) used.set(id, count);
             }
         }

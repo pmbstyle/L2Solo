@@ -21,9 +21,14 @@ const filename = require.resolve('../src/GameServer/Bot/Economy/WishProviders');
 // This is an uncached replay oracle, rather than a copied wish algorithm.
 const reference = new Module(filename, module);
 reference.filename = filename; reference.paths = Module._nodeModulePaths(path.dirname(filename));
-reference._compile(fs.readFileSync(filename, 'utf8').replace(
-    /if \(!sourceValues\.has\(source\.spot\)\) sourceValues\.set\(source\.spot, ctx\.spotValue\(source\.spot\)\);\s*const rate = sourceValues\.get\(source\.spot\);/,
-    'const rate = ctx.spotValue(source.spot);'), filename);
+const memoized = `    const spotValue = spot => {
+        if (!sourceValues.has(spot)) sourceValues.set(spot, ctx.spotValue(spot));
+        return sourceValues.get(spot);
+    };
+`;
+const providerSource = fs.readFileSync(filename, 'utf8');
+assert(providerSource.includes(memoized), 'the oracle bypasses the actual spot-value memo');
+reference._compile(providerSource.replace(memoized, '    const spotValue = spot => ctx.spotValue(spot);\n'), filename);
 
 const originalRandom = Math.random;
 let seed = 20261005;
@@ -40,10 +45,14 @@ const world = { user: { sessions: [] }, npc: { spawns: [], grid: {}, nextId: 100
 const timestamp = 1791335800000;
 const board = new BoardIndex();
 const reviewed = [];
+const preparedTrip = () => 0;
+preparedTrip.details = () => ({ known: true, hours: .25, fees: 0 });
 function review(build, state, deps) {
     // This fixture compares native farm source ranking, without static shop
     // quotes masking changes in occupied hunting grounds.
-    deps = { ...deps, npcOffersFor: () => [] };
+    // Farm facts need a known route to the spot's town (Task 2, D6): a
+    // prepared table, as the worker passes, every town a quarter hour away.
+    deps = { ...deps, npcOffersFor: () => [], tripCost: preparedTrip };
     const input = structuredClone(state), calls = new Map(), values = new Map();
     Economy.reset(); Profile.forgetBuild(state.characterId);
     Providers.build = (nativeState, ctx, nativeDeps) => {
@@ -74,7 +83,12 @@ try {
     const spots = Profiles.ensure();
     assert(spots.length > 1800, 'use the actual native source catalogue');
     Math.random = originalRandom;
-    const occupied = new Map(spots.map(spot => [spot.id, { reservedCount: Math.max(1, Number(spot.density)) * 4 }]));
+    // Crowded but not full: a full ground is refused as occupied (Task 2,
+    // D5) before its value is read, so each keeps room for one more hunter.
+    const occupied = new Map(spots.map(spot => {
+        const reservedCount = Math.max(1, Number(spot.density)) * 4;
+        return [spot.id, { reservedCount, capacity: reservedCount + 1 }];
+    }));
     // The complete saved native crafter from the measured corpus, including
     // physical equipment, learned skills and remembered hunt/stock facts.
     const crafter = require('./fixtures/wish_spot_native_state.json');

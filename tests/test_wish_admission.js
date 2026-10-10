@@ -38,7 +38,6 @@ const adapters = {
         resolveByRecipeId: id => [...recipes.values()].find(row => row.recipeId === Number(id)) || null },
     'GameServer/Items/C4DualSwordCombinations': { loadRecipes: () => [] },
     'GameServer/Bot/Economy/CraftShopService': { canCraft: () => true, isServiceCrafter: () => false },
-    'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
     'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
@@ -46,6 +45,13 @@ const adapters = {
     'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
     'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) }
 };
+// Task 2 readers: MP per hour, exit value, combat profile and spoil
+// eligibility come from their own modules (one reader each).
+Object.assign(adapters, {
+    'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+        exitValue: function* () { return 0; } },
+    'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
+adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ maxMp: 1000 });
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const network = load('WishNetwork.js', name => {

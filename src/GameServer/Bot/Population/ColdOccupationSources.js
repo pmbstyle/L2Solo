@@ -183,6 +183,12 @@ function* exitValue(state, id, board = null) {
     return Number.isFinite(value) ? Math.max(0, value) : NaN;
 }
 
+// Seated MP recovery per hour, one reader for the wish and the producer.
+function mpPerHour(state) {
+    initialise();
+    return mpRates.get(Number(state.stats?.classId))?.[Number(state.level)];
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
@@ -201,7 +207,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
         ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(packet[0]) }) : null;
     const context = { timestamp, state, insideContext: true, hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        survivalReserve: Number(packet[2]), mpPerHour: mpRates.get(Number(state.stats?.classId))?.[Number(state.level)],
+        survivalReserve: Number(packet[2]), mpPerHour: mpPerHour(state),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
@@ -332,7 +338,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, mpPerHour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcSellerTowns.has(town); },
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],

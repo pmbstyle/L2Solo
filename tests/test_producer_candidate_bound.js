@@ -64,16 +64,18 @@ try {
     const { PRODUCER_PRICED } = Providers;
     assert.equal(PRODUCER_PRICED, 12, 'detailed pricing shares the plan bound of 12 wish roots');
     // At most K candidates: every one is priced and the outcome is the old
-    // path's (digest recorded on feature/next-update 709762a3 before the bound).
+    // path's (digest recorded on feature/next-update 709762a3 before the bound;
+    // re-recorded for the Task 2 path shape: gross inputs and perCommand, same
+    // choice and numbers).
     const small = run(range(0, 5));
     assert.equal(small.priced, 5, 'with no more candidates than the bound, each is priced as before');
     assert.deepEqual(small.resale.map(node => [node.key, node.valueHours, node.price, node.paths[0].recipeId]),
         [['resale:9', 18.06448605742223, 2220, 5]]);
-    assert.equal(small.digest, 'f25c0882fd3b4f7458e3a8c56633c08f06ec6fe0', 'chosen recipe and its numbers unchanged');
+    assert.equal(small.digest, '84e24dbb7f4f9699c970a18a995a200230135d7a', 'chosen recipe and its numbers unchanged');
     // Forty candidates: only K reach the detailed exit pricing.
     const large = run(range(0, 40));
     assert.equal(large.priced, PRODUCER_PRICED, 'only the pre-ranked finalists are priced');
-    assert.equal(large.digest, '0d9cd2046ba89029ff5831ea5c5cb7a2419cab64', 'same choice as the unbounded old path in this world');
+    assert.equal(large.digest, '0bb0b9acd1fd66180623c8629439a590474fbf43', 'same choice as the unbounded old path in this world');
     // The finalists are the K highest exit ceilings: a world of exactly those
     // candidates (unbounded) gives the same projection.
     const top = run(range(40 - PRODUCER_PRICED, 40));
