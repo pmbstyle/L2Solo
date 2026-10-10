@@ -1013,6 +1013,27 @@ function claimAck(kernel, payload) {
     assert.strictEqual(renewalKernel.snapshot().leaseRecoveries, 0,
         'a renewed claim must not be recovered using its old deadline');
     assert.strictEqual(renewalKernel.inFlight.get(90).grant.leaseUntil, now + 10000);
+    // The tick skips the expiry scan until the earliest lease can be due; a
+    // lease added later with an earlier deadline lowers that bound.
+    assert.strictEqual(renewalKernel.inFlight.checkAt, now + 10000);
+    renewalKernel.upsert({ state: state(92), context: {} });
+    renewalKernel.inFlight.set(92, {
+        grant: { ...renewalGrant, characterId: 92, leaseId: 'early-lease', leaseUntil: now + 4000 },
+        state: state(92),
+        context: {},
+        startedAt: now
+    });
+    assert.strictEqual(renewalKernel.inFlight.checkAt, now + 4000);
+    renewalKernel.recoverStalled(now + 3999);
+    assert.strictEqual(renewalKernel.snapshot().leaseRecoveries, 0);
+    renewalKernel.recoverStalled(now + 4000);
+    assert.strictEqual(renewalKernel.snapshot().leaseRecoveries, 1, 'the early lease expires at its own deadline');
+    assert.deepStrictEqual([...renewalKernel.inFlight.keys()], [90]);
+    assert.strictEqual(renewalKernel.inFlight.checkAt, now + 10000);
+    renewalKernel.recoverStalled(now + 10000);
+    assert.strictEqual(renewalKernel.snapshot().leaseRecoveries, 2, 'the renewed lease expires at its new deadline');
+    assert.strictEqual(renewalKernel.inFlight.size, 0);
+    assert.strictEqual(renewalKernel.inFlight.checkAt, Infinity);
 
     const oversizedInventory = Object.fromEntries(Array.from({ length: 1200 }, (_, index) => [
         String(index), {

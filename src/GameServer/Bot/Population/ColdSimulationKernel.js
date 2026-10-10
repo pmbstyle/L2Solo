@@ -119,6 +119,25 @@ class DueHeap {
     }
 }
 
+// Active leases by bot. set() keeps checkAt at or below every positive
+// leaseUntil, so the 20 ms tick skips the expiry scan until a lease can be
+// due. Renewal only raises leaseUntil (onLeaseRenewal) and delete only raises
+// the minimum, so neither has to touch it; a grant's leaseUntil is never
+// lowered in place.
+class InFlightLeases extends Map {
+    constructor() {
+        super();
+        this.checkAt = Infinity;
+    }
+
+    set(id, active) {
+        super.set(id, active);
+        const until = Number(active?.grant?.leaseUntil || 0);
+        if (until > 0 && until < this.checkAt) this.checkAt = until;
+        return this;
+    }
+}
+
 function deterministicRandom(state = {}) {
     const seedText = `${state.characterId || 0}:${state.timing?.lastResolvedAt || 0}:${state.timing?.nextResolveAt || 0}`;
     let seed = 2166136261;
@@ -527,7 +546,7 @@ class ColdSimulationKernel {
         // Release, hot handoff/remove and shutdown discard them; never saved.
         this.lookSeen = new Map();
         this.nextAlarmToken = 1;
-        this.inFlight = new Map();
+        this.inFlight = new InFlightLeases();
         this.pendingReleases = new Map();
         this.nextReleaseRequest = 1;
         this.partyRuns = new Map();
@@ -1293,11 +1312,17 @@ class ColdSimulationKernel {
 
     recoverStalled(timestamp = this.now()) {
         this.drainOperationalAlarms(timestamp);
+        if (this.inFlight.checkAt > timestamp) return;
 
-        const expiredLeases = [...this.inFlight.entries()].filter(([, active]) => (
-            Number(active?.grant?.leaseUntil || 0) > 0
-            && Number(active.grant.leaseUntil) <= timestamp
-        ));
+        let expiredLeases = null, checkAt = Infinity;
+        for (const entry of this.inFlight) {
+            const until = Number(entry[1]?.grant?.leaseUntil || 0);
+            if (!(until > 0)) continue;
+            if (until <= timestamp) (expiredLeases ||= []).push(entry);
+            else if (until < checkAt) checkAt = until;
+        }
+        this.inFlight.checkAt = checkAt;
+        if (!expiredLeases) return;
         const expiredParties = new Set(expiredLeases.map(([, active]) => active.partyId).filter(Boolean).map(String));
         for (const partyId of expiredParties) {
             const members = [...this.inFlight.entries()].filter(([, active]) => String(active.partyId || '') === partyId);
