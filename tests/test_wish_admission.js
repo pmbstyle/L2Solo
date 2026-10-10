@@ -94,15 +94,18 @@ function scenario({ items, asks = [], known = [], inventory = {}, improvements =
     const board = new BoardIndex();
     asks.forEach(([selfId, price, count = 1], at) => board.put({ id: at + 1, ownerId: 2, storeType: 1, kind: 'sell_ad',
         town: 'Giran', revision: 1, lines: [{ lineId: at + 1, selfId, count, price, enchant: 0 }] }));
+    // EconomyContext's read scope: a candidate's reads count once kept.
+    let open = null; const reads = new Set(), opened = [];
     const ctx = { timestamp: 1, persona, board, hunt: { perHour: 0, expPerHour: 0 }, deathHours: 0,
         hourAdena: 100, riskWeight: 1, wallet: 0, survivalReserve: 0, stockFor,
-        price: id => prices.get(Number(id)) ?? 1, buyback: () => 0,
+        readScope: { open: () => { open = new Set(); opened.push(new WeakRef(open)); return open; }, close: () => { open = null; }, keep: kept => kept.forEach(id => reads.add(id)) },
+        price: id => { (open || reads).add(Number(id)); return prices.get(Number(id)) ?? 1; }, buyback: () => 0,
         stock: () => ({ itemId: 900, missing: 0 }), spotValue: () => ({}), trip };
     const projection = provider.build(state, ctx, { board, knownRecipes: known.map(recipeId => ({ recipeId })) });
     const result = new network.WishNetwork().build({ actorKey: 'character:1', inputKey: 'admission', characterId: 1,
         nodes: projection.nodes, roots: projection.roots, wallet: 0, survivalReserve: 0, hourAdena: 100, riskWeight: 1,
         persona, remembered: false, stockFor });
-    return { projection, admission: projection.admission, result };
+    return { projection, admission: projection.admission, result, reads, opened };
 }
 const close = (actual, expected, message) => assert(Math.abs(actual - expected) < 1e-9, `${message}: ${actual} != ${expected}`);
 const witness = (admission, key) => admission.admitted.find(row => row.key === key);
@@ -136,6 +139,22 @@ assert.equal(counts.get('provider/admission/round'), 1);
 assert.equal(counts.get('provider/admission/gear_root'), 4);
 console.log('PASS ready benefit admits the cheaper chest the old proxy cut; witness equals the expanded wish; counts');
 
+// 1b. The same cut with a known recipe for 111 (admitted) and 114 (waits),
+// each from a material at 5000, so buying still wins and the ranks hold.
+// The nomination reads every candidate's own price (the author's screen);
+// a material read only while the waiting piece's arena is built never
+// becomes an input of the review, the admitted piece's does (MVP-6 Bounds).
+prices.set(211, 5000); prices.set(214, 5000);
+const scoped = scenario({ items: [111, 112, 113, 114].map((id, at) => gear(id, at + 1, 0.5, 1000)).concat(gear(115, 10, 0.2, 500)),
+    asks: [[111, 1000], [112, 1000], [113, 1000], [114, 1000], [115, 500]],
+    known: [recipe(3111, 111, [211]), recipe(3114, 114, [214])] });
+assert.deepEqual(scoped.projection.roots.filter(key => key.startsWith('power:')).sort(),
+    ['power:111:1', 'power:112:2', 'power:113:3', 'power:115:10']);
+assert(scoped.reads.has(211), 'the admitted piece\'s material is an input');
+assert(!scoped.reads.has(214), 'the waiting piece\'s material is not an input');
+recipes.delete(111); recipes.delete(114);
+console.log('PASS a waiting candidate\'s arena reads never become inputs');
+
 // 2. Weapon slots 7 and 14 are one family: one weapon root, the better one.
 const weapons = scenario({ items: [gear(121, 7, 0.4, 1000), gear(122, 14, 0.6, 1000), gear(115, 10, 0.2, 500)],
     asks: [[121, 1000], [122, 1000], [115, 500]] });
@@ -156,6 +175,18 @@ assert.equal(witness(shared.admission, 'power:132:2').evaluations, 2);
 assert.equal(witness(shared.admission, 'power:131:1').price, 0, 'held material costs no money');
 assert.equal(witness(shared.admission, 'power:132:2').price, 10, 'the second craft buys its material');
 console.log('PASS shared stock re-evaluates only the affected candidate');
+// 3b. Five pieces in five families each craft from 10 of 50 held 202: every
+// admission claims 10 more, so the rest are re-evaluated. Four gear roots
+// stop at four rounds (5 + 4 + 3 + 2 evaluations); the fifth is not admitted.
+const rounds = scenario({ items: [[151, 1], [152, 2], [153, 3], [154, 4], [155, 10]].map(([id, slot]) => gear(id, slot, 0.5, 1000)),
+    known: [151, 152, 153, 154, 155].map(id => recipe(id + 300, id, [[202, 10]])),
+    inventory: { 202: { selfId: 202, amount: 50 } } });
+assert.equal(rounds.admission.rounds, 4, 'the round cap');
+assert.equal(rounds.admission.evaluations, 14);
+assert.equal(rounds.admission.admitted.length, 4);
+assert.deepEqual(rounds.admission.admitted.map(row => row.price), [0, 0, 0, 0], 'each admitted craft uses its own held 10');
+[151, 152, 153, 154, 155].forEach(id => recipes.delete(id));
+console.log('PASS four gear roots stop shared-stock re-evaluation at four rounds');
 recipes.clear();
 
 // 4. An improvement already placed a 30-node crafted material in the graph.
@@ -272,3 +303,15 @@ assert.deepEqual(far.admission.pending, [{ key: 'power:116:1', reason: 'not_read
 assert.equal(counts.get('provider/admission_pending/not_ready_in_horizon'), 1);
 assert(!far.projection.roots.includes('power:116:1'));
 console.log('PASS a path not ready inside the horizon is pending with its reason');
+
+// A completed build keeps only its cut: every candidate's read scope (and the
+// arena that filled it) is garbage once the projection is returned.
+const retained = scoped.projection, scopes = scoped.opened;
+assert.equal(scopes.length, 5);
+setImmediate(() => {
+    require('node:v8').setFlagsFromString('--expose-gc');
+    require('node:vm').runInNewContext('gc')();
+    assert(retained.nodes.length > 0);
+    assert.equal(scopes.filter(ref => ref.deref()).length, 0, 'no candidate scope survives the completed build');
+    console.log('PASS a completed build releases its candidates\' scopes');
+});

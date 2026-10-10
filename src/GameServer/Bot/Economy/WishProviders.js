@@ -271,6 +271,10 @@ function buildProjection(state, ctx, deps) {
     // identical nodes. ARCH-NOTE: dies at return; at most the 64-node cap
     // per target, no owner store.
     const descriptors = new Map();
+    // The read scope of the candidate whose arena built each descriptor;
+    // only scopes with a descriptor in the final cut become inputs.
+    const builtBy = new Map();
+    let readScope = null;
     const include = key => {
         if (nodes.some(node => node.key === key)) return;
         const node = descriptors.get(key);
@@ -427,6 +431,7 @@ function buildProjection(state, ctx, deps) {
         if (craft) paths.push(craft);
         const node = { key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] };
         descriptors.set(key, node);
+        if (scratch && readScope) builtBy.set(key, readScope);
         add(node);
         preparingItems.delete(key);
         return key;
@@ -591,10 +596,10 @@ function buildProjection(state, ctx, deps) {
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
     const real = nodes, gear = [];
     for (const candidate of candidates) {
-        nodes = []; scratch = true;
+        nodes = []; scratch = true; readScope = ctx.readScope?.open() || null;
         const key = itemNode(candidate.item.selfId);
         const keys = nodes.map(node => node.key);
-        nodes = real; scratch = false;
+        nodes = real; scratch = false; readScope = null; ctx.readScope?.close();
         if (!key) continue;
         const benefitPerHour = (candidate.gain.attack + candidate.gain.defence * ctx.deathHours) * powerWeight;
         gear.push({ candidate, keys, family: Equipment.isWeaponSlot(candidate.slot) ? 'weapon' : candidate.slot,
@@ -812,6 +817,7 @@ function buildProjection(state, ctx, deps) {
     roots.sort((a, b) => rank(b) - rank(a) || a.localeCompare(b));
     const cut = Network.admitRoots(roots, byKey, { rootLimit: WISH_ROOTS, nodeLimit: Network.MAX_NODES });
     admission.pending.push(...cut.pending);
+    for (const [key, scope] of builtBy) if (cut.kept.has(key)) ctx.readScope.keep(scope);
     if (Diagnostics.active()) {
         Diagnostics.count('provider', 'admission', 'candidate', admission.candidates);
         Diagnostics.count('provider', 'admission', 'evaluation', admission.evaluations);

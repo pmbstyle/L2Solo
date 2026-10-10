@@ -383,9 +383,15 @@ function forState(state = {}, deps = {}) {
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
     const reads = new Map();
     let building = true;
-    const read = id => { id = Number(id); if (!reads.has(id)) {
+    // MVP-6 Bounds: while a gear candidate's arena is built its reads wait
+    // in its own scope; the provider keeps the scopes whose descriptors
+    // survive the final cut, so a rejected candidate's items never become
+    // inputs of the review.
+    let scope = null;
+    const read = id => { id = Number(id); if (reads.has(id)) return;
+        if (scope) { if (!scope.has(id)) scope.set(id, marketToken(sourceBoard, id, deps)); return; }
         reads.set(id, marketToken(sourceBoard, id, deps)); deps.onSourceRead?.(id);
-    } };
+    };
     const watch = id => { if (building) read(id); };
     const Data = invoke('GameServer/DataCache');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -407,7 +413,9 @@ function forState(state = {}, deps = {}) {
     const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, persona, board, hunt: base.hunt, price, buyback, calibration,
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
-        survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena };
+        survivalReserve: base.survivalReserve, kitCost: base.kitCost, hourAdena: base.hourAdena,
+        readScope: { open: () => (scope = new Map()), close: () => { scope = null; },
+            keep: kept => { for (const [id, token] of kept) if (!reads.has(id)) { reads.set(id, token); deps.onSourceRead?.(id); } } } };
     const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : isMainThread
         ? craftIncome(state, { hourAdena: base.hourAdena, worth: price, timestamp }) : null;
     context.workshop = workshop || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };

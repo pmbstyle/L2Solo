@@ -166,6 +166,28 @@ async function run() {
     assert.equal(typeof context.statsPacket.activityLeaf, 'number');
     assert(context.statsPacket.activityLeaf !== 0);
     assert.equal(Economy.forState(base), context, 'unchanged own inputs reuse the complete context');
+    // MVP-6 Bounds: a gear candidate's reads wait in its scope; only a kept
+    // scope becomes an input, so a rejected candidate's market cannot rebuild.
+    const ScopedProviders = invoke('GameServer/Bot/Economy/WishProviders');
+    const build = ScopedProviders.build;
+    try {
+        ScopedProviders.build = (state, ctx, deps) => {
+            const admitted = ctx.readScope.open(); ctx.price(990001); ctx.readScope.close();
+            ctx.readScope.open(); ctx.price(990002); ctx.readScope.close();
+            ctx.readScope.keep(admitted);
+            return build(state, ctx, deps);
+        };
+        const revisions = new Map(), sources = new Set();
+        const scopedDeps = () => ({ workshops: invoke('GameServer/Bot/Economy/CraftWorkshopService').publicForRecipe, workshopRevision: id => revisions.get(id) || 0, onSourceRead: id => sources.add(id) });
+        const scoped = { ...base, characterId: 905 };
+        const scopedContext = Economy.forState(scoped, scopedDeps());
+        assert(sources.has(990001) && !sources.has(990002), 'only the kept scope subscribes its sources');
+        revisions.set(990002, 1);
+        assert.equal(Economy.forState(scoped, scopedDeps()), scopedContext, 'a rejected candidate\'s market change keeps the context');
+        revisions.set(990001, 1);
+        assert.notEqual(Economy.forState(scoped, scopedDeps()), scopedContext, 'an admitted candidate\'s source becoming known rebuilds');
+    } finally { ScopedProviders.build = build; }
+    console.log('PASS candidate read scopes');
     const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
     const shopRecipe = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems())
         .find(row => row.type === 'dwarven' && Number(row.mpCost) > 0);
