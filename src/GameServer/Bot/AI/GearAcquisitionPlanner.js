@@ -20,7 +20,8 @@ const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementM
 // sourceCache still shares the plain result until that decision returns.
 const MAX_RESOLVED_SOURCE_CACHE = 128;
 const MAX_SOURCE_YIELDS = 16384;
-let sourceIndexCache = { spots: null, rewards: null, npcs: null, byItemId: new Map(), resolved: new Map(), yields: new Map() };
+let sourceIndexCache = { spots: null, rewards: null, npcs: null, byItemId: new Map(), resolved: new Map(), yields: new Map(),
+    plainYields: new Map(), plainRatesKey: null, huntable: new Map() };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
@@ -1992,7 +1993,8 @@ function sourceIndexFor(spots = []) {
         });
     });
 
-    sourceIndexCache = { spots, rewards, npcs, byItemId, resolved: new Map(), yields: new Map() };
+    sourceIndexCache = { spots, rewards, npcs, byItemId, resolved: new Map(), yields: new Map(),
+        plainYields: new Map(), plainRatesKey: null, huntable: new Map() };
     return byItemId;
 }
 
@@ -2066,7 +2068,7 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
 function sourceCacheSize() {
     return { resolved: sourceIndexCache.resolved.size,
         packedBytes: [...sourceIndexCache.resolved.values()].reduce((bytes, row) => bytes + row.byteLength, 0),
-        yields: sourceIndexCache.yields.size };
+        yields: sourceIndexCache.yields.size + sourceIndexCache.plainYields.size };
 }
 
 function sourceYieldRatesKey() {
@@ -2110,25 +2112,35 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     let spoiler = options.spoiler;
     for (const entry of entries) {
         yield 'source';
-        const source = materializeSource(entry, itemId, killerLevel, ratesKey);
-        if (!source) continue;
-        const fact = { kind: entry.kind, spotId: source.spotId, npcId: source.npcId, itemId: Number(itemId),
-            units, expectedYield: source.expectedYield };
+        // The fact reads the index record directly: the yield pair, then the
+        // hunt rules on the target's levels and spot, as materializeSource
+        // would give them, without its per-entry object (74% are refusals).
+        const { reward, spot, kind } = entry;
+        const npcLevel = Number(entry.npcLevel || spot?.avgLevel || 1);
+        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey);
+        if (!chance) continue;
+        const npcId = Number(reward.selfId);
+        const fact = { kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield };
         facts.push(fact);
-        if (source.raidBoss) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
-        if (entry.kind === 'spoil') {
+        if (spot?.raidBoss === true) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
+        if (kind === 'spoil') {
             // The executor's rule: a learned Spoil, not the class (E189).
             if (spoiler === undefined) spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
                 { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state) }) || false;
             if (!spoiler) { fact.status = 'ineligible'; fact.reason = 'spoil_skill'; continue; }
         }
-        const reason = !isBotEligibleSourceNpcId(source.npcId) ? 'cannot_hunt'
-            : !sourceWithinVoluntaryHuntBand(state, source) ? 'level_band'
-                : !soloSafeForSource(state, source) ? 'party_needed'
-                    : !sourceHasCapacity(source, state, { occupancy: options.occupancy }) ? 'occupied' : null;
+        const target = { npcId, npcLevel, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1), sourceKind: kind,
+            raidBoss: false };
+        let reason = !sourceNpcHuntable(npcId) ? 'cannot_hunt'
+            : !sourceWithinVoluntaryHuntBand(state, target) ? 'level_band'
+                : !soloSafeForSource(state, target) ? 'party_needed' : null;
+        if (!reason) {
+            target.capacity = LevelingRoutes.capacityForSpot(spot);
+            if (!sourceHasCapacity(target, state, { occupancy: options.occupancy })) reason = 'occupied';
+        }
         if (reason) { fact.status = 'ineligible'; fact.reason = reason; continue; }
         const row = spotValue(entry.spot);
-        const perHour = Number(row?.kills) * source.expectedYield
+        const perHour = Number(row?.kills) * expectedYield
             * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));
         if (!(perHour > 0)) { fact.status = 'unknown'; fact.reason = 'yield'; continue; }
         if (!Number.isFinite(row.valueHours)) { fact.status = 'unknown'; fact.reason = 'income'; continue; }
@@ -2152,19 +2164,53 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
 // penalty: keep it as a number pair per rate profile. Craft routes evaluate
 // many materials, so the bounded source lists above are rebuilt often; this
 // keeps a rebuild from recomputing every reward roll.
+// Without a deep-blue penalty (every fact the hunt band admits) the pair is
+// keyed by numbers, not a five-part string: the same bound, a cheaper read.
+const PLAIN_YIELD_ITEMS = 2 ** 20;
 function dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey) {
+    const npcId = Number(reward.selfId), item = Number(itemId);
+    if ((kind === 'drop' || kind === 'spoil') && Number.isInteger(npcId) && npcId >= 0 && npcId < 2 ** 31
+        && Number.isInteger(item) && item >= 0 && item < PLAIN_YIELD_ITEMS
+        && !ProgressionRates.deepBlueActive(npcLevel, killerLevel)) {
+        if (sourceIndexCache.plainRatesKey !== ratesKey) {
+            sourceIndexCache.plainYields = new Map();
+            sourceIndexCache.plainRatesKey = ratesKey;
+        }
+        const plain = sourceIndexCache.plainYields;
+        const key = (npcId * PLAIN_YIELD_ITEMS + item) * 2 + (kind === 'spoil' ? 1 : 0);
+        let value = plain.get(key);
+        if (!value) {
+            value = itemDropYield(reward, itemId, kind, { npcLevel, killerLevel });
+            if (plain.size + sourceIndexCache.yields.size >= MAX_SOURCE_YIELDS) evictSourceYield();
+            plain.set(key, value);
+        }
+        return value;
+    }
     const rule = ProgressionRates.deepBlueRule({ npcLevel, killerLevel });
     const penalty = rule.active ? Math.min(100, rule.penaltyPercent) : 0;
     const key = `${ratesKey}:${reward.selfId}:${itemId}:${kind}:${penalty}`;
     let value = sourceIndexCache.yields.get(key);
     if (!value) {
         value = itemDropYield(reward, itemId, kind, { npcLevel, killerLevel });
-        if (sourceIndexCache.yields.size >= MAX_SOURCE_YIELDS) {
-            sourceIndexCache.yields.delete(sourceIndexCache.yields.keys().next().value);
-        }
+        if (sourceIndexCache.plainYields.size + sourceIndexCache.yields.size >= MAX_SOURCE_YIELDS) evictSourceYield();
         sourceIndexCache.yields.set(key, value);
     }
     return value;
+}
+
+// Both yield maps share one bound; the larger gives up its oldest pair.
+function evictSourceYield() {
+    const { plainYields, yields } = sourceIndexCache;
+    const map = plainYields.size >= yields.size ? plainYields : yields;
+    map.delete(map.keys().next().value);
+}
+
+// A catalog NPC's huntability is static per loaded NPC table (the index
+// cache is rebuilt when that table changes).
+function sourceNpcHuntable(npcId) {
+    const huntable = sourceIndexCache.huntable;
+    if (!huntable.has(npcId)) huntable.set(npcId, isBotEligibleSourceNpcId(npcId));
+    return huntable.get(npcId);
 }
 
 function stationRecipeIds() {

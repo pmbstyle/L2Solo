@@ -144,15 +144,26 @@ function rollDropAmount(group, item, rate, rng = Math.random) {
     return Math.max(1, amount);
 }
 
+function deepBlueLevelGap(npcLevel, highestLevel) {
+    const normalizedNpcLevel = Number(npcLevel);
+    return Number.isFinite(normalizedNpcLevel) && normalizedNpcLevel > 0
+        ? highestLevel - normalizedNpcLevel
+        : 0;
+}
+
+// The single-killer answer of deepBlueRule without building the rule: hot
+// readers (source facts per item) only need to know whether a penalty applies.
+function deepBlueActive(npcLevel, killerLevel) {
+    const level = Number(killerLevel);
+    return deepBlueLevelGap(npcLevel, Number.isFinite(level) && level > 0 ? level : 0) >= DEEP_BLUE_LEVEL_GAP;
+}
+
 function deepBlueRule({ npcLevel, killerLevel, attackerLevels = [] } = {}) {
     const levels = [killerLevel, ...attackerLevels]
         .map((level) => Number(level))
         .filter((level) => Number.isFinite(level) && level > 0);
     const highestLevel = levels.length > 0 ? Math.max(...levels) : 0;
-    const normalizedNpcLevel = Number(npcLevel);
-    const levelGap = Number.isFinite(normalizedNpcLevel) && normalizedNpcLevel > 0
-        ? highestLevel - normalizedNpcLevel
-        : 0;
+    const levelGap = deepBlueLevelGap(npcLevel, highestLevel);
 
     if (levelGap < DEEP_BLUE_LEVEL_GAP) {
         return { active: false, highestLevel, levelGap, penaltyPercent: 0, chanceMultiplier: 1, minimumChance: 0 };
@@ -213,6 +224,7 @@ module.exports = {
     selectDropItem,
     rollDropAmount,
     deepBlueRule,
+    deepBlueActive,
     rewardGroupRoll,
     scaleAmount
 };
