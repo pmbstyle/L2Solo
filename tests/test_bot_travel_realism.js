@@ -30,6 +30,8 @@ function bot(loc = {}) {
         fetchLocZ() { return this.locZ; },
         moveTo(data) { this.moves.push(data); },
         unselect() { this.unselected = true; },
+        // The restock reads the wallet after its purchase (a19a9727).
+        backpack: { fetchItemFromSelfId: () => null, fetchItems: () => [] },
         state: {
             inMotion: () => false
         },
@@ -91,6 +93,10 @@ const originalPartySay = BotManager.botPartySay;
 const originalBotSessions = BotManager.sessions;
 const originalApplyFullNewbieBlessing = BotBuffs.applyFullNewbieBlessing;
 const originalNeedsNewbieRefresh = BotBuffs.needsNewbieRefresh;
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const NpcRestockPlan = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+const originalHotRow = LifeState.hotRow;
+const originalPurchaseForActor = NpcRestockPlan.purchaseForActor;
 
 async function run() {
 try {
@@ -102,6 +108,10 @@ try {
     ShotStock.planForActor = () => ({ selfId: 1835, price: 1, kind: 'soulshot', rank: 'none', name: 'Soulshot: No Grade' });
     ShotStock.shotAmount = () => 0;
     ShotStock.purchaseActorRestock = () => Promise.resolve({ ok: true, delta: 10, cost: 10 });
+    // A hot restock goes on only while the bot's row is hot, and buys at the NPC
+    // through one seller basket (a19a9727); the travel scenes have no database.
+    LifeState.hotRow = (characterId) => ({ characterId, phase: 'hot' });
+    NpcRestockPlan.purchaseForActor = () => Promise.resolve({ ok: true, receipts: [] });
 
     const shopper = bot({ locX: 1000, locY: 1000, locZ: -100 });
     const shoppingSession = {
@@ -515,6 +525,8 @@ try {
     ShotStock.planForActor = originalPlanForActor;
     ShotStock.shotAmount = originalShotAmount;
     ShotStock.purchaseActorRestock = originalPurchaseActorRestock;
+    LifeState.hotRow = originalHotRow;
+    NpcRestockPlan.purchaseForActor = originalPurchaseForActor;
     BotBuffs.applyFullNewbieBlessing = originalApplyFullNewbieBlessing;
     BotBuffs.needsNewbieRefresh = originalNeedsNewbieRefresh;
     fs.rmSync(isolated.directory, { recursive: true, force: true });

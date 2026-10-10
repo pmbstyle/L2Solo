@@ -107,6 +107,9 @@ const common = {
     'GameServer/Bot/AI/HotBotPolicyOverlay': { clearForPartyDetach: noop },
     'GameServer/Bot/AI/BotSocialMemory': { recordEvent: noop },
     'GameServer/World/Generics/NpcBypasses/CompanionControl': { render: noop },
+    // Detach retires a player-party ownership marker (8019829c); these bots carry none.
+    'GameServer/Bot/Population/BotLifeState': { releasePlayerPartyTakeover: () => Promise.resolve(null) },
+    'GameServer/Bot/Population/PopulationConfig': invoke('GameServer/Bot/Population/PopulationConfig'),
     [global.path.actor]: { teleportTo: () => false }
 };
 
@@ -259,6 +262,7 @@ async function main() {
             'GameServer/Actor/PartyRewardMath': require(path.join(gameRoot, 'src/GameServer/Actor/PartyRewardMath')),
             'GameServer/Bot/Population/BotLifeState': life, 'GameServer/Bot/Population/BackgroundPartyState': parties,
             'GameServer/Bot/Population/ColdSimulationCoordinator': {}, 'GameServer/Bot/BotAI': ai,
+            'GameServer/Bot/Population/PopulationConfig': invoke('GameServer/Bot/Population/PopulationConfig'),
             Database: { restoreTakenOverBackgroundParty: () => Promise.resolve({ ok: true, party: restoredParty, rows: newStates }) }
         });
         publications.length = 0;

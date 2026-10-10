@@ -1,9 +1,9 @@
 {
   "market_sell": {
     "activity": "traveling",
-    "adena": 492200,
+    "adena": 491900,
     "wallet": {
-      "57": 492200,
+      "57": 491900,
       "736": 2
     },
     "timing": {
@@ -18,18 +18,18 @@
       },
       "reason": "market_sale_inventory",
       "to": {
-        "locX": 46600,
-        "locY": 49700,
-        "locZ": 0
+        "locX": 83396,
+        "locY": 147904,
+        "locZ": -3404
       },
-      "townName": "Elven Village",
+      "townName": "Giran",
       "viaTown": "Dion",
       "arrivalActivity": "shopping",
       "arrivalEvent": "arrived_town",
       "method": "soe_gatekeeper",
       "paid": {
         "scroll": 736,
-        "fee": 7800
+        "fee": 8100
       },
       "startedAt": 1000000,
       "arrivalAt": 1025000

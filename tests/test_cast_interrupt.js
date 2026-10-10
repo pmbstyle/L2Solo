@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects packet traces, written only with developer diagnostics.
 const assert = require('assert');
 
 require('../src/Global');

@@ -11,6 +11,7 @@ const ListingService = invoke('GameServer/Bot/Economy/ColdMarketListingService')
 const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const originalWarehouseRelease = Warehouse.releaseCold;
+const originalFinishTownErrands = invoke('GameServer/Bot/Economy/ColdMarketService').finishTownErrands;
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
@@ -149,6 +150,9 @@ async function run() {
         visitOrder.push('warehouse'); return { state: value, released: false };
     };
     ListingService.resolve = async value => { visitOrder.push('listings'); return { state: value, closed: false }; };
+    // A town visit now ends with the NPC restock (a19a9727), a database purchase this
+    // fixture has no database for; only the release-before-listing order is checked here.
+    MarketService.finishTownErrands = async value => value;
     const town = { ...hunter(7420), activity: 'shopping', currentRegion: 'Giran',
         loc: { locX: 83396, locY: 147904, locZ: -3400 } };
     const townResult = { ...workerFight(), patch: { activity: 'shopping', loc: town.loc, stats: {} } };
@@ -160,6 +164,7 @@ async function run() {
         { precomputedResult: workerFight(), context: { spot: oldSpot, route: null } });
     assert.deepStrictEqual(visitOrder, ['listings'], 'field command never releases the warehouse');
     Warehouse.releaseCold = originalWarehouseRelease;
+    MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
 
     // Without a worker result main still starts and resolves the trip itself.
@@ -204,6 +209,7 @@ run().catch((error) => {
     Selection.selectAcquisitionPlan = originalSelect;
     Object.assign(LifeState, { cachedState: originals.cachedState, applyResolve: originals.applyResolve, upsertState: originals.upsertState });
     Warehouse.releaseCold = originalWarehouseRelease;
+    MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = originals.resolveListing;
     MarketService.tryPurchase = originals.tryPurchase;
     Object.assign(GoalService, { current: originals.current, review: originals.review });

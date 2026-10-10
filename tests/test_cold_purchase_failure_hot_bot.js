@@ -88,7 +88,8 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             MarketOpportunity.bestOffer = () => ({ ...afkOffer });
             MarketOpportunity.reserve = () => true;
             // The trade finds the bot hot: the AFK sync returns no cold state (H1).
-            AfkTrade.buyFromShop = () => Promise.resolve({ ok: true, coldState: null });
+            // A committed native trade reports its units and price; a purchase counts its units (71143511).
+            AfkTrade.buyFromShop = () => Promise.resolve({ ok: true, coldState: null, amount: 1, totalPrice: afkOffer.price });
 
             // The bot was activated while the job ran: its row is hot.
             const hot = bot(77);

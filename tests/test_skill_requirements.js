@@ -66,7 +66,10 @@ function fighter(classId, level, worn) {
     if (worn.legs) put(itemFor(worn.legs, 11, rank), 11);
     if (worn.full) put(itemFor(worn.full, 15, rank), 15);
     if (worn.shield) put(itemFor('Armor.Shield', 8, rank), 8);
-    return { state: { characterId: 1, name: 'F', level, classId, stats: { classId }, inventory, vitals: {} }, pieces };
+    const state = { characterId: 1, name: 'F', level, classId, stats: { classId }, inventory, vitals: {} };
+    // Cold combat reads only the learned kit (113e1791); carry the kit a character of this class and level has learned.
+    state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level));
+    return { state, pieces };
 }
 
 // The first day and the first night moment from a fixed time, by the game clock.

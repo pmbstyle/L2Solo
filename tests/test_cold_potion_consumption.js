@@ -9,6 +9,7 @@ const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Solo = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Party = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-potion-consumption.sqlite');
 const POTION = 1060; // Lesser Healing Potion
 const at = 1_750_000_000_000;
@@ -25,7 +26,7 @@ function item(selfId, amount, name) {
 }
 
 function fighter(state, hp) {
-    return {
+    const result = {
         ...state,
         level: 12,
         activity: 'hunting',
@@ -43,6 +44,10 @@ function fighter(state, hp) {
         },
         party: { role: 'dps' }
     };
+    // Owned characters fight with their learned kit only (113e1791); the
+    // fighter carries the database-learned skills of a level 12 Human Fighter.
+    result.stats.coldCombat = ColdCombatProfile.legacySnapshot(result, ColdCombatProfile.skillRecordsFromTree(0, 12));
+    return result;
 }
 
 function seeded(seed) {

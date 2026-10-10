@@ -91,9 +91,13 @@ async function cases() {
     out.market_sell = digest(GoalExecutor.beginMarketTravel(hunter(), {
         type: 'sell_inventory', plan: { expectedBenefit: 'market_sale_inventory', cleanupReason: 'inventory_full' }
     }, T));
-    out.market_buy = digest(GoalExecutor.beginMarketTravel(hunter(), {
+    // The trip builder is pinned here; whether a purchase trip pays for itself
+    // (24512a44) has its own fixture (test_acquisition_trip_value.js).
+    out.market_buy = withStubs([
+        [invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => true]
+    ], () => digest(GoalExecutor.beginMarketTravel(hunter(), {
         type: 'upgrade_gear', plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
-    }, T));
+    }, T)));
 
     const giranCenter = { locX: 83396, locY: 147904, locZ: -3400 };
     const shopping = hunter({

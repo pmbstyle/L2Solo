@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 const fs = require('node:fs');
 const nodePath = require('node:path');
@@ -130,8 +131,9 @@ function authoredKitInputs(actor, session) {
     const escapeHeld = positive(state.inventory[736]?.amount);
     const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats.karma) ? 0
         : escapePrice * Math.max(0, 1 - escapeHeld);
-    const survivalReserve = escapeCost + Math.max(0, shotUse - shotHeld) * shotPrice
-        + Math.max(0, potionUse - potionHeld) * potionPrice;
+    // The protected survival kit is one hour of use in whole purchasable units.
+    const survivalReserve = escapeCost + Math.max(0, Math.ceil(shotUse) - shotHeld) * shotPrice
+        + Math.max(0, Math.ceil(potionUse) - potionHeld) * potionPrice;
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,

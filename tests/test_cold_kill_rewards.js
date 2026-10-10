@@ -17,6 +17,7 @@ process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: 
 const DataCache = invoke('GameServer/DataCache');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
 DataCache.init();
 
@@ -76,7 +77,7 @@ const spots = { pin_orcs: orcs, pin_unknown: unknown };
 
 // Strong saved gear so each fight is a single blow and the rewards dominate the draws.
 function member(characterId, classId, level, spotId) {
-    return {
+    const state = {
         characterId,
         name: `Pin${characterId}`,
         level,
@@ -93,6 +94,11 @@ function member(characterId, classId, level, spotId) {
             }
         }
     };
+    // Owned characters fight with their learned kit only (113e1791); each
+    // member carries the database-learned skills of its class and level, so
+    // the Dwarven Fighter has Spoil.
+    state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TIMESTAMP);
+    return state;
 }
 
 const compact = (materialize) => [

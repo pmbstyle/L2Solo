@@ -46,7 +46,12 @@ try {
             }
         }
     }
-    for (const classId of [53, 54, 55, 117]) assert.equal(Craft.canCraft({ classId, level: 78 }, { level: 1 }), false);
+    // Create Item is shared by every class that has learned it (a9b995ba): the spoiler line
+    // keeps the level 1 it learned as a Dwarven Fighter and crafts nothing above it.
+    for (const classId of [53, 54, 55, 117]) {
+        assert.equal(Craft.canCraft({ classId, level: 78 }, { level: 1 }), true);
+        assert.equal(Craft.canCraft({ classId, level: 78 }, { level: 2 }), false);
+    }
     for (const classId of [56, 57, 118]) assert.equal(Craft.canCraft({ classId, level: 78 }, { level: 1 }), true);
     const tree = Data.skillTree;
     Data.skillTree = tree.filter(row => Number(row.classId) !== 56);

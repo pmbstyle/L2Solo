@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Langfuse tracing config exists only with developer diagnostics.
 const assert = require('assert');
 
 require('../src/Global');

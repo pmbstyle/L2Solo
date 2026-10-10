@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
@@ -57,6 +58,14 @@ async function main() {
     Population.started = true;
     const originalMin = Config.partyMinSize, originalMax = Config.partyMaxSize;
     Config.partyMinSize = 2; Config.partyMaxSize = 2;
+    // Cold members' party goals come from the cold worker (absent here); answer
+    // as the worker does so formation runs its real path to the commit.
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const GoalPolicy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
+    const GoalCalculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
+    const originalPartyGoals = Coordinator.requestPartyGoals;
+    Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
+        sources: GoalCalculation.sources(selected), joint: GoalPolicy.joint(party, selected) });
     const clock = { now: Date.now() }, jobs = registry(clock);
     const driver = new PartyAssemblyEvents({ registry: jobs, life: Life, parties: Parties,
         classify: state => Population.partyAssemblyInput(state),
@@ -71,6 +80,7 @@ async function main() {
     const [nativeParty] = await DB.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', [joinedA.party.partyId]]);
     assert.deepEqual(JSON.parse(nativeParty.memberIdsJson).sort((x, y) => x - y), [a.characterId, b.characterId]);
     driver.stop(); Population.started = false; Population.playerActivityProfile = savedProfile;
+    Coordinator.requestPartyGoals = originalPartyGoals;
     Config.partyMinSize = originalMin; Config.partyMaxSize = originalMax;
     console.log('PASS addressed publication group performs real native membership commit without formation timers');
     }
