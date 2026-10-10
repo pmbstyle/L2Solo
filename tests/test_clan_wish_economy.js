@@ -68,8 +68,10 @@ async function main() {
         * invoke('GameServer/Clan/ClanContributionPolicy').duesRate(establishedContexts.map(context => context.persona.traits)));
     done('one clan purse: marginal money price, own dues and valued residence');
 
+    // A clan item wish needs a real item origin (82e5323c): Ring Mail Breastplate
+    // is sold by an NPC; the quest necklace this fixture used has no source.
     const mixed = Context.build(clan, { warehouse: warehouse(200000), memberContexts: contexts, halls: [lot],
-        equipment: [{ memberId: 1, plan: { target: { selfId: 788 }, strategy: 'market', status: 'active', market: { price: 150000 } } }] });
+        equipment: [{ memberId: 1, plan: { target: { selfId: 347 }, strategy: 'market', status: 'active', market: { price: 150000 } } }] });
     assert.equal(mixed.network.queue.filter(row => row.object.kind === 'equipment').length, 1);
     assert(mixed.network.queue.filter(row => row.funded).reduce((sum, row) => sum + row.price, 0) <= mixed.wallet);
     assert.equal(mixed.hallBid(lot), 0, 'an unfunded earlier wish cannot spend another purse');

@@ -21,17 +21,18 @@ const state = {
     characterId: 9500001, level: 30, spotId: '-10_30', adena: 1000, phase: 'cold', activity: 'shopping',
     stats: { classId: 0, role: 'dps' },
     inventory: Object.fromEntries([
-        line(57, 1000), line(17, 500), line(736, 3), line(1661, 2), line(1831, 4),
+        // One Scroll of Escape above the carried target (ten since 71ff0f77) is surplus.
+        line(57, 1000), line(17, 500), line(736, invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT + 1), line(1661, 2), line(1831, 4),
         line(1060, 10), line(1061, 30), line(956, 1), line(1458, 40)
     ].map((entry) => [String(entry.selfId), entry]))
 };
 
 const target = HealingPotionStock.targetAmountFor(state);
 const potionStock = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
-// ARCH-NOTE: E9's native no-history bag-fill interval reaches the 24h cap
-// here: 3.3875 potions/h -> ceil(3.3875*24)=82, beyond the old 30-stack
-// fixture. Keep a real full stock plus 20 surplus, then check both sales.
-assert.strictEqual(potionStock.targetHours, 24);
+// ARCH-NOTE: bag space only bounds an outing (1a1a2adc); with no town visit
+// history the stock horizon is the initial town-visit estimate. Keep a real
+// full stock plus 20 surplus, then check both sales.
+assert.strictEqual(potionStock.targetHours, invoke('GameServer/Bot/Economy/TownVisitInterval').targetHours(state.stats));
 assert.strictEqual(target, Math.ceil(potionStock.usePerHour * potionStock.targetHours));
 assert(target > 3);
 state.inventory[1061].amount = target + 20;

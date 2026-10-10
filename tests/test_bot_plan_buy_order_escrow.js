@@ -21,7 +21,9 @@ DataCache.init();
 // The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
 const weapon = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
 const state = {
-    characterId: 7, phase: 'cold', level: 30, activity: 'hunting',
+    // Market trips are valued from where the bot stands (d5fb26bd); a bot
+    // without a location priced the kit at Aden instead of nearby Giran.
+    characterId: 7, phase: 'cold', level: 30, activity: 'hunting', loc: { locX: 83000, locY: 148000, locZ: -3400 },
     inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 } },
     stats: { classId: 1, build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };

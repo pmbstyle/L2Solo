@@ -31,7 +31,9 @@ async function capture(state, options = {}, label = '') {
         'the original scenario reaches the voluntary decision reader');
     const miss = Needs.evaluate(state, { ...options, now: timestamp });
     assert.deepEqual(miss, [], 'a voluntary cold read without an accepted native decision must defer');
-    const captured = await nativeWorker(state, { timestamp, context, tablePages });
+    // options.nativeRoutes: the worker prepares town routes before the wish
+    // review, as its route cache does for a live bot (5e91bb1c).
+    const captured = await nativeWorker(state, { timestamp, context, tablePages, nativeRoutes: options.nativeRoutes === true });
     assert.deepEqual(state, before, 'actual worker cannot mutate the original fixture input');
     assert.deepEqual(captured.forbiddenLoaded, []);
     const native = Decision.compact(captured.decision);

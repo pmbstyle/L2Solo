@@ -37,6 +37,12 @@ const adapters = {
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' }
 };
+// Liquidation funding reads the shared sale and kept-stock readers (f75b6525); this
+// fixture sells nothing, so no inventory row is a sale candidate.
+Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
+    'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) } });
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const tendency = { MIN: 0.02, roll: () => 0.5 };

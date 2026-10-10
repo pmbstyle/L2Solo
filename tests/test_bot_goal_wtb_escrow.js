@@ -84,26 +84,37 @@ try {
     }
     AfkTrade.ownerRecords = originalProjection;
     // Independent physical publication/withdrawal seam with the exact
-    // original7/chest/85%/initial wallet. No fake funded choice is supplied.
+    // original7/chest/85%/initial wallet. A bot buy ad is a funded-only
+    // conditional bid that holds no Adena and settles at a meeting (6d672802,
+    // tests/test_board_trade_meeting.js): without a native money packet it is
+    // refused, and a funded one moves no money until a seller meets it.
     Database.init();
     await character(Database, 7, 'EscrowBuyer', 'bot_7');
     await Database.setItem(7, { selfId: 57, name: 'Adena', amount: price + reserve });
     await Life.init(); await AfkTrade.init();
-    await Life.upsertState({ ...gearState(price + reserve), accountName: 'bot_7', name: 'EscrowBuyer',
+    const lifeState = async (money) => Life.upsertState({ ...gearState(price + reserve), accountName: 'bot_7', name: 'EscrowBuyer',
+        stats: { ...gearState(price + reserve).stats, ...(money ? { money } : {}) },
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(7)), timing: {} }, 'fixture_wtb_quote');
-    const posted = await AfkTrade.publishBot(7, { kind: 'buy_ad', storeType: AfkTrade.BUY,
-        title: 'WTB chest', town: 'Gludio', locX: 0, locY: 0, locZ: 0,
-        lines: [{ selfId: item.selfId, name: item.template.name, count: 1, price: escrow, enchant: 0 }] });
-    assert.strictEqual(Number(posted.escrowAdena), escrow);
-    assert.strictEqual(amount(await Database.fetchItems(7), 57), walletAfterPosting);
-    assert.strictEqual(Market.buyOrderEscrow(7), escrow);
+    const ad = { kind: 'buy_ad', storeType: AfkTrade.BUY, title: 'WTB chest', town: 'Gludio', locX: 0, locY: 0, locZ: 0,
+        lines: [{ selfId: item.selfId, name: item.template.name, count: 1, price: escrow, enchant: 0 }] };
+    await lifeState(null);
+    await assert.rejects(AfkTrade.publishBot(7, ad), /economy_funding_missing/, 'no native packet, no bot bid');
+    assert.strictEqual(amount(await Database.fetchItems(7), 57), price + reserve, 'a refused bid moves no Adena');
+    // The packet's E1 reserve is the declared reserve and its one funded row is
+    // this chest at the bid (PurchaseFunding.packetFor, an E3 money row).
+    await lifeState(Funding.packetFor({ moneyPrice: 0.0001, gap: null,
+        queue: [{ funded: true, price: escrow, ratio: 1, object: { itemId: item.selfId } }] }, 100, reserve));
+    const posted = await AfkTrade.publishBot(7, ad);
+    assert.strictEqual(Number(posted.escrowAdena || 0), 0, 'a bot buy ad holds no Adena');
+    assert.strictEqual(amount(await Database.fetchItems(7), 57), price + reserve, 'the wallet stays whole until a meeting');
+    assert.strictEqual(Market.buyOrderEscrow(7), 0);
     assert.strictEqual(Funding.budget(Life.snapshot(7), Market.buyOrderEscrow(7)), price + reserve);
     assert.strictEqual(Number((await AfkTrade.closeBotRecord(7, posted.id, { expectedRevision: posted.revision })).closed), 1);
-    assert.strictEqual(amount(await Database.fetchItems(7), 57), price + reserve, 'every held Adena comes back once');
+    assert.strictEqual(amount(await Database.fetchItems(7), 57), price + reserve, 'withdrawal creates no Adena');
     assert.strictEqual(amount(await Database.fetchItems(7), item.selfId), 0, 'a withdrawn order never acquires its chest');
     assert.strictEqual(Market.buyOrderEscrow(7), 0);
     console.log(JSON.stringify({ chest: item.selfId, price, declaredReserve: reserve, escrow,
-        physicalWalletAfterPosting: walletAfterPosting, physicalWalletAfterRefund: price + reserve, chestAcquired: 0 }));
+        physicalWalletAfterPosting: price + reserve, physicalWalletAfterWithdrawal: price + reserve, chestAcquired: 0 }));
     console.log('Bot goal WTB escrow checks passed');
 } finally {
     AfkTrade.ownerRecords = originalProjection;

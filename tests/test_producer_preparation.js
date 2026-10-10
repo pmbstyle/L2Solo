@@ -36,6 +36,12 @@ const adapters = {
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' }
 };
+// Liquidation funding reads the shared sale and kept-stock readers (f75b6525); this
+// fixture sells nothing, so no inventory row is a sale candidate.
+Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
+    'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) } });
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
 const tendency = { MIN: 0.02, roll: () => 0.5 };
@@ -53,6 +59,12 @@ adapters['GameServer/Bot/Economy/PriceBelief'] = { prior: () => ({ mu: Math.log(
 const nativePrice = load('PriceDecision.js', name => require(path.resolve(root, name)), invokeAdapter);
 const producerPrice = { ...nativePrice, prospectiveExit: (...args) => supported ? nativePrice.prospectiveExit(...args) : args[1] };
 const provider = load('WishProviders.js' , name => {
+    // Admitted synthetic origins (a missing recipe is never admitted, as in the real
+    // catalogue) and the shared equipment rule (82e5323c, d300b1b7).
+    if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true,
+        allowsRecipe: recipe => !!recipe };
+    if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
+    if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './PriceDecision') return producerPrice;
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false };

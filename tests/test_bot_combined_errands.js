@@ -58,6 +58,9 @@ async function run() {
 
     const mage = { characterId: 900001, level: 7, activity: 'hunting', phase: 'cold', inventory: {},
         vitals: { hp: 100, maxHp: 100, mp: 0, maxMp: 100 }, stats: { classId: 10 } };
+    // Owned characters fight with their learned kit only (113e1791): the mage
+    // carries the skills a level 7 Human Mystic has learned.
+    mage.stats.coldCombat = Profile.legacySnapshot(mage, Profile.skillRecordsFromTree(10, 7));
     const profile = Profile.profileFor(mage);
     const skills = Profile.offensiveSkills(profile);
     assert(skills.some(skill => skill.mp > 0), 'shipped mage has an actual usable spell');
@@ -110,8 +113,10 @@ async function run() {
     let buyer = await seed([{ selfId: 57, name: 'Adena', amount: 500000 }, { selfId: 736, name: 'Scroll of Escape', amount: 3 },
         { selfId: 86, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }]);
     const now = Date.now();
+    // A trip must pay for itself before travel (24512a44); a planned errand
+    // carries its originating value (ColdMarketService.fundingTerms).
     const jobs = [
-        { selfId: 1869, amount: 2, town: 'Dion', purpose: 'craft_input', maxPrice: 80, at: now },
+        { selfId: 1869, amount: 2, town: 'Dion', purpose: 'craft_input', maxPrice: 80, valueHours: 10, at: now },
         { selfId: 1060, amount: 2, town: 'Dion', purpose: 'healing', money: 50000, at: now },
         { selfId: 736, amount: 1, town: 'Dion', purpose: 'scrolls', money: 50000, at: now },
         { selfId: 1061, amount: 1, town: 'Giran', purpose: 'future_visit', at: now }

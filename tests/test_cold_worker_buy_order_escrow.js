@@ -28,19 +28,32 @@ const weapon = BotGear.planFor({ classId: 1, level: 30 }).items.find((item) => N
 const base = (characterId, adena) => ({
     characterId, name: `Buyer${characterId}`, accountName: `bot_${characterId}`, level: 30, exp: Number(DataCache.experience[29]), sp: 0,
     phase: 'cold', activity: 'hunting', loc: { ...point },
-    inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 } }, adena,
+    // A full hour of D soulshots: the worker's hunting table reserves a missing
+    // shot hour from the wallet, which this escrow fixture does not exercise.
+    inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 },
+        1463: { selfId: 1463, amount: 2000 } }, adena,
     vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { ...([7, 8].includes(characterId) ? fundingPacket : null), hennas: [1, 13, 17], generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 });
-const wallet = 120000;
-const nativePosting = Selection.selectAcquisitionPlan(base(7, wallet), null, { spots: [], planningOptions: plannerOptions });
+// With prepared routes the cheapest useful D piece leads the queue; this wallet
+// funds it but, once its bid sits in escrow, no longer covers it.
+const wallet = 60000;
+// A purchase is executable only over prepared town routes (5e91bb1c). The
+// worker prepares them before its wish review; this main-thread review reads
+// the same EconomicTrip rows for the bot's own position.
+const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
+const routeRows = (state) => { const steps = EconomicTrip.prepare(state); let next;
+    do next = steps.next(); while (!next.done); return next.value; };
+const select = (state) => Selection.selectAcquisitionPlan(state, null, { spots: [], planningOptions: plannerOptions,
+    preparedEconomy: invoke('GameServer/Bot/Economy/EconomyContext').forState(state, { spots: [], routeRows: routeRows(state) }) });
+const nativePosting = select(base(7, wallet));
 const posting = nativePosting.acquisitionPlan;
 fundingPacket = nativePosting.economy.statsPacket;
 assert(fundingPacket.money.slice(4).includes(posting.target.selfId), 'the native queue packet funds the selected item');
 assert.strictEqual(posting?.strategy, 'market', 'the fixture must plan a purchase');
 const price = Number(posting.market.price);
 const afterPosting = wallet - price;
-const unfunded = Selection.selectAcquisitionPlan(base(7, afterPosting), null, { spots: [], planningOptions: plannerOptions });
+const unfunded = select(base(7, afterPosting));
 assert.strictEqual(unfunded.economy.network.activity.funding, true, 'without escrow its selected gear wish must earn money first');
 const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) / 3) }, (_, i) => packet[6 + i * 3]);
 assert(!fundedIds(unfunded.economy.statsPacket.money).includes(posting.target.selfId), 'unfunded target has no spending ratio');

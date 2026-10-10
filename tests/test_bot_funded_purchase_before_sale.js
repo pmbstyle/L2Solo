@@ -20,7 +20,10 @@ const loot = Object.fromEntries([[1864, 60], [1865, 15], [1866, 26], [1868, 108]
     .map(([selfId, amount]) => [String(selfId), { selfId, amount,
         name: DataCache.items.find((item) => Number(item.selfId) === selfId)?.template?.name }]));
 const bot = (persona, equipmentPlan, adena = 2000000) => ({
+    // Purchases are executable only over prepared routes from where the bot
+    // stands (5e91bb1c): the hunting bot is near Giran.
     characterId: 7, name: 'Saver', accountName: 'bot_7', phase: 'cold', activity: 'hunting', level: 30, adena,
+    loc: { locX: 83000, locY: 148000, locZ: -3400 },
     persona, inventory: loot, vitals: { hp: 2000, maxHp: 2000, mp: 1000, maxMp: 1000 },
     stats: { generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [], equipmentPlan }
 });
@@ -33,7 +36,7 @@ const wealth = { primaryDrive: 'wealth', traits: {} };
 // ARCH-NOTE: FX-C1 reads one genuine worker choice; NeedsEvaluator maps
 // voluntary choices at priority50. The prior78/86/58/82 ladder is retired.
 async function choice(state, label) {
-    const result = await NativeChoice.capture(state, {}, label);
+    const result = await NativeChoice.capture(state, { nativeRoutes: true }, label);
     assert.strictEqual(result.goals.length, 1, 'one worker leaf, not simultaneous buy and sale alternatives');
     const goal = result.goals[0], leaf = result.read.activity;
     assert.strictEqual(goal.priority, 50);
@@ -66,7 +69,9 @@ assert.strictEqual(wealthChoice.goals.find(row => row.type === 'sell_inventory')
     'buying happens first without a parallel sale leaf');
 
 const poorChoice = await choice(bot(wealth, npcJewellery, 50000), 'poor_original_50k');
-assert.strictEqual(poorChoice.read.activity.activity, 'hunting', 'the original poor wallet must earn its missing purchase value');
+// Selling the loot is finite funding too (f75b6525): the poor wallet earns its
+// missing purchase value by hunting or by selling, never by buying.
+assert(['hunting', 'selling'].includes(poorChoice.read.activity.activity), 'the original poor wallet must earn its missing purchase value');
 assert(poorChoice.state.stats.money[3] > 0, 'a real unfunded gap remains');
 assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
     'the old jewellery plan alone cannot authorize its debit');

@@ -50,7 +50,9 @@ assert.strictEqual(joint.objective, objective);
 assert.equal(joint.wishFocus, undefined, 'route wait does not install a new group roll or objective');
 const previous = { network: { activity: { activity: 'hunting' } } };
 session.heldEconomy = previous; session.economySeq = 10;
-const pending = { routePending: true, statsPacket: { decisionSeq: 11, activityLeaf: 999 } };
+// A real economy context always carries its stock reader (0175fd23), pending route or not.
+const pending = { stock: () => ({ itemId: 0, usePerHour: 0 }), routePending: true,
+    statsPacket: { decisionSeq: 11, activityLeaf: 999 } };
 assert.strictEqual(Events.hold(session, null, pending), previous);
 Events.prepared(session);
 assert.equal(session.coldLifeState.stats.decisionSeq, 10, 'ready route is same decision, not a new roll');

@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // The shared capture helper reads the optional main cold-build counter.
 const assert = require('assert');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');

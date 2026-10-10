@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // The shared capture helper reads the optional main cold-build counter.
 const assert = require('assert');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
@@ -18,7 +19,7 @@ const { captureAndRead } = require('./helpers/nativeEconomyPolicyAssertions');
 const NOW = 1791343645000;
 
 // ARCH-NOTE: FX-E1 removed the level/percentage floor. Sum the native hourly
-// stock deficits and escape cost independently; no wish network is built here.
+// whole-unit stock deficits and escape cost independently; no wish network is built here.
 function reserveInputs(state) {
     const base = Economy.basics(state, { timestamp: NOW });
     const stocks = ['shots', 'potions'].map(kind => {
@@ -28,7 +29,9 @@ function reserveInputs(state) {
     });
     const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.price(736),
         usable: !Karma.closesTowns(state.stats?.karma) };
-    const expected = stocks.reduce((sum, row) => sum + Math.max(0, row.perHour - row.held) * row.unitPrice, 0)
+    // A fractional hourly use is bought as whole units (24512a44): the survival
+    // stock is ceil(use per hour), so both purchase tranches stay executable.
+    const expected = stocks.reduce((sum, row) => sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0)
         + (escape.usable ? Math.max(0, 1 - escape.held) * escape.unitPrice : 0);
     assert.strictEqual(base.survivalReserve, expected, 'native E1 reserve is the explicit hourly kit plus escape deficit');
     assert.strictEqual(Gear.operationalAdenaReserve(state), expected, 'gear reads the same E1 reserve');
@@ -75,7 +78,7 @@ const reserveCapture = await captureAndRead(kitState, { timestamp: NOW });
 const nativeReserve = reserveCapture.captured.reserveInputs;
 assert(nativeReserve && nativeReserve.stocks.length === 2);
 const workerReserve = nativeReserve.stocks.reduce((sum, row) =>
-    sum + Math.max(0, row.perHour - row.held) * row.unitPrice, 0)
+    sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0)
     + (nativeReserve.escape.usable ? Math.max(0, 1 - nativeReserve.escape.held) * nativeReserve.escape.unitPrice : 0);
 assert.strictEqual(reserveCapture.state.stats.money[2], Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
 console.log(JSON.stringify({ mainReserve: emptyKit.expected, nativeReserveInputs: nativeReserve, expectedWorkerReserve: workerReserve }));
@@ -120,7 +123,9 @@ assert.strictEqual(originalBidContext.economy.network.demands.get(`item:${BOW}`)
 assert.strictEqual(originalBidContext.economy.worth(BOW), 0, 'no native usefulness means zero own worth at a positive money price');
 assert.strictEqual(bid(scaledBase), null, 'a caller\'s reference amount cannot create a profitable bid for an unsuitable item');
 
-// A wealth crafter does not craft while it holds its own WTB.
+// A wealth crafter may craft while it holds its own WTB (ec757278): the
+// ad's escrow is not free purse money; the funding check guards that
+// (tests/test_cold_wealth_craft.js).
 const crafter = { characterId: 9103, accountName: 'bot_pop_test', name: 'Crafter', phase: 'cold',
     activity: 'hunting', level: 60, adena: 500000, vitals: { mp: 100 }, inventory: {},
     stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
@@ -129,7 +134,7 @@ const ownerRecords = AfkTrade.ownerRecords;
 try {
     AfkTrade.ownerRecords = (id) => Number(id) === 9103
         ? [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 1000, lines: [] }] : [];
-    assert.strictEqual(WealthCraft.eligible(crafter), false, 'its own buy ad comes first');
+    assert.strictEqual(WealthCraft.eligible(crafter), true, 'its own buy ad no longer blocks crafting');
 } finally {
     AfkTrade.ownerRecords = ownerRecords;
 }
