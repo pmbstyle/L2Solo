@@ -25,6 +25,19 @@ const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
+// On arrival a cold bot buys only what its held card orders (Task 4, question
+// 1 = A). These goals stand for that step: the genuine card is kept and its
+// leaf orders the goal's item; a bot without a card keeps the goal's amount.
+function purchaseOnCard(state, goal) {
+    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+    const decided = decisions.decided;
+    decisions.decided = function (value) {
+        const real = decided.call(this, value);
+        return real && goal?.target?.itemId ? Object.create(real, { activity: { value: { activity: 'shopping',
+            itemId: Number(goal.target.itemId), amount: Math.max(1, Number(goal.target.amount) || 1) } } }) : real;
+    };
+    return ColdMarketService.tryPurchase(state, goal).finally(() => { delete decisions.decided; });
+}
 
 DataCache.init();
 
@@ -204,7 +217,7 @@ async function run() {
     const nativeOriginal = await NativeChoice.capture(state, {}, 'cold_purchase_original_1000');
     assert.strictEqual(Funding.spendable(nativeOriginal.state, 0, { itemId: 2 }), 0);
     const negativeBuyer = await declaredState(nativeOriginal.state, 'original_unfunded');
-    const unfunded = await ColdMarketService.tryPurchase(negativeBuyer, goal);
+    const unfunded = await purchaseOnCard(negativeBuyer, goal);
     assert.strictEqual(unfunded.purchased, false, 'the actual queue does not fund this item');
     assert.strictEqual(Native.amount(await Database.fetchItems(77), 57), 1000);
     assert.strictEqual(Native.amount(await Database.fetchItems(77), 2), 0);
@@ -242,7 +255,7 @@ async function run() {
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 11000 } } };
     const nativeFunded = await NativeChoice.capture(oldFundedInput, {}, 'cold_purchase_original_11000');
     assert.strictEqual(Funding.spendable(nativeFunded.state, 0, { itemId: 2 }), 0);
-    const funded = await ColdMarketService.tryPurchase(await declaredState(nativeFunded.state, 'original_11000'), goal);
+    const funded = await purchaseOnCard(await declaredState(nativeFunded.state, 'original_11000'), goal);
     assert.strictEqual(funded.purchased, false);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 57), 11000);
     assert.strictEqual(Native.amount(await Database.fetchItems(777), 2), 0);
@@ -285,7 +298,7 @@ async function run() {
     // The native bot also probes public offers while checking remote-trade
     // eligibility. Count this consumer separately from capture/preparation.
     lowTierMarketLookups.length = 0; lowTierBudget = undefined;
-    const lowTierPlayerPurchase = await ColdMarketService.tryPurchase(lowTierState, {
+    const lowTierPlayerPurchase = await purchaseOnCard(lowTierState, {
         type: 'upgrade_gear',
         status: 'active',
         target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none', adena: 900 },
@@ -319,7 +332,7 @@ async function run() {
         lowTierBuyStoreCalls += 1;
         return Promise.resolve({ opened: true });
     };
-    const missingLowTierNpcGear = await ColdMarketService.tryPurchase(await declaredState({
+    const missingLowTierNpcGear = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 87,
         level: 14,
@@ -344,7 +357,7 @@ async function run() {
     MarketOpportunity.reserve = originals.reserve;
     BuyStoreService.open = originals.openBuyStore;
 
-    const completedGoal = await ColdMarketService.tryPurchase(state, {
+    const completedGoal = await purchaseOnCard(state, {
         ...goal,
         status: 'completed',
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
@@ -361,7 +374,7 @@ async function run() {
     const legacyJourneyState = { ...state, accountName: 'bot77' };
     const fundedInGiran = { ...legacyJourneyState, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
-    const otherTownGoal = await ColdMarketService.tryPurchase(await declaredState(fundedInGiran, 'giran_to_dion'), {
+    const otherTownGoal = await purchaseOnCard(await declaredState(fundedInGiran, 'giran_to_dion'), {
         ...goal,
         status: 'active',
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Dion' }
@@ -369,18 +382,18 @@ async function run() {
     assert.strictEqual(otherTownGoal.reason, 'market_destination_corrected', 'a stale journey must continue to the requested town');
     assert.strictEqual(otherTownGoal.state.stats.travel.townName, 'Dion');
     assert.strictEqual(otherTownGoal.state.adena, 100000 - 8100, 'the corrected journey pays the Giran to Dion gatekeeper');
-    const shortOfFee = await ColdMarketService.tryPurchase(await declaredState({ ...fundedInGiran, adena: 1000, inventory: state.inventory }, 'short_gatekeeper'), {
+    const shortOfFee = await purchaseOnCard(await declaredState({ ...fundedInGiran, adena: 1000, inventory: state.inventory }, 'short_gatekeeper'), {
         ...goal, status: 'active', plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Dion' }
     });
     assert.strictEqual(shortOfFee.reason, 'different_market_town', 'a buyer short of the gatekeeper fee stays (N2)');
     const returnPoint = { loc: { locX: 100, locY: 200, locZ: 0 }, regionName: 'Field' };
-    const corrected = await ColdMarketService.tryPurchase(await declaredState({
+    const corrected = await purchaseOnCard(await declaredState({
         ...fundedInGiran, stats: { ...state.stats, marketReturn: returnPoint }
     }, 'corrected_goddard'), { ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Goddard' } });
     assert.strictEqual(corrected.state.stats.travel.townName, 'Goddard');
     assert.deepStrictEqual(corrected.state.stats.marketReturn, returnPoint,
         'correcting a persisted wrong-town journey must keep the original hunting return');
-    const unknownTown = await ColdMarketService.tryPurchase(await declaredState(legacyJourneyState, 'unknown_town'), {
+    const unknownTown = await purchaseOnCard(await declaredState(legacyJourneyState, 'unknown_town'), {
         ...goal, plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Unknown town' }
     });
     assert.strictEqual(unknownTown.reason, 'different_market_town');
@@ -394,7 +407,7 @@ async function run() {
         blockedReserveCalls += 1;
         return true;
     };
-    const incompatibleShield = await ColdMarketService.tryPurchase(await declaredState({
+    const incompatibleShield = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 86,
         level: 40,
@@ -427,7 +440,7 @@ async function run() {
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
 
-    const noOffer = await ColdMarketService.tryPurchase(await declaredState({
+    const noOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 79,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
@@ -440,7 +453,7 @@ async function run() {
 
     MarketOpportunity.bestOffer = () => null;
     BuyStoreService.open = () => Promise.reject(new Error('forced buy-store persistence failure'));
-    const failedBuyStore = await ColdMarketService.tryPurchase(await declaredState({
+    const failedBuyStore = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 82,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
@@ -451,7 +464,7 @@ async function run() {
 
     MarketOpportunity.bestOffer = () => ({ selfId: 2, price: 1000, sourceType: 'cold_store', storeItem: { count: 1, price: 1000 } });
     MarketOpportunity.reserve = () => false;
-    const changedOffer = await ColdMarketService.tryPurchase(await declaredState({
+    const changedOffer = await purchaseOnCard(await declaredState({
         ...state,
         characterId: 80,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },

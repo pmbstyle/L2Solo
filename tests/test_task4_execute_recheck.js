@@ -91,7 +91,27 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         await Market.executePlan(fresh, { shot: [1] });
         assert.equal(shots, 1, 'a held shot step is executed');
 
-        // 7. A wealth craft whose decision changed writes nothing.
+        // 7. A meeting settles: its goods reach the bag and every settlement
+        //    writer replies with the projected SQL row in the same transaction
+        //    (TradeMeeting terminal and settleBoardOwner via coldSimulationRow),
+        //    which clears the incoming; column-only writes after it never
+        //    bring it back, so the bag is not counted twice (heldFor = bag +
+        //    incoming). Only a column-only write carrying the settled bag
+        //    before that row would count it twice (9); no writer does so.
+        const { heldFor } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+        assert(Life.acceptLifecycleRow(await lifeRow({ acceptedIncoming: { [ORE]: 2 } })));
+        assert.equal(heldFor(Life.cachedState(owner), ORE), 7, '5 in the bag and 2 in the accepted meeting');
+        await Database.setItem(owner, { selfId: ORE, name: 'Iron Ore', amount: 2, slot: 0 });
+        const settledBag = Life.inventorySummaryFromItems(await Database.fetchItems(owner));
+        assert(Life.acceptLifecycleRow(await lifeRow({ acceptedIncoming: {}, inventorySummary: JSON.stringify(settledBag) })));
+        assert.equal(Life.cachedState(owner).inventory[ORE].amount, 7);
+        assert.equal(heldFor(Life.cachedState(owner), ORE), 7, 'the settlement row: 7 in the bag, nothing incoming');
+        const later = { ...Life.cachedState(owner), activity: 'hunting' };
+        delete later.acceptedIncoming;
+        await Life.upsertState(later, 'probe_after_settlement');
+        assert.equal(heldFor(Life.cachedState(owner), ORE), 7, 'a column-only write after the settlement counts the bag once');
+
+        // 8. A wealth craft whose decision changed writes nothing.
         let writes = 0;
         stub(Life, 'upsertState', async () => { writes++; return null; });
         const opportunity = { exit: { type: 'npc' }, recipe: { mpCost: 0 }, batches: 1, basket: { owned: [], purchases: [] } };

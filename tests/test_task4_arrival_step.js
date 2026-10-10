@@ -8,14 +8,17 @@
 // Native ColdMarketService in a sandbox with declared adapters; no game DB.
 const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
 const root = require('node:path').resolve(__dirname, '..');
-let current, offer, card = null, offered = [], quoted = [], funded = [], refreshes = [];
+let current, offer, decision = null, offered = [], quoted = [], funded = [], refreshes = [], refreshedOn = [];
 const dependencies = {
     'GameServer/Bot/Population/BotLifeState': {
         cachedState: () => current, hotRow: () => null, marketPurchaseBlocker: () => null,
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},
         upsertState: async next => (current = next)
     },
-    'GameServer/Bot/Population/ColdSimulationCoordinator': { requestEconomyRefresh: id => refreshes.push(id) },
+    // The held card (economyDecisions.decided); a refresh records the state
+    // the worker would be posted.
+    'GameServer/Bot/Population/ColdSimulationCoordinator': { economyDecisions: { decided: () => decision },
+        requestEconomyRefresh: id => { refreshes.push(id); refreshedOn.push(current); } },
     'GameServer/Bot/Economy/MarketOpportunity': { botCanBuy: () => true, fixedStoreOffers: () => [], npcOffersAll: () => [],
         bestOffer: (_id, options) => { offered.push(options); return offer && options.accept(offer) ? offer : null; } },
     'GameServer/Bot/Economy/MarketTelemetry': { offerChanged: () => {}, noOffer: () => {}, purchaseFailed: () => {} },
@@ -29,7 +32,7 @@ const dependencies = {
         buyFromShop: async (_buyer, _store, _id, _qty, options) => { funded.push(options.funding); return { pending: true, meetingId: 1 }; } }
 };
 global.invoke = name => dependencies[name] || {};
-const Decision = { economyFor: () => card ? { network: { activity: card } } : null,
+const Decision = { economyFor: () => { throw Error('arrival builds no economy view'); },
     remainingToOrder: require(root + '/src/GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder };
 const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoWarn: () => {} }, Date, Promise, console,
     require: name => name === './EconomyDiagnostics' ? { active: () => false, enabled: () => false }
@@ -47,12 +50,17 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
 (async () => {
     // A board line above the plan's unit price is not bought; the worker is asked.
     offer = { sourceType: 'afk_bot_store', selfId: 48, price: 80, store: { shopId: 1 }, town: 'Giran' };
+    // No card (a karma plan carries none): the goal's step stands.
     current = bot();
     const above = await Market.tryPurchase(current, gear(75));
     assert.equal(above.purchased, false);
     assert.deepEqual(funded, [], 'no line above the plan price reaches the writer');
     assert.deepEqual(refreshes, [7], 'a miss asks the worker for a new card');
     assert(above.state.stats.marketRetryAfter > Date.now(), 'the bot waits instead of replanning on main');
+    // The worker is posted the written return, not the state before it: a
+    // card decided on the old state would never match the bot again.
+    assert.equal(refreshedOn[0], above.state, 'refresh after the return is written');
+    assert.equal(refreshedOn[0].activity, 'hunting');
 
     // A goal without the plan's unit price is not the card's step: nothing to buy.
     refreshes = []; offered = [];
@@ -73,7 +81,7 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
     // A material: the amount is the card leaf's amount less what reached the
     // bag or accepted incoming since the decision (5 - (3 + 1 - 2) = 3).
     refreshes = [];
-    card = { activity: 'shopping', itemId: 48, amount: 5, heldAtDecision: 2 };
+    decision = { activity: { activity: 'shopping', itemId: 48, amount: 5, heldAtDecision: 2 } };
     const material = { type: 'buy_craft_material', status: 'active', target: { itemId: 48, amount: 10, adena: 75 },
         plan: { marketTown: 'Giran', purpose: 'supply', valueRate: 0.02 } };
     const missed = await Market.tryPurchase(bot({ inventory: { 48: { selfId: 48, amount: 3 } }, acceptedIncoming: { 48: 1 } }), material);
@@ -88,5 +96,21 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
     await Market.tryPurchase(bot({ inventory: { 48: { selfId: 48, amount: 5 } }, acceptedIncoming: { 48: 2 } }), material);
     assert.deepEqual(quoted, []);
     assert.deepEqual(refreshes, [7]);
-    console.log('PASS arrival step: plan price cap, remaining amount with incoming, refresh on a miss, goal funding on the board line');
+
+    // The goal outlives its card: a meeting on the way delivered the item and
+    // the arrival card hunts. Nothing is bought (not the goal's 10 again).
+    for (const other of [{ activity: 'hunting', spotId: 3 }, { activity: 'shopping', itemId: 49, amount: 10 }, null]) {
+        decision = { activity: other }; quoted = []; offered = []; refreshes = []; refreshedOn = [];
+        current = bot({ inventory: { 48: { selfId: 48, amount: 10 } } });
+        const gone = await Market.tryPurchase(current, material);
+        assert.deepEqual(quoted, [], `no material lookup when the card is ${JSON.stringify(other)}`);
+        assert.equal(gone.purchased, false);
+        assert.equal(gone.reason, 'arrival_step_gone');
+        assert.deepEqual(refreshes, [7], 'the worker decides anew');
+        assert.equal(refreshedOn[0], gone.state, 'refresh after the return is written');
+        const gearGone = await Market.tryPurchase(bot(), gear(75));
+        assert.deepEqual(offered, [], 'no gear lookup without the card ordering it');
+        assert.equal(gearGone.reason, 'arrival_step_gone');
+    }
+    console.log('PASS arrival step: plan price cap, remaining amount with incoming, refresh on a miss after the return, no buy when the card no longer orders the item, goal funding on the board line');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

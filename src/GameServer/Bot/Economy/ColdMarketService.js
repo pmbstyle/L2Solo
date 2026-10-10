@@ -213,15 +213,19 @@ function goalFunding(goal) {
 
 // The card's step for an arrival purchase: the plan's unit price, and the
 // amount still missing (the goal's, less what reached the bag or accepted
-// incoming since the card's decision). Null when the card no longer orders it.
+// incoming since the card's decision). Null when the card no longer orders it:
+// the goal may outlive its card (a meeting delivered the item on the way).
+// The held card only; no economy view is built for it. Without a card (a
+// karma plan carries none) the goal's amount stands.
 function arrivalStep(state, goal) {
     const itemId = Number(goal?.target?.itemId), unitPrice = Number(goal?.target?.adena);
     if (!(unitPrice > 0)) return null;
-    const Decision = require('../Population/ColdEconomyDecision');
-    const leaf = Decision.economyFor(state)?.network?.activity;
     const ordered = Math.max(1, Math.ceil(Number(goal.target.amount) || 1));
-    const amount = leaf?.activity === 'shopping' && Number(leaf.itemId || leaf.object?.itemId || leaf.object) === itemId
-        ? Math.min(ordered, Decision.remainingToOrder(leaf, state, state, itemId)) : ordered;
+    const decision = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.decided(state);
+    if (!decision) return { unitPrice, amount: ordered };
+    const leaf = decision.activity;
+    if (leaf?.activity !== 'shopping' || Number(leaf.itemId || leaf.object?.itemId || leaf.object) !== itemId) return null;
+    const amount = Math.min(ordered, require('../Population/ColdEconomyDecision').remainingToOrder(leaf, state, state, itemId));
     return amount > 0 ? { unitPrice, amount } : null;
 }
 
@@ -748,10 +752,13 @@ const ColdMarketService = {
         // at most what is still missing. A miss is not planned again on main:
         // the worker decides anew and the bot waits for it.
         const arrival = arrivalStep(state, goal);
-        const missed = reason => {
+        // The worker is asked after the return is written: a card decided on
+        // the state before it would never match the bot's next state.
+        const refreshAfter = written => written.then(result => {
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
-            return retryAfterFailedPurchase(state, goal, reason);
-        };
+            return result;
+        });
+        const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));
         if (!arrival) return missed('arrival_step_gone');
         // What the bot may spend (PurchaseFunding.spendable): its wallet above
         // the operating reserve, at the goal root's place in the money queue.
@@ -765,10 +772,7 @@ const ColdMarketService = {
         });
         if (!offer && !activeMaterialPurchase) {
             // A stale NG/D goal ends here; the worker's next card replaces it.
-            if (lowTierGearPurchase) {
-                invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
-                return finishBlockedPurchase(state, goal, 'low_tier_offer_missing');
-            }
+            if (lowTierGearPurchase) return refreshAfter(finishBlockedPurchase(state, goal, 'low_tier_offer_missing'));
             return missed('no_affordable_offer');
         }
         if (activeMaterialPurchase) {
