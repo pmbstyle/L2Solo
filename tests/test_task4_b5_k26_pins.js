@@ -108,7 +108,7 @@ function stub(object, key, value) { const prior = object[key]; restore.push(() =
         stub(Market, 'bestOffer', (_id, o = {}) => o.budget >= 50000 ? { price: 50000, sourceType: 'afk_bot_store', sourceId: 900, town: 'Giran' } : null);
         stub(Database, 'payClanMember', async ({ amount }) => { buyer = { ...buyer, adena: buyer.adena + amount }; return { ok: true, row: buyer }; });
         stub(Life, 'acceptNewerLifecycleRow', row => row);
-        stub(Cold, 'acquire', async (state, selfId, amount) => { acquired.push(selfId); return { state, bought: false, traveling: true }; });
+        stub(Cold, 'acquire', async (state, selfId) => { acquired.push(selfId); return { state, bought: false, traveling: true }; });
         stub(Database, 'fetchItems', async () => [{ id: 1, selfId: MARK, amount: 1 }]);
         stub(Database, 'transferInventoryToClanWarehouse', async request => { deposits.push(request.resolveKey); return { ok: true }; });
         for (const name of ['upsertClanMarketDemand', 'syncClanMarketDemandSignal', 'recordClanGoalEvent']) stub(Database, name, async () => null);

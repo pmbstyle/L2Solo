@@ -48,7 +48,7 @@ const item = (selfId, amount) => ({ selfId, amount, name: nativeItem(selfId)?.te
     try {
         await Database.init();
         await Life.init();
-        const crafter = await seed(Craft.crafterAccount(station), 'ChainStation', 57, 70, [item(57, 1000000)],
+        await seed(Craft.crafterAccount(station), 'ChainStation', 57, 70, [item(57, 1000000)],
             { craftStationId: station.id, generatedIndex: 10000 });
         const owned = inputs.get(gemstoneId) - 2, bought = 2;
         const staffSlot = Number(nativeItem(recipe.productId)?.etc?.slot || 0);
