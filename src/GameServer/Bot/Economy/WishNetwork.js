@@ -2,6 +2,7 @@ const Tendency = require('../AI/TendencyRoll');
 const Valuation = require('./EconomicValuation');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('./EconomyDiagnostics');
+const { packetRowWishes } = require('./PurchaseFunding');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -401,7 +402,9 @@ class WishNetwork {
             leaves.set(key, { ...path, key, nodeKey: unfunded.key, funding: true,
                 rootKey: unfunded.key, price: 0, effort, valueHours: unfunded.valueHours, shortfall });
         }
-        const funded = new Set(queue.filter(wish => wish.funded).map(wish => wish.key));
+        // Only funded wishes with their own money-packet row can be paid by
+        // every itemId spend site; the merged tail stays protected but waits.
+        const funded = new Set(packetRowWishes(queue.filter(wish => wish.funded)).map(wish => wish.key));
         const candidates = [...leaves.values()].filter(leaf => leaf.funding || !queue.some(wish => wish.key === leaf.rootKey)
             || funded.has(leaf.rootKey) || leaf.price === 0 && leaf.rootKey === unfunded?.key);
         // A cheap intermediate material cannot claim the whole upgrade's

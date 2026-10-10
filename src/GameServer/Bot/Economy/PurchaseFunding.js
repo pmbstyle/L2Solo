@@ -123,6 +123,13 @@ function significant(value) {
     const scale = 10 ** (2 - Math.floor(Math.log10(value)));
     return Number((Math.ceil(value * scale) / scale).toPrecision(3));
 }
+// The money packet keeps this many (ratio, cumulative, itemId) rows; with more
+// funded wishes the last row merges the tail and carries itemId 0 (FX-E3).
+const PACKET_ROWS = 8;
+// Funded queue wishes that own an itemId row of packetFor, in queue order.
+function packetRowWishes(funded) {
+    return funded.length <= PACKET_ROWS ? funded : funded.slice(0, PACKET_ROWS - 1);
+}
 function packetFor(network, hour, reserve) {
     const packet = [Math.round(hour), significant(network.moneyPrice), Math.round(reserve), Math.round(network.gap?.price || 0)];
     let cumulative = 0, count = 0;
@@ -130,11 +137,11 @@ function packetFor(network, hour, reserve) {
         if (!wish.funded) break;
         cumulative += wish.price; count++;
         const ratio = significant(wish.ratio);
-        if (count <= 8) packet.push(ratio, Math.round(cumulative), Number(wish.object?.itemId || 0));
-        else { packet[25] = ratio; packet[26] = Math.round(cumulative); packet[27] = 0; }
+        if (count <= PACKET_ROWS) packet.push(ratio, Math.round(cumulative), Number(wish.object?.itemId || 0));
+        else { const last = 4 + 3 * (PACKET_ROWS - 1); packet[last] = ratio; packet[last + 1] = Math.round(cumulative); packet[last + 2] = 0; }
     }
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

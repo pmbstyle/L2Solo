@@ -41,6 +41,7 @@ const valuation = load('EconomicValuation.js', () => { throw Error('unexpected r
 const tendency = { MIN: 0.02, roll: () => 0.5 };
 const network = load('WishNetwork.js', name => {
     if (name === './EconomyDiagnostics') return { active: () => false };
+    if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return tendency;
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };

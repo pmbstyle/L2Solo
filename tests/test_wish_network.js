@@ -132,3 +132,41 @@ assert.equal(network.build({ ...liquidationInput, inputKey: 'receipt', wallet: 4
     activityLeaf: finiteSale.activityLeaf, moneyPaths: [] }).activity, null,
 'after receipt an empty bag cannot renew the sale');
 console.log('PASS finite liquidation / partial gap / fees / unknown route / receipt');
+
+// FX-E3 keeps PACKET_ROWS itemId rows; a larger funded tail merges into the
+// last row with itemId 0. The selected purchase must be payable by that packet.
+const { packetFor, PACKET_ROWS } = require('../src/GameServer/Bot/Economy/PurchaseFunding');
+const rowItems = result => {
+    const packet = packetFor(result, result.hourAdena, 0), items = [];
+    for (let index = 4; index + 2 < packet.length; index += 3) if (packet[index + 2]) items.push(packet[index + 2]);
+    return items;
+};
+const manyWishes = count => ({ wallet: 1e6, hourAdena: 1000, remembered: false,
+    persona: { traits: { commitment: 0 } }, roots: Array.from({ length: count }, (_, i) => `w${i}`),
+    // Queue order follows value per adena; the tail wishes are by far the
+    // quickest leaves, so without the row bound they would win most rolls.
+    nodes: Array.from({ length: count }, (_, i) => ({ key: `w${i}`, need: 'power', object: { itemId: 100 + i },
+        valueHours: 100 - i, price: 100, paths: [{ activity: 'shopping', price: 100, costHours: i >= PACKET_ROWS - 1 ? 0.001 : 10 }] })) });
+for (const count of [PACKET_ROWS + 1, PACKET_ROWS + 3]) {
+    let selected = 0;
+    for (let seed = 0; seed < 40; seed++) {
+        const result = network.build({ ...manyWishes(count), actorKey: `rows:${count}:${seed}`, inputKey: `rows:${seed}` });
+        assert.equal(result.queue.filter(wish => wish.funded).length, count, 'every wish is funded and its money protected');
+        assert.equal(rowItems(result).length, PACKET_ROWS - 1, 'the merged tail row has no itemId');
+        assert(result.activity, 'earlier funded rows remain selectable');
+        const item = result.activity.object.itemId;
+        assert(rowItems(result).includes(item), `selected purchase ${item} has its own money packet row`);
+        assert(item < 100 + PACKET_ROWS - 1, 'a merged funded wish waits until earlier rows are paid');
+        selected++;
+    }
+    assert.equal(selected, 40);
+}
+const exactRows = new Set();
+for (let seed = 0; seed < 40; seed++) {
+    const result = network.build({ ...manyWishes(PACKET_ROWS), actorKey: `rows:exact:${seed}`, inputKey: `exact:${seed}` });
+    assert.equal(rowItems(result).length, PACKET_ROWS);
+    assert(rowItems(result).includes(result.activity.object.itemId));
+    exactRows.add(result.activity.object.itemId);
+}
+assert(exactRows.has(100 + PACKET_ROWS - 1), 'with exactly PACKET_ROWS funded wishes the last one owns a row and stays selectable');
+console.log('PASS selected purchase is payable by the money packet rows (FX-E3 row bound)');

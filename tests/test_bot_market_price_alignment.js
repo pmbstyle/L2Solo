@@ -24,6 +24,7 @@ const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const OfferQuery = invoke('GameServer/Bot/Economy/OfferQuery');
+const SkillBooks = invoke('GameServer/Skills/SkillBookCatalog');
 DataCache.init();
 
 const originalRate = process.env.L2NODE_PROGRESSION_RATE;
@@ -38,6 +39,12 @@ const state = {
         equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 439, slot: 10 } }
     }
 };
+// A level-40 buyer with millions of adena has already bought and learned its
+// cheap level-40 skill books. Unlearned, eight book wishes would take every
+// itemId row of the money packet ahead of the gear, and the gear wish could
+// not be the selected leaf (FX-E3 row bound).
+state.skills = SkillBooks.requiredBooks(state).map((book) => ({ selfId: book.skillId, level: book.level }));
+assert.strictEqual(SkillBooks.missingBooks(state).length, 0, 'the gear buyer wants no skill book');
 const board = AfkTrade.boardIndex();
 const quoteIds = [94004010, 94004011];
 const gearQuoteIds = new Set();
