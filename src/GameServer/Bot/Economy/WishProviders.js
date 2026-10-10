@@ -6,6 +6,15 @@ const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
 const Equipment = require('../AI/BotEquipmentCompatibility');
 const Network = require('./WishNetwork');
+// A module read inside a hot function: require() walks the module path on
+// every call, so each path is resolved once here. The relative require keeps
+// the module's dependency boundary (tests pass their own require).
+const needed = new Map();
+function need(path) {
+    let module = needed.get(path);
+    if (!module) needed.set(path, module = require(path));
+    return module;
+}
 let catalogSource = null;
 let sourceRevision = -1;
 const kits = new Map();
@@ -70,7 +79,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         // it has no actor choice or expensive build evaluation.
         if (!ctx) { result.set(slot, allowed.map(at => kit.items[at])); continue; }
         const current = replacementWorn(wornFor, slot);
-        const owned = current && Data.items && invoke('GameServer/Item/ItemTemplateIndex').find(Data.items, current.selfId);
+        const owned = current && Data.items && need('../../Item/ItemTemplateIndex').find(Data.items, current.selfId);
         const before = owned ? Planner.itemScore(owned, role, classId) : 0;
         const efficientByRank = new Map();
         let affordable = null, above = null, retained = null;
@@ -138,7 +147,7 @@ function replacementConflict(row, slot) {
         }
         return false;
     }
-    const wornSlot = row.slot || invoke('GameServer/Item/ItemTemplateIndex')
+    const wornSlot = row.slot || need('../../Item/ItemTemplateIndex')
         .find(invoke('GameServer/DataCache').items, row.selfId)?.etc?.slot;
     return Equipment.equipmentReplacementConflict(slot, wornSlot);
 }
@@ -160,7 +169,7 @@ function gearGainReader(state, timestamp, build, caster = require('./BotImprovem
         if (ownWeapon === undefined) {
             ownWeapon = null;
             const Data = invoke('GameServer/DataCache');
-            const Index = invoke('GameServer/Item/ItemTemplateIndex');
+            const Index = need('../../Item/ItemTemplateIndex');
             // The same native comparison, once per review, includes weapons
             // received but not yet reconciled. Known material slots need no lookup.
             for (const [key, row] of entries()) {
@@ -258,8 +267,8 @@ function buildProjection(state, ctx, deps) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const ownBuild = Profile.buildGainsFor(state, timestamp);
     let beforeBook = null, beforeBookRate = null;
-    const magic = invoke('GameServer/Bot/Economy/BotImprovementPolicy').isCaster(state);
-    const Recipes = invoke('GameServer/Items/C4RecipeItems'), Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
+    const magic = need('./BotImprovementPolicy').isCaster(state);
+    const Recipes = invoke('GameServer/Items/C4RecipeItems'), Profit = need('./CraftProfitPolicy');
     // `nodes` is the current target: the real projection, or one gear
     // candidate's scratch arena while it is evaluated (MVP-6).
     let nodes = [], scratch = false;
@@ -319,7 +328,7 @@ function buildProjection(state, ctx, deps) {
     const sourceTrips = new Map(), farmFacts = new Map();
     const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
-    const purchaseFor = invoke('GameServer/Bot/Economy/WishPurchaseEvidence').reader(state, ctx, deps);
+    const purchaseFor = need('./WishPurchaseEvidence').reader(state, ctx, deps);
     const purchases = new Map();
     const observedPurchase = id => {
         if (!purchases.has(id)) purchases.set(id, purchaseFor(id));
@@ -369,7 +378,7 @@ function buildProjection(state, ctx, deps) {
         if (workshop && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
             && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
         if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < 36) {
-            const freeAmount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount;
+            const freeAmount = need('./WealthCraftDecision').freeAmount;
             const learned = !!workshop || dual || knownRecipes.has(Number(recipe.recipeId));
             let scrollAvailable = learned || freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
             const scrollBoard = ctx.board || deps.board;
@@ -469,7 +478,7 @@ function buildProjection(state, ctx, deps) {
     // worker's existing item->recipe index, not a per-actor catalogue scan.
     const producerCandidates = function* () {
         for (const id of knownRecipes) yield Recipes.resolveByRecipeId(id);
-        for (const row of rows(state)) if (invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, row) > 0) yield Recipes.resolve?.(Number(row.selfId));
+        for (const row of rows(state)) if (need('./WealthCraftDecision').freeAmount(state, row) > 0) yield Recipes.resolve?.(Number(row.selfId));
         yield* deps.producerRecipes || [];
     };
     const production = new Map(), seenProduction = new Set();
@@ -481,8 +490,8 @@ function buildProjection(state, ctx, deps) {
         // Plan bound (E92 "Performance, fixed bounds"): preliminary admission
         // reads only the RecipeProductionIndex rows and O(1) facts per recipe;
         // the detailed exit pricing runs for PRODUCER_PRICED finalists only.
-        const Price = invoke('GameServer/Bot/Economy/PriceDecision'), WealthCraft = invoke('GameServer/Bot/Economy/WealthCraftDecision');
-        const ItemTemplates = invoke('GameServer/Item/ItemTemplateIndex'), Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
+        const Price = need('./PriceDecision'), WealthCraft = need('./WealthCraftDecision');
+        const ItemTemplates = need('../../Item/ItemTemplateIndex'), Profit = need('./CraftProfitPolicy');
         const items = invoke('GameServer/DataCache').items;
         const ownSalesByItem = new Map();
         for (const line of ctx.board.ownerLines?.(state.characterId) || []) {
@@ -865,11 +874,11 @@ function buildProjection(state, ctx, deps) {
     const saleValue = sale.reduce((sum, row) => sum + ctx.buyback(row.selfId) * row.count, 0);
     if (saleValue > 0) {
         const town = state.stats?.shopTown?.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, sale, {
-            findSpot: id => invoke('GameServer/Bot/AI/SpotIndex').spotById(deps.spots, id)
+            findSpot: id => need('../AI/SpotIndex').spotById(deps.spots, id)
         });
         const route = ctx.trip?.details?.(town);
         if (route?.known && route.fees <= Number(state.adena || 0)
-            && invoke('GameServer/Bot/Population/ColdOccupationSources').hasNpcSellerInTown(town)) {
+            && need('../Population/ColdOccupationSources').hasNpcSellerInTown(town)) {
             moneyPaths.push({ activity: 'selling', kind: 'liquidate', repeatable: false,
                 capacityCash: saleValue, cashFees: route.fees, actionHours: route.hours,
                 town, items: sale.map(row => row.selfId) });
