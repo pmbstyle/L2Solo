@@ -758,25 +758,30 @@ function buildProjection(state, ctx, deps) {
     }
     for (const kind of ['shots', 'potions', 'scrolls']) {
         const stock = ctx.stock(kind);
+        // One missing amount (MVP-3): the survival tranche and the rest, as
+        // every restock executor buys them.
+        const amount = Number(stock?.survivalMissing || 0) + Number(stock?.missing || 0);
         if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
             caller: deps.caller || 'wish_provider', trigger: 'projection_build',
-            phase: 'wish_need', reason: !(stock?.missing > 0) ? 'target_satisfied' : !(stock.unitPrice > 0)
-                ? 'unknown_price' : !(stock.benefitHours > 0) ? 'no_expected_benefit' : 'stock_shortfall',
+            phase: 'wish_need', reason: !(amount > 0) ? 'target_satisfied' : !(stock.unitPrice > 0)
+                ? 'unknown_price' : !(stock.benefitPerUnit > 0) ? 'no_expected_benefit' : 'stock_shortfall',
             decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
             wishKey: `stock:${kind}`, item: stock?.itemId, target: stock?.target,
-            owned: stock?.current, missing: stock?.missing, requested: stock?.missing,
-            unitPrice: stock?.unitPrice, valueHours: stock?.benefitHours, wallet: state.adena });
-        if (!(stock?.missing > 0) || !(stock.unitPrice > 0) || !(stock.benefitHours > 0)) continue;
+            owned: stock?.current, missing: stock?.missing, requested: amount,
+            unitPrice: stock?.unitPrice, valueHours: amount * (stock?.benefitPerUnit || 0), wallet: state.adena });
+        if (!(amount > 0) || !(stock.unitPrice > 0) || !(stock.benefitPerUnit > 0)) continue;
         const key = itemNode(stock.itemId);
         if (!key) continue;
-        root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount: stock.missing, kind },
-            valueHours: stock.benefitHours * powerWeight, price: stock.missing * stock.unitPrice,
-            // The survival tranche is the kit's cost (kitCost), not this wish:
-            // gross = held units + missing, so allocation leaves `missing`.
-            paths: [{ requirements: [{ key, amount: stock.missing }],
-                grossRequirements: [{ key, amount: stock.missing
+        root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount, kind },
+            valueHours: amount * stock.benefitPerUnit * powerWeight, price: amount * stock.unitPrice,
+            // The survival tranche is the kit's cost (kitCost), already held
+            // by the survival reserve; the money queue charges only the rest.
+            reserved: Math.min(amount * stock.unitPrice, Math.max(0, Number(ctx.kitCost?.(stock.itemId)) || 0)),
+            // gross = held units + amount, so allocation leaves `amount`.
+            paths: [{ requirements: [{ key, amount }],
+                grossRequirements: [{ key, amount: amount
                     + Math.max(0, Number(state.inventory?.[stock.itemId]?.amount) || 0) }] }] });
-        values.set(stock.itemId, stock.benefitHours / stock.missing);
+        values.set(stock.itemId, stock.benefitPerUnit);
     }
     // Concrete remembered people, not persona-labelled lifelong goals.
     const relations = deps.memory?.relations || state.stats?.relations || [];

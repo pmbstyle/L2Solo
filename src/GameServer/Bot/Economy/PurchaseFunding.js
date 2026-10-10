@@ -167,13 +167,14 @@ function packetRowWishes(funded) {
     return funded.length <= PACKET_ROWS ? funded : funded.slice(0, PACKET_ROWS - 1);
 }
 function packetFor(network, hour, reserve) {
-    const packet = [Math.round(hour), significant(network.moneyPrice), Math.round(reserve), Math.round(network.gap?.price || 0)];
+    const { fundable, cashCharge } = require('./WishNetwork');
+    const packet = [Math.round(hour), significant(network.moneyPrice), Math.round(reserve), Math.round(network.gap ? cashCharge(network.gap) : 0)];
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {
         // An unsupported wish keeps its queue place without money (MVP-1).
-        if (!require('./WishNetwork').fundable(wish)) continue;
+        if (!fundable(wish)) continue;
         if (!wish.funded) break;
-        cumulative += wish.price; count++;
+        cumulative += cashCharge(wish); count++;
         const ratio = significant(wish.ratio);
         if (count <= PACKET_ROWS) packet.push(ratio, Math.round(cumulative), Number(wish.object?.itemId || 0));
         else { const last = 4 + 3 * (PACKET_ROWS - 1); packet[last] = ratio; packet[last + 1] = Math.round(cumulative); packet[last + 2] = 0; }

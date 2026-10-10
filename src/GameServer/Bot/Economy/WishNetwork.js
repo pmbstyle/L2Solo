@@ -29,6 +29,9 @@ function mergedBranches(kinds, batches) {
 // MVP-1: money is held only behind a path with a step now (or awaiting a
 // native accepted incoming); an unresolved outcome holds none either.
 const fundable = wish => wish.supported !== false && wish.resolved !== false;
+// Cash the money queue holds for a wish: a stock root's survival tranche
+// is already held by the survival reserve (kitCost), never a second time.
+const cashCharge = wish => Math.max(0, nonnegative(wish.price) - nonnegative(wish.reserved));
 
 function choose(rows, weight, roll) {
     if (!rows.length) return null;
@@ -55,8 +58,8 @@ function moneyQueue(wishes, wallet, survivalReserve = 0, floor = 0) {
         if (!fundable(wish)) { wish.funded = false; continue; }
         // The first gap holds the marginal price of money. Smaller desires
         // do not spend the money earmarked toward that first missing goal.
-        wish.funded = !cutoffFound && wish.ratio >= floor && wish.price <= available;
-        if (wish.funded) available -= wish.price;
+        wish.funded = !cutoffFound && wish.ratio >= floor && cashCharge(wish) <= available;
+        if (wish.funded) available -= cashCharge(wish);
         else if (!cutoffFound) {
             if (wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
             cutoffFound = true;
@@ -359,7 +362,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         if (!node || !NEEDS.includes(node.need)) throw new TypeError('invalid_wish_root');
         const plan = solve(key, 0, 1, null, finiteProduction(key));
         plans.set(key, plan);
-        const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false,
+        const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false, reserved: nonnegative(node.reserved),
             price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         value(wish, node, plan);
         wish.fullValueHours = fullValue(wish, node);
@@ -585,4 +588,4 @@ class WishNetwork {
     }
 }
 
-module.exports = { WishNetwork, createSolver, admitRoots, moneyQueue, remainingQuantity, fundable, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT };
+module.exports = { WishNetwork, createSolver, admitRoots, moneyQueue, remainingQuantity, fundable, cashCharge, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT };

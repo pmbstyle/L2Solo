@@ -245,8 +245,10 @@ const occupationPlanner = new ColdOccupationPlanner({
                     if (!intent) throw Error('trade_meeting_need_changed');
                     line.certificate = require('../Economy/TradeIntent').encode({ ...intent, amount: line.count, price: line.price, valueHours: intent.valueHours * line.count / intent.amount });
                     line.needAdId = line.needAdRevision = 0; own.needRevision = own.revision;
+                    // Survival first (the kit's cost), the rest by the wish's rank,
+                    // as every other restock purchase (PurchaseFunding.stockAllowance).
                     spendable = Math.min(spendable, require('../Economy/PurchaseFunding').spendable(input.state,
-                        input.buyOrderEscrow || 0, { r: intent.valueRate }));
+                        input.buyOrderEscrow || 0, { r: intent.valueRate, survivalCost: economy.kitCost?.(line.selfId, line.price) || 0 }));
                     total += line.count * line.price;
                 } else {
                     const item = input.state.inventory?.[line.selfId];

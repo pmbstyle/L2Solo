@@ -93,6 +93,39 @@ const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext
     + poorContext.price(736);
 assert.equal(poorContext.survivalReserve, noShotReserve);
 
+{
+    // E198: below the one-hour survival line with nothing wanted above it,
+    // the shot wish still names the whole shortfall (MVP-3), so a meeting
+    // can certify it; its survival part is the reserve's money (kitCost),
+    // never held a second time by the money queue.
+    const short = { ...warrior, characterId: 718003, phase: 'cold', activity: 'hunting',
+        stats: { ...warrior.stats, visitEvery: [1, .5] },
+        inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: 10 } } };
+    const context = Economy.forState(short, deps), own = context.stock('shots');
+    assert.equal(own.missing, 0); assert(own.survivalMissing > 0);
+    const wish = context.network.queue.find(row => row.key === 'stock:shots');
+    assert(wish, 'a shortfall below the survival line is a shot wish');
+    assert.equal(wish.object.amount, own.survivalMissing);
+    assert.equal(wish.reserved, context.kitCost(own.itemId));
+    // With a supported path the queue charges only the part above the
+    // reserve: the survival-only wish is funded from an empty free wallet
+    // and adds nothing to the cash held for lower wishes.
+    const { moneyQueue } = invoke('GameServer/Bot/Economy/WishNetwork');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+    const supported = { ...wish, supported: true, resolved: true };
+    const lower = { key: 'lower', valueHours: supported.ratio * 1000 / 2, price: 1000, supported: true };
+    const network = moneyQueue([supported, lower], context.survivalReserve + 1000, context.survivalReserve);
+    assert.deepEqual(network.queue.map(row => row.funded), [true, true], 'the survival reserve already holds this money');
+    const packet = Funding.packetFor(network, context.hourAdena, context.survivalReserve);
+    assert.deepEqual([packet[5], packet[8]], [0, 1000]);
+    assert.equal(Funding.spendable({ ...short, adena: context.kitCost(own.itemId), stats: { ...short.stats, money: packet } }, 0,
+        { r: supported.ratio, survivalCost: context.kitCost(own.itemId) }), context.kitCost(own.itemId),
+        'a meeting funds the survival tranche from the reserve');
+    const intent = invoke('GameServer/Bot/Economy/TradeIntent').project(short, context.network, context.projection,
+        id => context.worth(id) ?? context.price(id), 40).find(line => line.itemId === own.itemId);
+    assert(intent?.amount >= own.survivalMissing && intent.valueHours > 0, 'a meeting can certify the survival tranche');
+}
+
 const plan = Trip.spotPlan, honest = Config.coldHonestTravel;
 try {
     const center = { locX: 88000, locY: 151904, locZ: -3400 };
