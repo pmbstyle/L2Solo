@@ -111,7 +111,8 @@ function kitReserve(buyer, context) {
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);
         const held = Number(buyer.inventory?.[stock.itemId]?.amount || 0);
-        return sum + Math.max(0, stock.usePerHour - held) * stock.unitPrice;
+        // Whole units since 080f085b: the survival stock is ceil(use per hour).
+        return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.unitPrice;
     }, escape);
 }
 

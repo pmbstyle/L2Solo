@@ -159,14 +159,15 @@ async function run() {
     const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
     const visitAt = 1791000000000;
     for (let deal = 0; deal < 20; deal++) MarketCounters.deal(1463, 90, 500, visitAt - (20 - deal) * 180000, 999999);
-    // An explicit historical physical sell_ad is the escrow/trade unit here;
-    // it does not assert that the current enchant-funded leaf selected sale.
+    // An explicit physical sell shop is the escrow/trade unit here (E115: a
+    // bot's sell_ad settles only through a meeting); it does not assert that
+    // the current enchant-funded leaf selected sale.
     const outputRow = (await DB.fetchItems(crafter.characterId)).find(item => Number(item.selfId) === recipe.productId);
-    const published = await Afk.openBotRecords(crafter.characterId, 'sell_ad', [{ storeType: Afk.SELL,
+    const published = await Afk.publishBot(crafter.characterId, { kind: 'shop', storeType: Afk.SELL,
         title: 'Authored recipe output', town: 'Giran', ...TOWNS.Giran,
         lines: [{ objectId: outputRow.id, selfId: recipe.productId, name: outputRow.name,
-            count: recipe.productCount, price: 90, enchant: 0, slot: 0, stackable: true }] }]);
-    assert(published.opened[0]?.lines.some(line => Number(line.selfId) === 1463));
+            count: recipe.productCount, price: 90, enchant: 0, slot: 0, stackable: true }] });
+    assert(published?.lines.some(line => Number(line.selfId) === 1463));
     const buyer = await demand();
     Shots._resetForTests();
     const purchase = await nativeReview(buyer);
@@ -189,9 +190,9 @@ async function run() {
     await DB.setItem(seller.characterId, { selfId: 1804, name: 'Recipe: Soulshot: D-Grade', amount: 1 });
     await Life.syncExternalInventory(seller.characterId, 'test_recipe_drop', seller);
     const scroll = (await DB.fetchItems(seller.characterId)).find(row => row.selfId === 1804);
-    const scrollRecords = await Afk.openBotRecords(seller.characterId, 'sell_ad', [{ storeType: Afk.SELL, title: 'Recipe', town: 'Dion', ...TOWNS.Dion,
+    const bookRecord = await Afk.publishBot(seller.characterId, { kind: 'shop', storeType: Afk.SELL, title: 'Recipe', town: 'Dion', ...TOWNS.Dion,
         lines: [{ objectId: Number(scroll.id), selfId: 1804, name: scroll.name, count: 1, price: 30000,
-            enchant: 0, slot: 0, stackable: false }] }]);
+            enchant: 0, slot: 0, stackable: false }] });
     const recipeBuyer = await bot({ recipe: false });
     await demand(); Shots._resetForTests();
     const noLearning = await nativeReview(recipeBuyer);
@@ -203,7 +204,7 @@ async function run() {
     // The unchanged negative optional policy above did not publish funding
     // for this purchase; no spending packet or optional admission is invented.
     // Native receipt/eligibility selection is covered by cold-shot/commit tests.
-    const bookRecord = scrollRecords.opened[0], bookLine = bookRecord.lines.find(line => Number(line.selfId) === 1804);
+    const bookLine = bookRecord.lines.find(line => Number(line.selfId) === 1804);
     const boughtBook = await DB.buyFromAfkTradeShop(beforeBook.characterId, {
         shopId: bookRecord.id, ownerId: seller.characterId, lineId: bookLine.id,
         amount: 1, expectedPrice: 30000, expectedRevision: bookRecord.revision

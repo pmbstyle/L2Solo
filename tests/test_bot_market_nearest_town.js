@@ -151,7 +151,15 @@ function selectionPlansFromHuntingSpot() {
     const { selectAcquisitionPlan } = invoke('GameServer/Bot/AI/GearPlanSelection');
     const spots = [{ id: 'origin-spot', center: townCenters['Orc Village'] }];
     const wanderer = { ...npcKitState(townCenters['Dwarven Village']), spotId: 'origin-spot', phase: 'cold', activity: 'hunting' };
-    const plan = selectAcquisitionPlan(wanderer, null, { spots, occupancy: {} }).acquisitionPlan;
+    // Since d4322a21 the selection plans gear only when the bot's economy
+    // chose that gear wish as its activity; here the economy's own focused
+    // gear wish is the chosen purchase.
+    const economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(wanderer, { spots, occupancy: {} });
+    const gear = economy.network.queue.find((wish) => wish.key === economy.network.focus?.[0] && wish.object?.slot);
+    assert(gear, 'the fixture economy focuses a gear wish');
+    const preparedEconomy = { ...economy, network: { ...economy.network,
+        activity: { ...economy.network.activity, kind: 'buy', activity: 'shopping', rootKey: gear.key } } };
+    const plan = selectAcquisitionPlan(wanderer, null, { spots, occupancy: {}, preparedEconomy }).acquisitionPlan;
     assert.strictEqual(plan?.market?.town, 'Orc Village',
         `the selection must buy near the hunting ground, got ${plan?.strategy} ${plan?.market?.town}`);
 }

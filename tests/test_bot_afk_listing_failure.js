@@ -60,8 +60,12 @@ async function run() {
     }
 
     // The shop opens at a market visit, in the town the bot chose (group C).
+    // Since 71143511 deal counters supply no buyer forecast: the fixture
+    // supplies a finite demand, as test_bot_market_listing_policy does.
+    const demandFor = (selfId) => ({ known: true, origin: 'fixture_finite_demand', authority: { fixture: 'afk_listing' },
+        selfId, applicableUnits: 1000, delayHours: 0, availability: { from: clock, until: clock } });
     await BotAfkMarket.listOnBoard({ ...hunting, activity: 'shopping',
-        stats: { ...hunting.stats, shopTown: { town: hunting.currentRegion, at: 1 } } }, { now: clock });
+        stats: { ...hunting.stats, shopTown: { town: hunting.currentRegion, at: 1 } } }, { now: clock, demandFor });
     const opened = { shop: AfkTrade.findOwnerProjection(ownerId)?.shop };
     assert(opened.shop, 'the bot opens an AFK sell shop');
     const listed = (opened.shop.lines || []).map((line) => [Number(line.selfId), Number(line.price)]);

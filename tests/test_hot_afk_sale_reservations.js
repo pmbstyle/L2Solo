@@ -32,18 +32,31 @@ function item(selfId, amount, options = {}) {
     };
 }
 
+// The hot seller stands in Gludio: since 71143511 an ad is answered only over
+// a known trip from the bot's own location; since 5e91bb1c the main thread
+// reads that trip from routes the coordinator prepared (here, synchronously).
+const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const EconomicTrip = invoke('GameServer/Bot/Economy/EconomicTrip');
+function preparedRoutes(routeState) {
+    const steps = EconomicTrip.prepare(routeState);
+    let step;
+    do { step = steps.next(); } while (!step.done);
+    return step.value;
+}
+const GLUDIO = { locX: -14225, locY: 123540, locZ: -3121 };
 const items = [item(57, 1000), item(VARNISH, 10), item(STEM, 10, { petLocked: true }), item(ANIMAL_BONE, 20)];
 const bot = {
     fetchId: () => 930001,
     fetchName: () => 'HotSeller',
-    fetchLocX: () => 0,
-    fetchLocY: () => 0,
-    fetchLocZ: () => 0,
+    fetchLocX: () => GLUDIO.locX,
+    fetchLocY: () => GLUDIO.locY,
+    fetchLocZ: () => GLUDIO.locZ,
     backpack: { fetchItems: () => items, fetchItemFromSelfId: () => null }
 };
 const state = {
     characterId: 930001,
     level: 30,
+    loc: { ...GLUDIO },
     inventory: { [VARNISH]: { selfId: VARNISH, amount: 10 }, [STEM]: { selfId: STEM, amount: 10 },
         [ANIMAL_BONE]: { selfId: ANIMAL_BONE, amount: 20 } },
     stats: { classId: 0, equipmentPlan: { status: 'active', strategy: 'craft',
@@ -64,6 +77,7 @@ const original = {
     sellToShop: AfkTrade.sellToShop,
     findBuyOffers: MarketOpportunity.findBuyOffers,
     scheduleRestock: ShoppingState.scheduleRestock,
+    routeRows: Coordinator.routeRows,
     npcTalk: require.cache[npcTalkPath].exports
 };
 
@@ -79,6 +93,7 @@ async function run() {
         selfId, sourceName: 'Buyer', locX: 1, locY: 2, locZ: 3, town: 'Gludio',
         projection: { actor: { fetchId: () => 940001 } } }];
     ShoppingState.scheduleRestock = () => {};
+    Coordinator.routeRows = preparedRoutes;
     require.cache[npcTalkPath].exports = () => {};
 
     const session = { shoppingTarget: { actorId: 940001 }, coldLifeState: state };
@@ -122,5 +137,6 @@ run().then(() => console.log('Hot AFK sale reservation checks passed'))
         AfkTrade.sellToShop = original.sellToShop;
         MarketOpportunity.findBuyOffers = original.findBuyOffers;
         ShoppingState.scheduleRestock = original.scheduleRestock;
+        Coordinator.routeRows = original.routeRows;
         require.cache[npcTalkPath].exports = original.npcTalk;
     });
