@@ -144,6 +144,12 @@ function rollDropAmount(group, item, rate, rng = Math.random) {
     return Math.max(1, amount);
 }
 
+// A usable attacker level, or 0 when it is missing or malformed.
+function attackerLevel(level) {
+    const value = Number(level);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 function deepBlueLevelGap(npcLevel, highestLevel) {
     const normalizedNpcLevel = Number(npcLevel);
     return Number.isFinite(normalizedNpcLevel) && normalizedNpcLevel > 0
@@ -154,14 +160,13 @@ function deepBlueLevelGap(npcLevel, highestLevel) {
 // The single-killer answer of deepBlueRule without building the rule: hot
 // readers (source facts per item) only need to know whether a penalty applies.
 function deepBlueActive(npcLevel, killerLevel) {
-    const level = Number(killerLevel);
-    return deepBlueLevelGap(npcLevel, Number.isFinite(level) && level > 0 ? level : 0) >= DEEP_BLUE_LEVEL_GAP;
+    return deepBlueLevelGap(npcLevel, attackerLevel(killerLevel)) >= DEEP_BLUE_LEVEL_GAP;
 }
 
 function deepBlueRule({ npcLevel, killerLevel, attackerLevels = [] } = {}) {
     const levels = [killerLevel, ...attackerLevels]
-        .map((level) => Number(level))
-        .filter((level) => Number.isFinite(level) && level > 0);
+        .map(attackerLevel)
+        .filter((level) => level > 0);
     const highestLevel = levels.length > 0 ? Math.max(...levels) : 0;
     const levelGap = deepBlueLevelGap(npcLevel, highestLevel);
 

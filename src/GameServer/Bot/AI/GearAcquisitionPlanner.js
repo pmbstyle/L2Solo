@@ -1998,23 +1998,31 @@ function sourceIndexFor(spots = []) {
     return byItemId;
 }
 
+// The hunt-rule view of an index record: the fields the band, party and
+// capacity rules read. Materialized sources and source facts share it.
+function sourceTargetOf({ reward, spot, kind, npcLevel }) {
+    const raidBoss = spot?.raidBoss === true;
+    return { npcId: Number(reward.selfId), npcLevel: Number(npcLevel || spot?.avgLevel || 1), spotId: spot.id,
+        spotLevel: Number(spot.avgLevel || 1), sourceKind: raidBoss ? 'raid' : kind, raidBoss };
+}
+
 // One materialized source of an index record for a killer level.
-function materializeSource({ reward, spot, kind, npcLevel }, itemId, killerLevel, ratesKey) {
-    const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
-    const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, sourceLevel, killerLevel, ratesKey);
+function materializeSource(entry, itemId, killerLevel, ratesKey) {
+    const { reward, spot, kind } = entry, target = sourceTargetOf(entry);
+    const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, target.npcLevel, killerLevel, ratesKey);
     if (!chance) return null;
     return {
-        npcId: Number(reward.selfId),
+        npcId: target.npcId,
         npcName: reward.template?.name || `NPC ${reward.selfId}`,
         kind,
         chance,
         expectedYield,
-        spotId: spot.id,
-        spotLevel: Number(spot.avgLevel || 1),
-        npcLevel: sourceLevel,
+        spotId: target.spotId,
+        spotLevel: target.spotLevel,
+        npcLevel: target.npcLevel,
         capacity: LevelingRoutes.capacityForSpot(spot),
-        sourceKind: spot?.raidBoss === true ? 'raid' : kind,
-        raidBoss: spot?.raidBoss === true,
+        sourceKind: target.sourceKind,
+        raidBoss: target.raidBoss,
         sharedEncounter: spot?.sharedEncounter === true,
         raidEstimate: spot?.raidEstimate || null,
         raidRosterSize: spot?.raidBoss === true
@@ -2112,26 +2120,21 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     let spoiler = options.spoiler;
     for (const entry of entries) {
         yield 'source';
-        // The fact reads the index record directly: the yield pair, then the
-        // hunt rules on the target's levels and spot, as materializeSource
-        // would give them, without its per-entry object (74% are refusals).
-        const { reward, spot, kind } = entry;
-        const npcLevel = Number(entry.npcLevel || spot?.avgLevel || 1);
-        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey);
+        // The fact reads the record's hunt-rule view, not a full materialized
+        // source per entry (74% of entries are refusals kept for counts).
+        const { reward, spot, kind } = entry, target = sourceTargetOf(entry);
+        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, target.npcLevel, killerLevel, ratesKey);
         if (!chance) continue;
-        const npcId = Number(reward.selfId);
-        const fact = { kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield };
+        const fact = { kind, spotId: target.spotId, npcId: target.npcId, itemId: Number(itemId), units, expectedYield };
         facts.push(fact);
-        if (spot?.raidBoss === true) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
+        if (target.raidBoss) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
         if (kind === 'spoil') {
             // The executor's rule: a learned Spoil, not the class (E189).
             if (spoiler === undefined) spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
                 { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state) }) || false;
             if (!spoiler) { fact.status = 'ineligible'; fact.reason = 'spoil_skill'; continue; }
         }
-        const target = { npcId, npcLevel, spotId: spot.id, spotLevel: Number(spot.avgLevel || 1), sourceKind: kind,
-            raidBoss: false };
-        let reason = !sourceNpcHuntable(npcId) ? 'cannot_hunt'
+        let reason = !sourceNpcHuntable(target.npcId) ? 'cannot_hunt'
             : !sourceWithinVoluntaryHuntBand(state, target) ? 'level_band'
                 : !soloSafeForSource(state, target) ? 'party_needed' : null;
         if (!reason) {

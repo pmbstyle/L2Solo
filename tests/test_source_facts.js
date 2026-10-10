@@ -58,6 +58,14 @@ try {
     const raid = drain(Planner.sourceFacts(warsmith, 99101, 1, { spotValue, timestamp: 1,
         spots: [{ ...spots[0], id: 'facts-raid', raidBoss: true, raidBossTemplateId: 99001 }] })).value;
     assert(raid.every(row => row.reason === 'raid'));
+    // A siege guard is never a bot's farm (BotHuntingTargetPolicy.canHunt); the
+    // answer is read once per loaded NPC table and follows a replaced table.
+    const ordinaryNpcs = Data.npcs;
+    Data.npcs = ordinaryNpcs.map(npc => npc.selfId === 99001 ? { ...npc, clanName: 'Siege Guard' } : npc);
+    const guarded = facts(warsmith);
+    assert(guarded.length === 2 && guarded.every(row => row.reason === 'cannot_hunt'));
+    Data.npcs = ordinaryNpcs;
+    assert.equal(byKind(facts(warsmith)).drop.status, 'ready');
 
     // Unknown is explicit: no kills, no income, no route.
     assert.equal(byKind(facts(warsmith, { spotValue: () => null })).drop.reason, 'yield');

@@ -22,11 +22,11 @@ const subject = Providers.build;
 const plannerFile = require.resolve('../src/GameServer/Bot/AI/GearAcquisitionPlanner');
 const plannerCopy = new Module(plannerFile, module);
 plannerCopy.filename = plannerFile; plannerCopy.paths = Module._nodeModulePaths(path.dirname(plannerFile));
-const cachedYield = '        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, npcLevel, killerLevel, ratesKey);\n';
+const cachedYield = '        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, target.npcLevel, killerLevel, ratesKey);\n';
 const atlasShare = '            * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));\n';
 let source = fs.readFileSync(plannerFile, 'utf8');
 assert(source.includes(cachedYield) && source.includes(atlasShare));
-source = source.replace(cachedYield, `        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, { npcLevel, killerLevel });
+source = source.replace(cachedYield, `        const { chance, expectedYield } = itemDropYield(reward, itemId, kind, { npcLevel: target.npcLevel, killerLevel });
 `).replace(atlasShare, `            * (entry.spot.npcEntries || []).filter(npc => Number(npc.selfId) === Number(entry.reward.selfId))
                 .reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0)
             / Math.max(1, (entry.spot.npcEntries || []).reduce((sum, npc) => sum + Math.max(1, Number(npc.count || 1)), 0));
