@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
 const Registry = require('../src/GameServer/Bot/Population/BackgroundJobRegistry');
 

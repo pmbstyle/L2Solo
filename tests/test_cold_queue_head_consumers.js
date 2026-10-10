@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 require('../src/Global');
 const Database = invoke('Database');
