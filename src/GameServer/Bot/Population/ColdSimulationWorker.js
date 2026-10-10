@@ -171,6 +171,7 @@ function changeWorkshop(key, row) {
         occupationPlanner.groupChanged(scope);
         workshopRevisions.set(productId, (workshopRevisions.get(productId) || 0) + 1); occupationPlanner.sourceChanged(productId); }
 }
+const EDGE_STEPS = 64;
 const occupationPlanner = new ColdOccupationPlanner({
     onPublishError: (error, characterId, input) => send('fault', {
         reason: 'occupation_publication_failed', characterId, mode: input.mode,
@@ -365,8 +366,12 @@ const occupationPlanner = new ColdOccupationPlanner({
         return { selected, economyPlan, ...(input.mode === 'refresh' ? { economyDecision:
             ColdEconomyDecision.capture({ ...input.economy, shot: economyPlan?.shot || null }, input.state) } : {}) };
     })(), done: false, value: null, stage: 0, units: 0 }),
+    // An edge (one polygon side, teleport point or material node) costs less
+    // than the planner's per-unit checks: up to EDGE_STEPS of them run as one
+    // unit. Other yields still end the unit, so the 4 ms slice check is unchanged.
     step: work => {
-        const next = work.iterator.next(); work.units++;
+        let next = work.iterator.next(); work.units++;
+        for (let edges = 1; next.value === 'edge' && edges < EDGE_STEPS; edges++) { next = work.iterator.next(); work.units++; }
         work.stage = typeof next.value === 'number' ? next.value
             : ['stock', 'recipe', 'ingredient', 'owned', 'quote', 'trip', 'exit', 'without', 'success', 'utility', 'candidate', 'funding', 'edge'].indexOf(next.value) + 1;
         if (next.done) { work.done = true; work.value = next.value; work.iterator = null; }
