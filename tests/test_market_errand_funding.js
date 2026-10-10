@@ -54,6 +54,19 @@ async function errand(state, itemId, amount, settings = {}) {
     return result.state;
 }
 
+// E115: a bot's sell_ad is conditional interest settled by a meeting. An
+// immediate board purchase needs the seller's backed shop, as real bots publish.
+async function sellShop(ownerId, title, line) {
+    const previous = Afk.ownerRecords(ownerId).find(row => row.kind === 'shop');
+    const lines = new Map((previous?.lines || []).map(row => [Number(row.selfId), { selfId: row.selfId, name: row.name,
+        count: row.count, price: row.price, enchant: 0, stackable: true }]));
+    if (previous) await Afk.closeBotRecord(ownerId, previous.id);
+    lines.set(Number(line.selfId), line);
+    const bag = await Database.fetchItems(ownerId);
+    return Afk.publishBot(ownerId, { kind: 'shop', storeType: Afk.SELL, town: 'Giran', title,
+        lines: [...lines.values()].map(row => ({ ...row, objectId: bag.find(item => Number(item.selfId) === Number(row.selfId) && !item.equipped).id })) });
+}
+
 async function noSpend(state, itemId, message) {
     const items = await Database.fetchItems(state.characterId);
     const result = await Market.tryPurchase(state, { type: 'market_errand', status: 'active' });
@@ -131,8 +144,8 @@ async function noSpend(state, itemId, message) {
         // A real seller reserves stock on the board; no mocked transaction or wallet.
         const seller = await arrive(await stateFor());
         await Database.setItem(seller.characterId, { selfId: 1864, name: 'Stem', amount: 20, slot: 0 });
-        await Afk.openBotRecords(seller.characterId, 'sell_ad', [{ storeType: 1, town: 'Giran', title: 'Native inputs',
-            lines: [{ selfId: 1864, name: 'Stem', count: 20, price: 40000, enchant: 0, stackable: true }] }]);
+        await sellShop(seller.characterId, 'Native inputs',
+            { selfId: 1864, name: 'Stem', count: 20, price: 40000, enchant: 0, stackable: true });
         const sellerLine = Afk.boardIndex().ownerLines(seller.characterId)[0];
         assert(sellerLine && sellerLine.count === 20);
         const boardStale = await arrive(await errand(await stateFor(), 1864, 2, { npc: false }), CHANGED);
@@ -140,8 +153,8 @@ async function noSpend(state, itemId, message) {
         assert.equal(Afk.boardIndex().ownerLines(seller.characterId)[0].count, 20);
 
         await Database.setItem(seller.characterId, { selfId: 736, name: 'Scroll of Escape', amount: 1, slot: 0 });
-        await Afk.openBotRecords(seller.characterId, 'sell_ad', [{ storeType: 1, town: 'Giran', title: 'One genuine escape scroll',
-            lines: [{ selfId: 736, name: 'Scroll of Escape', count: 1, price: 10, enchant: 0, stackable: true }] }]);
+        await sellShop(seller.characterId, 'One genuine escape scroll',
+            { selfId: 736, name: 'Scroll of Escape', count: 1, price: 10, enchant: 0, stackable: true });
         const legacySurvival = await arrive(await stateFor(CHANGED, { marketErrand: {
             selfId: 736, amount: 2, town: 'Giran', purpose: 'scrolls', money: 985000, at: Date.now() } }));
         assert(invoke('GameServer/Bot/Economy/EconomyContext').basics(legacySurvival).kitCost(736) >= 10);
@@ -182,8 +195,8 @@ async function noSpend(state, itemId, message) {
 
         const secondSeller = await arrive(await stateFor());
         await Database.setItem(secondSeller.characterId, { selfId: 1864, name: 'Stem', amount: 1, slot: 0 });
-        await Afk.openBotRecords(secondSeller.characterId, 'sell_ad', [{ storeType: 1, town: 'Giran', title: 'Cheaper first line',
-            lines: [{ selfId: 1864, name: 'Stem', count: 1, price: 30000, enchant: 0, stackable: true }] }]);
+        await sellShop(secondSeller.characterId, 'Cheaper first line',
+            { selfId: 1864, name: 'Stem', count: 1, price: 30000, enchant: 0, stackable: true });
         const changing = await arrive(await errand(await stateFor(), 1864, 2, { npc: false }));
         const changingWallet = await wallet(changing.characterId);
         const originalBuy = Afk.buyFromShop;
