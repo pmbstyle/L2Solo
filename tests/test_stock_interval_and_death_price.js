@@ -121,6 +121,7 @@ assert.equal(poorContext.survivalReserve, noShotReserve);
     assert.equal(Funding.spendable({ ...short, adena: context.kitCost(own.itemId), stats: { ...short.stats, money: packet } }, 0,
         { r: supported.ratio, survivalCost: context.kitCost(own.itemId) }), context.kitCost(own.itemId),
         'a meeting funds the survival tranche from the reserve');
+    assert.equal(context.network.quantityPrepared, true, 'forState hands TradeIntent a stock-prepared network');
     const intent = invoke('GameServer/Bot/Economy/TradeIntent').project(short, context.network, context.projection,
         id => context.worth(id) ?? context.price(id), 40).find(line => line.itemId === own.itemId);
     assert(intent?.amount >= own.survivalMissing && intent.valueHours > 0, 'a meeting can certify the survival tranche');
