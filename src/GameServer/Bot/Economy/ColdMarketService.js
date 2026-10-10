@@ -375,7 +375,8 @@ function canTravelForPurchase(state, request, options = {}) {
     if (!(id > 0) || !(amount > 0)) return false;
     const economy = options.economy || require('../Population/ColdEconomyDecision').economyFor(state);
     const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
-    // One refusal lives only with its held prepared context. Public quote
+    // One refusal lives only with its held prepared plan (perf C1: each view
+    // of one plan shares it). Public quote
     // versions omit membership, so retain at most eight observed owner/allowed
     // pairs and recheck them through the same indexed admission on a hit.
     let key = null;
@@ -386,7 +387,7 @@ function canTravelForPurchase(state, request, options = {}) {
             require('./EconomicTrip').key(state), board.itemRevision(id), rates.multiplier, rates.adena,
             require('./ProductionPolicy').shotsDisabled()]);
         if (token.length <= 2048) key = token;
-        const previous = key && deniedTrips.get(economy);
+        const previous = key && deniedTrips.get(economy.plan || economy);
         if (previous?.key === key && previous.owners.every(([ownerId, allowed]) =>
             personalOfferAllowed({ custodyPolicy: 1, ownerId }, state) === allowed)) return false;
     }
@@ -403,8 +404,8 @@ function canTravelForPurchase(state, request, options = {}) {
         cost: options.cost || (typeof economy.trip === 'function' ? economy.trip : null),
         ...(request.town ? { towns: [request.town] } : {}), currentFunding: true });
     const allowed = worthwhileTravel(state, plan, { ...request, ...options, economy });
-    if (key && !allowed && !overflow) deniedTrips.set(economy, { key, owners });
-    else deniedTrips.delete(economy);
+    if (key && !allowed && !overflow) deniedTrips.set(economy.plan || economy, { key, owners });
+    else deniedTrips.delete(economy.plan || economy);
     return allowed;
 }
 
