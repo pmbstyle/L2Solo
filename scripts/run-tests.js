@@ -1308,6 +1308,18 @@ const defaultConfigTests = new Set([
 const selectedTests = tests.filter((testFile) => geodataOnly
     ? geodataTests.has(testFile) || optionalGeodataTests.has(testFile)
     : !geodataTests.has(testFile));
+// --shard=K/N keeps every N-th file starting at K, so CI can run N parts on
+// separate machines at once; the interleave spreads the slow files evenly.
+const shardArg = process.argv.find((arg) => arg.startsWith('--shard='));
+if (shardArg) {
+    const [index, count] = shardArg.slice('--shard='.length).split('/').map(Number);
+    if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || index < 1 || index > count) {
+        console.error(`Invalid ${shardArg}: expected --shard=K/N with 1 <= K <= N`);
+        process.exit(2);
+    }
+    const kept = selectedTests.filter((_, position) => position % count === index - 1);
+    selectedTests.splice(0, selectedTests.length, ...kept);
+}
 if (process.argv.includes('--list')) {
     selectedTests.forEach((testFile) => console.log(testFile));
     process.exit(0);
