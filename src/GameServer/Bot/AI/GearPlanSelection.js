@@ -19,7 +19,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
     const wishTargetId = chosen?.object?.slot ? chosen.object.itemId : null;
     const activity = economy.network.activity;
     const activeGear = wishTargetId && activity?.rootKey === chosen.key
-        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && activity.kind !== 'production';
+        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && activity.kind !== 'production' && !activity.funding;
     if (!activeGear && !GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)) {
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.
@@ -47,7 +47,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
     // Equal-price towns are ranked from the bot's hunting ground, for every caller.
     const origin = OfferOrder.farmingOrigin(state, (spotId) => SpotIndex.spotById(spots, spotId));
-    const planOptions = { ...planningOptions, excludedSpotIds, origin, wishTargetId };
+    const planOptions = { ...planningOptions, excludedSpotIds, origin, wishTargetId, wishSlot: Number(chosen?.object?.slot) };
     const clanRaidPlan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && previousPlan?.next?.sourceKind === 'raid';
     if (clanRaidPlan) planOptions.allowRaidSources = true;
@@ -123,6 +123,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], occupancy, tim
     const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(finalizedPlan, state, spots, { occupancy });
     const acquisitionPlan = {
         ...costedPlan,
+        ...(costedPlan.target?.selfId === wishTargetId ? { target: { ...costedPlan.target, slot: Number(chosen.object.slot) } } : {}),
         marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     };

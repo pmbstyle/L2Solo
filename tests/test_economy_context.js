@@ -28,15 +28,21 @@ async function run() {
     const capture = Profile.capture;
     try {
         Profile.capture = () => ({});
-        let craftLevel = 0;
+        let craftLevel = 0, clanId = 0;
         const actor = { fetchId: () => 999001, fetchLevel: () => 16, fetchClassId: () => 53,
+            fetchClanId: () => clanId,
             backpack: { fetchItems: () => [], fetchDwarvenCraftLevel: () => craftLevel } };
-        const session = { coldLifeState: { craftLevel: 1, stats: { dwarvenCraftLevel: 1 } } };
+        const session = { coldLifeState: { craftLevel: 1, stats: { dwarvenCraftLevel: 1, clanId: 7 } } };
         const unlearned = Economy.stateForActor(actor, session);
         assert.equal(unlearned.craftLevel, 0, 'native hot zero overrides stored cold capability');
+        assert.equal(unlearned.clanId, 0, 'native hot membership overrides the stored clan');
+        clanId = 9;
         craftLevel = 1;
         const learned = Economy.stateForActor(actor, session);
         assert.equal(learned.craftLevel, 1);
+        assert.equal(learned.clanId, 9);
+        assert.equal(invoke('GameServer/Bot/AI/PersonalGearProgression').assess(learned).required, false,
+            'a hot clan member stays outside personal equipment milestones');
         assert.notEqual(Economy.inputKey(unlearned), Economy.inputKey(learned), 'learning invalidates the planning inputs');
         assert.notEqual(Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 0 } }),
             Economy.inputKey({ level: 16, stats: { classId: 53, dwarvenCraftLevel: 1 } }));
@@ -124,13 +130,18 @@ async function run() {
     for (const wallet of [0, 20000, 200000, 1000000, 50000000]) {
         const state = { ...warrior, adena: wallet };
         const context = Economy.forState(state, kitDeps);
-        assert(Math.abs(context.hourAdena - 76797) < 1);
+        const earning = Hunt.huntIncome(state, context.timestamp);
+        const row = Table.value(earning.spotId, 'dps', state.level, true);
+        assert(Math.abs(context.hourAdena - Hunt.netIncome(row, Hunt.consumablePrices(state))) < 1,
+            'the hunting hour deducts paid shots and healing');
         assert(context.moneyPrice >= 1 / context.hourAdena);
         assert(Profit.margin({ productCount: 100, successRate: 100, mpCost: 5 }, 10, 500,
             { ...context, mpPerHour: 1000 }));
     }
     const gladiator = Economy.forState(equippedFixture(1202, 2, 50, 1000000), kitDeps);
-    assert(Math.abs(gladiator.hourAdena - 123854) < 1);
+    const gladiatorHunt = Hunt.huntIncome(gladiator.state, gladiator.timestamp);
+    assert(Math.abs(gladiator.hourAdena - Hunt.netIncome(Table.value(gladiatorHunt.spotId, 'dps', 50, true),
+        Hunt.consumablePrices(gladiator.state))) < 1);
     assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
     const stocked = { ...warrior, inventory: { ...warrior.inventory,
         [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) } } };
@@ -264,7 +275,9 @@ async function run() {
     const richContext = Economy.forState(rich);
     assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);
     const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
-    assert.equal(richContext.network.gap, null);
+    assert(richContext.network.gap && !richContext.network.gap.funded
+        && richContext.network.gap.price < rich.adena,
+        'an affordable mandatory kit still waits for a confirmed supplier');
     assert(richContext.gapHorizonHours > 0, 'affordable useful wishes retain their own waiting horizon');
     assert(PriceDecision.traderOf({ traits: { commitment: 0 } }, richContext).wait > 0);
     assert(PriceDecision.traderOf({ traits: { commitment: 0 } }, richContext).wait
@@ -350,7 +363,7 @@ async function run() {
     assert.equal(closureNetwork.plans.get(ownedCraftRoot.key).requirements.length, 0,
         'physical owned ingredients remain executable after native provider pruning');
     const mage = { ...base, characterId: 903, level: 40, sp: 100000,
-        stats: { ...base.stats, classId: 14, exp: Data.experience[39], coldCombat: { classId: 14, skillSource: 'database', skills: [] } } };
+        stats: { ...base.stats, clanId: 1, classId: 14, exp: Data.experience[39], coldCombat: { classId: 14, skillSource: 'database', skills: [] } } };
     const missing = Catalog.missingBooks(mage);
     const valuable = missing.find(book => Providers.skillGain(mage, book).attack > 0);
     assert(valuable, 'actual unlearned first-rank offensive skill has native improvement');

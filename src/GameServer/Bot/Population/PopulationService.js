@@ -527,8 +527,34 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         const currentMembers = members.map(member => LifeState.cachedState(member.characterId) || member);
         const joint = await jointPartyGoals(party, currentMembers, timestamp);
         if (!joint) return { party, reviewed, departed: null };
+        const incomeDeparture = (joint.incomeReviews || []).find(review => review.accept === false
+            && review.partySource === 'own_party' && review.soloIncome > 0
+            && review.reason === 'solo_preferred' && Number(review.fee || 0) === 0);
+        if (incomeDeparture && !PartyMarketBreak.pending(party).length && !party.stats?.pveEncounter
+            && !currentMembers.some(member => member.stats?.tradeMeeting || member.activity === 'traveling' || member.activity === 'dead')) {
+            const member = LifeState.cachedState(incomeDeparture.characterId);
+            if (member && String(member.party?.partyId || member.partyId || '') === String(party.partyId)) {
+                const detached = await LifeState.leaveParty({ ...member, stats: { ...member.stats,
+                    partyIncomeDecision: incomeDeparture } }, 'better_solo_income', { ownerHandoff: true });
+                if (detached) {
+                    const retained = currentMembers.filter(member => member.characterId !== detached.characterId);
+                    if (retained.length < Config.partyMinSize) {
+                        const dissolved = await dissolveBackgroundParty(party, 'better_solo_income', retained.length);
+                        return { party: dissolved.party || party, reviewed, departed: detached, dissolved: true };
+                    }
+                    const leader = retained.find(member => member.characterId === party.leaderId) || PartyComposition.chooseLeader(retained);
+                    const updated = await BackgroundPartyState.createOrUpdate({ ...party,
+                        leaderId: leader.characterId, memberIds: retained.map(member => member.characterId),
+                        roleCoverage: PartyComposition.roleCoverage(retained), stats: { ...party.stats, ...joint,
+                            memberGoals: retained.map(invoke('GameServer/Bot/Population/PartyGoalPolicy').declaration),
+                            agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null } });
+                    return { party: updated || party, reviewed, departed: detached };
+                }
+            }
+        }
         if (JSON.stringify(party.stats?.memberGoals) !== JSON.stringify(joint.memberGoals)
-            || JSON.stringify(party.stats?.objective) !== JSON.stringify(joint.objective)) {
+            || JSON.stringify(party.stats?.objective) !== JSON.stringify(joint.objective)
+            || joint.lastIncomeReviewAt) {
             const saved = await BackgroundPartyState.commitGoals(party, currentMembers, joint);
             party = saved || party;
         }
@@ -2656,6 +2682,15 @@ const PopulationService = {
                     levelRange: partyLimits.levelRange
                 });
                 if (!recruits.length) return null;
+                if (!partyObjective?.clanGoalKey && partyObjective?.sourceKind !== 'raid') {
+                    const Income = require('./PartyIncomeComparison');
+                    const roster = [...members, ...recruits];
+                    const prepared = Income.prepare(roster, { party, objective: partyObjective });
+                    const Policy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
+                    if (roster.some(member => invoke('GameServer/Bot/AI/PersonalGearProgression').personal(member)
+                        && !Policy.decide(member, roster.filter(peer => peer !== member),
+                            { prepared, party, objective: partyObjective }).accept)) return null;
+                }
 
                 return hydratePartyCandidates(recruits).then((hydratedRecruits) => {
                     if (hydratedRecruits.length !== recruits.length) return null;

@@ -18,6 +18,9 @@ function groupContext(party, members, deps = {}) {
 }
 
 function decide(state, peers, options = {}) {
+    const economic = require('./PartyIncomeComparison').compare(state, peers, options);
+    if (economic) return { ...economic, probability: economic.accept ? 1 : 0,
+        roll: options.roll ?? 0.5, goal: declaration(state) };
     return participation(state, peers, { ...options,
         persona: options.persona || invoke('GameServer/Bot/AI/BotPersona').of(state),
         roll: options.roll ?? require('../AI/TendencyRoll').roll('party', state.characterId,
@@ -29,8 +32,7 @@ function pending(party, members) {
     return { objective: party.stats?.objective, memberGoals: members.map(declaration) };
 }
 
-function joint(party, members, { context = null } = {}) {
-    if (context?.routePending) return pending(party, members);
+function joint(party, members, { context = null, memberContexts, spots, timestamp = context?.timestamp || Date.now() } = {}) {
     const goals = members.map(declaration);
     // The same wish engine merges members' actual wishes. Its selected leaf
     // carries a native route; a shopping/crafting leaf does not teleport a party.
@@ -43,12 +45,25 @@ function joint(party, members, { context = null } = {}) {
     const objective = previous?.clanGoalKey || previous?.sourceKind === 'raid' || previous?.helpDeal
         ? previous : selected ? { ...previous, ...selected, status: 'open', priority: previous?.priority || 'preferred',
             objectiveKey: ['joint', selected.spotId, selected.npcId || 0].join(':') } : previous;
-    return { objective, memberGoals: goals, ...(context?.statsPacket || {}) };
+    const Income = require('./PartyIncomeComparison');
+    let review = {};
+    if (!previous?.clanGoalKey && previous?.sourceKind !== 'raid' && !previous?.helpDeal
+        && timestamp - Number(party.stats?.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS
+        && members.every(member => invoke('GameServer/Bot/AI/PersonalGearProgression').personal(member))
+        && members.some(member => member.spotId)) {
+        const prepared = Income.prepare(members, { party, objective: previous, timestamp, memberContexts, spots });
+        review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
+            ...Income.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
+    }
+    // Waiting for a travel quote keeps the objective, but must not suspend
+    // the cheap personal income review for an already active hunt.
+    return { ...(context?.routePending ? pending(party, members)
+        : { objective, memberGoals: goals, ...(context?.statsPacket || {}) }), ...review };
 }
 
 function participation(state, peers, { persona, roll = 0.5, bonus = 0 } = {}) {
     const traits = persona?.traits || {};
-    // ARCH-NOTE: The interim party policy ignores income and help fees; escrow still pays the agreed fee.
+    // Clan/social declarations without economic inputs retain their persona policy.
     const social = Number(traits.sociability ?? 0.5), empathy = Number(traits.empathy ?? 0.5);
     const score = social - 0.5 + empathy * 0.25 + Number(traits.commitment ?? 0.5) * 0.15;
     const probability = Math.max(0.02, Math.min(0.98, 0.5 + score / (2 * (1 + Math.abs(score))) + Number(bonus || 0)));
@@ -57,10 +72,19 @@ function participation(state, peers, { persona, roll = 0.5, bonus = 0 } = {}) {
 
 function formingMembers(members, requested) {
     if (requested?.clanGoalKey || requested?.sourceKind === 'raid') return members;
-    return members.filter(member => member.stats?.partyRequest?.priority === 'required'
-        || decide(member, members.filter(peer => peer !== member), {
-            fee: requested?.helpDeal && Number(requested.helpDeal.payerId) !== Number(member.characterId)
-                ? Number(requested.helpDeal.fee) / Math.max(1, members.length - 1) : 0 }).accept);
+    const Income = require('./PartyIncomeComparison');
+    const filter = roster => {
+        const prepared = Income.prepare(roster, { objective: requested });
+        return roster.filter(member => !invoke('GameServer/Bot/AI/PersonalGearProgression').personal(member)
+            && member.stats?.partyRequest?.priority === 'required'
+            || decide(member, roster.filter(peer => peer !== member), { prepared, objective: requested }).accept);
+    };
+    const accepted = filter(members);
+    if (accepted.length === members.length || accepted.length < 2 || members.every(member => !member.spotId)) return accepted;
+    // A declined helper changes safety, loot shares and costs. Do not form
+    // a roster based on the economics of members who will not actually join.
+    const confirmed = filter(accepted);
+    return confirmed.length === accepted.length ? confirmed : [];
 }
 
 function itemNeed(state, item, projected) {

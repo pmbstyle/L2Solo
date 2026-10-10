@@ -58,7 +58,7 @@ function score(context = {}) {
     if (!context.incomingThreat && levelGap > MAX_LEVEL_ADVANTAGE) {
         return { eligible: false, score: -Infinity, reason: 'level_too_high', reasons: ['level_too_high'] };
     }
-    if (!context.incomingThreat && levelGap < MIN_LEVEL_GAP) {
+    if (!context.incomingThreat && levelGap < Math.max(-15, number(context.minLevelGap, MIN_LEVEL_GAP))) {
         return { eligible: false, score: -Infinity, reason: 'level_too_low', reasons: ['level_too_low'] };
     }
     if (verticalGap > MAX_VERTICAL_GAP) {

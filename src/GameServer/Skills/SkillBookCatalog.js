@@ -59,6 +59,7 @@ function learned(state) {
 }
 
 function requiredBooks(state = {}) {
+    if (invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state)) return [];
     const known = learned(state);
     const classId = Number(state.stats?.classId ?? state.classId);
     return entries(classId).flatMap((entry) => {
@@ -78,7 +79,8 @@ function needsTraining(state = {}) {
     return entries(classId).some((entry) => {
         const training = nextTraining(classId, state.level, entry.selfId, known.get(Number(entry.selfId)) || 0);
         return training && Number(state.sp || 0) >= training.sp
-            && (!training.bookId || Number(state.inventory?.[training.bookId]?.amount || 0) > 0);
+            && (invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state)
+                || !training.bookId || Number(state.inventory?.[training.bookId]?.amount || 0) > 0);
     });
 }
 
@@ -87,7 +89,7 @@ function nextTrainingSp(state = {}) {
     let next = Infinity;
     for (const entry of entries(classId)) {
         const training = nextTraining(classId, state.level, entry.selfId, known.get(Number(entry.selfId)) || 0);
-        if (training && (training.bookId === null || Number(state.inventory?.[training.bookId]?.amount || 0) > 0)) {
+        if (training && (invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state) || training.bookId === null || Number(state.inventory?.[training.bookId]?.amount || 0) > 0)) {
             next = Math.min(next, training.sp);
         }
     }

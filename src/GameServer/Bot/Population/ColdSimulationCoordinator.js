@@ -1111,7 +1111,9 @@ class ColdSimulationCoordinator {
         const wishDestination = wished && wished.raidBoss !== true
             && !excludedSpotIds.has(String(wished.id))
             && LevelingRoutes.isSpotAllowedForState(wished, state, soloOptions())
-            && SpotService.isSuitable(wished, Number(state.level || 1), options)
+            && (SpotService.isSuitable(wished, Number(state.level || 1), options)
+                || invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state)
+                    && Number(wished.avgLevel || wished.minLevel || 1) >= Number(state.level || 1) - 15)
             && SpotProfiles.hasCapacityForStates(wished, routedMembers, index.occupancy) ? wished : null;
         const sharedSpot = party?.stats?.objective?.spotId;
         let selected = partyRoute && sharedSpot && !excludedSpotIds.has(String(sharedSpot))

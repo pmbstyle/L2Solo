@@ -772,7 +772,8 @@ function requestPartyGoals(payload, msgId, admitted = false) {
                 occupancy: currentPlanningOccupancy(timestamp), workshop, routeRows,
                 rememberContext: kernel.states.get(member.characterId)?.state === member,
                 buyOrderEscrow: context.buyOrderEscrow, caller: 'workerPartyGoal', withNodes: true });
-        }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy && partyMembersAvailable(members));
+        }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
+            && partyMembersAvailable(members), { spots: planningSpots });
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
             send('party_goal_result', { ok: true, joint, sources: Calculation.sources(members) }, msgId);
     }).catch(error => {

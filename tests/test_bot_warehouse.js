@@ -83,7 +83,7 @@ async function run() {
             2: usefulGear,
             94: { selfId: 94, name: 'Bec de Corbin', amount: 2, kind: 'Weapon.Pole', rank: 'c' }
         },
-        stats: {}
+        stats: { craftStationId: 1 }
     };
     const result = await BotWarehouse.depositCold(state);
     assert.strictEqual(result.count, 23);
@@ -102,7 +102,7 @@ async function run() {
                 { id: 82, amount: 1, equipped: false, enchant: 3, slot: 0 },
                 { id: 83, amount: 1, equipped: false, enchant: 0, slot: 0 }
             ]
-        } }, stats: { equipmentPlan: { status: 'active', strategy: 'craft', materials: [{ selfId: 94, amount: 2 }] } }
+        } }, stats: { craftStationId: 1, equipmentPlan: { status: 'active', strategy: 'craft', materials: [{ selfId: 94, amount: 2 }] } }
     };
     Database.fetchItems = () => Promise.resolve(mixed.inventory[94].instances.map((item) => ({ ...item, selfId: 94 })));
     const mixedCandidates = ItemDisposition.warehouseCandidates(mixed);
@@ -138,7 +138,7 @@ async function run() {
         inventory: {
             94: { selfId: 94, name: 'Bec de Corbin', amount: 3, kind: 'Weapon.Pole', rank: 'c' }
         },
-        stats: {}
+        stats: { craftStationId: 1 }
     });
     assert.strictEqual(capped.count, 1, 'only the remaining warehouse gear allowance may be deposited');
     assert.strictEqual(capped.overflow[0].count, 2, 'surplus gear must be reported for the common market choice');
@@ -179,7 +179,7 @@ async function run() {
     const concurrentState = {
         characterId: 57,
         inventory: { 1870: { ...material } },
-        stats: {}
+        stats: { craftStationId: 1 }
     };
     const concurrentDeposits = await Promise.all([
         BotWarehouse.depositCold(concurrentState),
@@ -216,7 +216,7 @@ async function run() {
     ];
     const liveBackpack = { items: liveItems, fetchItems() { return this.items; } };
     const liveState = {
-        stats: {
+        stats: { craftStationId: 1,
             equipmentPlan: {
                 status: 'ready_to_craft',
                 strategy: 'craft',

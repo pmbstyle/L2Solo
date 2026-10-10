@@ -49,6 +49,16 @@ const party = { partyId: 'goal-calculation', memberIds: [701, 702], leaderId: 70
     assert(!check({ ...payload, replyBy: timestamp - 1 }).ok);
     assert(!check({ ...payload, party: { ...party, leaderId: 999 } }).ok);
     assert(!check({ ...payload, party: { ...party, padding: 'x'.repeat(256 * 1024) } }).ok);
+    const incomeParty = { ...party, startedAt: timestamp - 600000 };
+    const incomeJoint = Policy.joint(incomeParty, members, { timestamp, context: { routePending: true } });
+    const resultCheck = joint => Protocol.validateEnvelope(Protocol.envelope('party_goal_result', 'probe',
+        { ok: true, sources: Calculation.sources(members), joint }), 'worker');
+    assert(resultCheck(incomeJoint).ok, 'native income reviews survive the worker wire admission');
+    assert(!resultCheck({ ...incomeJoint, incomeReviews: incomeJoint.incomeReviews.slice(0, 1) }).ok);
+    const invalidReview = change => ({ ...incomeJoint,
+        incomeReviews: [{ ...incomeJoint.incomeReviews[0], ...change }, incomeJoint.incomeReviews[1]] });
+    for (const bad of [{ characterId: 999 }, { soloIncome: Infinity }, { partyHours: -1 },
+        { at: timestamp + 1 }, { reason: 'unknown' }, { extraGraph: {} }]) assert(!resultCheck(invalidReview(bad)).ok);
     const protectedParty = { ...party, stats: { objective: { clanGoalKey: 'clan-probe', spotId: 'protected' } } };
     assert.deepEqual((await Calculation.calculate(protectedParty, members,
         async member => contexts[members.indexOf(member)], timestamp)).objective, protectedParty.stats.objective);

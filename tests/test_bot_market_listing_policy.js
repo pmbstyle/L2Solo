@@ -75,7 +75,7 @@ for (const count of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
 // A small world: an empty board index and counters for the items below.
 const items = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871, 1872, 1873];
 const bag = Object.fromEntries(items.map((selfId) => [selfId, { selfId, amount: 100, kind: 'Other.Material' }]));
-const state = { characterId: 4242, level: 40, adena: 50000, stats: { generatedCold: true }, inventory: bag };
+const state = { characterId: 4242, level: 40, adena: 50000, stats: { generatedCold: true, craftStationId: 1 }, inventory: bag };
 const now = 1800000000000;
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const options = (extra = {}) => ({ now, board, persona: null, npcOffersFor: () => [], findSpot: () => null, ...extra });

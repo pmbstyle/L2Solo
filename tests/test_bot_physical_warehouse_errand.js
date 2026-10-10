@@ -88,7 +88,7 @@ try {
     const session = {
         actor: bot,
         plan: 'shopping',
-        coldLifeState: { characterId: bot.fetchId(), inventory: {}, stats: {} },
+        coldLifeState: { characterId: bot.fetchId(), inventory: {}, stats: { craftStationId: 1 } },
         shoppingTarget: sellerTarget
     };
     const BotAI = {

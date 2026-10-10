@@ -18,6 +18,8 @@ const DEFAULT_FILE = path.resolve(__dirname, '../../../../data/Bots/spot-table.j
 let table = null;
 let file = DEFAULT_FILE;
 const bestRows = new Map();
+const incomeRows = new Map();
+let incomeTable, incomeRates;
 // value() is a pure function of the table, the rate profile and its four
 // arguments; every bot of a role and level asks the same spots. One bounded
 // answer per argument set, dropped when the table or the profile changes
@@ -214,6 +216,31 @@ function best(role, level, shots = true, metric = 'exp') {
     bestRows.set(key, bestRow);
     return bestRow;
 }
+// A shared bounded shortlist keeps route reviews from scanning the atlas
+// on every actor tick. Final safety, occupancy and travel remain actor facts.
+function rankedIncome(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true) {
+    const t = load(), rates = ProgressionRates.profile();
+    if (t !== incomeTable || rates !== incomeRates) {
+        incomeTable = t; incomeRates = rates;
+        incomeRows.clear(); bestRows.clear(); valueMemo.clear();
+        valueMemoTable = t; valueMemoRates = rates;
+    }
+    const key = `${role}:${level}:${costs.shots}:${costs.potions}:${minGap}:${Number(shots)}`;
+    if (incomeRows.has(key)) return incomeRows.get(key);
+    const rows = [];
+    for (const spot of t.spots) {
+        if (spot[1] - level < minGap || spot[1] - level > 8) continue;
+        const row = computeValue(t, rates, spot[0], role, level, shots);
+        if (!row) continue;
+        const income = row.adena + row.loot - row.shots * costs.shots - row.potions * costs.potions;
+        if (income > 0) rows.push({ ...row, income, spotId: spot[0], useShots: shots });
+    }
+    rows.sort((a, b) => b.income - a.income || String(a.spotId).localeCompare(String(b.spotId)));
+    const result = Object.freeze(rows.slice(0, 64).map(Object.freeze));
+    if (incomeRows.size >= 128) incomeRows.delete(incomeRows.keys().next().value);
+    incomeRows.set(key, result);
+    return result;
+}
 function roles() {
     return load().roles;
 }
@@ -226,4 +253,4 @@ function useFile(next = DEFAULT_FILE) {
     valueMemo.clear();
 }
 
-module.exports = { value, spotLevel, referenceLevel, roles, best, useFile, expGapFactor, DEFAULT_FILE };
+module.exports = { value, spotLevel, referenceLevel, roles, best, rankedIncome, useFile, expGapFactor, DEFAULT_FILE };

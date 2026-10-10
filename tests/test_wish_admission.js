@@ -25,6 +25,7 @@ const adapters = {
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/GearAcquisitionPlanner': { roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: item => gearIds.has(item.selfId), considerable: () => true, itemScore: () => 1, withReadiness: fn => fn(),
+        equippedSlotsFor: row => row?.equippedSlots?.length ? row.equippedSlots : row?.equipped ? [row.slot] : [],
         equipmentCandidate: () => true, equipmentItemBetter: (item, current) => !current },
     // The worn candidate raises attack by its own gain; nothing else changes.
     'GameServer/Bot/Population/ColdCombatProfile': { withEquipmentPreparation: fn => fn(), buildGainsFor: () => ({}),
@@ -79,6 +80,7 @@ const provider = load('WishProviders.js', name => {
     if (name === './EconomyDiagnostics') return Diagnostics;
     if (name === './EconomicValuation') return valuation;
     if (name === './WishNetwork') return tracked;
+    if (name === '../AI/PersonalGearProgression') return { assess: () => ({ required: false, gaps: new Map() }), priority: () => 0, personal: () => false };
     if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
     if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
@@ -140,8 +142,8 @@ const cut = scenario({ items: [111, 112, 113, 114].map((id, at) => gear(id, at +
 diagnostics = false;
 assert.deepEqual(cut.projection.roots.filter(key => key.startsWith('power:')).sort(),
     ['power:111:1', 'power:112:2', 'power:113:3', 'power:115:10'], 'the chest enters, the fourth equal piece waits');
-assert.equal(cut.admission.candidates, 5);
-assert.equal(cut.admission.evaluations, 5, 'no shared stock: one evaluation each');
+assert.equal(cut.admission.candidates, 6);
+assert.equal(cut.admission.evaluations, 6, 'no shared stock: one evaluation each');
 assert.equal(cut.admission.rounds, 1);
 const chest = witness(cut.admission, 'power:115:10');
 close(chest.valueHours, 1.6, 'chest ready benefit');
@@ -153,8 +155,8 @@ const expanded = cut.result.queue.find(row => row.key === 'power:115:10');
 const loyalty = cut.result.focus?.[0] === 'power:115:10' ? 1 : 1 - persona.traits.commitment;
 assert.deepEqual([expanded.price, expanded.effort, expanded.valueHours], [chest.price, chest.effort, chest.valueHours * loyalty],
     'the witness is the expanded network wish when no other root shares its stock');
-assert.equal(counts.get('provider/admission/candidate'), 5);
-assert.equal(counts.get('provider/admission/evaluation'), 5);
+assert.equal(counts.get('provider/admission/candidate'), 6);
+assert.equal(counts.get('provider/admission/evaluation'), 6);
 assert.equal(counts.get('provider/admission/round'), 1);
 assert.equal(counts.get('provider/admission/gear_root'), 4);
 console.log('PASS ready benefit admits the cheaper chest the old proxy cut; witness equals the expanded wish; counts');
@@ -199,13 +201,13 @@ assert.equal(witness(shared.admission, 'power:132:2').price, 10, 'the second cra
 console.log('PASS shared stock re-evaluates only the affected candidate');
 // 3b. Five pieces in five families each craft from 10 of 50 held 202: every
 // admission claims 10 more, so the rest are re-evaluated. Four gear roots
-// stop at four rounds (5 + 4 + 3 + 2 evaluations), then the four share 202
+// stop at four rounds (6 + 5 + 4 + 3 evaluations), then the four share 202
 // and are allocated again in the network's order (4); the fifth is not admitted.
 const rounds = scenario({ items: [[151, 1], [152, 2], [153, 3], [154, 4], [155, 10]].map(([id, slot]) => gear(id, slot, 0.5, 1000)),
     known: [151, 152, 153, 154, 155].map(id => recipe(id + 300, id, [[202, 10]])),
     inventory: { 202: { selfId: 202, amount: 50 } } });
 assert.equal(rounds.admission.rounds, 4, 'the round cap');
-assert.equal(rounds.admission.evaluations, 18);
+assert.equal(rounds.admission.evaluations, 22);
 assert.equal(rounds.admission.admitted.length, 4);
 assert.deepEqual(rounds.admission.admitted.map(row => row.price), [0, 0, 0, 0], 'each admitted craft uses its own held 10');
 [151, 152, 153, 154, 155].forEach(id => recipes.delete(id));
@@ -287,7 +289,7 @@ const edge = scenario({ items: [gear(142, 1, 0.5, 1000), Object.assign(gear(143,
     improvements: [{ key: 'improvement:1', kind: 'enchant', materials: [{ selfId: 141, amount: 1 }],
         valueHours: 5, price: 100, fee: 0 }] });
 assert.equal(edge.admission.maxScratch, 40);
-assert.deepEqual(edge.admission.pending.filter(row => row.key.startsWith('power:')), [{ key: 'power:142:1', reason: 'evaluation_limit' }]);
+assert.deepEqual(edge.admission.pending.filter(row => row.key.startsWith('power:')), [{ key: 'power:142:1', reason: 'evaluation_limit' }, { key: 'power:142:2', reason: 'evaluation_limit' }]);
 assert(edge.projection.roots.includes('power:143:1'), 'the family stays open for the fitting candidate');
 console.log('PASS forty arena descriptors and the root exceed forty: evaluation limit, the family stays open');
 recipes.clear();
@@ -322,8 +324,8 @@ console.log('PASS the rare status value is scored at admission and repeated by t
 diagnostics = true; counts.clear();
 const far = scenario({ items: [gear(116, 1, 0.5, 5000)], asks: [[116, 5000]] });
 diagnostics = false;
-assert.deepEqual(far.admission.pending, [{ key: 'power:116:1', reason: 'not_ready_in_horizon' }]);
-assert.equal(counts.get('provider/admission_pending/not_ready_in_horizon'), 1);
+assert.deepEqual(far.admission.pending, [{ key: 'power:116:1', reason: 'not_ready_in_horizon' }, { key: 'power:116:2', reason: 'not_ready_in_horizon' }]);
+assert.equal(counts.get('provider/admission_pending/not_ready_in_horizon'), 2);
 assert(!far.projection.roots.includes('power:116:1'));
 console.log('PASS a path not ready inside the horizon is pending with its reason');
 
@@ -378,7 +380,7 @@ console.log('PASS a path whose own time reaches the horizon waits; a funding del
 // A completed build keeps only its cut: every candidate's read scope (and the
 // arena that filled it) is garbage once the projection is returned.
 const retained = scoped.projection, scopes = scoped.opened;
-assert.equal(scopes.length, 5);
+assert.equal(scopes.length, 6);
 setImmediate(() => {
     require('node:v8').setFlagsFromString('--expose-gc');
     require('node:vm').runInNewContext('gc')();

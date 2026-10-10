@@ -39,16 +39,10 @@ function townCenter(name) {
 }
 
 function marketAwareNpcCandidates(state, options = {}) {
-    const market = MarketListingPolicy.evaluate(state, {
+    return MarketListingPolicy.evaluate(state, {
         unlimited: true,
         allowPreTradeCleanup: options.allowPreTradeCleanup === true
     }).npc;
-    const chosen = new Set(market.map((item) => Number(item.selfId)));
-    return market.concat(ItemDisposition.npcLiquidationCandidates(state, options).filter((item) => {
-        const kind = String(item.kind || '');
-        return !kind.startsWith('Weapon.') && !kind.startsWith('Armor.')
-            && !chosen.has(Number(item.selfId));
-    }));
 }
 
 function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {

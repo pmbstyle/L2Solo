@@ -6512,7 +6512,7 @@ const Database = {
         const admission = captureWriteAdmission(options, 'invalid_skill_before_write', id);
         return withCharacterFlush(id, () => inTransaction(() => {
             checkCapturedWriteAdmission(admission, id);
-            const character = one('SELECT username, classId, level, sp FROM characters WHERE id = ?', [id]);
+            const character = one('SELECT username, classId, level, sp, clanId FROM characters WHERE id = ?', [id]);
             if (!character || !String(character.username).startsWith('bot_')) return { learned: false, reason: 'not_bot' };
             const known = one('SELECT level FROM skills WHERE characterId = ? AND selfId = ?', [id, skillSelfId]);
             if (Number(known?.level || 0) >= Number(skillLevel)) return { learned: false, reason: 'already_known' };
@@ -6524,13 +6524,15 @@ const Database = {
                 return { learned: false, reason: 'ineligible_rank' };
             }
             // Static workshops are authored infrastructure, rather than a
-            // progressing character. Ordinary bots pay the canonical SP/book.
+            // progressing character. Personal bots pay SP and sell skill books;
+            // clan training retains its existing book requirement.
             const infrastructure = String(character.username).startsWith('bot_craft_');
             const spentSp = infrastructure ? 0 : training.sp;
             if (Number(character.sp) < spentSp) return { learned: false, reason: 'insufficient_sp' };
-            const book = !infrastructure && training.bookId
+            const requiresBook = !infrastructure && Number(character.clanId) > 0 && training.bookId;
+            const book = requiresBook
                 ? one('SELECT id, amount FROM items WHERE characterId = ? AND selfId = ? AND amount > 0 AND equipped = 0 ORDER BY id LIMIT 1', [id, training.bookId]) : null;
-            if (!infrastructure && training.bookId && !book) return { learned: false, reason: 'missing_book' };
+            if (requiresBook && !book) return { learned: false, reason: 'missing_book' };
             if (spentSp) {
                 checkCapturedWriteAdmission(admission, id);
                 write('UPDATE characters SET sp = sp - ? WHERE id = ?', [spentSp, id]);

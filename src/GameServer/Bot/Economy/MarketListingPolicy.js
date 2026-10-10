@@ -25,7 +25,7 @@ function classify(state, item) {
     if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId))
         return { action: 'ignore', reason: 'no_acquisition_source' };
     if (!LotPolicy.viable(item)) return { action: 'ignore', reason: 'invalid_item' };
-    if (ItemDisposition.isNpcOnlyItem(item)) {
+    if (ItemDisposition.isNpcOnlyItem(item, undefined, state)) {
         return { action: 'npc', reason: 'npc_only_item' };
     }
     return { action: 'market', reason: 'market' };
@@ -70,10 +70,14 @@ const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 // ads it chose to sell into ({ item, line, count }: the bot sells there when
 // it is in the ad's town, the side that acts travels).
 function evaluate(state, options = {}) {
-    const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true });
     const ctx = traderContext(state, options);
+    const craftReservations = ctx.economy?.craftReservations
+        || ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
+    const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
+        reserved: { ...options.reserved, ...craftReservations } });
     const decisionPoint = options.decisionPoint ?? (Number(options.now) || ctx.timestamp);
     const kept = options.kept || new Map();
+    const liquidate = invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state);
     const decisions = [];
     const forBoard = [];
     let keptLines = 0;
@@ -84,7 +88,7 @@ function evaluate(state, options = {}) {
             continue;
         }
         const keptKey = `${item.selfId}:${item.enchant || 0}`;
-        if (kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId))) {
+        if (!liquidate && (kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId)))) {
             // Only unreserved conditional stock can answer from the field.
             // Reuse the sale decision, preserving the held ask unless it
             // actually chooses the opposite bid. Backed custody stays native.
@@ -108,10 +112,10 @@ function evaluate(state, options = {}) {
         }
         const town = MarketTownPolicy.targetTownForItems(state, [item], options);
         const chosen = MarketPricing.disposition(item, ctx, {
-            town, room: roomFor(item, options.stored), stockQuote: options.stockQuotes === true,
+            town, room: liquidate ? 0 : roomFor(item, options.stored), stockQuote: !liquidate && options.stockQuotes === true,
             rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
         });
-        const decision = { action: chosen.action === 'keep' ? 'warehouse' : chosen.action,
+        const decision = { action: chosen.action === 'keep' ? liquidate ? 'npc' : 'warehouse' : chosen.action,
             reason: chosen.priced?.ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
             priced: chosen.priced, gain: chosen.gain, answer: chosen.answer,
             // Attention to a free quote uses its possible spread, never expected receipts.
@@ -129,7 +133,7 @@ function evaluate(state, options = {}) {
                 pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL, enchant: decision.item.enchant || 0 }) };
             continue;
         }
-        decision.action = 'warehouse';
+        decision.action = liquidate ? 'npc' : 'warehouse';
         decision.reason = 'no_board_slot';
     }
     return {

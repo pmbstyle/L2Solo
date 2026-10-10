@@ -63,8 +63,8 @@ assert.deepEqual(delta(before, shadow()), { 'context:shadow:not_retained:same_ke
 before = shadow();
 Economy.forState({ ...republished, adena: 5000 }, deps);
 let changed = delta(before, shadow());
-assert.deepEqual(changed, { 'context:shadow:input_dependency_changed:new_key': 1, 'context:shadow_plan:new_key:new_plan': 1 },
-    'a new key has no gap count; a richer wallet moves the focus, so the plan is new');
+assert.deepEqual(changed, { 'context:shadow:input_dependency_changed:new_key': 1, 'context:shadow_plan:new_key:same_plan': 1 },
+    'a richer wallet invalidates inputs while the mandatory kit remains the focus');
 
 // A build that waits on incoming stock (early return) still classifies its plan.
 before = shadow();

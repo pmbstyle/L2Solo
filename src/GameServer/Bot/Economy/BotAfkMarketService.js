@@ -277,7 +277,8 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
 function decide(state, stock, existing, options = {}) {
     const ads = AfkTrade.ownerRecords(Number(state.characterId)).filter((record) => record.kind === 'sell_ad').length;
     return ListingPolicy.evaluate(stateWithEscrow(state, stock), {
-        ...options, slots: Math.max(0, ListingPolicy.BOARD_SLOTS - ads),
+        ...options, economy: options.economy || require('../Population/ColdEconomyDecision').economyFor(state),
+        slots: Math.max(0, ListingPolicy.BOARD_SLOTS - ads),
         kept: new Map(existing.map((line) => [lineKey(line), line.price]))
     });
 }

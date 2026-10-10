@@ -64,7 +64,7 @@ const rich = earner(1, 35, [{ spotId: 'rich', cycleMs: 60000, adena: 9000, loot:
     { spotId: 'poor', cycleMs: 60000, adena: 1000, loot: 0, kills: 10, exp: 300 }]);
 const row = rich.stats.huntEfficiency.find((entry) => entry.spotId === 'rich');
 assert.deepStrictEqual([row.adena, row.loot, row.kills], [9000, 1000, 10], 'record keeps adena, loot value and kills');
-assert.deepStrictEqual(Efficiency.huntIncome(rich, at), { perHour: 600000, perKill: 1000, expPerHour: 6000, source: 'own' },
+assert.deepStrictEqual(Efficiency.huntIncome(rich, at), { spotId: 'rich', perHour: 600000, perKill: 1000, expPerHour: 6000, source: 'own' },
     'the best of the bot\'s rows, per hour of the hunt cycle and per kill, with the exp per hour of that same row');
 assert.strictEqual(Efficiency.huntIncome(rich, at, 'party').source, 'table', 'solo samples do not value a party hunt');
 earner(2, 32, [{ spotId: 'a', cycleMs: 60000, adena: 1000, loot: 0, kills: 5 }]);

@@ -259,7 +259,8 @@ async function run() {
 
     const remoteBuyerState = { ...buyerRoutedState, characterId: 86, currentRegion: 'Giran' };
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
-    assert.strictEqual(remoteBuyer.state.stats.lastNpcLiquidation, undefined, 'a bot must not sell to a buyer in another town before travelling there');
+    assert.deepStrictEqual(remoteBuyer.state.stats.lastNpcLiquidation.sold, [[1864, 10, 50]],
+        'a personal bot liquidates unwanted stock at the local NPC when the remote buyer trip is not worthwhile');
 
     const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
     const SpotService = invoke('GameServer/Bot/AI/SpotService');

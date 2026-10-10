@@ -5,7 +5,7 @@ require(require('node:path').join(gameRoot, 'src/Global'));
 invoke('GameServer/DataCache').init();
 const Catalog = invoke('GameServer/Skills/SkillBookCatalog'), Training = invoke('GameServer/Bot/BotSkillTraining');
 assert.equal(typeof Catalog.nextTrainingSp,'function');
-const support = {level:45,inventory:{},stats:{classId:16,coldCombat:{skills:[]}}};
+const support = {level:45,inventory:{},stats:{classId:16,clanId:1,coldCombat:{skills:[]}}};
 const eligible = Catalog.entries(16).map(entry=>Catalog.nextTraining(16,45,entry.selfId))
     .filter(next=>next && next.bookId===null);
 assert(eligible.some(next=>next.skillId===1011),'E6 heal rank opens without an attack book');

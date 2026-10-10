@@ -64,6 +64,12 @@ async function main() {
     const GoalPolicy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
     const GoalCalculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
     const originalPartyGoals = Coordinator.requestPartyGoals;
+    // This event fixture has no world/spot atlas. Supply a reachable party
+    // goal with no solo route; the economic policy has its own native tests.
+    const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+    const originalIncome = Income.compare;
+    Income.compare = () => Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 });
+    disposers.push(() => { Income.compare = originalIncome; });
     Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
         sources: GoalCalculation.sources(selected), joint: GoalPolicy.joint(party, selected) });
     const clock = { now: Date.now() }, jobs = registry(clock);
@@ -81,6 +87,7 @@ async function main() {
     assert.deepEqual(JSON.parse(nativeParty.memberIdsJson).sort((x, y) => x - y), [a.characterId, b.characterId]);
     driver.stop(); Population.started = false; Population.playerActivityProfile = savedProfile;
     Coordinator.requestPartyGoals = originalPartyGoals;
+    Income.compare = originalIncome;
     Config.partyMinSize = originalMin; Config.partyMaxSize = originalMax;
     console.log('PASS addressed publication group performs real native membership commit without formation timers');
     }

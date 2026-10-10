@@ -32,7 +32,7 @@ const adapters = {
     'GameServer/Bot/Economy/BotImprovementPolicy': { opportunities: () => [], crystalPath: () => null },
     'GameServer/Items/C4RecipeItems': { resolveByProductId: id => allowCraft && id === 101 ? recipe : null, resolveByRecipeId: id => id === 301 ? recipe : null },
     'GameServer/Items/C4DualSwordCombinations': { loadRecipes: () => [] },
-    'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft },
+    'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft, isServiceCrafter: () => false },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
     'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
     // No sellable inventory: the liquidation money path stays out of these routes.
@@ -89,6 +89,7 @@ const provider = load('WishProviders.js', name => {
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
     if (name === './WishNetwork') return network;
+    if (name === '../AI/PersonalGearProgression') return { assess: () => ({ required: false, gaps: new Map() }), priority: () => 0, personal: () => false };
     if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
     if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
@@ -97,7 +98,7 @@ const provider = load('WishProviders.js', name => {
     if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount || 0) };
     throw Error(name);
 }, invokeAdapter);
-const context = { timestamp: 1, persona, board, hunt: { perHour: 100, expPerHour: 0 }, deathHours: 0,
+const context = { timestamp: 1, persona, board, hunt: { perHour: 100, expPerHour: 0 }, hourAdena: 100, wallet: 1000, deathHours: 0,
     price: id => id === 101 ? 100 : 1, buyback: () => 0,
     stock: () => ({ itemId: 900, missing: 0 }), spotValue: () => { spotReads++; return {}; } };
 const preparedTrip = town => town === 'Giran' ? 0 : Infinity;
@@ -122,11 +123,14 @@ assert(nativeCraft, 'prepared native book enables ingredient collection without 
 assert.equal(nativeCraft.requiresRecipeLearning, false);
 assert.equal(nativeCraft.grossRequirements.length, 1);
 assert.equal(nativeCraft.grossRequirements[0].key, 'item:202');
-assert.equal(run(true).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false,
-    'no invented recipe knowledge when neither native nor compatibility book contains it');
+const unknownBook = run(true).nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
+assert(unknownBook?.requiresRecipeLearning, 'an unknown recipe remains a preparation goal');
+assert(unknownBook.grossRequirements.some(row => row.key === 'item:401' && row.once),
+    'the goal acquires a real scroll without inventing recipe knowledge');
 state.stats.recipes = savedBook;
-assert.equal(run(true, { deps: { knownRecipes: [] } }).nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft'), false,
-    'an authoritative empty book overrides a stale compatibility book');
+assert.equal(run(true, { deps: { knownRecipes: [] } }).nodes.find(row => row.key === 'item:101')
+    .paths.find(row => row.kind === 'craft').requiresRecipeLearning, true,
+    'an authoritative empty book overrides stale compatibility knowledge');
 assert.deepEqual(provider.recipeIds(state, { knownRecipes: [301, { recipeId: 301 }, 302, 0, NaN] }), [301, 302]);
 let safeScroll = true, scrollKind = 'drop', raidScroll = false;
 const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
@@ -145,11 +149,14 @@ assert.equal(farmedBook.activity.activity, 'hunting');
 assert.equal(farmedBook.activity.itemId, 401, 'the acquisition leaf farms the actual scroll, not the product');
 const hasCraft = result => result.nodes.find(row => row.key === 'item:101').paths.some(row => row.kind === 'craft');
 safeScroll = false;
-assert.equal(hasCraft(farmScroll()), false, 'unsafe recipe sources cannot create an executable craft acquisition path');
+const unsafeScroll = farmScroll();
+assert(hasCraft(unsafeScroll), 'unsafe ground does not delete the future recipe purchase goal');
+assert.equal(unsafeScroll.plans.find(([key]) => key === 'item:401')[1].executable, false,
+    'unsafe recipe farming cannot execute');
 safeScroll = true; raidScroll = true;
-assert.equal(hasCraft(farmScroll()), false, 'a raid scroll source is not a solo route');
+assert.notEqual(farmScroll().activity?.kind, 'raid', 'a raid scroll source is not a solo route');
 raidScroll = false; scrollKind = 'spoil';
-assert.equal(hasCraft(farmScroll()), false, 'a crafter cannot obtain a spoil-only recipe by ordinary hunting');
+assert.notEqual(farmScroll().activity?.kind, 'spoil', 'a crafter cannot obtain a spoil-only recipe by ordinary hunting');
 assert.equal(buy.activity, null, 'known price with no offer preserves wish without shopping');
 assert(buy.queue.length && buy.focus, 'unknown future supply does not erase the desired gear');
 // A reference estimate is not an offer: the purchase cannot execute and the
@@ -187,7 +194,7 @@ assert.equal(expensive.queue[0].funded, false);
 assert.equal(expensive.activity, null, 'an unaffordable actual ask cannot execute shopping');
 const paidTrip = town => town === 'Giran' ? 6 : Infinity;
 paidTrip.details = town => ({ known: town === 'Giran', hours: 2, fees: 400 });
-const travelTooDear = run(false, { wallet: 1500, context: { trip: paidTrip } });
+const travelTooDear = run(false, { wallet: 1500, context: { trip: paidTrip, wallet: 1500, persona: { ...persona, traits: { ...persona.traits, commitment: 0.5 } } } });
 assert.equal(travelTooDear.queue[0].price, 1600, 'the purse includes actual future road fees');
 assert.equal(travelTooDear.queue[0].funded, false);
 assert.equal(travelTooDear.activity, null);

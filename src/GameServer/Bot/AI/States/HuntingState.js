@@ -198,6 +198,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 dead: npc.isDead(),
                 retryCooldown: targetOnCooldown(session, npc.fetchId()),
                 botLevel: bot.fetchLevel(),
+                minLevelGap: invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(session.coldLifeState || {}) ? -15 : undefined,
                 npcLevel: npc.fetchLevel?.() || bot.fetchLevel(),
                 distance: targetDistance(bot, npc),
                 verticalGap: Math.abs(bot.fetchLocZ() - npc.fetchLocZ()),

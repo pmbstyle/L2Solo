@@ -432,6 +432,13 @@ function spotMatchup(spot, profiles, options = {}) {
     return result;
 }
 
-module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier,
+// A fixed attack envelope, shared with the survival gate. Admission may
+// compare native buff effects without running an encounter simulation.
+function damageRate(profiles, target = {}) {
+    return profiles.reduce((sum, profile) => sum + Math.max(0, ...channels(profile, target)
+        .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
+}
+
+module.exports = { MIN_EFFICIENCY, VERDICT_PROFILE_LIMIT, actorProfiles, coldProfiles, targetView, skillModifier, damageRate,
     profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup,
     sharedVerdictProfiles: () => sharedVerdicts.size, uniqueVerdictCount: () => uniqueVerdicts.size };

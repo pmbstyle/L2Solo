@@ -9,7 +9,7 @@ function stateFor(actor) {
         const selfId = Number(item.fetchSelfId());
         inventory[selfId] = { amount: Number(inventory[selfId]?.amount || 0) + Number(item.fetchAmount()) };
     }
-    return { level: actor.fetchLevel(), sp: actor.fetchSp(), inventory, stats: { classId: actor.fetchClassId(),
+    return { level: actor.fetchLevel(), sp: actor.fetchSp(), inventory, stats: { classId: actor.fetchClassId(), clanId: Number(actor.fetchClanId?.() || 0),
         coldCombat: { skills: (actor.skillset?.fetchSkills?.() || []).map((skill) => ({
             selfId: skill.fetchSelfId(), level: skill.fetchLevel() })) } } };
 }

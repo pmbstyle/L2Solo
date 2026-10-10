@@ -88,7 +88,7 @@ try {
     const oracle = catalogue.filter(s => !s.raidBoss && s.maxLevel < 46 && savedGate(s, fighter, options));
     const income = s => {
         const row = Table.value(s.id, 'dps', 50, true);
-        return row ? row.adena + row.loot : 0;
+        return row ? Hunt.netIncome(row, Hunt.consumablePrices(fighter)) : 0;
     };
     const bestIncome = Math.max(...oracle.map(income));
     assert(bestIncome > 0);

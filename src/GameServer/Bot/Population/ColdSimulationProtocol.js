@@ -66,6 +66,27 @@ function byteLength(value) {
     }
 }
 
+const INCOME_REVIEW_KEYS = new Set(['characterId', 'accept', 'reason', 'soloIncome', 'partyIncome',
+    'soloHours', 'partyHours', 'fee', 'soloSpotId', 'soloBuffPrice', 'at', 'soloSource', 'partySource']);
+function validPartyIncomeReviews(joint, sources) {
+    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return true;
+    if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
+        || !Array.isArray(joint.incomeReviews) || joint.incomeReviews.length !== sources.length) return false;
+    const nullableNumber = value => value === null || typeof value === 'number' && Number.isFinite(value);
+    return joint.incomeReviews.every((row, index) => row && typeof row === 'object' && !Array.isArray(row)
+        && Object.keys(row).every(key => INCOME_REVIEW_KEYS.has(key))
+        && row.characterId === sources[index]?.characterId && typeof row.accept === 'boolean'
+        && ['solo_preferred', 'help_fee_unfunded', 'higher_personal_income', 'income_unknown',
+            'goal_requires_party', 'equipment_sooner'].includes(row.reason)
+        && row.at === joint.lastIncomeReviewAt
+        && ['soloIncome', 'partyIncome', 'soloHours', 'partyHours'].every(key => nullableNumber(row[key]))
+        && ['soloHours', 'partyHours'].every(key => row[key] === null || row[key] >= 0)
+        && ['fee', 'soloBuffPrice'].every(key => typeof row[key] === 'number' && Number.isFinite(row[key]) && row[key] >= 0)
+        && (row.soloSpotId === null || typeof row.soloSpotId === 'string' && row.soloSpotId.length <= 128)
+        && [null, 'solo_route', 'paid_buff', 'native_craft'].includes(row.soloSource)
+        && [null, 'own_party', 'table_party'].includes(row.partySource));
+}
+
 // Main reconstructs the lifecycle input from its admitted native state and
 // the acquisition fields. The worker's full plannedState is useful locally
 // for combat, but is redundant on the wire when a large bag exceeds the cap.
@@ -213,7 +234,9 @@ function validateEnvelope(message, direction, options = {}) {
             ? !Array.isArray(payload.sources) || payload.sources.length < 1 || payload.sources.length > 9
                 || !payload.joint || typeof payload.joint !== 'object' || Array.isArray(payload.joint)
                 || !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
-                || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes'].includes(key))
+                || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
+                    'lastIncomeReviewAt', 'incomeReviews'].includes(key))
+                || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
     }
     const meeting = ['command_request', 'command_ack'].includes(message.type)

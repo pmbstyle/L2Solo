@@ -51,6 +51,10 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Life, 'assignParty', async member => member);
     stub(Events, 'record', async () => { announcements++; });
     stub(Economy, 'forState', () => { throw Error('cold main economic calculation forbidden'); });
+    // This fixture supplies a final admitted roster without a real atlas.
+    // Keep economic admission separate from worker waits and lifecycle CAS.
+    const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
+    stub(Income, 'compare', () => Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }));
     stub(Coordinator, 'requestPartyGoals', async (party, selected, options) => {
         queries++;
         const started = Date.now();
@@ -108,6 +112,38 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     const beforeStale = writes;
     await Population.reconcileWorkerPartyGoals(active, timestamp);
     assert.equal(writes, beforeStale, 'wrong source result cannot write party goals');
+    const incomeParty = { ...active, memberIds: [901, 902, 903], leaderId: 901,
+        stats: { objective: { spotId: spot.id }, agreement: { memberIds: [901, 902, 903] } } };
+    const incomeMembers = [...grouped, { ...grouped[1], characterId: 903 }];
+    Life.cachedState = id => incomeMembers.find(member => member.characterId === Number(id));
+    Parties.find = () => incomeParty;
+    let incomeSource = 'table_party', incomeFee = 0, incomeDepartures = 0, retainedParty;
+    Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
+        sources: Calculation.sources(selected), joint: { memberGoals: selected.map(Policy.declaration),
+            lastIncomeReviewAt: timestamp, incomeReviews: [{ characterId: 901, accept: false,
+                reason: 'solo_preferred', partySource: incomeSource, soloIncome: 1000, partyIncome: 200, fee: incomeFee }] } });
+    Parties.commitGoals = async party => party;
+    stub(Life, 'leaveParty', async (member, reason, options) => {
+        assert.equal(reason, 'better_solo_income'); assert.equal(options.ownerHandoff, true);
+        assert.equal(member.stats.partyIncomeDecision.partyIncome, 200);
+        incomeDepartures++; return { ...member, party: { partyId: null } };
+    });
+    Parties.createOrUpdate = async party => { retainedParty = party; return party; };
+    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
+    assert.equal(incomeDepartures, 0, 'a table forecast alone cannot eject an existing member');
+    incomeSource = 'own_party'; incomeFee = 100;
+    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
+    assert.equal(incomeDepartures, 0, 'an unsettled helper fee prevents an income departure');
+    incomeFee = 0; incomeParty.stats.pveEncounter = { status: 'active' };
+    await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
+    assert.equal(incomeDepartures, 0, 'income review cannot interrupt combat');
+    delete incomeParty.stats.pveEncounter;
+    const soloExit = await Population.reconcileWorkerPartyGoals(incomeParty, timestamp);
+    assert.equal(incomeDepartures, 1, 'a measured personal loss detaches one member at a safe boundary');
+    assert.equal(soloExit.departed.characterId, 901);
+    assert.deepEqual(retainedParty.memberIds, [902, 903]);
+    assert.deepEqual(retainedParty.stats.agreement.memberIds, [902, 903]);
+    assert(retainedParty.memberIds.includes(retainedParty.leaderId), 'the retained party has an attached leader');
     console.log('PASS all three cold group readers: no main network, delayed formation, budget, lifecycle CAS, stale rejection');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     for (const undo of restore.reverse()) undo();

@@ -176,9 +176,11 @@ function isSpareConsumable(item, template = templateFor(item?.selfId)) {
     return basePrice(item, template) > 0;
 }
 
-function isNpcOnlyItem(item, template = templateFor(item?.selfId)) {
+function isNpcOnlyItem(item, template = templateFor(item?.selfId), state = null) {
     if (isQuestItem(item, template)) return false;
     if (isEquipmentItem(item, template)) return false;
+    if (state && invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state) && (isSkillBookItem(item, template)
+        || invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(item?.selfId)))) return true;
     if (invoke('GameServer/Skills/SkillBookCatalog').isBook(Number(item?.selfId))) return false;
     if (isMarketRecipeItem(item)) return false;
     const kind = kindFor(item, template);
@@ -237,11 +239,11 @@ function liquidationSlotCount(state, predicate, candidates = saleCandidates(stat
 }
 
 function npcOnlySlotCount(state = {}, candidates) {
-    return liquidationSlotCount(state, isNpcOnlyItem, candidates);
+    return liquidationSlotCount(state, item => isNpcOnlyItem(item, undefined, state), candidates);
 }
 
 function skillBookSlotCount(state = {}, candidates) {
-    return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item), candidates);
+    return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item, undefined, state), candidates);
 }
 
 function soloSaleSlotLimit(state = {}, timestamp = Date.now()) {
@@ -444,7 +446,7 @@ function protectedStarterLootAmount(item, kind) {
 function saleFreeAmount(state, item, reserved = {}) {
     if (!item) return 0;
     const template = templateFor(item.selfId), kind = kindFor(item, template);
-    const protectedAmount = isNpcOnlyItem(item, template) ? 0 : protectedStarterLootAmount(item, kind);
+    const protectedAmount = isNpcOnlyItem(item, template, state) ? 0 : protectedStarterLootAmount(item, kind);
     const rawEquippedCount = Number(item.equippedCount ?? (item.equipped ? 1 : 0));
     const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
     // Sale-specific starter cleanup is preserved; customer, clan and explicit
@@ -455,6 +457,7 @@ function saleFreeAmount(state, item, reserved = {}) {
         equippedCount, starterMobLootAmount: protectedAmount }, reserved));
 }
 
+const { selectedCraftAmounts } = require('./CraftInputReservations');
 function saleCandidates(state, options = {}) {
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
@@ -484,7 +487,7 @@ function saleCandidates(state, options = {}) {
         if (isQuestItem(item, template)
             || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(selfId)) return [];
         const kind = kindFor(item, template);
-        const npcOnly = isNpcOnlyItem(item, template);
+        const npcOnly = isNpcOnlyItem(item, template, state);
         if (options.onlyNpc === true && !npcOnly) return [];
         const clanProgression = isClanProgressionItem(item);
         if (!npcOnly && !clanProgression && !isMarketRecipeItem(item)
@@ -588,6 +591,9 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
 }
 
 function warehouseCandidates(state) {
+    // Personal surplus finances equipment. Craft inputs and accepted native
+    // obligations are already protected by reservations, not spare storage.
+    if (invoke('GameServer/Bot/AI/PersonalGearProgression').personal(state)) return [];
     const reserved = reservedEquipmentAmounts(state);
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const equipped = Math.max(0, Number(item.equippedCount ?? (item.equipped ? 1 : 0)) || 0);
@@ -645,6 +651,7 @@ module.exports = {
     reservedEquipmentAmounts,
     reservationInputKey,
     saleCandidates,
+    selectedCraftAmounts,
     saleFreeAmount,
     saleSummary,
     isSpareConsumable,

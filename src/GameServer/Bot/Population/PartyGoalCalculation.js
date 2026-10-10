@@ -39,7 +39,7 @@ function validMembers(party, members, partial = false) {
         && party.memberIds.includes(party.leaderId) && typeof party.partyId === 'string' && !!party.partyId;
 }
 
-async function calculate(party, members, prepare, timestamp, current = () => true) {
+async function calculate(party, members, prepare, timestamp, current = () => true, { spots } = {}) {
     const contexts = [];
     for (const member of members) {
         if (!current()) throw new Error('party_goal_expired');
@@ -48,7 +48,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     }
     const policy = require('./PartyGoalPolicy');
     const context = policy.groupContext(party, members, { timestamp, memberContexts: contexts, rememberGroup: false });
-    return policy.joint(party, members, { context });
+    return policy.joint(party, members, { context, timestamp, memberContexts: contexts, spots });
 }
 
 module.exports = { sources, sameSource, matches, validMembers, calculate };

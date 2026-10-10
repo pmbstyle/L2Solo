@@ -523,6 +523,7 @@ const BackgroundPartyResolver = {
                     nextResolveAt: timestamp + (raid ? RAID_RESOLVE_INTERVAL_MS : PARTY_RESOLVE_MIN_MS + Math.round(rng() * PARTY_RESOLVE_SPREAD_MS)),
                     debug: {
                         partyId: party.partyId,
+                        partyRoster: members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(','),
                         fights,
                         wins,
                         losses,

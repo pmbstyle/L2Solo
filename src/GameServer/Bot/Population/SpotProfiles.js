@@ -509,6 +509,14 @@ const SpotProfiles = {
         // Fresh racial cohorts stay at their physical level-one spot until
         // they advance. A gear plan otherwise remains the normal route choice
         // for established bots.
+        const collectingGear = acquisitionPlan?.status === 'active' && acquisitionPlan.next?.spotId;
+        if (!protectedStarterCohort && !collectingGear && !GearAcquisitionPlanner.isClanOwnedPlan(acquisitionPlan)) {
+            const incomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').select(state, {
+                spots: profiles, occupancy, timestamp, mode,
+                required: invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required });
+            if (incomeRoute) return incomeRoute.spot;
+        }
+
         if (keepCurrentSpot) {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
@@ -540,7 +548,9 @@ const SpotProfiles = {
                 // plan pin an outleveled bot to that source indefinitely.
                 const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
                     && Number.isFinite(Number(planned.maxLevel));
-                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options)) {
+                const economicSource = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state)
+                    && Number(planned.avgLevel || planned.minLevel || 1) - state.level >= -15;
+                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options) || economicSource) {
                     return planned;
                 }
             }

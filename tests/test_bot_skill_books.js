@@ -41,7 +41,7 @@ async function main() {
             assert(learned.learned, 'support training spends SP without a spellbook');
             assert.deepEqual(learned.consumedBooks, []);
         }
-        const bishopState = { level: 45, inventory: {}, stats: { classId: 16, coldCombat: { skills: [] } } };
+        const bishopState = { level: 45, inventory: {}, stats: { clanId: 1, classId: 16, coldCombat: { skills: [] } } };
         for (const book of Catalog.missingBooks(bishopState)) {
             assert(Profile.isAttackSkill(Profile.skillSnapshotsFromRecords([{ selfId: book.skillId, level: 1 }])[0]));
         }
@@ -56,6 +56,8 @@ async function main() {
         await new Skillset().awardSkills(songs, 21, 45, { botTraining: true });
         assert((await Database.fetchSkills(songs)).some(row => row.selfId === 267), 'Song of Warding is learned without its book');
         const sorcerer = await supportId('bot_sorcerer_books', 12);
+        const clanId = Number((await Database.createClan({ name: 'TrainingFixture', leaderId: sorcerer })).insertId);
+        await Database.updateCharacterClan(sorcerer, clanId, 0, 0, 0);
         assert.equal((await Database.learnBotSkill(sorcerer, 1184, 1)).reason, 'missing_book', 'attack training still needs Ice Bolt');
         const supportInventory = { ...bishopState, inventory: { 1152: { selfId: 1152, amount: 2, kind: 'Other.Spellbook', rank: 'none', basePrice: 100 } } };
         assert.equal(Disposition.saleCandidates(supportInventory, { allowPreTradeCleanup: true }).find(row => row.selfId === 1152).count, 2,
@@ -64,6 +66,7 @@ async function main() {
         const id = Number((await Database.createCharacter('bot_pop_books', { name: 'BookLearner', race: 0,
             classId: 10, maxHp: 100, maxMp: 100, sex: 0, face: 0, hair: 0, hairColor: 0,
             locX: 0, locY: 0, locZ: 0 })).insertId);
+        await Database.updateCharacterClan(id, clanId, 0, 0, 0);
         await Database.updateCharacterExperience(id, 14, Number(Data.experience[13]) + 1, 10000);
         const first = Catalog.nextTraining(10, 14, 1184);
         assert.equal(first.bookId, 1049); assert.equal(first.sp, 240);
@@ -91,7 +94,7 @@ async function main() {
         const next = Catalog.nextTraining(10, 14, 1184, second.level);
         assert.equal((await Database.learnBotSkill(id, 1184, next.level)).reason, 'insufficient_sp');
 
-        const empty = { characterId: id, level: 14, sp: 1000, inventory: {}, stats: { classId: 10,
+        const empty = { characterId: id, level: 14, sp: 1000, inventory: {}, stats: { classId: 10, clanId,
             coldCombat: { classId: 10, skillSource: 'database', skills: [] } } };
         assert.equal(Catalog.missingBooks(empty).find((book) => book.skillId === 1184).selfId, 1049);
         assert.equal(Profile.treeSnapshot(empty).skills.length, 0);
@@ -102,6 +105,15 @@ async function main() {
         const sale = Disposition.saleCandidates(held, { allowPreTradeCleanup: true });
         assert.equal(sale.find((row) => row.selfId === 1049).count, 1, 'keep the first own book; surplus is real board stock');
         assert.equal(Disposition.skillBookSlotCount(held, sale), 0, 'market books do not force NPC cleanup');
+        const solo = { ...held, stats: { ...held.stats, clanId: 0 } };
+        assert.equal(Catalog.missingBooks(solo).length, 0, 'personal training never starts a skill-book errand');
+        assert(Catalog.needsTraining({ ...solo, inventory: {} }), 'SP opens personal training without a book');
+        assert.equal(Disposition.saleCandidates(solo).find(row => row.selfId === 1049).count, 2);
+        assert.equal(Disposition.skillBookSlotCount(solo), 1, 'all personal skill books trigger NPC cleanup');
+        const soloLearner = await supportId('bot_solo_books', 12);
+        const soloPaid = await Database.learnBotSkill(soloLearner, 1184, 1);
+        assert(soloPaid.learned && soloPaid.spentSp > 0);
+        assert.deepEqual(soloPaid.consumedBooks, [], 'native personal training still pays SP, without a book');
         const incoming = Catalog.applyTraining({ ...held, sp: 1500 }, paid);
         assert.equal(incoming.sp, 1260); assert.equal(incoming.inventory[1049].amount, 1);
         const instanced = Catalog.applyTraining({ ...held, inventory: { 1049: { ...held.inventory[1049],

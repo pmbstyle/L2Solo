@@ -420,6 +420,7 @@ function craftRequests(state, warehouseItems) {
 }
 
 function marketRequests(state, warehouseItems, reserved = new Map(), options = {}) {
+    const economy = options.economy || require('../Population/ColdEconomyDecision').economyFor(state);
     const stored = storedAmounts(warehouseItems);
     const inventory = { ...(state.inventory || {}) };
     const summary = LifeState.inventorySummaryFromItems(warehouseItems);
@@ -434,8 +435,9 @@ function marketRequests(state, warehouseItems, reserved = new Map(), options = {
     // Warehouse units in this temporary bag are not counted again as occupied
     // room. Only the stock reserved to remain there limits the E keep option.
     const decision = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(
-        { ...state, inventory }, { ...options, stored: reserved });
-    const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true })
+        { ...state, inventory }, { ...options, economy, stored: reserved });
+    const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true,
+        reserved: economy.craftReservations || ItemDisposition.selectedCraftAmounts(state, economy.network) })
         .map((item) => [Number(item.selfId), Number(item.count)]));
     const choices = [
         ...decision.listings,

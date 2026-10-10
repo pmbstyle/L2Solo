@@ -79,6 +79,20 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(prepared.slots.filter(row => row.id > 0).length, 2);
     assert(prepared.slots.filter(row => row.id > 0).every(row => row.knownShotRecipes.length === 0),
         'current query knowledge replaces the old worker recipe context');
+    const incomeSpot = { id: '-10_10', minLevel: 14, maxLevel: 14, avgLevel: 14, density: 20,
+        tagsAuthoritative: true, tags: ['starter', 'normal_hp'], npcEntries: [], center: { locX: 0, locY: 0 } };
+    post('catalog_page', { catalog: 'spots', rows: [incomeSpot], done: true }, 'income-spots');
+    const incomeMembers = members.map(member => ({ ...member, spotId: incomeSpot.id, updatedAt: timestamp + 10 }));
+    post('party_goal_request', { ...request, members: incomeMembers, party: { ...party, spotId: incomeSpot.id,
+        startedAt: timestamp - 600000, stats: { objective: { spotId: incomeSpot.id } } },
+        replyBy: Date.now() + 5000 }, 'income');
+    const income = await wait(message => message.type === 'party_goal_result' && message.msgId === 'income');
+    assert.equal(income.payload.ok, true, income.payload.reason);
+    assert.equal(income.payload.joint.lastIncomeReviewAt, timestamp);
+    assert.equal(income.payload.joint.incomeReviews.length, members.length);
+    assert(Protocol.validateEnvelope(income, 'worker').ok, 'native worker income packet is admitted on main');
+    assert(income.payload.joint.incomeReviews.every(row => row.partySource === 'table_party'),
+        'the worker uses its planning catalogue for native party forecasts');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };
     post('party_goal_request', { ...request, members: changed, replyBy: Date.now() + 5000 }, 'changed');
     const fresh = await wait(message => message.type === 'party_goal_result' && message.msgId === 'changed');

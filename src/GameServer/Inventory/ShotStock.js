@@ -157,7 +157,8 @@ function usePolicy(state, prepared = {}) {
         const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
         const hunt = Hunt.huntIncome(state, prepared.timestamp || Date.now(), prepared.mode);
         const spot = hunt.spotId || state.spotId;
-        best = (spot && Table.value(spot, tableRole, state.level, true)) || Table.best(tableRole, state.level, true);
+        best = (spot && Table.value(spot, tableRole, state.level, hunt.useShots !== false))
+            || Table.best(tableRole, state.level, hunt.useShots !== false);
         without = spot ? Table.value(spot, tableRole, state.level, false) : null;
         hour = Hunt.huntHour(hunt, state);
     }

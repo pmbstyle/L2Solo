@@ -34,6 +34,7 @@ class CompactActivity {
         if (leaf.targetId) this.targetId = leaf.targetId;
         if (leaf.funding) this.funding = true;
         if (leaf.items) this.items = leaf.items.slice(0, 8).map(Number);
+        if (leaf.craftReservations?.length) this.craftReservations = leaf.craftReservations;
         if (leaf.activity === 'improving' && leaf.improvement) this.improvement = { ...leaf.improvement };
     }
 }
@@ -73,7 +74,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17], craftReservations: row[18] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -161,7 +162,9 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
-        ...(leaf.town || leaf.sourceType || leaf.unitPrice !== undefined || leaf.r !== undefined
+        ...(leaf.craftReservations?.length ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null,
+            leaf.unitPrice ?? null, leaf.r ?? null, leaf.craftReservations]
+            : leaf.town || leaf.sourceType || leaf.unitPrice !== undefined || leaf.r !== undefined
             ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null,
                 ...(leaf.r !== undefined ? [leaf.r] : [])]
             : leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
@@ -254,6 +257,11 @@ function capture(economy, state, seen = state) {
     };
     if (economy?.network?.quantityPrepared) for (const row of queue) visit(row.plan);
     const activity = leaf ? new CompactActivity(leaf) : null;
+    if (activity) {
+        const reserved = require('../Economy/CraftInputReservations').selectedCraftAmounts(seen, economy?.network);
+        const rows = Object.entries(reserved).filter(([, amount]) => amount > 0).map(([id, amount]) => [Number(id), amount]);
+        if (rows.length) activity.craftReservations = rows;
+    }
     if (activity?.activity === 'shopping') {
         activity.heldAtDecision = heldFor(seen, activity.itemId);
         const r = require('../Economy/PurchaseFunding').rootRatio(wish);
@@ -344,6 +352,7 @@ function view(state, decision, deps = {}) {
                 : invoke('GameServer/Bot/Economy/EconomicValuation').stageHours(state, base.hunt.expPerHour, base.persona),
         board: deps.board || invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
         network: { activity }, activity, wish,
+        craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
         workshop: decision?.workshop || unknownWorkshop(),

@@ -55,22 +55,30 @@ function choose(rows, weight, roll) {
 function moneyQueue(wishes, wallet, survivalReserve = 0, floor = 0) {
     let available = Math.max(0, nonnegative(wallet) - nonnegative(survivalReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
-        .map(wish => ({ ...wish, ratio: wish.valueHours / wish.price }))
-        .sort((a, b) => b.ratio - a.ratio || a.key.localeCompare(b.key));
-    let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null;
+        .map(wish => {
+            const valueHours = wish.progressionPriority > 0 ? Math.max(wish.valueHours, wish.price * floor) : wish.valueHours;
+            return { ...wish, valueHours, ratio: valueHours / wish.price };
+        })
+        .sort((a, b) => nonnegative(b.progressionPriority) - nonnegative(a.progressionPriority)
+            || b.ratio - a.ratio || a.key.localeCompare(b.key));
+    let moneyPrice = nonnegative(floor), cutoffFound = false, gap = null, awaitingKit = null;
     for (const wish of queue) {
         // An unsupported wish keeps its place and interest, never the money.
-        if (!fundable(wish)) { wish.funded = false; continue; }
+        if (!fundable(wish)) {
+            wish.funded = false;
+            if (wish.progressionPriority > 0 && !awaitingKit) awaitingKit = wish;
+            continue;
+        }
         // The first gap holds the marginal price of money. Smaller desires
         // do not spend the money earmarked toward that first missing goal.
-        wish.funded = !cutoffFound && wish.ratio >= floor && cashCharge(wish) <= available;
+        wish.funded = !cutoffFound && (wish.progressionPriority > 0 || wish.ratio >= floor) && cashCharge(wish) <= available;
         if (wish.funded) available -= cashCharge(wish);
         else if (!cutoffFound) {
-            if (wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
+            if (wish.progressionPriority > 0 || wish.ratio >= floor) { moneyPrice = Math.max(floor, wish.ratio); gap = wish; }
             cutoffFound = true;
         }
     }
-    return { queue, moneyPrice, available, gap };
+    return { queue, moneyPrice, available, gap: gap || awaitingKit };
 }
 
 // Providers supply game effects and available paths, never policy priorities.
@@ -133,12 +141,13 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         byKey.set(node.key, node);
     }
-    const plans = new Map(), visiting = new Set();
+    const plans = new Map(), ordinaryPlans = new Map(), visiting = new Set();
     // A finite trial may plan a future purchase before a seller appears.
     // Its source choice cannot overwrite ordinary executable-first item
     // plans. This scratch map has at most the same 40 graph-node keys;
     // only the selected root/child plans survive in the bounded result.
     const producerPlans = new Map();
+    const completionPlans = new Map(), producerCompletionPlans = new Map();
     const adenaToHours = hourAdena > 0 ? 1 / hourAdena : Infinity;
     // One route per member and town for the basket. Scratch descriptions
     // die with this build; plans retain bounded entry indices only. Group
@@ -183,12 +192,12 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         repeatables.set(key, result);
         return result;
     };
-    const solve = (key, depth = 0, requested = 1, allocation = null, planning = false) => {
+    const solve = (key, depth = 0, requested = 1, allocation = null, planning = false, completionFirst = false) => {
         if (visiting.has(key)) throw new TypeError('cyclic_wish_network');
         const node = byKey.get(key);
         if (!node) throw new TypeError('missing_wish_requirement');
         if (depth > MAX_DEPTH) throw new RangeError('wish_network_depth');
-        const memo = planning ? producerPlans : plans;
+        const memo = completionFirst ? planning ? producerCompletionPlans : completionPlans : planning ? producerPlans : ordinaryPlans;
         if (!allocation && memo.has(key)) {
             if (diagnostic) Diagnostics.count('network', 'node_hit', 'same_build');
             const cachedPlan = memo.get(key);
@@ -271,7 +280,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             for (const requirement of inputs) {
                 const amount = nonnegative(requirement.amount ?? 1) * (allocation ? requirement.once ? 1 : units : 1);
                 if (!Number.isSafeInteger(amount) || amount <= 0) { available = false; break; }
-                const child = solve(requirement.key, depth + 1, amount, local, planning);
+                const child = solve(requirement.key, depth + 1, amount, local, planning, completionFirst);
                 if (!child || !amount) { available = false; break; }
                 if (!child.executable || Number(child.availableUnits ?? Infinity) < amount) executable = false;
                 supported &&= child.supported !== false;
@@ -292,7 +301,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 quoted ||= child.quoted;
                 height = Math.max(height, 1 + child.height);
                 if (!allocation || child.missingAmount > 0 || child.awaitingIncoming) requirements.push({ key: requirement.key,
-                    amount: allocation ? child.missingAmount || amount : amount, ...(allocation || planning ? { plan: child } : {}) });
+                    amount: allocation ? child.missingAmount || amount : amount, plan: child });
             }
             if (untilSuccess) {
                 // ARCH-NOTE: expected attempts 1/p repeat the cash, consumed
@@ -320,7 +329,11 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         // then effort. Finite production plans its cheapest future source:
         // an unsupported purchase keeps the trial's queue place and WTB row
         // without cash, never a costlier step now.
-        choices.sort((a, b) => planning
+        const completionHours = choice => choice.hours + (adenaToHours > 0
+            ? Math.max(0, choice.price - Math.max(0, wallet - survivalReserve)) * adenaToHours : choice.price > wallet ? Infinity : 0);
+        choices.sort((a, b) => completionFirst
+            ? Number(b.supported) - Number(a.supported) || completionHours(a) - completionHours(b) || a.effort - b.effort
+            : planning
             ? a.effort - b.effort || Number(b.supported) - Number(a.supported) || Number(b.executable) - Number(a.executable) || a.price - b.price
             : Number(b.executable) - Number(a.executable) || Number(b.supported) - Number(a.supported) || a.effort - b.effort || a.price - b.price);
         const best = choices[0] || null;
@@ -341,12 +354,12 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             item: requirement.key.startsWith('item:') ? Number(requirement.key.slice(5)) : undefined });
         visiting.delete(key);
         if (allocation) allocation.used = alternativeUse;
-        else memo.set(key, best);
+        else { memo.set(key, best); if (!planning) plans.set(key, best); }
         return best;
     };
     const finiteProduction = key => {
         const node = byKey.get(key);
-        return node?.object?.kind === 'resale' && node.paths?.some(path => path.kind === 'craft'
+        return node?.object?.kind === 'resale' && node.paths?.some(path => ['craft', 'spoil_sale'].includes(path.kind)
             && path.trial === true && path.repeatable === false);
     };
     // MVP-4: one horizon H per root; a benefit per hour starts when the
@@ -372,23 +385,30 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     const rootWish = key => {
         const node = byKey.get(key);
         if (!node || !NEEDS.includes(node.need)) throw new TypeError('invalid_wish_root');
-        const plan = solve(key, 0, 1, null, finiteProduction(key));
+        const plan = solve(key, 0, 1, null, finiteProduction(key), node.progressionPriority > 0);
         plans.set(key, plan);
         const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false, reserved: nonnegative(node.reserved),
+            progressionPriority: nonnegative(node.progressionPriority), progressionFunding: !!node.progressionFunding,
             price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         value(wish, node, plan);
         wish.fullValueHours = fullValue(wish, node);
+        if (wish.progressionPriority && plan) wish.effort = Math.max(wish.effort,
+            plan.hours + Math.max(0, plan.price - spendable) * adenaToHours);
         return wish;
     };
     // Shared stock: re-solve one root against the stock already claimed. The
     // returned claims enter the caller's map only when it keeps the root.
     const allocate = (wish, used) => {
         const allocation = { rootKey: wish.key, used: new Map(used) };
-        const plan = solve(wish.key, 0, 1, allocation, finiteProduction(wish.key));
+        const plan = solve(wish.key, 0, 1, allocation, finiteProduction(wish.key), byKey.get(wish.key).progressionPriority > 0);
+        wish.progressionPriority = nonnegative(byKey.get(wish.key).progressionPriority);
+        wish.progressionFunding = !!byKey.get(wish.key).progressionFunding;
         wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
         wish.supported = plan?.supported !== false;
         value(wish, byKey.get(wish.key), plan);
         wish.fullValueHours = fullValue(wish, byKey.get(wish.key));
+        if (wish.progressionPriority && plan) wish.effort = Math.max(wish.effort,
+            plan.hours + Math.max(0, plan.price - spendable) * adenaToHours);
         // Shared stock can change the full path's cost. A finite
         // earning trial never funds a route whose effort consumes its
         // entire expected benefit; rejected trials claim no stock.
@@ -477,7 +497,8 @@ class WishNetwork {
             const alone = new Map(wishes.map(wish => [wish, solver.allocate(wish, new Map())]));
             wishes = wishes.filter(wish => wish.plan && wish.fullValueHours > 0);
             const used = new Map();
-            const priority = [...wishes].sort((a, b) => b.fullValueHours / Math.max(1, b.price) - a.fullValueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
+            const priority = [...wishes].sort((a, b) => b.progressionPriority - a.progressionPriority
+                || b.fullValueHours / Math.max(1, b.price) - a.fullValueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
             for (const wish of priority) {
                 // Less free stock off the alone solve's claims only makes its
                 // alternatives dearer, so that solve stands unless a claim is taken.
@@ -489,12 +510,25 @@ class WishNetwork {
             }
         }
         wishes = wishes.filter(kept);
+        const gearPriority = Math.max(0, ...wishes.filter(wish => wish.object?.slot).map(wish => wish.progressionPriority));
+        if (gearPriority) {
+            const budget = Math.max(0, wallet - survivalReserve);
+            const readyGear = wishes.some(wish => wish.object?.slot && wish.progressionPriority === gearPriority
+                && fundable(wish) && Math.max(cashCharge(wish), nonnegative(byKey.get(wish.key).price)) <= budget);
+            // A finite profitable craft can pay for the kit. Once a kit piece
+            // is affordable, spend on it before starting another earning trial.
+            for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
+            wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
+        }
+        const activePriority = Math.max(0, ...wishes.map(wish => wish.progressionPriority));
+        if (activePriority) wishes = wishes.filter(wish => wish.progressionPriority === activePriority);
+        const focusWishes = wishes.filter(wish => wish.progressionPriority === activePriority);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
-        const held = wishes.find(wish => wish.key === previous.focus?.[0]);
-        const challenger = wishes.reduce((best, wish) => !best || score(wish) > score(best) ? wish : best, null);
+        const held = focusWishes.find(wish => wish.key === previous.focus?.[0]);
+        const challenger = focusWishes.reduce((best, wish) => !best || score(wish) > score(best) ? wish : best, null);
         const focused = held && (!challenger || score(challenger) <= score(held) * (1 + loyalty)) ? held
-            : choose(wishes, score, roll('focus'));
+            : choose(focusWishes, score, roll('focus'));
         const focus = focused ? [focused.key, held === focused ? previous.focus[1] : playedHours,
             nonnegative(focused.price)] : null;
         const inputDecisionSeq = decisionSeq, inputActivityLeaf = activityLeaf;
@@ -536,6 +570,7 @@ class WishNetwork {
                     object: node.object, amount: acquired,
                     price: stockFor ? plan.price * acquired / amount : plan.basePrice * acquired + tripValue(plan.tripEntries, 'fees'),
                     effort: stockFor ? plan.effort * acquired / amount : plan.baseEffort * acquired + tripEffort(plan.tripEntries), valueHours: 0 };
+                if (byKey.get(rootKey)?.progressionPriority) leaf.effort = wishes.find(wish => wish.key === rootKey)?.effort ?? leaf.effort;
                 leaf.valueHours += value * acquired / amount;
                 leaves.set(leafKey, leaf);
             }
@@ -566,7 +601,7 @@ class WishNetwork {
             const income = nonnegative(path.incomePerHour);
             if (!(income > 0) || path.available === false || path.repeatable === false
                 || path.kind === 'production' && (!(path.cycleHours > 0) || path.repeatable !== true)) continue;
-            const effort = shortfall / income + nonnegative(path.costHours)
+            const effort = Math.max(unfunded.progressionPriority && !fundable(unfunded) ? 1 / 60 : 0, shortfall / income) + nonnegative(path.costHours)
                 + nonnegative(path.riskHours) * nonnegative(riskWeight);
             leaves.set(key, { ...path, key, nodeKey: unfunded.key, funding: true,
                 rootKey: unfunded.key, price: 0, effort, valueHours: unfunded.valueHours, shortfall });
@@ -577,7 +612,8 @@ class WishNetwork {
         // A step that spends no money stays available toward an unsupported
         // wish (farming its material); only money waits for a step now.
         const unfundable = new Set(queue.filter(wish => !fundable(wish)).map(wish => wish.key));
-        const candidates = [...leaves.values()].filter(leaf => leaf.funding || !queue.some(wish => wish.key === leaf.rootKey)
+        const candidates = [...leaves.values()].filter(leaf => wishes.find(wish => wish.key === leaf.rootKey)?.progressionPriority === activePriority)
+            .filter(leaf => leaf.funding || !queue.some(wish => wish.key === leaf.rootKey)
             || funded.has(leaf.rootKey) || leaf.price === 0 && (leaf.rootKey === unfunded?.key || unfundable.has(leaf.rootKey)));
         // A cheap intermediate material cannot claim the whole upgrade's
         // benefit as an instantaneous income. Use the complete chosen path.

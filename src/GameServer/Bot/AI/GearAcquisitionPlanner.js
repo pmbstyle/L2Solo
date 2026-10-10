@@ -316,7 +316,13 @@ function suitable(item, state, role, requiredRank = gradeForLevel(state.level)) 
     if (slot === 8) return BotEquipmentCompatibility.usesShield(role, classId)
         && kind === 'Armor.Shield'
         && !hasEquippedTwoHandedWeapon(state);
-    if ([10, 11, 15].includes(slot)) return kind === BotEquipmentCompatibility.armorKindFor(role, classId);
+    if ([10, 11, 15].includes(slot)) {
+        const preferred = BotEquipmentCompatibility.armorKindFor(role, classId);
+        // The authored NG kit allows light/heavy fighter bridges before D
+        // masteries; native receipt and wish compatibility must agree with it.
+        return kind === preferred || rank === 'none' && ['Armor.Chain', 'Armor.Leather'].includes(preferred)
+            && ['Armor.Chain', 'Armor.Leather'].includes(kind);
+    }
     if ([6, 9, 12].includes(slot)) return kind === 'Armor.Wear';
     return JEWEL_SLOTS.has(slot) && kind === 'Armor.Jewel';
 }
@@ -654,8 +660,11 @@ function preferredTarget(state = {}, options = {}) {
         .filter(({ item, recipe }) => !recipeNeedsExcludedMaterial(recipe, state, excludedMaterials)
             || !!marketOfferForTarget(item, state, options))
         .filter(({ recipe }) => !options.recipeId || Number(recipe?.recipeId) === Number(options.recipeId))
-        .filter(({ item }) => Number(owned.get(Number(item.selfId)) || 0) < 1)
-        .filter(({ item }) => (missingDualSword && item.template?.kind === 'Weapon.Dual')
+        .filter(({ item }) => Number(owned.get(Number(item.selfId)) || 0) < 1
+            || options.wishTargetId && PAIRED_SLOTS[options.wishSlot]
+                && !equippedSlotsFor(state.inventory?.[item.selfId], item.etc?.slot).includes(Number(options.wishSlot)))
+        .filter(({ item }) => options.wishTargetId && PAIRED_SLOTS[options.wishSlot]
+            || (missingDualSword && item.template?.kind === 'Weapon.Dual')
             || isSlotUpgrade(item, ownedItems, role, classId));
     const requiredRank = recipeRank || gradeForLevel(state.level);
     const hasCurrentGradeWeapon = ownedItems.some((item) => (
@@ -1244,7 +1253,8 @@ function sourceWithinVoluntaryHuntBand(state = {}, source = {}) {
     const botLevel = Number(state.level || 0);
     const sourceLevel = Number(source.npcLevel || source.spotLevel || 0);
     if (!botLevel || !sourceLevel) return true;
-    return sourceLevel - botLevel >= BotTargetScorer.MIN_LEVEL_GAP;
+    const economic = state.economicLower || require('../Economy/EquipmentIncomeRoute').economicHunt(state);
+    return sourceLevel - botLevel >= (economic ? -15 : BotTargetScorer.MIN_LEVEL_GAP);
 }
 
 function isPlanSourceViableForState(state = {}, plan = {}) {
@@ -2149,7 +2159,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const current = String(state.stats?.travel?.spotId || state.spotId || null);
     const counts = options.counts || null, readyOnly = !!(counts || options.readyOnly);
     let spoiler = options.spoiler;
-    const rules = sourceFactRulesFor(entries, itemId, killerLevel, ratesKey);
+    const rules = sourceFactRulesFor(entries, itemId, killerLevel, ratesKey, !!options.economicLower);
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
         if (ordinal % SOURCE_FACT_STEP === 0) yield 'source';
         // The fact reads the shared rule row of the record (yield and the
@@ -2218,19 +2228,19 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
 const FACT_RULE_RAID = 1, FACT_RULE_CANNOT_HUNT = 2, FACT_RULE_LEVEL_BAND = 3, FACT_RULE_NO_CHANCE = 255;
 const FACT_RULE_REASONS = [null, 'raid', 'cannot_hunt', 'level_band'];
 const NO_FACT_RULES = { entries: [], expected: new Float64Array(0), reasons: new Uint8Array(0) };
-function sourceFactRulesFor(entries, itemId, killerLevel, ratesKey) {
+function sourceFactRulesFor(entries, itemId, killerLevel, ratesKey, economicLower = false) {
     if (!entries.length) return NO_FACT_RULES;
     if (sourceIndexCache.factRulesKey !== ratesKey) {
         sourceIndexCache.factRules = new Map();
         sourceIndexCache.factRulesKey = ratesKey;
         sourceIndexCache.factRuleCells = 0;
     }
-    const cache = sourceIndexCache.factRules, key = `${itemId}:${killerLevel}`;
+    const cache = sourceIndexCache.factRules, key = `${itemId}:${killerLevel}:${Number(economicLower)}`;
     let rules = cache.get(key);
     if (rules && rules.entries === entries) return rules;
     if (rules) { cache.delete(key); sourceIndexCache.factRuleCells -= rules.entries.length; }
     const expected = new Float64Array(entries.length), reasons = new Uint8Array(entries.length);
-    const band = { level: killerLevel };
+    const band = { level: killerLevel, economicLower };
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
         const entry = entries[ordinal], target = sourceTargetOf(entry);
         const value = dropYieldFor(entry.reward, itemId, entry.kind, target.npcLevel, killerLevel, ratesKey);

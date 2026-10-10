@@ -19,7 +19,9 @@ function signature(state, mode) {
         .map(item => `${item.selfId}:${item.enchant || 0}`).sort();
     const level = levelOf(state);
     // Pre-migration samples used gross rewards and cannot establish net profit.
-    return ['net-xp-v1',Roles.classIdOf(state),level,situationOf(state,mode),Rates.profile().exp,...equipped].join(':');
+    const rates = Rates.profile();
+    return ['net-income-v3',Roles.classIdOf(state),level,situationOf(state,mode),
+        rates.exp, rates.adena, rates.drop, rates.spoil,...equipped].join(':');
 }
 // The situation a row was recorded in (the fourth part of its signature).
 function levelOf(state) {
@@ -37,23 +39,46 @@ function lootValue(items = []) {
     }
     return value;
 }
+// Prices are independent of the wish network: callers may supply their
+// current quotes, otherwise native shop/template prices are the baseline.
+function consumablePrices(state, price = id => Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0)) {
+    const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
+    return { shots: Math.max(0, Number(price(shots.selfId)) || 0), potions: Math.max(0, Number(price(potion.selfId)) || 0) };
+}
+function netIncome(row, costs) {
+    return Number(row.adena || 0) + Number(row.loot || 0)
+        - Number(row.shots || 0) * costs.shots - Number(row.potions || 0) * costs.potions;
+}
+function consumedCost(state, after) {
+    if (!after) return 0;
+    const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const ids = [shots.selfId, ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
+    return ids.reduce((total, id) => total + Math.max(0,
+        Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0))
+        * Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0), 0);
+}
 // One sample of a spot: cycleMs is the round's time on the spot, from its
 // start to the next round (the fights, the rest, the wait between rounds).
-function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, kills = 0, timestamp = Date.now() }) {
+function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 0, kills = 0,
+    partyRoster = null, timestamp = Date.now() }) {
     const key = signature(state);
     const prior = Array.isArray(state.stats?.huntEfficiency) ? state.stats.huntEfficiency : [];
-    const kept = prior.filter(row => row.signature === key && timestamp >= row.at && timestamp-row.at < MAX_AGE_MS);
+    const opposite = signature(state, situationOf(state) === 'solo' ? 'party' : 'solo');
+    const kept = prior.filter(row => (row.signature === key || row.signature === opposite)
+        && timestamp >= row.at && timestamp-row.at < MAX_AGE_MS);
     cycleMs = Math.max(0,Number(cycleMs));
     if (!spotId || !Number.isFinite(cycleMs) || cycleMs <= 0 || !Number.isFinite(exp)) return kept;
-    const old = kept.find(row => row.spotId === spotId);
+    const old = kept.find(row => row.spotId === spotId && row.signature === key && row.partyRoster === partyRoster);
     // Rows saved before income was recorded start their income from this sample.
     const mix = (field,value) => old && Number.isFinite(old[field]) ? Number(old[field])*0.75+value*0.25 : value;
     const next = { spotId,signature:key,at:timestamp,samples:Math.min(32,(old?.samples||0)+1),
         exp:mix('exp',exp),cycleMs:mix('cycleMs',cycleMs),
         adena:mix('adena',Math.max(0,Number(adena)||0)),loot:mix('loot',Math.max(0,Number(loot)||0)),
+        costs:mix('costs',Math.max(0,Number(costs)||0)),
         kills:mix('kills',Math.max(0,Number(kills)||0)),
-        source:'cold_round' };
-    const rows = [next,...kept.filter(row=>row.spotId!==spotId)].slice(0,MAX_SPOTS);
+        partyRoster, source:'cold_round' };
+    const rows = [next,...kept.filter(row=>row.spotId!==spotId || row.signature!==key)].slice(0,MAX_SPOTS);
 
     return rows;
 }
@@ -104,10 +129,18 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const items = result.materialize?.items || [];
     const huntEfficiency = record(state, {
         spotId: spotId || debug.spotId, cycleMs, exp, timestamp,
-        adena: Number(result.materialize?.adena || 0), loot: lootValue(items), kills: Number(debug.wins || 0),
+        adena: Number(result.materialize?.adena || 0), loot: lootValue(items),
+        costs: consumedCost(state, result.patch?.inventory) + buffPurchaseCost(state, timestamp),
+        kills: Number(debug.wins || 0), partyRoster: debug.partyRoster || null,
         share: onSpotShare({ stats: { huntClock } })
     });
     return { ...life, huntEfficiency, huntClock };
+}
+function buffPurchaseCost(state, timestamp) {
+    const purchase = state.stats?.lastBuffServicePurchase;
+    const at = Number(purchase?.at || 0);
+    return at > Number(state.stats?.huntClock?.at || 0) && at <= timestamp
+        ? Math.max(0, Number(purchase?.price || 0)) : 0;
 }
 function sampledRows(state, timestamp, mode) {
     const rows = state.stats?.huntEfficiency;
@@ -133,10 +166,10 @@ function bestIncome(rows, share = 1) {
     let best = null;
     for (const row of rows) {
         if (!Number.isFinite(row.adena) || !Number.isFinite(row.loot) || !Number.isFinite(row.kills)) continue;
-        const income = row.adena + row.loot;
+        const income = row.adena + row.loot - Math.max(0, Number(row.costs) || 0);
         const perHour = income / row.cycleMs * HOUR_MS * share;
         if (best && perHour <= best.perHour) continue;
-        best = { perHour, perKill: row.kills > 0 ? income / row.kills : 0, expPerHour: row.exp / row.cycleMs * HOUR_MS * share };
+        best = { spotId: row.spotId, perHour, perKill: row.kills > 0 ? income / row.kills : 0, expPerHour: row.exp / row.cycleMs * HOUR_MS * share };
     }
     return best;
 }
@@ -146,26 +179,31 @@ function bestIncome(rows, share = 1) {
 // priors and providers cannot recurse through the common value of an hour.
 function huntIncome(state, timestamp = Date.now(), mode) {
     const own = bestIncome(sampledRows(state, timestamp, mode), onSpotShare(state));
-    if (own) return { ...own, source: 'own' };
+    if (own?.perHour > 0) return { ...own, source: 'own' };
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const role = state.party?.role || state.stats?.role || Roles.inferRole(state.stats?.classId || state.classId || 0);
     const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
     const current = state.spotId && Table.value(state.spotId, tableRole, levelOf(state), true);
     const progress = current || Table.best(tableRole, levelOf(state), true);
-    const row = current?.adena + current?.loot > 0 ? current : Table.best(tableRole, levelOf(state), true, 'income');
+    const costs = consumablePrices(state);
+    const row = current && netIncome(current, costs) > 0 ? current : Table.rankedIncome(tableRole, levelOf(state), costs)[0]
+        || Table.rankedIncome(tableRole, levelOf(state), costs, -7, false)[0];
     if (!row) return { perHour: 0, perKill: 0, expPerHour: 0, source: 'unavailable' };
-    const income = row.adena + row.loot;
+    const income = netIncome(row, costs);
     return { perHour: income * onSpotShare(state), perKill: row.kills > 0 ? income / row.kills : 0,
         expPerHour: (progress?.exp || 0) * onSpotShare(state), source: 'table',
-        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId };
+        spotId: row.spotId || state.spotId, progressSpotId: progress?.spotId || state.spotId, useShots: row.useShots !== false };
 }
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
     if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
     const role = state.party?.role || state.stats?.role || Roles.inferRole(state.stats?.classId || state.classId || 0);
     const tableRole = role === 'melee' ? 'dps' : role === 'nuker' ? 'mage' : role === 'crafter' ? 'spoiler' : role;
-    const row = invoke('GameServer/Bot/AI/SpotValueTable').best(tableRole, levelOf(state), true, 'income');
-    return Math.max(1, Number(row?.adena || 0) + Number(row?.loot || 0));
+    const costs = consumablePrices(state);
+    const table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const row = table.rankedIncome(tableRole, levelOf(state), costs)[0]
+        || table.rankedIncome(tableRole, levelOf(state), costs, -7, false)[0];
+    return Math.max(1, row ? netIncome(row, costs) : 0);
 }
 function hourValue(state, timestamp = Date.now(), mode) {
     const hunt = huntIncome(state, timestamp, mode);
@@ -177,4 +215,4 @@ function hourValue(state, timestamp = Date.now(), mode) {
 function observe() {}
 function resetLevelBands() {}
 module.exports = { record, recordRound, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
-    resetLevelBands, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
+    resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };
