@@ -1,5 +1,7 @@
 const assert = require('assert');
 require('../src/Global');
+// Combat counters are developer diagnostics, off by default; this file checks them.
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
