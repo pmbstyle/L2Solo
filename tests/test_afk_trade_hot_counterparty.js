@@ -75,16 +75,20 @@ function clean() {
     await Database.updateCharacterExperience(sellerId, 40, 18728112, 0);
     await Database.updateCharacterLocation(sellerId, hotLoc);
 
+    // markHot stamps the session's snapshots with the hot phase (c73e4d3a);
+    // the economy admission checks that phase against the row (71143511).
+    const sessionSnapshot = { ...activation, phase: 'hot' };
     const store = AfkTrade.findOwnerProjection(ownerId).actor.fetchPrivateStore();
     const trade = await AfkTrade.sellToShop(sellerId, store, 1865, 1,
-        { objectId: varnishId, expectedPrice: 500, coldState: activation });
+        { objectId: varnishId, expectedPrice: 500, coldState: sessionSnapshot });
 
     const items = await Database.fetchItems(sellerId);
     assert.strictEqual(amount(items, 1865), 1, 'the sale itself commits');
     assert.strictEqual(amount(items, 57), 1500);
     assert.strictEqual(LifeState.snapshot(sellerId).phase, 'hot',
         'an AFK trade must not turn the hot row cold while the actor is in the world');
-    assert.strictEqual(trade.coldState, null, 'no cold snapshot is returned for a hot character');
+    // The committed row comes back, not a cold snapshot written over it.
+    assert.strictEqual(trade.coldState?.phase, 'hot', 'no cold snapshot is returned for a hot character');
     const row = (await Database.fetchCharacters('bot_hot_seller'))[0];
     assert.strictEqual(Number(row.exp), 18728112, 'experience earned while hot must not roll back');
     assert.deepStrictEqual({ locX: Number(row.locX), locY: Number(row.locY), locZ: Number(row.locZ) }, hotLoc,

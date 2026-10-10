@@ -29,7 +29,8 @@ function counts() {
         .map(name => [name, [...active.values()].filter(value => value === name).length]));
 }
 const stopped = { counter: 0, board: 0, world: 0, market: 0, life: 0 };
-const running = { counter: 0, board: 1, world: 1, market: 1, life: 1 };
+// The counter listener is the reset hook that forgets cached looks (6f5a2b65).
+const running = { counter: 1, board: 1, world: 1, market: 1, life: 1 };
 
 try {
     track(Counters, 'subscribeChanges', 'counter');
@@ -41,7 +42,7 @@ try {
     assert.strictEqual(Database.isReady(), false);
     assert.throws(() => Service.start(), TypeError);
     assert.strictEqual(Service.start(providers), true);
-    assert.deepStrictEqual(counts(), running, 'own-line review owns four current subscriptions and no retired counter listener');
+    assert.deepStrictEqual(counts(), running, 'own-line review owns its five current subscriptions, counters only for reset');
     assert.strictEqual(Service.stop(), true);
     assert.deepStrictEqual(counts(), stopped);
     console.log('Actual ordinary service start/stop and required admission positive controls PASS');

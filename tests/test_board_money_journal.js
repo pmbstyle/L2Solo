@@ -116,13 +116,16 @@ async function run() {
         nextState: { ...leasedState, adena: hunted['57'].amount, inventory: hunted,
             simulation: { ...leasedState.simulation, ownerId: Owner.OWNER_ID, revision: claim.revision } },
         proposal: { baseState: { inventory: leasedState.inventory } } }], { timestamp: Date.now() });
-    assert(!commit.ok, 'a native board deal fences the previously leased inventory');
+    // Small lots are no longer pruned by a fixed minimum (45a13735): the 13
+    // remaining Stems stay listed, the owner's bag is untouched, and the
+    // worker's commit merges the sale's settlement.
+    assert(commit.ok && commit.settled, 'the commit merges the leased bot\'s deal');
     await AfkTrade.settleOwners([leased]);
     const expiring = await AfkTrade.publishBot(leaver, ad('sell_ad', [await stemLine(leaver, 10, 300)]));
     await AfkTrade.publishBot(leaver, ad('buy_ad', [{ selfId: 1865, name: 'Varnish', count: 10, price: 400, stackable: true }]));
     const standing = AfkTrade.activeShops().length;
-    assert.strictEqual(standing, 4, 'the small remaining backed shop is pruned; the seller and leaver keep their ads');
-    assert.equal(AfkTrade.recordStore(leasedAd.id), null);
+    assert.strictEqual(standing, 5, 'the seller\'s shop and ad, the leased shop, the leaver\'s two ads');
+    assert.notEqual(AfkTrade.recordStore(leasedAd.id), null, 'a small remaining lot stays listed');
     // Records close by events: the owners leave (the leave rule).
     assert.strictEqual(Number(expiring.expiresAt), 0, 'no record has a deadline');
     for (const owner of [seller, leased, leaver, buyer]) await AfkTrade.leave(owner);
@@ -131,7 +134,7 @@ async function run() {
     const heldChange = difference(await held(), heldBefore);
     const journalChange = difference(await journal(), journalBefore);
     assert.deepStrictEqual(journalChange, heldChange, 'the journal accounts for every change of what is held');
-    assert.deepStrictEqual(heldChange, {}, 'a stale hunt is rejected; the board only transfers existing custody');
+    assert.deepStrictEqual(heldChange, { 57: 30 }, 'only the leased bot\'s hunt adds money; the board moves, it never makes');
     console.log(`Board money journal: held change ${JSON.stringify(heldChange)} = journal flows ${JSON.stringify(journalChange)}`);
 
     await AfkTrade._resetForTests();

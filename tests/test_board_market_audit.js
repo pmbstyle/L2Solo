@@ -67,6 +67,12 @@ async function sellAd(id, count = 10) {
         lines: [{ objectId: stock.id, selfId: 1864, name: 'Stem', count, price: 100, stackable: true }] };
 }
 
+// A bot sell ad settles only at a meeting (E115, 540ce2aa); an immediate
+// purchase needs the seller's backed shop, as real bots publish.
+async function sellShop(id, count = 10) {
+    return { ...(await sellAd(id, count)), kind: 'shop' };
+}
+
 async function bag(id, selfId) {
     return (await Database.fetchItems(id)).filter(item => Number(item.selfId) === selfId)
         .reduce((sum, item) => sum + Number(item.amount), 0);
@@ -119,7 +125,7 @@ async function run() {
         const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
         rolledBackOwner = owner;
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 1000 }]);
-        const sale = await Database.createAfkTradeShop(owner, await sellAd(owner));
+        const sale = await Database.createAfkTradeShop(owner, await sellShop(owner));
         await Database.buyFromAfkTradeShop(buyer, { shopId: sale.shop.id, ownerId: owner,
             lineId: sale.shop.lines[0].id, amount: 3, expectedPrice: 100, expectedRevision: 1 });
         await Database.execute([`CREATE TEMP TRIGGER audit_settlement_failure
@@ -143,7 +149,7 @@ async function run() {
     await check('failed trade must roll back newly discovered settlement and deal count', async () => {
         const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 1000 }]);
-        const sale = (await Database.createAfkTradeShop(owner, await sellAd(owner))).shop;
+        const sale = (await Database.createAfkTradeShop(owner, await sellShop(owner))).shop;
         const before = (await Database.fetchRecentBoardDeals()).dealCounts;
         await Database.execute([`CREATE TEMP TRIGGER audit_trade_failure
             BEFORE UPDATE OF count ON main.afk_trade_lines WHEN NEW.id = ${sale.lines[0].id}
@@ -163,7 +169,7 @@ async function run() {
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 2000 }]);
         for (let index = 0; index < 2; index++) {
             const id = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
-            const sale = (await Database.createAfkTradeShop(id, await sellAd(id))).shop;
+            const sale = (await Database.createAfkTradeShop(id, await sellShop(id))).shop;
             await Database.buyFromAfkTradeShop(buyer, { shopId: sale.id, ownerId: id, lineId: sale.lines[0].id, amount: 3 });
             const token = await Owner.claim(LifeState.cachedState(id), { timestamp: Date.now(), leaseMs: 30000 });
             assert(token.ok);
@@ -198,7 +204,7 @@ async function run() {
     await check('COMMIT failure must restore settlement discovery', async () => {
         const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 1000 }]);
-        const sale = (await Database.createAfkTradeShop(owner, await sellAd(owner))).shop;
+        const sale = (await Database.createAfkTradeShop(owner, await sellShop(owner))).shop;
         await Database.buyFromAfkTradeShop(buyer, { shopId: sale.id, ownerId: owner, lineId: sale.lines[0].id, amount: 3 });
         await Database.execute(['CREATE TABLE audit_deferred (ownerId INTEGER REFERENCES characters(id) DEFERRABLE INITIALLY DEFERRED)']);
         await Database.execute([`CREATE TEMP TRIGGER audit_commit_failure
@@ -219,7 +225,7 @@ async function run() {
     await check('partial fill must fence a stale price look', async () => {
         const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 10 }]);
         const buyer = await bot([{ selfId: 57, name: 'Adena', amount: 1000 }]);
-        const sale = await AfkTrade.publishBot(owner, await sellAd(owner));
+        const sale = await AfkTrade.publishBot(owner, await sellShop(owner));
         const line = sale.lines[0];
         const review = { reprices: [{ recordId: sale.id, lineId: line.id, selfId: line.selfId,
             price: 80, expectedRevision: sale.revision, previousPricing: line.pricing,
@@ -262,7 +268,7 @@ async function run() {
 
     await check('held-price observation fences an obsolete withdrawal', async () => {
         const owner = await bot([{ selfId: 1864, name: 'Stem', amount: 20 }]);
-        const record = await AfkTrade.publishBot(owner, await sellAd(owner));
+        const record = await AfkTrade.publishBot(owner, await sellShop(owner));
         const line = record.lines[0];
         const stale = { recordId: record.id, lineId: line.id, selfId: line.selfId,
             expectedRevision: record.revision, previousPricing: line.pricing };

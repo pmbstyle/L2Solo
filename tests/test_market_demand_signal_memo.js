@@ -8,7 +8,9 @@ const SHORT_GLOVES = 48;
 const LEATHER_SHOES = 37;
 const now = 10 * 60 * 60 * 1000;
 const ttl = MarketDemandIndex.WANTED_TTL_MS;
-const signalsFor = (states, timestamp, selfId) => (MarketDemandIndex.indexSignals(states, timestamp).get(selfId) || [])
+// Private wants are read only for the own bot and its group (71143511).
+const scope = { ownerId: 1, groupOwnerIds: [2] };
+const signalsFor = (states, timestamp, selfId) => (MarketDemandIndex.indexSignals(states, timestamp, scope).get(selfId) || [])
     .map((signal) => signal.characterId);
 
 const wanting = { characterId: 1, adena: 500, stats: {
@@ -26,7 +28,7 @@ const bought = { ...planning, stats: { ...planning.stats, equipmentPlan: { statu
 assert.deepStrictEqual(signalsFor([wanting, bought], now + 2000, LEATHER_SHOES), [],
     'a replaced state drops its old demand at once');
 const richer = { ...wanting, adena: 900 };
-assert.strictEqual(MarketDemandIndex.indexSignals([richer], now + 2000).get(SHORT_GLOVES)[0].budget, 900,
+assert.strictEqual(MarketDemandIndex.indexSignals([richer], now + 2000, scope).get(SHORT_GLOVES)[0].budget, 900,
     'a replaced state carries its new budget');
 
 // A timed want expires without any state update.

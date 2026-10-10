@@ -26,7 +26,8 @@ async function purchase(id, wantedId) {
         loc: { locX: 83000, locY: 148000, locZ: -3400 },
         vitals: { hp: 1000, maxHp: 1000, mp: 300, maxMp: 300 }, timing: {},
         inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
-        stats: { classId: 1, generatedCold: true, equipmentPlan: { status: 'active', strategy: 'market',
+        // The worker's money packet funds the purchase of item 2 (71143511).
+        stats: { classId: 1, generatedCold: true, money: [1000, .0001, 0, 0, .001, 1000, 2], equipmentPlan: { status: 'active', strategy: 'market',
             target: { selfId: 2, slot: 7 }, market: { price: 1000, town: 'Giran', sourceType: 'afk_bot_store' } },
             partyRequest: { status: 'open' }, marketWanted: wanted,
             marketRetryAfter: 100000, marketLead: { itemId: wantedId, town: 'Giran' } }
@@ -56,8 +57,9 @@ async function purchase(id, wantedId) {
         returnedWanted: result.state.stats.marketWanted, durableWanted: stats.marketWanted }));
     if (wantedId === 2) {
         for (const key of ['marketWanted', 'marketRetryAfter', 'marketLead']) {
-            assert.equal(result.state.stats[key], null, 'matching fulfilled target clears ' + key);
-            assert.equal(stats[key], null, 'durable matching target clears ' + key);
+            // The atomic settlement clears with a JSON merge patch, which removes the key (71143511).
+            assert.equal(result.state.stats[key] ?? null, null, 'matching fulfilled target clears ' + key);
+            assert.equal(stats[key] ?? null, null, 'durable matching target clears ' + key);
         }
     } else {
         assert.deepEqual(result.state.stats.marketWanted, wanted);

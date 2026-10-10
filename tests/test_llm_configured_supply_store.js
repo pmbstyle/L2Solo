@@ -1,4 +1,5 @@
 const assert = require('assert');
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 
 require('../src/Global');
 

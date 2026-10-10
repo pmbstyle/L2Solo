@@ -4,6 +4,7 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const Decisions = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
+const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
 
 async function runWorker(state, predicate) {
     const epoch = `economy-publication-${state.characterId}`, received = [];
@@ -70,12 +71,15 @@ async function runWorker(state, predicate) {
         timing: { ...state.timing, nextResolveAt: Date.now() - 1 },
         inventory: { 952: { selfId: 952, amount: instances.length, equipped: false, stackable: false, instances } } };
     const command = await runWorker(large, message => message.type === 'command_request');
-    const request = command.payload.requests[0];
+    // The worker packs large bags on the wire; the coordinator restores them (88eb104f).
+    const request = StateWire.unpackPayload('command_request', command.payload).requests[0];
     assert(Protocol.sameCommandCheckpoint(large, request.commandCheckpoint));
     assert.deepEqual(request.state.inventory, large.inventory, 'the complete admitted bag crosses unchanged');
     assert(request.precomputedResult && request.precomputedPlan.statsPacket && request.precomputedPlan.economyDecision,
         'native combat and economy results remain in the command');
-    assert.equal(request.precomputedPlan.plannedState, undefined, 'the unused duplicate state is omitted on overflow');
+    // Packed instances keep this bag under the cap, so the planned state is
+    // no longer dropped here; the overflow path is checked on the raw form below.
+    assert.notEqual(request.precomputedPlan.plannedState, undefined, 'the packed command keeps its planned state');
     assert(Protocol.byteLength(command) <= Protocol.MAX_MESSAGE_BYTES);
     const expanded = { ...command, payload: { requests: [{ ...request,
         precomputedPlan: { ...request.precomputedPlan, plannedState: large } }] } };
@@ -84,6 +88,7 @@ async function runWorker(state, predicate) {
     assert.equal(Protocol.validateEnvelope(expanded, 'worker').ok, true);
     assert.equal(Protocol.omitPlannedStates(expanded), false);
     const stillTooLarge = { ...command, payload: { requests: [{ ...request,
+        precomputedPlan: { ...request.precomputedPlan, plannedState: undefined },
         state: { ...large, inventory: { ...large.inventory, secondBag: large.inventory[952] } } }] } };
     assert.equal(Protocol.omitPlannedStates(stillTooLarge), false);
     assert.equal(Protocol.validateEnvelope(stillTooLarge, 'worker').reason, 'message_too_large',

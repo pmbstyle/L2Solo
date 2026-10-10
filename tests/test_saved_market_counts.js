@@ -45,7 +45,8 @@ async function run() {
                 inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)) }, 'saved_counts_seed');
         }
         const item = (await Database.fetchItems(ids[0])).find(row => row.selfId === 1864);
-        const { shop } = await Database.createAfkTradeShop(ids[0], { kind: 'sell_ad', storeType: 1, town: 'Giran',
+        // A bot sell ad settles only at a meeting (E115); an immediate deal needs the backed shop.
+        const { shop } = await Database.createAfkTradeShop(ids[0], { kind: 'shop', storeType: 1, town: 'Giran',
             lines: [{ objectId: item.id, selfId: 1864, name: 'Stem', count: 10, price: 100, stackable: true }] });
         await Database.execute(['DELETE FROM saved_counts_audit']);
         await Database.execute([`CREATE TRIGGER saved_counts_insert AFTER INSERT ON bot_market_counts

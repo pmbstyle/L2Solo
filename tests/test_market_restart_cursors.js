@@ -44,7 +44,9 @@ async function bot(label, { player = false } = {}) {
     if (!player) await LifeState.upsertState({ characterId: id, accountName: account, name: `Cursor${label}`,
         phase: 'cold', activity: 'hunting', level: 40, adena: 10000,
         inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(id)), currentRegion: 'Giran',
-        loc: { locX: 83000, locY: 148000, locZ: -3466 }, stats: { generatedCold: true }, timing: {},
+        loc: { locX: 83000, locY: 148000, locZ: -3466 }, timing: {},
+        // A bot buy ad and purchase are funded by the worker's money packet (71143511).
+        stats: { generatedCold: true, money: [10000, .0001, 0, 0, .001, 2000, 1864] },
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }, 'cursor_seed');
     return { id, stock };
 }
@@ -97,6 +99,9 @@ async function run() {
     // Only the disposable fixture returns to schema56 before migration57.
     const fixture = new DatabaseSync(databasePath);
     fixture.prepare('DELETE FROM schema_migrations WHERE version = 57').run();
+    // The one-time Giran plaza spread (bda57b25) is not under test; it would
+    // move the centre-placed fixture shop and bump its revision.
+    fixture.prepare("INSERT OR REPLACE INTO world_meta (key, value) VALUES ('giranShopDistributionV1', 'fixture')").run();
     const columns = new Set(fixture.prepare('PRAGMA table_info(afk_trade_lines)').all().map(column => column.name));
     for (const column of PRICING_COLUMNS) if (columns.has(column)) fixture.exec(`ALTER TABLE afk_trade_lines DROP COLUMN ${column}`);
     fixture.exec(`CREATE TRIGGER cursor_migration_failure BEFORE UPDATE OF statsJson ON bot_life_state
@@ -135,7 +140,10 @@ async function run() {
     assert(Number.isSafeInteger(checkpoint.seenAt) && checkpoint.seenAt > 0, 'migration initializes durable observation time');
     assert.deepStrictEqual(migrated.lines[0].pricing, checkpoint);
     assert.strictEqual(migrated.revision, 1);
-    assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900);
+    // A bot buy ad is funded-only: no escrow leaves the wallet, it settles at a meeting (6d672802).
+    const migratedBuy = await storedShop(buyer.id);
+    assert.deepStrictEqual([migratedBuy.custodyPolicy, migratedBuy.escrowAdena, migratedBuy.lines[0].count, migratedBuy.lines[0].price],
+        [1, 0, 10, 90], 'migration keeps the funded bot bid unchanged');
     assert.strictEqual((await storedShop(buyer.id)).lines[0].pricing.worth, 90,
         'migrated BUY keeps its authored bid as a conservative worth floor');
     assert.strictEqual((await storedShop(player.id)).lines[0].pricing, undefined);
@@ -177,7 +185,9 @@ async function run() {
     await AfkTrade.repriceBotLines(buyer.id, [], { updates: [{ recordId: buyLine.recordId, lineId: buyLine.lineId,
         expectedRevision: buyLine.revision, previousPricing: buyLine.pricing, pricing: buyState }] });
     assert.strictEqual((await storedShop(buyer.id)).lines[0].pricing.worth, 90);
-    assert.strictEqual((await storedShop(buyer.id)).escrowAdena, 900, 'first counter observation cannot lose a migrated BUY escrow');
+    const observedBuy = await storedShop(buyer.id);
+    assert.deepStrictEqual([observedBuy.escrowAdena, observedBuy.lines[0].count, observedBuy.lines[0].price], [0, 10, 90],
+        'first counter observation cannot change a migrated funded BUY');
     channel.flush();
     assert.deepStrictEqual(worker.ownerLines(owner.id)[0].pricing, consumed, 'worker receives metadata-only change');
     channel.detach('cursor-worker');
