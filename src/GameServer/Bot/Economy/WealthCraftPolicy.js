@@ -5,32 +5,13 @@ const Price = require('./PriceDecision');
 const MAX_BATCHES = 64;
 const count = value => Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : NaN;
 
-// Canonical requirements prevent two ingredient rows allocating the same stock.
-function requirements(recipe, batches = 1) {
-    if (!Number.isSafeInteger(batches) || batches < 0 || batches > MAX_BATCHES) return null;
-    const result = new Map();
-    for (const row of recipe?.materials || []) {
-        const id = Number(row.selfId), amount = Number(row.amount);
-        if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(amount) || amount <= 0) return null;
-        const total = (result.get(id) || 0) + amount * batches;
-        if (!Number.isSafeInteger(total)) return null;
-        result.set(id, total);
-    }
-    return result;
-}
 function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, context = {}) {
-    const required = new Map();
     // Learning consumes one scroll for this whole decision, never one per
     // manufactured batch. Its purchase joins the same town/fee allocation.
     const entry = Number(context.recipeInput || 0);
-    if (entry > 0) required.set(entry, 1);
-    for (const row of recipe?.materials || []) {
-        const id = Number(row.selfId), amount = Number(row.amount);
-        if (!Number.isSafeInteger(id) || id <= 0 || !Number.isSafeInteger(amount) || amount <= 0
-            || !Number.isSafeInteger(amount * batches + (required.get(id) || 0))) return null;
-        required.set(id, amount * batches + (required.get(id) || 0));
-        yield 'ingredient';
-    }
+    const facts = yield* Profit.prepareCraftFacts(recipe, { batches, recipeInput: entry, mpPerHour: context.mpPerHour });
+    if (facts.status !== 'ready' && facts.reason !== 'mp_regen') return null;
+    const required = facts.gross;
     const purchases = [], owned = [], trips = new Map(), allocated = new Map();
     let cashCost = 0, ownedValue = 0, actualCashFees = 0, travelHours = 0, processingHours = 0,
         extraMp = 0, residualValue = 0, unknownTrip = false, repeatableInputs = true;
@@ -229,5 +210,5 @@ function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => nul
     if (recipe?.type !== 'dwarven') return null;
     return chooseQuantity({ state, recipe, planFor, exits, ownedFor, context });
 }
-module.exports = { MAX_BATCHES, requirements, basketFor, craftMargin, evaluateBasket, chooseQuantity,
+module.exports = { MAX_BATCHES, basketFor, craftMargin, evaluateBasket, chooseQuantity,
     opportunityFor, prepareBasket, evaluatePrepared, searchQuantity, drain };

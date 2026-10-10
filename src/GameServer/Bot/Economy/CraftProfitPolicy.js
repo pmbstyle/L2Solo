@@ -80,6 +80,55 @@ function batchesFor(recipe, output) {
     const batches = Math.ceil(output / count);
     return Number.isSafeInteger(batches) ? batches : null;
 }
+// Native finite facts of one recipe for `output` units or `batches`, read by
+// the wish network and by the producer alike. Gross requirements only: the
+// Core quantity reader subtracts stock, incoming and commitments once.
+// A cold own craft makes one draw per command of up to 64 batches bounded by
+// MP (Database.craftInventoryItems); a hot bot crafts one batch per command
+// (HotWealthCraftService); a workshop command is bounded by its capacity
+// (Database.craftForCustomer). A failed draw consumes every input of its command.
+// A recipe scroll learned for this decision is consumed once, never per batch.
+function* prepareCraftFacts(recipe, { output, batches, executor = 'cold', mpCapacity = Infinity, capacityBatches,
+    mpPerHour, recipeInput = 0, fee = 0 } = {}) {
+    const probability = successProbability(recipe);
+    if (!recipe || !Number.isFinite(probability)) return { status: 'unknown', reason: 'recipe' };
+    const productCount = Number(recipe.productCount || 1);
+    const count = batches ?? batchesFor(recipe, output);
+    if (!Number.isSafeInteger(count) || count < 0) return { status: 'unknown', reason: 'quantity' };
+    const mpCost = Math.max(0, Number(recipe.mpCost || 0));
+    const bound = executor === 'hot' ? 1 : executor === 'workshop' ? Number(capacityBatches)
+        : mpCost > 0 ? Math.floor(Number(mpCapacity) / mpCost) : 64;
+    const perCommand = Math.min(64, bound);
+    if (!(perCommand >= 1)) return { status: 'unknown', reason: executor === 'workshop' ? 'capacity' : 'mp_capacity' };
+    const gross = new Map(), once = new Set();
+    const entry = Number(recipeInput || 0);
+    if (entry > 0) { gross.set(entry, 1); once.add(entry); }
+    let rows = 0;
+    for (const input of recipe.materials || []) {
+        const id = Number(input.selfId), amount = Number(input.amount) * count;
+        if (!Number.isSafeInteger(id) || id < 1 || !(Number(input.amount) > 0) || !Number.isSafeInteger(amount))
+            return { status: 'unknown', reason: 'recipe' };
+        const total = Number(gross.get(id) || 0) + amount;
+        if (!Number.isSafeInteger(total)) return { status: 'unknown', reason: 'quantity' };
+        gross.set(id, total); rows++;
+        yield 'ingredient';
+    }
+    const mp = mpCost * count;
+    // Own MP is labour; a workshop crafter spends his own MP for the fee.
+    const labourMp = executor === 'workshop' ? 0 : mp;
+    const labourHours = labourMp ? Number(mpPerHour) > 0 ? labourMp / Number(mpPerHour) : NaN : 0;
+    const cash = Math.max(0, Number(fee) || 0) * count;
+    // Unknown labour keeps the quantities for readers that need no hours.
+    return { ...(Number.isFinite(labourHours) ? { status: 'ready' } : { status: 'unknown', reason: 'mp_regen' }), recipeId: Number(recipe.recipeId), productCount, batches: count, output: count * productCount,
+        perCommand, draws: Math.ceil(count / perCommand), successProbability: probability, gross, once, mp, labourHours,
+        fee: cash, feeOnFailure: cash > 0, rows };
+}
+function craftFacts(recipe, options) {
+    const steps = prepareCraftFacts(recipe, options);
+    let step;
+    do { step = steps.next(); } while (!step.done);
+    return step.value;
+}
 function craftableBatches(items, recipe, requested = 1) {
     const required = requirements(recipe), amounts = new Map(), seen = new Set();
     if (!required || !Number.isSafeInteger(requested) || requested < 1) return 0;
@@ -123,5 +172,5 @@ function materials(items, recipe, batches = 1) {
 function succeeds(recipe, random = Math.random) {
     return Number(recipe.successRate) >= 100 || Number(random()) * 100 < Number(recipe.successRate);
 }
-module.exports = { requirements, batchesFor, craftableBatches, revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
+module.exports = { prepareCraftFacts, craftFacts, requirements, batchesFor, craftableBatches, revenue, margin, craftIncomePerHour, contextFor, tripFor, inputValue, materials, succeeds,
     mpHours, successProbability, craftOutcomes };

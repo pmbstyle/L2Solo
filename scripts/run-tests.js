@@ -349,6 +349,7 @@ const tests = [
     'tests/test_bot_persona_economic_policy.js',
     'tests/test_wealth_investment_policy.js',
     'tests/test_wealth_craft_policy.js',
+    'tests/test_craft_facts.js',
     'tests/test_cold_wealth_craft.js',
     'tests/test_next_e2_craft_choices.js',
     'tests/test_cold_occupation_planner.js',
