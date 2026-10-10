@@ -36,6 +36,11 @@ function setPlanningContexts(count) {
 // a proposed composition (`proposal:` party id) is built and not kept.
 const groups = new Map();
 const GROUP_LIMIT = 256;
+// Shadow count (perf item 1, diagnostics only): the hash of each actor's last
+// input key, to count rebuilds whose inputs equal the bot's previous request
+// (a retained context would have served them). It never decides anything.
+const lastKeyHashes = new Map();
+const LAST_KEY_LIMIT = 8192;
 const positive = value => Math.max(0, Number(value) || 0);
 
 function stateForActor(actor, session = actor?.session) {
@@ -381,6 +386,11 @@ function forState(state = {}, deps = {}) {
     const diagnosticReason = !diagnostic ? null : !held ? 'not_retained' : held.key !== key
         ? 'input_dependency_changed' : !isMainThread && held.context.state !== state ? 'state_publication' : 'used_market_changed';
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
+    if (diagnostic) {
+        const hash = fnv1a32(key);
+        Diagnostics.count('context', 'shadow', `${diagnosticReason}:${lastKeyHashes.get(actorKey) === hash ? 'same_key' : 'new_key'}`);
+        remember(lastKeyHashes, actorKey, hash, LAST_KEY_LIMIT);
+    }
     const reads = new Map();
     let building = true;
     // MVP-6 Bounds: while a gear candidate's arena is built its reads wait
@@ -641,7 +651,7 @@ function forget(id) {
 function reset() {
     if (Diagnostics.active() && cache.size) Diagnostics.count('context', 'eviction', 'reset', cache.size);
     if (Diagnostics.active() && groups.size) Diagnostics.count('context_group', 'eviction', 'reset', groups.size);
-    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap();
+    cache.clear(); groups.clear(); engine.clear(); lastKeyHashes.clear(); routeAnchors = new WeakMap();
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
