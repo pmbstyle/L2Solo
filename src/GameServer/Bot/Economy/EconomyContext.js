@@ -588,27 +588,37 @@ function forState(state = {}, deps = {}) {
 // Plan nodes keep only what post-build readers walk: the materials of the
 // decision card (ColdEconomyDecision.capture), TradeIntent.project and
 // npcOwnsPurchase, WishProviders.personalCraftPlan. Shared nodes stay shared.
-function planTrimmer() {
+// A requirement row without its plan is looked up by key in network.plans
+// (personalCraftPlan); `unresolved` collects those keys for the kept map.
+const NODE_FIELDS = ['kind', 'sourceType', 'quoted', 'executable', 'recipeId', 'missingAmount', 'improvement'];
+const NO_REQUIREMENTS = Object.freeze([]);
+function planTrimmer(unresolved = new Set()) {
     const seen = new Map();
     const trim = plan => {
         if (!plan || typeof plan !== 'object') return plan;
         if (seen.has(plan)) return seen.get(plan);
-        const out = { kind: plan.kind, sourceType: plan.sourceType, quoted: plan.quoted, executable: plan.executable,
-            recipeId: plan.recipeId, missingAmount: plan.missingAmount, improvement: plan.improvement,
-            workshop: plan.workshop ? { characterId: plan.workshop.characterId, price: plan.workshop.price,
-                loc: plan.workshop.loc, townName: plan.workshop.townName } : undefined,
-            intentionPath: undefined, requirements: undefined };
+        // Absent fields stay absent and an empty requirement list is one
+        // shared frozen array: a bot keeps ~20 nodes, most of them buys.
+        const out = {};
+        for (const field of NODE_FIELDS) if (plan[field] !== undefined) out[field] = plan[field];
+        if (plan.workshop) out.workshop = { characterId: plan.workshop.characterId, price: plan.workshop.price,
+            loc: plan.workshop.loc, townName: plan.workshop.townName };
         seen.set(plan, out);
-        out.intentionPath = trim(plan.intentionPath);
-        out.requirements = plan.requirements?.map(row => ({ key: row.key, amount: row.amount, plan: trim(row.plan) }));
+        if (plan.intentionPath !== undefined) out.intentionPath = trim(plan.intentionPath);
+        if (plan.requirements) out.requirements = !plan.requirements.length ? NO_REQUIREMENTS : plan.requirements.map(row => {
+            if (!row.plan) unresolved.add(row.key);
+            return { key: row.key, amount: row.amount, plan: trim(row.plan) };
+        });
         return out;
     };
     return trim;
 }
 // Queue rows keep the fields read after the build (funding, the money packet
-// ratio, the card, trade intents, gear and companion choices).
+// ratio, the card, trade intents, gear and companion choices). network.plans
+// keeps the item plans (TradeIntent.npcOwnsPurchase asks by `item:<id>`) and
+// the plans of requirement rows that have none, not every graph node.
 function compactNetwork(network) {
-    const trim = planTrimmer();
+    const unresolved = new Set(), trim = planTrimmer(unresolved);
     const row = wish => ({ key: wish.key, object: wish.object, price: wish.price, valueHours: wish.valueHours,
         ratio: wish.ratio, funded: wish.funded, plan: trim(wish.plan) });
     const queue = (network.queue || []).map(row);
@@ -617,8 +627,10 @@ function compactNetwork(network) {
     const activity = !leaf ? leaf : { ...leaf,
         ...(leaf.requirements ? { requirements: leaf.requirements.map(item => ({ ...item, plan: trim(item.plan) })) } : {}),
         ...(leaf.intentionPath ? { intentionPath: trim(leaf.intentionPath) } : {}) };
-    return { ...network, queue, gap: !network.gap ? network.gap : at >= 0 ? queue[at] : row(network.gap), activity,
-        plans: new Map([...(network.plans || [])].map(([key, plan]) => [key, trim(plan)])) };
+    const all = network.plans || new Map(), plans = new Map();
+    for (const [key, plan] of all) if (key.startsWith('item:')) plans.set(key, trim(plan));
+    for (const key of unresolved) if (!plans.has(key) && all.has(key)) plans.set(key, trim(all.get(key)));
+    return { ...network, queue, gap: !network.gap ? network.gap : at >= 0 ? queue[at] : row(network.gap), activity, plans };
 }
 function planOf(context, base, { key, market, tripHour, projection = null, knowledgeEnabled }) {
     const stockRoots = new Map();
