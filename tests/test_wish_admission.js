@@ -237,3 +237,15 @@ assert.deepEqual(edge.admission.pending.filter(row => row.key.startsWith('power:
 assert(edge.projection.roots.includes('power:143:1'), 'the family stays open for the fitting candidate');
 console.log('PASS forty arena descriptors and the root exceed forty: evaluation limit, the family stays open');
 recipes.clear();
+
+// 9. Held materials for a craft of gear priced 10000 need no cash: ready at
+// once. The network judges the root after stock allocation like admission;
+// the unquoted market price (100 hours of income, past the 13-hour horizon)
+// no longer zeroes its ready benefit and drops it before allocation.
+const held = scenario({ items: [gear(132, 2, 0.5, 10000)], known: [recipe(332, 132, [[202, 10]])],
+    asks: [[202, 1, 20]], inventory: { 202: { selfId: 202, amount: 10 } } });
+assert.equal(witness(held.admission, 'power:132:2').price, 0);
+assert.equal(held.result.focus?.[0], 'power:132:2', 'the held-material craft stays a wish of the network');
+assert.equal(held.result.plans.get('power:132:2').price, 0);
+console.log('PASS a held-material craft is judged after allocation in the network as in admission');
+recipes.clear();

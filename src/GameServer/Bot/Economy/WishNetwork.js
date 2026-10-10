@@ -351,6 +351,9 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         }
         wish.valueHours = plan ? base * Number(plan.successProbability ?? 1) : 0;
     };
+    // The author's priority value: full benefit, before its ready delay.
+    const fullValue = (wish, node) => wish.plan ? nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress)))
+        * Number(wish.plan.successProbability ?? 1) : 0;
     const rootWish = key => {
         const node = byKey.get(key);
         if (!node || !NEEDS.includes(node.need)) throw new TypeError('invalid_wish_root');
@@ -359,6 +362,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         const wish = { key, need: node.need, object: node.object, plan, supported: plan?.supported !== false,
             price: plan ? nonnegative(plan.quoted ? plan.price : node.price ?? plan.price) : Infinity, effort: plan?.effort ?? Infinity };
         value(wish, node, plan);
+        wish.fullValueHours = fullValue(wish, node);
         return wish;
     };
     // Shared stock: re-solve one root against the stock already claimed. The
@@ -442,18 +446,24 @@ class WishNetwork {
             : Tendency.roll(actorKey, inputKey, kind);
         const solver = createSolver({ nodes, hourAdena, riskWeight, stockFor, wallet, survivalReserve, diagnostic, detail, trace });
         const { byKey, plans, finiteProduction, tripValue, tripEffort } = solver;
-        const wishes = roots.map(solver.rootWish).filter(wish => wish.valueHours > 0 && wish.plan
-            && (!finiteProduction(wish.key) || wish.valueHours > wish.effort));
+        const kept = wish => wish.valueHours > 0 && wish.plan
+            && (!finiteProduction(wish.key) || wish.valueHours > wish.effort);
+        let wishes = roots.map(solver.rootWish);
         if (stockFor) {
             // Existing money priority allocates free stock once. Alternatives of
             // one root evaluate the same baseline and retain the maximum claim.
+            // MVP-4: the ready delay follows the cash the allocated path needs,
+            // so a root is judged after allocation, as admission judges it; an
+            // unquoted market price before it is no reason to drop the root.
+            wishes = wishes.filter(wish => wish.plan && wish.fullValueHours > 0);
             const used = new Map();
-            const priority = [...wishes].sort((a, b) => b.valueHours / Math.max(1, b.price) - a.valueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
+            const priority = [...wishes].sort((a, b) => b.fullValueHours / Math.max(1, b.price) - a.fullValueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
             for (const wish of priority) {
                 const claimed = solver.allocate(wish, used);
                 if (wish.valueHours > 0) for (const [id, count] of claimed) used.set(id, count);
             }
         }
+        wishes = wishes.filter(kept);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
         const held = wishes.find(wish => wish.key === previous.focus?.[0]);
