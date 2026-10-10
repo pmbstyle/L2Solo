@@ -637,6 +637,13 @@ function buildProjection(state, ctx, deps) {
     admission.candidates = gear.length;
     // A throw of the solver's own bounds or an arena over forty descriptors
     // is `limit`: unresolved, never an unavailable item or a zero cost.
+    // A path whose benefit cannot start inside the horizon is not a missing
+    // path: it waits, counted, for money or a cheaper source. Its own elapsed
+    // time (a drop's expected kills, a craft, a trip) at or past the horizon
+    // waits too, though resale and status keep its ready value above zero (E212).
+    const statusOf = (wish, node) => !wish.plan ? 'no_path'
+        : wish.valueHours > 0 && positive(wish.plan.hours) < node.horizonHours ? 'evaluated'
+            : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
     const evaluate = (row, used) => {
         admission.evaluations++; row.evaluations = (row.evaluations || 0) + 1;
         row.status = 'limit'; row.wish = null; row.claims = null;
@@ -650,10 +657,7 @@ function buildProjection(state, ctx, deps) {
                 : solver.rootWish(row.node.key);
             if (solverOptions.stockFor) { const claims = solver.allocate(wish, used); if (wish.plan) row.claims = claims; }
             row.wish = wish;
-            // A path whose benefit cannot start inside the horizon is not a
-            // missing path: it waits, counted, for money or a cheaper source.
-            row.status = !wish.plan ? 'no_path' : wish.valueHours > 0 ? 'evaluated'
-                : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
+            row.status = statusOf(wish, row.node);
         } catch (error) {
             if (!SOLVER_LIMITS.has(error?.message)) throw error;
         }
@@ -733,8 +737,7 @@ function buildProjection(state, ctx, deps) {
                 const claims = solver.allocate(wish, used);
                 if (wish.valueHours > 0) used = claims;
                 row.wish = wish; row.claims = wish.plan ? claims : null;
-                row.status = !wish.plan ? 'no_path' : wish.valueHours > 0 ? 'evaluated'
-                    : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
+                row.status = statusOf(wish, row.node);
                 yield row;
             }
             for (let at = admitted.length - 1; at >= 0; at--) if (admitted[at].status !== 'evaluated') {
