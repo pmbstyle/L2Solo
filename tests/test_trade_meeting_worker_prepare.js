@@ -45,10 +45,12 @@ module.exports.meetingPrepareProbe = async id => {
     // path; an own SELL quote above intentionally did not exercise that path.
     boardIndex.put({ id: 710060, kind: 'buy_ad', storeType: 3, ownerId: id+1, botOwned: true,
         town: 'Giran', revision: 1, custodyPolicy: 1,
-        lines: [{ id: 710061, selfId: 1869, enchant: 0, count: 1000000, price: 1000000 }] });
+        // The board reads lineId; a conditional bid is valued by the units its buyer is
+        // expected to pay for (MVP-5), so its price stays near what the seller believes.
+        lines: [{ lineId: 710061, selfId: 1869, enchant: 0, count: 1000000, price: 1000 }] });
     const sellRequest = JSON.parse(JSON.stringify(request));
     sellRequest.token = 'actual-positive-seller';
-    sellRequest.lines[0].adId = 710060; sellRequest.lines[0].count = 1000000; sellRequest.lines[0].price = 1000000;
+    sellRequest.lines[0].adId = 710060; sellRequest.lines[0].count = 1000000; sellRequest.lines[0].price = 1000;
     const seller = await kernel.prepareMeeting(id, sellRequest);
     const wanted = Intent.project(state, economy.network, economy.projection, itemId => economy.worth(itemId) ?? economy.price(itemId), 40)
         .find(row => row.amount >= 1 && row.worth >= 1);
