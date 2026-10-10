@@ -34,7 +34,11 @@ const adapters = {
     'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft, isServiceCrafter: () => true },
     'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
-    'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' }
+    'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
+    'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
+    'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) }
 };
 // Liquidation funding reads the shared sale and kept-stock readers (f75b6525); this
 // fixture sells nothing, so no inventory row is a sale candidate.
@@ -69,6 +73,10 @@ const provider = load('WishProviders.js' , name => {
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
+    // Synthetic origins are admitted; the solver is the network under test.
+    if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: recipe => !!recipe };
+    if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
+    if (name === './WishNetwork') return network;
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
     if (name.endsWith('ItemTemplateIndex')) return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name === './BotImprovementPolicy') return { isCaster: () => false };
