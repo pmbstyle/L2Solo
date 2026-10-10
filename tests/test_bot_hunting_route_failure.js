@@ -3,6 +3,8 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 // Navigation fixtures have no economy datapack; town wishes do not own these route checks.
 invoke('GameServer/Bot/Economy/EconomyContext').forActor = (_actor, session) => ({
+    // A real context always carries its stock reader; these bots use no shots.
+    stock: () => ({ itemId: 0, usePerHour: 0 }),
     network: { activity: null }, statsPacket: { decisionSeq: session.coldLifeState?.stats?.decisionSeq || 0,
         activityLeaf: 0, money: [1, 1, 0, 0] }
 });
