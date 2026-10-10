@@ -155,6 +155,13 @@ async function run() {
     }
     const product = Data.items.find(row => Number(row.selfId) === Number(uncertain.productId));
     const beforeOutput = await amount(2, uncertain.productId);
+    // Task 4 B4: a failed roll completes no goal. The goal that wants the
+    // product stays as it was; the next card re-derives the need from stock.
+    const wanted = JSON.stringify({ id: 'craft-target', type: 'buy_craft_material', status: 'active',
+        target: { itemId: uncertain.productId, amount: uncertain.productCount * 3 }, createdAt: 1, reviewedAt: 1 });
+    await Database.execute(['INSERT OR REPLACE INTO bot_goal_state (characterId, goalJson, updatedAt) VALUES (?, ?, ?)', [2, wanted, 1]]);
+    const goalRow = async () => (await Database.execute(['SELECT goalJson, updatedAt FROM bot_goal_state WHERE characterId=?', [2]]))[0];
+    const goalBefore = await goalRow();
     const failing = await step(2, Commit.KINDS.craft);
     let draws = 0;
     const failedArgs = { recipeId: uncertain.recipeId, batches: 3, materials: failureMaterials,
@@ -172,6 +179,10 @@ async function run() {
     Commit.finish(2, failedRetry.command);
     assert(replayFailure.replayed && !replayFailure.success);
     assert.equal(draws, 1, 'retry must keep the saved failure, never draw again');
+    assert.deepEqual(await goalRow(), goalBefore, 'a failed craft and its replay leave the goal untouched');
+    assert.equal(JSON.parse((await goalRow()).goalJson).status, 'active');
+    assert.equal(Number((await current(2)).inventory?.[uncertain.productId]?.amount || 0), beforeOutput,
+        'the cold snapshot holds no product after the failed roll');
     // A pending intent without a commit survives restart, but recovery never
     // recreates its old arguments. Replan a different native step from stock.
     const pending = await step(1, Commit.KINDS.npcBuy);
