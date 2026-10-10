@@ -50,7 +50,7 @@ function parseJson(value, fallback = {}) {
 }
 
 // Parsed member stats and inventory kept between projections, keyed by the row
-// text. Clan actions project their clan many times a minute (live x10: ~15
+// text (also the warehouse gear pass's stats). Clan actions project their clan many times a minute (live x10: ~15
 // projections a minute, ~6% of main-thread busy, nearly all of it parsing) and
 // ~90% of member texts are the same as in the previous read, so they are parsed
 // once. The text is the key, not simulationRevision: some writes change the
@@ -61,7 +61,7 @@ const MEMBER_JSON_IDLE_MS = 10 * 60 * 1000;
 const parsedMemberJson = new Map();
 let memberJsonSweepAt = 0;
 
-function memberJson(characterId, field, text, now) {
+function memberJson(characterId, field, text, now = Date.now()) {
     let entry = parsedMemberJson.get(characterId);
     if (!entry) parsedMemberJson.set(characterId, entry = {});
     entry.seenAt = now;
@@ -577,6 +577,7 @@ const ClanGoalService = {
     policy: GoalPolicy,
     clanProjection,
     clanProjectionById,
+    memberJson,
     resolveClan,
     recordCatastrophicFailure,
 

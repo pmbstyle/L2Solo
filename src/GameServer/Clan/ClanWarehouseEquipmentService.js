@@ -88,6 +88,7 @@ async function resolve(clanId, options) {
         FROM characters c JOIN bot_life_state l ON l.characterId = c.id
         WHERE c.clanId = ? ORDER BY c.id`, [clanId]], 'clan-gear:members');
     const manager = invoke('GameServer/Bot/BotManager');
+    const Goals = invoke('GameServer/Clan/ClanGoalService');
     let exchanged = 0;
     let inspected = 0;
     let pending = false;
@@ -102,7 +103,7 @@ async function resolve(clanId, options) {
             memberCursors.set(clanId, { itemId: item.id, memberId: member.id });
             const session = manager.findSessionById(Number(member.id));
             if (!['hot', 'cold'].includes(member.phase)) continue;
-            if (Identity.isStaticService({ ...member, stats: JSON.parse(member.statsJson || '{}') })) continue;
+            if (Identity.isStaticService({ ...member, stats: Goals.memberJson(Number(member.id), 'stats', member.statsJson) })) continue;
             const inventory = member.phase === 'hot' && session?.actor?.backpack
                 ? liveRows(session.actor) : await Database.fetchItems(member.id);
             inspected += 1;
