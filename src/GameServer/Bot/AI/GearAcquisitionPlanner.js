@@ -20,9 +20,11 @@ const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementM
 // sourceCache still shares the plain result until that decision returns.
 const MAX_RESOLVED_SOURCE_CACHE = 128;
 const MAX_SOURCE_YIELDS = 16384;
-const MAX_SOURCE_FACT_RULES = 4096;
+// Rows are as long as an item's index records (up to ~3,300 for a material
+// every monster drops): the bound counts record cells, 9 bytes each.
+const MAX_SOURCE_FACT_RULE_CELLS = 262144;
 let sourceIndexCache = { spots: null, rewards: null, npcs: null, byItemId: new Map(), resolved: new Map(), yields: new Map(),
-    plainYields: new Map(), plainRatesKey: null, huntable: new Map(), factRules: new Map(), factRulesKey: null };
+    plainYields: new Map(), plainRatesKey: null, huntable: new Map(), factRules: new Map(), factRulesKey: null, factRuleCells: 0 };
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const GearLifecycle = invoke('GameServer/Bot/AI/GearLifecycle');
@@ -1995,7 +1997,7 @@ function sourceIndexFor(spots = []) {
     });
 
     sourceIndexCache = { spots, rewards, npcs, byItemId, resolved: new Map(), yields: new Map(),
-        plainYields: new Map(), plainRatesKey: null, huntable: new Map(), factRules: new Map(), factRulesKey: null };
+        plainYields: new Map(), plainRatesKey: null, huntable: new Map(), factRules: new Map(), factRulesKey: null, factRuleCells: 0 };
     return byItemId;
 }
 
@@ -2125,12 +2127,11 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         // The fact reads the shared rule row of the record (yield and the
         // per-level refusals), not a materialized source per entry (74% of
         // entries are refusals kept for counts).
-        const value = rules.yields[ordinal];
-        if (!value) continue;
-        const entry = entries[ordinal], { spot, kind } = entry, { expectedYield } = value;
+        const rule = rules.reasons[ordinal];
+        if (rule === FACT_RULE_NO_CHANCE) continue;
+        const entry = entries[ordinal], { spot, kind } = entry, expectedYield = rules.expected[ordinal];
         const fact = { kind, spotId: spot.id, npcId: Number(entry.reward.selfId), itemId: Number(itemId), units, expectedYield };
         facts.push(fact);
-        const rule = rules.reasons[ordinal];
         if (rule === FACT_RULE_RAID) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
         if (kind === 'spoil') {
             // The executor's rule: a learned Spoil, not the class (E189).
@@ -2171,33 +2172,41 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
 // depend only on the record, the item, the killer level and the rates: the
 // yield pair, raid, a huntable NPC and the voluntary level band. One row per
 // item and level holds them, aligned with the index records; it lives with
-// the index (rebuilt with it) and follows the rate profile. A null yield is a
-// record the bot never sees (chance 0).
-const FACT_RULE_RAID = 1, FACT_RULE_CANNOT_HUNT = 2, FACT_RULE_LEVEL_BAND = 3;
+// the index (rebuilt with it) and follows the rate profile. Numbers only, no
+// object references: 9 bytes per record. FACT_RULE_NO_CHANCE is a record the
+// bot never sees (chance 0).
+const FACT_RULE_RAID = 1, FACT_RULE_CANNOT_HUNT = 2, FACT_RULE_LEVEL_BAND = 3, FACT_RULE_NO_CHANCE = 255;
 const FACT_RULE_REASONS = [null, 'raid', 'cannot_hunt', 'level_band'];
-const NO_FACT_RULES = { entries: [], yields: [], reasons: new Uint8Array(0) };
+const NO_FACT_RULES = { entries: [], expected: new Float64Array(0), reasons: new Uint8Array(0) };
 function sourceFactRulesFor(entries, itemId, killerLevel, ratesKey) {
     if (!entries.length) return NO_FACT_RULES;
     if (sourceIndexCache.factRulesKey !== ratesKey) {
         sourceIndexCache.factRules = new Map();
         sourceIndexCache.factRulesKey = ratesKey;
+        sourceIndexCache.factRuleCells = 0;
     }
     const cache = sourceIndexCache.factRules, key = `${itemId}:${killerLevel}`;
     let rules = cache.get(key);
     if (rules && rules.entries === entries) return rules;
-    const yields = new Array(entries.length).fill(null), reasons = new Uint8Array(entries.length);
+    if (rules) { cache.delete(key); sourceIndexCache.factRuleCells -= rules.entries.length; }
+    const expected = new Float64Array(entries.length), reasons = new Uint8Array(entries.length);
     const band = { level: killerLevel };
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
         const entry = entries[ordinal], target = sourceTargetOf(entry);
         const value = dropYieldFor(entry.reward, itemId, entry.kind, target.npcLevel, killerLevel, ratesKey);
-        if (!value.chance) continue;
-        yields[ordinal] = value;
+        if (!value.chance) { reasons[ordinal] = FACT_RULE_NO_CHANCE; continue; }
+        expected[ordinal] = value.expectedYield;
         reasons[ordinal] = target.raidBoss ? FACT_RULE_RAID
             : !sourceNpcHuntable(target.npcId) ? FACT_RULE_CANNOT_HUNT
                 : !sourceWithinVoluntaryHuntBand(band, target) ? FACT_RULE_LEVEL_BAND : 0;
     }
-    rules = { entries, yields, reasons };
-    if (cache.size >= MAX_SOURCE_FACT_RULES) cache.delete(cache.keys().next().value);
+    rules = { entries, expected, reasons };
+    sourceIndexCache.factRuleCells += entries.length;
+    while (sourceIndexCache.factRuleCells > MAX_SOURCE_FACT_RULE_CELLS && cache.size) {
+        const [oldest, row] = cache.entries().next().value;
+        cache.delete(oldest);
+        sourceIndexCache.factRuleCells -= row.entries.length;
+    }
     cache.set(key, rules);
     return rules;
 }
