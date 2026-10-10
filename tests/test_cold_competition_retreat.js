@@ -153,9 +153,19 @@ async function run() {
     } } });
     assert.strictEqual((await memoryRace.apply(event(26, 27))).reason, 'retreat_changed_during_claim');
     assert(!state(26).stats.travel && !state(26).simulation.leaseId);
-    const scheduler = new ColdCompetitionActions(base);
-    scheduler.submit({ at, recent: [event(28, 29)] }); await scheduler.running;
-    assert.strictEqual(scheduler.snapshot().avoids, 1, 'avoid is executed even with PvP disabled');
+    // The scheduler report is developer diagnostics (off by default since c656911d):
+    // the departure itself must happen with it off, and is counted when it is on.
+    const Diagnostics = invoke('GameServer/Bot/Population/PopulationConfig');
+    for (const [a, b, diagnostics] of [[28, 29, false], [30, 31, true]]) {
+        Diagnostics.developerDiagnostics = diagnostics;
+        const scheduler = new ColdCompetitionActions(base);
+        scheduler.submit({ at, recent: [event(a, b)] }); await scheduler.running;
+        assert.strictEqual(state(a).stats.coldCompetition.outcome, 'avoid', 'avoid is executed even with PvP disabled');
+        assert.strictEqual(state(a).stats.travel.spotId, 'other');
+        if (diagnostics) assert.strictEqual(scheduler.snapshot().avoids, 1, 'the executed avoid is counted');
+        else assert.deepStrictEqual(scheduler.snapshot(), { enabled: false });
+    }
+    Diagnostics.developerDiagnostics = false;
     await Database.close(); Database.init();
     const persisted = await Database.execute(['SELECT statsJson, activity FROM bot_life_state WHERE characterId=9', []]);
     assert.strictEqual(persisted[0].activity, 'traveling');

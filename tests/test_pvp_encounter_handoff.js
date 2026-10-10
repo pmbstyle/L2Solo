@@ -38,6 +38,8 @@ function assertClosingRow(key, encounter, outcome) {
     assert.strictEqual(row.kills, 0);
     return row;
 }
+// The extension counters are developer diagnostics (off by default since c656911d).
+invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const telemetry = new (require('../src/GameServer/Bot/Population/ColdCompetitionActions').ColdCompetitionActions)({});
 const patch = (o, k, v) => { const old = o[k]; saved.push(() => { o[k] = old; }); o[k] = v; };
 let clock = Date.now(), failSpawn = 0, spawned = 0, expectedCount = 0;
