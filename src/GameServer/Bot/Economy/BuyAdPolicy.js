@@ -24,7 +24,7 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
 
     // `state.adena` already holds the order's escrow (callers add it).
     const spendable = Math.min(money, PurchaseFunding.spendable(state, 0,
-        goal.plan?.valueRate === undefined ? { itemId: selfId } : { r: goal.plan.valueRate }));
+        PurchaseFunding.goalTerms(goal, selfId)));
     // Older generic equipment goals stored the unscaled template value as
     // their budget: like a reference estimate, it says nothing of the price.
     const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource

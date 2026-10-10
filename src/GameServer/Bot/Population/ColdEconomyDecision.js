@@ -201,13 +201,29 @@ function stateKey(state = {}) {
         Number(state.adena ?? state.inventory?.[57]?.amount ?? 0), Number(state.vitals?.mp ?? 0)].join('|');
 }
 
+// Units a bot holds against a card's item: the bag and accepted incoming,
+// the two amounts the core subtracts from an order (MVP-3).
+function heldFor(state, itemId) {
+    return Math.max(0, Number(state?.inventory?.[itemId]?.amount || 0))
+        + Math.max(0, Number(state?.acceptedIncoming?.[itemId] || 0));
+}
+// What a shopping leaf still orders now: the core's amount less what reached
+// the bag or accepted incoming since the decision (heldAtDecision; a full
+// worker leaf is read against its own decided state).
+function remainingToOrder(leaf, state, decided = state, itemId = leaf?.itemId) {
+    const id = Number(itemId), baseline = Number(leaf?.heldAtDecision ?? heldFor(decided, id));
+    return Math.max(0, Math.ceil(Number(leaf?.amount) || 0) - Math.max(0, heldFor(state, id) - baseline));
+}
+
 // economy: the network built on `seen` (the state before the projection's
 // last changes); state: the projected state main will commit.
 function capture(economy, state, seen = state) {
     const leaf = economy?.network?.activity || null;
     const queue = economy?.network?.queue || [];
     const urgent = economy?.network?.gap || queue.find(row => row.key === economy?.network?.focus?.[0]) || queue[0];
-    const wish = queue.find(row => row.key === leaf?.rootKey) || urgent;
+    // The card's wish is the leaf's own root or none: another root's amount
+    // and price never stand in for the core's step (MVP-1).
+    const wish = queue.find(row => row.key === leaf?.rootKey) || null;
     const urgency = !urgent ? 0 : urgent.key === 'stock:shots' ? URGENCY_SHOTS
         : urgent.key === 'stock:potions' ? URGENCY_POTIONS : URGENCY_STAGE;
     const useful = new Map(economy?.projection?.values || []);
@@ -216,35 +232,29 @@ function capture(economy, state, seen = state) {
     }
     const usefulness = new Float32Array([...useful].filter(([id, value]) => id > 0 && value > 0)
         .sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, 40).flat());
+    // The core's craft inputs to order only (MVP-3): a quantity-prepared
+    // network (a stock reader) holds each input's remaining amount, stock and
+    // accepted incoming subtracted once. A network without a stock reader has
+    // no missing amounts, and no recipe walk guesses them.
     const missing = new Map();
-    for (const row of economy?.network?.queue || []) {
-        for (const material of row.object?.materials || []) {
-            const id = Number(material.selfId), amount = Math.max(0, Number(material.amount || 0) - Number(state?.inventory?.[id]?.amount || 0));
-            if (id > 0 && amount > 0) missing.set(id, Math.max(missing.get(id) || 0, amount));
-        }
-    }
-    // A quantity-prepared network (a stock reader) holds whole remaining
-    // amounts per root, stock and incoming subtracted once; craft paths
-    // carry gross inputs, so its stockless plans are no missing amounts.
-    const prepared = !!economy?.network?.quantityPrepared;
-    const visit = (key, amount = 1, depth = 0, given = null) => {
-        if (depth > 8) return;
-        const plan = prepared ? given : economy?.network?.plans?.get(key);
-        if (!plan) return;
+    const visit = (plan, depth = 0) => {
+        if (!plan || depth > 8) return;
         if (plan.kind === 'craft') for (const row of plan.requirements || []) {
-            if (row.key?.startsWith('item:') && row.amount > 0) {
+            const gap = Math.max(0, Number(row.plan?.missingAmount || 0));
+            if (row.key?.startsWith('item:') && row.amount > 0 && gap > 0) {
                 const id = Number(row.key.slice(5));
-                const gap = prepared ? Math.max(0, Number(row.plan?.missingAmount || 0)) : Math.max(0, row.amount * amount);
-                if (gap > 0) missing.set(id, Math.max(missing.get(id) || 0, gap));
+                missing.set(id, Math.max(missing.get(id) || 0, gap));
             }
         }
-        for (const row of plan.requirements || []) visit(row.key, amount * row.amount, depth + 1, row.plan);
+        for (const row of plan.requirements || []) visit(row.plan, depth + 1);
     };
-    for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1), 0, wish.plan);
+    if (economy?.network?.quantityPrepared) for (const row of queue) visit(row.plan);
     const activity = leaf ? new CompactActivity(leaf) : null;
-    if (activity?.activity === 'shopping') activity.heldAtDecision = Math.max(0, Number(seen?.inventory?.[activity.itemId]?.amount || 0));
-    if (activity?.activity === 'shopping' && wish?.key === leaf.rootKey && wish.funded && Number(wish.ratio) > 0)
-        activity.r = require('../Economy/PurchaseFunding').significant(Number(wish.ratio));
+    if (activity?.activity === 'shopping') {
+        activity.heldAtDecision = heldFor(seen, activity.itemId);
+        const r = require('../Economy/PurchaseFunding').rootRatio(wish);
+        if (r > 0) activity.r = r;
+    }
     let clan = null;
     // Workshop-only publications carry no hunting valuation. Clan membership
     // cannot turn that partial source into a second, fabricated economy review.
@@ -457,5 +467,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, capture, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
+module.exports = { personalUsefulness, preparedCardWorth, capture, heldFor, remainingToOrder, stateKey, CompactActivity, ColdEconomyDecisions, economyFor, view, kindCode, kindFor, compact, workshopValues,
     unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

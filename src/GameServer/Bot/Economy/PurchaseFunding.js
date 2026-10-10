@@ -151,6 +151,17 @@ function nativeTerms(options = {}, itemId = 0) {
     if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
     return terms;
 }
+// A root's place in the money queue (r) as a goal and the compact card carry
+// it: only a funded root has one.
+function rootRatio(wish) {
+    return wish?.funded && Number(wish.ratio) > 0 ? significant(Number(wish.ratio)) : 0;
+}
+// The funding terms of a buy goal, one rule for every reader: its root's
+// place in the money queue when the goal carries one, else the money
+// packet's row for its item.
+function goalTerms(goal, itemId = goal?.target?.itemId) {
+    return goal?.plan?.valueRate === undefined ? { itemId } : { r: goal.plan.valueRate };
+}
 // ARCH-NOTE: round value rates upward to three digits so a stored money floor
 // never falls below 1/hour; applying the same monotone rounding keeps funded ratios admissible.
 function significant(value) {
@@ -182,5 +193,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, goalTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

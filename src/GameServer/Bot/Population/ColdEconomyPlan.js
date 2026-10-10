@@ -112,8 +112,7 @@ function* prepareNative(state, economy, options) {
     const needs = require('../Goals/NeedsEvaluator').evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
     const goal = needs[0];
     const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
-    const money = Funding.spendable(state, options.buyOrderEscrow || 0,
-        goal?.plan?.valueRate === undefined ? { itemId: goal?.target?.itemId } : { r: goal.plan.valueRate });
+    const money = Funding.spendable(state, options.buyOrderEscrow || 0, Funding.goalTerms(goal));
     const lines = require('../Economy/BuyAdPolicy').linesFor(buyState, goal, { ...options, economy,
         watchList: economy.watchList || [], money });
     let buyAds;

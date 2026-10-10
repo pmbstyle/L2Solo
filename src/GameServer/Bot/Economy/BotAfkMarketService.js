@@ -77,14 +77,14 @@ function canTradeRemotely(state, goal) {
         // The offer as the buyer weighs it: its price and its trip there (б5, C7).
         const offer = MarketOpportunity.bestOffer(goal.target?.itemId, {
             town: goal.plan?.marketTown || null,
-            budget: PurchaseFunding.spendable(state, reserved, { itemId: goal.target?.itemId }),
+            budget: PurchaseFunding.spendable(state, reserved, PurchaseFunding.goalTerms(goal)),
             buyerCharacterId: state.characterId,
             cost: invoke('GameServer/Bot/Economy/ColdMarketService').tripFrom(state)
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
         if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
         return !!BuyStoreService.bidFor(budgetState, goal, { money: PurchaseFunding.spendable(state, reserved,
-            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
+            PurchaseFunding.goalTerms(goal)) });
     }
     // Opening a shop needs the seller in its town (user, 2026-10-05): only a
     // bot that has its shop sells from afar.
@@ -383,15 +383,9 @@ async function reconcileBuyAds(state, goal, candidates) {
     const ownerId = Number(state.characterId);
     const ads = buyAds(ownerId);
     state = LifeState.snapshot(ownerId) || state;
-    let side = desiredSide(goal);
-    // ARCH-NOTE: a cached voluntary watch may still match a newly dead/resting
-    // state. The native survival floor judges before that watch can change its side.
-    if (side !== AfkTrade.BUY && state.phase === 'cold'
-        && !invoke('GameServer/Bot/Population/SurvivalFloor').forState(state, Date.now())) {
-        const wanted = require('../Population/ColdEconomyDecision').economyFor(state).watchList[0];
-        if (wanted) { goal = { type: 'buy_craft_material', target: { itemId: wanted.itemId, amount: wanted.amount },
-            plan: { estimatedCost: wanted.worth, purpose: wanted.kind } }; side = AfkTrade.BUY; }
-    }
+    // Only the core's buy step opens or widens an ad (MVP-1): a goal without
+    // a buy side never borrows the first watched item as a guessed target.
+    const side = desiredSide(goal);
     const lines = linesOf(ads);
     if (side !== AfkTrade.BUY) {
         if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: false };
@@ -406,7 +400,7 @@ async function reconcileBuyAds(state, goal, candidates) {
     const escrow = buyOrderEscrow(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
         { money: PurchaseFunding.spendable(state, escrow,
-            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
+            PurchaseFunding.goalTerms(goal)) });
     const town = buyAdTown(state, ads, wanted);
     if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: false };
     if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted)) {
@@ -446,7 +440,7 @@ async function openBuyAd(state, goal) {
     const escrow = buyOrderEscrow(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
         { money: PurchaseFunding.spendable(state, escrow,
-            goal.plan?.valueRate === undefined ? { itemId: goal.target?.itemId } : { r: goal.plan.valueRate }) });
+            PurchaseFunding.goalTerms(goal)) });
     if (!wanted.length) return { state, opened: false, reason: 'insufficient_budget' };
     const town = buyAdTown(state, ads, wanted);
     let store;
