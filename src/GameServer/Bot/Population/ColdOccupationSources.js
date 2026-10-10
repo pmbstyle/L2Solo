@@ -236,7 +236,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     for (const key in state.inventory || {}) {
         const id = Number(state.inventory[key].selfId || key); read(id);
         const value = yield* exitValue(state, id, board);
-        let amount = require('../Economy/WealthCraftDecision').freeAmount(state, state.inventory[key], reserved);
+        let amount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory[key], reserved);
         if (Number(stock?.itemId) === id) amount = Math.max(0, amount - Math.min(amount,
             Math.max(0, Number(stock.target || 0))));
         ownStock.set(id, { count: amount, unitValue: value }); yield 'stock';
@@ -272,7 +272,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             }
             exit.cheaperUnits = cheaper;
             if (tailUnknown) exit.applicableUnits = NaN;
-            Object.assign(exit, require('../Economy/PriceDecision').prospectiveExit(state, exit, { board, timestamp }));
+            Object.assign(exit, invoke('GameServer/Bot/Economy/PriceDecision').prospectiveExit(state, exit, { board, timestamp }));
             yield 'exit';
         }
         return result;

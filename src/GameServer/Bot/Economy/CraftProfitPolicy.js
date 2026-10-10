@@ -51,7 +51,7 @@ function contextFor(state, timestamp = Date.now()) {
     const context = require('../Population/ColdEconomyDecision').economyFor(state, { timestamp });
     return { ...context, ...invoke('GameServer/Bot/Population/ColdOccupationSources').craftLabour(state, timestamp) };
 }
-function tripFor(state, options = {}) { return require('./EconomicTrip').reader(state, options); }
+function tripFor(state, options = {}) { return invoke('GameServer/Bot/Economy/EconomicTrip').reader(state, options); }
 function inputValue(id, state, context = {}) {
     const worth = context.worth?.(Number(id));
     if (Number.isFinite(worth) && worth > 0) return worth;
