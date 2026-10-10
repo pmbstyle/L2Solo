@@ -32,11 +32,12 @@ function selectedPreset() {
 const PROFILE_KEYS = ['progressionPreset', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate',
     'questRewardRate', 'questAdenaRate', 'questExpRate', 'questSpRate'];
 let lastProfile = null, lastEnv, lastGeneral = null;
+const NO_GENERAL = Object.freeze({});
 const lastValues = new Array(PROFILE_KEYS.length);
 
 function profile() {
     const env = process.env.L2NODE_PROGRESSION_RATE;
-    const general = options.default.General || {};
+    const general = options.default.General || NO_GENERAL;
     if (lastProfile && env === lastEnv && general === lastGeneral && sameProfileValues(general)) return lastProfile;
     lastProfile = Object.freeze(buildProfile(env, general));
     lastEnv = env;
