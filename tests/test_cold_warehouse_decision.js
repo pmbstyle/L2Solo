@@ -100,7 +100,8 @@ const id = 730180;
             const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
             Coordinator.economyDecisions.accept(id, Decision.capture({
                 projection: { values: new Map(recipe.materials.map(item => [item.selfId, 1000])) },
-                network: { activity: null, queue: [{ object: { materials: recipe.materials } }] }
+                network: { activity: null, quantityPrepared: true, queue: [{ plan: { kind: 'craft', requirements: recipe.materials
+                    .map(item => ({ key: `item:${item.selfId}`, amount: item.amount, plan: { kind: 'buy', missingAmount: item.amount } })) } }] }
             }, state));
             const overlapStored = await Database.fetchWarehouseItems(id);
             const legacy = Warehouse.craftRequests(state, overlapStored);

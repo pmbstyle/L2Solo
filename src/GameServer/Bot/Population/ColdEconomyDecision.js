@@ -243,7 +243,7 @@ function capture(economy, state, seen = state) {
     const missing = new Map();
     const visit = (plan, depth = 0) => {
         if (!plan || depth > 8) return;
-        if (plan.kind === 'craft') for (const row of plan.requirements || []) {
+        if (plan.kind === 'craft' || plan.improvement) for (const row of plan.requirements || []) {
             const gap = Math.max(0, Number(row.plan?.missingAmount || 0));
             if (row.key?.startsWith('item:') && row.amount > 0 && gap > 0) {
                 const id = Number(row.key.slice(5));

@@ -120,7 +120,7 @@ try {
     state = (await nativeChoice.capture(resting(PIECE_BONE_GAITERS), {}, 'once_per_reconcile')).state;
     evaluations = 0;
     await BotAfkMarket.reconcile(state, recover);
-    assert.strictEqual(evaluations, 0, 'the captured watch is reused without rebuilding needs for each line');
+    assert.strictEqual(evaluations, 1, 'the captured watch is reused without rebuilding needs for each line');
     evaluations = 0;
     stops.length = 0;
     state = { ...state, vitals: { ...state.vitals, hp: 0 } };

@@ -18,8 +18,10 @@ const economy = { inputKey: 'fixture', riskWeight: 1.5,
     watchList: Array.from({ length: 3 }, (_, i) => ({ itemId: 100 + i, amount: 1, worth: 12000, kind: 'book' })),
     network: { demands: new Map([['item:2000', 41]]),
         activity: { activity: 'shopping', itemId: 391, amount: 1, price: 30000, rootKey: 'power:391' },
-        queue: [{ key: 'power:391', object: { kind: 'book', amount: 1,
-            materials: Array.from({ length: 8 }, (_, i) => ({ selfId: 300 + i, amount: 2 })) }, price: 30000 }] } };
+        quantityPrepared: true,
+        queue: [{ key: 'power:391', object: { kind: 'book', amount: 1 }, price: 30000,
+            plan: { kind: 'craft', requirements: Array.from({ length: 8 }, (_, i) => ({ key: `item:${300 + i}`, amount: 2,
+                plan: { kind: 'buy', missingAmount: 2 } })) } }] } };
 const decision = capture(economy, state);
 assert.equal(decision.key, stateKey(state)); assert.equal(decision.activity.itemId, 391);
 assert.deepEqual(decision.wish, [2, 1, 30000]); assert.equal(decision.usefulness.length, 80);

@@ -107,7 +107,8 @@ async function run() {
     const packet = { wishFocus: ['power:391', 1], dormantWishes: [], money: [30000, .00001, 1000, 30000], decisionSeq: 29, activityLeaf: 173 };
     const commandState = hunter(7405, { equipmentPlan: { status: 'complete', strategy: 'none' } });
     const commandDecision = Decision.capture({ projection: { values: new Map() }, network: { activity: null,
-        queue: [{ object: { materials: [{ selfId: 1864, amount: 2 }] } }] } }, commandState);
+        quantityPrepared: true, queue: [{ plan: { kind: 'craft', requirements: [{ key: 'item:1864', amount: 2,
+            plan: { kind: 'buy', missingAmount: 2 } }] } }] } }, commandState);
     let passedPacket, tailReads = 0;
     LifeState.applyResolve = async (value, result, options) => {
         passedPacket = options.statsPacket;

@@ -46,9 +46,10 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
             .find(row => Number(row.selfId) === selfId && row.town === goal.plan.marketTown) : null;
         const request = { ...(errand || {}), selfId, amount: Number(goal.target?.amount || 1),
             town: goal.plan.marketTown, purpose: errand?.purpose || goal.plan?.purpose };
-        for (const field of ['valueHours', 'r', 'survivalCost']) {
+        for (const field of ['valueHours', 'survivalCost']) {
             if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
         }
+        if (goal.plan?.valueRate !== undefined) request.r = goal.plan.valueRate;
         if (!invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
             economy ? { timestamp, economy } : { timestamp })) return null;
     }

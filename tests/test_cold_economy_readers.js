@@ -19,7 +19,8 @@ const state = { characterId: 7191, name: 'DecisionReader', level: 30, exp: 0, sp
 const fixture = { inputKey: 'native-reader-input', riskWeight: 1, projection: { values: new Map([[391, .39]]), nodes: [] },
     watchList: [{ itemId: 391, amount: 1, worth: 39000, kind: undefined }], network: { demands: new Map(),
         activity: { activity: 'shopping', itemId: 391, amount: 1, price: 30000, rootKey: 'power:391' },
-        queue: [{ key: 'power:391', price: 30000, object: { itemId: 391, amount: 1, materials: [{ selfId: 1864, amount: 2 }] } }] } };
+        quantityPrepared: true, queue: [{ key: 'power:391', price: 30000, object: { itemId: 391, amount: 1 },
+            plan: { kind: 'craft', requirements: [{ key: 'item:1864', amount: 2, plan: { kind: 'buy', missingAmount: 2 } }] } }] } };
 const original = { full: Economy.forState, owner: Afk.ownerRecords, upsert: Life.upsertState, floor: Floor.forState };
 const decisions = Coordinator.economyDecisions;
 (async () => {
@@ -65,8 +66,10 @@ const decisions = Coordinator.economyDecisions;
         // Captured-wire classification control; native graph selection and
         // physical scroll consumption are tested separately in the town fixture.
         decisions.accept(state.characterId, Decision.capture({ ...fixture, network: { ...fixture.network,
-            queue: [{ object: { materials: [{ selfId: 955, amount: 2 }, { selfId: 957, amount: 3 },
-                { selfId: 1864, amount: 7 }] } }] } }, state));
+            queue: [{ plan: { kind: 'enchant', improvement: {}, requirements: [
+                { key: 'item:955', amount: 2, plan: { kind: 'buy', missingAmount: 2 } },
+                { key: 'item:957', amount: 3, plan: { kind: 'buy', missingAmount: 3 } }] } },
+            { plan: { kind: 'craft', requirements: [{ key: 'item:1864', amount: 7, plan: { kind: 'buy', missingAmount: 7 } }] } }] } }, state));
         assert.deepEqual(SafeEnchant.warehouseRequests(state, [
             { selfId: 955, amount: 1 }, { selfId: 957, amount: 5 }, { selfId: 1864, amount: 9 },
             { selfId: 1869, amount: 20 }
