@@ -206,7 +206,8 @@ function fundingTerms(options = {}) {
     return terms;
 }
 
-function purchaseMoney(state, plan, spent = 0) {
+// price: the unit price this money buys at (a board line's, else the NPC's).
+function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
     const wallet = PurchaseFunding.budget(state);
     const limit = Number.isFinite(plan.money) ? Math.max(0, plan.money - spent) : Infinity;
     let funded;
@@ -214,7 +215,8 @@ function purchaseMoney(state, plan, spent = 0) {
         // The treasury part was already credited by ClanMarketService. It
         // is excluded from personal free money before adding its remainder.
         const clanPart = Math.min(wallet, Math.max(0, Number(plan.tag?.clanPart || 0) - spent));
-        funded = clanPart + PurchaseFunding.spendable({ ...state, adena: wallet - clanPart }, 0, { free: true });
+        funded = clanPart + PurchaseFunding.spendable({ ...state, adena: wallet - clanPart }, 0,
+            { free: true, ownClanErrand: { clanId: plan.tag?.clanId, selfId: plan.selfId } });
     } else {
         const terms = fundingTerms(plan);
         const options = { itemId: plan.selfId, ...terms };
@@ -222,10 +224,10 @@ function purchaseMoney(state, plan, spent = 0) {
         // missing survival kit, never the former general purchasing cap.
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
             const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
-            options.survivalCost = context.kitCost(plan.selfId, Number(plan.npcPrice) || null);
-            // The stock wish's rank at the quoted price, not the estimate (E187).
+            options.survivalCost = context.kitCost(plan.selfId, Number(price) || null);
+            // The stock wish's rank at the price paid, not the estimate (E187).
             if (plan.purpose === 'shots' && terms.r === undefined) {
-                options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(plan.npcPrice));
+                options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(price));
             }
         }
         funded = PurchaseFunding.spendable(state, 0, options);
@@ -417,7 +419,7 @@ async function buyHere(state, plan, options = {}) {
         const offer = AfkTrade.offerOf(entry.line, plan.town);
         if (!offer || Number(offer.price) !== Number(entry.price)) continue;
         const count = Math.max(0, Math.min(entry.count, plan.amount - units,
-            Math.floor(purchaseMoney(current, plan, spent) / Number(offer.price))));
+            Math.floor(purchaseMoney(current, plan, spent, Number(offer.price)) / Number(offer.price))));
         if (!(count > 0)) continue;
         const bought = await buyOffer(current, offer, { qty: count, autoEquip: false, ...purchaseTerms(current, plan, spent) });
         current = bought.state || current;
@@ -594,9 +596,10 @@ async function acquire(state, selfId, amount, options = {}) {
     const next = travel || withErrand;
     if (Diagnostics.active()) purchaseObservation(state, selfId, amount, options.money, 'market_travel', travel ? 'departed' : state.party?.partyId || state.partyId ? 'party_wait' : 'town_visit_wait',
         Diagnostics.enabled(state.characterId) ? { errandAt: errand.at, town: errand.town, planned: Number(plan.units), caller: errand.purpose } : undefined);
-    if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan };
+    // errandAt: this call left the errand (a clan credit travels with it).
+    if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan, errandAt: errand.at };
     const saved = await LifeState.upsertState(next, travel ? `market_errand_${errand.purpose}` : 'market_errand_kept');
-    return { state: saved || next, bought: false, units: 0, traveling: !!travel && !!saved, plan };
+    return { state: saved || next, bought: false, units: 0, traveling: !!travel && !!saved, plan, errandAt: saved ? errand.at : null };
 }
 
 // A selected craft's total inputs, rather than independent blind requests.

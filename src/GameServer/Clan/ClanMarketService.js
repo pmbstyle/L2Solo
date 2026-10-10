@@ -69,8 +69,7 @@ async function resolveClan(clan) {
     // town, the one purchase path, ColdMarketService.acquire).
     for (const candidate of candidates) {
         const state = await stateFor(candidate.characterId);
-        const errand = state?.stats?.marketErrand;
-        if (errand?.purpose === 'clan' && Number(errand.tag?.clanId) === Number(clan.id)) {
+        if (ClanCredit.hasClanErrand(state, clan.id)) {
             recordReason('market_buyer_traveling');
             return { ok: true, skipped: true, reason: 'market_buyer_traveling' };
         }
@@ -117,7 +116,7 @@ async function resolveClan(clan) {
         tag: { clanId: clan.id, offer: placed, clanPart }
     });
     if (!purchase.bought || !purchase.state) {
-        const settled = await ClanCredit.settle(clan.id, buyer.characterId, itemId, clanPart, purchase,
+        const { code: settled } = await ClanCredit.settle(clan.id, buyer.characterId, clanPart, purchase,
             'clan_level_purchase_refund', false);
         if (settled === 'kept') {
             recordReason('market_buyer_traveling');
@@ -127,9 +126,13 @@ async function resolveClan(clan) {
         recordReason(Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE);
         return { ok: false, code: Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE, purchase };
     }
+    // The credit the purchase did not spend goes back before the deposit,
+    // which checks the member's current row.
+    const settled = await ClanCredit.settle(clan.id, buyer.characterId, clanPart, purchase, 'clan_level_purchase_refund');
+    if (settled.code !== 'bought') recordReason(`market_${settled.code}`);
     metrics.purchases += 1;
     recordReason('market_purchase');
-    return deposit(clan, goal, itemId, buyer, purchase, placed, { playerControlled, order });
+    return deposit(clan, goal, itemId, buyer, { ...purchase, state: settled.state || purchase.state }, placed, { playerControlled, order });
 }
 
 // The member's purchase goes to the clan warehouse and advances its goal.

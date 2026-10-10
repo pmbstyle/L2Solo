@@ -7,6 +7,7 @@
 // without spending it (E193, E194). One rule for the equipment goal
 // (ClanEquipmentService) and the clan-level goal (ClanMarketService).
 const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
+const Diagnostics = require('../Bot/Economy/EconomyDiagnostics');
 const Database = () => invoke('Database');
 const LifeState = () => invoke('GameServer/Bot/Population/BotLifeState');
 const PurchaseFunding = () => invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -30,22 +31,31 @@ async function fund(clanId, state, price, kind, progressionGoal = null) {
 async function refund(clanId, characterId, amount, kind) {
     if (!(amount > 0)) return { ok: true, state: null };
     const back = await Database().payClanMember({ clanId, characterId, amount: -amount, kind, moveMark: false });
+    if (!back.ok && Diagnostics.active()) Diagnostics.count('clan_credit', 'refund_failed', back.code || 'unknown');
     return { ...back, state: back.ok ? LifeState().acceptNewerLifecycleRow(back.row) : null };
 }
 
-// The member's clan errand for this item is still pending.
-function errandKept(state, clanId, selfId) {
+// The member already carries an errand for this clan (for this item when
+// selfId is given): one clan errand at a time, so one credit at a time.
+function hasClanErrand(state, clanId, selfId = null) {
     return CombinedErrands.pending(state).some(errand => errand.purpose === 'clan'
-        && Number(errand.selfId) === Number(selfId) && Number(errand.tag?.clanId) === Number(clanId));
+        && Number(errand.tag?.clanId) === Number(clanId) && (selfId === null || Number(errand.selfId) === Number(selfId)));
 }
 
-// After ColdMarketService.acquire: 'bought', 'kept' (the errand carries the
-// credit), 'refunded', or the refund's failure code.
-async function settle(clanId, characterId, selfId, clanPart, purchase, kind, bought = !!purchase?.bought) {
-    if (bought) return 'bought';
-    if (purchase?.traveling || purchase?.pending || errandKept(purchase?.state, clanId, selfId)) return 'kept';
-    const back = await refund(clanId, characterId, clanPart, kind);
-    return back.ok ? 'refunded' : `refund_${back.code}`;
+// After ColdMarketService.acquire; returns { code, state } (state: the
+// member's row after a refund, else the purchase's). Bought at once: the
+// credit not spent goes back ('bought', or 'bought_refund_<code>' when that
+// fails). Not bought: 'kept' when this acquire left an errand (on its way, or
+// waiting for its party or town visit) or a pending meeting, else 'refunded'
+// or the refund's failure code.
+async function settle(clanId, characterId, clanPart, purchase, kind, bought = !!purchase?.bought) {
+    const kept = !!(purchase?.traveling || purchase?.pending || purchase?.errandAt);
+    if (!bought && kept) return { code: 'kept', state: purchase?.state || null };
+    const amount = !bought ? clanPart
+        : kept ? 0 : Math.max(0, Number(clanPart || 0) - Math.max(0, Number(purchase?.spent) || 0));
+    const back = await refund(clanId, characterId, amount, kind);
+    const code = bought ? (back.ok ? 'bought' : `bought_refund_${back.code}`) : (back.ok ? 'refunded' : `refund_${back.code}`);
+    return { code, state: back.state || purchase?.state || null };
 }
 
 // A clan errand that ends on arrival (filled, or no plan left) returns the
@@ -57,4 +67,4 @@ async function returnUnspent(characterId, errand, spent) {
     return refund(clanId, characterId, left, 'clan_errand_refund');
 }
 
-module.exports = { needed, fund, refund, settle, errandKept, returnUnspent };
+module.exports = { needed, fund, refund, settle, hasClanErrand, returnUnspent };

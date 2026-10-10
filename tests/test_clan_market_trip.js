@@ -52,7 +52,7 @@ async function run() {
     ColdMarketService.acquire = async (state, selfId, amount, options) => {
         acquired.push({ selfId, amount, options });
         member = { ...state, activity: 'traveling', stats: { ...state.stats, marketErrand: { selfId, amount, town: 'Giran',
-            purpose: options.purpose, tag: options.tag } } };
+            purpose: options.purpose, tag: options.tag, at: Date.now() } } };
         return { state: member, bought: false, traveling: true };
     };
     Database.fetchItems = async () => [{ id: 1, selfId: BLOOD_MARK, amount: 1 }];

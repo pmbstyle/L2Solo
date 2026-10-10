@@ -40,4 +40,13 @@ assert.equal(atEstimate.amount, 1900);
 assert.equal(dear.spendBudget, 10000, 'at twice the estimate only the survival kit is funded');
 assert.equal(dear.amount, 100);
 assert.equal(100000 - dear.cost, 90000, 'a dry bot keeps its money for the trip and other wishes');
+
+// Players' lines cheaper than the NPC are ranked at their own price: at the
+// estimate they are worth buying although the NPC asks twice as much.
+const board = Shot.restockPlan({ ...state, inventory: { [plan.selfId]: { amount: 400 } } },
+    { plan, unitPrice: 100, potionUnitPrice: 0, context: context(100), offers: [{ price: 50, count: 1000, ownerId: 77 }] });
+assert.equal(board.shops.reduce((sum, line) => sum + line.amount, 0), 1000, 'the whole cheap line is bought');
+assert.equal(board.npcAmount, 0, 'the NPC remainder stays within the allowance at the NPC price');
+assert.equal(board.npcBudget, 10000);
+assert.equal(Shot.npcRestockAmount(board, 0, 0), 100, 'a failed line leaves the NPC only its own allowance');
 console.log('Stock restock ranked at the quoted NPC price: PASS');

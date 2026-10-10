@@ -6,7 +6,6 @@ const Database = invoke('Database');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ComponentProgress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
 const ClanCredit = require('./ClanPurchaseCredit');
-const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Policy = invoke('GameServer/Clan/ClanEquipmentPolicy');
@@ -419,8 +418,7 @@ async function buyGoalCopy(memberId, plan, clan, amount = 1) {
         || String(state.simulation?.ownerId || 'legacy_main') !== 'legacy_main'
         || !['hunting', 'resting'].includes(state.activity)) return { ok: false, code: 'member_busy' };
     const selfId = number(plan.target?.selfId);
-    if (CombinedErrands.pending(state).some((errand) => errand.purpose === 'clan'
-        && number(errand.tag?.clanId) === number(clan.id) && number(errand.selfId) === selfId)) {
+    if (ClanCredit.hasClanErrand(state, clan.id, selfId)) {
         recordReason('clan_goal_market_buyer_traveling');
         return { ok: false, code: 'market_buyer_traveling', traveling: true };
     }
@@ -443,8 +441,11 @@ async function buyGoalCopy(memberId, plan, clan, amount = 1) {
         purpose: 'clan', money: price, free: true, clanPart, tag: { clanId: number(clan.id), offer: placed, clanPart }
     });
     // A kept errand (waiting for its party or town visit) carries the credit.
-    const settled = await ClanCredit.settle(clan.id, memberId, selfId, clanPart, purchase, 'clan_goal_purchase_refund');
-    if (settled === 'bought') return { ok: true, purchase };
+    const { code: settled } = await ClanCredit.settle(clan.id, memberId, clanPart, purchase, 'clan_goal_purchase_refund');
+    if (settled.startsWith('bought')) {
+        if (settled !== 'bought') recordReason(`clan_goal_${settled}`);
+        return { ok: true, purchase };
+    }
     if (settled === 'kept') {
         recordReason('clan_goal_market_buyer_traveling');
         return { ok: true, traveling: true, purchase };

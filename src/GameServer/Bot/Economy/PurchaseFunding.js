@@ -1,4 +1,5 @@
 const Diagnostics = require('./EconomyDiagnostics');
+const CombinedErrands = require('../Population/CombinedErrandPolicy');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
 // higher-valued funded wishes keep their cumulative costs before a spend.
 const nonnegative = value => Math.max(0, Number(value) || 0);
@@ -59,8 +60,27 @@ function packetAfterPurchase(packet, spent, funding = {}) {
 }
 // The Adena a finite value is worth at the money price (hours per Adena).
 function worth(packet, valueHours) { return packet[1] > 0 ? nonnegative(valueHours) / packet[1] : Infinity; }
+// The treasury money a member carries for its pending clan errands
+// (ClanPurchaseCredit): the clan's, not the member's, while it waits or
+// travels (E193). `own` ({ clanId?, selfId }) is the clan errand whose own
+// purchase is being funded; its credit is that purchase's clanPart.
+function clanCredit(state, own = null) {
+    const stats = state?.stats;
+    if (stats?.marketErrand?.purpose !== 'clan'
+        && !(Array.isArray(stats?.marketErrands) && stats.marketErrands.some(errand => errand?.purpose === 'clan'))) return 0;
+    let held = 0;
+    for (const errand of CombinedErrands.pending(state)) {
+        if (errand.purpose !== 'clan' || own && (own.clanId === undefined || Number(errand.tag?.clanId) === Number(own.clanId))
+            && Number(errand.selfId) === Number(own.selfId)) continue;
+        held += nonnegative(errand.tag?.clanPart);
+    }
+    return held;
+}
 function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
-    const wallet = budget(state, escrow), packet = state.stats?.money;
+    // A purchase that carries a clanPart (native terms) is its clan errand's own.
+    const own = options.ownClanErrand || (options.free === true && options.clanPart !== undefined && options.itemId
+        ? { selfId: options.itemId } : null);
+    const wallet = Math.max(0, budget(state, escrow) - clanCredit(state, own)), packet = state.stats?.money;
     const selected = Diagnostics.active() && Diagnostics.enabled(state.characterId);
     // Native callers observe this same calculation; they never calculate a second wallet.
     const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
@@ -159,5 +179,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

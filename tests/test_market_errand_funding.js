@@ -133,7 +133,10 @@ async function noSpend(state, itemId, message) {
         const clanDouble = await stateFor([77000, 1.3e-5, 15000, 0, 4e-5, reserved, 999999], {
             marketErrand: { selfId: npc.selfId, amount: 1, town: 'Giran', money: npc.price, maxPrice: npc.price,
                 purpose: 'clan', tag: { clanId: 42, clanPart }, at: Date.now() } });
-        assert.equal(Funding.spendable({ ...clanDouble, adena: WALLET - clanPart }, 0, { free: true }) + clanPart, npc.price - 1000);
+        assert.equal(Funding.spendable({ ...clanDouble, adena: WALLET - clanPart }, 0,
+            { free: true, ownClanErrand: { clanId: 42, selfId: npc.selfId } }) + clanPart, npc.price - 1000);
+        assert.equal(Funding.spendable({ ...clanDouble, adena: WALLET - clanPart }, 0, { free: true }), npc.price - 1000 - 2 * clanPart,
+            'another purchase cannot spend the credit the errand carries (E193)');
         await noSpend(await arrive(clanDouble), npc.selfId, 'the treasury credit cannot also be counted as personal free money');
         const clanFunded = await stateFor(CHANGED, { marketErrand: { selfId: npc.selfId, amount: 1, town: 'Giran',
             money: npc.price, maxPrice: npc.price, purpose: 'clan', tag: { clanId: 42, clanPart: npc.price }, at: Date.now() } });

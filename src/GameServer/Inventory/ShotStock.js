@@ -435,21 +435,28 @@ function restockPlan(value, options = {}) {
     const wish = options.targetAmount === undefined ? context.network?.queue?.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
     const fundedState = !coldMain && options.targetAmount === undefined && context.statsPacket
         ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId, context.kitCost(plan.selfId, npcPrice), PurchaseFunding.quoteScale(stock.unitPrice, npcPrice));
+    // The wish's rank at the price each source asks (E187): the board lines
+    // at the cheapest line's price, the NPC remainder at the NPC's.
+    const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
+        context.kitCost(plan.selfId, price), PurchaseFunding.quoteScale(stock.unitPrice, price));
+    const allowance = allowanceAt(npcPrice);
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
-    const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
-    const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
-    const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
-    const money = Math.min(allowance, Math.max(0, adena - potionCost));
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
     // the one rule for a stack purchase (OfferQuery.fill).
     const offers = [...(options.offers || [])].sort((a, b) => Number(a.price) - Number(b.price));
+    const cheapest = offers.find(offer => Number(offer.price) > 0 && Number(offer.price) <= maxPrice);
+    const boardAllowance = cheapest ? allowanceAt(Number(cheapest.price)) : allowance;
+    const needed = Math.max(allowance, boardAllowance) > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
+    const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
+    const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
+    const free = Math.max(0, adena - potionCost);
+    const money = Math.min(boardAllowance, free);
     const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice });
     const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price }));
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
-    const npcAmount = npcRestockAmount({ needed, targetAmount, currentAmount,
-        unitPrice: npcPrice, adena: Math.min(adena, money + potionCost), reserve: 0, potionCost }, shopAmount, shopCost);
+    const npcBudget = Math.min(allowance, free);
+    const npcAmount = npcRestockAmount({ needed, targetAmount, currentAmount, unitPrice: npcPrice, npcBudget }, shopAmount, shopCost);
     return {
         plan,
         currentAmount,
@@ -461,6 +468,7 @@ function restockPlan(value, options = {}) {
         amount: shopAmount + npcAmount,
         cost: shopCost + npcAmount * npcPrice,
         spendBudget: money,
+        npcBudget,
         adena,
         reserve,
         potionCost
@@ -468,12 +476,14 @@ function restockPlan(value, options = {}) {
 }
 
 // The NPC part of a restock (restockPlan): the remaining hours of stock with the money
-// left after the players' shops. `bought` and `spent` are what the shop lines
+// left after the players' shops, within the wish's allowance at the NPC's
+// price (npcBudget, E187). `bought` and `spent` are what the shop lines
 // bought, so a line that fails at purchase leaves its shots and money to the NPC.
 function npcRestockAmount(restock, bought = 0, spent = 0) {
     if (!restock.needed || !(restock.unitPrice > 0)) return 0;
     const left = restock.targetAmount - restock.currentAmount - bought;
-    const money = Math.max(0, (restock.spendBudget ?? (restock.adena - restock.reserve - restock.potionCost)) - spent);
+    const money = Math.max(0, (restock.npcBudget ?? restock.spendBudget
+        ?? (restock.adena - restock.reserve - restock.potionCost)) - spent);
     return Math.max(0, Math.min(left, Math.floor(money / restock.unitPrice)));
 }
 
