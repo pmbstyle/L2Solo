@@ -2097,7 +2097,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const spotValue = options.spotValue
         || require('../Economy/SpotEconomics').create(state, { timestamp, occupancy: options.occupancy });
     const trips = options.trips || new Map();
-    const current = state.spotId ?? state.stats?.travel?.spotId ?? null;
+    const current = state.stats?.travel?.spotId || state.spotId || null;
     let spoiler = options.spoiler;
     for (const entry of entries) {
         yield 'source';
@@ -2109,8 +2109,8 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         if (source.raidBoss) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
         if (entry.kind === 'spoil') {
             // The executor's rule: a learned Spoil, not the class (E189).
-            spoiler ??= invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
-                invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(state, timestamp));
+            if (spoiler === undefined) spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
+                { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state) }) || false;
             if (!spoiler) { fact.status = 'ineligible'; fact.reason = 'spoil_skill'; continue; }
         }
         const reason = !isBotEligibleSourceNpcId(source.npcId) ? 'cannot_hunt'

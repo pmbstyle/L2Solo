@@ -186,7 +186,7 @@ function* exitValue(state, id, board = null) {
 // Seated MP recovery per hour, one reader for the wish and the producer.
 function mpPerHour(state) {
     initialise();
-    return mpRates.get(Number(state.stats?.classId))?.[Number(state.level)];
+    return mpRates.get(Number(state.stats?.classId ?? state.classId))?.[Number(state.level)];
 }
 
 // The native craft executor's facts, one reader for the wish and the
@@ -350,7 +350,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, mpPerHour, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcSellerTowns.has(town); },
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],

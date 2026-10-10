@@ -26,7 +26,7 @@ const adapters = {
     'GameServer/Bot/AI/GearAcquisitionPlanner': { roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn(),
         equipmentCandidate: () => true, equipmentItemBetter: (item, current) => !current },
-    'GameServer/Bot/Population/ColdCombatProfile': { withEquipmentPreparation: fn => fn(), buildGainsFor: () => ({}),
+    'GameServer/Bot/Population/ColdCombatProfile': { withEquipmentPreparation: fn => fn(), skillsFor: () => [], buildGainsFor: () => ({}),
         gainFor: (build, key, fn) => fn(), powerNumbers: () => ({ pAtk: 100, pDef: 100, mDef: 100 }),
         powerFor: () => ({ pAtk: 200, pDef: 100, mDef: 100 }), buildOptions: () => ({}) },
     'GameServer/Bot/Economy/BotImprovementPolicy': { opportunities: () => [], crystalPath: () => null },
@@ -50,7 +50,7 @@ Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandid
 // Task 2 readers: MP per hour, exit value, combat profile and spoil
 // eligibility come from their own modules (one reader each).
 Object.assign(adapters, {
-    'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+    'GameServer/Bot/Population/ColdOccupationSources': {
         craftLabour: state => ({ executor: state.phase === 'hot' ? 'hot' : 'cold', mpCapacity: 1000, mpPerHour: 120000 }),
         exitValue: function* () { return 0; } },
     'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
@@ -345,6 +345,9 @@ console.log('PASS native capture/transport/view: rich funded urgency, unknown ar
             const path = run(true).nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
             assert(path, phase);
             const direct = Profit.craftFacts(recipe, { batches: 1, ...labour });
+            // The producer's own context builder carries the same labour facts.
+            const producerContext = Profit.contextFor(state, 1);
+            for (const field of ['executor', 'mpCapacity', 'mpPerHour']) assert.equal(producerContext[field], labour[field], `${phase} ${field}`);
             const producer = Basket.basketFor(recipe, whole, () => null, 1, { ...labour, hourAdena: 100 }).facts;
             for (const facts of [direct, producer]) {
                 assert.equal(facts.status, 'ready', phase);

@@ -515,6 +515,16 @@ function capturedEquipmentEffect(effect, state) {
         || (effect.category === C4ArmorSets.CATEGORY && hasInventory(state));
 }
 
+// The skills a cold profile carries, readable without building the profile.
+// An empty saved kit is still empty. Only class-only hypothetical estimates
+// (without a character owner) may use the eligibility tree.
+function skillsFor(state = {}, classId = number(state.stats?.coldCombat?.classId, number(state.stats?.classId, number(state.classId))),
+    level = Math.max(1, number(state.level, 1))) {
+    const saved = state.stats?.coldCombat;
+    return Array.isArray(saved?.skills) && saved.skillSource !== 'tree' && saved.skillSource !== 'unresolved' ? saved.skills
+        : state.characterId || saved ? [] : skillsFromTree(classId, level);
+}
+
 function profileFor(state = {}, timestamp = Date.now(), options = {}) {
     const saved = state.stats?.coldCombat;
     const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
@@ -540,10 +550,7 @@ function profileFor(state = {}, timestamp = Date.now(), options = {}) {
         effects: [...(saved?.effects || []).filter(effect => !capturedEquipmentEffect(effect, state)),
             ...C4ArmorSets.effectsForEquippedIds(new Set(equipped.map(item => Number(item.selfId)))),
             ...equipped.map(item => equipmentPreparation ? copyEquipmentEffect(item.equipmentEffect) : item.equipmentEffect).filter(Boolean)],
-        // An empty saved kit is still empty. Only class-only hypothetical
-        // estimates (without a character owner) may use the eligibility tree.
-        skills: Array.isArray(saved?.skills) && saved.skillSource !== 'tree' && saved.skillSource !== 'unresolved' ? saved.skills
-            : state.characterId || saved ? [] : skillsFromTree(classId, level)
+        skills: skillsFor(state, classId, level)
     };
     const henna = invoke('GameServer/Henna/HennaRules').totals(state.stats?.hennas || []);
     // Captured hot base stats already include the same paid symbols. Only
@@ -953,7 +960,7 @@ function gainFor(entry, key, compute) {
 function size() { return { buildGains: buildGains.size, ownerBuilds: ownerBuilds.size, candidateIndex: candidateIndex.size }; }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, withEquipmentPreparation, size,
+    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, skillsFor, powerFor, buildGainsFor, gainFor, forgetBuild, powerNumbers, buildOptions, withEquipmentPreparation, size,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
     spotSpawns, npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add

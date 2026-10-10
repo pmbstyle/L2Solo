@@ -309,8 +309,8 @@ function buildProjection(state, ctx, deps) {
         if (!sourceValues.has(spot)) sourceValues.set(spot, ctx.spotValue(spot));
         return sourceValues.get(spot);
     };
-    // Task 2 readers: one combat profile, spoil eligibility, MP rate and trip
-    // map per build, shared by every farm and craft fact; they die at return.
+    // Task 2 readers: one combat profile, spoil eligibility, craft labour and
+    // trip map per build, shared by every farm and craft fact; they die at return.
     let combat = null, spoiler;
     const profile = () => combat ??= Profile.profileFor(state, timestamp, Profile.buildOptions(ownBuild, timestamp));
     const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');
@@ -332,7 +332,7 @@ function buildProjection(state, ctx, deps) {
         if (!sourceIndex?.has(Number(id))) return null;
         if (!farmFacts.has(Number(id))) {
             if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
-                spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, profile());
+                spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
             const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue, occupancy: deps.occupancy,
                 trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp });
             let step;
@@ -347,7 +347,7 @@ function buildProjection(state, ctx, deps) {
             farmFacts.set(Number(id), best);
         }
         const best = farmFacts.get(Number(id));
-        return best ? { kind: best.kind, activity: 'hunting', costHours: best.hours * best.netHourCost,
+        return best ? { kind: best.kind, activity: 'hunting', costHours: best.hours * best.netHourCost, readyHours: best.hours,
             spotId: best.spotId, npcId: best.npcId, itemId: Number(id), amount: 1,
             ...(best.town ? { town: best.town, tripHours: best.tripHours, tripFees: best.tripFees } : {}) } : null;
     };
@@ -900,13 +900,11 @@ function knownWorkshop(recipe, state, ctx, deps) {
             || Number(row.recipeId) !== Number(recipe.recipeId)
             || !Number.isSafeInteger(Number(row.price)) || Number(row.price) < 0
             || ![row.loc?.locX, row.loc?.locY, row.loc?.locZ].every(Number.isFinite)) continue;
-        // The same craft facts as an own craft: capacity bounds one command.
-        const facts = require('./CraftProfitPolicy').craftFacts(recipe, { batches: 1, executor: 'workshop',
-            capacityBatches: row.capacityBatches, fee: Number(row.price) });
-        if (facts.status !== 'ready') continue;
+        // Capacity bounds one command; the chosen row's craft facts are read once by the caller.
+        if (!(Number(row.capacityBatches) >= 1)) continue;
         const route = trip.details(row.townName);
         if (!route?.known || !Number.isFinite(route.hours) || !Number.isFinite(route.fees)) continue;
-        const cost = facts.fee + route.fees + route.hours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0);
+        const cost = Number(row.price) + route.fees + route.hours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0);
         if (!best || cost < best.cost || cost === best.cost && Number(row.characterId) < best.characterId)
             best = { ...row, characterId: Number(row.characterId), cost,
                 tripHours: route.hours, tripFees: route.fees };

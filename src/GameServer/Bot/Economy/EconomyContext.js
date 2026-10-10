@@ -567,10 +567,10 @@ function forGroup(group, members, deps = {}) {
             for (const row of path.grossRequirements) {
                 const id = row.key.startsWith('item:') ? Number(row.key.slice(5)) : 0;
                 const stock = id ? contexts[i].stockFor?.(id, '') || {} : {};
-                const order = remainingQuantity({ required: row.amount, freePhysical: positive(stock.owned),
-                    acceptedIncoming: positive(stock.incoming) }).toOrder;
+                const { toOrder: order, toExecute } = remainingQuantity({ required: row.amount,
+                    freePhysical: positive(stock.owned), acceptedIncoming: positive(stock.incoming) });
                 const node = held.get(row.key);
-                ownValue += (row.amount - order) * positive(Number.isFinite(node?.exitValue) ? node.exitValue : node?.price);
+                ownValue += (row.amount - toExecute) * positive(Number.isFinite(node?.exitValue) ? node.exitValue : node?.price);
                 if (order > 0) requirements.push({ ...row, amount: order });
             }
             return { requirements, ownInputOpportunityValue: positive(path.ownInputOpportunityValue) + ownValue };

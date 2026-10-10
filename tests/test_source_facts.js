@@ -76,5 +76,21 @@ try {
     assert(Number.isFinite(drop.tripHours) && drop.tripHours >= 0);
     assert.equal(drop.costHours, drop.hours * drop.netHourCost + drop.tripHours);
     assert.equal(travelled.stages.filter(stage => stage === 'source').length, 2, 'one step per index record');
+    // A known non-spoiler is read once from its learned skills, never from a combat profile per spoil record.
+    const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile'), profileFor = Profile.profileFor;
+    let profiles = 0;
+    Profile.profileFor = (...args) => { profiles++; return profileFor(...args); };
+    try {
+        const twoSpots = [spots[0], { ...spots[0], id: 'facts-test-2' }];
+        const refused = drain(Planner.sourceFacts(noSpoil, 99101, 50, { spots: twoSpots, spotValue, timestamp: 1 })).value
+            .filter(row => row.kind === 'spoil');
+        assert.equal(refused.length, 2);
+        assert(refused.every(row => row.reason === 'spoil_skill'));
+        assert.equal(profiles, 0, 'no combat profile for spoil eligibility');
+    } finally { Profile.profileFor = profileFor; }
+
+    // A travelling bot's spot is its destination, as PopulationService reads it.
+    const travelling = byKind(facts({ ...warsmith, spotId: 'elsewhere', stats: { ...warsmith.stats, travel: { spotId: 'facts-test' } } })).drop;
+    assert.equal(travelling.tripHours, 0, 'the destination spot needs no further trip');
     console.log('test_source_facts: ok');
 } finally { Data.items = saved.items; Data.npcs = saved.npcs; Data.npcRewards = saved.rewards; }

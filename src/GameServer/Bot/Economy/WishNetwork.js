@@ -252,7 +252,8 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             // MVP-4: elapsed hours until the output is ready, in sequence:
             // own labour, inputs, trips. Waiting for accepted incoming has
             // no native delivery time. ARCH-NOTE: counted as zero.
-            let hours = nonnegative(path.costHours) * units;
+            // A farm's cost is its net hour (D7); its elapsed time is readyHours.
+            let hours = nonnegative(path.readyHours ?? path.costHours) * units;
             const trip = travels(path) && trips.get(tripKey(path));
             const tripEntries = trip ? [trip.index] : [];
             let quoted = !!path.quoted;
@@ -478,7 +479,12 @@ class WishNetwork {
             const used = new Map();
             const priority = [...wishes].sort((a, b) => b.fullValueHours / Math.max(1, b.price) - a.fullValueHours / Math.max(1, a.price) || a.key.localeCompare(b.key));
             for (const wish of priority) {
-                const claimed = used.size ? solver.allocate(wish, used) : alone.get(wish);
+                // Less free stock off the alone solve's claims only makes its
+                // alternatives dearer, so that solve stands unless a claim is taken.
+                const own = alone.get(wish);
+                let taken = false;
+                for (const id of own.keys()) if (used.has(id)) { taken = true; break; }
+                const claimed = taken ? solver.allocate(wish, used) : own;
                 if (wish.valueHours > 0) for (const [id, count] of claimed) used.set(id, count);
             }
         }

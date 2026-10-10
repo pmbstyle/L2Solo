@@ -48,7 +48,7 @@ const adapters = {
 // Task 2 readers: MP per hour, exit value, combat profile and spoil
 // eligibility come from their own modules (one reader each).
 Object.assign(adapters, {
-    'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+    'GameServer/Bot/Population/ColdOccupationSources': {
         craftLabour: state => ({ executor: state.phase === 'hot' ? 'hot' : 'cold', mpCapacity: 1000, mpPerHour: 120000 }),
         exitValue: function* () { return 0; } },
     'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
