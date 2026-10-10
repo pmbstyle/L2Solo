@@ -204,9 +204,13 @@ try {
 } finally { Combat.profileFor = savedProfile; Combat.npcForSpot = savedNpc; }
 invoke('GameServer/DataCache').init();
 const actualSpot = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById('raid:10372');
-const actualEstimate = Estimate.estimate([4, 15, 52, 9, 21, 34, 2].map((classId, index) => ({
-    characterId: index + 100, level: 40, stats: { classId }, inventory: {}
-})), actualSpot);
+// Owned characters fight with their learned kit only (113e1791); the roster
+// carries the database-learned skills a level 40 member of each class has.
+const actualEstimate = Estimate.estimate([4, 15, 52, 9, 21, 34, 2].map((classId, index) => {
+    const state = { characterId: index + 100, level: 40, stats: { classId }, inventory: {} };
+    state.stats.coldCombat = Combat.legacySnapshot(state, Combat.skillRecordsFromTree(classId, 40));
+    return state;
+}), actualSpot);
 assert(actualEstimate && Object.values(actualEstimate).every(Number.isFinite),
     'real NPC, class and learned-skill profiles produce a finite economic estimate');
 assert(actualEstimate.healingBudget > 0 && actualEstimate.damagePerSecond > 0);
