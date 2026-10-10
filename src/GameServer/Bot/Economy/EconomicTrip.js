@@ -45,13 +45,27 @@ function* regionalTown(loc) {
     }
     return closest;
 }
+// The region is a pure function of the point over the frozen region index, and
+// one route table asks it for the same bot point and the same towns 17 times
+// each. Remembered by exact coordinates; bounded, so a busy worker only drops
+// the oldest points and walks their polygons again. A remembered answer still
+// yields one edge: callers read edges as evidence that route geometry was read.
+const regions = new Map(), MAX_REGIONS = 1024;
+function* region(loc) {
+    const id = `${Number(loc?.locX || 0)}|${Number(loc?.locY || 0)}|${Number(loc?.locZ)}`;
+    if (regions.has(id)) { yield 'edge'; return regions.get(id); }
+    const value = yield* regionalTown(loc);
+    if (regions.size >= MAX_REGIONS) regions.delete(regions.keys().next().value);
+    regions.set(id, value);
+    return value;
+}
 
 function* forwardTrip(state, from, to) {
     if (Karma.closesTowns(state.stats?.karma)) return to.name === Karma.TOWN_NAME
         ? { route: { fee: 0, hops: 0 }, durationMs: Trip.honest() ? Trip.runMs(from, to)
             : Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, to)) } : null;
-    const origin = yield* regionalTown(from), start = Towns.towns[origin?.respawnTown] || origin;
-    const destination = yield* regionalTown(to), destinationKey = townKeys.get(destination);
+    const origin = yield* region(from), start = Towns.towns[origin?.respawnTown] || origin;
+    const destination = yield* region(to), destinationKey = townKeys.get(destination);
     const gateKey = destinationKey === 'floran_village' ? 'dion_town' : destinationKey;
     const gate = Towns.towns[gateKey], route = Routes.route(townKeys.get(start), gateKey);
     if (!route || !start || !gate) return null;
@@ -70,7 +84,7 @@ function* returnMs(state, from, to) {
     if (!Trip.honest()) return Trip.AUTHOR_TRIP_MS;
     let best = Trip.runMs(from, to);
     if (Karma.closesTowns(state.stats?.karma)) return best;
-    const regional = yield* regionalTown(from), start = Towns.towns[regional?.respawnTown] || regional;
+    const regional = yield* region(from), start = Towns.towns[regional?.respawnTown] || regional;
     if (!start) return NaN;
     const lead = Math.hypot(from.locX - start.locX, from.locY - start.locY) <= Trip.TOWN_RADIUS
         ? Trip.runMs(from, start) : Payment.SCROLL_CAST_MS;

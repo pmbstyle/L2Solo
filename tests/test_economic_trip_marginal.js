@@ -34,5 +34,12 @@ try {
     assert.strictEqual(Profit.tripFor(state, { hourAdena: 1000 }), reader, 'same owner inputs reuse one bounded route reader');
     state.loc = giran;
     assert.notStrictEqual(Profit.tripFor(state, { hourAdena: 1000 }), reader, 'changing current position invalidates the captured route');
+    // A remembered region answers like the polygon walk and skips its edges.
+    const walk = run => { let edges = 0, next; do { next = run.next(); if (next.value === 'edge') edges++; } while (!next.done); return [edges, next.value]; };
+    const probe = { characterId: 9302, activity: 'idle', loc: { locX: 81234, locY: 147321, locZ: -3400 }, inventory: {}, stats: {} };
+    const [coldEdges, cold] = walk(EconomicTrip.details(probe, 'Giran')), [warmEdges, warm] = walk(EconomicTrip.details(probe, 'Giran'));
+    assert.deepEqual(warm, cold);
+    assert.equal(cold.known, true);
+    assert.ok(warmEdges < coldEdges, `remembered regions skip the walk (${warmEdges} < ${coldEdges})`);
     console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity and unknown/karma routes passed');
 } finally { Config.coldHonestTravel = saved; }
