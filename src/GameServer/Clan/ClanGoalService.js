@@ -49,6 +49,37 @@ function parseJson(value, fallback = {}) {
     }
 }
 
+// Parsed member stats and inventory kept between projections, keyed by the row
+// text. Clan actions project their clan many times a minute (live x10: ~15
+// projections a minute, ~6% of main-thread busy, nearly all of it parsing) and
+// ~90% of member texts are the same as in the previous read, so they are parsed
+// once. The text is the key, not simulationRevision: some writes change the
+// text under the same revision. Readers share these objects across projections
+// and never write into them. A member not projected for MEMBER_JSON_IDLE_MS
+// (left the clan, clan no longer acting) is forgotten at the next projection.
+const MEMBER_JSON_IDLE_MS = 10 * 60 * 1000;
+const parsedMemberJson = new Map();
+let memberJsonSweepAt = 0;
+
+function memberJson(characterId, field, text, now) {
+    let entry = parsedMemberJson.get(characterId);
+    if (!entry) parsedMemberJson.set(characterId, entry = {});
+    entry.seenAt = now;
+    const cached = entry[field];
+    if (cached && cached.text === text) return cached.value;
+    const value = parseJson(text, {});
+    entry[field] = { text, value };
+    return value;
+}
+
+function forgetIdleMemberJson(now) {
+    if (now < memberJsonSweepAt) return;
+    memberJsonSweepAt = now + MEMBER_JSON_IDLE_MS;
+    for (const [characterId, entry] of parsedMemberJson) {
+        if (now - entry.seenAt >= MEMBER_JSON_IDLE_MS) parsedMemberJson.delete(characterId);
+    }
+}
+
 function record(map, value) {
     if (!DiagnosticConfig.developerDiagnostics) return;
     if (value) map.set(value, (map.get(value) || 0) + 1);
@@ -84,6 +115,8 @@ async function clanProjection(clanId = null) {
         ORDER BY simulated.clanId ASC, members.id ASC
     `, hasClanId ? [Number(clanId)] : []], hasClanId ? 'clan-goal:projection-one' : 'clan-goal:projection');
     const byId = new Map();
+    const now = Date.now();
+    forgetIdleMemberJson(now);
     rows.forEach((row) => {
         const clanId = number(row.clanId);
         if (!byId.has(clanId)) {
@@ -114,8 +147,8 @@ async function clanProjection(clanId = null) {
             simulationOwner: String(row.simulationOwner || 'legacy_main'),
             adena: number(row.adena),
             simulationRevision: number(row.simulationRevision),
-            inventory: parseJson(row.inventorySummary, {}),
-            stats: parseJson(row.statsJson, {}),
+            inventory: memberJson(number(row.characterId), 'inventory', row.inventorySummary, now),
+            stats: memberJson(number(row.characterId), 'stats', row.statsJson, now),
             persona: { primaryDrive: row.primaryDrive, archetype: row.archetype, traits: parseJson(row.traitsJson, {}) }
         };
         if (!ClanSimulationPolicy.isStaticService(member)) byId.get(clanId).members.push(member);
