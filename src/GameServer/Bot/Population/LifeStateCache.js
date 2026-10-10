@@ -170,6 +170,13 @@ class LifeStateCache extends Map {
         const sequence = this.orderEntries.get(id)?.sequence ?? this.nextSequence++;
         this.removeOrder(id);
         const previous = this.get(id);
+        // Accepted incoming is projected only by the SQL rows of meeting and
+        // cold commit replies. A snapshot rebuilt from life-state columns has
+        // no field; it keeps the cached amount instead of erasing it.
+        if (state && typeof state === 'object' && state.acceptedIncoming === undefined && previous?.acceptedIncoming) {
+            state.acceptedIncoming = previous.acceptedIncoming;
+            if (previous.incomingPending) state.incomingPending = true;
+        }
         if (previous && stateKey(previous) !== stateKey(state)) this.occupancy.remove(stateKey(previous));
         const objectSource = state !== null && (typeof state === 'object' || typeof state === 'function');
         const indexed = objectSource && spatialState(state);
