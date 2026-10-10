@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional worker counters.
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -65,42 +66,48 @@ function wait(ms) {
         }
     });
 
-    const deadline = Date.now() + 25000;
-    let row = null;
-    while (Date.now() < deadline) {
-        [row] = await Database.execute([
-            `SELECT activity, lastResolvedAt, nextResolveAt, simulationOwner,
-                    simulationRevision, simulationLeaseId, simulationLeaseUntil, statsJson
-             FROM bot_life_state WHERE characterId = ?`, [characterId]
-        ]);
-        if (Number(row?.simulationRevision || 0) >= 2 && Number(row?.lastResolvedAt || 0) > dueAt) break;
-        await wait(100);
-    }
-    let snapshot = coordinator.snapshot();
-    const heartbeatDeadline = Date.now() + 2000;
-    while (Number(snapshot.worker.resolved || 0) < 1 && Date.now() < heartbeatDeadline) {
-        await wait(50);
-        snapshot = coordinator.snapshot();
-    }
-    assert(snapshot.ready && snapshot.snapshotsLoaded, 'real worker must complete bootstrap and snapshot loading');
-    assert(Number(snapshot.worker.resolved || 0) >= 1, 'worker thread must perform the resolve');
-    assert(Number(snapshot.queue.committed || 0) >= 1, 'main gateway must durably commit worker progress');
-    assert(Number(row.simulationRevision) >= 2, 'claim plus commit/release must advance revision twice');
-    assert(Number(row.lastResolvedAt) > dueAt, 'authoritative DB progress must advance lastResolvedAt');
-    assert.strictEqual(row.simulationOwner, Owner.LEGACY_OWNER_ID);
-    assert.strictEqual(row.simulationLeaseId, null);
-    assert.strictEqual(Number(row.simulationLeaseUntil), 0, 'successful commit must not leak a lease');
-    const persistedStats = JSON.parse(row.statsJson || '{}');
-    assert.strictEqual(persistedStats.karma, 45, 'travel must not wash karma without XP');
-    assert.strictEqual(persistedStats.equipmentPlan, null, 'town purchases must yield to karma washing');
-    assert.strictEqual(row.activity, 'traveling');
-    assert.strictEqual(persistedStats.travel.reason, 'karma_washing');
-    assert.strictEqual(persistedStats.travel.method, 'walk');
-    assert.strictEqual(persistedStats.travel.arrivalActivity, 'hunting');
-    assert.strictEqual(persistedStats.travel.spotId, '-15_37');
-    assert(persistedStats.travel.arrivalAt > Date.now());
+    let stopped = null;
+    try {
+        const deadline = Date.now() + 25000;
+        let row = null;
+        while (Date.now() < deadline) {
+            [row] = await Database.execute([
+                `SELECT activity, lastResolvedAt, nextResolveAt, simulationOwner,
+                        simulationRevision, simulationLeaseId, simulationLeaseUntil, statsJson
+                 FROM bot_life_state WHERE characterId = ?`, [characterId]
+            ]);
+            if (Number(row?.simulationRevision || 0) >= 2 && Number(row?.lastResolvedAt || 0) > dueAt) break;
+            await wait(100);
+        }
+        let snapshot = coordinator.snapshot();
+        const heartbeatDeadline = Date.now() + 2000;
+        while (Number(snapshot.worker.resolved || 0) < 1 && Date.now() < heartbeatDeadline) {
+            await wait(50);
+            snapshot = coordinator.snapshot();
+        }
+        assert(snapshot.ready && snapshot.snapshotsLoaded, 'real worker must complete bootstrap and snapshot loading');
+        assert(Number(snapshot.worker.resolved || 0) >= 1, 'worker thread must perform the resolve');
+        assert(Number(snapshot.queue.committed || 0) >= 1, 'main gateway must durably commit worker progress');
+        assert(Number(row.simulationRevision) >= 2, 'claim plus commit/release must advance revision twice');
+        assert(Number(row.lastResolvedAt) > dueAt, 'authoritative DB progress must advance lastResolvedAt');
+        assert.strictEqual(row.simulationOwner, Owner.LEGACY_OWNER_ID);
+        assert.strictEqual(row.simulationLeaseId, null);
+        assert.strictEqual(Number(row.simulationLeaseUntil), 0, 'successful commit must not leak a lease');
+        const persistedStats = JSON.parse(row.statsJson || '{}');
+        assert.strictEqual(persistedStats.karma, 45, 'travel must not wash karma without XP');
+        assert.strictEqual(persistedStats.equipmentPlan, null, 'town purchases must yield to karma washing');
+        assert.strictEqual(row.activity, 'traveling');
+        assert.strictEqual(persistedStats.travel.reason, 'karma_washing');
+        assert.strictEqual(persistedStats.travel.method, 'walk');
+        assert.strictEqual(persistedStats.travel.arrivalActivity, 'hunting');
+        assert.strictEqual(persistedStats.travel.spotId, '-15_37');
+        assert(persistedStats.travel.arrivalAt > Date.now());
 
-    const stopped = await coordinator.stop();
+        stopped = await coordinator.stop();
+    } finally {
+        // A failed assertion must still stop the worker thread, or the test never exits.
+        if (!stopped) await coordinator.stop().catch(() => {});
+    }
     assert.strictEqual(stopped.stopped, true);
     assert.strictEqual(stopped.queue.drained, true, 'shutdown must drain the commit queue');
     const resolved = await LifeState.applyResolve(LifeState.cachedState(characterId), {
