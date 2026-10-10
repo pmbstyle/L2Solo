@@ -152,9 +152,17 @@ async function run() {
     const Population = invoke('GameServer/Bot/Population/PopulationService');
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
     const originalFind = Spots.findById;
+    // Cold members' party goals come from the cold worker (absent here); answer
+    // as the worker does so formation runs its real path to the commit.
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const GoalPolicy = require('../src/GameServer/Bot/Population/PartyGoalPolicy');
+    const GoalCalculation = require('../src/GameServer/Bot/Population/PartyGoalCalculation');
+    const originalPartyGoals = Coordinator.requestPartyGoals;
     let socialParty;
     try {
         Spots.findById = id => id === 'test' ? { id: 'test' } : originalFind.call(Spots, id);
+        Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
+            sources: GoalCalculation.sources(selected), joint: GoalPolicy.joint(party, selected) });
         socialParty = await Population.formCompetitionParty([Life.cachedState(9), Life.cachedState(10)], { spotId: 'test', npcId: 10 });
         assert(socialParty?.partyId, 'real population formation must create a social party');
         assert.strictEqual(socialParty.stats.capacityPool, undefined);
@@ -164,7 +172,7 @@ async function run() {
         assert.strictEqual(reviewed.ok, true, JSON.stringify(reviewed));
         assert.strictEqual(reviewed.party.status, 'active', 'legacy runtime must review rather than expire a new productive goal');
         assert(reviewed.party.stats.sessionReview.nextAt > Date.now());
-    } finally { Spots.findById = originalFind; }
+    } finally { Spots.findById = originalFind; Coordinator.requestPartyGoals = originalPartyGoals; }
     const runtimeMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
     await runtimeMemory.ensureMany([13, 14, 15, 16, 17, 18]);
     const contestNow = Date.now();
