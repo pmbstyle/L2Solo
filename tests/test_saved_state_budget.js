@@ -14,7 +14,7 @@ const Gear = invoke('GameServer/Bot/AI/GearPlanSelection');
 const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
-const id = 719112, buyerId = 719113;
+const id = 719112, sellerId = 719113;
 
 async function workerPacketSurvivesMainPreparation(source, { huntSpot = null, heldPacket = null } = {}) {
     const { Worker } = require('node:worker_threads');
@@ -165,15 +165,16 @@ async function run() {
     const insert = seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,exp,sp,maxHp,maxMp,hp,mp,
         sex,face,hair,hairColor,locX,locY,locZ,newbie,newbieShotsReceived)
         VALUES(?,'quests',?,0,0,60,0,0,187,74,187,74,0,0,0,0,0,0,0,-1,0)`);
-    for (const characterId of [id, buyerId]) insert.run(characterId, `Quest${characterId}`);
+    for (const characterId of [id, sellerId]) insert.run(characterId, `Quest${characterId}`);
     seed.close();
     await Database.init();
     const sale = Market.saleDecision;
     try {
         await Database.createAccount('bot_budget_probe', 'test');
-        await Database.execute(["UPDATE characters SET username='bot_budget_probe'"]);
+        // The probe is a bot; its board counterpart stays a player ('quests').
+        await Database.execute(["UPDATE characters SET username='bot_budget_probe' WHERE id=?", [id]]);
         await Life.init();
-        for (const characterId of [id, buyerId]) await Database.setItem(characterId,
+        for (const characterId of [id, sellerId]) await Database.setItem(characterId,
             { selfId: 57, name: 'Adena', amount: 1000000, slot: 0 });
         for (let i = 0; i < 60; i++) await Database.setItem(id,
             { selfId: 1864 + i, name: `Probe${i}`, amount: 30, slot: 0 });
@@ -210,12 +211,17 @@ async function run() {
         state = await Life.applyNpcLiquidation(state, candidates);
         assert(state);
 
-        const item = (await Database.fetchItems(id)).find(row => row.selfId === 1864);
-        const { shop } = await Database.createAfkTradeShop(id, { kind: 'sell_ad', storeType: 1, town: 'Giran',
+        // A bot's own ads settle only at an accepted meeting (custodyPolicy=1);
+        // a player's held-goods ad is still bought from in person, so the
+        // probe bot makes its three board deals as the buyer.
+        await Database.setItem(sellerId, { selfId: 1864, name: 'Stem', amount: 3, slot: 0 });
+        const item = (await Database.fetchItems(sellerId)).find(row => row.selfId === 1864);
+        const { shop } = await Database.createAfkTradeShop(sellerId, { kind: 'sell_ad', storeType: 1, town: 'Giran',
             lines: [{ objectId: item.id, selfId: 1864, name: 'Stem', count: 3, price: 100, stackable: true }] });
+        assert.equal(shop.custodyPolicy, 0, 'a player ad holds its goods');
         for (let i = 0; i < 3; i++) {
-            const result = await Database.buyFromAfkTradeShop(buyerId,
-                { shopId: shop.id, ownerId: id, lineId: shop.lines[0].id, amount: 1 });
+            const result = await Database.buyFromAfkTradeShop(id,
+                { shopId: shop.id, ownerId: sellerId, lineId: shop.lines[0].id, amount: 1 });
             assert(result && !result.error);
             for (const [characterId, counts] of Object.entries(result.marketTrades)) Life.acceptMarketTrades(characterId, counts);
         }
