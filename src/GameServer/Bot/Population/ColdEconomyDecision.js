@@ -19,6 +19,9 @@ class CompactActivity {
         this.itemId = Number(leaf.itemId || (typeof leaf.object === 'number' ? leaf.object : leaf.object?.itemId) || 0);
         this.amount = Number(leaf.amount || 0); this.price = Number(leaf.price || 0);
         if (leaf.unitPrice !== undefined && leaf.unitPrice !== null) this.unitPrice = Number(leaf.unitPrice);
+        // The funded root's money-packet ratio: a material bought for a root whose
+        // packet row has no item id (henna, merged tail) is funded by this ratio.
+        if (Number(leaf.r) > 0 && Number.isFinite(Number(leaf.r))) this.r = Number(leaf.r);
         if (leaf.heldAtDecision !== undefined && leaf.heldAtDecision !== null) this.heldAtDecision = Number(leaf.heldAtDecision);
         if (leaf.rootKey) this.rootKey = leaf.rootKey;
         if (leaf.town) this.town = leaf.town;
@@ -67,7 +70,7 @@ class CompactDecision {
         if (at === this.data.byteLength) return null;
         const row = JSON.parse(decoder.decode(new Uint8Array(this.data, at)));
         return new CompactActivity({ activity: row[0], spotId: row[1], npcId: row[2], kind: row[3], rootKey: row[4],
-            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16] });
+            itemId: row[5], amount: row[6], price: row[7], recipeId: row[8], targetId: row[9], funding: row[10], items: row[11], improvement: row[12], heldAtDecision: row[13], town: row[14], sourceType: row[15], unitPrice: row[16], r: row[17] });
     }
     get updatedAt() { return new DataView(this.data).getFloat64(8, true); }
     get riskWeight() { return new DataView(this.data).getFloat64(16, true); }
@@ -154,8 +157,9 @@ function compact(record) {
     const leaf = record.activity;
     const activity = leaf ? encoder.encode(JSON.stringify([leaf.activity, leaf.spotId, leaf.npcId, leaf.kind, leaf.rootKey,
         leaf.itemId, leaf.amount, leaf.price, leaf.recipeId, leaf.targetId, leaf.funding, leaf.items, leaf.improvement,
-        ...(leaf.town || leaf.sourceType || leaf.unitPrice !== undefined
-            ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null]
+        ...(leaf.town || leaf.sourceType || leaf.unitPrice !== undefined || leaf.r !== undefined
+            ? [leaf.heldAtDecision ?? null, leaf.town || null, leaf.sourceType || null, leaf.unitPrice ?? null,
+                ...(leaf.r !== undefined ? [leaf.r] : [])]
             : leaf.heldAtDecision !== undefined ? [leaf.heldAtDecision] : [])])) : [];
     const clan = record.clan;
     const workshop = Object.hasOwn(record, 'workshop') ? workshopValues(record.workshop) : null;
@@ -236,6 +240,8 @@ function capture(economy, state, seen = state) {
     for (const wish of economy?.network?.queue || []) visit(wish.key, Number(wish.object?.amount || 1));
     const activity = leaf ? new CompactActivity(leaf) : null;
     if (activity?.activity === 'shopping') activity.heldAtDecision = Math.max(0, Number(seen?.inventory?.[activity.itemId]?.amount || 0));
+    if (activity?.activity === 'shopping' && wish?.key === leaf.rootKey && wish.funded && Number(wish.ratio) > 0)
+        activity.r = require('../Economy/PurchaseFunding').significant(Number(wish.ratio));
     let clan = null;
     // Workshop-only publications carry no hunting valuation. Clan membership
     // cannot turn that partial source into a second, fabricated economy review.

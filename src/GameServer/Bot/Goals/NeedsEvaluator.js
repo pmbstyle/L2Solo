@@ -75,7 +75,10 @@ function evaluate(state = {}, options = {}) {
             plan: { ...common.plan, expectedBenefit: slot ? 'market_search_for_gear' : 'market_buy_craft_material',
                 marketTown: town, sourceType: leaf.sourceType || (offer ? 'afk' : npc ? 'npc' : null),
                 ...(leaf.sourceType === 'afk' && leaf.unitPrice > 0 ? { priceSource: 'offer' } : {}),
-                valueHours: leaf.amount > 0 ? leaf.valueHours * amount / leaf.amount : leaf.valueHours,
+                // A compact leaf carries no valueHours; its funded root's packet ratio funds it.
+                ...(Number.isFinite(leaf.valueHours)
+                    ? { valueHours: leaf.amount > 0 ? leaf.valueHours * amount / leaf.amount : leaf.valueHours }
+                    : leaf.r > 0 ? { r: leaf.r } : {}),
                 purpose: wish?.object?.kind, requiredAdena: 0, reserve: Economy.survivalReserve(state) } }];
     }
     if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',
