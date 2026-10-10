@@ -619,8 +619,11 @@ function buildProjection(state, ctx, deps) {
         if (row.keys.length + 1 > Network.MAX_NODES) return;
         try {
             const solver = Network.createSolver({ ...solverOptions, nodes: [...row.keys.map(key => descriptors.get(key)), row.node] });
-            const wish = solver.rootWish(row.node.key);
-            if (solverOptions.stockFor && wish.plan) row.claims = solver.allocate(wish, used);
+            // With a stock reader allocate is the whole evaluation (it solves
+            // against the claimed stock); rootWish is the stockless one.
+            const wish = solverOptions.stockFor ? { key: row.node.key, need: row.node.need, object: row.node.object }
+                : solver.rootWish(row.node.key);
+            if (solverOptions.stockFor) { const claims = solver.allocate(wish, used); if (wish.plan) row.claims = claims; }
             row.wish = wish;
             // A path whose benefit cannot start inside the horizon is not a
             // missing path: it waits, counted, for money or a cheaper source.
