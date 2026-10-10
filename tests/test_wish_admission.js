@@ -202,3 +202,23 @@ const group = Economy.forGroup({ id: 'proposal:1', adena: 10000 }, [member], { m
     persona, riskWeight: 1, itemUsefulness: () => 0 }] });
 assert.equal(group.network.plans.get('0:gear').untilSuccess, true, 'prefixed gross inputs reach the repeatable check');
 console.log('PASS group gross inputs are prefixed: until-success applies to group crafts');
+
+// 7. A memoized item subgraph obeys the same 36-node cap as a fresh build. An
+// improvement holds a 31-node crafted material; the rare 26-node piece the
+// status root asks for again was built in its scratch arena. Copying it whole
+// filled the graph past 64, and the admitted 13-node gear became node_limit.
+persona.traits.ambition = 0.5;
+const crowdLeaves = Array.from({ length: 30 }, (_, at) => 400 + at);
+const crowd = scenario({ items: [gear(201, 1, 0.5, 1000), Object.assign(gear(202, 1, 0.1, 1000), { etc: { slot: 1, rank: 'd' } })],
+    asks: [[201, 1000], [201, 1000]],
+    known: [recipe(701, 300, crowdLeaves), recipe(702, 201, Array.from({ length: 12 }, (_, at) => 500 + at)),
+        recipe(703, 202, Array.from({ length: 25 }, (_, at) => 600 + at))],
+    improvements: [{ key: 'improvement:1', kind: 'enchant', materials: [{ selfId: 300, amount: 1 }], valueHours: 0.1, price: 100, fee: 0 }] });
+persona.traits.ambition = 0;
+assert(crowd.projection.roots.includes('power:201:1'), 'the admitted gear keeps its place');
+assert(!crowd.projection.roots.includes('status:202'), 'the memoized 26-node subgraph does not fit the 36 cap');
+assert(!crowd.admission.pending.some(row => row.key === 'power:201:1'));
+// The higher-ranked gear then wins the final cut over the 32-node improvement.
+assert.deepEqual(crowd.admission.pending, [{ key: 'improvement:1', reason: 'node_limit' }]);
+console.log('PASS a memoized subgraph obeys the build cap: admitted gear is not crowded out');
+recipes.clear();

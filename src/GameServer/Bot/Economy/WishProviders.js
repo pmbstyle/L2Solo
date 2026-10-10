@@ -262,7 +262,7 @@ function buildProjection(state, ctx, deps) {
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
     // `nodes` is the current target: the real projection, or one gear
     // candidate's scratch arena while it is evaluated (MVP-6).
-    let nodes = [];
+    let nodes = [], scratch = false;
     const roots = [], values = new Map();
     const add = node => { if (nodes.length >= 64 || nodes.some(row => row.key === node.key)) return false;
         nodes.push(node); return true; };
@@ -390,7 +390,24 @@ function buildProjection(state, ctx, deps) {
         const key = `item:${id}`;
         if (nodes.some(node => node.key === key)) return key;
         if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
-        if (descriptors.has(key)) { include(key); return key; }
+        // A memoized subgraph enters the real graph under the same 36-node
+        // cap as a fresh build: its whole missing closure is counted first.
+        // A candidate's scratch arena copies it whole, so its witness reads
+        // the real graph's descriptors; the arena bound is the evaluation's.
+        if (descriptors.has(key)) {
+            const missing = new Set();
+            const collect = at => {
+                if (missing.has(at) || nodes.some(node => node.key === at) || !descriptors.has(at)) return;
+                missing.add(at);
+                for (const path of descriptors.get(at).paths || []) {
+                    for (const row of path.requirements || []) collect(row.key);
+                    for (const row of path.grossRequirements || []) collect(row.key);
+                }
+            };
+            collect(key);
+            if (!scratch && nodes.length + missing.size > 36) return null;
+            include(key); return key;
+        }
         const observed = observedPurchase(id);
         // A raid origin belongs to the clan's prepared roster. A personal
         // wish needs actual owned stock or a finite supplier, not a price.
@@ -571,10 +588,10 @@ function buildProjection(state, ctx, deps) {
         wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve };
     const real = nodes, gear = [];
     for (const candidate of candidates) {
-        nodes = [];
+        nodes = []; scratch = true;
         const key = itemNode(candidate.item.selfId);
         const keys = nodes.map(node => node.key);
-        nodes = real;
+        nodes = real; scratch = false;
         if (!key) continue;
         const benefitPerHour = (candidate.gain.attack + candidate.gain.defence * ctx.deathHours) * powerWeight;
         gear.push({ candidate, keys, family: Equipment.isWeaponSlot(candidate.slot) ? 'weapon' : candidate.slot,
