@@ -65,6 +65,7 @@ const provider = load('WishProviders.js', name => {
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './EconomicValuation') return valuation;
+    if (name === './WishNetwork') return network;
     if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
     if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name.endsWith('BoardIndex')) return { SELL: 1 };

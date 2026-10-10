@@ -5,6 +5,7 @@ const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
 const Equipment = require('../AI/BotEquipmentCompatibility');
+const Network = require('./WishNetwork');
 let catalogSource = null;
 let sourceRevision = -1;
 const kits = new Map();
@@ -20,6 +21,11 @@ const GEAR_FINALISTS_PER_SLOT = 8;
 const WISH_ROOTS = 12;
 const PRODUCER_PRICED = WISH_ROOTS;
 const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
+// MVP-6 (PLAN "Admission and placement"): four gear roots, four admission
+// rounds (the initial evaluation plus three affected re-evaluations).
+const GEAR_ROOTS = 4;
+const GEAR_ROUNDS = 4;
+const SOLVER_LIMITS = new Set(['missing_wish_requirement', 'cyclic_wish_network', 'invalid_wish_node', 'wish_network_depth']);
 function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null) {
     const Data = invoke('GameServer/DataCache');
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
@@ -254,9 +260,27 @@ function buildProjection(state, ctx, deps) {
     let beforeBook = null, beforeBookRate = null;
     const magic = require('./BotImprovementPolicy').isCaster(state);
     const Recipes = invoke('GameServer/Items/C4RecipeItems');
-    const nodes = [], roots = [], values = new Map();
+    // `nodes` is the current target: the real projection, or one gear
+    // candidate's scratch arena while it is evaluated (MVP-6).
+    let nodes = [];
+    const roots = [], values = new Map();
     const add = node => { if (nodes.length >= 64 || nodes.some(row => row.key === node.key)) return false;
         nodes.push(node); return true; };
+    // One descriptor per item key in this build, shared by the scratch
+    // arenas and the real graph, so a witness and its expanded root read
+    // identical nodes. ARCH-NOTE: dies at return; at most the 64-node cap
+    // per target, no owner store.
+    const descriptors = new Map();
+    const include = key => {
+        if (nodes.some(node => node.key === key)) return;
+        const node = descriptors.get(key);
+        if (!node) return;
+        for (const path of node.paths || []) {
+            for (const row of path.requirements || []) include(row.key);
+            for (const row of path.grossRequirements || []) include(row.key);
+        }
+        add(node);
+    };
     const root = node => {
         if (node.object?.itemId && !Sources.hasSource(node.object.itemId)) return;
         if (add(node)) roots.push(node.key);
@@ -366,6 +390,7 @@ function buildProjection(state, ctx, deps) {
         const key = `item:${id}`;
         if (nodes.some(node => node.key === key)) return key;
         if (depth >= 3 || nodes.length >= 36 || preparingItems.has(key)) return null;
+        if (descriptors.has(key)) { include(key); return key; }
         const observed = observedPurchase(id);
         // A raid origin belongs to the clan's prepared roster. A personal
         // wish needs actual owned stock or a finite supplier, not a price.
@@ -383,7 +408,9 @@ function buildProjection(state, ctx, deps) {
             .find(row => Number(row.productId) === Number(id));
         const craft = craftPath(recipe, id, depth);
         if (craft) paths.push(craft);
-        add({ key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] });
+        const node = { key, object: Number(id), price: price(id), paths: paths.length <= 3 ? paths : [...paths.slice(0, 2), paths.find(path => path.kind === 'craft') || paths[2]] };
+        descriptors.set(key, node);
+        add(node);
         preparingItems.delete(key);
         return key;
     };
@@ -533,33 +560,107 @@ function buildProjection(state, ctx, deps) {
         const value = (gain.attack + gain.defence * ctx.deathHours) * horizon
             + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0);
         if (!(value > 0) || !(price(item.selfId) > 0)) continue;
-        const observed = observedPurchase(item.selfId);
-        const fullPrice = observed ? observed.price + observed.tripFees + observed.tripHours * ctx.hunt.perHour : price(item.selfId);
-        candidates.push({ item, slot, value, ratio: value / Math.max(1, fullPrice), gain, observed });
+        candidates.push({ item, slot, value, gain });
     }
-    // Within a slot an executable quote cannot be screened out by a cheap
-    // forecast with no supplier. Different slots still use shared utility.
-    const bySlot = new Map();
+    // MVP-6: every nominated candidate is valued by the same path solver
+    // the network uses, over its own scratch arena of item descriptors. A
+    // forecast without a supplier no longer screens out a step now: the
+    // fundable path wins its family, then benefit per effort.
+    const admission = { candidates: 0, evaluations: 0, maxScratch: 0, rounds: 0, pending: [], admitted: [] };
+    const solverOptions = { hourAdena: ctx.hourAdena, riskWeight: ctx.riskWeight, stockFor: ctx.stockFor || null,
+        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve };
+    const real = nodes, gear = [];
     for (const candidate of candidates) {
-        const best = bySlot.get(candidate.slot);
-        if (!best || Number(!!candidate.observed) > Number(!!best.observed)
-            || !!candidate.observed === !!best.observed && candidate.ratio > best.ratio) bySlot.set(candidate.slot, candidate);
-    }
-    const finalists = [...bySlot.values()].sort((a, b) => b.ratio - a.ratio || a.item.selfId - b.item.selfId);
-    // Distinct slots, including each jewellery side. Dual blades stay a single
-    // product requirement; its native combination is one acquisition path.
-    const slots = new Set();
-    for (const candidate of finalists) {
-        if (slots.has(candidate.slot) || slots.size >= 4) continue;
+        nodes = [];
         const key = itemNode(candidate.item.selfId);
+        const keys = nodes.map(node => node.key);
+        nodes = real;
         if (!key) continue;
-        slots.add(candidate.slot);
-        values.set(Number(candidate.item.selfId), candidate.value * powerWeight);
-        root({ key: `power:${candidate.item.selfId}:${candidate.slot}`, need: 'power',
-            object: { itemId: Number(candidate.item.selfId), slot: candidate.slot }, price: price(candidate.item.selfId),
-            valueHours: candidate.value * powerWeight, benefitPerHour: (candidate.gain.attack + candidate.gain.defence * ctx.deathHours) * powerWeight,
-            horizonHours: horizon, paths: [{ requirements: [{ key, amount: 1 }] }] });
+        const benefitPerHour = (candidate.gain.attack + candidate.gain.defence * ctx.deathHours) * powerWeight;
+        gear.push({ candidate, keys, family: Equipment.isWeaponSlot(candidate.slot) ? 'weapon' : candidate.slot,
+            node: { key: `power:${candidate.item.selfId}:${candidate.slot}`, need: 'power',
+                object: { itemId: Number(candidate.item.selfId), slot: candidate.slot }, price: price(candidate.item.selfId),
+                valueHours: candidate.value * powerWeight, benefitPerHour, horizonHours: horizon,
+                paths: [{ requirements: [{ key, amount: 1 }] }] } });
+        admission.maxScratch = Math.max(admission.maxScratch, keys.length);
     }
+    admission.candidates = gear.length;
+    // A throw of the solver's own bounds or an arena over forty descriptors
+    // is `limit`: unresolved, never an unavailable item or a zero cost.
+    const evaluate = (row, used) => {
+        admission.evaluations++; row.evaluations = (row.evaluations || 0) + 1;
+        row.status = 'limit'; row.wish = null; row.claims = null;
+        if (row.keys.length > Network.MAX_NODES) return;
+        try {
+            const solver = Network.createSolver({ ...solverOptions, nodes: [...row.keys.map(key => descriptors.get(key)), row.node] });
+            const wish = solver.rootWish(row.node.key);
+            if (solverOptions.stockFor && wish.plan) row.claims = solver.allocate(wish, used);
+            row.wish = wish;
+            row.status = wish.plan && wish.valueHours > 0 ? 'evaluated' : 'no_path';
+        } catch (error) {
+            if (!SOLVER_LIMITS.has(error?.message)) throw error;
+        }
+    };
+    const score = row => row.wish.valueHours / Math.max(1 / 3600, row.wish.effort);
+    const before = (a, b) => score(a) > score(b) || score(a) === score(b) && a.node.key < b.node.key;
+    const winners = open => {
+        const best = new Map();
+        for (const row of gear) {
+            if (row.status !== 'evaluated' || !open(row.family)) continue;
+            const held = best.get(row.family);
+            const fundable = Number(Network.fundable(row.wish)), heldFundable = held ? Number(Network.fundable(held.wish)) : -1;
+            if (!held || fundable > heldFundable || fundable === heldFundable && before(row, held)) best.set(row.family, row);
+        }
+        return [...best.values()].sort((a, b) => before(a, b) ? -1 : before(b, a) ? 1 : 0);
+    };
+    // Family winners enter one at a time by score while the union of their
+    // descriptors stays within forty; a winner that does not fit is pending
+    // and the others proceed. Shared stock: after each admission except the
+    // last, only candidates holding a newly claimed item are re-evaluated.
+    function* admitGear() {
+        let used = new Map();
+        for (const row of gear) { evaluate(row, used); yield row; }
+        admission.rounds = gear.length ? 1 : 0;
+        const admitted = [], closed = new Set(), union = new Set();
+        for (;;) {
+            if (admitted.length >= GEAR_ROOTS) break;
+            const [winner] = winners(family => !closed.has(family));
+            if (!winner) break;
+            closed.add(winner.family);
+            if ([...winner.keys, winner.node.key].filter(key => !union.has(key)).length + union.size > Network.MAX_NODES) {
+                admission.pending.push({ key: winner.node.key, reason: 'node_limit' });
+                continue;
+            }
+            for (const key of winner.keys) union.add(key);
+            union.add(winner.node.key);
+            admitted.push(winner);
+            if (admitted.length >= GEAR_ROOTS || !winner.claims || admission.rounds >= GEAR_ROUNDS) continue;
+            const claimed = new Set();
+            for (const [id, count] of winner.claims) if (count > (used.get(id) || 0)) claimed.add(`item:${id}`);
+            used = new Map(used);
+            for (const [id, count] of winner.claims) used.set(id, Math.max(used.get(id) || 0, count));
+            const affected = gear.filter(row => !closed.has(row.family) && row.keys.some(key => claimed.has(key)));
+            if (!affected.length) continue;
+            admission.rounds++;
+            for (const row of affected) { evaluate(row, used); yield row; }
+        }
+        for (const row of gear) if (row.status === 'limit' && !admitted.includes(row))
+            admission.pending.push({ key: row.node.key, reason: 'evaluation_limit' });
+        // The selected-path witness: the scalar facts the expanded root must repeat.
+        admission.admitted = admitted.map(row => ({ key: row.node.key, family: row.family, scratch: row.keys.length,
+            evaluations: row.evaluations, price: row.wish.price, effort: row.wish.effort, valueHours: row.wish.valueHours,
+            supported: row.wish.supported, resolved: row.wish.resolved }));
+        return admitted;
+    }
+    // ARCH-NOTE: the provider runs inside the synchronous EconomyContext
+    // forState; yielding each evaluation through prepareNative would need
+    // forState and its callers as generators (the MVP-6 continuation gate,
+    // not met). The generator keeps the per-evaluation step and is drained
+    // here synchronously.
+    const admitting = admitGear();
+    let step = admitting.next();
+    while (!step.done) step = admitting.next();
+    const admittedGear = step.value;
     for (const book of invoke('GameServer/Skills/SkillBookCatalog').missingBooks(state)) {
         if (nodes.length >= 36) break;
         const gain = Profile.gainFor(ownBuild, `${magic ? 'm' : 'p'}:skill:${book.skillId}:${book.level}`, () => {
@@ -579,7 +680,7 @@ function buildProjection(state, ctx, deps) {
     }
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
     if (rare && statusWeight > 0) {
-        const held = nodes.find(node => node.need && node.object?.itemId === Number(rare.item.selfId));
+        const held = admittedGear.find(row => row.node.object.itemId === Number(rare.item.selfId))?.node;
         if (held) held.valueHours += rare.value * statusWeight;
         const key = !held && itemNode(rare.item.selfId);
         if (key) root({ key: `status:${rare.item.selfId}`, need: 'status', object: { itemId: rare.item.selfId },
@@ -645,6 +746,18 @@ function buildProjection(state, ctx, deps) {
             valueHours: ctx.hunt.perHour > 0 ? row.profit / ctx.hunt.perHour : 0, price: row.ask.price,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
+    // Admitted gear enters the real graph after the other providers, so
+    // their 36-node build cap is not spent on gear; the final rank cut
+    // below compares every root.
+    for (const row of admittedGear) {
+        if (nodes.length + row.keys.filter(key => !nodes.some(node => node.key === key)).length + 1 > 64) {
+            admission.pending.push({ key: row.node.key, reason: 'node_limit' });
+            continue;
+        }
+        for (const key of row.keys) include(key);
+        values.set(Number(row.candidate.item.selfId), row.candidate.value * powerWeight);
+        root(row.node);
+    }
     for (const node of deps.nodes || []) { if (node.need) root(node); else add(node); }
     const moneyPaths = ctx.hunt.perHour > 0 ? [{ activity: 'hunting', kind: 'money',
         spotId: ctx.bestSpotId, incomePerHour: ctx.hunt.perHour, riskHours: ctx.expectedDeathHours }] : [];
@@ -673,19 +786,16 @@ function buildProjection(state, ctx, deps) {
     const rank = key => { const node = byKey.get(key); return positive(node.valueHours)
         / Math.max(1 / 3600, positive(node.price) / Math.max(1, ctx.hunt.perHour) + positive(node.costHours)); };
     roots.sort((a, b) => rank(b) - rank(a) || a.localeCompare(b));
-    roots.length = Math.min(WISH_ROOTS, roots.length);
-    const reachable = () => {
-        const seen = new Set();
-        const visit = key => { if (seen.has(key)) return; seen.add(key);
-            for (const path of byKey.get(key)?.paths || []) {
-                for (const requirement of path.requirements || []) visit(requirement.key);
-                for (const requirement of path.grossRequirements || []) visit(requirement.key);
-            } };
-        roots.forEach(visit); return seen;
-    };
-    let kept = reachable();
-    while (kept.size > 40 && roots.length) { roots.pop(); kept = reachable(); }
-    return { nodes: nodes.filter(node => kept.has(node.key)), roots, values, moneyPaths, horizon };
+    const cut = Network.admitRoots(roots, byKey, { rootLimit: WISH_ROOTS, nodeLimit: Network.MAX_NODES });
+    admission.pending.push(...cut.pending);
+    if (Diagnostics.active()) {
+        Diagnostics.count('provider', 'admission', 'candidate', admission.candidates);
+        Diagnostics.count('provider', 'admission', 'evaluation', admission.evaluations);
+        Diagnostics.count('provider', 'admission', 'round', admission.rounds);
+        Diagnostics.count('provider', 'admission', 'gear_root', admittedGear.length);
+        for (const row of admission.pending) Diagnostics.count('provider', 'admission_pending', row.reason);
+    }
+    return { nodes: nodes.filter(node => cut.kept.has(node.key)), roots: cut.roots, values, moneyPaths, horizon, admission };
 }
 // Only public recipe rows and a prepared route can prove a usable service.
 // This bounded indexed read is shared by visible and distant bots. No private
@@ -742,4 +852,4 @@ function personalCraftPlan(state, context) {
         materials: finalRecipe.materials.map(row => ({ ...row })), craftProviders: providers,
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network' };
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { GEAR_FINALISTS_PER_SLOT, GEAR_ROOTS, GEAR_ROUNDS, PRODUCER_PRICED, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

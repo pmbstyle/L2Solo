@@ -5,7 +5,7 @@ const GearThreat = require('./GearThreat');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
-const { WishNetwork, remember } = require('./WishNetwork');
+const { WishNetwork, remember, admitRoots } = require('./WishNetwork');
 const { isMainThread } = require('node:worker_threads');
 const Diagnostics = require('./EconomyDiagnostics');
 const { fnv1a32 } = require('../Fnv1a');
@@ -434,26 +434,31 @@ function forState(state = {}, deps = {}) {
             money: state.stats?.money || [0, 0, base.survivalReserve, 0] };
         return context;
     }
+    // One stock reader for the provider's gear witnesses and the network
+    // build; the projection is read lazily once it exists (stock roots).
+    context.wallet = positive(state.adena) + positive(deps.buyOrderEscrow);
+    context.stockFor = (id, rootKey) => ({ owned: rootKey.startsWith('stock:')
+        && context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId === id
+        ? positive(state.inventory?.[id]?.amount) : require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
+    incoming: positive(state.acceptedIncoming?.[id]) });
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
+    context.projection = projection;
     if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
         object: workshop.productId, incomePerHour: workshop.incomePerHour,
         cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = `${key}#${marketKey(reads)}`;
     const network = engine.build({ actorKey, inputKey: networkKey, ...projection,
         remembered: deps.rememberContext !== false,
-        stockFor: (id, rootKey) => ({ owned: rootKey.startsWith('stock:') && projection.nodes.find(node => node.key === rootKey)?.object?.itemId === id
-            ? positive(state.inventory?.[id]?.amount) : require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
-        incoming: positive(state.acceptedIncoming?.[id]) }),
+        stockFor: context.stockFor,
         characterId: state.characterId, decisionSeq: state.stats?.decisionSeq, activityLeaf: state.stats?.activityLeaf,
-        wallet: positive(state.adena) + positive(deps.buyOrderEscrow), survivalReserve: base.survivalReserve,
+        wallet: context.wallet, survivalReserve: base.survivalReserve,
         playedHours: positive(state.stats?.playedHours), persona,
         previous: { focus: state.stats?.wishFocus, dormant: state.stats?.dormantWishes },
         hourAdena: context.hourAdena, riskWeight: context.riskWeight,
         caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason || 'context_build' });
     context.inputKey = networkKey;
     context.horizonHours = projection.horizon;
-    context.projection = projection;
     context.network = network;
     context.moneyPrice = network.moneyPrice;
     context.hourAdena = network.hourAdena;
@@ -546,19 +551,17 @@ function forGroup(group, members, deps = {}) {
         const prefix = `${i}:`;
         for (const node of source.nodes) nodes.push({ ...node, key: prefix + node.key,
             paths: (node.paths || []).map(path => ({ ...path, ...(path.quoted ? { tripScope: contexts[i].actorKey } : {}), requirements: (path.requirements || [])
-                .map(row => ({ ...row, key: prefix + row.key })) })) });
+                .map(row => ({ ...row, key: prefix + row.key })),
+                ...(path.grossRequirements ? { grossRequirements: path.grossRequirements.map(row => ({ ...row, key: prefix + row.key })) } : {}) })) });
         roots.push(...source.roots.map(key => prefix + key));
     }
     const byKey = new Map(nodes.map(node => [node.key, node]));
     roots.sort((a, b) => positive(byKey.get(b).valueHours) / Math.max(1, positive(byKey.get(b).price))
         - positive(byKey.get(a).valueHours) / Math.max(1, positive(byKey.get(a).price)));
-    roots.length = Math.min(12, roots.length);
-    const collect = () => { const seen = new Set(); const visit = key => { if (seen.has(key)) return;
-        seen.add(key); for (const path of byKey.get(key)?.paths || []) for (const row of path.requirements || []) visit(row.key); };
-        roots.forEach(visit); return seen; };
-    let kept = collect();
-    while (kept.size > 40 && roots.length) { roots.pop(); kept = collect(); }
-    const network = engine.build({ actorKey, inputKey: key, remembered: false, nodes: nodes.filter(node => kept.has(node.key)), roots,
+    // MVP-6: the same admission as one member's projection; a root whose
+    // union does not fit is pending and the smaller ones still proceed.
+    const { roots: admitted, kept } = admitRoots(roots, byKey);
+    const network = engine.build({ actorKey, inputKey: key, remembered: false, nodes: nodes.filter(node => kept.has(node.key)), roots: admitted,
         wallet, playedHours: positive(group.playedHours), persona: group.persona || first.persona,
         previous: { focus: group.wishFocus, dormant: group.dormantWishes },
         hourAdena: contexts.reduce((sum, context) => sum + context.hunt.perHour, 0),
