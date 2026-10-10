@@ -18,6 +18,13 @@ const DEFAULT_FILE = path.resolve(__dirname, '../../../../data/Bots/spot-table.j
 let table = null;
 let file = DEFAULT_FILE;
 const bestRows = new Map();
+// value() is a pure function of the table, the rate profile and its four
+// arguments; every bot of a role and level asks the same spots. One bounded
+// answer per argument set, dropped when the table or the profile changes
+// (ProgressionRates keeps one profile object while the rates are equal).
+const MAX_VALUE_MEMO = 32768;
+const valueMemo = new Map();
+let valueMemoTable = null, valueMemoRates = null;
 
 // A curve with no value at a gap (no curve spot hunts there) takes the
 // nearest higher gap's value, else the nearest lower one.
@@ -117,7 +124,24 @@ const expGapFactor = require('../../Progression/MobExperience').gapFactor;
 // when the spot or role is unknown or the bot finds no target it may fight
 // alone there at this level.
 function value(spotId, role, level, shots = true) {
-    const t = load();
+    const t = load(), rates = ProgressionRates.profile();
+    if (t !== valueMemoTable || rates !== valueMemoRates) {
+        valueMemo.clear();
+        valueMemoTable = t;
+        valueMemoRates = rates;
+    }
+    const key = `${spotId}\u0000${role}\u0000${level}\u0000${shots ? 1 : 0}`;
+    let row = valueMemo.get(key);
+    if (row === undefined) {
+        row = computeValue(t, rates, spotId, role, level, shots);
+        if (valueMemo.size >= MAX_VALUE_MEMO) valueMemo.delete(valueMemo.keys().next().value);
+        valueMemo.set(key, row);
+    }
+    // Callers own the result: a copy, never the remembered row.
+    return row && { ...row };
+}
+
+function computeValue(t, rates, spotId, role, level, shots) {
     const s = t.spotIndex.get(String(spotId));
     const r = t.roleIndex.get(role);
     if (s === undefined || r === undefined) return null;
@@ -134,7 +158,6 @@ function value(spotId, role, level, shots = true) {
     };
     const kills = Math.min(row[t.f.kph] * ratio('kph'), spotCap) * pull;
     if (!(kills > 0)) return null;
-    const rates = ProgressionRates.profile();
     // One lookup has fixed curve/gap/rates: XP and SP share their ratio,
     // adena and loot share theirs, and combat/shots/potions share busy.
     // Keep the original multiplication order and return a fresh result.
@@ -198,6 +221,7 @@ function useFile(next = DEFAULT_FILE) {
     file = next;
     table = null;
     bestRows.clear();
+    valueMemo.clear();
 }
 
 module.exports = { value, spotLevel, referenceLevel, roles, best, useFile, expGapFactor, DEFAULT_FILE };
