@@ -8,6 +8,8 @@ jobs:
   node-tests:
     name: Node tests (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    # A test file that never exits must not hold its shard for the 6 h default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
