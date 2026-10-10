@@ -49,6 +49,7 @@ Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandid
 // eligibility come from their own modules (one reader each).
 Object.assign(adapters, {
     'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+        craftLabour: state => ({ executor: state.phase === 'hot' ? 'hot' : 'cold', mpCapacity: 1000, mpPerHour: 120000 }),
         exitValue: function* () { return 0; } },
     'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
 adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ maxMp: 1000 });

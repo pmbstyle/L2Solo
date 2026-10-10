@@ -36,7 +36,7 @@ function recheck(state, selected) {
     const board = AfkTrade.boardIndex(), Fields = require('../../AfkTrade/BoardIndex');
     const ItemIndex = require('../../Item/ItemTemplateIndex');
     const context = { hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]), fixedBatches: batches,
-        mpPerHour: Number(invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state).mp) * 1200 };
+        ...Source.craftLabour(state) };
     const trip = Profit.tripFor(state, context); context.trip = trip;
     const ownStock = new Map(), neededIds = new Set([Number(recipe.productId), Number(recipe.recipeItemId)]);
     for (const material of recipe.materials || []) neededIds.add(Number(material.selfId));

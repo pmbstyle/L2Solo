@@ -347,7 +347,8 @@ check('five books reuse the own before profile and cached gains on later reviews
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');
     const Books = invoke('GameServer/Skills/SkillBookCatalog');
     const Policy = invoke('GameServer/Bot/Economy/BotImprovementPolicy');
-    const state = base({ characterId: 820, level: 51 });
+    // A cold bot carries the MP cap its resolver stored; craft facts read it, not the profile.
+    const state = base({ characterId: 820, level: 51, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } });
     const original = { profile: Profile.profileFor, books: Books.missingBooks, opportunities: Policy.opportunities };
     let ownCalls = 0;
     Profile.profileFor = function(value, ...args) { if (value === state) ownCalls++; return original.profile(value, ...args); };

@@ -10,7 +10,8 @@ function* prepareBasket(recipe, planFor, ownedFor = () => null, batches = 1, con
     // Learning consumes one scroll for this whole decision, never one per
     // manufactured batch. Its purchase joins the same town/fee allocation.
     const entry = Number(context.recipeInput || 0);
-    const facts = yield* Profit.prepareCraftFacts(recipe, { batches, recipeInput: entry, mpPerHour: context.mpPerHour });
+    const facts = yield* Profit.prepareCraftFacts(recipe, { batches, recipeInput: entry,
+        executor: context.executor, mpCapacity: context.mpCapacity, mpPerHour: context.mpPerHour });
     if (facts.status !== 'ready' && facts.reason !== 'mp_regen') return null;
     const required = facts.gross;
     const purchases = [], owned = [], trips = new Map(), allocated = new Map();
@@ -103,7 +104,7 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     // Chance, MP and labour of the basket's own craft facts, the reader the
     // wish network prices the same craft by.
     const facts = basket?.facts?.batches === batches ? basket.facts
-        : Profit.craftFacts(recipe, { batches, mpPerHour: context.mpPerHour });
+        : Profit.craftFacts(recipe, { batches, executor: context.executor, mpCapacity: context.mpCapacity, mpPerHour: context.mpPerHour });
     const successRate = facts.successProbability;
     const productCount = Number(recipe?.productCount) * batches;
     const mp = Number(facts.mp);

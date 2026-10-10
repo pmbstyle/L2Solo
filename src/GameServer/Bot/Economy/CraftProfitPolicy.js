@@ -49,8 +49,7 @@ function craftIncomePerHour(margin) {
 }
 function contextFor(state, timestamp = Date.now()) {
     const context = require('../Population/ColdEconomyDecision').economyFor(state, { timestamp });
-    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
-    return { ...context, mpPerHour: Number(regen.mp) * 1200 };
+    return { ...context, ...invoke('GameServer/Bot/Population/ColdOccupationSources').craftLabour(state, timestamp) };
 }
 function tripFor(state, options = {}) { return require('./EconomicTrip').reader(state, options); }
 function inputValue(id, state, context = {}) {

@@ -314,8 +314,8 @@ function buildProjection(state, ctx, deps) {
     let combat = null, spoiler;
     const profile = () => combat ??= Profile.profileFor(state, timestamp, Profile.buildOptions(ownBuild, timestamp));
     const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');
-    const mpPerHour = Occupation.mpPerHour(state);
-    const executor = state.phase === 'hot' ? 'hot' : 'cold';
+    let labour = null;
+    const craftLabour = () => labour ??= Occupation.craftLabour(state, timestamp, profile);
     const sourceTrips = new Map(), farmFacts = new Map();
     const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
@@ -359,7 +359,7 @@ function buildProjection(state, ctx, deps) {
         if (!Sources.allowsRecipe(recipe)) return null;
         const dual = recipe?.kind === 'dual_sword_combine';
         const ownCapable = recipe && (dual || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
-        const own = ownCapable ? Profit.craftFacts(recipe, { batches: 1, executor, mpCapacity: profile().maxMp, mpPerHour }) : null;
+        const own = ownCapable ? Profit.craftFacts(recipe, { batches: 1, ...craftLabour() }) : null;
         let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
         if (workshop && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
             && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
@@ -379,7 +379,7 @@ function buildProjection(state, ctx, deps) {
             if (!scrollAvailable) return null;
             const facts = workshop ? Profit.craftFacts(recipe, { batches: 1, executor: 'workshop',
                 capacityBatches: workshop.capacityBatches, fee: workshop.price, recipeInput: 0 })
-                : Profit.craftFacts(recipe, { batches: 1, executor, mpCapacity: profile().maxMp, mpPerHour,
+                : Profit.craftFacts(recipe, { batches: 1, ...craftLabour(),
                     recipeInput: learned ? 0 : recipe.recipeItemId });
             if (facts.status !== 'ready') return null;
             // A physical attempt consumes one whole command, including failure.

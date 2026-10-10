@@ -189,6 +189,18 @@ function mpPerHour(state) {
     return mpRates.get(Number(state.stats?.classId))?.[Number(state.level)];
 }
 
+// The native craft executor's facts, one reader for the wish and the
+// producer: a hot bot crafts one batch per command; a cold command is bound
+// by the MP cap the executor's vitals carry (the combat profile only when
+// none is stored); seated recovery prices the labour.
+function craftLabour(state, timestamp = Date.now(), profile = null) {
+    if (state.phase === 'hot') return { executor: 'hot', mpCapacity: Infinity, mpPerHour: mpPerHour(state) };
+    const stored = Number(state.vitals?.maxMp);
+    const mpCapacity = stored > 0 ? stored : Number((profile ? profile()
+        : invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(state, timestamp))?.maxMp);
+    return { executor: 'cold', mpCapacity, mpPerHour: mpPerHour(state) };
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
@@ -207,7 +219,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
         ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(packet[0]) }) : null;
     const context = { timestamp, state, insideContext: true, hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        survivalReserve: Number(packet[2]), mpPerHour: mpPerHour(state),
+        survivalReserve: Number(packet[2]), ...craftLabour(state, timestamp),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
@@ -338,7 +350,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, mpPerHour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, mpPerHour, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcSellerTowns.has(town); },
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],

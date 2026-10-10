@@ -51,6 +51,7 @@ Object.assign(adapters, { 'GameServer/Bot/Economy/ItemDisposition': { saleCandid
 // eligibility come from their own modules (one reader each).
 Object.assign(adapters, {
     'GameServer/Bot/Population/ColdOccupationSources': { mpPerHour: () => 120000,
+        craftLabour: state => ({ executor: state.phase === 'hot' ? 'hot' : 'cold', mpCapacity: 1000, mpPerHour: 120000 }),
         exitValue: function* () { return 0; } },
     'GameServer/Bot/Population/ColdKillRewards': { spoilerFor: () => false } });
 adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ maxMp: 1000 });
@@ -319,6 +320,54 @@ assert.equal(ColdDecision.view(committedRich, emptyTransport, nativeDeps).gapHor
 assert(require('node:v8').serialize(richTransport).byteLength <= ColdDecision.MAX_BYTES);
 NativeEconomy.reset();
 console.log('PASS native capture/transport/view: rich funded urgency, unknown arrival, stock horizons, empty queue and wire bound');
+
+// Identical facts (Task 2 D2/D3): the wish craft path, CraftProfitPolicy.craftFacts
+// and the producer's basket read one recipe through the one labour reader.
+{
+    const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');
+    const Basket = require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
+    const Profit = require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
+    const stub = adapters['GameServer/Bot/Population/ColdOccupationSources'];
+    const saved = { labour: stub.craftLabour, mpCost: recipe.mpCost, successRate: recipe.successRate,
+        stats: state.stats, vitals: state.vitals, phase: state.phase };
+    const whole = (id, units) => ({ whole: true, units, cost: units, landed: units, town: 'Giran' });
+    stub.craftLabour = Occupation.craftLabour;
+    Object.assign(recipe, { mpCost: 30, successRate: 70 });
+    state.stats = { ...state.stats, classId: 1, recipes: [301] };
+    state.vitals = { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 };
+    try {
+        assert.equal(Occupation.craftLabour({ ...state, vitals: {} }, 1, () => ({ maxMp: 600 })).mpCapacity, 600,
+            'no stored MP cap: the combat profile supplies it');
+        for (const phase of ['cold', 'hot']) {
+            state.phase = phase;
+            const labour = Occupation.craftLabour(state, 1);
+            assert(labour.mpPerHour > 0, phase);
+            const path = run(true).nodes.find(row => row.key === 'item:101').paths.find(row => row.kind === 'craft');
+            assert(path, phase);
+            const direct = Profit.craftFacts(recipe, { batches: 1, ...labour });
+            const producer = Basket.basketFor(recipe, whole, () => null, 1, { ...labour, hourAdena: 100 }).facts;
+            for (const facts of [direct, producer]) {
+                assert.equal(facts.status, 'ready', phase);
+                assert.equal(path.successProbability, facts.successProbability, phase);
+                assert.equal(path.perCommand, facts.perCommand, phase);
+                assert.equal(path.productCount, facts.productCount, phase);
+                assert.equal(path.costHours, facts.labourHours, phase);
+                assert.deepEqual(path.grossRequirements.map(row => [row.key, row.amount]),
+                    [...facts.gross].map(([id, amount]) => [`item:${id}`, amount]), phase);
+            }
+            // floor(1000 MP / 30 per batch) = 33 batches per cold command; a hot bot crafts one.
+            assert.equal(path.perCommand, phase === 'hot' ? 1 : 33, phase);
+            assert.equal(path.successProbability, .7, phase);
+        }
+    } finally {
+        stub.craftLabour = saved.labour;
+        Object.assign(recipe, { mpCost: saved.mpCost, successRate: saved.successRate });
+        Object.assign(state, { stats: saved.stats, vitals: saved.vitals, phase: saved.phase });
+        if (saved.vitals === undefined) delete state.vitals;
+        if (saved.phase === undefined) delete state.phase;
+    }
+}
+console.log('PASS identical craft facts: wish path = craftFacts = producer basket, cold 33 per command, hot 1');
 
 // A fighter buys a published service instead of pretending to learn a dwarf recipe.
 ownCraft = false;

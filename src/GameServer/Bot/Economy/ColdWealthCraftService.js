@@ -29,9 +29,8 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
     const template = ItemTemplateIndex.find(DataCache.items, Number(recipe.productId));
     if (!template) return null;
     const board = AfkTrade.boardIndex();
-    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
     const context = { hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        mpPerHour: Number(regen.mp) * 1200, fixedBatches: batches };
+        ...invoke('GameServer/Bot/Population/ColdOccupationSources').craftLabour(state), fixedBatches: batches };
     const trip = Profit.tripFor(state, context); context.trip = trip;
     const learning = !(knownRecipes || []).some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId));
     let scrollQuote = null;
@@ -418,9 +417,9 @@ async function tryCraft(state) {
 
 function opportunities(state, { hourAdena, worth, timestamp = Date.now() } = {}) {
     if (!eligible(state)) return [];
-    const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(state);
     const known = state.stats?.workshop?.entries || [];
-    const opportunity = chooseOpportunity(state, known, { hourAdena, hunt: { perHour: hourAdena }, worth, timestamp, insideContext: true, mpPerHour: Number(regen.mp) * 1200 });
+    const opportunity = chooseOpportunity(state, known, { hourAdena, hunt: { perHour: hourAdena }, worth, timestamp, insideContext: true,
+        ...invoke('GameServer/Bot/Population/ColdOccupationSources').craftLabour(state, timestamp) });
     return opportunity ? [{ ...opportunity, value: opportunity.expectedProfit, activity: 'crafting' }] : [];
 }
 
