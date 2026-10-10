@@ -676,6 +676,42 @@ function buildProjection(state, ctx, deps) {
             admission.rounds++;
             for (const row of affected) { evaluate(row, used); yield row; }
         }
+        // Shared held stock (MVP-6): the network allocates it in the author's
+        // money priority (stockless full value per price, an unquoted root at
+        // its market price), not by score. Admitted roots whose arenas share
+        // an item are allocated again in that order, one evaluation each, so
+        // every witness is the expanded wish. A root the network would then
+        // drop leaves admission; its family waits for the next review.
+        const shared = new Set(), seen = new Set();
+        for (const row of admitted) for (const key of new Set(row.keys)) (seen.has(key) ? shared : seen).add(key);
+        if (solverOptions.stockFor && shared.size) {
+            const rows = [];
+            for (const row of admitted) {
+                admission.evaluations++; row.evaluations++;
+                row.status = 'limit'; row.wish = null; row.claims = null;
+                try {
+                    const solver = Network.createSolver({ ...solverOptions, nodes: [...row.keys.map(key => descriptors.get(key)), row.node] });
+                    const base = solver.rootWish(row.node.key);
+                    if (base.plan && base.fullValueHours > 0) rows.push({ row, solver, base });
+                    else row.status = 'no_path';
+                } catch (error) {
+                    if (!SOLVER_LIMITS.has(error?.message)) throw error;
+                }
+            }
+            rows.sort((a, b) => b.base.fullValueHours / Math.max(1, b.base.price) - a.base.fullValueHours / Math.max(1, a.base.price)
+                || a.base.key.localeCompare(b.base.key));
+            used = new Map();
+            for (const { row, solver } of rows) {
+                const wish = { key: row.node.key, need: row.node.need, object: row.node.object };
+                const claims = solver.allocate(wish, used);
+                if (wish.valueHours > 0) used = claims;
+                row.wish = wish; row.claims = wish.plan ? claims : null;
+                row.status = !wish.plan ? 'no_path' : wish.valueHours > 0 ? 'evaluated'
+                    : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
+                yield row;
+            }
+            for (let at = admitted.length - 1; at >= 0; at--) if (admitted[at].status !== 'evaluated') admitted.splice(at, 1);
+        }
         for (const row of gear) if (row.status === 'limit' && !admitted.includes(row))
             admission.pending.push({ key: row.node.key, reason: 'evaluation_limit' });
         for (const row of gear) if (row.status === 'not_ready')

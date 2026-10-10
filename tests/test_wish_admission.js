@@ -55,12 +55,22 @@ const network = load('WishNetwork.js', name => {
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };
     throw Error(name);
 });
+// Candidate solvers and their wishes (plan trees) are the heavy references
+// a completed build must not keep; `heavy` collects them while it is set.
+let heavy = null;
+const tracked = Object.create(network, { createSolver: { value: options => {
+    const solver = network.createSolver(options);
+    if (!heavy) return solver;
+    heavy.push(new WeakRef(solver));
+    return { ...solver, rootWish: key => { const wish = solver.rootWish(key); heavy.push(new WeakRef(wish)); return wish; },
+        allocate: (wish, used) => { heavy.push(new WeakRef(wish)); return solver.allocate(wish, used); } };
+} } });
 const provider = load('WishProviders.js', name => {
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: () => true };
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './EconomyDiagnostics') return Diagnostics;
     if (name === './EconomicValuation') return valuation;
-    if (name === './WishNetwork') return network;
+    if (name === './WishNetwork') return tracked;
     if (name === '../AI/BotEquipmentCompatibility') return require('../src/GameServer/Bot/AI/BotEquipmentCompatibility');
     if (name === '../../Item/ItemTemplateIndex') return require('../src/GameServer/Item/ItemTemplateIndex');
     if (name.endsWith('BoardIndex')) return { SELL: 1 };
@@ -145,6 +155,7 @@ console.log('PASS ready benefit admits the cheaper chest the old proxy cut; witn
 // a material read only while the waiting piece's arena is built never
 // becomes an input of the review, the admitted piece's does (MVP-6 Bounds).
 prices.set(211, 5000); prices.set(214, 5000);
+heavy = [];
 const scoped = scenario({ items: [111, 112, 113, 114].map((id, at) => gear(id, at + 1, 0.5, 1000)).concat(gear(115, 10, 0.2, 500)),
     asks: [[111, 1000], [112, 1000], [113, 1000], [114, 1000], [115, 500]],
     known: [recipe(3111, 111, [211]), recipe(3114, 114, [214])] });
@@ -153,6 +164,7 @@ assert.deepEqual(scoped.projection.roots.filter(key => key.startsWith('power:'))
 assert(scoped.reads.has(211), 'the admitted piece\'s material is an input');
 assert(!scoped.reads.has(214), 'the waiting piece\'s material is not an input');
 recipes.delete(111); recipes.delete(114);
+const solvers = heavy; heavy = null;
 console.log('PASS a waiting candidate\'s arena reads never become inputs');
 
 // 2. Weapon slots 7 and 14 are one family: one weapon root, the better one.
@@ -169,20 +181,21 @@ const shared = scenario({ items: [gear(131, 1, 0.5, 1000), gear(132, 2, 0.5, 100
     asks: [[202, 1, 20]], known: [recipe(331, 131, [[202, 10]]), recipe(332, 132, [[202, 10]])],
     inventory: { 202: { selfId: 202, amount: 10 } } });
 assert.equal(shared.admission.rounds, 2);
-assert.equal(shared.admission.evaluations, 3, 'two first evaluations and one affected re-evaluation');
-assert.equal(witness(shared.admission, 'power:131:1').evaluations, 1);
-assert.equal(witness(shared.admission, 'power:132:2').evaluations, 2);
+assert.equal(shared.admission.evaluations, 5, 'two first evaluations, one affected re-evaluation, two in the network order');
+assert.equal(witness(shared.admission, 'power:131:1').evaluations, 2);
+assert.equal(witness(shared.admission, 'power:132:2').evaluations, 3);
 assert.equal(witness(shared.admission, 'power:131:1').price, 0, 'held material costs no money');
 assert.equal(witness(shared.admission, 'power:132:2').price, 10, 'the second craft buys its material');
 console.log('PASS shared stock re-evaluates only the affected candidate');
 // 3b. Five pieces in five families each craft from 10 of 50 held 202: every
 // admission claims 10 more, so the rest are re-evaluated. Four gear roots
-// stop at four rounds (5 + 4 + 3 + 2 evaluations); the fifth is not admitted.
+// stop at four rounds (5 + 4 + 3 + 2 evaluations), then the four share 202
+// and are allocated again in the network's order (4); the fifth is not admitted.
 const rounds = scenario({ items: [[151, 1], [152, 2], [153, 3], [154, 4], [155, 10]].map(([id, slot]) => gear(id, slot, 0.5, 1000)),
     known: [151, 152, 153, 154, 155].map(id => recipe(id + 300, id, [[202, 10]])),
     inventory: { 202: { selfId: 202, amount: 50 } } });
 assert.equal(rounds.admission.rounds, 4, 'the round cap');
-assert.equal(rounds.admission.evaluations, 14);
+assert.equal(rounds.admission.evaluations, 18);
 assert.equal(rounds.admission.admitted.length, 4);
 assert.deepEqual(rounds.admission.admitted.map(row => row.price), [0, 0, 0, 0], 'each admitted craft uses its own held 10');
 [151, 152, 153, 154, 155].forEach(id => recipes.delete(id));
@@ -304,6 +317,30 @@ assert.equal(counts.get('provider/admission_pending/not_ready_in_horizon'), 1);
 assert(!far.projection.roots.includes('power:116:1'));
 console.log('PASS a path not ready inside the horizon is pending with its reason');
 
+// 12. Shared held stock: 131 (gain 0.4, price 100) and 132 (gain 0.5, price
+// 10000) both craft from the 10 held 202. Admission scores 132 first; the
+// network's money priority (full value per price) gives the stock to 131.
+// After admission the admitted roots are allocated again in the network's
+// order, so every witness is the expanded wish (MVP-6, critic 4b).
+const order = scenario({ items: [gear(131, 1, 0.4, 100), gear(132, 2, 0.5, 10000)],
+    known: [recipe(331, 131, [[202, 10]]), recipe(332, 132, [[202, 10]])],
+    inventory: { 202: { selfId: 202, amount: 10 } } });
+assert.equal(witness(order.admission, 'power:131:1')?.price, 0, 'the network\'s first root crafts from the held stock');
+assert.equal(order.result.plans.get('power:131:1').price, 0);
+const kept = key => order.result.focus?.[0] === key || order.result.queue.some(wish => wish.key === key);
+for (const row of order.admission.admitted) {
+    const plan = order.result.plans.get(row.key);
+    assert(kept(row.key), `${row.key} admitted and kept by the network`);
+    close(plan.price, row.price, `${row.key} witness price`);
+    close(plan.effort, row.effort, `${row.key} witness effort`);
+}
+for (const key of ['power:131:1', 'power:132:2']) if (!witness(order.admission, key))
+    assert(!kept(key), `${key} dropped by both`);
+assert.deepEqual(order.admission.pending, [{ key: 'power:132:2', reason: 'not_ready_in_horizon' }],
+    'without the stock 132 buys at 10000: past the horizon, it waits');
+recipes.clear();
+console.log('PASS admitted roots sharing held stock repeat the network\'s allocation');
+
 // A completed build keeps only its cut: every candidate's read scope (and the
 // arena that filled it) is garbage once the projection is returned.
 const retained = scoped.projection, scopes = scoped.opened;
@@ -313,5 +350,7 @@ setImmediate(() => {
     require('node:vm').runInNewContext('gc')();
     assert(retained.nodes.length > 0);
     assert.equal(scopes.filter(ref => ref.deref()).length, 0, 'no candidate scope survives the completed build');
-    console.log('PASS a completed build releases its candidates\' scopes');
+    assert(solvers.length >= 10, 'candidate solvers and wishes were tracked');
+    assert.equal(solvers.filter(ref => ref.deref()).length, 0, 'no candidate solver or wish survives the completed build');
+    console.log('PASS a completed build releases its candidates\' scopes, solvers and wishes');
 });
