@@ -8,7 +8,7 @@ const { SpotCatalogReader } = require('./ClanSpotCatalog');
 const spotCatalog = new SpotCatalogReader();
 
 // Only immutable catalogs and per-request snapshots enter this process.
-const catalogs = { items: [], npcs: [], npcRewards: [], experience: [], skillTree: [], classTemplates: [], revitalize: {} };
+const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieItems: [], experience: [], skillTree: [], classTemplates: [], revitalize: {} };
 // ARCH-NOTE: native cap, tree and seated recovery readers capture DataCache.
 // Keep the same authored arrays/objects behind the facade and populate them
 // once per epoch; full native planning previously failed at missing craftLevelFor
@@ -87,6 +87,8 @@ parentPort.on('message', (message) => {
             if (!Object.hasOwn(catalogs, message.name)) throw new Error('unknown catalog');
             if (message.name === 'revitalize') Object.assign(catalogs.revitalize, message.rows[0]);
             else catalogs[message.name].push(...message.rows);
+            // Item origins are rebuilt from the complete catalogs, never a partial page.
+            require('../Items/ItemAcquisitionCatalog').reset();
         } else if (message.type === 'spot_catalog') {
             spotCatalog.apply(message.page);
         } else if (message.type === 'plan') {

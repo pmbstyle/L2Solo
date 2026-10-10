@@ -5,6 +5,20 @@ const TableChannel = require('../Bot/Population/ColdTableChannel');
 const { SpotCatalogWriter } = require('./ClanSpotCatalog');
 const EMPTY_SPOTS = [];
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
+// The item-origin catalog (ItemAcquisitionCatalog) reads only which NPCs
+// spawn (total > 0) and the creation grants; ship one row per spawned NPC
+// instead of the full 3.5 MB spawn table.
+function spawnedNpcRows(regions = []) {
+    const totals = new Map();
+    for (const region of regions) for (const row of region.spawns || []) if (Number(row.total) > 0)
+        totals.set(Number(row.selfId), (totals.get(Number(row.selfId)) || 0) + Number(row.total));
+    return [...totals].map(([selfId, total]) => ({ spawns: [{ selfId, total }] }));
+}
+function catalogRows(catalogs, name) {
+    if (name === 'revitalize') return [catalogs[name] || {}];
+    if (name === 'npcSpawns') return spawnedNpcRows(catalogs.npcSpawns);
+    return catalogs[name] || [];
+}
 
 class ClanPlanningCoordinator {
     constructor({ workerFile = path.join(__dirname, 'ClanPlanningWorker.js'), timeoutMs = 30000, maxPending = 8, restartDelayMs = 5000,
@@ -102,8 +116,8 @@ class ClanPlanningCoordinator {
         });
         this.initializing = (async () => {
             // Bound serialization work on the game thread, including initial startup.
-            for (const name of ['items', 'npcs', 'npcRewards', 'experience', 'skillTree', 'classTemplates', 'revitalize']) {
-                const rows = name === 'revitalize' ? [catalogs[name] || {}] : catalogs[name] || [];
+            for (const name of ['items', 'npcs', 'npcRewards', 'npcSpawns', 'newbieItems', 'experience', 'skillTree', 'classTemplates', 'revitalize']) {
+                const rows = catalogRows(catalogs, name);
                 for (let offset = 0; offset < rows.length; offset += 128) {
                     await this.send('catalog', { name, rows: rows.slice(offset, offset + 128) });
                     await yieldLoop();

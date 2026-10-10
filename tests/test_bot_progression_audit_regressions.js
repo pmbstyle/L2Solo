@@ -183,7 +183,7 @@ async function checkMissingSpotRecovery() {
     // priority ladder; the existing bridge and travel guards still apply.
     assert.deepStrictEqual(Needs.evaluate(nativeBuyer, { now: at }), [],
         'a retained weapon bridge cannot manufacture a voluntary goal without a worker decision');
-    const native = await require('./helpers/workerEconomyDecision')(nativeBuyer, { timestamp: at });
+    const native = await require('./helpers/workerEconomyDecision')(nativeBuyer, { timestamp: at, nativeRoutes: true });
     const buyer = { ...nativeBuyer, stats: { ...nativeBuyer.stats, ...native.statsPacket } };
     const leaf = compact(native.decision).activity;
     assert.strictEqual(leaf?.activity, 'shopping', 'the real funded buyer selects a native shopping leaf');
