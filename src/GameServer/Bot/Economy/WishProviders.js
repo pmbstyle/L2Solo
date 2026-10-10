@@ -679,12 +679,14 @@ function buildProjection(state, ctx, deps) {
         // Shared held stock (MVP-6): the network allocates it in the author's
         // money priority (stockless full value per price, an unquoted root at
         // its market price), not by score. Admitted roots whose arenas share
-        // an item are allocated again in that order, one evaluation each, so
-        // every witness is the expanded wish. A root the network would then
-        // drop leaves admission; its family waits for the next review.
+        // a held item someone claimed are allocated again in that order, one
+        // evaluation each (a stockless solve for the order and an allocation),
+        // so every witness is the expanded wish. A root the network would then
+        // drop leaves admission as pending; its family waits for the next review.
         const shared = new Set(), seen = new Set();
         for (const row of admitted) for (const key of new Set(row.keys)) (seen.has(key) ? shared : seen).add(key);
-        if (solverOptions.stockFor && shared.size) {
+        const claimed = key => admitted.some(row => row.claims?.get(Number(key.slice(5))) > 0);
+        if (solverOptions.stockFor && [...shared].some(key => key.startsWith('item:') && claimed(key))) {
             const rows = [];
             for (const row of admitted) {
                 admission.evaluations++; row.evaluations++;
@@ -710,7 +712,10 @@ function buildProjection(state, ctx, deps) {
                     : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
                 yield row;
             }
-            for (let at = admitted.length - 1; at >= 0; at--) if (admitted[at].status !== 'evaluated') admitted.splice(at, 1);
+            for (let at = admitted.length - 1; at >= 0; at--) if (admitted[at].status !== 'evaluated') {
+                if (admitted[at].status === 'no_path') admission.pending.push({ key: admitted[at].node.key, reason: 'no_path' });
+                admitted.splice(at, 1);
+            }
         }
         for (const row of gear) if (row.status === 'limit' && !admitted.includes(row))
             admission.pending.push({ key: row.node.key, reason: 'evaluation_limit' });

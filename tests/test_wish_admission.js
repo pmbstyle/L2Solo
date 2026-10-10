@@ -323,6 +323,7 @@ console.log('PASS a path not ready inside the horizon is pending with its reason
 // network's money priority (full value per price) gives the stock to 131.
 // After admission the admitted roots are allocated again in the network's
 // order, so every witness is the expanded wish (MVP-6, critic 4b).
+heavy = [];
 const order = scenario({ items: [gear(131, 1, 0.4, 100), gear(132, 2, 0.5, 10000)],
     known: [recipe(331, 131, [[202, 10]]), recipe(332, 132, [[202, 10]])],
     inventory: { 202: { selfId: 202, amount: 10 } } });
@@ -340,6 +341,8 @@ for (const key of ['power:131:1', 'power:132:2']) if (!witness(order.admission, 
 assert.deepEqual(order.admission.pending, [{ key: 'power:132:2', reason: 'not_ready_in_horizon' }],
     'without the stock 132 buys at 10000: past the horizon, it waits');
 recipes.clear();
+const reallocated = heavy; heavy = null;
+assert(reallocated.length > 4, 'the re-allocation\'s solvers were tracked');
 console.log('PASS admitted roots sharing held stock repeat the network\'s allocation');
 
 // A completed build keeps only its cut: every candidate's read scope (and the
@@ -353,5 +356,6 @@ setImmediate(() => {
     assert.equal(scopes.filter(ref => ref.deref()).length, 0, 'no candidate scope survives the completed build');
     assert(solvers.length >= 10, 'candidate solvers and wishes were tracked');
     assert.equal(solvers.filter(ref => ref.deref()).length, 0, 'no candidate solver or wish survives the completed build');
+    assert.equal(reallocated.filter(ref => ref.deref()).length, 0, 'no re-allocation solver or wish survives the completed build');
     console.log('PASS a completed build releases its candidates\' scopes, solvers and wishes');
 });
