@@ -2112,6 +2112,12 @@ function* spotTown(spot) {
     if (!spotTowns.has(spot)) spotTowns.set(spot, spot.center ? (yield* invoke('GameServer/Bot/Economy/EconomicTrip').regionalTown(spot.center))?.name || null : null);
     return spotTowns.get(spot);
 }
+// A driver slices the loop per SOURCE_FACT_STEP records: a step per record
+// cost more than the record itself (the wish drains it synchronously).
+// options.counts (a Map, the wish's case): every record is counted there by
+// 'ready' or its reason, in record order; refusals are counted only, never
+// built as objects (74% of records), and only ready facts are returned.
+const SOURCE_FACT_STEP = 64;
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const facts = [], ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
     const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
@@ -2119,50 +2125,63 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const spotValue = options.spotValue
         || require('../Economy/SpotEconomics').create(state, { timestamp, occupancy: options.occupancy });
     const trips = options.trips || new Map();
-    const current = state.stats?.travel?.spotId || state.spotId || null;
+    const current = String(state.stats?.travel?.spotId || state.spotId || null);
+    const counts = options.counts || null;
     let spoiler = options.spoiler;
     const rules = sourceFactRulesFor(entries, itemId, killerLevel, ratesKey);
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
-        yield 'source';
+        if (ordinal % SOURCE_FACT_STEP === 0) yield 'source';
         // The fact reads the shared rule row of the record (yield and the
-        // per-level refusals), not a materialized source per entry (74% of
-        // entries are refusals kept for counts).
+        // per-level refusals), not a materialized source per entry.
         const rule = rules.reasons[ordinal];
         if (rule === FACT_RULE_NO_CHANCE) continue;
         const entry = entries[ordinal], { spot, kind } = entry, expectedYield = rules.expected[ordinal];
-        const fact = { kind, spotId: spot.id, npcId: Number(entry.reward.selfId), itemId: Number(itemId), units, expectedYield };
-        facts.push(fact);
-        if (rule === FACT_RULE_RAID) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
-        if (kind === 'spoil') {
+        let status = 'ineligible', reason = rule === FACT_RULE_RAID ? 'raid' : null;
+        if (!reason && kind === 'spoil') {
             // The executor's rule: a learned Spoil, not the class (E189).
             if (spoiler === undefined) spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
                 { skills: invoke('GameServer/Bot/Population/ColdCombatProfile').skillsFor(state) }) || false;
-            if (!spoiler) { fact.status = 'ineligible'; fact.reason = 'spoil_skill'; continue; }
+            if (!spoiler) reason = 'spoil_skill';
         }
-        if (rule) { fact.status = 'ineligible'; fact.reason = FACT_RULE_REASONS[rule]; continue; }
-        const target = sourceTargetOf(entry);
-        let reason = !soloSafeForSource(state, target) ? 'party_needed' : null;
+        if (!reason && rule) reason = FACT_RULE_REASONS[rule];
         if (!reason) {
-            target.capacity = LevelingRoutes.capacityForSpot(spot);
-            if (!sourceHasCapacity(target, state, { occupancy: options.occupancy })) reason = 'occupied';
+            const target = sourceTargetOf(entry);
+            if (!soloSafeForSource(state, target)) reason = 'party_needed';
+            else {
+                target.capacity = LevelingRoutes.capacityForSpot(spot);
+                if (!sourceHasCapacity(target, state, { occupancy: options.occupancy })) reason = 'occupied';
+            }
         }
-        if (reason) { fact.status = 'ineligible'; fact.reason = reason; continue; }
-        const row = spotValue(entry.spot);
-        const perHour = Number(row?.kills) * expectedYield
-            * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));
-        if (!(perHour > 0)) { fact.status = 'unknown'; fact.reason = 'yield'; continue; }
-        if (!Number.isFinite(row.valueHours)) { fact.status = 'unknown'; fact.reason = 'income'; continue; }
-        let trip = { known: true, hours: 0, fees: 0 }, town = null;
-        if (String(entry.spot.id) !== String(current)) {
-            town = yield* spotTown(entry.spot);
-            // A caller with prepared routes (the wish) passes its own reader.
-            if (town && !trips.has(town)) trips.set(town, options.trip ? options.trip.details(town)
-                : yield* invoke('GameServer/Bot/Economy/EconomicTrip').details(state, town));
-            trip = town ? trips.get(town) : { known: false };
+        let row = null, perHour = 0, trip = null, town = null;
+        if (!reason) {
+            status = 'unknown';
+            row = spotValue(entry.spot);
+            perHour = Number(row?.kills) * expectedYield
+                * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));
+            if (!(perHour > 0)) reason = 'yield';
+            else if (!Number.isFinite(row.valueHours)) reason = 'income';
         }
-        if (!trip?.known) { fact.status = 'unknown'; fact.reason = 'route'; continue; }
+        if (!reason) {
+            trip = { known: true, hours: 0, fees: 0 };
+            if (String(entry.spot.id) !== current) {
+                // A known town is read without a delegated generator per record.
+                town = spotTowns.has(entry.spot) ? spotTowns.get(entry.spot) : yield* spotTown(entry.spot);
+                // A caller with prepared routes (the wish) passes its own reader.
+                if (town && !trips.has(town)) trips.set(town, options.trip ? options.trip.details(town)
+                    : yield* invoke('GameServer/Bot/Economy/EconomicTrip').details(state, town));
+                trip = town ? trips.get(town) : { known: false };
+            }
+            if (!trip?.known) reason = 'route';
+        }
+        if (counts) counts.set(reason || 'ready', (counts.get(reason || 'ready') || 0) + 1);
+        const npcId = Number(entry.reward.selfId);
+        if (reason) {
+            if (!counts) facts.push({ kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield, status, reason });
+            continue;
+        }
         const hours = units / perHour, netHourCost = Math.max(0, 1 - row.valueHours);
-        Object.assign(fact, { status: 'ready', perHour, hours, valueHours: row.valueHours, netHourCost,
+        facts.push({ kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield, status: 'ready',
+            perHour, hours, valueHours: row.valueHours, netHourCost,
             town, tripHours: trip.hours, tripFees: trip.fees, costHours: hours * netHourCost + trip.hours });
     }
     return facts;

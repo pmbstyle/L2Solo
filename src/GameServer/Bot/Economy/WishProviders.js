@@ -342,22 +342,21 @@ function buildProjection(state, ctx, deps) {
         if (!farmFacts.has(Number(id))) {
             if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
                 spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
+            // Every record comes back counted as ready or by its reason;
+            // refusals only as counts, never as fact objects.
+            const reasons = new Map();
             const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue, occupancy: deps.occupancy,
-                trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp });
+                trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp,
+                counts: reasons });
             let step;
             do step = steps.next(); while (!step.done);
             let best = null;
-            const diagnostic = Diagnostics.active(), reasons = diagnostic ? new Map() : null;
-            for (const fact of step.value) {
-                if (diagnostic) {
-                    const reason = fact.status === 'ready' ? 'ready' : fact.reason;
-                    reasons.set(reason, (reasons.get(reason) || 0) + 1);
-                }
-                if (fact.status === 'ready' && (!best || fact.costHours < best.costHours)) best = fact;
-            }
+            for (const fact of step.value) if (fact.status === 'ready' && (!best || fact.costHours < best.costHours)) best = fact;
             // One count per reason and item: a per-fact count cost 4% of the worker.
-            if (diagnostic) for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
-            if (diagnostic) Diagnostics.count('provider', 'source_path', best ? 'ready' : step.value.length ? 'refused' : 'no_source');
+            if (Diagnostics.active()) {
+                for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
+                Diagnostics.count('provider', 'source_path', best ? 'ready' : reasons.size ? 'refused' : 'no_source');
+            }
             farmFacts.set(Number(id), best);
         }
         const best = farmFacts.get(Number(id));

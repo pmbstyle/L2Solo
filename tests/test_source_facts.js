@@ -83,7 +83,7 @@ try {
     assert(drop.town && trips.size === 1, 'two sources on one spot read one trip');
     assert(Number.isFinite(drop.tripHours) && drop.tripHours >= 0);
     assert.equal(drop.costHours, drop.hours * drop.netHourCost + drop.tripHours);
-    assert.equal(travelled.stages.filter(stage => stage === 'source').length, 2, 'one step per index record');
+    assert.equal(travelled.stages.filter(stage => stage === 'source').length, 1, 'one step per 64 index records');
     // The spot's town is found once per planning spot: a later read walks no region edge and names the same town.
     const again = drain(Planner.sourceFacts(away, 99101, 50, { spots, spotValue, timestamp: 1, trips }));
     assert.equal(byKind(again.value).drop.town, drop.town);
@@ -101,6 +101,16 @@ try {
         assert.equal(profiles, 0, 'no combat profile for spoil eligibility');
     } finally { Profile.profileFor = profileFor; }
 
+    // With a counts map (the wish's reader) refusals are counted by reason in
+    // record order and never returned; ready facts are the same objects.
+    for (const [state, options] of [[warsmith, {}], [noSpoil, {}], [{ ...warsmith, level: 50 }, {}], [away, {}],
+        [{ ...warsmith, inventory: {} }, {}], [warsmith, { spotValue: () => null }], [noSpoil, { spots: [spots[0], { ...spots[0], id: 'facts-test-2' }] }]]) {
+        const all = facts(state, options), counts = new Map(), ready = facts(state, { ...options, counts });
+        const tally = new Map();
+        for (const row of all) tally.set(row.status === 'ready' ? 'ready' : row.reason, (tally.get(row.status === 'ready' ? 'ready' : row.reason) || 0) + 1);
+        assert.deepEqual([...counts], [...tally]);
+        assert.deepEqual(ready, all.filter(row => row.status === 'ready'));
+    }
     // A travelling bot's spot is its destination, as PopulationService reads it.
     const travelling = byKind(facts({ ...warsmith, spotId: 'elsewhere', stats: { ...warsmith.stats, travel: { spotId: 'facts-test' } } })).drop;
     assert.equal(travelling.tripHours, 0, 'the destination spot needs no further trip');
