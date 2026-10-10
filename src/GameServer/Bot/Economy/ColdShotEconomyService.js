@@ -192,22 +192,10 @@ async function reviewDemand(state, now) {
         state = await persist({ ...state, stats: { ...state.stats,
             shotDemand: { itemId: stock.itemId, amount: missing, maxSpend, at: now } } }, 'shot_market_demand') || state;
     }
-    if (require('../Population/CombinedErrandPolicy').pending(state, now)
-        .some(errand => errand.purpose === 'shots')) return state;
-    const bought = await ColdMarket().acquire(state, stock.itemId, missing, {
-        purpose: 'shots', timestamp: now
-    });
-    if (bought.hot) return bought.state;
-    if (!bought.bought) {
-        // A standing funded order is the real demand producer when fixed
-        // shots are disabled; no NPC-derived 5% purchasing purse.
-        const ad = await invoke('GameServer/Bot/Economy/BotAfkMarketService').openBuyAd(bought.state, {
-            type: 'buy_craft_material', target: { itemId: stock.itemId, amount: missing },
-            plan: { expectedBenefit: 'market_buy_craft_material', purpose: 'shots', estimatedCost: price }
-        });
-        return ad.state || bought.state;
-    }
-    return await persist({ ...bought.state, stats: { ...bought.state.stats, shotDemand: null } }, 'shot_market_purchase') || bought.state;
+    // The core's root stock:shots (the same stock rule) is executed by its
+    // card: board deals and buy ads by the economy plan, the trip and the
+    // NPC remainder by its goal and the town visit. Main plans no purchase.
+    return state;
 }
 
 async function obtainRecipe(state, selected, now) {

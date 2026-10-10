@@ -5,7 +5,6 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GoalState = invoke('GameServer/Bot/Goals/GoalState');
-const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const TradeChat = invoke('GameServer/Bot/Economy/ColdMarketTradeChat');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -204,6 +203,26 @@ function fundingTerms(options = {}) {
         }
     }
     return terms;
+}
+
+// A buy goal's funding terms for the native writer: its root's place in the
+// money queue (PurchaseFunding.goalTerms reads the same plan.valueRate).
+function goalFunding(goal) {
+    return fundingTerms({ ...goal?.plan, r: goal?.plan?.valueRate });
+}
+
+// The card's step for an arrival purchase: the plan's unit price, and the
+// amount still missing (the goal's, less what reached the bag or accepted
+// incoming since the card's decision). Null when the card no longer orders it.
+function arrivalStep(state, goal) {
+    const itemId = Number(goal?.target?.itemId), unitPrice = Number(goal?.target?.adena);
+    if (!(unitPrice > 0)) return null;
+    const Decision = require('../Population/ColdEconomyDecision');
+    const leaf = Decision.economyFor(state)?.network?.activity;
+    const ordered = Math.max(1, Math.ceil(Number(goal.target.amount) || 1));
+    const amount = leaf?.activity === 'shopping' && Number(leaf.itemId || leaf.object?.itemId || leaf.object) === itemId
+        ? Math.min(ordered, Decision.remainingToOrder(leaf, state, state, itemId)) : ordered;
+    return amount > 0 ? { unitPrice, amount } : null;
 }
 
 // price: the unit price this money buys at (a board line's, else the NPC's).
@@ -724,59 +743,43 @@ const ColdMarketService = {
         }
 
         const lowTierGearPurchase = activeGearPurchase && Number(state.level || 1) < 40;
+        // On arrival the bot buys only the card's step (question 1 = A, user
+        // 2026-10-10): this item in this town, at most the plan's unit price,
+        // at most what is still missing. A miss is not planned again on main:
+        // the worker decides anew and the bot waits for it.
+        const arrival = arrivalStep(state, goal);
+        const missed = reason => {
+            invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
+            return retryAfterFailedPurchase(state, goal, reason);
+        };
+        if (!arrival) return missed('arrival_step_gone');
         // What the bot may spend (PurchaseFunding.spendable): its wallet above
-        // the operating reserve, as the planner priced the purchase. A buy ad's
-        // escrow is not in the wallet a shop is paid from.
-        const offer = MarketOpportunity.bestOffer(goal.target.itemId, {
+        // the operating reserve, at the goal root's place in the money queue.
+        // A buy ad's escrow is not in the wallet a shop is paid from.
+        const offer = activeMaterialPurchase ? null : MarketOpportunity.bestOffer(goal.target.itemId, {
             town: state.currentRegion,
             budget: goal.plan?.weaponBridge ? PurchaseFunding.budget(state)
-                : PurchaseFunding.spendable(state, 0, { itemId: goal.target.itemId }),
-            buyerCharacterId: state.characterId
+                : PurchaseFunding.spendable(state, 0, PurchaseFunding.goalTerms(goal)),
+            buyerCharacterId: state.characterId,
+            accept: candidate => Number(candidate.price) <= arrival.unitPrice
         });
-        if (!offer) {
-            const BotAfkMarket = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-            if (BotAfkMarket.canTradeRemotely(state, goal)) {
-                return BotAfkMarket.reconcile(state, goal).then((remote) => ({
-                    state: remote.state || state,
-                    purchased: false,
-                    reason: remote.changed ? 'afk_buy_store_opened' : 'afk_buy_store_unchanged',
-                    buyStore: remote.shop || null,
-                    wanted: true,
-                    remoteOffer: null
-                }));
+        if (!offer && !activeMaterialPurchase) {
+            // A stale NG/D goal ends here; the worker's next card replaces it.
+            if (lowTierGearPurchase) {
+                invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
+                return finishBlockedPurchase(state, goal, 'low_tier_offer_missing');
             }
-            // A stale NG/D goal should be replanned instead of creating a WTB
-            // shop. Concrete player and NPC offers are both considered above.
-            if (lowTierGearPurchase) return finishBlockedPurchase(state, goal, 'low_tier_offer_missing');
-            return BuyStoreService.open(state, goal).catch((error) => {
-                utils.infoWarn('BotMarket', 'failed to open buy store for %s: %s', state.name, error?.message || String(error));
-                return { opened: false };
-            }).then((opened) => {
-                if (!opened.opened) {
-                    const plazaFull = String(opened.reason || '').startsWith('plaza_full:');
-                    return retryAfterFailedPurchase(state, goal, plazaFull ? opened.reason : 'no_affordable_offer');
-                }
-                MarketTelemetry.noOffer();
-                return {
-                    state: opened.state,
-                    purchased: false,
-                    reason: 'buy_store_opened',
-                    buyStore: opened.store,
-                    wanted: true,
-                    remoteOffer: null
-                };
-            });
+            return missed('no_affordable_offer');
         }
         if (activeMaterialPurchase) {
-            // NeedsEvaluator has already converted captured stock into the
-            // remaining need. Reuse errand execution and its native funding;
-            // subtract committed units, never the current bag a second time.
-            const terms = { ...fundingTerms(goal.plan), purpose: goal.plan?.purpose || 'supply',
+            // The card's amount less what reached the bag or accepted
+            // incoming since; native funding at the root's queue place.
+            const terms = { ...goalFunding(goal), purpose: goal.plan?.purpose || 'supply',
                 selfId: Number(goal.target.itemId) };
-            const plan = planPurchase(state, terms.selfId, Number(goal.target.amount), {
-                ...terms, money: purchaseMoney(state, terms), towns: [state.currentRegion]
+            const plan = planPurchase(state, terms.selfId, arrival.amount, {
+                ...terms, money: purchaseMoney(state, terms), towns: [state.currentRegion], maxPrice: arrival.unitPrice
             });
-            if (!plan) return retryAfterFailedPurchase(state, goal, 'no_affordable_offer');
+            if (!plan) return missed('no_affordable_offer');
             const snapshot = GoalState.snapshot(state.characterId);
             return buyHere(state, plan, { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt } }).then(async bought => {
                 const progress = bought.progressApplied || (bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null);
@@ -798,7 +801,7 @@ const ColdMarketService = {
         offer.equipSlot = Number(goal.target.itemSlot || 0) || undefined;
         const snapshot = GoalState.snapshot(state.characterId);
         const execution = offer.sourceType === 'npc' ? buyHere(state, { selfId: goal.target.itemId, amount: 1,
-            town: state.currentRegion, npcPrice: Number(offer.price), lines: [], ...fundingTerms(goal.plan) },
+            town: state.currentRegion, npcPrice: Number(offer.price), lines: [], ...goalFunding(goal) },
         { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt }, autoEquip: true })
             .then(bought => ({ ...bought, purchased: bought.units > 0 })) : buyOffer(state, offer);
         return execution.then((bought) => {

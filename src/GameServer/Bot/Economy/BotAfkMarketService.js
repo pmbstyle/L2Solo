@@ -662,8 +662,19 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         state = LifeState.cachedState(ownerId) || result?.state || state;
         return result;
     };
+    // No native writer reads accepted incoming. Units that reached the bag or
+    // an obligation accepted since the decision may already fill a purchase:
+    // it waits for the worker's new card (buyPending) instead of buying twice.
+    const Decision = require('../Population/ColdEconomyDecision');
+    const card = preparedState.phase === 'cold' ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator')
+        .economyDecisions?.decided?.(preparedState)?.activity : null;
+    const heldAtDecision = itemId => Number(card?.itemId) === Number(itemId) && Number.isFinite(Number(card.heldAtDecision))
+        ? Number(card.heldAtDecision) : Decision.heldFor(preparedState, itemId);
+    const filledSince = itemId => Decision.heldFor(LifeState.cachedState(ownerId) || state, itemId) > heldAtDecision(itemId);
     if (plan.take) {
         if (!stillPrepared()) return { state, tradeDeferred: true };
+        const buying = plan.take[0] === AfkTrade.SELL;
+        if (buying && filledSince(plan.take[1])) return { state, buyPending: true };
         const Ready = require('./ReadyTradeChoice');
         const line = Ready.resolve(plan.take, AfkTrade.boardIndex(), ownerId);
         // The tuple's item passed source admission where it was made: a wish
@@ -673,8 +684,9 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (!offer) return { state, tradeDeferred: true };
         const result = await run(async () => {
             if (!stillPrepared()) return { state, tradeDeferred: true };
+            if (buying && filledSince(plan.take[1])) return { state, buyPending: true };
             try {
-                const trade = plan.take[0] === AfkTrade.SELL ? AfkTrade.buyFromShop : AfkTrade.sellToShop;
+                const trade = buying ? AfkTrade.buyFromShop : AfkTrade.sellToShop;
                 return await trade(ownerId, offer.store, line.selfId, plan.take[2], {
                     lineId: line.lineId, expectedRevision: line.revision, expectedPrice: line.price, coldState: state
                 });
@@ -689,16 +701,20 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         });
         return { ...result, state: LifeState.cachedState(ownerId) || state };
     }
-    if (plan.shot) await run(async () => {
+    // A craft step runs under the prepared authority like a take: a stale
+    // step waits for the worker's new card.
+    const crafted = plan.shot ? await run(async () => {
+        if (!stillPrepared()) return { state, stale: true };
         const shot = require('./ShotCraftPolicy').unpackStep(plan.shot);
         if (shot.wealth) {
             const Wealth = require('./ColdWealthCraftService');
             if (!Wealth.eligible(state)) return { state };
             const opportunity = Wealth.recheck(state, shot.wealth);
-            return opportunity ? Wealth.execute(state, opportunity) : { state };
+            return opportunity ? Wealth.execute(state, opportunity, { stillPrepared }) : { state };
         }
         return { state: await require('./ColdShotEconomyService').execute(state, shot) };
-    });
+    }) : null;
+    if (crafted?.stale) return { state, buyPending: true };
     if (require('../../AfkTrade/TradeMeetingService').hasPreparation(ownerId)) return { state, pending: true };
     if (plan.withdraw?.length) await run(async () => {
         const own = new Map(AfkTrade.boardIndex().ownerLines(ownerId).map(line => [line.lineId, line]));
@@ -754,9 +770,11 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     // An earlier native improvement/craft/sale may have filled the root or
     // changed its inputs. Publishing its old certificate at the new revision
     // would manufacture fresh authority from stale need. Keep it pending.
-    if (Object.hasOwn(plan, 'buyAds') && !stillPrepared()) return { state, buyPending: true };
-    if (Object.hasOwn(plan, 'buyAds')) await run(async () => {
+    const filledAd = () => (plan.buyAds || []).slice(0, 3).some(row => filledSince(row[0]));
+    if (Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd())) return { state, buyPending: true };
+    const published = Object.hasOwn(plan, 'buyAds') ? await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
+        if (filledAd()) return { state, buyPending: true };
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
@@ -783,7 +801,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines: existing }, wanted)) return { state };
         await publishBuyAds(ownerId, ads, wanted, town, authority);
         return { state: LifeState.cachedState(ownerId) || state };
-    });
+    }) : null;
+    if (published?.buyPending) return { state, buyPending: true };
     await run(async () => {
         const snapshot = await invoke('GameServer/Bot/Goals/GoalService').review(state, { saleTown: plan.sell?.[0]?.[3] || state.stats?.shopTown?.town });
         const goal = snapshot?.current;

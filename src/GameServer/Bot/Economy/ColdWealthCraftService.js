@@ -192,7 +192,9 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
     };
 }
 
-async function execute(state, opportunity) {
+// options.stillPrepared: the economy plan's authority check. The first write
+// below advances the revision; it runs only while the decision still holds.
+async function execute(state, opportunity, options = {}) {
     if (opportunity.exit.type === 'afk' && !personalOfferAllowed(opportunity.exit.offer, state)) {
         return { state, crafted: false, reason: 'buyer_changed' };
     }
@@ -209,6 +211,7 @@ async function execute(state, opportunity) {
             return { state, crafted: false, reason: 'owned_materials_changed' };
         }
     }
+    if (options.stillPrepared && !options.stillPrepared()) return { state, crafted: false, reason: 'decision_changed', stale: true };
     let current = await LifeState.upsertState(withOutcome(state, opportunity, 'buying'), 'wealth_craft_started');
     if (!current) return { state, crafted: false, reason: 'state_write_rejected' };
     let spent = 0;
