@@ -501,6 +501,26 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         }
         return selected;
     }, new Map());
+    if (!best.has('weapon')) {
+        // Legacy starter saves can have both a spare sword and training fists
+        // worn before the bot owns its preferred weapon. Resolve the conflict
+        // without stripping its last usable weapon or equipping new off-build gear.
+        const worn = Object.values(inventory || {}).flatMap((entry) => {
+            const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
+            return String(item?.template?.kind || '').startsWith('Weapon.')
+                && equippedSlotsFor(entry, item.etc?.slot).some(slot => slot === 7 || slot === 14)
+                ? [{ entry, item }] : [];
+        });
+        if (worn.length > 1) {
+            const starters = new Set((DataCache.newbieItems?.find(row => row.classId === classId)?.items || [])
+                .filter(item => item.equipped === true).map(item => Number(item.selfId)));
+            worn.sort((left, right) => Number(starters.has(Number(right.entry.selfId)))
+                - Number(starters.has(Number(left.entry.selfId)))
+                || itemScore(right.item, role, classId) - itemScore(left.item, role, classId)
+                || Number(left.entry.selfId) - Number(right.entry.selfId));
+            best.set('weapon', worn[0]);
+        }
+    }
     // A full body occupies both chest and legs. Decide that mutually-exclusive
     // set before applying equipment so inventory key order cannot flip the
     // result on every inventory refresh.

@@ -391,6 +391,18 @@ function hasIncompatibleShield(state = {}) {
     return incompatiblePlan || incompatibleEquippedShield;
 }
 
+function hasConflictingWeapons(state = {}) {
+    let weapons = 0;
+    for (const item of Object.values(state.inventory || {})) {
+        const template = itemTemplate(item?.selfId);
+        if (!String(template?.template?.kind || item?.kind || '').startsWith('Weapon.')) continue;
+        weapons += GearAcquisitionPlanner.equippedSlotsFor(item, template?.etc?.slot || item.slot)
+            .filter((slot) => slot === 7 || slot === 14).length;
+        if (weapons > 1) return true;
+    }
+    return false;
+}
+
 function reconcileIncompatibleShieldState(state = {}) {
     const reconciledEquipment = reconcileEquipmentInventory(state);
     const stats = { ...(reconciledEquipment.stats || {}) };
@@ -1575,24 +1587,26 @@ function discardFulfilledEquipmentPlans() {
     });
 }
 
-function reconcileIncompatibleShields() {
-    const affected = [...cache.values()].filter(hasIncompatibleShield);
+function reconcilePersistedLoadouts() {
+    // Startup runs before workers/actors publish: repair legacy hand conflicts
+    // through the same class-aware optimizer used by normal cold equipment.
+    const affected = [...cache.values()].filter((state) => hasIncompatibleShield(state) || hasConflictingWeapons(state));
     let reconciledCount = 0;
     return affected.reduce((chain, state) => chain.then(() => {
         const reconciled = reconcileIncompatibleShieldState(state);
         const row = rowFromState(reconciled);
         return save(row)
-            .then(() => syncInventorySummary(row.characterId, reconciled.inventory, 'shield_reconcile'))
+            .then(() => syncInventorySummary(row.characterId, reconciled.inventory, 'loadout_reconcile'))
             .then(() => {
                 cache.set(row.characterId, normalize(row));
                 reconciledCount += 1;
             })
             .catch((err) => {
-                utils.infoWarn('BotLife', 'failed shield reconciliation for %d: %s', row.characterId, err.message);
+                utils.infoWarn('BotLife', 'failed loadout reconciliation for %d: %s', row.characterId, err.message);
             });
     }), Promise.resolve()).then(() => {
         if (reconciledCount > 0) {
-            utils.infoWarn('BotLife', 'reconciled %d incompatible persisted shield loadouts or plans on startup', reconciledCount);
+            utils.infoWarn('BotLife', 'reconciled %d conflicting persisted weapons or incompatible shield loadouts on startup', reconciledCount);
         }
         return reconciledCount;
     });
@@ -1655,7 +1669,7 @@ const BotLifeState = {
                         cache.set(state.characterId, state);
                     });
             }), Promise.resolve())
-                .then(() => reconcileIncompatibleShields())
+                .then(() => reconcilePersistedLoadouts())
                 .then(() => count);
         }).then((count) => {
             initialized = true;

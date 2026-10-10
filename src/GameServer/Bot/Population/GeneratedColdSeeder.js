@@ -250,7 +250,8 @@ function migratePopulationAppearances(states = []) {
 
 function awardBaseGear(characterId, classId) {
     const items = DataCache.newbieItems.find((row) => row.classId === classId)?.items || [];
-    const starterTemplates = items.map((item) => ItemTemplateIndex.findStrict(DataCache.items, item.selfId));
+    const starterTemplates = items.filter((item) => item.equipped === true)
+        .map((item) => ItemTemplateIndex.findStrict(DataCache.items, item.selfId));
     const hasTwoHandedWeapon = starterTemplates.some((template) => (
         Number(template?.etc?.slot || 0) === 14 &&
         String(template?.template?.kind || '').startsWith('Weapon.')
@@ -268,7 +269,8 @@ function awardBaseGear(characterId, classId) {
                     // Newbie templates may still grant a Buckler, but it
                     // must remain in inventory until the two-handed weapon
                     // is replaced.
-                    equipped: !(hasTwoHandedWeapon && Number(template?.etc?.slot || 0) === 8)
+                    equipped: item.equipped === true
+                        && !(hasTwoHandedWeapon && Number(template?.etc?.slot || 0) === 8)
                 });
             }));
     });
@@ -564,6 +566,7 @@ const GeneratedColdSeeder = {
     // restart; the base-36 form still fits the sixteen-character account name.
     nextPopulationIndex: Date.now(),
 
+    awardBaseGear,
     awardProfileSkills,
     craftServiceSeedState,
     baseForIndex,
