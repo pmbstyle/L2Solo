@@ -13,6 +13,9 @@ const Diagnostics = require('../Economy/EconomyDiagnostics');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
 function kindFor(code) { return kinds[code]; }
+// A wish row carrying only the urgent root's urgency: the leaf has no root of
+// its own, so no amount or price is published (MVP-1), only gapHorizonHours.
+const URGENCY_ONLY = 62;
 class CompactActivity {
     constructor(leaf) {
         this.activity = leaf.activity || null; this.spotId = leaf.spotId ?? null; this.npcId = leaf.npcId ?? null;
@@ -101,6 +104,7 @@ class CompactDecision {
         const at = 28 + (counts & 63) * 8 + ((counts >>> 6) & 3) * 21 + ((counts >>> 8) & 15) * 12;
         const view = new DataView(this.data);
         const kind = view.getUint8(at) & 63;
+        if (kind === URGENCY_ONLY) return null;
         return [kind === 63 ? 255 : kind, view.getFloat64(at + 1, true), view.getFloat64(at + 9, true)];
     }
     get urgency() {
@@ -283,7 +287,7 @@ function capture(economy, state, seen = state) {
         activity,
         // Upper two bits reuse the existing byte; amount and price remain exact.
         wish: wish ? [(kindCode(wish.object?.kind) & 63) | (urgency << 6),
-            Number(wish.object?.amount || 0), Number(wish.price || 0)] : null,
+            Number(wish.object?.amount || 0), Number(wish.price || 0)] : urgency ? [URGENCY_ONLY | (urgency << 6), 0, 0] : null,
         watch: (economy?.watchList || []).slice(0, 3).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
         workshop: economy?.workshop || unknownWorkshop(), shot: economy?.shot || null,

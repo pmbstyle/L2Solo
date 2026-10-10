@@ -239,9 +239,11 @@ assert.equal(decoded.heldAtDecision, undefined, 'optional town fields do not man
 const goalsModule = { exports: {} };
 new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join(root, '../Goals/NeedsEvaluator.js'), 'utf8'))(
     name => name.includes('ItemTemplateIndex') ? { find: () => null }
-        : name.endsWith('Fnv1a') ? { fnv1a32: () => 1 } : (() => { throw Error(name); })(),
+        : name.endsWith('Fnv1a') ? { fnv1a32: () => 1 }
+        : name.endsWith('ColdEconomyDecision') ? ColdDecision : (() => { throw Error(name); })(),
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
         : name.endsWith('EconomyContext') ? { survivalReserve: () => 0 }
+        : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0 }
         : name.endsWith('DataCache') ? { items: [] } : (() => { throw Error(name); })(),
     goalsModule, goalsModule.exports);
 const otherTownBoard = new BoardIndex();

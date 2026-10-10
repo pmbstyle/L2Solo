@@ -52,7 +52,8 @@ module.exports.meetingPrepareProbe = async id => {
     sellRequest.token = 'actual-positive-seller';
     sellRequest.lines[0].adId = 710060; sellRequest.lines[0].count = 1000000; sellRequest.lines[0].price = 1000;
     const seller = await kernel.prepareMeeting(id, sellRequest);
-    assert.equal(economy.network.quantityPrepared, true, 'forState hands TradeIntent a stock-prepared network');
+    // Runs inside the worker: forState hands TradeIntent a stock-prepared network.
+    if (economy.network.quantityPrepared !== true) throw Error('trade_intent_network_unprepared');
     const wanted = Intent.project(state, economy.network, economy.projection, itemId => economy.worth(itemId) ?? economy.price(itemId), 40)
         .find(row => row.amount >= 1 && row.worth >= 1);
     if (!wanted) throw Error('fixture_has_no_real_buy_wish');

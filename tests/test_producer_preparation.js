@@ -268,7 +268,8 @@ for (const stockFor of [undefined, () => ({ owned: 0, incoming: 0 })]) {
     assert.equal(producerPath.requirements[0].plan.executable, false);
     assert.equal(preparedTrial.plans.get('power:202:7').effort, 100, 'the normal root retains executable-first acquisition');
     const commands = intent.project({}, preparedTrial, { nodes: plannedNodes }, () => 1);
-    assert(commands.some(row => row.itemId === 202), 'the missing material remains a public purchase intention');
+    if (!stockFor) assert.equal(commands, null, 'a network without a stock reader defers its public intentions');
+    else assert(commands.some(row => row.itemId === 202), 'the missing material remains a public purchase intention');
     assert.notEqual(preparedTrial.activity?.rootKey, 'resale:501', 'unsupported purchase/craft leaves remain blocked');
 }
 const sharedTrialNodes = [501, 502].map((id, index) => ({ key: `resale:${id}`, need: 'power',

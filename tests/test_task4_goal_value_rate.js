@@ -56,4 +56,5 @@ assert.equal(goal.plan.valueRate, undefined);
 const orphan = capture({ network: { activity: { ...leaf(), rootKey: 'item:50' }, queue: [wish(true, 0.2)] }, inputKey: 'c' }, state);
 assert.equal(orphan.activity.r, undefined);
 assert.equal(orphan.wish, null);
+assert(orphan.urgency > 0, 'the urgent root still sets the waiting horizon without lending its amount');
 console.log('test_task4_goal_value_rate: ok');
