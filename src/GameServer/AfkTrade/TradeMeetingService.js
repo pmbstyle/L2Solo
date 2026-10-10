@@ -304,9 +304,32 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
             enchant: line.enchant || 0, count, price: line.price, needAdId: 0, needAdRevision: 0, adId: record.id, adRevision: record.revision, certificate: null })) };
     stage(request);
     const entry = staged.get(token);
-    entry.ready = prepareActors(token).catch(error => { discard(token); throw error; });
+    entry.ready = prepareActors(token).catch(error => {
+        discard(token);
+        // Only the payer's worker refuses a need; on a buy ad the payer is its
+        // owner, so the need behind the ad changed. The refusal alone left the
+        // ad on the board for every later seller (E198 (2)).
+        if (error.message === 'trade_meeting_need_changed' && record.storeType === 3) buyAdNeedChanged(record);
+        throw error;
+    });
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
     return quote;
+}
+// The owner plans the same need once more: a cold worker's new card
+// republishes or closes the ad through executePlan, a hot owner's board
+// review looks again. One request per ad revision: a republished ad has a
+// new revision; an unchanged plan does not repeat on every later refusal.
+const refusedAds = new Map();
+function buyAdNeedChanged(record) {
+    if (refusedAds.get(record.id) === record.revision) return;
+    refusedAds.delete(record.id); refusedAds.set(record.id, record.revision);
+    if (refusedAds.size > 1024) refusedAds.delete(refusedAds.keys().next().value);
+    const phase = life().cachedState(record.ownerId)?.phase;
+    if (phase === 'cold') coordinator()?.requestEconomyRefresh?.(record.ownerId);
+    else if (phase === 'hot') {
+        coordinator()?.requestEconomyLook?.(record.ownerId);
+        invoke('GameServer/Bot/Economy/HotBoardReviewService').ownerChanged(record.ownerId, 'line');
+    }
 }
 async function cancel(characterId) {
     const rows = db().fetchTradeMeetingsForOwner ? await db().fetchTradeMeetingsForOwner(Number(characterId))
@@ -342,7 +365,7 @@ function reset() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);
-    staged.clear(); preparedActors.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
+    staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); playerWaiters.clear(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
