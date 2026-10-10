@@ -604,8 +604,11 @@ function buildProjection(state, ctx, deps) {
         if (!key) continue;
         root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount: stock.missing, kind },
             valueHours: stock.benefitHours * powerWeight, price: stock.missing * stock.unitPrice,
+            // The survival tranche is the kit's cost (kitCost), not this wish:
+            // gross = held units + missing, so allocation leaves `missing`.
             paths: [{ requirements: [{ key, amount: stock.missing }],
-                grossRequirements: [{ key, amount: Number(stock.target || stock.missing + (stock.current || 0)) }] }] });
+                grossRequirements: [{ key, amount: stock.missing
+                    + Math.max(0, Number(state.inventory?.[stock.itemId]?.amount) || 0) }] }] });
         values.set(stock.itemId, stock.benefitHours / stock.missing);
     }
     // Concrete remembered people, not persona-labelled lifelong goals.

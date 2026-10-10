@@ -66,7 +66,10 @@ async function run() {
     // and the first demand publication; this fixture seeds the same sequence.
     invoke('GameServer/Bot/Economy/CraftWorkshopService').init();
     await Life.init();
-    const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 100000 });
+    // The wallet covers the whole two-hour shot stock (1377 x 100 Adena) and
+    // keeps change, so the stale Soul Ore purchase below can only be refused
+    // by its stale state, never by an empty wallet.
+    const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 200000 });
     const fallback = await nativeReview(empty);
     assert(fallback.state.adena < empty.adena, 'paid static fallback must debit virtual Adena');
     assert(fallback.state.inventory[1463].amount > 0);
@@ -75,6 +78,7 @@ async function run() {
     await DB.syncInventorySummary(empty.characterId, fallback.state.inventory);
     assert.strictEqual((await balances(empty.characterId)).life.adena, fallback.state.adena);
     const stableWallet = fallback.state.adena;
+    assert(stableWallet >= 550, 'the stale purchase must be affordable; only its stale state may refuse it');
     await assert.rejects(DB.purchaseNpcInventoryItem(empty.characterId, {
         selfId: 1785, name: 'Soul Ore', amount: 1, unitPrice: 550, coldState: empty
     }), /economy_state_changed/, 'stale economic operations must roll back their physical inventory writes');
