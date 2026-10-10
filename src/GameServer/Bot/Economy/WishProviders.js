@@ -358,8 +358,9 @@ function buildProjection(state, ctx, deps) {
             const ownedScroll = freeAmount(state, state.inventory?.[recipe.recipeItemId] || {}) > 0;
             if (!learned && ownedScroll) ownInputOpportunityValue += positive(price(recipe.recipeItemId));
             let scrollAvailable = learned || ownedScroll;
-            if (!scrollAvailable && deps.board) {
-                for (const line of deps.board.list(recipe.recipeItemId, 1)) {
+            const scrollBoard = ctx.board || deps.board;
+            if (!scrollAvailable && scrollBoard) {
+                for (const line of scrollBoard.list(recipe.recipeItemId, 1)) {
                     if (Number(line.ownerId) !== Number(state.characterId) && Number(line.count) > 0 && Number(line.price) > 0) {
                         scrollAvailable = true; break;
                     }

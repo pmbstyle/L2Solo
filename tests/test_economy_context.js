@@ -188,6 +188,28 @@ async function run() {
         assert.notEqual(Economy.forState(scoped, scopedDeps()), scopedContext, 'an admitted candidate\'s source becoming known rebuilds');
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
+    // An item the purchase reader finds no offer for is still an input: the
+    // reader reads the context's watched board, so the first offer for that
+    // item rebuilds the held context.
+    const Evidence = invoke('GameServer/Bot/Economy/WishPurchaseEvidence');
+    const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
+    const absentBoard = new BoardIndex(), ABSENT = 990003;
+    try {
+        ScopedProviders.build = (state, ctx, deps) => {
+            assert.equal(Evidence.reader(state, ctx, deps)(ABSENT), null);
+            return build(state, ctx, deps);
+        };
+        const sources = new Set();
+        const absentDeps = () => ({ board: absentBoard, onSourceRead: id => sources.add(id) });
+        const absent = { ...base, characterId: 906 };
+        const absentContext = Economy.forState(absent, absentDeps());
+        assert(sources.has(ABSENT), 'an item with no offer is an input of the review');
+        assert.equal(Economy.forState(absent, absentDeps()), absentContext, 'no offer change keeps the context');
+        absentBoard.put({ id: 1, ownerId: 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
+            lines: [{ lineId: 2, selfId: ABSENT, count: 1, price: 100 }] });
+        assert.notEqual(Economy.forState(absent, absentDeps()), absentContext, 'a first offer for an absent item rebuilds');
+    } finally { ScopedProviders.build = build; }
+    console.log('PASS absent item is an input');
     const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
     const shopRecipe = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems())
         .find(row => row.type === 'dwarven' && Number(row.mpCost) > 0);

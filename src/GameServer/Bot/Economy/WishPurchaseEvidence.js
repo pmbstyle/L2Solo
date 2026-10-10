@@ -10,7 +10,8 @@ function reader(state, ctx, deps) {
     return id => {
         if (typeof cost !== 'function' || typeof cost.details !== 'function') return null;
         const others = Production.allowsNpcShot(id) ? (deps.npcOffersFor?.(id) || []).slice(0, 17) : [];
-        const board = deps.board || ctx.board;
+        // The context's watched board records an absent item as an input too.
+        const board = ctx.board || deps.board;
         const offer = Query.bestSellOffer(board?.heads ? board : null, id, {
             excludeOwner: state.characterId, maxInspected: 20, cost, others,
             accept: row => Number(row.price) > 0 && !Number(row.enchant || 0)
