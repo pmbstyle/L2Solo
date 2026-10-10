@@ -89,8 +89,13 @@ check('an ordinary fight (adena, exp) keeps the build entry; a gain is computed 
 check('gear gains from the store equal the direct calculation, per role', () => {
     const now = Date.now();
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const fighter = base({ characterId: 501 }), mage = base({ characterId: 502, stats: { ...base().stats, role: 'nuker' } });
+    // A weapon gain counts only for a weapon the bot would really equip
+    // (equipment selection): a Gladiator takes duals, not a great sword.
     const better = Data.items.find(item => String(item.template?.kind || '').startsWith('Weapon.') && item.etc?.rank === 'b'
-        && Number(item.stats?.pAtk) > Number(weapon.stats.pAtk));
+        && Number(item.stats?.pAtk) > Number(weapon.stats.pAtk)
+        && Planner.equipmentCandidate(item, fighter) && Planner.equipmentCandidate(item, mage));
+    assert.ok(better && Number(better.etc.slot) === Number(weapon.etc.slot), 'fixture upgrade wears in the same slot');
     const direct = (state, caster) => {
         const before = Profile.powerFor(state, now);
         const inventory = Object.fromEntries(Object.entries(state.inventory).map(([key, row]) => [key,
@@ -101,7 +106,6 @@ check('gear gains from the store equal the direct calculation, per role', () => 
         return { attack: Math.max(0, after[attack] / Math.max(1, before[attack]) - 1),
             defence: Math.max(0, 1 - before.pDef / Math.max(1, after.pDef), 1 - before.mDef / Math.max(1, after.mDef)) };
     };
-    const fighter = base({ characterId: 501 }), mage = base({ characterId: 502, stats: { ...base().stats, role: 'nuker' } });
     assert.deepEqual(Providers.gearGain(fighter, better, now), rounded(direct(fighter, false)));
     assert.deepEqual(Providers.gearGain(mage, better, now), rounded(direct(mage, true)));
     assert.deepEqual(Providers.gearGain(fighter, better, now), rounded(direct(fighter, false)), 'remembered value is the same');

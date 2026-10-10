@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // Fixture inspects optional developer counters (channel.stats).
 const assert = require('assert');
 const { ColdTableChannel, shared } = require('../src/GameServer/Bot/Population/ColdTableChannel');
 const TableMirror = require('../src/GameServer/Bot/Population/TableMirror');
@@ -177,8 +178,20 @@ async function nativeProducers() {
         ['GameServer/Bot/Economy/FirstPrice', { cachedFirstPrice: () => 10 }],
         ['GameServer/Actor/Actor', {}], ['Database', {}], ['GameServer/Network/Response', {}],
         ['GameServer/World/World', {}], ['GameServer/World/WorldConstants', { CLIENT_VISIBILITY_RADIUS: 2000 }],
-        ['GameServer/Bot/Economy/ShopPlaces', {}]
+        ['GameServer/Bot/Economy/ShopPlaces', {}],
+        // Public workshop rows share the 'board' table (CraftWorkshopService
+        // publishes them as 'w:<owner>:<recipe>' rows): a full board copy reads
+        // them lazily, so the producer dependency is part of the contract.
+        ['GameServer/Bot/Economy/CraftWorkshopService', { publicRows: () => [['w:77:5', 5]] }]
     ]);
+    // A board change also keeps the main-thread item->recipe index current
+    // (ColdOccupationSources.recipeIndex, shared with the workers). That index
+    // loads the whole merchant catalogue, so it is replaced by a recorder here.
+    const sourcesPath = require.resolve('../src/GameServer/Bot/Population/ColdOccupationSources');
+    const oldSources = require.cache[sourcesPath];
+    const indexUpdates = [];
+    require.cache[sourcesPath] = { id: sourcesPath, filename: sourcesPath, loaded: true,
+        exports: { recipeIndex: () => ({ reset() {}, update(id) { indexUpdates.push(id); } }) } };
     global.invoke = (name) => {
         assert(deps.has(name), `unexpected native producer dependency ${name}`);
         return deps.get(name);
@@ -189,6 +202,8 @@ async function nativeProducers() {
         deps.set('GameServer/Bot/Economy/MarketCounters', counters);
         const service = require('../src/GameServer/AfkTrade/AfkTradeService');
         worker = target(shared);
+        assert.deepStrictEqual(worker.mirror.rows('board').get('w:77:5'), ['w:77:5', 5],
+            'the full board copy carries the public workshop rows');
         const record = { id: 1, kind: 'sell_ad', ownerId: 12, ownerAccount: 'bot_12', town: 'Giran',
             status: 'active', storeType: service.SELL, revision: 1,
             lines: [{ id: 2, selfId: 1864, count: 5, price: 10, enchant: 0 }] };
@@ -197,6 +212,7 @@ async function nativeProducers() {
         await turn();
         assert.strictEqual(worker.mirror.rows('board').get(1)?.[6][0][3], 5,
             'the real board producer opts into automatic publication');
+        assert(indexUpdates.includes(1864), 'a board change updates the recipe index for its item');
         assert.strictEqual(worker.mirror.rows('market').get('c:material none')?.[1], 1,
             'the real counter producer opts into automatic publication');
         assert.strictEqual(worker.mirror.rows('market').get('i:1864')[1], 1);
@@ -205,6 +221,8 @@ async function nativeProducers() {
         assert(!worker.mirror.rows('board').has(1), 'native record removal is delivered as an event');
     } finally {
         if (worker) shared.detach(worker.key);
+        if (oldSources) require.cache[sourcesPath] = oldSources;
+        else delete require.cache[sourcesPath];
         if (oldInvoke === undefined) delete global.invoke;
         else global.invoke = oldInvoke;
     }

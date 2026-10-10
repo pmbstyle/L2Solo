@@ -61,10 +61,14 @@ function members(firstId, partyId) {
                     ...(index === 1 || index === 2
                         ? { armorKinds: ['Armor.Leather', 'Armor.Leather'], setKind: 'Armor.Leather' } : {})
                 },
+                // Cold combat uses only learned skills (an empty saved kit stays
+                // empty): the other members carry the kit their class learned by 20.
+                skillSource: 'database',
                 skills: index === 1 ? [
                     { selfId: 1040, level: 3, passive: false, mp: 39, buffTime: 1200000 },
                     { selfId: 1068, level: 3, passive: false, mp: 35, buffTime: 1200000 }
-                ] : [],
+                ] : Combat.skillSnapshotsFromRecords(Combat.skillRecordsFromTree(
+                    index === 0 ? 4 : index === 2 ? 15 : 0, 20)),
                 effects: []
             }
         },
