@@ -142,7 +142,8 @@ function evaluate(state, options = {}) {
         })),
         warehouse: decisions.filter((decision) => decision.action === 'warehouse').map((decision) => decision.item),
         answers: decisions.filter((decision) => decision.action === 'ad')
-            .map((decision) => ({ item: decision.item, line: decision.answer.line, count: decision.answer.count }))
+            .map((decision) => ({ item: decision.item, line: decision.answer.line, count: decision.answer.count,
+                receipts: decision.answer.receipts }))
     };
 }
 

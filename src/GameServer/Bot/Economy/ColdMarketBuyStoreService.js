@@ -125,7 +125,7 @@ function bestTownFor(state, options = {}) {
     const value = new Map();
     for (const answer of answers(state, options)) {
         const town = answer.line.town;
-        if (town) value.set(town, (value.get(town) || 0) + answer.line.price * answer.count);
+        if (town) value.set(town, (value.get(town) || 0) + answer.receipts);
     }
     let best = null;
     for (const [town, total] of value) {

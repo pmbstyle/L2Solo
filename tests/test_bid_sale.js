@@ -101,4 +101,23 @@ assert.equal(answer.line.lineId, answerBid.lineId);
 assert.equal(answer.count, 4, 'the physical answer offers the bid count; the trade checks the money');
 assert(answer.outcome.sold < 4, 'its value counts only the expected paid units');
 assert.equal(answer.outcome.sold, expected.after.sold);
+// The caller's own belief of the item is used for the willingness read: a
+// seller who believes the item is worth more expects more buyers at a bid.
+const dearer = { ...belief, mu: belief.mu + 1 };
+board = new BoardIndex();
+const readOnce = put(board, { ownerId: 7, storeType: 3, count: 20, price: 500, custodyPolicy: 1 });
+assert.equal(sale(board, readOnce, { units: 50 }).forecast.willingUnits, willing);
+assert(sale(board, readOnce, { units: 50, belief: dearer }).forecast.willingUnits > willing,
+    'a passed belief replaces the belief read again');
+
+// A backed bid is answered with its count and valued in full.
+board = new BoardIndex();
+const backedAnswer = put(board, { ownerId: 7, storeType: 3, count: 4, price: 500 });
+const backedCtx = Pricing.traderContext({ characterId: 42, adena: 0, inventory: {}, stats: {} }, { board, timestamp, persona,
+    economy: { hourAdena: 10000, moneyPrice: 0.001, worth: () => 0, trip, board } });
+const paid = Pricing.bestAnswer(ITEM, backedCtx, { units: 6, residualUnitValue: 10 });
+assert.equal(paid.line.lineId, backedAnswer.lineId);
+assert.equal(paid.count, 4);
+assert.equal(paid.outcome.sold, 4);
+assert.equal(paid.outcome.receipts, 4 * 500, 'a backed bid pays its whole count');
 console.log('PASS bid sale: finite buyers, willingness, competitors, own stock, tail and answers');

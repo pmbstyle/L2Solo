@@ -51,7 +51,10 @@ function recheck(state, selected) {
         const bids = board.list(id, AfkTrade.BUY);
         for (let at = 0; at < Math.min(5, bids.length); at++) if (bids[at].ownerId !== Number(state.characterId)) value = Math.max(value, Number(bids[at].price));
         const amount = row ? require('./WealthCraftDecision').freeAmount(state, row) : 0;
-        ownStock.set(id, { count: id === Number(recipe.productId) ? Math.max(0, amount - Number(selected.ownReserve || 0)) : amount,
+        // Accepted incoming goods are the seller's own output too; the reserve
+        // for its own use comes off their sum.
+        const incoming = id === Number(recipe.productId) ? Number(state.acceptedIncoming?.[id] || 0) : 0;
+        ownStock.set(id, { count: id === Number(recipe.productId) ? Math.max(0, amount + incoming - Number(selected.ownReserve || 0)) : amount,
             unitValue: Number.isFinite(value) ? Math.max(0, value) : NaN });
     }
     context.independentPrice = id => ownStock.get(Number(id))?.unitValue ?? NaN;
@@ -81,9 +84,7 @@ function recheck(state, selected) {
         if (tail && cheaperUnits < exit.count) return null;
         exit.cheaperUnits = cheaperUnits;
         exit.trip = trip(exit.town); exit.tripDetails = trip.details?.(exit.town);
-        // Accepted incoming goods are the seller's own unsold output too.
         const output = ownStock.get(Number(recipe.productId));
-        output.count += Number(state.acceptedIncoming?.[recipe.productId] || 0);
         for (const line of board.ownerLines(Number(state.characterId))) {
             if (line.storeType !== AfkTrade.SELL || line.selfId !== Number(recipe.productId)) continue;
             if (line.price !== exit.price) return null;

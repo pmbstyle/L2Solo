@@ -70,7 +70,7 @@ function traderContext(state, deps = {}) {
 // that acts travels (E45); known economic inputs rank the same hours as the
 // final action. `net` remains the legacy monetary trip comparison for callers.
 function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0,
-    reference = 0, caution = 0 } = {}) {
+    reference = 0, caution = 0, belief = null } = {}) {
     let best = null;
     // Keep finite quantities among the observed candidates: a lower bid for
     // five units can beat the top bid for only one unit in the same town.
@@ -82,7 +82,7 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
-            timestamp: ctx.timestamp, units, residualUnitValue });
+            timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;
         if (sale.status !== 'ready' || !(outcome.sold > 0)) continue;
         const trip = ctx.travelDetails?.(line.town);
@@ -209,10 +209,10 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
     }
     const residualUnitValue = useful > 0 && room > 0 ? useful : market.buyback;
     const answer = bestAnswer(item.selfId, ctx, { units, enchant: item.enchant, residualUnitValue,
-        reference, caution: ctx.trader.caution });
+        reference, caution: ctx.trader.caution, belief });
     if (answer && (Number.isFinite(answer.valueHours) ? answer.valueHours > 0 : answer.net > 0)) {
         const fields = { receipts: answer.outcome.receipts, monetaryResidual: answer.outcome.residualValue,
-            riskHours: loss(answer.line.price, answer.count) };
+            riskHours: loss(answer.line.price, answer.outcome.sold) };
         if (answer.trip) Object.assign(fields, { actualCashFees: answer.trip.fees,
             foregoneBenefitHours: answer.trip.hours, cycleHours: answer.trip.hours });
         else fields.actualCashFees = Math.max(0, ctx.travel?.(answer.line.town) || 0);
@@ -221,7 +221,7 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
     const chosen = PriceDecision.chooseByValue(options, rollKey);
     if (!chosen) return { action: 'keep', priced, gain: 0, answer: null, known: false };
     return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0,
-        answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count } : null };
+        answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count, receipts: answer.outcome.receipts } : null };
 }
 
 // A buy ad keeps authored worth with its line; the next ad starts fresh.

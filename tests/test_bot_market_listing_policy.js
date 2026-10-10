@@ -111,6 +111,7 @@ function tinySale(fees, hours) {
 const nearbyTinySale = tinySale(0, 0);
 assert.strictEqual(nearbyTinySale.answers.length, 1, 'two materials can answer a nearby profitable buyer');
 assert.strictEqual(nearbyTinySale.answers[0].count, 2);
+assert.strictEqual(nearbyTinySale.answers[0].receipts, 20000, 'a backed bid is ranked by its whole payment');
 const distantTinySale = tinySale(30000, 1);
 assert.strictEqual(distantTinySale.answers.length, 0,
     'the same 20000 Adena receipts do not pay a 30000 Adena trip plus an hour of lost activity');

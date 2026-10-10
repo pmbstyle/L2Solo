@@ -294,7 +294,8 @@ function findAfkBuyerForActor(actor, town, state = null, options = {}) {
     for (const answer of ListingPolicy.evaluate(seller, { unlimited: true, now: options.now }).answers) {
         if (answer.line.town !== town?.name) continue;
         const record = records.get(answer.line.recordId) || { line: answer.line, score: 0, sale: {} };
-        record.score += answer.line.price * answer.count;
+        // Expected receipts: a conditional bid pays only its willing units.
+        record.score += answer.receipts;
         record.sale[answer.line.selfId] = (record.sale[answer.line.selfId] || 0) + answer.count;
         records.set(answer.line.recordId, record);
     }
