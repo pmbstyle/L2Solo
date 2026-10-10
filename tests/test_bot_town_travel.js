@@ -109,6 +109,36 @@ try {
         'without a Scroll of Escape a far town trip is walked');
     assert.strictEqual(scrollless.moves.length, 1, 'the scrollless bot walks to town');
 
+    // E197: a gatekeeper fee the backpack cannot cover is counted per path;
+    // an ordinary trip then walks, a supply errand that must read a scroll is
+    // refused.
+    {
+        const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+        const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+        const TripPayment = invoke('GameServer/Bot/Travel/TripPayment');
+        const originalFee = TripPayment.fee, originalDiagnostics = Config.developerDiagnostics;
+        try {
+            TripPayment.fee = () => 2900;
+            Config.developerDiagnostics = true;
+            Diagnostics.stop();
+            const town = { name: 'Fee Town', x: 5000, y: 0, z: -100 };
+            const broke = botAt({ locX: 0, locY: 0, locZ: 0 });
+            broke.backpack.items.get(57).amount = 1000;
+            assert.strictEqual(BotTownTravel.request(session(broke), broke, farAi, 'Selling.', { destinationTown: town }), 'walk');
+            assert.strictEqual(BotTownTravel.request(session(broke), broke, farAi, 'Supplies.',
+                { destinationTown: town, forceScrollOfEscape: true }), 'unpaid');
+            const payer = botAt({ locX: 0, locY: 0, locZ: 0 });
+            assert.strictEqual(BotTownTravel.request(session(payer), payer, farAi, 'Selling.', { destinationTown: town }), 'escape');
+            assert.strictEqual(payer.backpack.items.get(57).amount, 100000 - 2900, 'the fee is paid once');
+            assert.deepStrictEqual(Diagnostics.metrics().counts, {
+                'trip_fare:short:hot': 1, 'trip_fare:short:hot_errand': 1, 'trip_fare:covered:hot': 1 });
+        } finally {
+            TripPayment.fee = originalFee;
+            Config.developerDiagnostics = originalDiagnostics;
+            Diagnostics.stop();
+        }
+    }
+
     const closeBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const closeSession = session(closeBot);
     const closeResult = BotTownTravel.request(closeSession, closeBot, {

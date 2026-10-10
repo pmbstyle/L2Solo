@@ -5,6 +5,7 @@
 // stored state (inventory summary and adena); the cold payment is written with
 // the trip (BotLifeState.upsertState syncs the items of a newly paid trip).
 const TravelRoutes = require('./TravelRoutes');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 const SCROLL_OF_ESCAPE = 736;
 // The SoE recall cast (skill 2013), as BotTownTravel and BotSpotTravel cast it.
@@ -15,6 +16,17 @@ const SCROLL_CAST_MS = 20000;
 function fee(from, to) {
     const route = TravelRoutes.between(from, to).route;
     return route ? route.fee : null;
+}
+
+// Whether a gatekeeper fee exceeds the money a bot may pay it from.
+// Developer telemetry counts each check per path as covered or short (E197),
+// never an input to the decision; counts are checks, not bots or trips:
+// cold (the trip is refused), hot (the bot walks), hot_errand (a supply
+// errand is refused), sale_town (a sale town is dropped from the choice).
+function fareShort(path, amount, adena) {
+    const short = amount > adena;
+    if (amount > 0) Diagnostics.count('trip_fare', short ? 'short' : 'covered', path);
+    return short;
 }
 
 function coldAmount(state, selfId) {
@@ -34,7 +46,7 @@ function hasColdScroll(state) {
 function payCold(state, { scroll = false, fee: amount = 0 } = {}) {
     const adena = coldAdena(state);
     if (scroll && !hasColdScroll(state)) return null;
-    if (amount > adena) return null;
+    if (fareShort('cold', amount, adena)) return null;
     if (!scroll && amount <= 0) return state;
     const inventory = { ...(state.inventory || {}) };
     if (scroll) {
@@ -71,6 +83,7 @@ module.exports = {
     SCROLL_OF_ESCAPE,
     SCROLL_CAST_MS,
     fee,
+    fareShort,
     coldAdena,
     hasColdScroll,
     payCold,

@@ -5,6 +5,9 @@ const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const TownRespawn = require('../../World/TownRespawn');
 const OfferOrder = require('./OfferOrder');
 const Karma = require('../../Karma');
+const TripPayment = require('../Travel/TripPayment');
+// A sale town whose gatekeeper fee the bot's money cannot cover is dropped.
+const fareShort = (fees, state) => TripPayment.fareShort('sale_town', fees, require('./PurchaseFunding').budget(state));
 
 const GLUDIO_D_GRADE_SHARE_PERCENT = 15;
 
@@ -129,7 +132,7 @@ function* chooseTown(state, items = [], options = {}) {
             if (!known) continue;
             if (prepareTrip) yield* prepareTrip(town);
             const route = ctx.travelDetails?.(town);
-            if (!route?.known || route.fees > require('./PurchaseFunding').budget(state)) continue;
+            if (!route?.known || fareShort(route.fees, state)) continue;
             const value = Valuation.opportunity({ moneyPrice: ctx.moneyPrice }, [{ probability: 1,
                 receipts, monetaryResidual: residual, ownInputOpportunityValue: input,
                 actualCashFees: route.fees, foregoneBenefitHours: route.hours, cycleHours: route.hours }]);
@@ -150,7 +153,7 @@ function* chooseTown(state, items = [], options = {}) {
             if (prepareTrip) yield* prepareTrip(seed);
             const route = ctx?.travelDetails?.(seed) || trip.details?.(seed);
             if (Number.isFinite(trip(seed)) && (!route || route.known
-                && route.fees <= require('./PurchaseFunding').budget(state))) { town = seed; fallbackRoute = route; }
+                && !fareShort(route.fees, state))) { town = seed; fallbackRoute = route; }
         } else {
             const alternatives = [];
             for (const candidate of towns) {
@@ -158,7 +161,7 @@ function* chooseTown(state, items = [], options = {}) {
                 if (prepareTrip) yield* prepareTrip(candidate);
                 const cost = trip(candidate);
                 const route = ctx?.travelDetails?.(candidate) || trip.details?.(candidate);
-                if (Number.isFinite(cost) && (!route || route.known && route.fees <= require('./PurchaseFunding').budget(state)))
+                if (Number.isFinite(cost) && (!route || route.known && !fareShort(route.fees, state)))
                     alternatives.push({ action: candidate, value: -cost, route });
                 yield 'candidate';
             }

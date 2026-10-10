@@ -164,7 +164,8 @@ function request(session, bot, BotAI, reason, options = {}) {
         ? TripPayment.fee({ locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
             { locX: town.x, locY: town.y, locZ: town.z }) ?? 0
         : 0 };
-    const affordable = wantsScroll && TripPayment.hasActorScroll(bot) && fare.fee <= TripPayment.actorAdena(bot);
+    const affordable = wantsScroll && TripPayment.hasActorScroll(bot) && !TripPayment.fareShort(
+        options.forceScrollOfEscape === true ? 'hot_errand' : 'hot', fare.fee, TripPayment.actorAdena(bot));
     if (wantsScroll && !affordable && options.forceScrollOfEscape === true) return 'unpaid';
     const usesScroll = wantsScroll && affordable;
     session.preShopLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
