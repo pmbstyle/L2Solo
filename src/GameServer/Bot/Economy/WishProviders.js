@@ -13,6 +13,12 @@ const kits = new Map();
 // purchase. Keep every item (including SA and set parts) in this immutable view.
 // Only a review's finalists are bounded; prices, holdings and funding are live.
 const GEAR_FINALISTS_PER_SLOT = 8;
+// A wish review keeps at most WISH_ROOTS roots (plan E92: 12 roots/40 nodes/
+// depth 4). Producer candidates priced in detail share that bound: at most
+// three producer roots are nominated, and pricing more candidates than a
+// review can hold as roots adds cost without a reachable choice.
+const WISH_ROOTS = 12;
+const PRODUCER_PRICED = WISH_ROOTS;
 const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null) {
     const Data = invoke('GameServer/DataCache');
@@ -396,8 +402,9 @@ function buildProjection(state, ctx, deps) {
         && !state.stats?.craftStationId && !/^bot_craft_\d+$/i.test(String(state.accountName || ''))) {
         // Per-bot constants of the candidate loop: the bot's own plain sell lines
         // are read once and grouped by item, not once per candidate recipe.
-        // ARCH-NOTE: deps.producerRecipes is the worker's public recipe set for
-        // this bot's scope; it is not bounded here, so the loop grows with that set.
+        // Plan bound (E92 "Performance, fixed bounds"): preliminary admission
+        // reads only the RecipeProductionIndex rows and O(1) facts per recipe;
+        // the detailed exit pricing runs for PRODUCER_PRICED finalists only.
         const Price = require('./PriceDecision'), WealthCraft = require('./WealthCraftDecision');
         const ItemTemplates = require('../../Item/ItemTemplateIndex'), Profit = require('./CraftProfitPolicy');
         const items = invoke('GameServer/DataCache').items;
@@ -407,24 +414,48 @@ function buildProjection(state, ctx, deps) {
             if (!ownSalesByItem.has(line.selfId)) ownSalesByItem.set(line.selfId, []);
             ownSalesByItem.get(line.selfId).push(line);
         }
+        // The same offer guard admits a candidate and opens its detailed pricing.
+        const usableExit = (offer, ownSales) => Number(offer.ownerId) !== Number(state.characterId) && !Number(offer.enchant || 0)
+            && offer.count > 0 && offer.price > 0 && !ownSales.some(line => line.price !== offer.price);
+        const exitCeiling = (offers, ownSales, best) => {
+            for (let at = 0; at < offers.length && at < 5; at++)
+                if (usableExit(offers[at], ownSales) && offers[at].price > best) best = offers[at].price;
+            return best;
+        };
+        // Admission: O(1) per candidate (at most 5 head bids of the indexed
+        // sorted list, no copy, no price belief). A candidate without a usable
+        // head exit cannot produce, so its removal is exact. The rest rank by
+        // the gross ceiling count x max(head bid, NPC residual) x success,
+        // the upper bound of the detailed gross; the known book only breaks
+        // ties, so known and unknown recipes compete by the same outcome.
+        const admitted = [];
         for (const recipe of producerCandidates()) {
-        if (!Sources.allowsRecipe(recipe) || seenProduction.has(Number(recipe.recipeId))) continue;
-        seenProduction.add(Number(recipe.recipeId));
-        if (!serviceCraft.canCraft(state, recipe)) continue;
-        const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
-        if (!Number.isSafeInteger(count) || count <= 0) continue;
-        const stock = WealthCraft.freeAmount(state, state.inventory?.[id] || {});
-        const ownSales = ownSalesByItem.get(id) || [];
-        const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
-        if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
+            if (!Sources.allowsRecipe(recipe) || seenProduction.has(Number(recipe.recipeId))) continue;
+            seenProduction.add(Number(recipe.recipeId));
+            if (!serviceCraft.canCraft(state, recipe)) continue;
+            const count = Number(recipe.productCount || 1), id = Number(recipe.productId);
+            if (!Number.isSafeInteger(count) || count <= 0) continue;
+            const stock = WealthCraft.freeAmount(state, state.inventory?.[id] || {});
+            const ownSales = ownSalesByItem.get(id) || [];
+            const oldUnits = stock + Number(state.acceptedIncoming?.[id] || 0) + ownSales.reduce((sum, line) => sum + Number(line.count), 0);
+            if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
+            const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
+            let best = exitCeiling(ctx.board.list(id, 3), ownSales, 0);
+            if (material) best = exitCeiling(deps.fixedProductionOffersFor?.(id) || [], ownSales, best);
+            if (!(best > 0)) continue;
+            admitted.push({ recipe, count, id, ownSales, oldUnits, material, known: knownRecipes.has(Number(recipe.recipeId)),
+                ceiling: positive(count * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
+        }
+        if (admitted.length > PRODUCER_PRICED) {
+            admitted.sort((a, b) => b.ceiling - a.ceiling || Number(b.known) - Number(a.known) || a.recipe.recipeId - b.recipe.recipeId);
+            admitted.length = PRODUCER_PRICED;
+        }
+        for (const { recipe, count, id, ownSales, oldUnits, material } of admitted) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
-        const product = ItemTemplates.find(items, id);
-        const fixedOffers = String(product?.template?.kind || '').startsWith('Other.Material')
-            ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
+        const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
         for (const offer of [...publicOffers, ...fixedOffers]) {
-            if (Number(offer.ownerId) === Number(state.characterId) || Number(offer.enchant || 0)
-                || !(offer.count > 0) || !(offer.price > 0) || ownSales.some(line => line.price !== offer.price)) continue;
+            if (!usableExit(offer, ownSales)) continue;
             const trip = ctx.trip?.details?.(offer.town);
             if (!trip?.known || ![trip.hours, trip.fees].every(value => Number.isFinite(value) && value >= 0)) continue;
             const fixed = offer.type === 'static';
@@ -637,7 +668,7 @@ function buildProjection(state, ctx, deps) {
     const rank = key => { const node = byKey.get(key); return positive(node.valueHours)
         / Math.max(1 / 3600, positive(node.price) / Math.max(1, ctx.hunt.perHour) + positive(node.costHours)); };
     roots.sort((a, b) => rank(b) - rank(a) || a.localeCompare(b));
-    roots.length = Math.min(12, roots.length);
+    roots.length = Math.min(WISH_ROOTS, roots.length);
     const reachable = () => {
         const seen = new Set();
         const visit = key => { if (seen.has(key)) return; seen.add(key);
@@ -706,4 +737,4 @@ function personalCraftPlan(state, context) {
         materials: finalRecipe.materials.map(row => ({ ...row })), craftProviders: providers,
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network' };
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

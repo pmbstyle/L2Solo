@@ -911,6 +911,7 @@ const tests = [
     'tests/test_wish_network.js',
     'tests/test_producer_preparation.js',
     'tests/test_recipe_production_index.js',
+    'tests/test_producer_candidate_bound.js',
     'tests/test_unknown_recipe_worker.js',
     'tests/test_board_trade_meeting.js',
     'tests/test_trade_meeting_service.js',
