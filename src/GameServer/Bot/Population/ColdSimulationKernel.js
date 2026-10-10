@@ -269,9 +269,8 @@ function lifecycleKind(state = {}, context = {}) {
     if (state.stats?.tradeMeeting) return ['traveling', 'dead', 'resting', 'fighting'].includes(state.activity) ? 'resolver' : 'event_driven';
     // A solo bot washing karma (ColdKarmaPolicy.active) is planned by the
     // resolver. The test is repeated here: ColdKarmaPolicy loads spot modules.
-    if (Number(state.stats?.karma || 0) > 0 && !state.party?.partyId && !state.partyId) return 'resolver';
+    if (Number(state.stats?.karma || 0) > 0) return 'resolver';
     if (context.isPartyLeader) return 'party';
-    if (state.partyId || state.party?.partyId) return 'party_member';
     if (state.activity === 'crafting' && state.stats?.craftShop) return 'event_driven';
     const stats = state.stats || {};
     const plan = stats.equipmentPlan || {};

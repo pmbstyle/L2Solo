@@ -302,7 +302,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             const economyPlan = yield* require('./ColdEconomyPlan').prepare(input.state, input.economy, {
                 now: input.timestamp, board: input.board, persona: BotPersona.of(input.state), tripCost: input.economy.trip,
                 preparedCraft: null, npcOffersFor: OccupationSources.npcOffersFor,
-                buyOrderEscrow: input.buyOrderEscrow, findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)) });
+                buyOrderEscrow: input.buyOrderEscrow, findSpot: id => SpotIndex.spotById(planningSpots, id) });
             return { selected: null, economyPlan, economyDecision: ColdEconomyDecision.capture(input.economy, input.state) };
         }
         if (!prepared) return input.mode === 'action' ? null : ColdEconomyDecision.unknownWorkshop();
@@ -352,7 +352,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                 phase: 'town_choice', town: decision.town, reason: decision.reason, candidates: decision.candidates,
                 tripHours: decision.tripHours, tripFees: decision.tripFees
             }) } : null),
-            findSpot: id => planningSpots.find(spot => String(spot.id) === String(id)),
+            findSpot: id => SpotIndex.spotById(planningSpots, id),
             buyOrderEscrow: input.buyOrderEscrow, knownShotRecipes: input.knownShotRecipes
         }) : null;
         return { selected, economyPlan, ...(input.mode === 'refresh' ? { economyDecision:
