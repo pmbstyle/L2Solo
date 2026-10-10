@@ -24,12 +24,14 @@ function traderContext(state, deps = {}) {
     const economicTrip = deps.tripCost?.details ? deps.tripCost : economy.trip?.details ? economy.trip
         : Profit.tripFor(state, { ...economy, origin });
     const trip = economicTrip;
-    const trader = PriceDecision.traderOf(deps.persona || economy.persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });
+    const persona = deps.persona || economy.persona;
+    const trader = PriceDecision.traderOf(persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });
     // The bot's own trip to a town: none to the town it is shopping in.
     const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
     return {
         characterId: Number(state?.characterId || 0),
         understanding: trader.understanding,
+        persona,
         marketTrades: state?.marketTrades || {},
         knowledgeEnabled: deps.knowledgeEnabled ?? PriceLearning.knowledgeEnabled(),
         trader,
@@ -72,12 +74,17 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     let best = null;
     // Keep finite quantities among the observed candidates: a lower bid for
     // five units can beat the top bid for only one unit in the same town.
+    // A conditional bid holds no money: its value counts only the units its
+    // buyer is expected to pay for (MVP-5), a backed one its count. The
+    // physical answer still offers the bid's count; the trade checks money.
     const lines = (ctx.board?.list(selfId, BUY) || []).slice(0, MAX_INSPECTED);
+    const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
-        const outcome = PriceDecision.saleOutcome({ units, applicableUnits: line.count, willingUnits: line.count,
-            cheaperUnits: 0, price: line.price, residualUnitValue });
-        if (!outcome.known || !(outcome.sold > 0)) continue;
+        const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
+            timestamp: ctx.timestamp, units, residualUnitValue });
+        const outcome = sale.after;
+        if (sale.status !== 'ready' || !(outcome.sold > 0)) continue;
         const trip = ctx.travelDetails?.(line.town);
         const travel = ctx.travel ? ctx.travel(line.town) : 0;
         const net = outcome.receipts + outcome.residualValue - travel;
@@ -89,7 +96,7 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
             foregoneBenefitHours: trip ? trip.hours : 0, cycleHours: trip ? trip.hours : 0,
             riskHours: Math.max(0, reference - line.price) * outcome.sold * caution * moneyPrice }]);
         const score = valued.known ? valued.valueHours : net;
-        if (!best || score > best.score) best = { line, count: outcome.sold, net, outcome, trip,
+        if (!best || score > best.score) best = { line, count: Math.min(units, line.count), net, outcome, trip,
             valueHours: valued.valueHours, score };
     }
     return best;

@@ -481,6 +481,7 @@ const tests = [
     'tests/test_bot_market_listing_policy.js',
     'tests/test_ready_trade_choice.js',
     'tests/test_standing_sale_answer.js',
+    'tests/test_bid_sale.js',
     'tests/test_ready_trade_execution.js',
     'tests/test_bot_quest_item_eligibility.js',
     'tests/test_owned_stock_quotes.js',

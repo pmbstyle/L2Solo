@@ -507,20 +507,10 @@ function buildProjection(state, ctx, deps) {
             if (!usableExit(offer, ownSales)) continue;
             const trip = ctx.trip?.details?.(offer.town);
             if (!trip?.known || ![trip.hours, trip.fees].every(value => Number.isFinite(value) && value >= 0)) continue;
-            const fixed = offer.type === 'static';
-            let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
-            if (!fixed) exit = Price.prospectiveExit(state, exit, { board: ctx.board, persona: ctx.persona, timestamp });
-            const forecast = exit.prospective || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
-            if (!forecast?.known) continue;
-            const competitors = fixed ? [] : asks.slice(0, 5).filter(line => Number(line.ownerId) !== Number(state.characterId));
-            let cheaperUnits = 0;
-            for (const line of competitors) if (!Number(line.enchant || 0) && line.price < offer.price) cheaperUnits += Number(line.count);
-            if (!fixed && asks.length > 5 && asks[5].price < offer.price && cheaperUnits < forecast.applicableUnits) continue;
-            const input = { ...forecast, cheaperUnits, price: offer.price, residualUnitValue: Number(exit.residualUnitValue ?? ctx.buyback(id)) };
-            const before = Price.saleOutcome({ ...input, units: oldUnits });
-            const after = Price.saleOutcome({ ...input, units: oldUnits + count });
-            if (!before.known || !after.known || exit.trial && !(after.sold > before.sold)) continue;
-            const gross = after.receipts + after.residualValue - before.receipts - before.residualValue;
+            const sale = Price.bidSale(state, offer, { board: ctx.board, persona: ctx.persona, timestamp, asks,
+                oldUnits, units: count, residualUnitValue: ctx.buyback(id), fixed: offer.type === 'static' });
+            if (sale.status !== 'ready' || sale.exit.trial && !(sale.after.sold > sale.before.sold)) continue;
+            const { gross } = sale;
             if (!(gross > 0)) continue;
             const inputPrice = [...(Profit.requirements(recipe) || [])]
                 .reduce((sum, [id, amount]) => sum + amount * positive(price(id)), 0);

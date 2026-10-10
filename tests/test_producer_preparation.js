@@ -61,7 +61,7 @@ let supported = true;
 adapters['GameServer/Items/NpcSellRules'] = { npcBuyPrice: () => 0 };
 adapters['GameServer/Bot/Economy/PriceBelief'] = { prior: () => ({ mu: Math.log(100) }), sigma: () => 0.3 };
 const nativePrice = load('PriceDecision.js', name => require(path.resolve(root, name)), invokeAdapter);
-const producerPrice = { ...nativePrice, prospectiveExit: (...args) => supported ? nativePrice.prospectiveExit(...args) : args[1] };
+const producerPrice = { ...nativePrice, bidSale: (...args) => supported ? nativePrice.bidSale(...args) : { status: 'unknown' } };
 const provider = load('WishProviders.js' , name => {
     // Admitted synthetic origins (a missing recipe is never admitted, as in the real
     // catalogue) and the shared equipment rule (82e5323c, d300b1b7).

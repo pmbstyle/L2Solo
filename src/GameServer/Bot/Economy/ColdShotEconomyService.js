@@ -76,14 +76,14 @@ function recheck(state, selected) {
     }
     if (!exit) return null;
     if (exit.type === 'afk') {
-        const asks = board.list(recipe.productId, AfkTrade.SELL);
-        let cheaper = 0;
-        for (let at = 0; at < Math.min(5, asks.length); at++) if (asks[at].ownerId !== Number(state.characterId)
-            && !Number(asks[at].enchant || 0) && asks[at].price < exit.price) cheaper += Number(asks[at].count);
-        if (asks.length > 5 && asks[5].price < exit.price && cheaper < exit.count) return null;
-        exit.cheaperUnits = cheaper;
+        const { cheaperUnits, tail } = require('./PriceDecision').cheaperAsks(board.list(recipe.productId, AfkTrade.SELL),
+            { ownerId: state.characterId, price: exit.price });
+        if (tail && cheaperUnits < exit.count) return null;
+        exit.cheaperUnits = cheaperUnits;
         exit.trip = trip(exit.town); exit.tripDetails = trip.details?.(exit.town);
+        // Accepted incoming goods are the seller's own unsold output too.
         const output = ownStock.get(Number(recipe.productId));
+        output.count += Number(state.acceptedIncoming?.[recipe.productId] || 0);
         for (const line of board.ownerLines(Number(state.characterId))) {
             if (line.storeType !== AfkTrade.SELL || line.selfId !== Number(recipe.productId)) continue;
             if (line.price !== exit.price) return null;

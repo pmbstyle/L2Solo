@@ -121,6 +121,45 @@ function prospectiveExit(state, exit, { board, persona, timestamp = Date.now() }
         applicableUnits: line.count, willingUnits, observedAt: timestamp } };
 }
 
+// The cheaper competition a seller meets at a bid price: the first five
+// asks of the board list (QUOTE_DEPTH) that are foreign, of the same enchant
+// and below it. `tail`: the sixth ask is cheaper too, so the competition
+// behind the inspected ones is unknown.
+function cheaperAsks(asks, { ownerId, price, enchant = 0 }) {
+    let cheaperUnits = 0;
+    for (let at = 0; at < asks.length && at < 5; at++) {
+        const line = asks[at];
+        if (Number(line.ownerId) !== Number(ownerId) && Number(line.enchant || 0) === Number(enchant)
+            && line.price < price) cheaperUnits += Number(line.count);
+    }
+    return { cheaperUnits, tail: asks.length > 5 && asks[5].price < price };
+}
+
+// One finite sale of `units` more goods into one bid (MVP-5). A backed bid
+// buys its count; a conditional one only what its buyer is willing to pay
+// for, read from the seller's price belief (prospectiveExit). Cheaper
+// foreign asks serve the buyer first and the seller's own unsold goods
+// (`oldUnits`) are counted once, so `gross` is only the gain of the new
+// units. `limit`: an uninspected cheaper tail may cover the bid.
+function bidSale(state, offer, { board, persona, timestamp = Date.now(), asks = [], oldUnits = 0, units,
+    residualUnitValue, fixed = false } = {}) {
+    let exit = { conditional: offer.custodyPolicy === 1, price: offer.price, count: offer.count, offer };
+    if (!fixed) exit = prospectiveExit(state, exit, { board, persona, timestamp });
+    const forecast = exit.prospective
+        || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
+    if (!forecast?.known) return { status: 'unknown', exit };
+    const { cheaperUnits, tail } = fixed ? { cheaperUnits: 0, tail: false }
+        : cheaperAsks(asks, { ownerId: state?.characterId, price: offer.price, enchant: Number(offer.enchant || 0) });
+    if (tail && cheaperUnits < forecast.applicableUnits) return { status: 'limit', exit, forecast, cheaperUnits };
+    const input = { applicableUnits: forecast.applicableUnits, willingUnits: forecast.willingUnits, cheaperUnits, price: offer.price,
+        residualUnitValue: Number(residualUnitValue ?? exit.residualUnitValue ?? 0) };
+    const before = saleOutcome({ ...input, units: oldUnits });
+    const after = saleOutcome({ ...input, units: oldUnits + units });
+    if (!before.known || !after.known) return { status: 'unknown', exit, forecast, cheaperUnits };
+    return { status: 'ready', exit, forecast, cheaperUnits, before, after,
+        gross: after.receipts + after.residualValue - before.receipts - before.residualValue };
+}
+
 // What the seller of `units` of an item in `town` competes with: { buyback,
 // buyersPerHour, lot, rivals [{ landed, units }], npcLanded, ownTrip }.
 // tripCost(town): a buyer's trip there in Adena (OfferOrder.tripCost of the
@@ -348,5 +387,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, cheaperAsks, bidSale,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

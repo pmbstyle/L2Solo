@@ -39,7 +39,7 @@ function world(positions) {
     const trip = town => town === 'Giran' ? 0 : Infinity;
     trip.details = town => ({ known: town === 'Giran', hours: 0, fees: 0 });
     const ctx = { timestamp: 1e12, persona, board, hunt: { perHour: 1000, expPerHour: 0 }, deathHours: 0, hourAdena: 1000,
-        price: id => products.has(Number(id)) ? 5000 : 10, buyback: () => 0, trip,
+        price: id => products.has(Number(id)) ? 5000 : 10, buyback: id => invoke('GameServer/Items/NpcSellRules').npcBuyPrice(Number(ItemTemplates.find(Data.items, Number(id))?.template?.price || 0)), trip,
         stock: () => ({ itemId: 900, missing: 0 }), spotValue: () => ({}), gearThreatMask: 3 };
     // Half of the recipes are in the book, the rest are public candidates.
     const deps = { board, knownRecipes: positions.filter(at => at % 2).map(at => recipes[at].recipeId),
@@ -49,15 +49,15 @@ function world(positions) {
 function run(positions) {
     const { state, ctx, deps } = world(positions);
     let priced = 0;
-    const original = Price.prospectiveExit;
-    Price.prospectiveExit = (...args) => { priced++; return original(...args); };
+    const original = Price.bidSale;
+    Price.bidSale = (...args) => { priced++; return original(...args); };
     try {
         const projection = Providers.build(state, ctx, deps);
         const resale = projection.roots.filter(key => key.startsWith('resale:'))
             .map(key => projection.nodes.find(row => row.key === key));
         const digest = crypto.createHash('sha1').update(JSON.stringify(resale)).digest('hex');
         return { priced, resale, digest };
-    } finally { Price.prospectiveExit = original; }
+    } finally { Price.bidSale = original; }
 }
 const range = (from, to) => Array.from({ length: to - from }, (_, at) => from + at);
 try {
