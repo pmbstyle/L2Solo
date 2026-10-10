@@ -1,7 +1,7 @@
 'use strict';
 const ItemSources = require('../Items/ItemAcquisitionCatalog');
 
-const { WishNetwork } = require('../Bot/Economy/WishNetwork');
+const { WishNetwork, fundable: fundableWish } = require('../Bot/Economy/WishNetwork');
 const HallPolicy = require('../ClanHall/Policy');
 const Rules = require('./ClanRules');
 const Contributions = invoke('GameServer/Clan/ClanContributionPolicy');
@@ -108,7 +108,7 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
         let left = Math.max(0, wallet - reserve);
         for (const wish of network.queue) {
             // An unsupported wish holds no money and blocks none (MVP-1).
-            const fundable = wish.supported !== false && wish.resolved !== false;
+            const fundable = fundableWish(wish);
             if (wish.object.kind === kind && (id === undefined || Number(wish.object.itemId ?? wish.object.hallId) === Number(id))
                 && (memberId === undefined || Number(wish.object.memberId) === Number(memberId))) return fundable ? left : 0;
             if (!fundable) continue;

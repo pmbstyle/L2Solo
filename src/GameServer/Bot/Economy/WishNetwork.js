@@ -376,7 +376,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         plans.set(wish.key, plan);
         return allocation.used;
     };
-    return { byKey, plans, solve, finiteProduction, tripValue, tripEffort, rootWish, allocate };
+    return { byKey, plans, finiteProduction, tripValue, tripEffort, rootWish, allocate };
 }
 // MVP-6: roots in the caller's rank order while the union of their reachable
 // nodes stays within the bound. A root that does not fit is pending (not

@@ -222,3 +222,18 @@ assert(!crowd.admission.pending.some(row => row.key === 'power:201:1'));
 assert.deepEqual(crowd.admission.pending, [{ key: 'improvement:1', reason: 'node_limit' }]);
 console.log('PASS a memoized subgraph obeys the build cap: admitted gear is not crowded out');
 recipes.clear();
+
+// 8. Exactly forty arena descriptors plus the root is forty-one: a limit at
+// evaluation. Before, it won its family and was always node_limit there, so
+// the smaller bought piece of the same slot never entered.
+const edgeLeaves = Array.from({ length: 27 }, (_, at) => 151 + at), edgeParts = Array.from({ length: 11 }, (_, at) => 181 + at);
+const edge = scenario({ items: [gear(142, 1, 0.5, 1000), Object.assign(gear(143, 1, 0.4, 1000), { etc: { slot: 1, rank: 'd' } })],
+    asks: [[143, 1000], ...[...edgeLeaves, ...edgeParts].map(id => [id, 1])],
+    known: [recipe(341, 141, edgeLeaves), recipe(342, 142, [...edgeParts, 141])],
+    improvements: [{ key: 'improvement:1', kind: 'enchant', materials: [{ selfId: 141, amount: 1 }],
+        valueHours: 5, price: 100, fee: 0 }] });
+assert.equal(edge.admission.maxScratch, 40);
+assert.deepEqual(edge.admission.pending.filter(row => row.key.startsWith('power:')), [{ key: 'power:142:1', reason: 'evaluation_limit' }]);
+assert(edge.projection.roots.includes('power:143:1'), 'the family stays open for the fitting candidate');
+console.log('PASS forty arena descriptors and the root exceed forty: evaluation limit, the family stays open');
+recipes.clear();

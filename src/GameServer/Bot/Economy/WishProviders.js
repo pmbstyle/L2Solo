@@ -607,7 +607,8 @@ function buildProjection(state, ctx, deps) {
     const evaluate = (row, used) => {
         admission.evaluations++; row.evaluations = (row.evaluations || 0) + 1;
         row.status = 'limit'; row.wish = null; row.claims = null;
-        if (row.keys.length > Network.MAX_NODES) return;
+        // The arena joins its own root in the union: both within forty.
+        if (row.keys.length + 1 > Network.MAX_NODES) return;
         try {
             const solver = Network.createSolver({ ...solverOptions, nodes: [...row.keys.map(key => descriptors.get(key)), row.node] });
             const wish = solver.rootWish(row.node.key);
@@ -869,4 +870,4 @@ function personalCraftPlan(state, context) {
         materials: finalRecipe.materials.map(row => ({ ...row })), craftProviders: providers,
         componentRecipes: components, valueRate: Number(wish.ratio || 0), source: 'wish_network' };
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, GEAR_ROOTS, GEAR_ROUNDS, PRODUCER_PRICED, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, knownWorkshop, personalCraftPlan, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
