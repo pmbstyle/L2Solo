@@ -34,7 +34,9 @@ const id = 730180;
         const weapon = Data.items.find(row => row.etc.rank === 'd' && String(row.template.kind).startsWith('Weapon.') && row.etc.slot === 7);
         assert(weapon, 'an actual authored D-grade weapon is required');
         await Database.setItem(id, { selfId: weapon.selfId, name: weapon.template.name, amount: 1, equipped: true, slot: 7, enchant: 0 });
-        for (const [selfId, amount] of [[957, 2]]) {
+        // The ordinary D weapon scroll: since 82e5323c an item without a world
+        // source (the D crystal scroll 957) is never an enchant alternative.
+        for (const [selfId, amount] of [[955, 2]]) {
             const item = Data.items.find(row => Number(row.selfId) === selfId);
             const inserted = await Database.setItem(id, { selfId, name: item.template.name, amount, slot: 0 });
             await Database.transferInventoryToWarehouse(id, { id: inserted.insertId, selfId, name: item.template.name,
@@ -48,9 +50,9 @@ const id = 730180;
             stats: { classId: 56, classProgressionClassId: 56, classProgressionLevel: 30 } }, 'warehouse_decision_fixture');
         const probe = await nativeDecision(state);
         console.log(JSON.stringify({ nativeMaterials: probe.materials, queue: probe.queue }));
-        const selectedScroll = 957;
+        const selectedScroll = 955;
         assert.deepEqual(probe.materials, [[selectedScroll, 3]],
-            'the actual worker selects the native D crystal scroll for the equipped weapon');
+            'the actual worker selects the native D weapon scroll for the equipped weapon');
         Coordinator.economyDecisions.accept(id, probe.decision);
         const originalFull = Economy.forState;
         Economy.forState = () => { throw Error('main_cold_forState_forbidden'); };

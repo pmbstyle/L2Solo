@@ -146,7 +146,9 @@ async function run() {
     assert.equal((await stats(owner.id)).marketTrades['material none'], 2, 'restarts cannot replay or add a newly imported journal row');
     pass('startup seeds confirmed canonical retained deals once, preserves existing counts and unrelated stats');
 
-    const shop = await Database.createAfkTradeShop(owner.id, { kind: 'sell_ad', storeType: 1, town: 'Giran',
+    // A bot sell ad settles only at a trade meeting (E115, 540ce2aa); the
+    // two-party learning contract is the same on a backed shop bought in place.
+    const shop = await Database.createAfkTradeShop(owner.id, { kind: 'shop', storeType: 1, town: 'Giran',
         lines: [{ objectId: owner.stock, selfId: 1864, name: 'Stem', count: 10, price: 100, stackable: true }] });
     Afk.refreshRecord(shop.shop);
     const authoredPricing = { ...Afk.boardIndex().ownerLines(owner.id)[0].pricing };

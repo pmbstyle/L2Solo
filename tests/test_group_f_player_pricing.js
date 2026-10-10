@@ -79,7 +79,9 @@ async function player(name, { bot = false } = {}) {
 let bidSequence = 0;
 async function fundedBid(price) {
     // Display-only index rows cannot fund a deal; accepted sales use real escrow.
-    const owner = await player(`FFillBid${++bidSequence}`, { bot: true });
+    // A bot buy ad holds no escrow and pays only at a meeting (E115,
+    // 540ce2aa), so the escrow-held bid a seller fills in place is a player's.
+    const owner = await player(`FFillBid${++bidSequence}`);
     const created = await Database.createAfkTradeShop(owner.actor.fetchId(), { kind: 'buy_ad', storeType: 3, town: 'Giran',
         lines: [{ selfId: MATERIAL, name: 'Stem', count: 10, price, stackable: true }] });
     AfkTrade.refreshRecord(created.shop);
@@ -446,7 +448,8 @@ test('all four accepted native/HTML player trades persist once with executed pri
         .sort((left, right) => left.unitPrice - right.unitPrice);
     assert.strictEqual(allRecords.length, 2, 'only the two static purchases use caller telemetry');
     assert.deepStrictEqual(values(playerTrades), values(allRecords));
-    const boardTrades = history.recent.filter(trade => trade.sourceType === 'afk_bot_buy_store');
+    // fundedBid is a player's escrow-held buy ad (bot buy ads pay only at a meeting).
+    const boardTrades = history.recent.filter(trade => trade.sourceType === 'afk_player_buy_store');
     assert.deepStrictEqual(boardTrades.map(trade => [trade.unitPrice, trade.quantity]).sort((a, b) => a[0] - b[0]),
         [[502, 1], [702, 1]], 'the two static-buyer fills appear once through native board settlement');
 });

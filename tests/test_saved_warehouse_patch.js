@@ -36,7 +36,10 @@ async function run() {
         for (let i = 0; i < 30; i++) await Database.execute([
             'INSERT INTO warehouse_items(characterId,selfId,name,amount,enchant) VALUES(?,1864,\'Stem\',1,0)', [id]]);
         await Database.execute(['CREATE TABLE withdrawal_stats_writes(n INTEGER)']);
+        // Count changed stats only: since 71143511 each transfer's inventory
+        // snapshot names statsJson in its SET list and keeps it unchanged.
         await Database.execute([`CREATE TRIGGER withdrawal_stats_write AFTER UPDATE OF statsJson ON bot_life_state
+            WHEN OLD.statsJson IS NOT NEW.statsJson
             BEGIN INSERT INTO withdrawal_stats_writes VALUES(1); END`]);
         Market.saleDecision = () => ({ listings: [{ selfId: 1864, count: 30 }], npc: [], answers: [] });
         // Warm the shared spot-value datapack before measuring per-withdrawal work.

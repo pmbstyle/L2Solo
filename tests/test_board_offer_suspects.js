@@ -50,16 +50,22 @@ function item(selfId, amount) {
 // stall: the bot sells into it by record at its place (D6, group C); a buy
 // shop's stall is walked to.
 check('E40', () => {
-    record(992101, { kind: 'buy_ad', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 30 }] });
+    // Both bids beat the NPC buy-back of Stem (50): since 71143511 a sale
+    // into a record is an expected-value choice against the NPC and keeping.
+    record(992101, { kind: 'buy_ad', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 60 }] });
     const actor = { fetchId: () => 992100, backpack: { fetchItems: () => [item(STEM, 5)] } };
+    // The hot bot's life state says where it stands: shopping in Giran, so
+    // answering an ad there costs no trip (MarketPricing.traderContext).
+    const standing = { characterId: 992100, activity: 'shopping', currentRegion: 'Giran',
+        loc: { locX: 83000, locY: 148000, locZ: -3400 }, stats: {} };
     // One decision point: the sale decision's rolls stand still.
     const now = 1800000000000;
-    const found = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, null, { now });
+    const found = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, standing, { now });
     assert.strictEqual(found?.offer.recordKind, 'buy_ad', 'the ad in town is answered');
     const adTarget = MarketOpportunity.offerTarget(found.offer, 'Giran');
     assert.deepStrictEqual([adTarget.actorId, adTarget.recordId], [null, found.offer.recordId], 'by record, at its place');
-    record(992102, { kind: 'shop', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 40 }] });
-    const shop = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, null, { now });
+    record(992102, { kind: 'shop', storeType: 3, lines: [{ selfId: STEM, count: 10, price: 80 }] });
+    const shop = TradeService.findAfkBuyerForActor(actor, { name: 'Giran' }, standing, { now });
     assert.strictEqual(Number(shop?.offer.sourceId), 992102, 'E40: the trip walks to the better buy shop');
     assert(MarketOpportunity.offerTarget(shop.offer, 'Giran').actorId > 0);
 });

@@ -41,9 +41,22 @@ const SABER = 123;
         // Skill training is certified separately; keep this exact-line native
         // purchase fixture confined to arrival, money and escrow settlement.
         Training.review = async () => null;
+        // A bot's board purchase is admitted through its saved economy owner
+        // (71143511, EconomyCommit): a bot account, a saved hot life state and
+        // the worker's money packet that funds the Saber (FX-E3 rows).
+        const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        await LifeState.init();
+        await Database.createAccount('bot_group_f_companion', 'pw');
+        await Database.execute(['UPDATE characters SET username = ? WHERE id = ?', ['bot_group_f_companion', BUYER]]);
+        const plan = { strategy: 'market', status: 'active', target: { selfId: SABER, name: 'Saber', slot: 7 } };
+        const hot = await LifeState.upsertState({ characterId: BUYER, accountName: 'bot_group_f_companion', name: 'Buyer',
+            level: 40, phase: 'hot', activity: 'shopping', currentRegion: 'Giran', adena: 100000,
+            loc: { locX: 83000, locY: 148000, locZ: -3400 }, inventory: { 57: { selfId: 57, amount: 100000 } },
+            vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { classId: 0, equipmentPlan: plan, money: [100000, .0001, 0, 0, .001, 10, SABER] },
+            timing: { lastHotAt: 1 } }, 'group_f_companion_fixture');
         const savedPlan = () => {
-            session.coldLifeState = { characterId: BUYER, level: 40, stats: { classId: 0,
-                equipmentPlan: { strategy: 'market', status: 'active', target: { selfId: SABER, name: 'Saber', slot: 7 } } } };
+            session.coldLifeState = { ...(LifeState.cachedState(BUYER) || hot), stats: { ...(LifeState.cachedState(BUYER) || hot).stats,
+                classId: 0, equipmentPlan: plan } };
         };
         const open = async () => {
             const first = Number((await Database.setItem(SELLER, { selfId: SABER, name: 'Saber +3',

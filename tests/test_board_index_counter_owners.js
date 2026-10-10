@@ -47,7 +47,8 @@ const follower = index.follower();
 const store = { shopId: 9, ownerId: 70, kind: 'buy_ad', storeType: BUY, botOwned: true, revision: 12,
     items: [{ afkTradeLineId: 91, selfId: 7, count: 2, price: 20, pricing, fills: 2 }] };
 const row = rowOf(store);
-assert.equal(row.length, 8);
+assert.equal(row.length, 9, 'id, kind, side, owner, town, bot, lines, revision, custody policy');
+assert.equal(row[8], 0, 'an ordinary backed record has custody policy 0');
 assert.deepEqual(row[6][0], [91, 7, 0, 2, 20, pricing, 2]);
 follower.put(9, row);
 assert.deepEqual(owners('material none'), [70]);

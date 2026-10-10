@@ -65,8 +65,11 @@ try {
         'a learned earlier visit remains earlier than the bag sale');
     assert.equal(target({ ...solo, phase: 'cold' }), target(solo), 'hot and cold use the identical stock horizon');
     assert.equal(target({ ...solo, partyId: 2 }), 6, 'standalone party membership retains the full-bag bound');
-    assert.equal(target({ ...solo, stats: { ...solo.stats, generatedCold: true }, level: 9 }), 5.9,
-        'pre-trade bots cannot forecast a sale they cannot execute');
+    // 829e4442 removed the generated-bot sale level cutoff: a level 9 bot
+    // sells like any other, so its executable bag sale bounds the outing too.
+    assert.equal(target({ ...solo, stats: { ...solo.stats, generatedCold: true }, level: 9 }), target({ ...solo, level: 9 }),
+        'a low-level generated bot forecasts the same executable sale');
+    assert(target({ ...solo, level: 9 }) < 3, 'the level 9 bag sale still bounds the outing');
     assert.equal(target({ ...solo, stats: { ...solo.stats, marketSellRetryAfter: Date.now() + 60000 } }), 6,
         'blocked sale does not claim an executable half-full return');
     const protectedLoot = { ...solo, inventory: { 1864: { selfId: 1864, amount: 1, stackable: true } },

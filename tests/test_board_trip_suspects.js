@@ -70,7 +70,10 @@ async function run() {
     // E45: a bot's buy ad in Dion and another bot's sell ad in Giran cross;
     // nobody travels, so no deal may happen (design 4.4, 4.6).
     await check('E45', async () => {
-        const buyer = await bot('bot_e45_buyer', 'E45Buyer', [{ selfId: 57, name: 'Adena', amount: 1000000 }]);
+        // A bot's buy ad reserves money only through its worker's money packet
+        // (5d87d87a): the packet funds the 20 Varnish bid (4000) at r .001.
+        const buyer = await bot('bot_e45_buyer', 'E45Buyer', [{ selfId: 57, name: 'Adena', amount: 1000000 }], TI,
+            { money: [1000000, .0001, 0, 0, .001, 4000, VARNISH] });
         const seller = await bot('bot_e45_seller', 'E45Seller', [{ selfId: VARNISH, name: 'Varnish', amount: 30 }]);
         await AfkTrade.openBotRecords(buyer.id, 'buy_ad', [{ storeType: AfkTrade.BUY, title: 'wtb', town: 'Dion',
             locX: 15631, locY: 142885, locZ: -2704,

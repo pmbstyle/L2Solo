@@ -32,7 +32,7 @@ async function check(name, work) {
     catch (error) { failures.push(name); console.error(`${name}: FAIL ${error.stack}`); }
 }
 
-async function makeBot(items, { player = false } = {}) {
+async function makeBot(items, { player = false, stats = {} } = {}) {
     const account = `${player ? 'player' : 'bot'}_n79_storage_${++sequence}`;
     await Database.createAccount(account, 'pw');
     const id = Number((await Database.createCharacter(account, {
@@ -46,7 +46,7 @@ async function makeBot(items, { player = false } = {}) {
             phase: 'cold', activity: 'hunting', level: 40, adena: Number(inventory[57]?.amount || 0), inventory,
             currentRegion: 'Giran', loc: { locX: 83000, locY: 148000, locZ: -3400 },
             vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 },
-            stats: { generatedCold: true }, timing: {} }, 'n79_storage_seed');
+            stats: { generatedCold: true, ...stats }, timing: {} }, 'n79_storage_seed');
     }
     return id;
 }
@@ -160,7 +160,9 @@ async function run() {
     await check('an agreed quote starts a fresh checkpoint while a worker keeps its authored pricing', async () => {
         const owner = await makeBot([stem(10)]);
         const buyer = await makeBot([adena(2000)]);
-        const shop = await sell(owner, { kind: 'sell_ad' });
+        // A bot sell ad settles only at a trade meeting (E115, 540ce2aa); the
+        // pricing checkpoint is the same on a backed shop line bought in place.
+        const shop = await sell(owner);
         await buy(buyer, { shopId: shop.id, ownerId: owner,
             lineId: shop.lines[0].id, amount: 1 });
         const before = await getShop(owner);
@@ -192,7 +194,9 @@ async function run() {
         assert.deepStrictEqual((await getShop(owner)).lines[0].pricing, authored,
             'batch worker checkpoint must survive the shared external-price fallback');
 
-        const bidOwner = await makeBot([adena(3000)]);
+        // A bot buy ad grows its reserve only through the worker's money packet
+        // (5d87d87a): rows [r, amount, item] fund the Stem bid.
+        const bidOwner = await makeBot([adena(3000)], { stats: { money: [3000, .0001, 0, 0, .001, 1100, STEM] } });
         const bid = (await Database.createAfkTradeShop(bidOwner, { kind: 'buy_ad', storeType: 3, town: 'Giran',
             lines: [{ selfId: STEM, name: 'Stem', count: 10, price: 100, stackable: true,
                 pricing: { ...pricing(100), worth: 5000.375 } }] })).shop;
@@ -200,7 +204,10 @@ async function run() {
         const agreedBid = await getShop(bidOwner);
         assert.strictEqual(agreedBid.lines[0].pricing.price, 110);
         assert.strictEqual(agreedBid.lines[0].pricing.worth, 5000.375);
-        assert.strictEqual(agreedBid.escrowAdena, 1100);
+        // A bot buy ad is conditional: it holds no escrow and pays at the
+        // meeting (E115, 540ce2aa), so the agreed bid moves no money here.
+        assert.strictEqual(agreedBid.custodyPolicy, 1);
+        assert.strictEqual(agreedBid.escrowAdena, 0);
     });
 
     await check('each bot participant learns one counter deal per actual transaction', async () => {

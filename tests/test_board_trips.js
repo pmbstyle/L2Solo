@@ -192,7 +192,17 @@ Config.coldHonestTravel = false;
     assert(goal, 'the errand is a goal');
     assert.strictEqual(goal.plan.marketTown, 'Dion');
     assert.strictEqual(goal.target.itemId, 1463);
-    const travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
+    // The errand's town and arrival are the subject here. Whether the trip
+    // pays for itself (24512a44) has its own fixture
+    // (test_acquisition_trip_value.js); this hunter has no weapon to value shots.
+    const canTravel = ColdMarketService.canTravelForPurchase;
+    ColdMarketService.canTravelForPurchase = () => true;
+    let travel;
+    try {
+        travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
+    } finally {
+        ColdMarketService.canTravelForPurchase = canTravel;
+    }
     assert.strictEqual(travel.stats.travel.townName, 'Dion');
     assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
     assert.deepStrictEqual(ColdMarketService.errandGoal(errand).plan.marketTown, 'Dion');
@@ -273,7 +283,10 @@ Config.coldHonestTravel = false;
             revision: 1, lines: [{ lineId: 10, selfId: STEM, count: dealsBy === me ? 8 : 20,
                 price: chosen.price, fills: dealsBy === me ? 6 : 0, pricing: chosen.pricing }] });
         for (let deal = 0; deal < 6; deal++) MarketCounters.deal(STEM, chosen.price, 2, t0 + 200 + deal, 9, 'Giran', dealsBy);
-        const reviewCtx = { ...ctx, timestamp: t0 + 4000000 };
+        // A standing bid is reviewed at the owner's current prepared value
+        // (b8516c65, 6f5a2b65), not the worth authored into the line. Supply
+        // that current value as 400 so only the observed prior moves.
+        const reviewCtx = { ...ctx, timestamp: t0 + 4000000, preparedWorth: id => Number(id) === STEM ? 400 : NaN };
         const publicPrior = PriceBelief.prior(STEM, reviewCtx);
         const before = publicPrior.mu;
         const observations = PriceBelief.lineObservations(board.ownerLines(me)[0], publicPrior, reviewCtx);
@@ -291,7 +304,7 @@ Config.coldHonestTravel = false;
             PriceDecision.chooseBid = (belief, market, trader, options, ...rest) => {
                 reviewCalls++;
                 after = belief.mu;
-                assert.strictEqual(options.worth, 400, 'review retains worth despite its public prior moving');
+                assert.strictEqual(options.worth, 400, 'review uses the owner current worth, not its moving public prior');
                 reviewChoice = chooseBid(belief, market, trader, options, ...rest);
                 return reviewChoice;
             };
