@@ -23,8 +23,11 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         && Number(state?.inventory?.[String(selfId)]?.amount || 0) > 0) return null;
 
     // `state.adena` already holds the order's escrow (callers add it).
+    // A survival item may spend its kit cost from the survival reserve
+    // (worker economy only; 0 for any other item), as executePlan and the
+    // native bid check do.
     const spendable = Math.min(money, PurchaseFunding.spendable(state, 0,
-        PurchaseFunding.goalTerms(goal, selfId)));
+        { ...PurchaseFunding.goalTerms(goal, selfId), survivalCost: Math.max(0, Number(options.economy?.kitCost?.(selfId)) || 0) }));
     // Older generic equipment goals stored the unscaled template value as
     // their budget: like a reference estimate, it says nothing of the price.
     const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource

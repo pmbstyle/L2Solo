@@ -3599,8 +3599,11 @@ function checkConditionalBidUnsafe(characterId, line, price = Number(line.price)
     const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
     if (total > wallet) throw Error('not_enough_adena');
     const row = one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
+    // survivalCost: the line's kit cost (in memory from executePlan), the
+    // survival tranche every other restock may spend.
+    const survivalCost = Math.max(0, Number(line.survivalCost) || 0);
     if (row) checkEconomyFundingUnsafe(characterId, { row }, total,
-        line.intent ? { r: line.intent.valueRate } : { itemId: Number(line.selfId) });
+        { ...(line.intent ? { r: line.intent.valueRate } : { itemId: Number(line.selfId) }), ...(survivalCost ? { survivalCost } : {}) });
 }
 
 function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp) {

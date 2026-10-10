@@ -778,17 +778,23 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
+        // A survival item's ad may spend its kit cost from the survival
+        // reserve, as the meeting and the NPC restock do (each item once).
+        let kit = null;
+        const kitCost = (selfId, price) => Math.round((kit ||= require('./EconomyContext').basics(state)).kitCost?.(selfId, price) || 0);
         // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
         const wanted = (plan.buyAds || []).slice(0, 3).map(row => {
             const [selfId, count, price] = row;
             const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
+            const survivalCost = selfId > 0 && price > 0 ? kitCost(selfId, price) : 0;
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
-                || count * price > PurchaseFunding.spendable(state, buyOrderEscrow(ownerId), intent ? { r: intent.valueRate } : { itemId: selfId })) {
+                || count * price > PurchaseFunding.spendable(state, buyOrderEscrow(ownerId),
+                    { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {
                 throw Error('economy_plan_bid_unfunded');
             }
             if (!intent) money -= count * price;
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
-            return { selfId, count, price, intent, enchant: 0, name: item?.template?.name || `Item ${selfId}`,
+            return { selfId, count, price, intent, survivalCost, enchant: 0, name: item?.template?.name || `Item ${selfId}`,
                 slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true,
                 pricing: invoke('GameServer/Bot/Economy/MarketPricing').lineState(selfId, ctx,
                     { price, storeType: AfkTrade.BUY, enchant: 0, count: Number(count) }) };
