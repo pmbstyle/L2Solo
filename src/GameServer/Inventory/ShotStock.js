@@ -435,8 +435,7 @@ function restockPlan(value, options = {}) {
     const wish = options.targetAmount === undefined ? context.network?.queue?.find(row => Number(row.object?.itemId) === Number(plan.selfId)) : null;
     const fundedState = !coldMain && options.targetAmount === undefined && context.statsPacket
         ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = PurchaseFunding.spendable(fundedState, 0, { itemId: plan.selfId,
-        ...(wish ? { r: PurchaseFunding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(plan.selfId, npcPrice) });
+    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId, context.kitCost(plan.selfId, npcPrice), PurchaseFunding.quoteScale(stock.unitPrice, npcPrice));
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     const needed = allowance > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;

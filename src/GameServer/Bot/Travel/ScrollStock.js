@@ -36,8 +36,7 @@ function restockPlan(value, options = {}) {
     const desired = Math.max(0, TARGET_AMOUNT - currentAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(SCROLL.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = Funding.spendable(fundedState, 0, { itemId: SCROLL.selfId,
-        ...(wish ? { r: Funding.significant(wish.ratio) } : {}), survivalCost: context.kitCost(SCROLL.selfId, unitPrice) });
+    const allowance = Funding.stockAllowance(fundedState, wish, SCROLL.selfId, context.kitCost(SCROLL.selfId, unitPrice), Funding.quoteScale(context.stock('scrolls').unitPrice, unitPrice));
     const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {

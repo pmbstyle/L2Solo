@@ -11,6 +11,7 @@ const ClanOrderService = invoke('GameServer/Clan/ClanOrderService');
 const ClanEconomy = require('./ClanEconomyContext');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const ClanCredit = require('./ClanPurchaseCredit');
 
 const metrics = {
     resolves: 0,
@@ -102,13 +103,12 @@ async function resolveClan(clan) {
     // The member buys in the offer's town (б5): at once when it stands there,
     // else it goes there with an errand and deposits at a later resolve.
     // ARCH-NOTE: No member clan-value wish exists; clan purchases use only unearmarked personal money and the treasury.
-    const clanPart = playerControlled ? 0 : Math.max(0, Math.ceil(Number(offer.price))
-        - Math.floor(PurchaseFunding.spendable(buyer, 0, { free: true })));
-    if (clanPart > 0) {
-        const paid = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: clanPart,
-            kind: 'clan_level_purchase', moveMark: false, progressionGoal: goal });
-        if (!paid.ok) return { ok: false, code: paid.code };
-        buyer = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(buyer.characterId);
+    let clanPart = 0;
+    if (!playerControlled) {
+        const funded = await ClanCredit.fund(clan.id, buyer, offer.price, 'clan_level_purchase', goal);
+        if (!funded.ok) return { ok: false, code: funded.code };
+        buyer = funded.state;
+        clanPart = funded.clanPart;
     }
     const placed = { price: Number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
     const purchase = await ColdMarketService.acquire(buyer, itemId, 1, {
@@ -117,14 +117,11 @@ async function resolveClan(clan) {
         tag: { clanId: clan.id, offer: placed, clanPart }
     });
     if (!purchase.bought || !purchase.state) {
-        if (purchase.traveling || purchase.state?.stats?.marketErrand) {
+        const settled = await ClanCredit.settle(clan.id, buyer.characterId, itemId, clanPart, purchase,
+            'clan_level_purchase_refund', false);
+        if (settled === 'kept') {
             recordReason('market_buyer_traveling');
             return { ok: true, skipped: true, reason: 'market_buyer_traveling' };
-        }
-        if (clanPart > 0) {
-            const refund = await Database.payClanMember({ clanId: clan.id, characterId: buyer.characterId, amount: -clanPart,
-                kind: 'clan_level_purchase_refund', moveMark: false });
-            if (refund.ok) LifeState.acceptNewerLifecycleRow(refund.row);
         }
         metrics.blocked += 1;
         recordReason(Contracts.REASON_CODES.MARKET_PRICE_UNACCEPTABLE);

@@ -5,7 +5,7 @@ const CraftShops = invoke('GameServer/Bot/Economy/CraftShopService');
 const Database = invoke('Database');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const ComponentProgress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
-const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const ClanCredit = require('./ClanPurchaseCredit');
 const CombinedErrands = require('../Bot/Population/CombinedErrandPolicy');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
@@ -433,31 +433,25 @@ async function buyGoalCopy(memberId, plan, clan, amount = 1) {
         { ...offer, buyerCharacterId: memberId, equipSlot: number(plan.target?.slot) || undefined }, amount);
     if (blocker) return goalPurchaseFailed(blocker);
     const price = Math.ceil(number(offer.price)) * amount;
-    // The treasury part excludes the member's money earmarked for its own
-    // unpaid wishes, as the errand's own funding check (purpose 'clan') does.
-    const clanPart = Math.max(0, price - Math.floor(PurchaseFunding.spendable(state, 0, { free: true })));
-    if (clanPart > 0) {
-        const paid = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: clanPart, kind: 'clan_goal_purchase', moveMark: false });
-        if (!paid.ok) return goalPurchaseFailed(paid.code, paid);
-        state = LifeState.acceptNewerLifecycleRow(paid.row) || await LifeState.findByCharacterId(memberId);
-    }
+    const funded = await ClanCredit.fund(clan.id, state, price, 'clan_goal_purchase');
+    if (!funded.ok) return goalPurchaseFailed(funded.code, funded.paid);
+    state = funded.state;
+    const clanPart = funded.clanPart;
     const placed = { price: number(offer.price), sourceType: offer.sourceType, sourceId: offer.sourceId, town: offer.town };
     const purchase = await invoke('GameServer/Bot/Economy/ColdMarketService').acquire(state, selfId, amount, {
         towns: offer.town ? [offer.town] : null, maxPrice: number(offer.price), npc: offer.sourceType === 'npc',
         purpose: 'clan', money: price, free: true, clanPart, tag: { clanId: number(clan.id), offer: placed, clanPart }
     });
-    if (purchase.bought) return { ok: true, purchase };
-    if (purchase.traveling || purchase.pending) {
+    // A kept errand (waiting for its party or town visit) carries the credit.
+    const settled = await ClanCredit.settle(clan.id, memberId, selfId, clanPart, purchase, 'clan_goal_purchase_refund');
+    if (settled === 'bought') return { ok: true, purchase };
+    if (settled === 'kept') {
         recordReason('clan_goal_market_buyer_traveling');
         return { ok: true, traveling: true, purchase };
     }
     const code = purchase.reason || 'clan_goal_purchase_failed';
     recordReason(code);
-    if (clanPart > 0) {
-        const back = await Database.payClanMember({ clanId: clan.id, characterId: memberId, amount: -clanPart, kind: 'clan_goal_purchase_refund', moveMark: false });
-        if (back.ok) LifeState.acceptNewerLifecycleRow(back.row);
-        else recordReason(`clan_goal_refund_${back.code}`);
-    }
+    if (settled !== 'refunded') recordReason(`clan_goal_${settled}`);
     return { ok: false, code };
 }
 

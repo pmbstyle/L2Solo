@@ -123,7 +123,7 @@ function stage(request) {
     }
     if ([request.actorA, request.actorB].some(id => !partyTradeAllowed('trade', life().cachedState(id), sessionFor(id)))) throw Error('trade_meeting_party_busy');
     if (count > 4 || pages + transportPages + count > 64) throw Error('trade_meeting_backpressure');
-    for (const entry of staged.values()) if ([request.actorA, request.actorB].some(id => entry.actors.includes(id))) throw Error('trade_meeting_preparation_busy');
+    if ([request.actorA, request.actorB].some(id => preparedActors.has(Number(id)))) throw Error('trade_meeting_preparation_busy');
     const id = request.token;
     staged.set(id, { frames, revisions: request.parties.map(party => party.revision),
         bytes: frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(frame)), 0), pages: count, actors: [request.actorA, request.actorB] });

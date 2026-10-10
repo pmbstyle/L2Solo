@@ -223,6 +223,10 @@ function purchaseMoney(state, plan, spent = 0) {
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
             const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
             options.survivalCost = context.kitCost(plan.selfId, Number(plan.npcPrice) || null);
+            // The stock wish's rank at the quoted price, not the estimate (E187).
+            if (plan.purpose === 'shots' && terms.r === undefined) {
+                options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(plan.npcPrice));
+            }
         }
         funded = PurchaseFunding.spendable(state, 0, options);
     }
@@ -686,7 +690,10 @@ async function buyErrand(state, options = {}) {
         lastErrand: { purpose: errand.purpose, selfId: errand.selfId, units: bought.units, tag: errand.tag || null, at: Date.now() } } };
     const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
     if (rest === 0 || !plan) await GoalState.clear(state.characterId, 'completed').catch(() => null);
-    return { state: saved || cleared, purchased: bought.units > 0, units: bought.units,
+    // A clan errand that ends here returns the clan's credit it did not spend.
+    const returned = saved && (rest === 0 || !plan)
+        ? await invoke('GameServer/Clan/ClanPurchaseCredit').returnUnspent(state.characterId, errand, bought.spent) : null;
+    return { state: returned?.state || saved || cleared, purchased: bought.units > 0, units: bought.units,
         reason: bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer' };
 }
 
