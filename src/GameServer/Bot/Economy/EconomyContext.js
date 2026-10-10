@@ -488,7 +488,7 @@ function forState(state = {}, deps = {}) {
     context.purchaseBudget = id => {
         const wish = network.queue.find(row => Number(row.object?.itemId) === Number(id));
         return Funding.spendable({ ...state, stats: { ...state.stats, money: context.statsPacket.money } }, 0,
-            { itemId: id, ...(wish ? { r: Funding.significant(wish.ratio) } : {}), survivalCost: base.kitCost(id) });
+            Funding.stockTerms(wish, id, base.kitCost(id)));
     };
     building = false;
 

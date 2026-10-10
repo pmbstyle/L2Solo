@@ -452,7 +452,9 @@ function restockPlan(value, options = {}) {
     const free = Math.max(0, adena - potionCost);
     const money = Math.min(boardAllowance, free);
     const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice });
-    const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price }));
+    // Each line carries the terms it was budgeted with to the native writer.
+    const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price,
+        funding: PurchaseFunding.stockTerms(wish, plan.selfId, context.kitCost(plan.selfId, price)) }));
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
     const npcBudget = Math.min(allowance, free);
@@ -516,7 +518,7 @@ async function purchaseActorRestock(actor, options = {}) {
     for (const line of restock.shops) {
         try {
             const result = await AfkTrade.buyFromShop(actor.fetchId(), line.offer.store, plan.selfId, line.amount,
-                { lineId: line.offer.lineId, expectedPrice: line.price });
+                { lineId: line.offer.lineId, expectedPrice: line.price, funding: line.funding });
             if (result.pending) return { ok: true, pending: true, meetingId: result.meetingId, changed: delta > 0,
                 plan, amount: shotAmount(actor, plan), delta, cost };
             delta += line.amount;

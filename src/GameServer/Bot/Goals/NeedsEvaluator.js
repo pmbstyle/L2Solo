@@ -61,7 +61,7 @@ function evaluate(state = {}, options = {}) {
         const itemName = state.inventory?.[String(itemId)]?.name
             || gear?.template?.name || `Item ${itemId}`;
         // Town, source and price are the core's (the card); no second quote look.
-        const ratio = leaf.r > 0 ? leaf.r : invoke('GameServer/Bot/Economy/PurchaseFunding').rootRatio(wish);
+        const ratio = invoke('GameServer/Bot/Economy/PurchaseFunding').leafRatio(leaf, wish);
         return [{ ...common, type: slot ? 'upgrade_gear' : 'buy_craft_material',
             target: { itemId, itemName, itemSlot: slot, amount,
                 adena: leaf.unitPrice ?? (leaf.amount > 0 ? leaf.price / leaf.amount : leaf.price) },

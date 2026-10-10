@@ -133,8 +133,12 @@ function quoteScale(estimate, quote) {
     return Number(estimate) > 0 && Number(quote) > 0 ? Number(estimate) / Number(quote) : 1;
 }
 function stockAllowance(state, wish, itemId, survivalCost, scale = 1) {
-    return spendable(state, 0, { itemId, survivalCost, quoteScale: scale,
-        ...(wish ? { r: significant(wish.ratio) } : {}) });
+    return spendable(state, 0, { ...stockTerms(wish, itemId, survivalCost), quoteScale: scale });
+}
+// A stock purchase's terms, the same for the planner and the native writer:
+// the kit's survival tranche and its stock wish's rank (else its packet row).
+function stockTerms(wish, itemId, survivalCost) {
+    return { itemId, survivalCost, ...(wish ? { r: significant(wish.ratio) } : {}) };
 }
 function forOpportunity(state, opportunity, escrow = 0) {
     if (!opportunity?.known || !Number.isFinite(opportunity.valueHours) || opportunity.valueHours <= 0
@@ -159,6 +163,10 @@ function rootRatio(wish) {
 // The funding terms of a buy goal, one rule for every reader: its root's
 // place in the money queue when the goal carries one, else the money
 // packet's row for its item.
+// A card leaf's ratio: the card's own r, else its funded root's.
+function leafRatio(leaf, wish) {
+    return leaf?.r > 0 ? leaf.r : rootRatio(wish);
+}
 function goalTerms(goal, itemId = goal?.target?.itemId) {
     return goal?.plan?.valueRate === undefined ? { itemId } : { r: goal.plan.valueRate };
 }
@@ -193,5 +201,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, goalTerms,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

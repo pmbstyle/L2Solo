@@ -709,7 +709,8 @@ module.exports = {
                 const bought = store?.afkTrade === true
                     ? await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(
                         bot.fetchId(), store, companionErrand.itemId, companionErrand.amount || 1,
-                        { lineId: companionErrand.lineId, expectedPrice: companionErrand.price, coldState: session.coldLifeState }
+                        { lineId: companionErrand.lineId, expectedPrice: companionErrand.price, coldState: session.coldLifeState,
+                            funding: companionErrand.funding }
                     )
                     : await TradeService.buyFromStore(bot, store, companionErrand.itemId, companionErrand.amount || 1);
                 if (bought.pending) return;
@@ -759,7 +760,7 @@ module.exports = {
                     locY: Number(companionErrand.target.locY), locZ: Number(companionErrand.target.locZ) };
                 const result = await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchaseForActor(bot, {
                     town: offer.town, seller, extras: [{ selfId: companionErrand.itemId,
-                        amount: companionErrand.amount || 1, offer: seller, autoEquip: true }] });
+                        amount: companionErrand.amount || 1, offer: seller, funding: companionErrand.funding, autoEquip: true }] });
                 if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
                 const line = result.receipts.flatMap(row => row.lines || [])
                     .find(row => Number(row.selfId) === Number(companionErrand.itemId));

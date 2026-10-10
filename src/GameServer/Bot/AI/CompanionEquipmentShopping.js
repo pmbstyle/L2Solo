@@ -77,13 +77,17 @@ function checkedPlan(session, state, town, options = {}) {
         const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, selfId);
         const amount = Math.max(1, Math.ceil(leaf.amount || 1));
         const fundedState = { ...state, stats: { ...state.stats, ...economy.statsPacket } };
-        const budget = Math.min(PurchaseFunding.spendable(fundedState, 0, { itemId: selfId }) / amount, economy.worth(selfId) ?? Infinity);
+        // The leaf's funded root funds it, as for a cold goal (PurchaseFunding.goalTerms).
+        const ratio = PurchaseFunding.leafRatio(leaf, economy.network.queue?.find(row => row.key === leaf.rootKey));
+        const funding = ratio > 0 ? { valueRate: ratio } : {};
+        const budget = Math.min(PurchaseFunding.spendable(fundedState, 0, PurchaseFunding.goalTerms({ plan: funding }, selfId)) / amount,
+            economy.worth(selfId) ?? Infinity);
         const offer = MarketOpportunity.bestOffer(selfId, { town: town.name, buyerCharacterId: state.characterId, budget,
             ...(leaf.sourceType ? { accept: row => leaf.sourceType === 'npc' ? row.sourceType === 'npc'
                 : ['afk_player_store', 'afk_bot_store'].includes(row.sourceType) } : {}) });
         return { statsPacket: economy.statsPacket, plan: offer ? { status: 'active', strategy: 'market',
             target: { selfId, name: item?.template?.name, slot: Number(item?.etc?.slot || 0) }, amount,
-            market: { sourceType: offer.sourceType } } : null, offers: offer ? [offer] : [] };
+            market: { sourceType: offer.sourceType }, ...funding } : null, offers: offer ? [offer] : [] };
     }
     const previous = state.stats?.equipmentPlan;
     const excludedSlots = new Set((options.excludedSlots || []).map(Number));
@@ -168,6 +172,8 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = []) {
         slot: Number(plan.target.slot || 0),
         price: Number(offer.price),
         amount: Math.min(Number(offer.count || Infinity), Number(plan.amount || 1)),
+        // The native writer checks the same terms the plan was budgeted with.
+        funding: PurchaseFunding.nativeTerms(PurchaseFunding.goalTerms({ plan }), plan.target.selfId),
         purchaseCount,
         excludedSlots: [...excludedSlots],
         target: offer.sourceType === 'npc'
