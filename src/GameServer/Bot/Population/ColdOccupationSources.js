@@ -166,6 +166,23 @@ function fixedBuyerOffersFor(id) {
     return Production.buyersDisabled() ? EMPTY : fixedBuy.get(Number(id)) || EMPTY;
 }
 
+// One value of an owned item for the wish and the producer (user 2026-10-10,
+// Q1): what the bot gets selling one unit now. NPC buyback, the top
+// QUOTE_DEPTH board bids of others and the enabled fixed buyers.
+function* exitValue(state, id, board = null) {
+    initialise();
+    const item = ItemIndex.find(Data.items, Number(id));
+    let value = invoke('GameServer/Items/NpcSellRules').npcBuyPrice(Number(item?.template?.price || 0));
+    let count = 0;
+    for (const line of board?.list(Number(id), 3) || []) {
+        if (count++ === QUOTE_DEPTH) break;
+        if (Number(line.ownerId) === Number(state.characterId)) { yield 'quote'; continue; }
+        value = Math.max(value, Number(line.price || 0)); yield 'quote';
+    }
+    for (const exit of fixedBuyerOffersFor(id)) { value = Math.max(value, exit.price); yield 'quote'; }
+    return Number.isFinite(value) ? Math.max(0, value) : NaN;
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
@@ -200,19 +217,11 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     context.trip = trip;
     for (const key in state.inventory || {}) {
         const id = Number(state.inventory[key].selfId || key); read(id);
-        const item = ItemIndex.find(Data.items, id);
-        let value = invoke('GameServer/Items/NpcSellRules').npcBuyPrice(Number(item?.template?.price || 0));
-        let count = 0;
-        for (const line of board.list(id, 3) || []) {
-            if (count++ === QUOTE_DEPTH) break;
-            if (Number(line.ownerId) === Number(state.characterId)) { yield 'quote'; continue; }
-            value = Math.max(value, Number(line.price || 0)); yield 'quote';
-        }
-        if (!Production.buyersDisabled()) for (const exit of fixedBuy.get(id) || []) { value = Math.max(value, exit.price); yield 'quote'; }
+        const value = yield* exitValue(state, id, board);
         let amount = require('../Economy/WealthCraftDecision').freeAmount(state, state.inventory[key], reserved);
         if (Number(stock?.itemId) === id) amount = Math.max(0, amount - Math.min(amount,
             Math.max(0, Number(stock.target || 0))));
-        ownStock.set(id, { count: amount, unitValue: Number.isFinite(value) ? Math.max(0, value) : NaN }); yield 'stock';
+        ownStock.set(id, { count: amount, unitValue: value }); yield 'stock';
     }
     const prepareExits = function* (owner, recipe, template) {
         const result = []; read(recipe.productId); let count = 0;
@@ -323,7 +332,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcSellerTowns.has(town); },
     npcOffersFor: id => npcByItem?.get(Number(id)) || [],

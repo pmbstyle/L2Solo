@@ -55,6 +55,20 @@ assert.equal(bounded.value.whole, false);
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
 assert(npc.whole && npc.npc === 1 && npc.repeatable && npc.town);
+// One value of an owned item (Q1): what the bot gets selling one unit now.
+// Own bids are skipped but use a quote slot; NPC buyback is the floor.
+const bids = new BoardIndex();
+bids.put({ id: 700, ownerId: owner.characterId, storeType: 3, kind: 'buy_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 800, selfId: 1864, count: 1, price: 900 }] });
+for (let at = 1; at < 7; at++) bids.put({ id: 700 + at, ownerId: 500 + at, storeType: 3, kind: 'buy_ad',
+    town: 'Giran', revision: 1, lines: [{ lineId: 800 + at, selfId: 1864, count: 1, price: 500 - at }] });
+const exit = drain(Sources.exitValue(owner, 1864, bids));
+assert.equal(exit.value, 499, 'best bid of others; the own 900 bid is not an exit');
+assert.equal(exit.stages.filter(stage => stage === 'quote').length, Sources.QUOTE_DEPTH + Sources.fixedBuyerOffersFor(1864).length);
+const npcFloor = drain(Sources.exitValue(owner, 1864, null)).value;
+assert(npcFloor >= 0 && npcFloor < 499, 'without a board only NPC buyback and fixed buyers');
+const withBids = drain(Sources.prepare(owner, { board: bids, timestamp: 1000 })).value;
+assert.equal(withBids.options.ownStock.get(1864).unitValue, 499, 'prepare reads the same exit value');
 const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
 const routeRows = drain(EconomicTrip.prepare(state)).value;
 const routeKey = EconomicTrip.key(state);

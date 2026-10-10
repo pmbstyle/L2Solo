@@ -13,6 +13,8 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = require('./PurchaseFunding');
 const Karma = require('../../Karma');
 let staticIndex = null;
+// Lazy: ColdOccupationSources reads this module while it loads.
+function exitValue(...args) { return require('../Population/ColdOccupationSources').exitValue(...args); }
 function staticExits(recipe, template) {
     if (require('./ProductionPolicy').buyersDisabled()
         || !String(template?.template?.kind || '').startsWith('Other.Material')) return [];
@@ -84,8 +86,7 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         seenPhysical.add(physicalKey);
         const count = freeAmount(state, item, reserved);
         if (count) ownStock.set(id, { count: (ownStock.get(id)?.count || 0) + count,
-            unitValue: Number(context.independentPrice?.(id) ?? context.price?.(id) ?? context.worth?.(id)
-                ?? ItemDisposition.priceFor(state, item, ItemTemplateIndex.find(DataCache.items, id))) });
+            unitValue: ownStock.get(id)?.unitValue ?? (yield* exitValue(state, id, options.board)) });
         yield 'stock';
     }
     // Bag is the spendable physical index. Board/warehouse goods are included
