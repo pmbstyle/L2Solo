@@ -93,8 +93,10 @@ const persona = { primaryDrive: 'progression', understanding: 1,
 const state = { characterId: 1, level: 40, adena: 0, inventory: {}, stats: { recipes: [] },
     activity: 'hunting', currentRegion: 'Giran', loc: { locX: 81100, locY: 148000, locZ: -3466 } };
 const stockFor = id => ({ owned: Number(state.inventory[id]?.amount || 0), incoming: 0 });
-const trip = town => town === 'Giran' ? 0 : Infinity;
-trip.details = town => ({ known: town === 'Giran', hours: 0, fees: 0 });
+// Known towns and their trip hours; a town outside the table is unreachable.
+const routes = { Giran: 0 };
+const trip = town => town in routes ? 0 : Infinity;
+trip.details = town => ({ known: town in routes, hours: routes[town] ?? 0, fees: 0 });
 const gear = (selfId, slot, gain, price) => {
     gains.set(selfId, gain); prices.set(selfId, price);
     return { selfId, etc: { slot, rank: 'c' }, template: { price, kind: 'Armor' } };
@@ -110,8 +112,8 @@ function scenario({ items, asks = [], known = [], inventory = {}, improvements =
     data.items = items; gearIds = new Set(items.map(row => row.selfId));
     opportunities = improvements; state.inventory = inventory;
     const board = new BoardIndex();
-    asks.forEach(([selfId, price, count = 1], at) => board.put({ id: at + 1, ownerId: 2, storeType: 1, kind: 'sell_ad',
-        town: 'Giran', revision: 1, lines: [{ lineId: at + 1, selfId, count, price, enchant: 0 }] }));
+    asks.forEach(([selfId, price, count = 1, town = 'Giran'], at) => board.put({ id: at + 1, ownerId: 2, storeType: 1, kind: 'sell_ad',
+        town, revision: 1, lines: [{ lineId: at + 1, selfId, count, price, enchant: 0 }] }));
     // EconomyContext's read scope: a candidate's reads count once kept.
     let open = null; const reads = new Set(), opened = [];
     const ctx = { timestamp: 1, persona, board, hunt: { perHour: 0, expPerHour: 0 }, deathHours: 0,
@@ -351,6 +353,27 @@ recipes.clear();
 const reallocated = heavy; heavy = null;
 assert(reallocated.length > 4, 'the re-allocation\'s solvers were tracked');
 console.log('PASS admitted roots sharing held stock repeat the network\'s allocation');
+
+// 13. E212: a path whose own time reaches the horizon waits, though its
+// status value stays. The rare weapon 161 sells only in Aden, 14 trip hours
+// of the 13-hour horizon: fundable, yet not ready. Before, its status value
+// kept it evaluated and fundable-first gave it the weapon family over 162,
+// which has no seller (not fundable) but is ready inside the horizon.
+persona.traits.ambition = 0.5; routes.Aden = 14;
+const farPath = scenario({ items: [gear(161, 7, 0.5, 100), gear(162, 14, 0.3, 1000)], asks: [[161, 100, 1, 'Aden']] });
+assert.equal(witness(farPath.admission, 'power:161:7'), undefined, 'the far path is not admitted');
+assert(farPath.projection.roots.includes('power:162:14'), 'the unfunded piece ready inside the horizon wins the family');
+assert.equal(witness(farPath.admission, 'power:162:14').supported, false, 'the winner has no seller');
+assert.deepEqual(farPath.admission.pending, [{ key: 'power:161:7', reason: 'not_ready_in_horizon' }]);
+assert(!farPath.projection.roots.includes('power:161:7'));
+// 13b. The funding delay alone does not make a path wait: the same rare
+// weapon in Giran at 1400 is 14 hours of income away, its power part is
+// gone, its status value keeps it evaluated: the bot saves for it.
+const saving = scenario({ items: [gear(161, 7, 0.5, 1400)], asks: [[161, 1400]] });
+persona.traits.ambition = 0; delete routes.Aden;
+assert(witness(saving.admission, 'power:161:7')?.valueHours > 0, 'the saved-for piece is admitted by its status value');
+assert(saving.projection.roots.includes('power:161:7'));
+console.log('PASS a path whose own time reaches the horizon waits; a funding delay alone does not');
 
 // A completed build keeps only its cut: every candidate's read scope (and the
 // arena that filled it) is garbage once the projection is returned.
