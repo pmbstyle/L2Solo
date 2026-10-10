@@ -53,6 +53,7 @@ const network = load('WishNetwork.js', name => {
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return { MIN: 0.02, roll: () => 0.5 };
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };
+    if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     throw Error(name);
 });
 // Candidate solvers and their wishes (plan trees) are the heavy references
