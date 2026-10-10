@@ -170,6 +170,8 @@ function packetFor(network, hour, reserve) {
     const packet = [Math.round(hour), significant(network.moneyPrice), Math.round(reserve), Math.round(network.gap?.price || 0)];
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {
+        // An unsupported wish keeps its queue place without money (MVP-1).
+        if (wish.supported === false || wish.resolved === false) continue;
         if (!wish.funded) break;
         cumulative += wish.price; count++;
         const ratio = significant(wish.ratio);

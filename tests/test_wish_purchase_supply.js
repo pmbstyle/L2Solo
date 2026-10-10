@@ -35,7 +35,12 @@ const adapters = {
     'GameServer/Bot/Economy/CraftShopService': { canCraft: () => ownCraft },
     'GameServer/Bot/Population/BackgroundResolver': { coldRestRegenPerTick: () => ({ mp: 100 }) },
     'GameServer/Skills/SkillBookCatalog': { missingBooks: () => [] },
-    'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' }
+    'GameServer/Bot/Economy/MarketCounters': { moveOf: () => 0, counterOf: () => 'armor c' },
+    // No sellable inventory: the liquidation money path stays out of these routes.
+    'GameServer/Bot/Economy/ItemDisposition': { saleCandidates: () => [] },
+    'GameServer/Inventory/ShotStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/AI/HealingPotionStock': { keptAmounts: () => ({}) },
+    'GameServer/Bot/Travel/ScrollStock': { keptAmounts: () => ({}) }
 };
 // Liquidation funding reads the shared sale and kept-stock readers (f75b6525); this
 // fixture sells nothing, so no inventory row is a sale candidate.

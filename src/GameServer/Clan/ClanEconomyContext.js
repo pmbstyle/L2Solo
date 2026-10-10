@@ -107,8 +107,11 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
     function budgetFor(kind, id, memberId) {
         let left = Math.max(0, wallet - reserve);
         for (const wish of network.queue) {
+            // An unsupported wish holds no money and blocks none (MVP-1).
+            const fundable = wish.supported !== false && wish.resolved !== false;
             if (wish.object.kind === kind && (id === undefined || Number(wish.object.itemId ?? wish.object.hallId) === Number(id))
-                && (memberId === undefined || Number(wish.object.memberId) === Number(memberId))) return left;
+                && (memberId === undefined || Number(wish.object.memberId) === Number(memberId))) return fundable ? left : 0;
+            if (!fundable) continue;
             if (!wish.funded) return 0;
             left -= wish.price;
         }
