@@ -373,6 +373,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         wish.plan = plan; wish.price = plan?.price ?? Infinity; wish.effort = plan?.effort ?? Infinity;
         wish.supported = plan?.supported !== false;
         value(wish, byKey.get(wish.key), plan);
+        wish.fullValueHours = fullValue(wish, byKey.get(wish.key));
         // Shared stock can change the full path's cost. A finite
         // earning trial never funds a route whose effort consumes its
         // entire expected benefit; rejected trials claim no stock.

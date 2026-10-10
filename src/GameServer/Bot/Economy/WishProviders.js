@@ -617,7 +617,10 @@ function buildProjection(state, ctx, deps) {
             const wish = solver.rootWish(row.node.key);
             if (solverOptions.stockFor && wish.plan) row.claims = solver.allocate(wish, used);
             row.wish = wish;
-            row.status = wish.plan && wish.valueHours > 0 ? 'evaluated' : 'no_path';
+            // A path whose benefit cannot start inside the horizon is not a
+            // missing path: it waits, counted, for money or a cheaper source.
+            row.status = !wish.plan ? 'no_path' : wish.valueHours > 0 ? 'evaluated'
+                : wish.fullValueHours > 0 ? 'not_ready' : 'no_path';
         } catch (error) {
             if (!SOLVER_LIMITS.has(error?.message)) throw error;
         }
@@ -667,6 +670,8 @@ function buildProjection(state, ctx, deps) {
         }
         for (const row of gear) if (row.status === 'limit' && !admitted.includes(row))
             admission.pending.push({ key: row.node.key, reason: 'evaluation_limit' });
+        for (const row of gear) if (row.status === 'not_ready')
+            admission.pending.push({ key: row.node.key, reason: 'not_ready_in_horizon' });
         // The selected-path witness: the scalar facts the expanded root must repeat.
         admission.admitted = admitted.map(row => ({ key: row.node.key, family: row.family, scratch: row.keys.length,
             evaluations: row.evaluations, price: row.wish.price, effort: row.wish.effort, valueHours: row.wish.valueHours,

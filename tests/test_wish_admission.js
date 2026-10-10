@@ -262,3 +262,13 @@ close(rareWish.valueHours, rareWitness.valueHours * (rarePiece.result.focus?.[0]
     'the expanded wish repeats the witness value');
 assert(!rarePiece.projection.roots.includes('status:115'), 'no second root for the admitted rare piece');
 console.log('PASS the rare status value is scored at admission and repeated by the network');
+
+// 11. A seller asks 5000: 50 hours of income before it is ready, past the
+// 13-hour horizon, so its ready benefit is 0. It waits as a counted reason.
+diagnostics = true; counts.clear();
+const far = scenario({ items: [gear(116, 1, 0.5, 5000)], asks: [[116, 5000]] });
+diagnostics = false;
+assert.deepEqual(far.admission.pending, [{ key: 'power:116:1', reason: 'not_ready_in_horizon' }]);
+assert.equal(counts.get('provider/admission_pending/not_ready_in_horizon'), 1);
+assert(!far.projection.roots.includes('power:116:1'));
+console.log('PASS a path not ready inside the horizon is pending with its reason');
