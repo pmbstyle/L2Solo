@@ -41,7 +41,10 @@ const GROUP_LIMIT = 256;
 // rebuilds whose inputs equal the bot's previous request (a retained context
 // would have served them), how long after it, and what dropped the context
 // (perf B1: only a short gap is reachable within the worker's memory budget).
-// It never decides anything.
+// The entry also keeps the hash of the plan that build produced (focus, queue
+// with funding, activity, dormant), so a rebuild is counted by whether its
+// inputs and its plan repeated the actor's previous build: how many rebuilds
+// change nothing a bot does (the B5 question). It never decides anything.
 const lastKeyHashes = new Map();
 const LAST_KEY_LIMIT = 8192;
 const GAP_BUCKETS = [[1000, 'lt1s'], [5000, '1_5s'], [15000, '5_15s'], [30000, '15_30s'], [60000, '30_60s'], [120000, '60_120s']];
@@ -53,6 +56,11 @@ function noteRelease(actorKey, reason) {
     if (last && last.released !== 'unkept') last.released = reason;
 }
 const positive = value => Math.max(0, Number(value) || 0);
+// What a bot acts on from its plan: the focus key, the ordered queue with its
+// funding, the chosen activity and the dormant keys; prices and play-hour
+// stamps inside focus/dormant rows are not acted on. Shadow count only.
+const planHash = network => fnv1a32(JSON.stringify([network.focus?.[0] ?? null, (network.queue || []).map(row => [row.key, row.funded === true]),
+    network.activity?.key ?? network.activity?.kind ?? null, (network.dormant || []).map(row => Array.isArray(row) ? row[0] : row)]));
 
 function stateForActor(actor, session = actor?.session) {
     const stored = session?.coldLifeState || {};
@@ -402,9 +410,11 @@ function forState(state = {}, deps = {}) {
     const diagnosticReason = !diagnostic ? null : !held ? 'not_retained' : held.key !== key
         ? 'input_dependency_changed' : !isMainThread && held.context.state !== state ? 'state_publication' : 'used_market_changed';
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
+    let shadowSame = false, previousPlan = null, shadowEntry = null;
     if (diagnostic) {
         const hash = fnv1a32(key), last = lastKeyHashes.get(actorKey), at = Date.now();
         const same = last?.hash === hash;
+        shadowSame = same; previousPlan = last?.plan ?? null;
         Diagnostics.count('context', 'shadow', `${diagnosticReason}:${same ? 'same_key' : 'new_key'}`);
         if (same) {
             Diagnostics.count('context', 'shadow_gap', gapBucket(Math.max(0, at - last.at)));
@@ -412,7 +422,8 @@ function forState(state = {}, deps = {}) {
             if (diagnosticReason === 'not_retained') Diagnostics.count('context', 'shadow_released', last.released || 'unknown');
         }
         const kept = deps.rememberContext !== false && planningContexts < 64;
-        remember(lastKeyHashes, actorKey, { hash, at, released: kept ? null : 'unkept' }, LAST_KEY_LIMIT);
+        shadowEntry = { hash, at, released: kept ? null : 'unkept', plan: null };
+        remember(lastKeyHashes, actorKey, shadowEntry, LAST_KEY_LIMIT);
     }
     const reads = new Map();
     let building = true;
@@ -473,6 +484,10 @@ function forState(state = {}, deps = {}) {
         context.statsPacket = { wishFocus: context.network.focus, dormantWishes: context.network.dormant,
             decisionSeq: context.network.decisionSeq, activityLeaf: context.network.activityLeaf,
             money: state.stats?.money || [0, 0, base.survivalReserve, 0] };
+        if (shadowEntry) {
+            const plan = planHash(context.network); shadowEntry.plan = plan;
+            if (previousPlan !== null) Diagnostics.count('context', 'shadow_plan', `${shadowSame ? 'same_key' : 'new_key'}:${plan === previousPlan ? 'same_plan' : 'new_plan'}`);
+        }
         return context;
     }
     // One stock reader for the provider's gear witnesses and the network
@@ -528,6 +543,10 @@ function forState(state = {}, deps = {}) {
     if (diagnostic) {
         Diagnostics.count('context', 'build', diagnosticReason);
         Diagnostics.duration('context', performance.now() - started);
+        const plan = planHash(network);
+        if (shadowEntry) shadowEntry.plan = plan;
+        if (previousPlan !== null) Diagnostics.count('context', 'shadow_plan',
+            `${shadowSame ? 'same_key' : 'new_key'}:${plan === previousPlan ? 'same_plan' : 'new_plan'}`);
     }
     if (diagnostic && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
         caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason,
