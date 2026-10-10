@@ -9,7 +9,9 @@ const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
 const { personalOfferAllowed } = require('./PartyAdmission');
-const QUOTE_DEPTH = 5;
+const Price = require('../Economy/PriceDecision');
+const OfferQuery = require('../Economy/OfferQuery');
+const { QUOTE_DEPTH } = Price;
 const EMPTY = Object.freeze([]);
 let fixedBuy, npcByItem, mpRates, townByName, townOrdinal, gearByRank, npcSellerTowns;
 
@@ -260,68 +262,27 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         }
         for (const exit of result) {
             if (exit.type !== 'afk') { yield 'exit'; continue; }
-            let cheaper = 0, depth = 0, tailUnknown = false;
-            for (const line of board?.list(recipe.productId, 1) || []) {
-                if (Number(line.price) >= exit.price) break;
-                if (Number(line.ownerId) !== Number(owner.characterId) && !Number(line.enchant || 0)) {
-                    if (depth === QUOTE_DEPTH) { tailUnknown = cheaper < exit.count; break; }
-                    cheaper += Math.max(0, Number(line.count)); depth++;
-                }
-                yield 'quote';
-                if (cheaper >= exit.count) break;
-            }
-            exit.cheaperUnits = cheaper;
-            if (tailUnknown) exit.applicableUnits = NaN;
-            Object.assign(exit, invoke('GameServer/Bot/Economy/PriceDecision').prospectiveExit(state, exit, { board, timestamp }));
+            const { cheaperUnits, limit } = Price.exitCompetition(board?.list(recipe.productId, 1) || [],
+                { ownerId: owner.characterId, price: exit.price, count: exit.count });
+            exit.cheaperUnits = cheaperUnits;
+            if (limit) exit.applicableUnits = NaN;
+            yield 'quote';
+            Object.assign(exit, Price.prospectiveExit(state, exit, { board, timestamp }));
             yield 'exit';
         }
         return result;
     };
     const preparePurchase = function* (owner, id, amount, query = {}) {
         read(id);
-        const towns = []; let depth = 0;
-        for (const line of board?.list(id, 1) || []) {
-            if (depth++ === QUOTE_DEPTH) break;
-            if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)
-                || !personalOfferAllowed(line, owner)) { yield 'quote'; continue; }
-            const index = townOrdinal.get(line.town);
-            if (index === undefined) { yield 'quote'; continue; }
-            let held = towns[index]; if (!held) towns[index] = held = { town: line.town, lines: [], npcPrice: 0 };
-            held.lines.push(line); yield 'quote';
-        }
         // Static NPC stock is the only unlimited ingredient source admitted here.
-        if (query.npc === true && Production.allowsNpcShot(id)) for (const offer of npcByItem.get(Number(id)) || []) {
-            const index = townOrdinal.get(offer.town);
-            if (index === undefined) { yield 'quote'; continue; }
-            let held = towns[index]; if (!held) towns[index] = held = { town: offer.town, lines: [], npcPrice: 0 };
-            const price = Number(offer.price);
-            if (price > 0) held.npcPrice = held.npcPrice ? Math.min(held.npcPrice, price) : price;
-            yield 'quote';
-        }
-        let best = null;
-        for (const held of towns) {
-            if (!held) { yield 'trip'; continue; }
-            const town = held.town;
-            const details = yield* ensureTrip(town);
-            if (!details.known) continue;
-            let remaining = amount, cost = 0, npc = 0; const lines = [];
-            for (const line of held.lines) {
-                const price = Number(line.price), units = Math.min(remaining, Number(line.count));
-                if (price > 0 && (!held.npcPrice || price <= held.npcPrice) && units > 0) {
-                    lines.push({ line, count: units, price }); remaining -= units; cost += units * price;
-                }
-                yield 'quote';
-            }
-            if (remaining > 0 && held.npcPrice > 0) { npc = remaining; cost += npc * held.npcPrice; remaining = 0; }
-            const units = amount - remaining, landed = cost + trip(town), whole = remaining === 0;
-            if (units > 0 && (!best || whole && !best.whole || whole === best.whole
-                && (landed / units < best.landed / best.units || landed / units === best.landed / best.units && String(town) < String(best.town)))) {
-                best = { town, lines, npc, npcPrice: held.npcPrice, units, cost, trip: trip(town), landed, whole,
-                    tripDetails: details, repeatable: npc === amount, routeKey: town };
-            }
-            yield 'candidate';
-        }
-        return best;
+        const npcOffers = query.npc === true && Production.allowsNpcShot(id) ? npcByItem.get(Number(id)) || EMPTY : EMPTY;
+        const towns = new Set(npcOffers.map(offer => offer.town));
+        for (const line of (board?.list(id, 1) || []).slice(0, QUOTE_DEPTH)) towns.add(line.town);
+        for (const town of towns) { if (townOrdinal.has(town)) yield* ensureTrip(town); yield 'quote'; }
+        const best = OfferQuery.cheapestTown(board, id, { amount, quoteDepth: QUOTE_DEPTH, excludeOwner: owner.characterId,
+            accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, owner), npcOffers, cost: trip });
+        yield 'candidate';
+        return best ? { ...best, tripDetails: trip.details(best.town), repeatable: best.npc === amount, routeKey: best.town } : null;
     };
     const gearRowsFor = function* (rank) {
         for (const gear of gearByRank.get(rank) || []) {

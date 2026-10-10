@@ -139,6 +139,14 @@ function cheaperAsks(asks, { ownerId, price, enchant = 0 }) {
     return { cheaperUnits, tail: asks.length > QUOTE_DEPTH && asks[QUOTE_DEPTH].price < price };
 }
 
+// The competition of one exit of `count` units, one reader for the planner,
+// its recheck and bidSale: `limit` when the uninspected cheaper tail may
+// cover the bid, so its demand is unknown.
+function exitCompetition(asks, { ownerId, price, enchant = 0, count }) {
+    const { cheaperUnits, tail } = cheaperAsks(asks, { ownerId, price, enchant });
+    return { cheaperUnits, limit: tail && cheaperUnits < count };
+}
+
 // One finite sale of `units` more goods into one bid (MVP-5). A backed bid
 // buys its count; a conditional one only what its buyer is willing to pay
 // for, read from the seller's price belief (prospectiveExit). Cheaper
@@ -152,9 +160,10 @@ function bidSale(state, offer, { board, persona, timestamp = Date.now(), asks = 
     const forecast = exit.prospective
         || (!exit.conditional ? { known: true, applicableUnits: offer.count, willingUnits: offer.count } : null);
     if (!forecast?.known) return { status: 'unknown', exit };
-    const { cheaperUnits, tail } = fixed ? { cheaperUnits: 0, tail: false }
-        : cheaperAsks(asks, { ownerId: state?.characterId, price: offer.price, enchant: Number(offer.enchant || 0) });
-    if (tail && cheaperUnits < forecast.applicableUnits) return { status: 'limit', exit, forecast, cheaperUnits };
+    const { cheaperUnits, limit } = fixed ? { cheaperUnits: 0, limit: false }
+        : exitCompetition(asks, { ownerId: state?.characterId, price: offer.price, enchant: Number(offer.enchant || 0),
+            count: forecast.applicableUnits });
+    if (limit) return { status: 'limit', exit, forecast, cheaperUnits };
     const input = { applicableUnits: forecast.applicableUnits, willingUnits: forecast.willingUnits, cheaperUnits, price: offer.price,
         residualUnitValue: Number(residualUnitValue ?? exit.residualUnitValue ?? 0) };
     const before = saleOutcome({ ...input, units: oldUnits });
@@ -391,5 +400,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, cheaperAsks, bidSale,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, cheaperAsks, exitCompetition, bidSale,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

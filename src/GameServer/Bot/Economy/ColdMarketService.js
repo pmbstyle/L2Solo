@@ -290,37 +290,17 @@ function planPurchase(state, selfId, amount, options = {}) {
         if (filled.units < amount || !Number.isFinite(Number(source.landed))) return null;
         plan = { ...filled, town: source.town, npcPrice, whole: true, spendBudget: moneyForTown(source.town, npcPrice, quotes),
             landed: filled.cost + Math.max(0, Number(source.landed) - Number(source.cost || 0)) };
-    } else if (options.quoteDepth) {
-        const groups = new Map(), board = AfkTrade.boardIndex();
-        const quotes = board.list(selfId, AfkTrade.SELL);
-        for (let at = 0; at < Math.min(5, quotes.length); at++) {
-            const line = quotes[at];
-            if (Number(line.ownerId) === Number(state.characterId) || towns && !towns.includes(line.town)) continue;
-            if (!groups.has(line.town)) groups.set(line.town, { lines: [], npcPrice: 0 });
-            groups.get(line.town).lines.push(line);
-        }
+    } else {
+        plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
+            amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept,
+            npcOffers: npc ? staticOffers(selfId) : [], cost: cost || tripFrom(state, timestamp),
+            quoteDepth: options.quoteDepth ? require('./PriceDecision').QUOTE_DEPTH : 0
+        });
         // An errand retains its finite quote depth, including a legal NPC
-        // remainder. Arrival must not turn that selected source into a board-
-        // only query or expand to the full public market.
-        if (npc) for (const offer of staticOffers(selfId)) {
-            if (towns && !towns.includes(offer.town)) continue;
-            if (!groups.has(offer.town)) groups.set(offer.town, { lines: [], npcPrice: 0 });
-            const group = groups.get(offer.town), price = Number(offer.price);
-            if (price > 0) group.npcPrice = group.npcPrice ? Math.min(group.npcPrice, price) : price;
-        }
-        const trip = cost || tripFrom(state, timestamp);
-        for (const [town, group] of groups) {
-            const filled = OfferQuery.fill(group.lines, amount, { money: moneyForTown(town, group.npcPrice, group.lines), maxPrice, npcPrice: group.npcPrice,
-                excludeOwner: state?.characterId, accept });
-            const landed = filled.cost + Number(trip(town));
-            if (filled.units < amount || !Number.isFinite(landed)) continue;
-            if (!plan || landed < plan.landed) plan = { town, ...filled, npcPrice: group.npcPrice, landed, whole: true, spendBudget: moneyForTown(town, group.npcPrice, group.lines) };
-        }
-    } else plan = OfferQuery.cheapestTown(AfkTrade.boardIndex(), selfId, {
-        amount, money, moneyForTown, maxPrice, towns, excludeOwner: state?.characterId, accept,
-        npcOffers: npc ? staticOffers(selfId) : [],
-        cost: cost || tripFrom(state, timestamp)
-    });
+        // remainder. Arrival must not turn that selected source into a
+        // partial buy or expand to the full public market.
+        if (options.quoteDepth && !plan?.whole) plan = null;
+    }
     if (Diagnostics.active()) purchaseObservation(state, selfId, amount, money, 'purchase_plan', plan ? 'source_selected' : 'no_affordable_source',
         Diagnostics.enabled(state.characterId) ? { planned: Number(plan?.units || 0), remaining: Math.max(0, amount - Number(plan?.units || 0)),
             cost: Number(plan?.cost), town: plan?.town, source: plan?.npc > 0 ? 'npc_and_board' : 'board', unitPrice: Number(plan?.npcPrice),

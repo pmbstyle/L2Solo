@@ -173,10 +173,20 @@ function nativeShotOptions(state, index, context) {
     const stock = context.stock?.('shots');
     for (const key in state.inventory || {}) {
         const row = state.inventory[key], id = Number(row.selfId || key);
-        let free = Wealth.freeAmount(state, row, reserved);
+        // Accepted incoming shots are the seller's own output too; the reserve
+        // for its own use comes off their sum (the recheck's rule).
+        const shot = String(index.itemTemplates.get(id)?.template?.kind || '').startsWith('Other.Shot');
+        let free = Wealth.freeAmount(state, row, reserved) + (shot ? Number(state.acceptedIncoming?.[id] || 0) : 0);
         if (Number(stock?.itemId) === id) free = Math.max(0, free - Number(stock.target || 0));
         if (free) ownStock.set(id, { count: free, unitValue: Number(context.independentPrice?.(id)
             ?? context.price?.(id) ?? ItemDisposition.priceFor(state, row, index.itemTemplates.get(id))) });
+    }
+    for (const key in state.acceptedIncoming || {}) {
+        const id = Number(key), template = index.itemTemplates.get(id);
+        if (ownStock.has(id) || state.inventory?.[id] || !String(template?.template?.kind || '').startsWith('Other.Shot')) continue;
+        const free = Math.max(0, Number(state.acceptedIncoming[key] || 0) - (Number(stock?.itemId) === id ? Number(stock.target || 0) : 0));
+        if (free) ownStock.set(id, { count: free, unitValue: Number(context.independentPrice?.(id)
+            ?? context.price?.(id) ?? ItemDisposition.priceFor(state, { selfId: id }, template)) });
     }
     const preparePurchase = function* (owner, id, amount, query = {}) {
         let plan = null;
@@ -207,17 +217,12 @@ function nativeShotOptions(state, index, context) {
         const exits = [];
         for (const quote of index.offersFor(Number(recipe.productId), 3, owner.characterId)) {
             if (!(quote.price > 0) || !(quote.count > 0)) continue;
-            let cheaperUnits = 0;
-            const seen = new Set();
-            for (const ask of index.offersFor(Number(recipe.productId), 1, owner.characterId)) {
-                const key = `${ask.recordId ?? ask.sourceId}:${ask.lineId ?? ask.selfId ?? recipe.productId}`;
-                if (!seen.has(key) && Number(ask.price) > 0 && Number(ask.price) < Number(quote.price)) {
-                    seen.add(key); cheaperUnits += Math.max(0, Number(ask.count || 0));
-                }
-                yield 'quote';
-            }
+            const { cheaperUnits, limit } = require('./PriceDecision').exitCompetition(
+                index.offersFor(Number(recipe.productId), 1, owner.characterId),
+                { ownerId: owner.characterId, price: Number(quote.price), enchant: Number(quote.enchant || 0), count: Number(quote.count) });
+            yield 'quote';
             exits.push({ type: 'afk', conditional: !!quote.conditional, price: Number(quote.price), count: Number(quote.count), cheaperUnits,
-                town: quote.town, trip: trip(quote.town), tripDetails: trip.details?.(quote.town), offer: quote });
+                ...(limit ? { applicableUnits: NaN } : {}), town: quote.town, trip: trip(quote.town), tripDetails: trip.details?.(quote.town), offer: quote });
             yield 'quote';
         }
         return exits;

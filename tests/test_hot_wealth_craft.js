@@ -34,7 +34,10 @@ new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.reso
     if (name === './ColdWealthCraftService') return { recheck: (state, step, book) => {
         assert.equal(step.recipeId, 47); assert.equal(step.batches, 1); assert.deepEqual(step.scroll, [-1]);
         assert.strictEqual(book, nativeBook);
-        return demand ? { basket: { purchases: missing ? [{}] : [], owned: [{ selfId: 1902, count: 7 }] } } : null;
+        // The real recheck takes free stock once (protected units excluded) and
+        // orders the shortfall; readiness reads only that basket.
+        const free = Number(state.inventory?.[1902]?.amount || 0) - Number(state.inventory?.[1902]?.protectedAmount || 0);
+        return demand ? { basket: { purchases: missing || free < 7 ? [{}] : [], owned: [{ selfId: 1902, count: Math.min(7, free) }] } } : null;
     } };
     if (name === './WealthCraftDecision') return { freeAmount: (state, row) => Number(row.amount) - Number(row.protectedAmount || 0) };
     if (name === '../AI/DecisionEvents') return { prepared: () => { prepared++; } };

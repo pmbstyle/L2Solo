@@ -73,7 +73,9 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
 // buyer's round trip (`cost`, OfferOrder.tripCost; 0 for its own town). A
 // town that fills the whole amount comes first, then the least landed price
 // a unit. options: towns (null: every town with lines or an NPC), npcOffers
-// ([{ town, price }]), money, maxPrice, excludeOwner, cost. Returns { town,
+// ([{ town, price }]), money, maxPrice, excludeOwner, cost, quoteDepth (only
+// the first lines of the item's board list, the ones a trader inspects,
+// PriceDecision.QUOTE_DEPTH; each in its own town). Returns { town,
 // lines, npc, npcPrice, units, cost, trip, landed } or null. O(T log n + k)
 // over the towns with offers.
 function cheapestTown(index, selfId, options = {}) {
@@ -83,14 +85,20 @@ function cheapestTown(index, selfId, options = {}) {
         const price = Number(offer.price);
         if (offer.town && price > 0 && (!npcPrice.has(offer.town) || price < npcPrice.get(offer.town))) npcPrice.set(offer.town, price);
     }
-    const towns = new Set(options.towns || [...(index ? index.towns(selfId, SELL) : []), ...npcPrice.keys()]);
+    const inspected = options.quoteDepth > 0 ? new Map() : null;
+    if (inspected) for (const line of (index ? index.list(selfId, SELL) : []).slice(0, options.quoteDepth)) {
+        if (!inspected.has(line.town)) inspected.set(line.town, []);
+        inspected.get(line.town).push(line);
+    }
+    const listed = inspected ? inspected.keys() : index ? index.towns(selfId, SELL) : [];
+    const towns = new Set(options.towns || [...listed, ...npcPrice.keys()]);
     let best = null;
     for (const town of towns) {
         if (!town) continue;
         const trip = options.cost ? Number(options.cost(town)) : 0;
         if (!Number.isFinite(trip)) continue;
         const price = npcPrice.get(town) || 0;
-        const lines = index ? index.list(selfId, SELL, town) : [];
+        const lines = inspected ? inspected.get(town) || [] : index ? index.list(selfId, SELL, town) : [];
         const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
         const filled = fill(lines, amount, {
             npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,

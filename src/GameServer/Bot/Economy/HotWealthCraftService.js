@@ -45,9 +45,9 @@ function review(session, context) {
         const ready = state => {
             const opportunity = require('./ColdWealthCraftService').recheck(state,
                 { recipeId: Number(recipe.recipeId), batches: 1, scroll: [-1] }, book());
-            return opportunity && opportunity.basket.purchases.length === 0
-                && opportunity.basket.owned.every(row => require('./WealthCraftDecision').freeAmount(state,
-                    state.inventory?.[row.selfId] || {}) >= row.count) ? opportunity : null;
+            // Ready when the basket orders nothing: its owned rows already took the
+            // free stock through the one quantity reader (remainingQuantity).
+            return opportunity && opportunity.basket.purchases.length === 0 ? opportunity : null;
         };
         const retirePreparation = () => {
             require('../AI/DecisionEvents').prepared(session);
