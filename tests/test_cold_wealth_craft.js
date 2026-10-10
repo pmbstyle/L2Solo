@@ -40,15 +40,21 @@ async function run() {
     boardLine(980001, 1864, 2, 10000);
     boardLine(980002, 1865, 1, 5000);
     boardLine(980003, 1867, 6, 500);
+    // Two finite dye sellers give two hennas a step now; the second is the
+    // first unaffordable priority, so its ratio is the native money floor.
+    boardLine(980004, 4529, 10, 16000);
+    boardLine(980005, 4541, 10, 16000);
     const originalState = { characterId: 9001, accountName: 'bot_pop_test', name: 'Crafter', phase: 'cold',
         activity: 'shopping', currentRegion: 'Giran', loc: { locX: 83396, locY: 147904, locZ: -3400 },
         level: 60, adena: 500000, vitals: { mp: 100 }, inventory: {},
         stats: { classId: 57, generatedIndex: 1787947094937 }, persona: { primaryDrive: 'wealth' } };
-    const native = await nativeChoice.capture(originalState, {}, 'wealth_original_before_unit_overrides');
+    const native = await nativeChoice.capture(originalState, { nativeRoutes: true }, 'wealth_original_before_unit_overrides');
     const state = native.state;
-    assert.strictEqual(native.read.activity.activity, 'hunting', 'the unchanged original inputs have no funded synthetic craft leaf');
-    assert(native.read.activity.funding && native.captured.queue.some(row => row.key === native.read.activity.rootKey
-        && !row.funded), 'the selected real native priority is unfunded, including improvements as well as gear');
+    // MVP-1: money waits only behind a path with a step now, so the decision
+    // reads prepared routes (as live does) and the gap is a priced seller.
+    assert.notStrictEqual(native.read.activity.activity, 'crafting', 'the unchanged original inputs have no funded synthetic craft leaf');
+    assert(native.captured.queue.some(row => !row.funded && Math.round(row.price) === native.state.stats.money[3]),
+        'the first unfunded priority with a step now is the money gap, including improvements as well as gear');
     assert(native.state.stats.money[3] > 0, 'the genuine unfunded priority remains a money gap');
     const nativePacket = structuredClone(state.stats.money);
     const productId = 999999;
