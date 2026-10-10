@@ -249,3 +249,16 @@ assert.equal(held.result.focus?.[0], 'power:132:2', 'the held-material craft sta
 assert.equal(held.result.plans.get('power:132:2').price, 0);
 console.log('PASS a held-material craft is judged after allocation in the network as in admission');
 recipes.clear();
+
+// 10. A rare piece (one listing) carries its status value in the gear root
+// before evaluation: the witness and the expanded wish read the same value.
+persona.traits.ambition = 0.5;
+const rarePiece = scenario({ items: [gear(115, 10, 0.2, 500)], asks: [[115, 500]] });
+persona.traits.ambition = 0;
+const rareWitness = witness(rarePiece.admission, 'power:115:10');
+const rareWish = rarePiece.result.queue.find(row => row.key === 'power:115:10');
+close(rareWitness.valueHours, chest.valueHours + 2.6 * 0.5, 'the status value enters the admitted score');
+close(rareWish.valueHours, rareWitness.valueHours * (rarePiece.result.focus?.[0] === 'power:115:10' ? 1 : 1 - persona.traits.commitment),
+    'the expanded wish repeats the witness value');
+assert(!rarePiece.projection.roots.includes('status:115'), 'no second root for the admitted rare piece');
+console.log('PASS the rare status value is scored at admission and repeated by the network');

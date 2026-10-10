@@ -586,6 +586,9 @@ function buildProjection(state, ctx, deps) {
     const admission = { candidates: 0, evaluations: 0, maxScratch: 0, rounds: 0, pending: [], admitted: [] };
     const solverOptions = { hourAdena: ctx.hourAdena, riskWeight: ctx.riskWeight, stockFor: ctx.stockFor || null,
         wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve };
+    // A rare piece's status value is part of its gear root from the start,
+    // so admission scores the value the network later reads.
+    const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
     const real = nodes, gear = [];
     for (const candidate of candidates) {
         nodes = []; scratch = true;
@@ -597,7 +600,7 @@ function buildProjection(state, ctx, deps) {
         gear.push({ candidate, keys, family: Equipment.isWeaponSlot(candidate.slot) ? 'weapon' : candidate.slot,
             node: { key: `power:${candidate.item.selfId}:${candidate.slot}`, need: 'power',
                 object: { itemId: Number(candidate.item.selfId), slot: candidate.slot }, price: price(candidate.item.selfId),
-                valueHours: candidate.value * powerWeight, benefitPerHour, horizonHours: horizon,
+                valueHours: candidate.value * powerWeight + (candidate === rare ? rare.value * statusWeight : 0), benefitPerHour, horizonHours: horizon,
                 paths: [{ requirements: [{ key, amount: 1 }] }] } });
         admission.maxScratch = Math.max(admission.maxScratch, keys.length);
     }
@@ -696,10 +699,8 @@ function buildProjection(state, ctx, deps) {
             price: price(book.selfId), valueHours: value, benefitPerHour: (gain.attack + gain.defence * ctx.deathHours) * powerWeight,
             horizonHours: horizon, paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
-    const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
     if (rare && statusWeight > 0) {
-        const held = admittedGear.find(row => row.node.object.itemId === Number(rare.item.selfId))?.node;
-        if (held) held.valueHours += rare.value * statusWeight;
+        const held = admittedGear.some(row => row.node.object.itemId === Number(rare.item.selfId));
         const key = !held && itemNode(rare.item.selfId);
         if (key) root({ key: `status:${rare.item.selfId}`, need: 'status', object: { itemId: rare.item.selfId },
             price: price(rare.item.selfId), valueHours: rare.value * statusWeight,
