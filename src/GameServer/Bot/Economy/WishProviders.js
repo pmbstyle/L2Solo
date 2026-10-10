@@ -735,9 +735,10 @@ function buildProjection(state, ctx, deps) {
             for (const { row, solver } of rows) {
                 const wish = { key: row.node.key, need: row.node.need, object: row.node.object };
                 const claims = solver.allocate(wish, used);
-                if (wish.valueHours > 0) used = claims;
                 row.wish = wish; row.claims = wish.plan ? claims : null;
                 row.status = statusOf(wish, row.node);
+                // Only a root that stays admitted keeps its claim on held stock.
+                if (row.status === 'evaluated') used = claims;
                 yield row;
             }
             for (let at = admitted.length - 1; at >= 0; at--) if (admitted[at].status !== 'evaluated') {

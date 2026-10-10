@@ -39,6 +39,10 @@ const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
     try {
         await Database.init();
         await Life.init();
+        // An ordinary generated bot's index is its creation time: never a station.
+        assert.equal(Shops.isStationService({ stats: { generatedIndex: 1791543604756 } }), false, 'an ordinary dwarf is no station');
+        assert.equal(Shops.isStationService({ stats: { generatedIndex: 10005 } }), true, 'a reserved slot is a station');
+        assert.equal(Shops.isStationService({ accountName: 'bot_craft_03', stats: {} }), true, 'a station account is a station');
         let owner = await seed(Crafting.crafterAccount(station), 'StationEntryC', 57, 70, [item(57, 1000)],
             { craftStationId: station.id, generatedIndex: 10000 });
         const profile = Shops.profileFor(owner);

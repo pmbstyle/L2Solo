@@ -130,7 +130,7 @@ function stationFor(state = {}) {
 }
 
 function portfolioStationFor(state = {}) {
-    if (state.stats?.craftStationId || Number(state.stats?.generatedIndex || 0) >= 10000) {
+    if (isStationService(state)) {
         return stationFor(state);
     }
     const craftLevel = craftLevelFor(state);
@@ -269,9 +269,10 @@ function normalizeEntries(entries, state) {
 }
 
 // A Giran station crafter: the server's public infrastructure, not an
-// ordinary player (its slot or seeded station id).
+// ordinary player (its seeded station id, account or reserved slot). An
+// ordinary generated bot's index is a timestamp, far above the slot range.
 function isStationService(state = {}) {
-    return Boolean(state.stats?.craftStationId) || Number(state.stats?.generatedIndex || 0) >= 10000;
+    return Boolean(state.stats?.craftStationId) || serviceStationSlot(state) !== null;
 }
 
 function profileFor(state = {}) {
