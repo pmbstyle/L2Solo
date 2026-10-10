@@ -1996,6 +1996,34 @@ function sourceIndexFor(spots = []) {
     return byItemId;
 }
 
+// One materialized source of an index record for a killer level.
+function materializeSource({ reward, spot, kind, npcLevel }, itemId, killerLevel, ratesKey) {
+    const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
+    const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, sourceLevel, killerLevel, ratesKey);
+    if (!chance) return null;
+    return {
+        npcId: Number(reward.selfId),
+        npcName: reward.template?.name || `NPC ${reward.selfId}`,
+        kind,
+        chance,
+        expectedYield,
+        spotId: spot.id,
+        spotLevel: Number(spot.avgLevel || 1),
+        npcLevel: sourceLevel,
+        capacity: LevelingRoutes.capacityForSpot(spot),
+        sourceKind: spot?.raidBoss === true ? 'raid' : kind,
+        raidBoss: spot?.raidBoss === true,
+        sharedEncounter: spot?.sharedEncounter === true,
+        raidEstimate: spot?.raidEstimate || null,
+        raidRosterSize: spot?.raidBoss === true
+            ? Math.max(RAID_MIN_ROSTER_LABOR, Number(spot.raidRosterSize || 0))
+            : null,
+        raidBossTemplateId: spot?.raidBoss === true
+            ? Number(spot.raidBossTemplateId || reward.selfId)
+            : null
+    };
+}
+
 function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const sourceCache = options.sourceCache;
     const spoilCapable = options.spoilCapable === true || roleFor(state) === 'spoiler';
@@ -2011,32 +2039,7 @@ function sourceForItem(itemId, spots = [], state = {}, options = {}) {
     const ratesKey = sourceYieldRatesKey();
     const resolvedKey = `${cacheKey}:${ratesKey}`;
     const entries = sourceIndex.get(Number(itemId)) || [];
-    const materialize = ({ reward, spot, kind, npcLevel }) => {
-        const sourceLevel = Number(npcLevel || spot?.avgLevel || 1);
-        const { chance, expectedYield } = dropYieldFor(reward, itemId, kind, sourceLevel, Number(state.level || 0), ratesKey);
-        if (!chance) return null;
-        return {
-            npcId: Number(reward.selfId),
-            npcName: reward.template?.name || `NPC ${reward.selfId}`,
-            kind,
-            chance,
-            expectedYield,
-            spotId: spot.id,
-            spotLevel: Number(spot.avgLevel || 1),
-            npcLevel: sourceLevel,
-            capacity: LevelingRoutes.capacityForSpot(spot),
-            sourceKind: spot?.raidBoss === true ? 'raid' : kind,
-            raidBoss: spot?.raidBoss === true,
-            sharedEncounter: spot?.sharedEncounter === true,
-            raidEstimate: spot?.raidEstimate || null,
-            raidRosterSize: spot?.raidBoss === true
-                ? Math.max(RAID_MIN_ROSTER_LABOR, Number(spot.raidRosterSize || 0))
-                : null,
-            raidBossTemplateId: spot?.raidBoss === true
-                ? Number(spot.raidBossTemplateId || reward.selfId)
-                : null
-        };
-    };
+    const materialize = entry => materializeSource(entry, itemId, Number(state.level || 0), ratesKey);
     const cached = sourceIndexCache.resolved.get(resolvedKey);
     if (cached) {
         const sources = Array.from(cached, ordinal => materialize(entries[ordinal]));
@@ -2077,6 +2080,61 @@ function sourceYieldReaderFor(killerLevel) {
     const ratesKey = sourceYieldRatesKey();
     return (source, itemId) => dropYieldFor(source.reward, itemId, source.kind,
         source.npcLevel, killerLevel, ratesKey);
+}
+
+// Finite farm and spoil facts of one item for one bot (Task 2, D4-D7, D9):
+// every known source, eligible by the rules the bot hunts and spoils by, or
+// with the reason it is not. Hours for `units` come from the spot's kills
+// per hour (the same SpotEconomics row the bot chooses spots by) times the
+// yield and the NPC's share of the spot. An hour there costs the bot its own
+// hour (1, the hour measure) less what the spot gives back (valueHours);
+// travel to a spot other than the current one is a round trip to the
+// spot's regional town. Unknown is explicit, never free.
+function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
+    const facts = [], ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
+    const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
+    const timestamp = options.timestamp ?? Date.now();
+    const spotValue = options.spotValue
+        || require('../Economy/SpotEconomics').create(state, { timestamp, occupancy: options.occupancy });
+    const trips = options.trips || new Map();
+    const current = state.spotId ?? state.stats?.travel?.spotId ?? null;
+    let spoiler = options.spoiler;
+    for (const entry of entries) {
+        yield 'source';
+        const source = materializeSource(entry, itemId, killerLevel, ratesKey);
+        if (!source) continue;
+        const fact = { kind: entry.kind, spotId: source.spotId, npcId: source.npcId, itemId: Number(itemId),
+            units, expectedYield: source.expectedYield };
+        facts.push(fact);
+        if (source.raidBoss) { fact.status = 'ineligible'; fact.reason = 'raid'; continue; }
+        if (entry.kind === 'spoil') {
+            // The executor's rule: a learned Spoil, not the class (E189).
+            spoiler ??= invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
+                invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(state, timestamp));
+            if (!spoiler) { fact.status = 'ineligible'; fact.reason = 'spoil_skill'; continue; }
+        }
+        const reason = !isBotEligibleSourceNpcId(source.npcId) ? 'cannot_hunt'
+            : !sourceWithinVoluntaryHuntBand(state, source) ? 'level_band'
+                : !soloSafeForSource(state, source) ? 'party_needed'
+                    : !sourceHasCapacity(source, state, { occupancy: options.occupancy }) ? 'occupied' : null;
+        if (reason) { fact.status = 'ineligible'; fact.reason = reason; continue; }
+        const row = spotValue(entry.spot);
+        const perHour = Number(row?.kills) * source.expectedYield
+            * Number(entry.sourceCount || 0) / Math.max(1, Number(entry.totalCount || 0));
+        if (!(perHour > 0)) { fact.status = 'unknown'; fact.reason = 'yield'; continue; }
+        if (!Number.isFinite(row.valueHours)) { fact.status = 'unknown'; fact.reason = 'income'; continue; }
+        let trip = { known: true, hours: 0, fees: 0 }, town = null;
+        if (String(entry.spot.id) !== String(current)) {
+            town = entry.spot.center ? (yield* require('../Economy/EconomicTrip').regionalTown(entry.spot.center))?.name : null;
+            if (town && !trips.has(town)) trips.set(town, yield* require('../Economy/EconomicTrip').details(state, town));
+            trip = town ? trips.get(town) : { known: false };
+        }
+        if (!trip?.known) { fact.status = 'unknown'; fact.reason = 'route'; continue; }
+        const hours = units / perHour, netHourCost = Math.max(0, 1 - row.valueHours);
+        Object.assign(fact, { status: 'ready', perHour, hours, valueHours: row.valueHours, netHourCost,
+            town, tripHours: trip.hours, tripFees: trip.fees, costHours: hours * netHourCost + trip.hours });
+    }
+    return facts;
 }
 
 // A drop yield depends only on the reward, the item and the deep-blue level
@@ -2496,6 +2554,7 @@ function withReadiness(fn) {
 module.exports.withReadiness = withReadiness;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
+module.exports.sourceFacts = sourceFacts;
 
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',
