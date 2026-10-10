@@ -160,13 +160,13 @@ function nativeTerms(options = {}, itemId = 0) {
 function rootRatio(wish) {
     return wish?.funded && Number(wish.ratio) > 0 ? significant(Number(wish.ratio)) : 0;
 }
-// The funding terms of a buy goal, one rule for every reader: its root's
-// place in the money queue when the goal carries one, else the money
-// packet's row for its item.
 // A card leaf's ratio: the card's own r, else its funded root's.
 function leafRatio(leaf, wish) {
     return leaf?.r > 0 ? leaf.r : rootRatio(wish);
 }
+// The funding terms of a buy goal, one rule for every reader: its root's
+// place in the money queue when the goal carries one, else the money
+// packet's row for its item.
 function goalTerms(goal, itemId = goal?.target?.itemId) {
     return goal?.plan?.valueRate === undefined ? { itemId } : { r: goal.plan.valueRate };
 }

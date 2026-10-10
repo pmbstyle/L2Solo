@@ -7,6 +7,19 @@ function templateFor(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
 }
 
+// A survival item's tranche: its kit cost at the bot's own unit price
+// (EconomyContext.kitCost; 0 for any other item and without an economy).
+// Decided once with the bid: the plan carries it, executePlan and the native
+// bid check reuse it, never a second price.
+function survivalCost(economy, selfId) {
+    return Math.max(0, Math.round(Number(economy?.kitCost?.(selfId)) || 0));
+}
+// The money a goal's bids may spend: its funding terms and its tranche.
+function goalMoney(state, goal, escrow = 0, economy = null) {
+    return PurchaseFunding.spendable(state, escrow,
+        { ...PurchaseFunding.goalTerms(goal), survivalCost: survivalCost(economy, goal?.target?.itemId) });
+}
+
 function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     // The selected goal already has an NPC executor. It cannot re-enter the
     // public projection through a caller's legacy goal fallback.
@@ -23,11 +36,10 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         && Number(state?.inventory?.[String(selfId)]?.amount || 0) > 0) return null;
 
     // `state.adena` already holds the order's escrow (callers add it).
-    // A survival item may spend its kit cost from the survival reserve
-    // (worker economy only; 0 for any other item), as executePlan and the
-    // native bid check do.
+    // A survival item may spend its kit cost from the survival reserve.
+    const kit = survivalCost(options.economy, selfId);
     const spendable = Math.min(money, PurchaseFunding.spendable(state, 0,
-        { ...PurchaseFunding.goalTerms(goal, selfId), survivalCost: Math.max(0, Number(options.economy?.kitCost?.(selfId)) || 0) }));
+        { ...PurchaseFunding.goalTerms(goal, selfId), survivalCost: kit }));
     // Older generic equipment goals stored the unscaled template value as
     // their budget: like a reference estimate, it says nothing of the price.
     const legacyEstimate = goal.type === 'upgrade_gear' && !goal.plan?.priceSource
@@ -67,6 +79,7 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         rank: template.etc?.rank || 'none',
         price,
         count,
+        survivalCost: kit,
         pricing: chosen.pricing
     };
 }
@@ -85,10 +98,11 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
         const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
         lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
             enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing,
+            ...(bid.survivalCost ? { survivalCost: bid.survivalCost } : {}),
             ...(candidate.intent?.key ? { intent: { ...candidate.intent, price: bid.price, amount: bid.count } } : {}) });
         // Conditional alternatives hold no cash until a native agreement.
     }
     return lines;
 }
 
-module.exports = { bidFor, linesFor };
+module.exports = { survivalCost, goalMoney, bidFor, linesFor };

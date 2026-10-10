@@ -112,21 +112,22 @@ function* prepareNative(state, economy, options) {
     const needs = require('../Goals/NeedsEvaluator').evaluate(state, { ...options, economy, errand: null, now: options.now, saleTown: shopTown });
     const goal = needs[0];
     const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
-    const money = Funding.spendable(state, options.buyOrderEscrow || 0, Funding.goalTerms(goal));
-    const lines = require('../Economy/BuyAdPolicy').linesFor(buyState, goal, { ...options, economy,
+    const BuyAds = require('../Economy/BuyAdPolicy');
+    const money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
+    const lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
         watchList: economy.watchList || [], money });
-    let buyAds;
-    try { buyAds = lines.slice(0, 3).map(row => row.intent ? require('../Economy/TradeIntent').encode(row.intent) : [row.selfId, row.count, row.price]); }
-    catch (_) { buyAds = [null]; }
-    const plan = { sell, withdraw, buyAds,
+    let batch;
+    try { batch = buyBatch(lines); }
+    catch (_) { batch = { buyAds: [null] }; }
+    const plan = { sell, withdraw, ...batch,
         travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null };
-    if (economy.intentPending || plan.buyAds.some(row => row === null)) { delete plan.buyAds; plan.d = 1; }
+    if (economy.intentPending || plan.buyAds.some(row => row === null)) { delete plan.buyAds; delete plan.buyKit; plan.d = 1; }
     const shot = decideShot(state, economy, { ...options, ownLines: own });
     if (shot) plan.shot = shot;
     // A complete buy batch is indivisible. Optional work is retained by the
     // existing dirty preparation owner; absent buyAds means not prepared.
     if (Buffer.byteLength(JSON.stringify({ buyAds: plan.buyAds })) > MAX_PLAN_PAYLOAD_BYTES) {
-        delete plan.buyAds; plan.d = (plan.d || 0) | 1;
+        delete plan.buyAds; delete plan.buyKit; plan.d = (plan.d || 0) | 1;
     }
     while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
         if (plan.sell.length) { plan.sell.pop(); plan.d = (plan.d || 0) | 2; }
@@ -150,6 +151,15 @@ function* prepareNative(state, economy, options) {
     }
     return plan;
 }
+// The buy batch as the plan carries it: each bid's row and, when any is
+// set, the survival tranche each bid was decided with (BuyAdPolicy
+// survivalCost); executePlan and the native bid check reuse that value.
+function buyBatch(lines) {
+    const rows = lines.slice(0, 3);
+    const buyAds = rows.map(row => row.intent ? require('../Economy/TradeIntent').encode(row.intent) : [row.selfId, row.count, row.price]);
+    const buyKit = rows.map(row => Number(row.survivalCost) || 0);
+    return buyKit.some(Boolean) ? { buyAds, buyKit } : { buyAds };
+}
 function decide(state, economy, options = {}) {
     const iterator = prepare(state, economy, options);
     let next; do { next = iterator.next(); } while (!next.done);
@@ -171,4 +181,4 @@ function decideShot(state, economy, options = {}) {
     // a recipe/gear/quote scan by falling through this publication adapter.
     return { unknown: true };
 }
-module.exports = { edges, decide, prepare, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { edges, decide, prepare, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };

@@ -83,8 +83,7 @@ function canTradeRemotely(state, goal) {
         });
         if (offer?.sourceType === 'npc' && goal.plan?.priceSource !== 'offer') return false;
         if (reserved && existing.some((line) => Number(line.selfId) === Number(goal.target?.itemId))) return true;
-        return !!BuyStoreService.bidFor(budgetState, goal, { money: PurchaseFunding.spendable(state, reserved,
-            PurchaseFunding.goalTerms(goal)) });
+        return !!BuyStoreService.bidFor(budgetState, goal, { money: require('./BuyAdPolicy').goalMoney(state, goal, reserved) });
     }
     // Opening a shop needs the seller in its town (user, 2026-10-05): only a
     // bot that has its shop sells from afar.
@@ -399,8 +398,7 @@ async function reconcileBuyAds(state, goal, candidates) {
     // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
     const escrow = buyOrderEscrow(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
-        { money: PurchaseFunding.spendable(state, escrow,
-            PurchaseFunding.goalTerms(goal)) });
+        { money: require('./BuyAdPolicy').goalMoney(state, goal, escrow) });
     const town = buyAdTown(state, ads, wanted);
     if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: false };
     if (ads[0]?.town === town && sameBuyOrder({ storeType: AfkTrade.BUY, lines }, wanted)) {
@@ -439,8 +437,7 @@ async function openBuyAd(state, goal) {
     // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
     const escrow = buyOrderEscrow(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
-        { money: PurchaseFunding.spendable(state, escrow,
-            PurchaseFunding.goalTerms(goal)) });
+        { money: require('./BuyAdPolicy').goalMoney(state, goal, escrow) });
     if (!wanted.length) return { state, opened: false, reason: 'insufficient_budget' };
     const town = buyAdTown(state, ads, wanted);
     let store;
@@ -778,15 +775,14 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         const ads = buyAds(ownerId), existing = linesOf(ads);
         const ctx = ListingPolicy.traderContext(state);
         let money = PurchaseFunding.budget(state, buyOrderEscrow(ownerId));
-        // A survival item's ad may spend its kit cost from the survival
-        // reserve, as the meeting and the NPC restock do (each item once).
-        let kit = null;
-        const kitCost = (selfId, price) => Math.round((kit ||= require('./EconomyContext').basics(state)).kitCost?.(selfId, price) || 0);
         // Planned bids come from BuyAdPolicy.linesFor: bidFor admitted each source.
-        const wanted = (plan.buyAds || []).slice(0, 3).map(row => {
+        // A survival item's ad may spend its kit cost from the survival
+        // reserve, as the meeting and the NPC restock do (each item once):
+        // the tranche the worker decided the bid with (plan.buyKit).
+        const wanted = (plan.buyAds || []).slice(0, 3).map((row, at) => {
             const [selfId, count, price] = row;
             const intent = row.length === 9 ? require('./TradeIntent').decode(row) : null;
-            const survivalCost = selfId > 0 && price > 0 ? kitCost(selfId, price) : 0;
+            const survivalCost = Math.max(0, Math.round(Number(plan.buyKit?.[at]) || 0));
             if (!(selfId > 0 && count > 0 && price > 0) || !intent && count * price > money
                 || count * price > PurchaseFunding.spendable(state, buyOrderEscrow(ownerId),
                     { ...(intent ? { r: intent.valueRate } : { itemId: selfId }), survivalCost })) {

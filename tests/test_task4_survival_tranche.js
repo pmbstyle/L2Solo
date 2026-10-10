@@ -1,8 +1,9 @@
 'use strict';
 // Task 4 B4: a survival item's buy ad may spend its kit cost from the survival
-// reserve, as the meeting and the NPC restock do. The worker's bid, the main
-// executePlan check and the native conditional bid check read the same
-// survivalCost; any other item stays funded by the queue alone.
+// reserve, as the meeting and the NPC restock do. The worker decides the
+// tranche once with the bid (its own unit price estimate); the plan carries
+// it and the main executePlan check and the native conditional bid check
+// reuse that value; any other item stays funded by the queue alone.
 const assert = require('node:assert/strict'), fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('task4-survival-tranche');
@@ -52,41 +53,61 @@ async function run() {
     await Afk.replaceBotRecords(owner, 'buy_ad', [], { expected: expected(ads) });
     assert.equal((await records()).length, 0);
 
-    // 2. executePlan: the main check and the line both take the kit cost from
-    // EconomyContext.basics(state).kitCost.
-    const basics = Economy.basics;
-    let kit = 0;
-    Economy.basics = () => ({ kitCost: (id, price) => Number(id) === SHOT ? kit * price / 7 : 0 });
-    try {
-        const plan = { buyAds: [[SHOT, 100, 7]] };
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), plan), /economy_plan_bid_unfunded/,
-            'no kit cost: the shot ad is refused on main');
+    // 2. executePlan: the main check and the line reuse the tranche the
+    // worker decided the bid with (plan.buyKit). This bot's real kit cost
+    // (EconomyContext.basics) is 0: a second computation on main refuses.
+    assert.equal(Economy.basics(Life.cachedState(owner)).kitCost(SHOT), 0);
+    {
+        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7]] }),
+            /economy_plan_bid_unfunded/, 'no tranche: the shot ad is refused on main');
         assert.equal((await records()).length, 0);
-        kit = 1000;
-        await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7], [OTHER, 1, 300]] });
+        await Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 100, 7], [OTHER, 1, 300]], buyKit: [1000, 0] });
         ads = await records();
         assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count]).sort((a, b) => a[0] - b[0]),
             [[SHOT, 100], [OTHER, 1]].sort((a, b) => a[0] - b[0]));
         assert.equal(await wallet(), 10000);
-        kit = 500;
-        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]] }),
-            /economy_plan_bid_unfunded/, 'a bid above queue + kit is refused');
-    } finally { Economy.basics = basics; }
+        await assert.rejects(Market.executePlan(Life.cachedState(owner), { buyAds: [[SHOT, 200, 7]], buyKit: [500] }),
+            /economy_plan_bid_unfunded/, 'a bid above queue + tranche is refused');
+        await Afk.replaceBotRecords(owner, 'buy_ad', [], { expected: expected(await records()) });
+    }
 
-    // 3. Worker bid: economy.kitCost raises the spendable cap of a shot only.
-    const goal = { type: 'buy_craft_material', target: { itemId: SHOT, amount: 100, adena: 7 },
+    // 3. Worker bid: the kit cost is the bot's own estimate (survivalMissing
+    // 100 x unit price 10 = 1000), whatever it bids. A bid below 10 for 250
+    // shots buys floor(1000 / price) (e.g. 7: 142 = 994): the worker, main
+    // and the native check must all allow it, not 100 x price (700).
+    const kitCost = (id, unitPrice = null) => Number(id) === SHOT ? 100 * (unitPrice > 0 ? unitPrice : 10) : 0;
+    const economy = { kitCost, worth: () => 7, moneyPrice: 0 };
+    const goal = { type: 'buy_craft_material', target: { itemId: SHOT, amount: 250, adena: 7 },
         plan: { estimatedCost: 7, priceSource: 'market' } };
-    const economy = (kitCost) => ({ kitCost, worth: () => 7, moneyPrice: 0 });
     const poor = Life.cachedState(owner);
-    assert.equal(BuyAdPolicy.bidFor(poor, goal, { economy: economy(() => 0), board: null }), null,
+    assert.equal(BuyAdPolicy.bidFor(poor, goal, { economy: { ...economy, kitCost: () => 0 }, board: null }), null,
         'no queue money and no kit: no bid');
-    const bid = BuyAdPolicy.bidFor(poor, goal, { economy: economy(id => Number(id) === SHOT ? 350 : 0), board: null });
-    assert(bid, 'the kit cost funds a shot bid');
-    assert(bid.count * bid.price <= 350 && bid.count > 0, `bid within the kit: ${bid.count} x ${bid.price}`);
+    // The goal path caps the bid by the goal's money: without the tranche
+    // there is none, with it the whole kit.
+    assert.equal(BuyAdPolicy.bidFor(poor, goal, { economy, board: null,
+        money: Funding.spendable(poor, 0, Funding.goalTerms(goal)) }), null, 'goal money without the tranche funds nothing');
+    const money = BuyAdPolicy.goalMoney(poor, goal, 0, economy);
+    assert.equal(money, 1000, 'the goal money holds the tranche');
+    const bid = BuyAdPolicy.bidFor(poor, goal, { economy, board: null, money });
+    assert(bid, 'the tranche funds a shot bid');
+    assert(bid.price > 0 && bid.price < 10, `a bid below the unit price: ${bid.price}`);
+    assert.equal(bid.count, Math.floor(1000 / bid.price)); assert.equal(bid.survivalCost, 1000);
+    assert(bid.count * bid.price > 100 * bid.price, 'more than a kit priced at the bid');
     const otherGoal = { ...goal, target: { itemId: OTHER, amount: 100, adena: 7 } };
-    const otherBid = BuyAdPolicy.bidFor(poor, otherGoal, { economy: economy(id => Number(id) === SHOT ? 350 : 0), board: null });
+    const otherBid = BuyAdPolicy.bidFor(poor, otherGoal, { economy, board: null, money: BuyAdPolicy.goalMoney(poor, otherGoal, 0, economy) });
     assert(!otherBid || otherBid.count * otherBid.price <= Funding.spendable(poor, 0, { itemId: OTHER }),
         'another item stays on its queue money');
+
+    // 4. The whole chain: the worker's lines, the plan batch, executePlan and
+    // the native check publish the bid the worker decided.
+    const lines = BuyAdPolicy.linesFor(poor, goal, { economy, board: null, watchList: [], money });
+    assert.deepEqual(lines.map(line => [line.selfId, line.count, line.price, line.survivalCost]), [[SHOT, bid.count, bid.price, 1000]]);
+    const batch = invoke('GameServer/Bot/Population/ColdEconomyPlan').buyBatch(lines);
+    assert.deepEqual(batch, { buyAds: [[SHOT, bid.count, bid.price]], buyKit: [1000] });
+    await Market.executePlan(Life.cachedState(owner), batch);
+    ads = await records();
+    assert.deepEqual(ads.map(ad => [ad.lines[0].selfId, ad.lines[0].count, ad.lines[0].price]), [[SHOT, bid.count, bid.price]]);
+    assert.equal(await wallet(), 10000);
 
     console.log('Survival tranche: native bid check, executePlan and worker bid fund a shot ad by its kit cost');
 }
