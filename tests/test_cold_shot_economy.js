@@ -224,30 +224,18 @@ async function images(ids) {
             purchases.push(['shop', args[3], args[4].expectedPrice]);return receipt;};
         Database.purchaseNpcInventoryItem = async(...args) => {const receipt = await originals.npc.apply(Database, args);
             purchases.push(['npc', args[1].amount, args[1].unitPrice]);return receipt;};
-        // ARCH-NOTE: E1/E5 replace the old level reserve and fixed 1000-shot
-        // target. Keep the actual cheaper-line/NPC order and physical wallet
-        // conservation; native stock and the queue determine the amount today.
+        // Task 4 B3: reviewDemand plans no purchase on main. The core's root
+        // stock:shots (the same stock rule) is executed by its card: board
+        // deals by the economy plan, the NPC remainder by the town visit.
+        // reviewDemand keeps only the crafters' demand index (shotDemand).
+        const fighterBefore = await images([fighter.characterId, supplier.characterId]);
         const stocked = await Shots.reviewDemand(fighter, now + 70000);
-        assert.deepEqual(purchases[0], ['shop', 300, 60]);
-        assert.equal(purchases.length, 2);assert.equal(purchases[1][0], 'npc');assert.equal(purchases[1][2], 100);
-        assert(purchases[1][1] > 0);
-        assert.equal(stocked.adena, 51000 - 18000 - purchases[1][1] * 100);assert(stocked.adena >= 0);
-        const stockedItems = await Database.fetchItems(fighter.characterId);
-        assert.equal(held(stockedItems, 57), stocked.adena);
-        assert.equal(held(stockedItems, 1463), 500 + purchases[1][1]);assert.equal(stocked.stats.shotDemand, null);
-
-        await Database.setItem(supplier.characterId, { selfId: 1463, name: 'Soulshot: D-grade', amount: 300 });
-        await Life.syncExternalInventory(supplier.characterId, 'native_restock_lot', Life.cachedState(supplier.characterId));
-        const replacement = (await Database.fetchItems(supplier.characterId)).find(row => Number(row.selfId) === 1463);
-        await Afk.publishBot(supplier.characterId, { kind: 'shop',  storeType: Afk.SELL, town: 'Gludio', title: 'Changed shots',
-            lines: [{ objectId: replacement.id, selfId: 1463, name: replacement.name, count: 300, price: 60, enchant: 0, stackable: true, slot: 0 }] });
-        const failedBuyer = await nativeEconomy(await seed(fighterItems, { classId: 1, name: 'ChangedShop', town: 'Gludio', loc: GLUDIO }), now);
-        purchases.length = 0;
-        Afk.buyFromShop = async() => {throw Error('afk_trade_stock_changed');};
-        const failed = await Shots.reviewDemand(failedBuyer, now + 71000);
-        assert.equal(purchases.length, 1);assert.equal(purchases[0][0], 'npc');assert.equal(purchases[0][2], 100);
-        assert(purchases[0][1] > 0);assert.equal(failed.adena, 51000 - purchases[0][1] * 100);
-        assert.equal(held(await Database.fetchItems(failedBuyer.characterId), 1463), 200 + purchases[0][1]);
+        assert.deepEqual(purchases, [], 'reviewDemand buys nothing, neither the cheaper line nor the NPC');
+        const fighterAfter = await images([fighter.characterId, supplier.characterId]);
+        assert.deepEqual(fighterAfter.map(row => row.items), fighterBefore.map(row => row.items));
+        assert.equal(stocked.adena, 51000);
+        assert.equal(stocked.stats.shotDemand?.itemId, 1463, 'the missing stack stays visible to crafters');
+        assert(stocked.stats.shotDemand.amount > 0 && stocked.stats.shotDemand.maxSpend > 0);
 
         // MVP-1: the money price comes only from wishes with a step now, so a
         // short walk to Gludio pays for the batch; this field is far enough
@@ -274,7 +262,7 @@ async function images(ids) {
         const fieldAfter = await images([hunter.characterId]);
         assert.deepEqual(fieldAfter.map(row => row.items), fieldBefore.map(row => row.items));
         assert.deepEqual(fieldAfter.map(row => row.character), fieldBefore.map(row => row.character));
-        console.log('PASS native cheaper-shot/NPC refill, changed-line fallback and unprofitable field-trip conservation');
+        console.log('PASS shot demand without a main-thread purchase and unprofitable field-trip conservation');
 
         // The scan/candidate timer was retired by C2a/C2c. Eligibility remains
         // the native class/recipe rule; named worker plans perform the work.

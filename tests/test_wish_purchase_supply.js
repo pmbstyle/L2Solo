@@ -243,7 +243,7 @@ new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join
         : name.endsWith('ColdEconomyDecision') ? ColdDecision : (() => { throw Error(name); })(),
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
         : name.endsWith('EconomyContext') ? { survivalReserve: () => 0 }
-        : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0 }
+        : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0, leafRatio: () => 0 }
         : name.endsWith('DataCache') ? { items: [] } : (() => { throw Error(name); })(),
     goalsModule, goalsModule.exports);
 const otherTownBoard = new BoardIndex();

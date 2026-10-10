@@ -199,7 +199,7 @@ async function run() {
         vitals: {},
         timing: {}
     };
-    const goal = { type: 'upgrade_gear', target: { itemId: 2 } };
+    const goal = { type: 'upgrade_gear', target: { itemId: 2, adena: 1000 } };
     // ARCH-NOTE: FX-C1/E3 require a genuine worker packet, not a flat reserve.
     const nativeOriginal = await NativeChoice.capture(state, {}, 'cold_purchase_original_1000');
     assert.strictEqual(Funding.spendable(nativeOriginal.state, 0, { itemId: 2 }), 0);
@@ -288,7 +288,7 @@ async function run() {
     const lowTierPlayerPurchase = await ColdMarketService.tryPurchase(lowTierState, {
         type: 'upgrade_gear',
         status: 'active',
-        target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none' },
+        target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, requiredRank: 'none', adena: 900 },
         plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' }
     });
     assert.strictEqual(lowTierPlayerPurchase.purchased, false);
@@ -299,8 +299,8 @@ async function run() {
     assert.strictEqual(Native.amount(await Database.fetchItems(88), 2), 0);
     assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost !== 'function').length, 1,
         'NG/D purchase consumer performs one indexed market lookup');
-    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost === 'function').length, 1,
-        'native bot remote-trade eligibility separately observes the same public quote');
+    assert.strictEqual(lowTierMarketLookups.filter(lookup => typeof lookup.cost === 'function').length, 0,
+        'a miss on arrival plans nothing on main: no remote-trade probe (Task 4 question 1 = A)');
     assert(lowTierMarketLookups.every(lookup => lookup.budget === lowTierBudget),
         'neither public lookup fabricates funding for the original quote');
     MarketOpportunity.bestOffer = originals.bestOffer;
@@ -333,7 +333,7 @@ async function run() {
     }, 'missing_low_tier'), {
         type: 'upgrade_gear',
         status: 'active',
-        target: { itemId: 945, itemName: 'Skeleton Buckler', itemSlot: 8, requiredRank: 'none' },
+        target: { itemId: 945, itemName: 'Skeleton Buckler', itemSlot: 8, requiredRank: 'none', adena: 1000 },
         plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
     });
     assert.strictEqual(missingLowTierNpcGear.reason, 'low_tier_offer_missing');
@@ -414,7 +414,7 @@ async function run() {
     }, 'incompatible_shield'), {
         type: 'upgrade_gear',
         status: 'active',
-        target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8 },
+        target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8, adena: 24090 },
         plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' }
     });
     assert.strictEqual(incompatibleShield.reason, 'incompatible_loadout');
@@ -432,7 +432,7 @@ async function run() {
         characterId: 79,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
-    }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1 } });
+    }, 'missing_material'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
     assert.strictEqual(noOffer.purchased, false);
     assert.strictEqual(noOffer.state.activity, 'traveling', 'a buyer with no offer must return to farming instead of waiting in Giran');
     assert.strictEqual(noOffer.state.stats.travel.arrivalActivity, 'hunting');
@@ -444,8 +444,8 @@ async function run() {
         ...state,
         characterId: 82,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } }
-    }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1 } });
-    assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a rejected WTB open must enter the normal market retry path');
+    }, 'failed_buy_store'), { type: 'buy_craft_material', target: { itemId: 999999, itemName: 'Missing Material', amount: 1, adena: 100 } });
+    assert.strictEqual(failedBuyStore.reason, 'no_affordable_offer', 'a miss on arrival enters the normal market retry path; no WTB opens from main');
     assert(failedBuyStore.state.stats.marketRetryAfter > Date.now());
     BuyStoreService.open = originals.openBuyStore;
 
@@ -456,7 +456,7 @@ async function run() {
         characterId: 80,
         stats: { ...state.stats, marketReturn: { loc: { locX: 100, locY: 200, locZ: -10 }, regionName: 'Field', spotId: 'field' } },
         loc: { locX: 80000, locY: 150000, locZ: -3466 }
-    }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer' } });
+    }, 'changed_offer'), { type: 'upgrade_gear', target: { itemId: 2, itemName: 'Changed Offer', adena: 1000 } });
     assert.strictEqual(changedOffer.reason, 'offer_changed');
     assert.strictEqual(changedOffer.state.activity, 'traveling', 'a stale offer must return the buyer to farming');
     assert(changedOffer.state.stats.marketRetryAfter > Date.now(), 'a stale offer must also start the retry cooldown');

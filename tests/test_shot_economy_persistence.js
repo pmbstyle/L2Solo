@@ -71,13 +71,21 @@ async function run() {
     // refused by its stale state, never by an empty wallet.
     const empty = await bot({ classId: 0, shots: 0, recipe: false, money: 100000 });
     const fallback = await nativeReview(empty);
-    assert(fallback.state.adena < empty.adena, 'paid static fallback must debit virtual Adena');
-    assert(fallback.state.inventory[1463].amount > 0);
+    // Task 4 B3: review plans no shot purchase on main; the card of the
+    // core's root stock:shots buys. Review keeps the crafters' demand index.
+    assert.strictEqual(fallback.state.adena, empty.adena, 'review buys no shots on main');
+    assert(!(fallback.state.inventory[1463]?.amount > 0));
+    assert(fallback.state.stats.shotDemand?.amount > 0, 'the missing stack stays visible to crafters');
     assert.strictEqual((await balances(empty.characterId)).life.adena, fallback.state.adena);
+    // A committed purchase makes the pre-review state stale.
+    await DB.purchaseNpcInventoryItem(empty.characterId, {
+        selfId: 1785, name: 'Soul Ore', amount: 1, unitPrice: 550, coldState: Life.snapshot(empty.characterId) });
+    const afterPaid = await balances(empty.characterId), paid = afterPaid.life.adena;
+    assert.strictEqual(paid, fallback.state.adena - 550, 'the fresh purchase commits');
     // A virtual sync after purchase may never restore the old wallet.
-    await DB.syncInventorySummary(empty.characterId, fallback.state.inventory);
-    assert.strictEqual((await balances(empty.characterId)).life.adena, fallback.state.adena);
-    const stableWallet = fallback.state.adena;
+    await DB.syncInventorySummary(empty.characterId, afterPaid.inventory);
+    assert.strictEqual((await balances(empty.characterId)).life.adena, paid);
+    const stableWallet = paid;
     assert(stableWallet >= 550, 'the stale purchase must be affordable; only its stale state may refuse it');
     await assert.rejects(DB.purchaseNpcInventoryItem(empty.characterId, {
         selfId: 1785, name: 'Soul Ore', amount: 1, unitPrice: 550, coldState: empty
@@ -175,7 +183,7 @@ async function run() {
     const buyer = await demand();
     Shots._resetForTests();
     const purchase = await nativeReview(buyer);
-    assert(purchase.state.inventory[1463]?.amount > 0);
+    assert(!(purchase.state.inventory[1463]?.amount > 0), 'the published line is bought by the buyer\'s card, not by review');
     await balances(buyer.characterId);
     await balances(crafter.characterId);
 

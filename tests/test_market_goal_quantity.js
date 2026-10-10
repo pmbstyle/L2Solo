@@ -33,10 +33,12 @@ async function buyer(id, wallet, held = 0, itemId = 2509) {
         inventory: { 57: { selfId: 57, amount: wallet }, 736: { selfId: 736, amount: 2 }, ...(held ? { 2509: { selfId: 2509, amount: held } } : {}) },
         simulation: { ownerId: 'legacy_main', revision: 0 }, updatedAt: Date.now() }, 'quantity_fixture');
 }
-async function goal(id, amount, itemId = 2509) {
+// The card's step: the plan's unit price (target.adena) and the root's
+// place in the money queue (plan.valueRate).
+async function goal(id, amount, itemId = 2509, adena = Number(Opportunity.npcOffersAll(itemId).find(offer => offer.town === 'Dion')?.price)) {
     return (await Goals.set(id, { type: 'buy_craft_material', status: 'active',
-        target: { itemId, amount }, plan: { expectedBenefit: 'market_buy_craft_material',
-            marketTown: 'Dion', purpose: 'supply', r: 0.001 }, createdAt: id })).current;
+        target: { itemId, amount, adena }, plan: { expectedBenefit: 'market_buy_craft_material',
+            marketTown: 'Dion', purpose: 'supply', valueRate: 0.001 }, createdAt: id })).current;
 }
 async function run() {
     Database.init();
@@ -95,7 +97,7 @@ async function run() {
     const stem = (await Database.fetchItems(9106)).find(item => Number(item.selfId) === 1864);
     await Afk.publishBot(9106, { kind: 'shop', storeType: Afk.SELL, town: 'Dion', title: 'Stem',
         lines: [{ selfId: 1864, name: 'Stem', count: 600, price: 10, enchant: 0, stackable: true, objectId: stem.id }] });
-    const finite = await Market.tryPurchase(await buyer(9107, 20000, 0, 1864), await goal(9107, 1000, 1864));
+    const finite = await Market.tryPurchase(await buyer(9107, 20000, 0, 1864), await goal(9107, 1000, 1864, 10));
     assert.equal(finite.units, 600, 'finite public stock leaves the actual unmet need');
     assert.equal(Native.amount(await Database.fetchItems(9107), 1864), 600);
     assert.equal(Goals.snapshot(9107).current.target.amount, 400);

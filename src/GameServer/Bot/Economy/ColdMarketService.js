@@ -803,7 +803,10 @@ const ColdMarketService = {
         const execution = offer.sourceType === 'npc' ? buyHere(state, { selfId: goal.target.itemId, amount: 1,
             town: state.currentRegion, npcPrice: Number(offer.price), lines: [], ...goalFunding(goal) },
         { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt }, autoEquip: true })
-            .then(bought => ({ ...bought, purchased: bought.units > 0 })) : buyOffer(state, offer);
+            .then(bought => ({ ...bought, purchased: bought.units > 0 }))
+            // The native writer funds the line by the same terms the offer
+            // was budgeted with (a weapon bridge: the whole wallet).
+            : buyOffer(state, offer, goal.plan?.weaponBridge ? {} : goalFunding(goal));
         return execution.then((bought) => {
             if (bought.pending) return bought;
             if (!bought.purchased) {

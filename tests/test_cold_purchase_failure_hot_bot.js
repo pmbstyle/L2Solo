@@ -72,7 +72,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             loc: { locX: 80000, locY: 150000, locZ: -3466 }, vitals: {}, timing: {},
             ...extra
         });
-        const goal = { type: 'upgrade_gear', status: 'active', target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7 },
+        const goal = { type: 'upgrade_gear', status: 'active', target: { itemId: 2, itemName: 'Long Sword', itemSlot: 7, adena: 1000 },
             plan: { expectedBenefit: 'market_search_for_weapon', marketTown: 'Giran' } };
         const afkOffer = { selfId: 2, itemName: 'Long Sword', price: 1000, sourceType: 'afk_player_store', store: { id: 5, ownerId: 9001 } };
 
@@ -114,7 +114,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
             await BotLifeState.upsertState({ ...hotBlocked, phase: 'hot' }, 'hot_activation');
             MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
             const blocked = await ColdMarketService.tryPurchase(hotBlocked, { type: 'upgrade_gear', status: 'active',
-                target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
+                target: { itemId: 626, itemName: 'Bronze Shield', itemSlot: 8, adena: 24090 }, plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Giran' } });
             assert.strictEqual(blocked.reason, 'incompatible_loadout', 'fixture: the shield is blocked');
             assert.strictEqual(BotLifeState.snapshot(86).phase, 'hot', 'a blocked purchase must not write a cold row over a hot bot');
             assert(!goalClears.includes(86), 'the hot bot\'s goal is left to the cold side, as its plan is');

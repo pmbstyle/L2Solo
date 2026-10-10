@@ -6,7 +6,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const root=require('node:path').resolve(__dirname,'..');
 const Service=require(root+'/src/GameServer/AfkTrade/TradeMeetingService');
 let listener,current,prepared,writes=[],offerChanged=0;
-let goal={type:'upgrade_gear',status:'active',target:{itemId:48,itemName:'Short Gloves'},plan:{marketTown:'Elven Village'}};
+let goal={type:'upgrade_gear',status:'active',target:{itemId:48,itemName:'Short Gloves',adena:75},plan:{marketTown:'Elven Village'}};
 const offer={sourceType:'afk_bot_store',selfId:48,price:75,store:{shopId:770},town:'Elven Village'};
 const dependencies={
  'Database':{recoverTradeMeetings:async()=>[],fetchTradeMeetingByToken:async()=>null},
@@ -19,7 +19,7 @@ const dependencies={
  },
  'GameServer/Bot/Economy/MarketOpportunity':{bestOffer:()=>offer,botCanBuy:()=>true,fixedStoreOffers:()=>[],npcOffersAll:()=>[]},
  'GameServer/Bot/Economy/MarketTelemetry':{offerChanged:()=>{offerChanged++;},noOffer:()=>{},purchaseFailed:()=>{}},
- 'GameServer/Bot/Economy/PurchaseFunding':{budget:()=>1000,spendable:()=>1000,nativeTerms:()=>({})},
+ 'GameServer/Bot/Economy/PurchaseFunding':{budget:()=>1000,spendable:()=>1000,nativeTerms:()=>({}),goalTerms:()=>({})},
  'GameServer/Bot/Goals/GoalState':{snapshot:()=>({current:goal})},
  'GameServer/Bot/Economy/ColdMarketTradeChat':{maybeAnnounceWanted:state=>({state,announced:false})},
  'GameServer/Bot/Goals/GoalExecutor':{finishMarketVisit:state=>({...state,activity:'hunting'})},
@@ -35,7 +35,7 @@ const dependencies={
 global.invoke=name=>dependencies[name]||{};
 const diagnostics={active:()=>false,enabled:()=>false};
 const sandbox={module:{exports:{}},invoke:global.invoke,utils:{infoWarn:()=>{}},Date,Promise,console,
- require:name=>name==='./EconomyDiagnostics'?diagnostics:name==='../Population/CombinedErrandPolicy'?{pending:state=>state.stats?.marketErrand?[state.stats.marketErrand]:[],ERRAND_MS:1}:name==='./WealthCraftDecision'?{freeAmount:(_state,item)=>Number(item.amount||0)}:name==='./OfferOrder'?{farmingOrigin:()=>null,tripCost:()=>()=>0}:name==='./OfferQuery'?{cheapestTown:(_board,_id,opts)=>({town:'Elven Village',units:opts.amount,cost:75*opts.amount,spendBudget:1000,lines:[{line:offer,count:opts.amount,price:75}]})}:{}
+ require:name=>name==='./EconomyDiagnostics'?diagnostics:name==='../Population/ColdEconomyDecision'?{economyFor:()=>null}:name==='../Population/CombinedErrandPolicy'?{pending:state=>state.stats?.marketErrand?[state.stats.marketErrand]:[],ERRAND_MS:1}:name==='./WealthCraftDecision'?{freeAmount:(_state,item)=>Number(item.amount||0)}:name==='./OfferOrder'?{farmingOrigin:()=>null,tripCost:()=>()=>0}:name==='./OfferQuery'?{cheapestTown:(_board,_id,opts)=>({town:'Elven Village',units:opts.amount,cost:75*opts.amount,spendBudget:1000,lines:[{line:offer,count:opts.amount,price:75}]})}:{}
 };
 vm.runInNewContext(fs.readFileSync(root+'/src/GameServer/Bot/Economy/ColdMarketService.js','utf8'),sandbox,{filename:'ColdMarketService.js'});
 (async()=>{
@@ -62,7 +62,7 @@ vm.runInNewContext(fs.readFileSync(root+'/src/GameServer/Bot/Economy/ColdMarketS
  dependencies['GameServer/AfkTrade/AfkTradeService'].buyFromShop=shop; current=firstBuyer;
  Service.discard(prepared); assert.equal(Service.hasPreparation(1),false);
 
- goal={type:'buy_craft_material',status:'active',target:{itemId:48,amount:1},plan:{marketTown:'Elven Village',r:1}};
+ goal={type:'buy_craft_material',status:'active',target:{itemId:48,amount:1,adena:75},plan:{marketTown:'Elven Village',valueRate:1}};
  let next=await sandbox.module.exports.tryPurchase(current,goal);
  assert.equal(next.pending,true); assert.deepEqual(writes,[]); Service.discard(prepared);
  current={...current,stats:{marketErrand:{selfId:48,amount:1,town:'Elven Village',r:1}}};
