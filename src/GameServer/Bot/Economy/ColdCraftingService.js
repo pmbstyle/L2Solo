@@ -15,10 +15,7 @@ const Workshops = require('./CraftWorkshopService');
 
 const NATIVE_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
-function isStationService(state = {}) {
-    return Boolean(state.stats?.craftStationId)
-        || Number(state.stats?.generatedIndex || 0) >= 10000;
-}
+const isStationService = state => CraftShopService.isStationService(state);
 
 function stationForRecipe(recipeId, state = null) {
     const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);

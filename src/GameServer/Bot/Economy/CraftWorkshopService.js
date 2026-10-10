@@ -240,7 +240,7 @@ function bookFor(id) {
 async function review(state) {
     init();
     const rules = invoke('GameServer/Bot/Economy/CraftShopService');
-    if (!state || !rules.isServiceCrafter(state) || state.stats?.craftStationId || state.phase !== 'cold') {
+    if (!state || !rules.isServiceCrafter(state) || state.phase !== 'cold') {
         if (state) register(state);
         return state;
     }
@@ -249,9 +249,15 @@ async function review(state) {
     const current = life().cachedState(state.characterId);
     if (current && current !== state) return current;
     const prior = new Map((state.stats?.workshop?.entries || []).map(entry => [Number(entry.recipeId), entry]));
+    // A Giran station is a workshop for bots as for the player (E212): its
+    // own station list at the station fee, never a learned price.
+    const fees = rules.isStationService(state)
+        ? new Map(rules.profileFor(state).entries.map(entry => [Number(entry.recipeId), entry.price])) : null;
     const entries = known.map(id => recipes().resolveByRecipeId(id)).filter(recipe => recipe
-        && rules.canCraft(state, recipe)).slice(0, rules.MAX_PUBLIC_RECIPES).map(recipe => ({ recipeId: recipe.recipeId,
-        ...servicePrice(recipe, prior.get(recipe.recipeId), state) }));
+        && rules.canCraft(state, recipe) && (!fees || fees.has(Number(recipe.recipeId))))
+        .slice(0, rules.MAX_PUBLIC_RECIPES).map(recipe => ({ recipeId: recipe.recipeId, ...(fees
+            ? { ...prior.get(recipe.recipeId), price: fees.get(Number(recipe.recipeId)), firstPrice: fees.get(Number(recipe.recipeId)) }
+            : servicePrice(recipe, prior.get(recipe.recipeId), state)) }));
     const previous = state.stats?.workshop?.entries || [];
     if (!entries.length && !previous.length) { remove(state.characterId, { recipes: false }); return state; }
     if (entries.length === previous.length && entries.every((entry, i) =>

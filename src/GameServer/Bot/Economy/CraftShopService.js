@@ -268,15 +268,19 @@ function normalizeEntries(entries, state) {
     }).slice(0, MAX_PUBLIC_RECIPES);
 }
 
+// A Giran station crafter: the server's public infrastructure, not an
+// ordinary player (its slot or seeded station id).
+function isStationService(state = {}) {
+    return Boolean(state.stats?.craftStationId) || Number(state.stats?.generatedIndex || 0) >= 10000;
+}
+
 function profileFor(state = {}) {
     const current = state.stats?.craftShop || {};
     const station = stationFor(state);
-    const isStationService = Boolean(state.stats?.craftStationId)
-        || Number(state.stats?.generatedIndex || 0) >= 10000;
     // Public station configuration is owned by the server.  Do not retain a
     // persisted snapshot here: it would prevent a changed catalogue, title or
     // placement from reaching an already-seeded service crafter.
-    const preserveCustomShop = !isStationService;
+    const preserveCustomShop = !isStationService(state);
     const entries = preserveCustomShop ? normalizeEntries(current.entries, state) : [];
     const published = entries.length ? entries : generatedEntries(state);
     return {
@@ -307,6 +311,7 @@ module.exports = {
     STATION_CRAFTER,
     stationCrafter,
     isServiceCrafter,
+    isStationService,
     craftLevelFor,
     canCraft,
     stationForSlot,

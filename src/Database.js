@@ -7955,7 +7955,9 @@ const Database = {
                     if (!product || !template || !!product.stackable !== !!template.etc?.stackable
                         || Number(product.slot || 0) !== Number(template.etc?.slot || 0)) throw Error('craft_product_template_changed');
                 }
-                crafterMp = Number(workshopCrafter.mp) - Number(recipe.mpCost) * batches;
+                // A Giran station is public infrastructure: as in its own
+                // service it spends no MP (it never rests while cold).
+                crafterMp = Number(workshopCrafter.mp) - (rules.isStationService({ stats }) ? 0 : Number(recipe.mpCost) * batches);
             }
             let manualOrder = null;
             if (clanOrder) {

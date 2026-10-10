@@ -615,6 +615,12 @@ const GeneratedColdSeeder = {
                                 stats: { ...(state.stats || {}), craftStationId: craftShop.stationId, craftShop }
                             }, 'generated_craft_service')
                             : state))
+                        // The station publishes its workshop to bots (E212);
+                        // review writes only when its entries change.
+                        .then((saved) => (saved?.phase === 'cold' && LifeState.cachedState(saved.characterId)
+                            ? invoke('GameServer/Bot/Economy/CraftWorkshopService').review(LifeState.cachedState(saved.characterId))
+                                .then(() => saved)
+                            : saved))
                         .then((saved) => {
                             if (saved && result.created) created += 1;
                             if (saved && shouldSeedState) seeded += 1;
