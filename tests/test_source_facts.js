@@ -101,16 +101,24 @@ try {
         assert.equal(profiles, 0, 'no combat profile for spoil eligibility');
     } finally { Profile.profileFor = profileFor; }
 
-    // With a counts map (the wish's reader) refusals are counted by reason in
-    // record order and never returned; ready facts are the same objects.
+    // The wish's reader (readyOnly) gets only the ready facts, the same objects;
+    // a counts map counts every record by ready or its reason, in record order.
     for (const [state, options] of [[warsmith, {}], [noSpoil, {}], [{ ...warsmith, level: 50 }, {}], [away, {}],
-        [{ ...warsmith, inventory: {} }, {}], [warsmith, { spotValue: () => null }], [noSpoil, { spots: [spots[0], { ...spots[0], id: 'facts-test-2' }] }]]) {
+        [{ ...warsmith, inventory: {} }, {}], [warsmith, { spotValue: () => null }], [noSpoil, { spots: [spots[0], { ...spots[0], id: 'facts-test-2' }] }],
+        [warsmith, { spots: [{ ...spots[0], id: 'facts-raid', raidBoss: true, raidBossTemplateId: 99001 }] }],
+        [warsmith, { occupancy: { 'facts-test': { count: 9, capacity: 9 } } }], [warsmith, { spotValue: () => ({ kills: 100, valueHours: NaN }) }]]) {
         const all = facts(state, options), counts = new Map(), ready = facts(state, { ...options, counts });
+        assert.deepEqual(facts(state, { ...options, readyOnly: true }), all.filter(row => row.status === 'ready'));
         const tally = new Map();
         for (const row of all) tally.set(row.status === 'ready' ? 'ready' : row.reason, (tally.get(row.status === 'ready' ? 'ready' : row.reason) || 0) + 1);
         assert.deepEqual([...counts], [...tally]);
         assert.deepEqual(ready, all.filter(row => row.status === 'ready'));
     }
+    // A step per 64 records: 33 spots of two records each (drop and spoil) are two steps.
+    const manySpots = Array.from({ length: 33 }, (unused, index) => ({ ...spots[0], id: `facts-many-${index}` }));
+    const many = drain(Planner.sourceFacts(warsmith, 99101, 1, { spots: manySpots, spotValue, timestamp: 1, trips: new Map() }));
+    assert.equal(many.value.length, 66);
+    assert.equal(many.stages.filter(stage => stage === 'source').length, 2, 'one step per 64 index records');
     // A travelling bot's spot is its destination, as PopulationService reads it.
     const travelling = byKind(facts({ ...warsmith, spotId: 'elsewhere', stats: { ...warsmith.stats, travel: { spotId: 'facts-test' } } })).drop;
     assert.equal(travelling.tripHours, 0, 'the destination spot needs no further trip');

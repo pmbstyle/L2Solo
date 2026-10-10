@@ -2114,9 +2114,10 @@ function* spotTown(spot) {
 }
 // A driver slices the loop per SOURCE_FACT_STEP records: a step per record
 // cost more than the record itself (the wish drains it synchronously).
-// options.counts (a Map, the wish's case): every record is counted there by
-// 'ready' or its reason, in record order; refusals are counted only, never
-// built as objects (74% of records), and only ready facts are returned.
+// options.readyOnly (the wish's case): only ready facts are returned and
+// refusals are never built as objects (74% of records). options.counts (a
+// Map, for diagnostics) counts every record by 'ready' or its reason, in
+// record order; it implies readyOnly.
 const SOURCE_FACT_STEP = 64;
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const facts = [], ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
@@ -2126,7 +2127,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         || require('../Economy/SpotEconomics').create(state, { timestamp, occupancy: options.occupancy });
     const trips = options.trips || new Map();
     const current = String(state.stats?.travel?.spotId || state.spotId || null);
-    const counts = options.counts || null;
+    const counts = options.counts || null, readyOnly = !!(counts || options.readyOnly);
     let spoiler = options.spoiler;
     const rules = sourceFactRulesFor(entries, itemId, killerLevel, ratesKey);
     for (let ordinal = 0; ordinal < entries.length; ordinal++) {
@@ -2176,7 +2177,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         if (counts) counts.set(reason || 'ready', (counts.get(reason || 'ready') || 0) + 1);
         const npcId = Number(entry.reward.selfId);
         if (reason) {
-            if (!counts) facts.push({ kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield, status, reason });
+            if (!readyOnly) facts.push({ kind, spotId: spot.id, npcId, itemId: Number(itemId), units, expectedYield, status, reason });
             continue;
         }
         const hours = units / perHour, netHourCost = Math.max(0, 1 - row.valueHours);

@@ -58,7 +58,7 @@ adapters['GameServer/Bot/Population/ColdCombatProfile'].profileFor = () => ({ ma
 // The farm path reads Planner.sourceFacts (its hunt rules are pinned in
 // test_source_facts.js); this stand-in maps the fixture's index rows by
 // the same reasons: raid, spoil skill, solo safety. As the planner does
-// with options.counts, a refusal is counted there, not returned.
+// with options.readyOnly, a refusal is only counted (options.counts), not returned.
 adapters['GameServer/Bot/AI/GearAcquisitionPlanner'].sourceFacts = function* (state, itemId, units, options) {
     const planner = adapters['GameServer/Bot/AI/GearAcquisitionPlanner'];
     const rows = planner.sourceIndexFor?.(options.spots)?.get(Number(itemId)) || [];
@@ -69,7 +69,7 @@ adapters['GameServer/Bot/AI/GearAcquisitionPlanner'].sourceFacts = function* (st
         const perHour = Number(options.spotValue(entry.spot)?.kills || 0) * planner.sourceYieldReaderFor()().expectedYield;
         return { kind: entry.kind, spotId: entry.spot.id, npcId: entry.reward?.selfId, itemId: Number(itemId), units,
             status: reason ? 'ineligible' : 'ready', reason, perHour, hours: units / perHour, netHourCost: 1 };
-    })())).filter(fact => !options.counts || fact.status === 'ready');
+    })())).filter(fact => !(options.readyOnly || options.counts) || fact.status === 'ready');
 };
 const invokeAdapter = name => { assert(name in adapters, name); return adapters[name]; };
 const valuation = load('EconomicValuation.js', () => { throw Error('unexpected require'); }, invokeAdapter);
