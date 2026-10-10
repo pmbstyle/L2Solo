@@ -50,7 +50,7 @@ function fromPlayer(offer) {
 function tripCost(state, { origin = null, timestamp = Date.now() } = {}) {
     if (!state || typeof state !== 'object') return null;
     const hourAdena = invoke('GameServer/Bot/AI/BotHuntEfficiency').hourValue(state, timestamp).perHour;
-    return require('./EconomicTrip').reader(state, { origin, hourAdena });
+    return invoke('GameServer/Bot/Economy/EconomicTrip').reader(state, { origin, hourAdena });
 }
 
 // The price an offer costs the buyer: its price and the trip to its town.

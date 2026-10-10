@@ -281,7 +281,7 @@ function equipmentTargetFulfilled(stats = {}, inventory = {}) {
 }
 
 function reconcileFulfilledEquipmentPlan(state = {}) {
-    const progress = require('../AI/EquipmentAcquisitionProgress');
+    const progress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
     const plan = state.stats?.equipmentPlan;
     if (plan?.clanGoal?.goalKey && progress.componentAcquired(state, plan)) {
         state = { ...state, stats: { ...state.stats, clanEquipmentAcquisition: {
@@ -341,7 +341,7 @@ function equipmentCompletionSignal(state = {}) {
     const clanGoal = state.stats?.equipmentPlan?.clanGoal;
     if (!clanGoal?.clanId || !clanGoal?.goalKey) return null;
     if (!equipmentTargetFulfilled(state.stats, state.inventory)
-        && !require('../AI/EquipmentAcquisitionProgress').componentAcquired(state)) return null;
+        && !invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress').componentAcquired(state)) return null;
     return {
         clanId: Number(clanGoal.clanId),
         goalKey: String(clanGoal.goalKey)
@@ -596,7 +596,7 @@ function recordFromSession(session, phase, reason = '') {
         ...Object.fromEntries(['playedHours', 'economyClock', 'frustration', 'lifelongKills', 'peoplePoints'].map(key => [key, session.coldLifeState?.stats?.[key] ?? cache.get(characterId)?.stats?.[key] ?? 0])),
         peopleEpisode: session.coldLifeState?.stats?.peopleEpisode ?? cache.get(characterId)?.stats?.peopleEpisode ?? null,
         ...(session.peopleKnowledge || {}),
-        playedHours: require('../../Social/RelationshipContext').playedHours(session, timestamp),
+        playedHours: invoke('GameServer/Social/RelationshipContext').playedHours(session, timestamp),
         pk: Number(actor.fetchPk?.() || 0),
         role: session.botStatus?.role || null,
         deathExperience: actor.deathExperience ? { ...actor.deathExperience } : null,
@@ -2601,7 +2601,7 @@ const BotLifeState = {
         if (shotActions > 0) {
             const Shots = invoke('GameServer/Inventory/ShotStock');
             const shot = Shots.planForState(state);
-            const beginnerId = require('../../Items/C4BeginnerShots').selfIdFor(shot.kind, shot.rank);
+            const beginnerId = invoke('GameServer/Items/C4BeginnerShots').selfIdFor(shot.kind, shot.rank);
             // The private combat inventory already contains exact consumption,
             // including beginner exhaustion followed by ordinary charges. Carry
             // only those decreases, preserving this resolve's new loot.
@@ -2817,7 +2817,7 @@ const BotLifeState = {
                         if (deathDrop?.inventory) {
                             row.inventorySummary = safeJson(deathDrop.inventory);
                             row.statsJson = safeJson({ ...parseJson(row.statsJson, {}), pkDropDeathSequence: deathDrop.deathSequence });
-                            require('../../Actor/Generics/PkDeathDrop').spawn(row.characterId, profiledState.loc, deathDrop.drops);
+                            invoke('GameServer/Actor/Generics/PkDeathDrop').spawn(row.characterId, profiledState.loc, deathDrop.drops);
                         }
                         const publish = () => {
                             const snapshot = normalize(row);
@@ -3211,7 +3211,7 @@ const BotLifeState = {
 
     leaveParty(state, reason = 'party_break', options = {}) {
         if (!state?.characterId) return Promise.resolve(null);
-        if (require('./RaidSoloBoundary').stale(state)) state = require('./RaidSoloBoundary').clear(state);
+        if (invoke('GameServer/Bot/Population/RaidSoloBoundary').stale(state)) state = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);
         const timestamp = now();
         const cached = cache.get(Number(state.characterId));
         const partyTravel = state.stats?.travel?.reason === 'party_spot_replan';
@@ -3410,7 +3410,7 @@ const BotLifeState = {
 
     applyNpcLiquidation(state, candidates = []) {
         if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
-        const Disposition = require('../Economy/ItemDisposition');
+        const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
         const reserved = Disposition.reservedEquipmentAmounts(state);
         const inventory = { ...(state.inventory || {}) };
         let payout = 0;
@@ -3418,7 +3418,7 @@ const BotLifeState = {
         candidates.forEach((candidate) => {
             const selfId = Number(candidate.selfId || 0);
             const existing = inventory[String(selfId)];
-            if (!existing || selfId === 57 || require('../../Items/C4BeginnerShots').isRestricted(selfId)) return;
+            if (!existing || selfId === 57 || invoke('GameServer/Items/C4BeginnerShots').isRestricted(selfId)) return;
             const free = Disposition.saleFreeAmount(state, existing, reserved);
             const equippedCount = Math.max(0, Number(existing?.equippedCount ?? (existing?.equipped ? 1 : 0)));
             const amount = Math.min(
@@ -3445,7 +3445,7 @@ const BotLifeState = {
             inventory,
             stats: {
                 ...(state.stats || {}),
-                lastNpcLiquidation: require('../LastOperations').compact({ at: now(), payout: Math.round(payout) }, sold, { field: 'sold' })
+                lastNpcLiquidation: invoke('GameServer/Bot/LastOperations').compact({ at: now(), payout: Math.round(payout) }, sold, { field: 'sold' })
             },
             updatedAt: now()
         };
@@ -3619,7 +3619,7 @@ const BotLifeState = {
                     ? [{ ...decision.recipe, name: item.name }] : [];
             });
             if (!recipes.length) return state;
-            const Commit = require('../Economy/EconomyCommit');
+            const Commit = invoke('GameServer/Bot/Economy/EconomyCommit');
             let saved = state, changed = false;
             for (const recipe of recipes) {
                 const admitted = await Commit.admit(saved, Commit.KINDS.learn);

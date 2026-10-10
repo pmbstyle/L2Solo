@@ -239,7 +239,7 @@ function review(state, lines, ctx, lookSeen) {
         cache[at + 34] = 0;
     }
     if (!selected.length) return null;
-    const result = require('./MarketPricing').look(state, selected, { ...ctx, visit, reviewReasons });
+    const result = invoke('GameServer/Bot/Economy/MarketPricing').look(state, selected, { ...ctx, visit, reviewReasons });
     for (const move of result?.reprices || []) {
         const at = cache.offset(Number(move.lineId));
         if (at < 0) continue;

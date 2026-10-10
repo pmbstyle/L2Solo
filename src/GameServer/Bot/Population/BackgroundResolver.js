@@ -1323,7 +1323,7 @@ function applyAllyHeal(caster, allies, heal, shot = null) {
         const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
             ? ally.vitals.maxHp * Number(heal.skill.power || 0) / 100 : Formulas.calcHealAmount(heal.skill.power, boost);
         ally.vitals.hp = Math.min(ally.vitals.maxHp, before + Math.max(0, amount));
-        if (ally !== caster && require('../../Social/CombatHelpPolicy').meaningfulHeal(before, ally.vitals.hp, ally.vitals.maxHp)) {
+        if (ally !== caster && invoke('GameServer/Social/CombatHelpPolicy').meaningfulHeal(before, ally.vitals.hp, ally.vitals.maxHp)) {
             helped.push({ sourceId: ally.state.characterId, targetId: caster.state.characterId, type: 'healed' });
         }
     }
@@ -1403,7 +1403,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
     let overhitContext = null;
     const fightLimitMs = 15000;
     const raidControlCapacity = coldRaidControlCapacity(fighters, mob);
-    const Help = require('../../Social/CombatHelpPolicy');
+    const Help = invoke('GameServer/Social/CombatHelpPolicy');
     const help = new Map();
     let lastVictim = null;
     let lastKiller = null;
@@ -1491,7 +1491,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             mobReadyAt += Math.max(250, Formulas.calcMeleeAtkTime(mob.atkSpd));
         }
         if (sharedEncounter && fighters.filter(f => f.vitals.hp <= 0).some((fighter, index) =>
-            require('./RaidCasualtyPolicy').disposition(fighter.state, { previousDamageCasualties: index,
+            invoke('GameServer/Bot/Population/RaidCasualtyPolicy').disposition(fighter.state, { previousDamageCasualties: index,
                 remainingHpRatio: mobHp / Math.max(1, mob.maxHp) }) !== 'continue')) break;
     }
 
@@ -1688,10 +1688,10 @@ const BackgroundResolver = {
                 nextResolveAt: timestamp + 30000, debug: { reason: `survival_${floor.reason}`, fights: 0, wins: 0 } };
         }
 
-        if (require('./ClanPartyDuty').waiting(state)) return require('./ClanPartyDuty').hold(state, timestamp);
+        if (invoke('GameServer/Bot/Population/ClanPartyDuty').waiting(state)) return invoke('GameServer/Bot/Population/ClanPartyDuty').hold(state, timestamp);
 
-        if (require('./RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
-            const cleared = require('./RaidSoloBoundary').clear(state);
+        if (invoke('GameServer/Bot/Population/RaidSoloBoundary').blocked(state, spot, targetNpcId)) {
+            const cleared = invoke('GameServer/Bot/Population/RaidSoloBoundary').clear(state);
             return {
                 patch: { activity: 'hunting', spotId: cleared.spotId, stats: cleared.stats },
                 events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
@@ -1933,7 +1933,7 @@ const BackgroundResolver = {
 const resolveSolo = BackgroundResolver.resolveSolo;
 BackgroundResolver.resolveSolo = (options = {}) => {
     const timestamp = options.timestamp ?? Date.now();
-    const competition = require('./ColdCompetitionWait').consume(options.state, options.elapsedMs ?? 60000, timestamp);
+    const competition = invoke('GameServer/Bot/Population/ColdCompetitionWait').consume(options.state, options.elapsedMs ?? 60000, timestamp);
     const competitionReason = options.state?.stats?.coldCompetition?.action === 'contest' ? 'competition_contest' : 'competition_yield';
     if (competition.waiting) return { patch: { stats: { ...options.state?.stats, pveEncounter: null } }, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
         nextResolveAt: competition.until, debug: { reason: competitionReason, fights: 0, wins: 0 } };

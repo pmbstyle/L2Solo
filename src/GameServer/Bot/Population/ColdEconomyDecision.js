@@ -263,18 +263,18 @@ function capture(economy, state, seen = state) {
     // Workshop-only publications carry no hunting valuation. Clan membership
     // cannot turn that partial source into a second, fabricated economy review.
     if (Number(state?.stats?.clanId) > 0 && economy?.hunt) {
-        const horizonHours = economy.horizonHours ?? require('../Economy/EconomicValuation')
+        const horizonHours = economy.horizonHours ?? invoke('GameServer/Bot/Economy/EconomicValuation')
             .stageHours(state, economy.hunt.expPerHour, economy.persona);
         const itemId = Number(state.stats.equipmentPlan?.target?.selfId || 0);
         let valueHours = itemId ? Math.max(0, Number(economy.itemUsefulness(itemId)) || 0) : 0;
         if (itemId && !valueHours) {
-            const item = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
+            const item = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
             if (item?.etc?.slot) {
                 // ARCH-NOTE: PERF: Wall time expired this resolve's buffs and
                 // evicted 159-209 evaluated gains per actor. Sharing the clock
                 // reduced paired added P95 6.465 -> 3.335 ms on 300 native actors;
                 // the measured maximum 6.569 ms still exceeds the strict +5 ms limit.
-                const gain = require('../Economy/WishProviders').gearGain(state, item, economy.timestamp);
+                const gain = invoke('GameServer/Bot/Economy/WishProviders').gearGain(state, item, economy.timestamp);
                 valueHours = Math.max(0, (gain.attack + gain.defence * economy.deathHours) * horizonHours);
             }
         }
@@ -309,7 +309,7 @@ function capture(economy, state, seen = state) {
 // the compact-card reader nor the full worker builds a second wish graph.
 function personalUsefulness(value, state, understanding, enabled, id) {
     return value * (enabled ? 1 + (1 - Number(understanding ?? .3))
-        * (2 * require('../AI/TendencyRoll').roll('usefulness', state.characterId, id) - 1) : 1);
+        * (2 * invoke('GameServer/Bot/AI/TendencyRoll').roll('usefulness', state.characterId, id) - 1) : 1);
 }
 function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabled) {
     if (!decision || decision.stale || !(moneyPrice > 0)) return NaN;
@@ -341,7 +341,7 @@ function view(state, decision, deps = {}) {
         gapHorizonHours: !decision?.urgency ? 0 : decision.urgency === URGENCY_SHOTS
             ? base.stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
                 ? base.stock('potions').targetHours
-                : require('../Economy/EconomicValuation').stageHours(state, base.hunt.expPerHour, base.persona),
+                : invoke('GameServer/Bot/Economy/EconomicValuation').stageHours(state, base.hunt.expPerHour, base.persona),
         board: deps.board || invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(),
         network: { activity }, activity, wish,
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),

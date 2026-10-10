@@ -100,7 +100,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
     const previous = state?.stats?.partyRequest;
     // Travel and recovery are part of returning to solo hunting. Neither may
     // erase the recruitment cooldown before the bot gets its first fight.
-    if (require('./PartyAssemblyRecovery').coolingDown(state, timestamp)) return previous;
+    if (invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)) return previous;
     if (plan?.levelingRecovery) return null;
     if (!partyRequestEligible(state)) return null;
     const sharedTarget = previous?.reason === 'shared_target' && ['open', 'deferred'].includes(previous.status)
@@ -109,10 +109,10 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
         ? { ...previous, status: 'open' } : null;
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan) || sharedTarget;
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
-        const context = require('./ColdEconomyDecision').economyFor(state);
+        const context = invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state);
         const amount = Math.max(1, Math.floor(Number(plan?.next?.amount || 1)));
         // ARCH-NOTE: party value is pending; the help fee buys progress on its requested item.
-        const fee = Math.floor(Math.min(require('../Economy/PurchaseFunding').spendable(state, 0, { itemId: objective.itemId }),
+        const fee = Math.floor(Math.min(invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(state, 0, { itemId: objective.itemId }),
             Math.max(0, Number(context.worth(objective.itemId)) || 0) * amount));
         if (fee > 0) objective = { ...objective, helpDeal: { payerId: Number(state.characterId),
             itemId: Number(objective.itemId), count: amount, fee } };
@@ -160,7 +160,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now()) {
 }
 
 function partyObjectiveForState(state) {
-    if (require('./PartyAssemblyRecovery').coolingDown(state)) return null;
+    if (invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state)) return null;
     if (state?.stats?.equipmentPlan?.levelingRecovery) return null;
     const request = state?.stats?.partyRequest;
     const clanObjective = clanPartyObjectiveForState(state);

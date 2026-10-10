@@ -6,6 +6,7 @@ const Trip = require('../Population/ColdTrip');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Karma = require('../../Karma');
+const Payment = require('../Travel/TripPayment');
 const townByName = new Map(Object.values(Towns.towns).map(town => [town.name, town]));
 const townKeys = new Map(Object.entries(Towns.towns).map(([key, town]) => [town, key]));
 const townOrdinal = new Map([...townByName.keys()].map((name, index) => [name, index]));
@@ -56,7 +57,7 @@ function* forwardTrip(state, from, to) {
     if (!route || !start || !gate) return null;
     const distance = Math.hypot(Number(from.locX) - start.locX, Number(from.locY) - start.locY);
     const inStart = distance <= Trip.TOWN_RADIUS;
-    const Payment = require('../Travel/TripPayment'), scroll = !inStart && Payment.hasColdScroll(state);
+    const scroll = !inStart && Payment.hasColdScroll(state);
     const honestMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
         + route.hops * Trip.HOP_MS + Trip.runMs(gate, to);
     yield 'trip';
@@ -72,7 +73,7 @@ function* returnMs(state, from, to) {
     const regional = yield* regionalTown(from), start = Towns.towns[regional?.respawnTown] || regional;
     if (!start) return NaN;
     const lead = Math.hypot(from.locX - start.locX, from.locY - start.locY) <= Trip.TOWN_RADIUS
-        ? Trip.runMs(from, start) : require('../Travel/TripPayment').SCROLL_CAST_MS;
+        ? Trip.runMs(from, start) : Payment.SCROLL_CAST_MS;
     for (const teleport of Routes.teleportPoints()) {
         const hops = teleport.hops[townKeys.get(start)];
         if (hops !== undefined) best = Math.min(best, lead + hops * Trip.HOP_MS + Trip.runMs(teleport, to));

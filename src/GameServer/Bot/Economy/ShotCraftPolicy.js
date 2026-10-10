@@ -202,7 +202,7 @@ function nativeShotOptions(state, index, context) {
                 yield 'quote';
             }
             for (const [town, offers] of towns) {
-                const filled = require('./OfferQuery').fill(offers, amount, { excludeOwner: owner.characterId });
+                const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, amount, { excludeOwner: owner.characterId });
                 const travel = trip(town), landed = filled.cost + travel;
                 if (filled.units >= amount && Number.isFinite(landed)
                     && (!plan?.whole || landed < plan.landed)) plan = { ...filled, town, whole: true, landed,
@@ -252,7 +252,7 @@ function eligible(state, now = Date.now()) {
     return state?.phase === 'cold' && ['hunting', 'resting', 'shopping', 'grouped'].includes(state.activity)
         && CraftShopService.isServiceCrafter(state) && CraftShopService.craftLevelFor(state) >= 2
         && !state.party?.partyId && !state.partyId && !state.stats?.craftStationId
-        && !require('../Population/CombinedErrandPolicy').pending(state, now).length
+        && !invoke('GameServer/Bot/Population/CombinedErrandPolicy').pending(state, now).length
         && !(state.stats?.equipmentPlan?.strategy === 'craft'
             && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status));
 }
@@ -280,7 +280,7 @@ function decide(state, index, knownRecipeIds = []) {
 // use the synchronous convenience adapter only for the selected recipe/quantity.
 function* recipeShotSearch(state, recipe, context, options = {}) {
     const rank = SHOT_RANK_BY_ID.get(Number(recipe.productId)), crystalId = CRYSTAL_BY_RANK[rank];
-    const output = options.itemTemplate?.(recipe.productId) || require('../../Item/ItemTemplateIndex')
+    const output = options.itemTemplate?.(recipe.productId) || invoke('GameServer/Item/ItemTemplateIndex')
         .find(invoke('GameServer/DataCache').items, Number(recipe.productId));
     const required = new Map();
     for (const row of recipe.materials || []) {
@@ -330,7 +330,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
         }
         for (const [selfId, held] of ownStock) {
             yield 'stock';
-            const template = options.itemTemplate?.(selfId) || require('../../Item/ItemTemplateIndex')
+            const template = options.itemTemplate?.(selfId) || invoke('GameServer/Item/ItemTemplateIndex')
                 .find(invoke('GameServer/DataCache').items, selfId);
             if (!(availableOwn(selfId)?.count > 0) || template?.etc?.rank !== rank || !(Number(template.etc.cristals) >= missing)
                 || !/^(Weapon|Armor)\./.test(String(template?.template?.kind || ''))) continue;
@@ -343,7 +343,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
             yield 'recipe';
             if (!scrap || scrap.type !== 'dwarven' || Number(scrap.successRate) !== 100 || Number(scrap.productCount) !== 1
                 || !CraftShopService.canCraft(state, scrap) || Number(scrap.mpCost) >= Number(state.vitals?.mp || 0)) continue;
-            const template = options.itemTemplate?.(scrap.productId) || require('../../Item/ItemTemplateIndex')
+            const template = options.itemTemplate?.(scrap.productId) || invoke('GameServer/Item/ItemTemplateIndex')
                 .find(invoke('GameServer/DataCache').items, Number(scrap.productId));
             if (template?.etc?.rank !== rank || !(Number(template.etc.cristals) >= missing)
                 || !/^(Weapon|Armor)\./.test(String(template?.template?.kind || ''))) continue;

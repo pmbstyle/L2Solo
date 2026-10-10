@@ -451,7 +451,7 @@ function saleFreeAmount(state, item, reserved = {}) {
     // physical reservations use the same stock guard as production.
     return Math.min(Math.max(0, Number(item.amount || 0) - equippedCount
         - Number(reserved[item.selfId] || 0) - protectedAmount),
-    require('./WealthCraftDecision').freeAmount(state, { ...item,
+    invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, { ...item,
         equippedCount, starterMobLootAmount: protectedAmount }, reserved));
 }
 

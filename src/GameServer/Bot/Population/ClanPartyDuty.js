@@ -1,6 +1,7 @@
+const AssemblyRecovery = require('./PartyAssemblyRecovery');
 // A clan hunt is a shared assignment, never permission to attempt it alone.
 function objective(state) {
-    if (require('./PartyAssemblyRecovery').coolingDown(state)) return null;
+    if (AssemblyRecovery.coolingDown(state)) return null;
     const value = state?.stats?.clanPartyObjective;
     return value?.status === 'open' && value.clanGoalKey && value.priority === 'required' ? value : null;
 }

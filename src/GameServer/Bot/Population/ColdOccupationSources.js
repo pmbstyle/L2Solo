@@ -64,7 +64,7 @@ function initialise() {
         }
     }
     // Exact native seated recovery is static in class/level on this branch.
-    const Rest = require('./ColdRest');
+    const Rest = invoke('GameServer/Bot/Population/ColdRest');
     for (const row of Data.classTemplates || []) {
         const rates = new Float64Array(81);
         for (let level = 1; level <= 80; level++) rates[level] = Rest.coldRestRegenPerTick({ level,
@@ -139,7 +139,7 @@ function* reservations(state) {
 function* feasibility(state, { board, read = () => {} }, reserved = null) {
     reserved ||= yield* reservations(state);
     if (!reserved || !board) return null;
-    const Look = require('../Economy/BoardLook'), lines = board.ownerLines(state.characterId);
+    const Look = invoke('GameServer/Bot/Economy/BoardLook'), lines = board.ownerLines(state.characterId);
     if (lines.length > Look.MAX_OWNED_LINES) return null;
     let hash = 0x811c9dc5, blocked = 0, at = 0;
     for (const line of lines) {
@@ -154,7 +154,7 @@ const EconomicTrip = require('../Economy/EconomicTrip');
 const { regionalTown, details: tripDetails } = EconomicTrip;
 function recipeIndex(board) {
     initialise();
-    return require('../Economy/RecipeProductionIndex').forBoard(board, {
+    return invoke('GameServer/Bot/Economy/RecipeProductionIndex').forBoard(board, {
         accept: recipe => !String(ItemIndex.find(Data.items, recipe.productId)?.template?.kind || '').startsWith('Other.Shot'),
         fixedBuyer: recipe =>
         !Production.buyersDisabled() && String(ItemIndex.find(Data.items, recipe.productId)?.template?.kind || '').startsWith('Other.Material')

@@ -295,7 +295,7 @@ function saleDecision(state, options = {}) {
 
 // The bot's buy ad lines carry the quote, its authored worth and cursors.
 function buyLines(state, goal, options = {}) {
-    return require('./BuyAdPolicy').linesFor(state, goal, options);
+    return invoke('GameServer/Bot/Economy/BuyAdPolicy').linesFor(state, goal, options);
 }
 
 // The bot's buy ads ask for the same items and counts: their bids are the
@@ -647,11 +647,11 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 // current item/record rows; a failed step is dropped by the coordinator's
 // existing after-commit guard, and the next resolve can decide again.
 async function executePlan(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state } = {}) {
-    if (state.stats?.tradeMeeting || require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
+    if (state.stats?.tradeMeeting || invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
-    const authority = require('./EconomyCommit').authority(preparedState);
+    const authority = invoke('GameServer/Bot/Economy/EconomyCommit').authority(preparedState);
     const stillPrepared = () => {
-        const current = require('./EconomyCommit').authority(LifeState.cachedState(ownerId) || state);
+        const current = invoke('GameServer/Bot/Economy/EconomyCommit').authority(LifeState.cachedState(ownerId) || state);
         return Object.keys(authority).every(key => current[key] === authority[key]);
     };
     const run = async (work) => {
@@ -704,7 +704,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (!stillPrepared()) return { state, stale: true };
         const shot = require('./ShotCraftPolicy').unpackStep(plan.shot);
         if (shot.wealth) {
-            const Wealth = require('./ColdWealthCraftService');
+            const Wealth = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
             if (!Wealth.eligible(state)) return { state };
             const opportunity = Wealth.recheck(state, shot.wealth);
             return opportunity ? Wealth.execute(state, opportunity, { stillPrepared }) : { state };

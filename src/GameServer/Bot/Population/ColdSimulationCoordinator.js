@@ -60,8 +60,8 @@ const SNAPSHOT_SLICE_MS = 50;
 
 function recipeKnowledgeFor(state) {
     if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return {};
-    const Workshop = require('../Economy/CraftWorkshopService');
-    return { knownShotRecipes: require('../Economy/ShotCraftPolicy').packKnown(Workshop.cachedRecipes(state.characterId)),
+    const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+    return { knownShotRecipes: invoke('GameServer/Bot/Economy/ShotCraftPolicy').packKnown(Workshop.cachedRecipes(state.characterId)),
         recipeBook: Workshop.bookFor(state.characterId) };
 }
 
@@ -166,7 +166,7 @@ class ColdSimulationCoordinator {
                     memory, memoryRevision: memory?.revision,
                     clanId: invoke('GameServer/Clan/ClanSocialRuntime').view.memberships.get(Number(state.characterId)) || 0,
                     escrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
-                    targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
+                    targetNpcId: party ? invoke('GameServer/Bot/Population/PartyHuntingTarget').npcId(party, state)
                         : leaf?.activity === 'hunting' ? (leaf.npcId || null) : null
                 };
             }
@@ -194,7 +194,7 @@ class ColdSimulationCoordinator {
         this.historyCleanupInFlight = null;
         this.seen = new Set();
         this.economyDecisions = new ColdEconomyDecisions();
-        this.economyRoutes = new (require('../Economy/EconomyRouteCache').EconomyRouteCache)({
+        this.economyRoutes = new (invoke('GameServer/Bot/Economy/EconomyRouteCache').EconomyRouteCache)({
             send: payload => !this.stopping && this.ready && !!this.post('economy_route_request', payload),
             prepared: (id, key) => {
                 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
@@ -202,8 +202,8 @@ class ColdSimulationCoordinator {
                 const record = invoke('GameServer/World/World').registeredActorById(id);
                 const session = record?.session;
                 if (record && !record.retired && session?.actor === record.actor
-                    && require('../Economy/EconomicTrip').key(Economy.stateForActor(record.actor, session)) === key)
-                    require('../AI/DecisionEvents').prepared(session);
+                    && invoke('GameServer/Bot/Economy/EconomicTrip').key(Economy.stateForActor(record.actor, session)) === key)
+                    invoke('GameServer/Bot/AI/DecisionEvents').prepared(session);
             }
         });
         this.unsubscribeWishRemovals = LifeState.subscribePublications(packet => {
@@ -217,7 +217,7 @@ class ColdSimulationCoordinator {
         this.partyGoalRequests = 0;
         this.commandTail = Promise.resolve();
         this.competitionFrameAdmission = null;
-        this.competitionActions = new (require('./ColdCompetitionActions').ColdCompetitionActions)({
+        this.competitionActions = new (invoke('GameServer/Bot/Population/ColdCompetitionActions').ColdCompetitionActions)({
             life: LifeState, owner: ColdSimulationOwner,
             memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
             parties: BackgroundPartyState,
@@ -359,9 +359,9 @@ class ColdSimulationCoordinator {
             // LifeState startup has already released members of historical
             // dissolved parties. Only then is it safe to trim the rows.
             await BackgroundPartyState.purgeHistory();
-            await require('./ColdRaidAuthority').init();
+            await invoke('GameServer/Bot/Population/ColdRaidAuthority').init();
             await invoke('GameServer/Clan/ClanSocialRuntime').refresh(true);
-            require('./ColdOccupationSources').initialise();
+            invoke('GameServer/Bot/Population/ColdOccupationSources').initialise();
             this.queue.start();
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
@@ -465,7 +465,7 @@ class ColdSimulationCoordinator {
     }
 
     meetingTermsDigest(input) {
-        const request = require('../../AfkTrade/TradeMeeting').canonical(input);
+        const request = invoke('GameServer/AfkTrade/TradeMeeting').canonical(input);
         const immutable = [request.token, request.actorA, request.actorB, request.seqA, request.seqB, request.town,
             [request.point.locX, request.point.locY, request.point.locZ],
             request.parties.map(party => [party.phase, party.ownerId, party.leaseId, party.hotAt, party.revision, party.sequence]),
@@ -502,14 +502,14 @@ class ColdSimulationCoordinator {
             const state = LifeState.cachedState(id);
             if (!state) throw Error('trade_meeting_missing_state');
             this.postCollections('snapshot_page', { rows: [{ state, context: this.contextFor(state, this.contextIndex({ compactPartyMembers: true })) }] });
-            const codec = require('../../AfkTrade/TradeMeetingCodec');
+            const codec = invoke('GameServer/AfkTrade/TradeMeetingCodec');
             const msgId = `meeting:${id}:${token}`;
             const envelope = frame => Protocol.envelope('command_request', epoch,
                 { requests: [{ kind: 'meeting', characterId: id, commandId: token, frame }] }, `${msgId}:3`);
             const frames = codec.commandPages(request, envelope, null, { incoming: request.incoming || request.parties.map(party => party.acceptedIncoming || {}) });
             const bytes = frames.reduce((sum, frame) => sum + Buffer.byteLength(JSON.stringify(envelope(frame))), 0);
             // Reserve response headroom in the same global staging budget.
-            require('../../AfkTrade/TradeMeetingService').adjustTransportPages(4, Math.max(bytes, 4 * 768));
+            invoke('GameServer/AfkTrade/TradeMeetingService').adjustTransportPages(4, Math.max(bytes, 4 * 768));
             promise.reservedPages = 4; promise.reservedBytes = Math.max(bytes, 4 * 768);
             for (const frame of frames) if (!this.post('command_request', { requests: [
                 { kind: 'meeting', characterId: id, commandId: token, frame }] }, `${msgId}:${frame[2]}`))
@@ -524,7 +524,7 @@ class ColdSimulationCoordinator {
         promise.settled = true;
         clearTimeout(promise.timer);
         if (held === promise) this.commandInflight.delete(Number(id)); else if (held?.meetingPending === promise) delete held.meetingPending;
-        if (promise.reservedPages) require('../../AfkTrade/TradeMeetingService')
+        if (promise.reservedPages) invoke('GameServer/AfkTrade/TradeMeetingService')
             .adjustTransportPages(-promise.reservedPages, -promise.reservedBytes);
         promise.frames = null;
         if (error) promise.reject(error); else promise.resolve(proof);
@@ -543,7 +543,7 @@ class ColdSimulationCoordinator {
     meetingPreparationCurrent(proof, request) {
         if (!proof || proof.epoch !== this.workerEpoch || proof.worker !== this.worker || this.stopping) return false;
         const state = LifeState.cachedState(proof.characterId);
-        const authority = state && require('../Economy/EconomyCommit').authority(state), expected = proof.authority;
+        const authority = state && invoke('GameServer/Bot/Economy/EconomyCommit').authority(state), expected = proof.authority;
         if (!authority || !expected || !['phase', 'ownerId', 'leaseId', 'hotAt', 'revision'].every(key => authority[key] === expected[key])) return false;
         const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
         const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
@@ -575,7 +575,7 @@ class ColdSimulationCoordinator {
                 if (previous && JSON.stringify(previous) !== JSON.stringify(request.frame)) throw Error('trade_meeting_consent_changed');
                 held.frames[request.frame[2]] = request.frame;
                 if (held.frames.filter(Boolean).length === request.frame[3]) {
-                    const result = require('../../AfkTrade/TradeMeetingCodec').fromPages(held.frames);
+                    const result = invoke('GameServer/AfkTrade/TradeMeetingCodec').fromPages(held.frames);
                     if (this.meetingTermsDigest(result) !== held.termsDigest) throw Error('trade_meeting_consent_changed');
                     const side = result.actorA === identity.characterId ? 0 : 1;
                     const own = result.parties[side];
@@ -593,7 +593,7 @@ class ColdSimulationCoordinator {
 
     routeRows(state) {
         if (this.stopping || !this.ready) return null;
-        const Trip = require('../Economy/EconomicTrip');
+        const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
         return this.economyRoutes.read(state.characterId, Trip.key(state), Trip.frame(state));
     }
 
@@ -688,7 +688,7 @@ class ColdSimulationCoordinator {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
         if (message?.type === 'economy_diagnostics' && Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch) {
             if (!Number.isSafeInteger(message.id) || message.id <= 0) return;
-            const diagnostics = require('../Economy/EconomyDiagnostics');
+            const diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
             const accepted = diagnostics.accept(message.records);
             if (this.diagnosticEpoch !== epoch) { this.diagnosticEpoch = epoch; this.diagnosticDropped = 0; }
             const dropped = Number(message.dropped);
@@ -770,14 +770,14 @@ class ColdSimulationCoordinator {
                 }
             } else if (payload.phase === 'economy_plan_ready' && !this.stopping) {
                 const id = Number(payload.characterId), state = LifeState.cachedState(id);
-                const current = state && require('../Economy/EconomyCommit').authority(state);
+                const current = state && invoke('GameServer/Bot/Economy/EconomyCommit').authority(state);
                 if (current && payload.authority && Object.keys(current).every(key => current[key] === payload.authority[key])) {
                     const beforeWrite = () => {
                         if (this.worker !== worker || this.workerEpoch !== epoch) throw Error('economy_refresh_source_retired');
                     };
                     const decision = payload.economyDecision;
                     if (!decision || decision.updatedAt !== Number(state.updatedAt || 0)
-                        || decision.key !== require('./ColdEconomyDecision').stateKey(state)) break;
+                        || decision.key !== invoke('GameServer/Bot/Population/ColdEconomyDecision').stateKey(state)) break;
                     this.economyDecisions.hold(id, decision);
                     try {
                         const result = await invoke('GameServer/Bot/Economy/BotAfkMarketService').executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
@@ -787,11 +787,11 @@ class ColdSimulationCoordinator {
                 }
             } else if (payload.phase === 'economy_decided' && !this.stopping) {
                 const id = Number(payload.characterId), state = LifeState.cachedState(id);
-                const decision = payload.economyDecision ? require('./ColdEconomyDecision').compact(payload.economyDecision) : null;
+                const decision = payload.economyDecision ? invoke('GameServer/Bot/Population/ColdEconomyDecision').compact(payload.economyDecision) : null;
                 // Same worker generation plus the exact captured owner facts
                 // fence hot publications; they never authorize native spending.
                 if (state?.phase === 'hot' && decision && decision.updatedAt === Number(state.updatedAt || 0)
-                    && decision.key === require('./ColdEconomyDecision').stateKey(state)) {
+                    && decision.key === invoke('GameServer/Bot/Population/ColdEconomyDecision').stateKey(state)) {
                     this.economyDecisions.accept(id, decision);
                     if (decision.feasibility) invoke('GameServer/Bot/Economy/HotBoardReviewService').preparedOwner(id);
                 }
@@ -919,7 +919,7 @@ class ColdSimulationCoordinator {
     }
 
     async requestPartyGoals(party, members, options = {}) {
-        const Calculation = require('./PartyGoalCalculation');
+        const Calculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
         if (!Calculation.validMembers(party, members)) return { ok: false, reason: 'invalid_party_members' };
         if (!this.worker || !this.ready || !this.snapshotsLoaded || this.stopping)
             return { ok: false, reason: 'worker_not_ready' };
@@ -1023,7 +1023,7 @@ class ColdSimulationCoordinator {
 
     routeFor(state, currentSpot, party, partyMembers, index) {
         if (!state || state.phase !== 'cold' || state.stats?.travel) return null;
-        if (!party && require('./ClanPartyDuty').waiting(state)) return null;
+        if (!party && invoke('GameServer/Bot/Population/ClanPartyDuty').waiting(state)) return null;
         const partyRoute = !!party;
         const eligibleActivity = state.activity === 'hunting'
             || (partyRoute && state.activity === 'grouped');
@@ -1045,7 +1045,7 @@ class ColdSimulationCoordinator {
             : physical?.id || currentSpot?.id || declaredSpotId;
         const timestamp = Number(index.timestamp || Date.now());
         const routedMembers = partyRoute ? partyMembers : [state];
-        const partyRisk = require('./PartySpotRiskPolicy');
+        const partyRisk = invoke('GameServer/Bot/Population/PartySpotRiskPolicy');
         const excludedSpotIds = partyRoute ? partyRisk.excludedSpotIds(party, timestamp)
             : SpotRiskPolicy.excludedSpotIdsForStates(routedMembers, timestamp);
         const spotBackoff = partyRoute ? partyRisk.backoff(party, currentId, timestamp)
@@ -1170,7 +1170,7 @@ class ColdSimulationCoordinator {
         const repairingPartyPosition = partyRoute && String(selected.id) === String(party.spotId || '')
             && partyMembers.every(member => member.phase === 'cold' && member.vitals?.hp > 0
                 && !member.stats?.pvpEncounter && !member.stats?.travel)
-            && (!require('./PartyHuntingAssembly').nearby(partyMembers)
+            && (!invoke('GameServer/Bot/Population/PartyHuntingAssembly').nearby(partyMembers)
                 || partyMembers.some(member => !SpotService.containsLocation(selected, member.loc)));
         if (String(selected.id) === String(currentId || '') && !repairingPartyPosition
             && (!partyRoute || String(party.spotId || '') === String(selected.id))) return null;
@@ -1218,7 +1218,7 @@ class ColdSimulationCoordinator {
 
     async ensureCraftRecipes(state) {
         if (invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) {
-            await require('../Economy/CraftWorkshopService').knownFor(state.characterId);
+            await invoke('GameServer/Bot/Economy/CraftWorkshopService').knownFor(state.characterId);
         }
     }
 
@@ -1248,7 +1248,7 @@ class ColdSimulationCoordinator {
         const leaf = !party ? this.economyDecisions.activity(state) : null;
         const workshop = this.economyDecisions.workshopFor(state);
         const context = {
-            playerWaiting: require('../../AfkTrade/TradeMeetingService').isPlayerWaiting?.(state.characterId) === true,
+            playerWaiting: invoke('GameServer/AfkTrade/TradeMeetingService').isPlayerWaiting?.(state.characterId) === true,
             // The public workshop is capped at 16 entries, not the recipe
             // book. Hydrated knowledge travels as one catalogue bitset.
             ...recipeKnowledgeFor(state),
@@ -1261,7 +1261,7 @@ class ColdSimulationCoordinator {
             // The worker cannot see AFK shops: hand it the Adena the bot's own
             // buy order holds, which still counts as purchase budget.
             buyOrderEscrow: invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId),
-            targetNpcId: party ? require('./PartyHuntingTarget').npcId(party, state)
+            targetNpcId: party ? invoke('GameServer/Bot/Population/PartyHuntingTarget').npcId(party, state)
                 : leaf?.activity === 'hunting' ? (leaf.npcId || null) : null,
             isPartyLeader: !!party,
             party,
@@ -1875,7 +1875,7 @@ class ColdSimulationCoordinator {
 
     async prepareProposal(proposal) {
         if (proposal.atomicGroup?.raidCommit) {
-            if (!require('./ColdRaidAuthority').prepare(proposal.atomicGroup.raidCommit)) return null;
+            if (!invoke('GameServer/Bot/Population/ColdRaidAuthority').prepare(proposal.atomicGroup.raidCommit)) return null;
         }
         const state = LifeState.cachedState(proposal.characterId) || proposal.baseState;
         if (!state) return null;
@@ -1953,7 +1953,7 @@ class ColdSimulationCoordinator {
     }
 
     async afterCommit(entry, committed = {}) {
-        if (Config.developerDiagnostics === true) require('../Economy/ConsumptionDiagnostics').publish(
+        if (Config.developerDiagnostics === true) invoke('GameServer/Bot/Economy/ConsumptionDiagnostics').publish(
             entry.nextState.characterId, entry.proposal.result?.consumptionDiagnostics, {
                 source: 'cold_commit', commandId: entry.proposal.commandId, proposalId: entry.proposal.proposalId,
                 revision: committed.revision ?? committed.row?.simulationRevision ?? entry.proposal.token?.revision, sequence: entry.proposal.sequence
@@ -1970,11 +1970,11 @@ class ColdSimulationCoordinator {
                 < Number(committedPartyRow.updatedAt)) BackgroundPartyState.acceptRow(committedPartyRow);
         });
         await this.step('raidCache', id, () => {
-            if (committed.raidRow) require('./ColdRaidAuthority').accept(committed.raidRow);
+            if (committed.raidRow) invoke('GameServer/Bot/Population/ColdRaidAuthority').accept(committed.raidRow);
         });
         await this.step('raidSettlement', id, async () => {
             if (committedPartyRow && entry.proposal.partyResolution?.party?.stats?.raidEncounter?.status === 'defeated') {
-                await require('./ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
+                await invoke('GameServer/Bot/Population/ColdRaidWorldBridge').settle(entry.proposal.partyResolution.party, { respawnAt: committed.raidRespawnAt });
             }
         });
         let state = LifeState.cachedState(id) || entry.nextState;
@@ -2018,7 +2018,7 @@ class ColdSimulationCoordinator {
                 if (this.economyPlanTimes.length > 256) this.economyPlanTimes.shift();
             }
         }
-        await this.step('clanEvents', id, () => require('../../Clan/ClanReviewEvents').committedMember(entry.proposal[CLAN_BEFORE], state));
+        await this.step('clanEvents', id, () => invoke('GameServer/Clan/ClanReviewEvents').committedMember(entry.proposal[CLAN_BEFORE], state));
         await this.step('party', id, async () => {
             if (entry.proposal.partyResolution?.party) {
                 const party = entry.proposal.partyResolution.party;
@@ -2085,7 +2085,7 @@ class ColdSimulationCoordinator {
     }
 
     async reviewCommittedEconomy(state, beforeWrite, decisionOverride) {
-        if (require('../../AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return LifeState.cachedState(state.characterId) || state;
+        if (invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return LifeState.cachedState(state.characterId) || state;
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;

@@ -140,8 +140,8 @@ function watchedBoard(board, watch) {
     });
 }
 function defaultProducerSource(state, board) {
-    const index = require('../Population/ColdOccupationSources').recipeIndex(board);
-    const level = require('./CraftEligibility').craftLevelFor(state), scope = index.scopeFor(level);
+    const index = invoke('GameServer/Bot/Population/ColdOccupationSources').recipeIndex(board);
+    const level = invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(state), scope = index.scopeFor(level);
     return { recipes: index.rowsFor(level), scope, revision: index.revision(scope) };
 }
 function resolved(state, deps, production = true) {
@@ -155,7 +155,7 @@ function resolved(state, deps, production = true) {
     if (production) {
         if (typeof deps.workshop === 'function') deps.workshop = deps.workshop(state.characterId);
         if (typeof deps.knownRecipes === 'function') deps.knownRecipes = deps.knownRecipes(state.characterId);
-        if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = require('../Population/ColdOccupationSources').fixedBuyerOffersFor;
+        if (!deps.fixedProductionOffersFor) deps.fixedProductionOffersFor = invoke('GameServer/Bot/Population/ColdOccupationSources').fixedBuyerOffersFor;
         if (!deps.producerSource && deps.board) deps.producerSource = defaultProducerSource;
         if (typeof deps.producerSource === 'function') {
             const source = deps.producerSource(state, deps.board);
@@ -165,19 +165,19 @@ function resolved(state, deps, production = true) {
         }
         if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
         if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
-            const Workshops = require('./CraftWorkshopService');
+            const Workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
             deps.workshops = Workshops.publicForRecipe;
             deps.workshopRevision = Workshops.publicRecipeDigest;
         }
         if (isMainThread && !Object.hasOwn(deps, 'knownRecipes')) {
-            const Workshops = require('./CraftWorkshopService');
+            const Workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
             if (Workshops.bookFor(state.characterId) !== null) deps.knownRecipes = Workshops.cachedRecipes(state.characterId);
         }
         if (typeof deps.buyOrderEscrow === 'function') deps.buyOrderEscrow = deps.buyOrderEscrow(state.characterId);
     }
     if (!deps.spots && isMainThread) deps.spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     if (!deps.npcOffersFor && isMainThread) deps.npcOffersFor = id => {
-        const Sources = require('../Population/ColdOccupationSources');
+        const Sources = invoke('GameServer/Bot/Population/ColdOccupationSources');
         Sources.initialise(); return Sources.npcOffersFor(id);
     };
     return deps;
@@ -212,7 +212,7 @@ function foundation(state, deps, persona, timestamp, price) {
     const hunt = Hunt.huntIncome(state, timestamp, deps.mode);
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
     const bestSpotId = hunt.spotId || state.spotId;
-    const walkBackHours = require('./WalkBack').hours(bestSpotId, state, deps.spots || invoke('GameServer/Bot/AI/SpotService').spots);
+    const walkBackHours = invoke('GameServer/Bot/Economy/WalkBack').hours(bestSpotId, state, deps.spots || invoke('GameServer/Bot/AI/SpotService').spots);
     const deathHours = Valuation.deathHours(state, { ...hunt, lostGearHours, walkBackHours });
     const spotTable = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, true) : null;
     const bestTable = spotTable || Table.best(tableRole, state.level, true);
@@ -231,7 +231,7 @@ function foundation(state, deps, persona, timestamp, price) {
     let bagHours = 2;
     const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
     if (hasBagForecast) {
-        const Floor = require('../Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
+        const Floor = invoke('GameServer/Bot/Population/SurvivalFloor'), Data = invoke('GameServer/DataCache');
         const race = state.stats?.race ?? Data.classTemplates?.find(row => Number(row.classId) === Number(state.stats?.classId || 0))?.template?.race;
         // ARCH-NOTE: size the E9 bag interval on the bag after its
         // planned kit stacks exist. Otherwise an empty shot/potion row uses
@@ -255,7 +255,7 @@ function foundation(state, deps, persona, timestamp, price) {
         const free = Math.max(0, slotLimit - Floor.stateInventory(state, Data.items).slots - plannedSlots);
         bagHours = free === 0 ? 0 : spotTable.stacks > 0 ? free / spotTable.stacks : 24;
     }
-    const Visits = require('./TownVisitInterval');
+    const Visits = invoke('GameServer/Bot/Economy/TownVisitInterval');
     // Bag space bounds a planned outing; it never chooses its duration.
     // Keep the existing initial estimate until actual town visits teach one.
     const targetHours = hasBagForecast
@@ -273,7 +273,7 @@ function foundation(state, deps, persona, timestamp, price) {
             || state.stats?.marketReturn?.loc || (state.activity === 'hunting' ? state.loc : null);
         if (!origin || ![origin.locX, origin.locY, origin.locZ].every(Number.isFinite)
             || origin.locX === 0 && origin.locY === 0) return scrollHours;
-        const Trip = require('../Population/ColdTrip'), Routes = require('../Travel/TravelRoutes');
+        const Trip = invoke('GameServer/Bot/Population/ColdTrip'), Routes = invoke('GameServer/Bot/Travel/TravelRoutes');
         const destination = Routes.landingTown(origin);
         const routeState = { ...state, loc: origin, inventory: { 736: { amount: 0 } } };
         const walking = Trip.townPlan(routeState, destination);
@@ -284,7 +284,7 @@ function foundation(state, deps, persona, timestamp, price) {
     const stock = kind => {
         if (kind === 'scrolls') {
             const current = positive(state.inventory?.[736]?.amount),
-                target = require('../Travel/ScrollStock').TARGET_AMOUNT, survivalTarget = 1;
+                target = invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT, survivalTarget = 1;
             const missing = Math.max(0, target - Math.max(current, survivalTarget));
             const benefitPerUnit = current < target ? scrollUseHours() : 0;
             return { itemId: 736, usePerHour: 0, current, hours: Infinity, targetHours, target,
@@ -425,7 +425,7 @@ function forState(state = {}, deps = {}) {
     context.routeKey = Trip.key(state); context.routeRows = Array.isArray(deps.routeRows) && deps.routeRows.length === Trip.towns.length ? deps.routeRows : null;
     context.routePending = !deps.tripCost && !context.routeRows;
     context.trip = deps.tripCost || Trip.preparedReader(context.routeRows || [], { hourAdena: context.hourAdena });
-    context.spotValue = require('./SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
+    context.spotValue = invoke('GameServer/Bot/Economy/SpotEconomics').create(state, { ...deps, timestamp, persona, deathHours: context.deathHours });
     if (state.incomingPending) {
         // ARCH-NOTE: an oversized incoming projection waits on the existing
         // settlement/preparation owner. Never replace unknown stock with zero
@@ -447,7 +447,7 @@ function forState(state = {}, deps = {}) {
     context.wallet = positive(state.adena) + positive(deps.buyOrderEscrow);
     context.stockFor = (id, rootKey) => ({ owned: rootKey.startsWith('stock:')
         && context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId === id
-        ? positive(state.inventory?.[id]?.amount) : require('./WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
+        ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {}),
     incoming: positive(state.acceptedIncoming?.[id]) });
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const projection = Providers.build(state, context, { ...deps, nodes: [...(deps.nodes || []), ...extra] });
@@ -474,14 +474,14 @@ function forState(state = {}, deps = {}) {
     const urgent = network.gap || network.queue.find(row => row.key === network.focus?.[0]) || network.queue[0];
     context.gapHorizonHours = !urgent ? 0 : urgent.key === 'stock:shots' ? base.stock('shots').targetHours
         : urgent.key === 'stock:potions' ? base.stock('potions').targetHours : projection.horizon;
-    context.itemUsefulness = id => require('../Population/ColdEconomyDecision').personalUsefulness(
+    context.itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
         network.demands.get(`item:${id}`) || projection.values.get(Number(id)) || 0,
         state, persona.understanding, knowledgeEnabled, id);
     context.worth = id => network.moneyPrice > 0 ? context.itemUsefulness(id) / network.moneyPrice : null;
-    context.watchList = require('./TradeIntent').project(state, network, projection, id => context.worth(id) ?? price(id));
+    context.watchList = invoke('GameServer/Bot/Economy/TradeIntent').project(state, network, projection, id => context.worth(id) ?? price(id));
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
-    const Funding = require('./PurchaseFunding');
+    const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         money: Funding.packetFor(network, context.hourAdena, base.survivalReserve) };

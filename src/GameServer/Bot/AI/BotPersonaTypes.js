@@ -1,4 +1,5 @@
 'use strict';
+const TendencyRoll = require('./TendencyRoll');
 
 // Persona types (market-sim step 3.1, N6a): a fixed table, pure functions, no
 // game state. Each type has a drive, a share of the world, a circle of class
@@ -161,7 +162,6 @@ function talents(traits) {
 // caution, plus one roll of its own (+-0.15). The error of its price guess
 // starts at 3% + 17% x (1 - understanding), then uses shared learning.
 function understanding(drive, traits, inclinations, characterId) {
-    const TendencyRoll = require('./TendencyRoll');
     const centre = 0.35 * (drive === 'wealth' ? 1 : 0) + 0.45 * Number(inclinations?.speculation || 0)
         + 0.2 * Number(traits?.caution || 0);
     return Math.max(0, Math.min(1, centre + 0.3 * (TendencyRoll.roll('n45s', Number(characterId) || 0) - 0.5)));

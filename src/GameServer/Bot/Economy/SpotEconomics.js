@@ -16,8 +16,8 @@ function create(state, { timestamp = Date.now(), mode, occupancy, persona, death
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
-    const Valuation = require('./EconomicValuation');
-    const Tendency = require('../AI/TendencyRoll');
+    const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+    const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
     const positive = value => Math.max(0, Number(value) || 0);
     persona ||= invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
     const role = state.party?.role || state.stats?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId || 0);

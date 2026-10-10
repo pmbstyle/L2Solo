@@ -37,7 +37,7 @@ function evaluate(state = {}, options = {}) {
         target: { itemId: errand.selfId, amount: errand.amount },
         plan: { kind: 'market_buy', expectedBenefit: 'market_errand', marketTown: errand.town, purpose: errand.purpose },
         blockers: [] }];
-    const context = options.economy || require('../Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
+    const context = options.economy || invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state, { ...options, timestamp });
     options.onEconomy?.(context);
     const leaf = context.network.activity;
     if (!leaf) return [];
@@ -51,12 +51,12 @@ function evaluate(state = {}, options = {}) {
         if (!amount) return [];
         if (amount < leaf.amount) estimatedCost = leaf.price / leaf.amount * amount;
     }
-    const common = { priority: 50, blockers: [], inputHash: context.inputHash ?? require('../Fnv1a').fnv1a32(context.inputKey),
+    const common = { priority: 50, blockers: [], inputHash: context.inputHash ?? invoke('GameServer/Bot/Fnv1a').fnv1a32(context.inputKey),
         plan: { kind: leaf.kind, spotId: leaf.spotId || state.spotId, npcId: leaf.npcId,
             recipeId: leaf.recipeId, wishKey: leaf.rootKey, estimatedCost,
             targetId: leaf.targetId, economyActivity: leaf.activity } };
     if (leaf.activity === 'shopping' && itemId) {
-        const gear = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
+        const gear = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, itemId);
         const slot = Number(gear?.etc?.slot || 0);
         const itemName = state.inventory?.[String(itemId)]?.name
             || gear?.template?.name || `Item ${itemId}`;

@@ -31,7 +31,7 @@ function hours(spotId, state = {}, spots = invoke('GameServer/Bot/AI/SpotService
     if (!spotId) return 0;
     const entry = table(spots).get(String(spotId));
     if (!entry) { if (DiagnosticConfig.developerDiagnostics) missing++; return 0; }
-    if (require('../../Karma').closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
+    if (invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
     // ARCH-NOTE: the default world uses the authored 25-second trip; price
     // the actual downtime rather than charging a walk it does not perform.
     return (Trip.honest() ? entry.ms : Trip.AUTHOR_TRIP_MS) / 3600000;

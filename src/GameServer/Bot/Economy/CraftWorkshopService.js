@@ -10,7 +10,7 @@ const publicCandidates = new (require('./PublicWorkshopIndex').PublicWorkshopInd
 function togglePublicDigest(row, direction = 1) {
     const productId = Number(recipes().resolveByRecipeId(row[1])?.productId || 0);
     if (!productId) return;
-    const hash = require('../Fnv1a').fnv1a32(JSON.stringify(row));
+    const hash = invoke('GameServer/Bot/Fnv1a').fnv1a32(JSON.stringify(row));
     const scope = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(productId);
     for (const [index, key] of [[publicDigests, productId], [publicScopeDigests, scope]]) {
         const prior = index.get(key) || { xor: 0, sum: 0, count: 0 };
@@ -44,7 +44,7 @@ function watchedInputs() {
         for (const recipe of Object.values(recipes().loadRecipeItems())) {
             if (recipe.type === 'dwarven') inputIds.add(Number(recipe.recipeItemId));
         }
-        for (const id of require('./ProductionPolicy').GRADED_SHOTS) inputIds.add(id);
+        for (const id of invoke('GameServer/Bot/Economy/ProductionPolicy').GRADED_SHOTS) inputIds.add(id);
     }
     return inputIds;
 }
@@ -54,9 +54,9 @@ let unsubscribeOwnership = null;
 function remove(id, { recipes: dropRecipes = true, publish = true } = {}) {
     const removedRecipes = owners.get(Number(id)) || [];
     for (const row of publicRecipeRows(id)) { togglePublicDigest(row, -1); publicCandidates.remove(`w:${Number(id)}:${row[1]}`); }
-    if (publish) for (const recipeId of removedRecipes) require('../Population/ColdTableChannel').shared
+    if (publish) for (const recipeId of removedRecipes) invoke('GameServer/Bot/Population/ColdTableChannel').shared
         .changed('board', { key: `w:${Number(id)}:${recipeId}`, removed: true });
-    require('./ShotMarketIndex').native().remove(id);
+    invoke('GameServer/Bot/Economy/ShotMarketIndex').native().remove(id);
     if (dropRecipes) recipesChanged(id);
     for (const recipeId of owners.get(Number(id)) || []) {
         const records = byRecipe.get(recipeId);
@@ -78,7 +78,7 @@ function register(state) {
     remove(id, { recipes: state?.phase !== 'cold', publish: false });
     const publishRows = () => {
         const rows = publicRecipeRows(id), keys = new Set(rows.map(row => row[1]));
-        const channel = require('../Population/ColdTableChannel').shared;
+        const channel = invoke('GameServer/Bot/Population/ColdTableChannel').shared;
         for (const row of previousRows) if (!keys.has(row[1])) channel.changed('board', { key: `w:${id}:${row[1]}`, removed: true });
         for (const row of rows) {
             const prior = previousRows.find(old => old[1] === row[1]);
@@ -86,7 +86,7 @@ function register(state) {
         }
     };
     if (!state || state.phase !== 'cold') { publishRows(); return; }
-    require('./ShotMarketIndex').native().update(state);
+    invoke('GameServer/Bot/Economy/ShotMarketIndex').native().update(state);
     const items = new Set([...watchedInputs()].filter(itemId => Number(state.inventory?.[itemId]?.amount || 0) > 0));
     if (state.stats?.shotDemand?.itemId) items.add(Number(state.stats.shotDemand.itemId));
     if (state.stats?.shotRecipeDemand?.itemId) items.add(Number(state.stats.shotRecipeDemand.itemId));
@@ -193,7 +193,7 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expe
         }
         const materials = Profit.materials(await database.fetchItems(customerId), recipe, batches);
         if (!materials) throw new Error('workshop materials missing');
-        const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
+        const template = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
         if (!template) throw new Error('workshop product missing');
         if (customer.phase) {
             admitted = await Commit.admit(customer, Commit.KINDS.craft);
@@ -234,7 +234,7 @@ function cachedRecipes(id) { return knownRecipes.get(Number(id)) || []; }
 function bookFor(id) {
     id = Number(id);
     if (!knownRecipes.has(id)) return null;
-    if (!encodedRecipes.has(id)) encodedRecipes.set(id, require('./RecipeBookCodec').pack(knownRecipes.get(id)));
+    if (!encodedRecipes.has(id)) encodedRecipes.set(id, invoke('GameServer/Bot/Economy/RecipeBookCodec').pack(knownRecipes.get(id)));
     return encodedRecipes.get(id);
 }
 async function review(state) {
