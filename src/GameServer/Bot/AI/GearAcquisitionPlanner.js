@@ -2090,7 +2090,18 @@ function sourceYieldReaderFor(killerLevel) {
 // hour (1, the hour measure) less what the spot gives back (valueHours);
 // travel to a spot other than the current one is a round trip to the
 // spot's regional town. Unknown is explicit, never free.
+// Resolved once: a require() in the per-source loop re-resolved the module
+// path on every ready source (21% of the cold worker in a live profile).
+let EconomicTrip = null;
+// A spot's regional town depends only on its fixed centre and the static
+// town regions: one answer per planning spot object, no per-bot state.
+const spotTowns = new WeakMap();
+function* spotTown(spot) {
+    if (!spotTowns.has(spot)) spotTowns.set(spot, spot.center ? (yield* EconomicTrip.regionalTown(spot.center))?.name || null : null);
+    return spotTowns.get(spot);
+}
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
+    EconomicTrip ||= require('../Economy/EconomicTrip');
     const facts = [], ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
     const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
     const timestamp = options.timestamp ?? Date.now();
@@ -2125,10 +2136,10 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
         if (!Number.isFinite(row.valueHours)) { fact.status = 'unknown'; fact.reason = 'income'; continue; }
         let trip = { known: true, hours: 0, fees: 0 }, town = null;
         if (String(entry.spot.id) !== String(current)) {
-            town = entry.spot.center ? (yield* require('../Economy/EconomicTrip').regionalTown(entry.spot.center))?.name : null;
+            town = yield* spotTown(entry.spot);
             // A caller with prepared routes (the wish) passes its own reader.
             if (town && !trips.has(town)) trips.set(town, options.trip ? options.trip.details(town)
-                : yield* require('../Economy/EconomicTrip').details(state, town));
+                : yield* EconomicTrip.details(state, town));
             trip = town ? trips.get(town) : { known: false };
         }
         if (!trip?.known) { fact.status = 'unknown'; fact.reason = 'route'; continue; }

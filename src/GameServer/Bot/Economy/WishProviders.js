@@ -338,11 +338,16 @@ function buildProjection(state, ctx, deps) {
             let step;
             do step = steps.next(); while (!step.done);
             let best = null;
-            const diagnostic = Diagnostics.active();
+            const diagnostic = Diagnostics.active(), reasons = diagnostic ? new Map() : null;
             for (const fact of step.value) {
-                if (diagnostic) Diagnostics.count('provider', 'source_fact', fact.status === 'ready' ? 'ready' : fact.reason);
+                if (diagnostic) {
+                    const reason = fact.status === 'ready' ? 'ready' : fact.reason;
+                    reasons.set(reason, (reasons.get(reason) || 0) + 1);
+                }
                 if (fact.status === 'ready' && (!best || fact.costHours < best.costHours)) best = fact;
             }
+            // One count per reason and item: a per-fact count cost 4% of the worker.
+            if (diagnostic) for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
             if (diagnostic) Diagnostics.count('provider', 'source_path', best ? 'ready' : step.value.length ? 'refused' : 'no_source');
             farmFacts.set(Number(id), best);
         }

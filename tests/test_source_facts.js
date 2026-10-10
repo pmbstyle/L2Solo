@@ -76,6 +76,10 @@ try {
     assert(Number.isFinite(drop.tripHours) && drop.tripHours >= 0);
     assert.equal(drop.costHours, drop.hours * drop.netHourCost + drop.tripHours);
     assert.equal(travelled.stages.filter(stage => stage === 'source').length, 2, 'one step per index record');
+    // The spot's town is found once per planning spot: a later read walks no region edge and names the same town.
+    const again = drain(Planner.sourceFacts(away, 99101, 50, { spots, spotValue, timestamp: 1, trips }));
+    assert.equal(byKind(again.value).drop.town, drop.town);
+    assert(travelled.stages.includes('edge') && !again.stages.includes('edge'), 'regional town read once per spot');
     // A known non-spoiler is read once from its learned skills, never from a combat profile per spoil record.
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile'), profileFor = Profile.profileFor;
     let profiles = 0;
