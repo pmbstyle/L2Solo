@@ -105,6 +105,8 @@ try {
         'GameServer/Bot/BotAI': {},
         'GameServer/Bot/AI/HotAiDispatcher': {},
         'GameServer/Persistence/CharacterWriteQueue': {},
+        // The harness starts only with developer diagnostics on (452e4727).
+        'GameServer/Bot/Population/PopulationConfig': { developerDiagnostics: true },
         'GameServer/Bot/Population/BotLifeState': { counts: () => ({ cold: 120, total: 122 }) },
         'GameServer/Bot/Population/GeneratedColdSeeder': { running: false },
         'GameServer/Bot/Population/ColdSimulationCoordinator': coordinator

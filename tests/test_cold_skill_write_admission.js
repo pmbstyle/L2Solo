@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');

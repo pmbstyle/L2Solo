@@ -60,8 +60,9 @@ module.exports.inspectSources = async name => {
         assert.throws(() => new ColdSimulationKernel({ resolveSolo: () => ({}), stateSources: cap }), /already_attached/);
         assert.strictEqual(Runtime.index.getSource(1, 'state'), before);
         const count = LifeStateProjector.stateRevision();
+        // A newer revision passes the stale-row check (1fa28c5b) and reaches the cache write guard.
         const row = { characterId: 1, name: 'SourceNative', phase: 'cold', activity: 'crafting', level: 1,
-            inventoryJson: '{}', statsJson: '{}', updatedAt: original.updatedAt + 1 };
+            inventoryJson: '{}', statsJson: '{}', updatedAt: original.updatedAt + 1, simulationRevision: 3 };
         assert.throws(() => LifeStateProjector.acceptLifecycleRow(row), /worker_passive_state_write/);
         assert.strictEqual(Runtime.index.getSource(1, 'state'), before);
         assert.strictEqual(LifeStateProjector.stateRevision(), count);

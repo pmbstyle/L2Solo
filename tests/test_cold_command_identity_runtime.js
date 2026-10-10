@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const root = path.resolve(process.env.N53_GAME_ROOT || path.join(__dirname, '..'));

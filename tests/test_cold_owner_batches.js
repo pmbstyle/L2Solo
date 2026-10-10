@@ -216,7 +216,12 @@ async function createProbe(index) {
     assert(committedRows.length >= 1, 'the batch must commit at least one row');
     for (const result of committedRows) {
         const [stored] = await Database.execute(['SELECT * FROM bot_life_state WHERE characterId = ?', [result.characterId]]);
-        assert.deepStrictEqual({ ...result.row }, { ...stored }, `committed row ${result.characterId} equals the stored row`);
+        // acceptedIncoming/incomingPending are a projection of accepted trade
+        // custody (1fa28c5b, 81eae8c8), not bot_life_state columns.
+        const { acceptedIncoming, incomingPending, ...columns } = result.row;
+        assert.deepStrictEqual(acceptedIncoming, {}, `row ${result.characterId} has no accepted trade custody`);
+        assert.strictEqual(incomingPending, undefined);
+        assert.deepStrictEqual(columns, { ...stored }, `committed row ${result.characterId} equals the stored row`);
     }
     const byId = new Map(results.map((result) => [Number(result.characterId), result]));
     assert.strictEqual(byId.get(states[0].characterId).ok, true);

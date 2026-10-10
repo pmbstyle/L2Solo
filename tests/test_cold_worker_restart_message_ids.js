@@ -1,3 +1,4 @@
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 // L23: a restarted cold worker numbers its requests from 1 again (claim:1,
 // release:1). The main thread must drop a repeated id only within one worker
 // epoch, never the new worker's first requests.

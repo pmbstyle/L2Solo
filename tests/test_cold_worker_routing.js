@@ -680,7 +680,9 @@ try {
                 occupancy: {}
             });
         }
-        assert.strictEqual(rewardScans, 1,
+        // b93aef45 keeps one static reward atlas per rewards/npcs table, so the
+        // atlas built by an earlier route in this file may already serve both.
+        assert(rewardScans <= 1,
             'repeated cold fallback routes must reuse the reward index across context batches');
     } finally {
         delete rewards.forEach;
