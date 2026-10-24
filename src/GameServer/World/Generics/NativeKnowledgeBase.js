@@ -29,6 +29,7 @@ function service() {
         knowledge = cachedService(createKnowledgeBaseService({
             dataDir: path.join(__dirname, '../../../../data/KnowledgeBase'), progressionRates: rates,
             catalogueFactory: createExportedCatalogue,
+            nativeSkills: () => nativeData.skills,
             nativeCatalogue: Array.isArray(nativeData.items) && Array.isArray(nativeData.npcs)
                 && require('../../Items/C4RecipeItems').loadedSource() ? GameCatalogue.native() : null
         }), rates);

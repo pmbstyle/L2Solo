@@ -12,6 +12,8 @@ const Response = invoke('GameServer/Network/Response');
 const World = invoke('GameServer/World/World');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Router = invoke('GameServer/Bot/AI/PartyLLMRouter');
+const PublicHistory = invoke('GameServer/Bot/AI/BotClanConversationStore');
+const Conversations = invoke('GameServer/Bot/AI/BotConversationStore');
 const saved = { ai: options.default.AI, or: options.default.OpenRouter, find: Clan.findById,
     sessions: Manager.sessions, cached: Life.cachedState, speak: Response.speak,
     user: World.user, log: Config.devLogPlayerChat, router: Router.enabled };
@@ -30,6 +32,7 @@ function member(id, name, clanId, bot = false) {
     };
 }
 function setup() {
+    Conversations.resetMemory();
     const id = nextClan++;
     const player = member(101, 'Player', id);
     const other = member(102, 'Friend', id);
@@ -97,7 +100,7 @@ async function main() {
         assert.strictEqual(requests.length, 1, 'continuation reuses its delivered responder');
         let payload = JSON.parse(requests[0].messages[1].content);
         assert.strictEqual(payload.bot.id, 202);
-        assert(payload.recentClanTurns.some(turn => turn.text === result.reply));
+        assert(requests[0].messages.some(turn => turn.role === 'assistant' && turn.content.endsWith(result.reply)));
         requests.length = 0;
         await send('Arina, hello');
         assert.strictEqual(requests.length, 1, 'explicit names bypass the LLM router');
@@ -135,12 +138,12 @@ async function main() {
         requests.length = 0;
         await send('Arina, did you hear us?', f.other);
         payload = JSON.parse(requests[0].messages[1].content);
-        assert(payload.recentClanTurns.some(turn => turn.name === 'Player'), 'clanmates share public history');
+        assert(requests[0].messages.some(turn => turn.role === 'user' && turn.content.startsWith('Player: ')), 'clanmates share public history');
         assert.strictEqual(payload.player.name, 'Friend');
         f = setup();
         await send('Arina, new clan here');
         payload = JSON.parse(requests[0].messages[1].content);
-        assert.strictEqual(payload.recentClanTurns.length, 1, 'another clan cannot inherit previous clan history');
+        assert.strictEqual(requests[0].messages.filter(turn => turn.role === 'assistant').length, 0, 'another clan cannot inherit previous clan history');
         requests.length = 0;
         await send('Arina, hello', f.stranger);
         await send('Arina, hello', f.hot);
@@ -178,7 +181,7 @@ async function main() {
         assert.deepStrictEqual(requests.map(r => r.model), ['test/router', 'test/main', 'test/main']);
         payload = JSON.parse(requests[2].messages[1].content);
         assert.strictEqual(payload.bot.id, 202);
-        assert(payload.recentClanTurns.some(turn => turn.role === 'bot' && turn.text === 'First answer.'));
+        assert(requests[2].messages.some(turn => turn.role === 'assistant' && turn.content.endsWith('First answer.')));
 
         f = setup();
         respond = async () => { f.clan.members = f.clan.members.filter(m => m.id !== 201); return { action: 'say', reply: 'Too late.' }; };
@@ -199,6 +202,34 @@ async function main() {
             assert.strictEqual((await send('Arina, hello')).reason, 'membership_changed');
             assert.strictEqual(takeoverCalls, 0, 'departed sender cannot trigger the model party action');
         } finally { Takeover.request = takeoverRequest; }
+        const historyAppend = PublicHistory.append;
+        try {
+            for (const change of ['actor', 'membership', 'speaker']) {
+                f = setup();
+                let releaseHistory, enteredHistory = false, joinCalls = 0;
+                PublicHistory.append = async (_clanId, turn) => {
+                    if (turn.role === 'player') {
+                        enteredHistory = true;
+                        await new Promise(resolve => { releaseHistory = resolve; });
+                    }
+                    return true;
+                };
+                Takeover.request = async () => { joinCalls++; return { ok: true, reply: 'Joined.' }; };
+                const joining = send('Arina, can I join your party?');
+                await spinUntil(() => enteredHistory && releaseHistory);
+                if (change === 'actor') {
+                    f.player.actor = member(103, 'Replacement', f.id).actor;
+                    f.clan.members.push({ id: 103, name: 'Replacement' });
+                } else if (change === 'membership') f.player.actor.fetchClanId = () => 0;
+                else f.clan.members = f.clan.members.filter(entry => entry.id !== 201);
+                releaseHistory();
+                const stale = await joining;
+                assert.strictEqual(stale.reason, change === 'actor' ? 'actor_changed' : change === 'membership' ? 'membership_changed' : 'speaker_unavailable');
+                assert.strictEqual(joinCalls, 0, `${change} changes during history persistence must stop the native join action`);
+                assert.strictEqual(requests.length, 0, 'stale public-history continuations cannot reach inference');
+                assert.strictEqual(f.other.inbox.length, 0);
+            }
+        } finally { PublicHistory.append = historyAppend; Takeover.request = takeoverRequest; }
         f = setup();
         respond = async r => { f.clan.members = f.clan.members.filter(m => m.id !== 202);
             return { route: 'bot', botId: 202, intent: 'conversation', confidence: 1, reason: 'clanmate' }; };

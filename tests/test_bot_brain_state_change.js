@@ -62,9 +62,6 @@ async function main() {
                 choices: [{ message: { content: JSON.stringify({
                     action: 'none',
                     reply: '',
-                    targetPlayerName: '',
-                    spotId: '',
-                    buffPolicyType: '',
                     reason: 'state_change_probe',
                     confidence: 0.9
                 }) } }]

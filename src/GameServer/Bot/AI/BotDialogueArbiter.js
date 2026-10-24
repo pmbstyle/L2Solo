@@ -20,6 +20,9 @@ function fallbackText(botSession, reason) {
 }
 
 function deliverFallback(input, turn, reason) {
+    const playerActor = input.playerSession?.actor, botActor = input.botSession?.actor;
+    const alive = () => input.playerSession?.actor === playerActor && input.botSession?.actor === botActor;
+    const pair = BotConversationService.capturePair(input);
     const BotManager = invoke('GameServer/Bot/BotManager');
     const reply = fallbackText(input.botSession, reason);
     const botId = input.botSession?.actor?.fetchId?.() || input.botSession?.accountId || null;
@@ -73,21 +76,21 @@ function deliverFallback(input, turn, reason) {
                 (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ action: 'fallback', reply, reason: reason || 'fallback' }) : null,
                 metadata,
                 async () => {
-                    BotManager.botTell(input.botSession, input.playerSession, reply);
+                    if (!alive()) return { ok: false, delivered: false };
+                    BotManager.botTell(input.botSession, input.playerSession, reply, { channel });
                     delivered = true;
                     recordDeliveredReply(input, turn, reply);
                     return { ok: true, reply, delivered: true };
                 },
                 'chain'
             );
-            persisted = turnId
+            persisted = turnId && delivered
                 ? await LangfuseTracing.withObservation(
                     'bot.conversation.persist',
                     (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? ({ botId, playerId, turnId, fallback: true }) : null,
                     metadata,
                     () => BotConversationService.recordFallback({
-                        playerSession: input.playerSession,
-                        botSession: input.botSession,
+                        ...pair,
                         turnId,
                         channel,
                         text: reply,
@@ -103,19 +106,18 @@ function deliverFallback(input, turn, reason) {
         'agent'
     ).catch(async (traceError) => {
         utils.infoWarn('Langfuse', 'fallback trace failed for %s: %s', input.botSession?.actor?.fetchName?.() || 'bot', traceError.message);
-        if (!delivered) {
+        if (!delivered && alive()) {
             try {
-                BotManager.botTell(input.botSession, input.playerSession, reply);
+                BotManager.botTell(input.botSession, input.playerSession, reply, { channel });
                 delivered = true;
                 recordDeliveredReply(input, turn, reply);
             } catch (_) {
                 delivered = false;
             }
         }
-        if (turnId && !persisted) {
+        if (turnId && delivered && !persisted) {
             persisted = await BotConversationService.recordFallback({
-                playerSession: input.playerSession,
-                botSession: input.botSession,
+                ...pair,
                 turnId,
                 channel,
                 text: reply,
@@ -127,6 +129,7 @@ function deliverFallback(input, turn, reason) {
 }
 
 async function executePartyJoin(input, turn) {
+    const playerActor = input.playerSession.actor, botActor = input.botSession.actor;
     const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
     const BotManager = invoke('GameServer/Bot/BotManager');
     const result = await Takeover.request({
@@ -134,8 +137,9 @@ async function executePartyJoin(input, turn) {
         target: input.botSession,
         source: input.source || input.channel || 'hot_dialogue'
     });
+    if (input.playerSession.actor !== playerActor || input.botSession.actor !== botActor) return { ok: false, reason: 'actor_changed' };
     const reply = result.reply || 'We cannot change the party right now.';
-    BotManager.botTell(input.botSession, input.playerSession, reply);
+    BotManager.botTell(input.botSession, input.playerSession, reply, { channel: turn.channel });
     recordDeliveredReply(input, turn, reply);
     await BotConversationService.recordBotReply({
         playerSession: input.playerSession,
@@ -175,9 +179,12 @@ function route(input = {}) {
         return Promise.resolve({ ok: false, reason: 'invalid_hot_pair' });
     }
 
+    const playerActor = input.playerSession.actor;
+    const botActor = input.botSession.actor;
     let turnForFallback = null;
     return BotConversationService.beginTurn(input).then((turn) => {
         turnForFallback = turn;
+        if (input.playerSession.actor !== playerActor || input.botSession.actor !== botActor) return { ok: false, reason: 'actor_changed' };
         const BotSocialMemory = invoke('GameServer/Bot/AI/BotSocialMemory');
         Promise.resolve(BotSocialMemory.recordEvent(
             input.playerSession,
@@ -196,6 +203,7 @@ function route(input = {}) {
         const status = BotAI.getStatus(input.botSession);
         const requestContext = {
             playerSession: input.playerSession,
+            playerActor,
             source: input.source || input.channel || 'hot_dialogue',
             channel: turn.channel,
             requestId: input.requestId,
@@ -212,6 +220,7 @@ function route(input = {}) {
             text: turn.playerText,
             requestContext
         }).then((assembledContext) => {
+            if (input.playerSession.actor !== playerActor || input.botSession.actor !== botActor) return { ok: false, reason: 'actor_changed' };
             const started = BotBrain.maybeThink(
                 input.botSession,
                 'player_chat',
@@ -226,6 +235,7 @@ function route(input = {}) {
             return { ok: true, started, queued: input.queued === true, turn, assembledContext };
         });
     }).catch((error) => {
+        if (input.playerSession.actor !== playerActor || input.botSession.actor !== botActor) return { ok: false, reason: 'actor_changed' };
         if (input.allowFallback === false || !input.playerSession?.actor || !input.botSession?.actor) {
             return { ok: false, reason: 'conversation_error' };
         }

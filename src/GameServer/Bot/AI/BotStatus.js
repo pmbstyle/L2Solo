@@ -248,7 +248,7 @@ function tradeSnapshot(session, bot) {
 }
 
 function personaSnapshot(session) {
-    const persona = session?.persona;
+    const persona = invoke('GameServer/Bot/AI/BotPersona').of(session);
     if (!persona?.primaryDrive || !persona?.archetype || !persona?.traits) return null;
 
     return {

@@ -10,6 +10,8 @@ const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const MemoryPolicy = invoke('GameServer/Social/InteractionMemoryPolicy');
+const Social = invoke('GameServer/Bot/AI/BotSocialMemory');
+const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
 
 function actor(id, name) {
     return {
@@ -35,10 +37,12 @@ async function main() {
     const originalAI = options.default.AI;
     const originalWithObservation = LangfuseTracing.withObservation;
     const originalWithRootObservation = LangfuseTracing.withRootObservation;
+    const originalSocialLoad = Social.load;
+    const originalTakeover = Takeover.request;
     try {
         options.default.AI = undefined;
         options.default.OpenRouter = { ...originalConfig, enabled: true, apiKey: 'switch-test-key',
-            model: 'test/actor-switch', maxConcurrentRequests: 2 };
+            model: 'test/actor-switch', maxConcurrentRequests: 2, strictSchema: false };
         BotConversationStore.resetMemory();
         LangfuseTracing.withObservation = (name, input, metadata, work) => Promise.resolve(work(null));
         LangfuseTracing.withRootObservation = (name, input, metadata, work) => Promise.resolve(work(null));
@@ -46,7 +50,7 @@ async function main() {
         const requests = [], releases = [];
         OpenRouterGateway.setTransport((_url, init) => {
             const body = JSON.parse(init.body);
-            requests.push(JSON.parse(body.messages[1].content).playerMessage);
+            requests.push(body.messages.at(-1).content);
             const answer = response({ choices: [{ message: { content: JSON.stringify({
                 action: 'say', reply: `reply-${requests.length}`, reason: 'test_reply', confidence: 0.95
             }) } }] });
@@ -80,6 +84,24 @@ async function main() {
             'the question stays with the character that asked');
         const replacement = await BotConversationStore.context(9203, 9202);
         assert.deepStrictEqual(replacement.recentTurns, [], 'no answer of the old turn is stored under the new character');
+
+        playerSession.actor = first;
+        packets.length = 0;
+        let releaseSocial, enteredSocial = false, takeoverCalls = 0;
+        Social.load = async () => {
+            enteredSocial = true;
+            await new Promise(resolve => { releaseSocial = resolve; });
+            return { trust: 0, familiarity: 0, groupRuns: 0, tradesCompleted: 0 };
+        };
+        Takeover.request = async () => { takeoverCalls++; return { ok: true, reply: 'Joined.' }; };
+        const joining = BotRemoteChat.replyForState(playerSession, { ...state, party: { partyId: 'background-party' } }, 'Can I join your party?');
+        await until(() => enteredSocial && releaseSocial);
+        playerSession.actor = second;
+        releaseSocial();
+        assert.strictEqual((await joining).reason, 'actor_changed');
+        assert.strictEqual(takeoverCalls, 0, 'a character switch during social-memory loading must stop the native join action');
+        assert.deepStrictEqual(packets, []);
+        assert.strictEqual(requests.length, 1, 'a stale social-memory continuation cannot reach inference');
         console.log('Remote chat character switch isolation passed');
         process.exitCode = 0;
     } finally {
@@ -87,6 +109,8 @@ async function main() {
         options.default.AI = originalAI;
         LangfuseTracing.withObservation = originalWithObservation;
         LangfuseTracing.withRootObservation = originalWithRootObservation;
+        Social.load = originalSocialLoad;
+        Takeover.request = originalTakeover;
         OpenRouterGateway.resetCircuit();
         OpenRouterGateway.resetTransport();
         BotConversationStore.resetMemory();

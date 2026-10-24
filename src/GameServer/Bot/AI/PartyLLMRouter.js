@@ -1,5 +1,6 @@
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const Budget = require('./BotInferenceBudget');
 
 const ROUTER_SCHEMA = {
     name: 'party_chat_route',
@@ -156,38 +157,49 @@ async function route(input = {}) {
         userPayload,
         metadata,
         async () => {
-            const result = await OpenRouterGateway.request({
-                config: {
-                    ...cfg,
-                    model: cfg.model,
-                    maxTokens: ROUTER_MAX_TOKENS,
-                    timeoutMs: group === 'clan' ? 60000 : 0
-                },
-                requestId: `${group}-router:${botId || 'unknown'}:${Date.now()}`,
-                sessionId: `${group}-router:${botId || 'unknown'}`,
-                circuitKey: `${group}-router`,
-                source: `${group}_router`,
-                playerId: botId,
-                interactive: false,
-                messages: [
-                    {
-                        role: 'system',
-                        content: [
-                            `You are a strict ${group}-chat router for an online game.`,
-                            'Choose at most one current candidate bot; never invent IDs.',
-                            `Use route=${group} only when the message is genuinely for the whole ${group}.`,
-                            'Use clarify when a human should clarify an ambiguous addressee.',
-                            'Never use none merely because the addressee is ambiguous; use clarify.',
-                            'Use none only for messages that genuinely need no bot response.',
-                            'For example, "who should answer this?" is clarify, not none.',
-                            'Return only the required JSON object. Do not call tools and do not roleplay.'
-                        ].join(' ')
-                    },
-                    { role: 'user', content: JSON.stringify(userPayload) }
-                ],
-                responseSchema,
-                repairSchema: true
+            const admission = Budget.reserveForBotId(candidates[0].id, {
+                event: `${group}_router`, bypass: true, priority: 'interactive',
+                estimatedPromptTokens: Math.ceil(JSON.stringify(userPayload).length / 4), maxCompletionTokens: ROUTER_MAX_TOKENS
             });
+            const granted = admission.ready ? await admission.ready : admission;
+            if (!granted?.ok) return { ok: false, route: 'none', reason: granted?.reason || 'budget_denied' };
+            const reservation = granted.reservation;
+            let result;
+            try {
+                Budget.markStarted(reservation);
+                result = await OpenRouterGateway.request({
+                    config: {
+                        ...cfg,
+                        model: cfg.model,
+                        maxTokens: ROUTER_MAX_TOKENS,
+                        timeoutMs: group === 'clan' ? 60000 : 0
+                    },
+                    requestId: `${group}-router:${botId || 'unknown'}:${Date.now()}`,
+                    sessionId: `${group}-router:${botId || 'unknown'}`,
+                    circuitKey: `${group}-router`,
+                    source: `${group}_router`,
+                    playerId: botId,
+                    interactive: false,
+                    messages: [
+                        {
+                            role: 'system',
+                            content: [
+                                `You are a strict ${group}-chat router for an online game.`,
+                                'Choose at most one current candidate bot; never invent IDs.',
+                                `Use route=${group} only when the message is genuinely for the whole ${group}.`,
+                                'Use clarify when a human should clarify an ambiguous addressee.',
+                                'Never use none merely because the addressee is ambiguous; use clarify.',
+                                'Use none only for messages that genuinely need no bot response.',
+                                'For example, "who should answer this?" is clarify, not none.',
+                                'Return only the required JSON object. Do not call tools and do not roleplay.'
+                            ].join(' ')
+                        },
+                        { role: 'user', content: JSON.stringify(userPayload) }
+                    ],
+                    responseSchema,
+                    repairSchema: true
+                });
+            } finally { Budget.settle(reservation, result?.usage); }
 
             if (!result?.ok) {
                 return {

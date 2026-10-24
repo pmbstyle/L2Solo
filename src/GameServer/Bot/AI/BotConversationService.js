@@ -12,6 +12,17 @@ function actorName(session) {
     return session?.actor?.fetchName?.() || session?.name || null;
 }
 
+// Queued persistence must keep the identities present at delivery, even if a
+// connection selects another character before its write runs.
+function capturePair(input) {
+    const identity = session => {
+        const id = actorId(session), name = actorName(session);
+        return { accountId: session?.accountId, accountName: session?.accountName,
+            characterId: id, name, actor: session?.actor ? { fetchId: () => id, fetchName: () => name } : null };
+    };
+    return { ...input, playerSession: identity(input.playerSession), botSession: identity(input.botSession) };
+}
+
 function isBotIdentity(session) {
     if (!session) return false;
     const account = String(session.accountId || session.accountName || '').toLowerCase();
@@ -39,7 +50,9 @@ function conversationMeta(meta) {
     if (meta.actionResult && typeof meta.actionResult === 'object') {
         compact.actionResult = {
             ok: meta.actionResult.ok === true,
-            reason: meta.actionResult.reason || null
+            reason: meta.actionResult.reason || null,
+            outcome: meta.actionResult.outcome || null,
+            effect: meta.actionResult.effect || null
         };
     }
     return Object.keys(compact).length ? compact : null;
@@ -124,9 +137,10 @@ function recordBotReply(input = {}) {
     const text = normalizeText(input.text);
     if (!text || !input.turnId) return Promise.resolve(false);
 
+    const playerId = actorId(input.playerSession), botId = actorId(input.botSession);
     return BotConversationStore.appendTurn({
-        playerId: actorId(input.playerSession),
-        botId: actorId(input.botSession),
+        playerId,
+        botId,
         turnId: input.turnId,
         role: 'bot',
         channel: normalizeChannel(input.channel),
@@ -136,8 +150,8 @@ function recordBotReply(input = {}) {
         meta: input.meta || null
     }).then(() => {
         BotConversationSummarizer.summarize({
-            playerId: actorId(input.playerSession),
-            botId: actorId(input.botSession),
+            playerId,
+            botId,
             requestId: input.requestId
         }).catch(() => {});
         return true;
@@ -160,6 +174,7 @@ function contextFor(playerSession, botSession, options = {}) {
 const BotConversationService = {
     DEFAULT_RECENT_TURNS,
     validPair,
+    capturePair,
     beginTurn,
     recordBotReply,
     recordFallback,

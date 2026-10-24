@@ -13,6 +13,10 @@ const Journal = invoke('GameServer/Bot/AI/BotEventJournal');
 const Panel = invoke('GameServer/World/Generics/NpcBypasses/CompanionControl');
 const Takeover = invoke('GameServer/Bot/AI/PlayerPartyTakeover');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Database = invoke('Database');
+const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const restoreAutonomousParty = Takeover.restoreAutonomousParty;
 const { partyTradeAllowed } = require('../src/GameServer/Bot/Population/PartyAdmission');
 
 const saved = [];
@@ -154,6 +158,35 @@ try {
     assert.equal(Companion.detachAll(leader, { rebuildWindow: false, refreshPanel: false }), 2);
     await leader.partyTakeoverRestorePromise;
     assert.deepStrictEqual(released, [101, 102, 101, 102], 'failed restoration also retires current player ownership');
+
+    // Publish the entire restored route before any urgent AI tick can run.
+    const restoredParty = { partyId, spotId: 'original-farm', memberIds: [101, 102] };
+    let restoredStates = states.map(state => ({ ...state, phase: 'hot', party: { partyId } }));
+    replace(Database, 'restoreTakenOverBackgroundParty', async () => ({ ok: true, party: restoredParty, rows: restoredStates }));
+    replace(Parties, 'acceptRow', row => row);
+    replace(Life, 'settleWrites', async () => {});
+    replace(Life, 'acceptLifecycleRow', row => row);
+    const dirty = [];
+    replace(Coordinator, 'markDirty', state => dirty.push(state.characterId));
+    const wakes = [];
+    replace(BotAI, 'wakeup', session => {
+        assert(roster.every(member => member.hotBackgroundPartyId === partyId
+            && member.plan === 'hunting'
+            && member.backgroundPartyReturn?.partyId === partyId
+            && member.backgroundPartyReturn?.spotId === restoredParty.spotId),
+        'every restored member must have its return destination before the first AI wakeup');
+        wakes.push(session.actor.fetchId());
+    });
+    assert((await restoreAutonomousParty({ partyId, playerId: 9001, companionSessions: roster })).ok);
+    assert.deepStrictEqual(wakes, [101, 102], 'hot restored members wake to return to their farming spot');
+    assert.deepStrictEqual(dirty, [], 'hot restoration stays with the native AI');
+
+    restoredStates = restoredStates.map(state => ({ ...state, phase: 'cold' }));
+    wakes.length = 0;
+    assert((await restoreAutonomousParty({ partyId, playerId: 9001, companionSessions: roster })).ok);
+    assert.deepStrictEqual(wakes, [], 'cold restoration must not start hot travel');
+    assert.deepStrictEqual(dirty, [101, 102], 'cold restoration resumes through the simulation coordinator');
+    assert(roster.every(member => member.backgroundPartyReturn === undefined), 'cold restoration clears obsolete hot return intent');
 
 } finally {
     while (saved.length) saved.pop()();

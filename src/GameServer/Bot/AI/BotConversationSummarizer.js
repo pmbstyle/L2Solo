@@ -186,6 +186,7 @@ async function summarize(input = {}) {
 
         let result = null;
         try {
+            BotInferenceBudget.markStarted(admission.reservation);
             result = await OpenRouterGateway.request({
                 config: cfg,
                 circuitKey: `conversation-summary:${botId}:${playerId}`,

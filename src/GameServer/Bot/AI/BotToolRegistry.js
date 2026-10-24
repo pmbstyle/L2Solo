@@ -87,7 +87,7 @@ const PK_LOCKED_REGISTRY_ACTIONS = new Set([
 ]);
 
 function requiresFreshWorld(action) {
-    return !SOFT_FRESHNESS_ACTIONS.has(String(action || ''));
+    return definitions.get(String(action || ''))?.mutating !== false && !SOFT_FRESHNESS_ACTIONS.has(String(action || ''));
 }
 
 function isAvailable(definition, session) {
@@ -195,7 +195,7 @@ function execute(context = {}) {
         audit({ ...context, decision: { ...decision, action } }, 'rejected', rejected.reason);
         return rejected;
     }
-    if (mutationStore && mutationKey && mutationStore.has(mutationKey)) {
+    if (definition.mutating && mutationStore && mutationKey && mutationStore.has(mutationKey)) {
         const previous = mutationStore.get(mutationKey);
         const replay = (resolved) => {
             audit({ ...context, decision: { ...decision, action } }, auditOutcome(resolved), 'idempotent_replay');
@@ -254,7 +254,7 @@ function execute(context = {}) {
 
     const finalize = (outcome) => {
         const normalized = result(outcome?.applied, outcome?.reason, outcome);
-        if (mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
+        if (definition.mutating && mutationStore && mutationKey) mutationStore.set(mutationKey, normalized);
         audit({ ...context, decision: { ...decision, action } }, auditOutcome(normalized), normalized.reason, {
             idempotent: false,
             currentRevision: worldRevision(session),
@@ -273,7 +273,7 @@ function execute(context = {}) {
         const pending = outcome
             .then(finalize)
             .catch((error) => finalize(result(false, `tool_error:${text(error.message, 120)}`)));
-        if (mutationStore && mutationKey) mutationStore.set(mutationKey, pending);
+        if (definition.mutating && mutationStore && mutationKey) mutationStore.set(mutationKey, pending);
         return pending;
     }
     return finalize(outcome);

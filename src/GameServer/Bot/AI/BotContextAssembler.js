@@ -1,6 +1,8 @@
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
+const Protocol = require('./BotDialogueProtocol');
+const Knowledge = require('./BotDialogueKnowledge');
 
 const DEFAULT_BUDGET = 1200;
 const HARD_MAX_TOKENS = 1800;
@@ -59,23 +61,6 @@ function compactJournal(events, max = 10) {
     }));
 }
 
-function fitString(value, tokenBudget) {
-    const maxChars = Math.max(32, tokenBudget * 4);
-    return trimText(value, maxChars);
-}
-
-function fitFragment(fragment, remainingTokens) {
-    if (estimateTokens(fragment.value) <= remainingTokens) return fragment;
-    if (typeof fragment.value === 'string') {
-        return { ...fragment, value: fitString(fragment.value, remainingTokens) };
-    }
-    const serialized = JSON.stringify(fragment.value);
-    return {
-        ...fragment,
-        value: fitString(serialized, remainingTokens)
-    };
-}
-
 async function assemble(input = {}) {
     const session = input.session;
     const status = input.status;
@@ -86,10 +71,14 @@ async function assemble(input = {}) {
     const conversation = requestContext.conversation || null;
     const recentTurns = conversation?.recentTurns || [];
     const merchantSlice = session?.plan === 'merchant';
-    const itemFollowup = /^(?:is (?:it|that)|are (?:they|those)|what about (?:it|that|them)|and (?:it|that|them)|which one)\b/i.test(String(text || '').trim()) &&
+    const itemFollowup = /^(?:is (?:it|that)|are (?:they|those)|what about (?:it|that|them)|and (?:it|that|them)|which one)\b|^(?:\u0430\s+)?(?:\u043e\u043d|\u043e\u043d\u0430|\u043e\u043d\u043e|\u043e\u043d\u0438|\u044d\u0442\u043e\u0442|\u044d\u0442\u0430|\u044d\u0442\u043e|\u044d\u0442\u0438)\s/i.test(String(text || '').trim()) &&
         recentTurns.slice(-4).some((turn) => BotBrainContext.textRequestsInventory(turn?.text));
     const itemIntent = merchantSlice || BotBrainContext.textRequestsInventory(text) || itemFollowup;
-    const skillIntent = !merchantSlice && textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|скилл|хил|баф|хаст|щит|майт|винд|спойл|свип/);
+    const learnedSkillMention = (session?.actor?.skillset?.fetchSkills?.() || []).some(skill => {
+        const name = String(skill.model?.name || '').toLowerCase();
+        return name.length >= 3 && String(text).toLowerCase().includes(name);
+    });
+    const skillIntent = !merchantSlice && (learnedSkillMention || textWants(text, /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b|\u0441\u043a\u0438\u043b\u043b|\u043d\u0430\u0432\u044b\u043a|\u0445\u0438\u043b|\u0431\u0430\u0444|\u0445\u0430\u0441\u0442|\u0449\u0438\u0442|\u043c\u0430\u0439\u0442|\u0432\u0438\u043d\u0434|\u0441\u043f\u043e\u0439\u043b|\u0441\u0432\u0438\u043f/));
     let bot;
     try {
         bot = merchantSlice
@@ -115,7 +104,7 @@ async function assemble(input = {}) {
 
     let journal = [];
     if (session?.actor?.fetchId) {
-        journal = await BotEventJournal.recent({
+        journal = await BotEventJournal.search({
             playerId: requestContext.playerSession?.actor?.fetchId?.() || requestContext.playerId,
             botId: session.actor.fetchId(),
             limit: input.journalLimit || 10
@@ -125,17 +114,12 @@ async function assemble(input = {}) {
         }
     }
 
+    if (requestContext.playerSession && session) {
+        // A session-wide last-social-event card may belong to another player.
+        bot = { ...bot, social: await Knowledge.relationship(requestContext.playerSession, session) };
+    }
+    if (session) bot = { ...bot, ...await Knowledge.selfContext(session, text, conversation || {}) };
     const fragments = [
-        {
-            id: 'conversation_summary',
-            priority: 95,
-            value: conversation?.summary ? trimText(conversation.summary, 1200) : null
-        },
-        {
-            id: 'recent_dialogue',
-            priority: 90,
-            value: compactRecentTurns(conversation?.recentTurns, input.recentTurns || 8)
-        },
         {
             id: 'authoritative_events',
             priority: 85,
@@ -143,48 +127,20 @@ async function assemble(input = {}) {
         }
     ].filter((fragment) => fragment.value !== null && fragment.value !== undefined);
 
-    const selected = [];
-    // `bot` is a canonical payload field (rather than a duplicated fragment),
-    // but it still consumes the same prompt budget.
-    let used = estimateTokens(bot);
-    fragments.sort((a, b) => b.priority - a.priority).forEach((fragment) => {
-        const cost = estimateTokens(fragment.value);
-        if (used + cost <= budget) {
-            selected.push(fragment);
-            used += cost;
-            return;
-        }
-        const remaining = budget - used;
-        if (remaining >= 48) {
-            const fitted = fitFragment(fragment, remaining);
-            const fittedCost = estimateTokens(fitted.value);
-            if (fittedCost <= remaining) {
-                selected.push(fitted);
-                used += fittedCost;
-            }
-        }
-    });
-
-    // The status is kept as a separate compatibility field, but the bounded
-    // fragments are the canonical prompt input. Never let a malformed fixture
-    // or a long player name break the hard cap.
-    let serializedCost = estimateTokens({ bot, fragments: selected.map((fragment) => ({ id: fragment.id, value: fragment.value })) });
-    if (serializedCost > hardMaxTokens) {
-        const overflow = serializedCost - hardMaxTokens;
-        const last = selected[selected.length - 1];
-        if (last) {
-            const fitted = fitFragment(last, Math.max(48, estimateTokens(last.value) - overflow));
-            selected[selected.length - 1] = fitted;
-            serializedCost = estimateTokens({ bot, fragments: selected.map((fragment) => ({ id: fragment.id, value: fragment.value })) });
-        }
-    }
+    const bounded = Protocol.fitContext({ bot, conversation: {
+        summary: conversation?.summary ? trimText(conversation.summary, 1200) : null,
+        recentTurns: compactRecentTurns(conversation?.recentTurns, input.recentTurns || 8)
+    }, contextFragments: fragments.map(({ id, value }) => ({ id, value })) }, hardMaxTokens);
+    const selected = bounded.contextFragments || [];
+    const serializedCost = estimateTokens(bounded);
 
     return {
-        bot,
-        conversation,
-        fragments: selected.map((fragment) => ({ id: fragment.id, value: fragment.value })),
+        bot: bounded.bot,
+        conversation: bounded.conversation,
+        fragments: selected,
+        omitted: bounded.omitted,
         journal,
-        estimatedTokens: Math.min(hardMaxTokens, serializedCost),
+        estimatedTokens: serializedCost,
         budget,
         hardMaxTokens,
         telemetry: DiagnosticConfig.developerDiagnostics ? {
@@ -195,7 +151,7 @@ async function assemble(input = {}) {
             skillIntent,
             contextSlice: merchantSlice ? 'merchant' : 'general',
             journalCount: journal.length,
-            estimatedTokens: Math.min(hardMaxTokens, serializedCost)
+            estimatedTokens: serializedCost
         } : { enabled: false }
     };
 }

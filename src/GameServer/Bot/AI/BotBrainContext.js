@@ -37,8 +37,8 @@ function safeNumber(read, fallback = 0) {
 
 function textRequestsInventory(text = '') {
     const lower = String(text || '').toLowerCase();
-    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|give|bring|spare|need|have|sell|buy|equip|equipped|upgrade)\b/.test(lower) ||
-        /(инвент|вещ|шмот|оруж|брон|аден|сос|шоты|шот|трейд|лут|дай|принес|принести|запас|нужн|есть|прод|экип|надет|улучш)/.test(lower);
+    return /\b(item|items|inventory|gear|weapon|armor|adena|shot|shots|soulshot|soulshots|spiritshot|spiritshots|trade|loot|sell|buy|equip|equipped|upgrade|potion|potions|resources)\b/.test(lower) ||
+        /(\u0438\u043d\u0432\u0435\u043d\u0442|\u0448\u043c\u043e\u0442|\u043e\u0440\u0443\u0436|\u0431\u0440\u043e\u043d|\u0430\u0434\u0435\u043d|\u0441\u043e\u0441\u043a\u0438|\u0448\u043e\u0442\u044b|\u0448\u043e\u0442|\u0442\u0440\u0435\u0439\u0434|\u043b\u0443\u0442|\u0437\u0435\u043b\u044c|\u0440\u0435\u0441\u0443\u0440\u0441|\u044d\u043a\u0438\u043f|\u043d\u0430\u0434\u0435\u0442)/.test(lower);
 }
 
 function compactTarget(target) {
@@ -252,7 +252,7 @@ function skillsSnapshot(actor, text = '') {
     const skills = actor?.skillset?.fetchSkills ? actor.skillset.fetchSkills() : [];
     const lower = String(text || '').toLowerCase();
     const wantsSkills = /\b(skill|skills|heal|buff|haste|shield|might|wind walk|windwalk|spoil|sweep)\b/.test(lower) ||
-        /(скилл|хил|баф|хаст|щит|майт|винд|спойл|свип)/.test(lower);
+        /(\u0441\u043a\u0438\u043b\u043b|\u0445\u0438\u043b|\u0431\u0430\u0444|\u0445\u0430\u0441\u0442|\u0449\u0438\u0442|\u043c\u0430\u0439\u0442|\u0432\u0438\u043d\u0434|\u0441\u043f\u043e\u0439\u043b|\u0441\u0432\u0438\u043f)/.test(lower);
     const active = skills
         .filter((skill) => !skill.fetchPassive())
         .slice(0, wantsSkills ? 24 : 12)

@@ -35,13 +35,13 @@ function priceInMessage(message) {
         const amount = Number(compact[1].replace(',', '.')) * multiplier;
         if (Number.isSafeInteger(amount) && amount > 0) return amount;
     }
-    const plain = message.match(/\b([\d][\d\s,]*)\s*(?:adena|аден[а-я]*)(?:\s|$)/i)
-        || message.match(/(?:offer|pay|предлагаю|дам|for|за)\s+([\d][\d\s,]*)\b/i);
+    const plain = message.match(/\b([\d][\d\s,]*)\s*(?:adena|\u0430\u0434\u0435\u043d[\u0430-\u044f]*)(?:\s|$)/i)
+        || message.match(/(?:offer|pay|\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u044e|\u0434\u0430\u043c|for|\u0437\u0430)\s+([\d][\d\s,]*)\b/i);
     const amount = plain ? Number(plain[1].replace(/[\s,]/g, '')) : 0;
     return Number.isSafeInteger(amount) && amount > 0 ? amount : 0;
 }
 
-function mentionedLine(lines, message) {
+function mentionedLine(lines, message, allowSingleLine = true) {
     const candidates = lines.filter((line) => Number(line.count) > 0).map((line) => {
         const name = String(line.name || '').toLowerCase();
         const words = name.split(/[^a-z0-9]+/).filter((word) => word.length >= 4);
@@ -52,7 +52,7 @@ function mentionedLine(lines, message) {
     if (candidates.length && (candidates.length === 1 || candidates[0].score > candidates[1].score)) {
         return candidates[0].line;
     }
-    return lines.filter((line) => Number(line.count) > 0).length === 1
+    return allowSingleLine && lines.filter((line) => Number(line.count) > 0).length === 1
         ? lines.find((line) => Number(line.count) > 0) : null;
 }
 
@@ -65,11 +65,13 @@ function context(state, playerSession = null) {
     const ownActive = active && (!active.playerName
         || active.playerName === playerSession?.actor?.fetchName?.());
     return {
+        purpose: 'shop_listings_not_equipped_items',
         side: Number(shop.store.storeType) === AfkTrade.BUY ? 'buy' : 'sell',
         town: shop.store.town,
         items: shop.store.items.filter((line) => Number(line.count) > 0).map((line) => ({
             selfId: Number(line.selfId), name: line.name,
-            count: Number(line.count), unitPrice: Number(line.price)
+            count: Number(line.count), unitPrice: Number(line.price),
+            grade: ItemTemplateIndex.find(DataCache.items, line.selfId)?.etc?.rank
         })),
         activeNegotiation: Boolean(ownActive)
     };
@@ -84,22 +86,28 @@ function parse(state, text, playerSession = null) {
     const active = buying ? activeBuy(shop, playerSession) : Negotiation.activeSummary(shop.session);
     const ownActive = active && (!active.playerName
         || active.playerName === playerSession?.actor?.fetchName?.());
-    if (/^(?:accept|agree|deal|согласен|согласна|договорились|беру)(?:\s|$)/i.test(lower)
-        || (ownActive && /^(?:yes|yep|sure|ok|okay|да|ага)(?:[\s,!.?]|$)/i.test(lower))) {
+    const quantityAcceptance = lower.match(/(?:,\s*|\s+)for\s+(one|[1-9]\d*)[.!?\s]*$/i);
+    const acceptanceText = quantityAcceptance ? lower.slice(0, quantityAcceptance.index).trim() : lower;
+    const acceptedQuantity = quantityAcceptance && Number(quantityAcceptance[1] === 'one' ? 1 : quantityAcceptance[1]);
+    if (ownActive && (!quantityAcceptance || acceptedQuantity === Number(active.quantity))
+        && /^(?:accept|agree|deal|yes|yep|sure|ok|okay|\u0441\u043e\u0433\u043b\u0430\u0441\u0435\u043d|\u0441\u043e\u0433\u043b\u0430\u0441\u043d\u0430|\u0434\u043e\u0433\u043e\u0432\u043e\u0440\u0438\u043b\u0438\u0441\u044c|\u0431\u0435\u0440\u0443|\u0434\u0430|\u0430\u0433\u0430)(?:[,\s]+(?:please|thanks|thank you|the offer|that price))?[.!?\s]*$/i.test(acceptanceText)) {
         return { ...shop, action: 'accept' };
     }
-    if (/^(?:decline|cancel|отмена|нет|передумал)(?:\s|$)/i.test(lower)) {
+    if (ownActive && /^(?:decline|cancel|\u043e\u0442\u043c\u0435\u043d\u0430|\u043d\u0435\u0442|\u043f\u0435\u0440\u0435\u0434\u0443\u043c\u0430\u043b)(?:[\s,!.?]|$)/i.test(lower)) {
         return { ...shop, action: 'decline' };
     }
-    if (/(?:update|change|refresh).{0,16}(?:shop|store|price)|(?:обнови|поменяй|измени).{0,16}(?:лавк|магазин|цен)/i.test(lower)) {
-        return { ...shop, action: ownActive ? 'accept' : 'status' };
+    if (/(?:update|change|refresh).{0,16}(?:shop|store|price)|(?:\u043e\u0431\u043d\u043e\u0432\u0438|\u043f\u043e\u043c\u0435\u043d\u044f\u0439|\u0438\u0437\u043c\u0435\u043d\u0438).{0,16}(?:\u043b\u0430\u0432\u043a|\u043c\u0430\u0433\u0430\u0437\u0438\u043d|\u0446\u0435\u043d)/i.test(lower)) {
+        return { ...shop, action: 'status' };
     }
     const price = priceInMessage(lower);
     const tradeCue = buying
-        ? /\b(?:sell|ask|offer|for)\b|продам|продаю|предлагаю|прошу|за/i.test(lower)
-        : /\b(?:offer|buy|pay|for)\b|предлагаю|куплю|дам\s|торг|за/i.test(lower);
-    if (!tradeCue) return null;
-    const quantityMatch = lower.match(/(?:x|х|×)\s*(\d+)/i);
+        ? /\b(?:sell|offer)\b|\u043f\u0440\u043e\u0434\u0430\u043c|\u043f\u0440\u043e\u0434\u0430\u044e|\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u044e/i.test(lower)
+        : /\b(?:offer|buy|pay)\b|\u043f\u0440\u0435\u0434\u043b\u0430\u0433\u0430\u044e|\u043a\u0443\u043f\u043b\u044e|\u0434\u0430\u043c\s|\u0442\u043e\u0440\u0433/i.test(lower);
+    const namedLine = mentionedLine(shop.store.items, lower, false);
+    // A preposition or an ordinary future shopping remark is not an offer.
+    // Incomplete help needs an actual listed item and a trading verb.
+    if (!(price && (tradeCue || namedLine) || tradeCue && namedLine)) return null;
+    const quantityMatch = lower.match(/(?:x|\u0445|×)\s*(\d+)/i);
     const quantity = quantityMatch ? Number(quantityMatch[1]) : 1;
     const line = mentionedLine(shop.store.items, lower);
     if (!price || !line || !Number.isSafeInteger(price) || !Number.isSafeInteger(quantity)) {

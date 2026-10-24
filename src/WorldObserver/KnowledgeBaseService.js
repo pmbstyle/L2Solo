@@ -269,7 +269,7 @@ function spawnMapPoints(spawn) {
 }
 
 function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
-    catalogueFactory = createExportedCatalogue, nativeCatalogue = null } = {}) {
+    catalogueFactory = createExportedCatalogue, nativeCatalogue = null, nativeSkills = null } = {}) {
     if (!dataDir) throw new Error('Knowledge base dataDir is required');
     if (!progressionRates) throw new Error('Knowledge base progressionRates is required');
     let cache = null;
@@ -480,7 +480,38 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
         return item ? itemSummary(item, iconFor) : null;
     }
 
-    return Object.freeze({ itemDetail, itemOverview, listItems, listNpcs, meta, npcDetail,
+    function listSkills({ q = '', page = 1, limit = DEFAULT_PAGE_SIZE } = {}) {
+        const needle = normalize(q);
+        const unique = new Map();
+        const native = typeof nativeSkills === 'function' ? nativeSkills() : nativeSkills;
+        const rows = [...(native || []).map(skill => ({ id: skill.selfId, name: skill.template?.name })), ...load().skills];
+        for (const skill of rows) {
+            if (needle && !normalize(`${skill.name} ${skill.id}`).includes(needle)) continue;
+            if (!unique.has(Number(skill.id))) unique.set(Number(skill.id), { id: Number(skill.id), name: String(skill.name || `Skill ${skill.id}`) });
+        }
+        return pageResult([...unique.values()].sort((a, b) => a.name.localeCompare(b.name)), page, limit);
+    }
+
+    function skillDetail(id) {
+        const native = typeof nativeSkills === 'function' ? nativeSkills() : nativeSkills;
+        const playerSkill = native?.find(skill => Number(skill.selfId) === Number(id));
+        if (playerSkill) {
+            const first = playerSkill.levels?.[0] || {};
+            return { id: Number(id), name: playerSkill.template?.name, passive: playerSkill.template?.passive,
+                level: first.level, levelCount: playerSkill.levels?.length || 0,
+                range: playerSkill.template?.distance, mpCost: first.mp, power: first.power,
+                hitTime: playerSkill.time?.hitTime, reuseMs: playerSkill.time?.reuse,
+                source: 'native_player_skill', observation: 'First catalog level shown. This does not prove the bot learned it; inspect_self skills gives learned levels.' };
+        }
+        const rows = load().skills.filter(skill => Number(skill.id) === Number(id));
+        if (!rows.length) return null;
+        const skill = rows[0];
+        return { id: Number(skill.id), name: skill.name, passive: skill.passive,
+            level: Number(skill.level), levelCount: rows.length, semantic: skill.semantic || null,
+            observation: 'Catalog skill level shown, not proof this bot learned it. Read inspect_self skills for learned levels.' };
+    }
+
+    return Object.freeze({ itemDetail, itemOverview, listItems, listNpcs, listSkills, skillDetail, meta, npcDetail,
         catalogue: () => load().catalogue,
         relations: (kind, id, options) => load().catalogue.relations(kind, id, options) });
 }

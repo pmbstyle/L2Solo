@@ -73,7 +73,7 @@ function finish(input = {}) {
         Number(usage.promptTokens || 0),
         Number(usage.completionTokens || 0),
         Number(usage.totalTokens || 0),
-        Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null,
+        usage.cost != null && Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null,
         text(input.error, 240),
         json(input.meta),
         turn

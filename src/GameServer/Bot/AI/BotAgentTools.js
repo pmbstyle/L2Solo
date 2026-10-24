@@ -97,22 +97,23 @@ function responseTargetSession(decision, visiblePlayers) {
         findVisiblePlayerByName(visiblePlayers[0]?.name, visiblePlayers);
 }
 
-function say(session, text, targetSession = null) {
+function say(session, text, targetSession = null, requestContext = null) {
     const line = clean(text);
     if (!line) return false;
 
     const BotAI = invoke('GameServer/Bot/BotAI');
     if (targetSession) {
-        BotAI.tell(session, targetSession, line);
+        BotAI.tell(session, targetSession, line, { channel: requestContext?.channel });
     } else {
         BotAI.say(session, line);
     }
     return true;
 }
 
-function replyOutcome(session, text, targetSession = null) {
+function replyOutcome(session, text, targetSession = null, requestContext = null) {
     const line = clean(text);
-    const replyDelivered = line ? say(session, line, targetSession) : false;
+    if (requestContext?.deferReply) return { replyDelivered: false, playerVisibleReply: null };
+    const replyDelivered = line ? say(session, line, targetSession, requestContext) : false;
     return {
         replyDelivered,
         playerVisibleReply: replyDelivered ? line : null
@@ -151,16 +152,6 @@ function applyMoveToSpot(session, bot, spotId) {
     });
 
     return true;
-}
-
-function startShopping(session, bot) {
-    if (session.partyCompanion === true && session.followPlayerSession) {
-        return false;
-    }
-
-    const BotAI = invoke('GameServer/Bot/BotAI');
-    const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
-    return BotTownTravel.request(session, bot, BotAI, 'Heading to town to sell and restock.') !== 'companion';
 }
 
 function isPartyCompanionOf(session, targetSession) {
@@ -224,14 +215,15 @@ function applyHealTarget(session, bot, decision, targetSession) {
     return { applied: true, reason: 'heal_requested' };
 }
 
-function executeLegacy(session, decision, visiblePlayers) {
+function executeLegacy(session, decision, visiblePlayers, requestContext = null) {
     const bot = session.actor;
     if (!bot || !decision || Number(decision.confidence || 0) < 0.45) {
         return { applied: false, reason: 'low_confidence_or_missing_context' };
     }
 
     const action = decision.action;
-    const targetSession = responseTargetSession(decision, visiblePlayers);
+    const targetSession = decision.action === 'say' && requestContext?.playerSession?.actor
+        ? requestContext.playerSession : responseTargetSession(decision, visiblePlayers);
 
     // A chaotic character remains autonomous.  Chat may make it talk, but may
     // never turn it into a callable companion or redirect its hunting route.
@@ -243,7 +235,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         return { applied: true, reason: 'none' };
     }
     if (action === 'say') {
-        const reply = replyOutcome(session, decision.reply, targetSession);
+        const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: reply.replyDelivered, reason: 'say', ...reply };
     }
     if (action === 'follow_player') {
@@ -253,8 +245,8 @@ function executeLegacy(session, decision, visiblePlayers) {
             clearChatArrival(session, 'party_follow');
             session.plan = 'following';
             session.botStay = false;
-            const reply = replyOutcome(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession);
-            return { applied: true, reason: 'follow_player', ...reply };
+            const reply = replyOutcome(session, decision.reply || `Following you, ${targetSession.actor.fetchName()}!`, targetSession, requestContext);
+            return { applied: true, reason: 'follow_player', outcome: 'pending', effect: 'approach_requested', ...reply };
         } else {
             const ChatArrivalState = invoke('GameServer/Bot/AI/ChatArrivalState');
             ChatArrivalState.start(session, targetSession, {
@@ -263,8 +255,8 @@ function executeLegacy(session, decision, visiblePlayers) {
                 stopOnArrival: true
             });
             approachPlayer(session, bot, targetSession);
-            const reply = replyOutcome(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession);
-            return { applied: true, reason: 'follow_player', ...reply };
+            const reply = replyOutcome(session, decision.reply || `Coming closer. Invite me if you want party follow.`, targetSession, requestContext);
+            return { applied: true, reason: 'follow_player', outcome: 'pending', effect: 'approach_requested', ...reply };
         }
     }
     if (action === 'stay_here') {
@@ -278,7 +270,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         if (session.followPlayerSession && session.partyCompanion === true) {
             session.plan = 'following';
         }
-        const reply = replyOutcome(session, decision.reply || 'Holding this position.', targetSession);
+        const reply = replyOutcome(session, decision.reply || 'Holding this position.', targetSession, requestContext);
         return { applied: true, reason: 'stay_here', ...reply };
     }
     if (action === 'hunt') {
@@ -287,7 +279,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         if (session.partyCompanion === true && session.followPlayerSession) {
             session.plan = 'hunting';
             session.botStay = false;
-            const reply = replyOutcome(session, decision.reply || 'Hunting with the party.', targetSession);
+            const reply = replyOutcome(session, decision.reply || 'Hunting with the party.', targetSession, requestContext);
             return { applied: true, reason: 'party_hunt', ...reply };
         }
 
@@ -296,7 +288,7 @@ function executeLegacy(session, decision, visiblePlayers) {
         session.partyCompanion = false;
         session.botStay = false;
         refreshPartyMemberships([session], invoke);
-        const reply = replyOutcome(session, decision.reply, targetSession);
+        const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: true, reason: 'hunt', ...reply };
     }
     if (action === 'rest') {
@@ -314,7 +306,7 @@ function executeLegacy(session, decision, visiblePlayers) {
             } else {
                 session.plan = 'hunting';
             }
-            const reply = replyOutcome(session, decision.reply || "I'm already recovered.", targetSession);
+            const reply = replyOutcome(session, decision.reply || "I'm already recovered.", targetSession, requestContext);
             return { applied: true, reason: 'already_recovered', ...reply };
         }
 
@@ -323,16 +315,20 @@ function executeLegacy(session, decision, visiblePlayers) {
         session.currentTargetId = undefined;
         bot.unselect();
         sit(session, bot);
-        const reply = replyOutcome(session, decision.reply, targetSession);
+        const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
         return { applied: true, reason: 'rest', ...reply };
     }
     if (action === 'shop') {
-        if (!startShopping(session, bot)) {
+        if (session.partyCompanion === true && session.followPlayerSession) {
             return { applied: false, reason: 'party_companion_cannot_shop_now' };
         }
         clearChatArrival(session, 'shop');
-        const reply = replyOutcome(session, decision.reply, targetSession);
-        return { applied: true, reason: 'shop', ...reply };
+        const travelMode = invoke('GameServer/Bot/AI/BotTownTravel').request(
+            session, bot, invoke('GameServer/Bot/BotAI'), 'player_chat_restock', { announce: false });
+        if (!['escape', 'walk', 'deferred'].includes(travelMode)) return { applied: false, reason: 'restock_unavailable' };
+        const reply = replyOutcome(session, decision.reply, targetSession, requestContext);
+        return { applied: true, reason: travelMode === 'deferred' ? 'shop_after_combat' : 'shop',
+            outcome: 'pending', effect: 'restock_requested', travelMode, ...reply };
     }
     if (action === 'move_to_spot') {
         if (session.partyCompanion === true && session.followPlayerSession) {
@@ -341,8 +337,9 @@ function executeLegacy(session, decision, visiblePlayers) {
         clearChatArrival(session, 'move_to_spot');
 
         const applied = applyMoveToSpot(session, bot, decision.spotId);
-        const reply = applied ? replyOutcome(session, decision.reply, targetSession) : { replyDelivered: false, playerVisibleReply: null };
-        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot', ...reply };
+        const reply = applied ? replyOutcome(session, decision.reply, targetSession, requestContext) : { replyDelivered: false, playerVisibleReply: null };
+        return { applied, reason: applied ? 'move_to_spot' : 'invalid_spot',
+            ...(applied ? { outcome: 'pending', effect: 'travel_requested' } : {}), ...reply };
     }
     if (action === 'buff_target') {
         return applyBuffTarget(session, bot, decision, targetSession);
@@ -980,7 +977,7 @@ function registerTools() {
                     : partyJoinActions.has(name) ? isAuthorizedPartyJoinRequester : undefined,
             execute(context) {
                 if (executors[name]) return executors[name](context);
-                return executeLegacy(context.session, context.decision, context.visiblePlayers || []);
+                return executeLegacy(context.session, context.decision, context.visiblePlayers || [], context.requestContext);
             }
         });
     });
@@ -1015,7 +1012,7 @@ function remember(session, decision, result, model) {
         reason: decision.reason || result.reason,
         appliedReason: result.reason,
         outcome: result.outcome || 'applied',
-        serverApplied: result.applied === true && result.outcome !== 'pending',
+        serverApplied: !NON_MUTATING_ACTIONS.has(decision.action) && result.applied === true && result.outcome !== 'pending',
         at: Date.now(),
         model,
         usage: decision.usage ? {
@@ -1139,6 +1136,9 @@ function rejectionReply(result = {}) {
 }
 
 function pendingReply(result = {}) {
+    if (result.effect === 'approach_requested') return 'I am heading over.';
+    if (result.effect === 'travel_requested') return 'I am on my way.';
+    if (result.effect === 'restock_requested') return 'I am going to restock.';
     if (result.reason === 'resources_offered_pending_confirmation') {
         const line = result.line || {};
         const count = Number(line.count || 0);

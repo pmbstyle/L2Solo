@@ -76,8 +76,6 @@ async function main() {
             return response(JSON.stringify({
                 action: 'none',
                 reply: 'Recovered response.',
-                targetPlayerName: '',
-                spotId: '',
                 buffType: '',
                 reason: 'schema_repair',
                 confidence: 0.9

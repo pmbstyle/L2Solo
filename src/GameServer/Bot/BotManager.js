@@ -34,11 +34,11 @@ const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 
 const BOTS_TO_SPAWN = BotPopulation.buildStarterBots();
 const DIRECT_SUPPORT_RANGE = 900;
-const INSULT_PATTERN = /\b(noob|idiot|stupid|trash|useless|suck|sucks)\b|(?:дурак|дура|тупой|тупая|лох|нуб|мусор|бесполезн)/i;
-// Whole-word greetings only ("this" is not "hi", "купи" is not "ку"),
-// with their chat forms ("hiii", "helloo", "приветик", "кукуку").
+const INSULT_PATTERN = /\b(noob|idiot|stupid|trash|useless|suck|sucks)\b|(?:\u0434\u0443\u0440\u0430\u043a|\u0434\u0443\u0440\u0430|\u0442\u0443\u043f\u043e\u0439|\u0442\u0443\u043f\u0430\u044f|\u043b\u043e\u0445|\u043d\u0443\u0431|\u043c\u0443\u0441\u043e\u0440|\u0431\u0435\u0441\u043f\u043e\u043b\u0435\u0437\u043d)/i;
+// Whole-word greetings only: a greeting substring inside a longer word does not count,
+// including elongated and repeated chat forms.
 // \b does not see Cyrillic letters, so word edges are Unicode letters/digits.
-const GREETING_PATTERN = /(^|[^\p{L}\p{N}])(hi+|hiya|hello+|привет\p{L}*|(?:ку)+)(?![\p{L}\p{N}])/iu;
+const GREETING_PATTERN = /(^|[^\p{L}\p{N}])(hi+|hiya|hello+|\u043f\u0440\u0438\u0432\u0435\u0442\p{L}*|(?:\u043a\u0443)+)(?![\p{L}\p{N}])/iu;
 
 const MERCHANT_BOTS = Object.keys(MerchantConfigs).map(name => {
     const cfg = MerchantConfigs[name];
@@ -857,7 +857,7 @@ const BotManager = {
         const PartyDialogueState = invoke('GameServer/Bot/AI/PartyDialogueState');
         const PartyLLMRouter = invoke('GameServer/Bot/AI/PartyLLMRouter');
         const llmEnabled = BotBrain.isEnabled();
-        const groupAddress = /\b(bot|bots|guys|party|team|help|everyone|everybody|companions|all)\b/.test(text) || /(бот|боты|ребят|народ|пати|команда|кто-нибудь)/.test(text);
+        const groupAddress = /\b(bot|bots|guys|party|team|help|everyone|everybody|companions|all)\b/.test(text) || /(\u0431\u043e\u0442|\u0431\u043e\u0442\u044b|\u0440\u0435\u0431\u044f\u0442|\u043d\u0430\u0440\u043e\u0434|\u043f\u0430\u0442\u0438|\u043a\u043e\u043c\u0430\u043d\u0434\u0430|\u043a\u0442\u043e-\u043d\u0438\u0431\u0443\u0434\u044c)/.test(text);
         const partyChannel = Number(data.kind) === 3;
 
         const dialogueState = PartyDialogueState.snapshot(playerSession);
@@ -1231,10 +1231,10 @@ const BotManager = {
         }
 
         else if (directCommandTarget && session.plan === 'pk_hunting' && (
-            text.includes('follow') || text.includes('come here') || text.includes('за мной') || text.includes('иди сюда') ||
-            text.includes('помоги') || text.includes('stop') || text.includes('стой') || text.includes('wait') ||
-            text.includes('hunt') || text.includes('иди качайся') || text.includes('кач') ||
-            text.includes('heal') || text.includes('хил') || text.includes('buff') || text.includes('бафф')
+            text.includes('follow') || text.includes('come here') || text.includes('\u0437\u0430 \u043c\u043d\u043e\u0439') || text.includes('\u0438\u0434\u0438 \u0441\u044e\u0434\u0430') ||
+            text.includes('\u043f\u043e\u043c\u043e\u0433\u0438') || text.includes('stop') || text.includes('\u0441\u0442\u043e\u0439') || text.includes('wait') ||
+            text.includes('hunt') || text.includes('\u0438\u0434\u0438 \u043a\u0430\u0447\u0430\u0439\u0441\u044f') || text.includes('\u043a\u0430\u0447') ||
+            text.includes('heal') || text.includes('\u0445\u0438\u043b') || text.includes('buff') || text.includes('\u0431\u0430\u0444\u0444')
         )) {
             handledByRule = true;
             setTimeout(() => {
@@ -1242,7 +1242,7 @@ const BotManager = {
             }, 500 + Math.random() * 500);
         }
 
-        else if (directCommandTarget && (text.includes("follow") || text.includes("за мной") || text.includes("помоги"))) {
+        else if (directCommandTarget && (text.includes("follow") || text.includes("\u0437\u0430 \u043c\u043d\u043e\u0439") || text.includes("\u043f\u043e\u043c\u043e\u0433\u0438"))) {
             handledByRule = true;
             setTimeout(() => {
                 if (session.partyCompanion === true && session.followPlayerSession === playerSession) {
@@ -1262,7 +1262,7 @@ const BotManager = {
             }, 800 + Math.random() * 800);
         }
 
-        else if (directCommandTarget && (text.includes("stop") || text.includes("стой") || text.includes("wait"))) {
+        else if (directCommandTarget && (text.includes("stop") || text.includes("\u0441\u0442\u043e\u0439") || text.includes("wait"))) {
             handledByRule = true;
             setTimeout(() => {
                 this.botSay(session, `Staying here! Let me know if you need help.`, playerSession);
@@ -1274,7 +1274,7 @@ const BotManager = {
             }, 800 + Math.random() * 800);
         }
 
-        else if (directCommandTarget && (text.includes("hunt") || text.includes("иди качайся") || text.includes("кач"))) {
+        else if (directCommandTarget && (text.includes("hunt") || text.includes("\u0438\u0434\u0438 \u043a\u0430\u0447\u0430\u0439\u0441\u044f") || text.includes("\u043a\u0430\u0447"))) {
             handledByRule = true;
             setTimeout(() => {
                 this.botSay(session, `Alright, returning to hunt keltirs!`, playerSession);
@@ -1293,12 +1293,12 @@ const BotManager = {
             }, 800 + Math.random() * 800);
         }
 
-        else if (directCommandTarget && (text.includes("heal") || text.includes("хил") || text.includes("buff") || text.includes("бафф"))) {
+        else if (directCommandTarget && (text.includes("heal") || text.includes("\u0445\u0438\u043b") || text.includes("buff") || text.includes("\u0431\u0430\u0444\u0444"))) {
             handledByRule = true;
             setTimeout(() => {
                 this.handleDirectSupportRequest(session, playerSession, distance, {
-                    heal: text.includes("heal") || text.includes("хил"),
-                    buff: text.includes("buff") || text.includes("бафф")
+                    heal: text.includes("heal") || text.includes("\u0445\u0438\u043b"),
+                    buff: text.includes("buff") || text.includes("\u0431\u0430\u0444\u0444")
                 });
             }, 1000);
         }
@@ -1396,14 +1396,14 @@ const BotManager = {
         );
     },
 
-    botTell(session, targetSession, text) {
+    botTell(session, targetSession, text, delivery = {}) {
         if (!session.actor || !targetSession || !targetSession.dataSendToMe) return;
         invoke('GameServer/Bot/AI/BotChatReactions').cancel(session);
         const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
         const lines = BotChatText.splitForTell(text);
         if (!lines.length) return;
 
-        if (this.partyChatRecipients(session, targetSession).length > 0) {
+        if (!['client_tell', 'remote_chat'].includes(delivery?.channel) && this.partyChatRecipients(session, targetSession).length > 0) {
             lines.forEach((line) => this.botPartySay(session, line, targetSession));
             return;
         }

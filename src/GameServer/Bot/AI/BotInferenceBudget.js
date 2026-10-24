@@ -90,7 +90,7 @@ function releaseGlobalSlot(reservation, options = {}) {
 function prune(bucket, now) {
     const expired = [];
     bucket.entries = bucket.entries.filter((entry) => {
-        const keep = now - entry.startedAt < WINDOW_MS;
+        const keep = entry.active === true && !entry.settled || now - entry.startedAt < WINDOW_MS;
         if (!keep && bucket === globalBucket && !entry.settled) expired.push(entry);
         return keep;
     });
@@ -285,6 +285,16 @@ function reserveForBotId(botId, input = {}) {
     return reserve({ characterId: Number(botId) }, input);
 }
 
+// The lease protects abandoned admissions. A live provider request retains
+// its slot until settlement, even when it crosses the accounting window.
+function markStarted(reservation) {
+    if (!reservation || reservation.settled) return false;
+    reservation.active = true;
+    if (reservation.expiryTimer) clearTimeout(reservation.expiryTimer);
+    reservation.expiryTimer = null;
+    return true;
+}
+
 function settle(reservation, usage = null) {
     if (!reservation || reservation.settled) return false;
     const prompt = usageValue(usage, 'promptTokens');
@@ -292,7 +302,7 @@ function settle(reservation, usage = null) {
     reservation.promptTokens = prompt === null ? reservation.reservedPromptTokens : prompt;
     reservation.completionTokens = completion === null ? reservation.reservedCompletionTokens : completion;
     reservation.totalTokens = reservation.promptTokens + reservation.completionTokens;
-    reservation.cost = Number.isFinite(Number(usage?.cost)) ? Number(usage.cost) : null;
+    reservation.cost = usage?.cost != null && Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null;
     reservation.settled = true;
     if (reservation.globalEntry) releaseGlobalSlot(reservation);
     return true;
@@ -390,6 +400,7 @@ const BotInferenceBudget = {
     MAX_GLOBAL_WAITERS,
     reserve,
     reserveForBotId,
+    markStarted,
     settle,
     status,
     snapshot: status,

@@ -4,6 +4,8 @@ require('../src/Global');
 invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 
 const OpenRouterGateway = invoke('GameServer/Bot/AI/OpenRouterGateway');
+const DialogueRunner = invoke('GameServer/Bot/AI/BotDialogueRunner');
+const Protocol = invoke('GameServer/Bot/AI/BotDialogueProtocol');
 
 function response(body, status = 200) {
     return {
@@ -170,7 +172,7 @@ async function main() {
                 message: {
                     content: JSON.stringify({
                         action: 'say',
-                        reply: 'Привет.',
+                        reply: 'Hello.',
                         tradeItemId: null,
                         context: null
                     })
@@ -245,6 +247,64 @@ async function main() {
     assert.strictEqual(repaired.telemetry.repairTriggered, true);
     assert.strictEqual(repaired.telemetry.initialRawContent, '{"reply":');
     assert.strictEqual(repaired.usage.totalTokens, 24, 'repair usage must include both provider attempts');
+    assert.strictEqual(repaired.usage.cost, null, 'unknown cost cannot become zero after a repair');
+
+    const cappedBodies = [];
+    OpenRouterGateway.setTransport(async (_url, init) => {
+        cappedBodies.push(JSON.parse(init.body));
+        return response({ choices: [{ message: { content: cappedBodies.length === 1 ? '{' : '{"reply":"ok"}' } }],
+            usage: { prompt_tokens: 100, completion_tokens: cappedBodies.length === 1 ? 900 : 50, cost: null } });
+    });
+    const capped = await OpenRouterGateway.request({ config: baseConfig, requestId: 'capped-repair',
+        messages: [], responseSchema: schema, repairSchema: true, maxCompletionTokens: 1000, maxTotalCompletionTokens: 1200 });
+    assert.strictEqual(capped.ok, true);
+    assert.strictEqual(cappedBodies[1].max_completion_tokens, 300, 'repair must fit the remaining whole-turn output budget');
+    assert.strictEqual(capped.usage.completionTokens, 950);
+    assert.strictEqual(capped.usage.cost, null);
+    let exhaustedCalls = 0;
+    OpenRouterGateway.setTransport(async () => {
+        exhaustedCalls++;
+        return response({ choices: [{ message: { content: '{' } }], usage: { completion_tokens: 1100 } });
+    });
+    const exhausted = await OpenRouterGateway.request({ config: baseConfig, requestId: 'exhausted-repair',
+        messages: [], responseSchema: schema, repairSchema: true, maxCompletionTokens: 1200, maxTotalCompletionTokens: 1200 });
+    assert.strictEqual(exhausted.ok, false);
+    assert.strictEqual(exhaustedCalls, 1, 'an exhausted turn cannot start a rescue request');
+
+    for (const reportUsage of [true, false]) {
+        let promptCalls = 0, promptSpent = 0;
+        const turnSchema = { name: 'bounded_dialogue', schema: {
+            type: 'object', properties: { action: { type: 'string' }, reply: { type: 'string' }, topic: { type: 'string' } },
+            required: ['action', 'reply', 'topic'], additionalProperties: false
+        } };
+        OpenRouterGateway.setTransport(async (_url, init) => {
+            const body = JSON.parse(init.body);
+            const prompt = Protocol.requestSize(body.messages, body.response_format.json_schema);
+            promptCalls++; promptSpent += prompt;
+            const round = Math.floor((promptCalls - 1) / 2);
+            const data = { action: round < 2 ? 'inspect_self' : 'say', topic: round ? 'skills' : 'inventory', reply: round < 2 ? '' : 'Done.' };
+            return response({ choices: [{ message: { content: promptCalls % 2 ? '{' : JSON.stringify(data) } }],
+                ...(reportUsage ? { usage: { prompt_tokens: prompt, completion_tokens: 10, total_tokens: prompt + 10 } } : {}) });
+        });
+        const boundedTurn = await DialogueRunner.run({
+            messages: Protocol.messages('context '.repeat(1200), { bot: { name: 'BudgetBot' }, playerMessage: 'Read my state.' }),
+            isRead: action => action === 'inspect_self', read: async () => ({ ok: true, rows: [] }),
+            generate: async round => {
+                const boundedMessages = Protocol.fitMessages(round.messages, turnSchema, round.maxPromptTokens);
+                if (!boundedMessages) return { ok: false, reason: 'dialogue_prompt_budget' };
+                const value = await OpenRouterGateway.request({ config: baseConfig, circuitBreaker: false, repairSchema: true,
+                    responseSchema: turnSchema, messages: boundedMessages,
+                    maxCompletionTokens: round.maxCompletionTokens, maxTotalCompletionTokens: round.maxTotalCompletionTokens,
+                    maxPromptTokens: round.maxPromptTokens, maxTotalPromptTokens: round.maxTotalPromptTokens });
+                return value.ok ? { ...value.data, usage: value.usage, accountedPromptTokens: value.accountedPromptTokens } : value;
+            }
+        });
+        assert(promptSpent <= Protocol.MAX_TURN_PROMPT_TOKENS, `schema repair exceeded whole-turn prompt budget: ${promptSpent}`);
+        if (reportUsage) assert.strictEqual(boundedTurn.usage.promptTokens, promptSpent, 'all dispatched repair attempts remain accounted');
+        else assert.strictEqual(boundedTurn.usage, null, 'estimated admission charges cannot masquerade as provider usage');
+        assert(promptCalls < 6, 'the last repair must be refused before dispatch when its prompt will not fit');
+
+    }
 
     OpenRouterGateway.resetCircuit();
     let configuredSummaryBody;

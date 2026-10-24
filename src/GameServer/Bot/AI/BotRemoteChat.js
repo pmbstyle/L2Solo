@@ -10,6 +10,10 @@ const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ChatLocation = invoke('GameServer/Bot/AI/BotChatLocation');
 const BotDialogueStyle = invoke('GameServer/Bot/AI/BotDialogueStyle');
+const DialogueProtocol = require('./BotDialogueProtocol');
+const DialogueKnowledge = require('./BotDialogueKnowledge');
+const DialogueRunner = require('./BotDialogueRunner');
+const DialogueParty = require('./BotDialogueParty');
 
 // A player can send several tells while the provider is answering.  Keep the
 // pair ordered so each request sees the previous answer in conversation
@@ -56,20 +60,15 @@ function stateSummary(state) {
         id: state.characterId,
         name: state.name,
         level: state.level,
-        classId: state.classId || state.stats?.classId || null,
-        phase: state.phase,
+        classId: state.classId ?? state.stats?.classId ?? null,
+        className: invoke('GameServer/Bot/AI/BotRoles').className(state),
         activity: state.activity,
-        homeRegion: state.homeRegion,
-        currentRegion: state.currentRegion,
-        spotId: state.spotId,
-        loc: state.loc || null,
+        currentRegion: ChatLocation.forState(state),
         hpPct: state.vitals?.maxHp ? Math.round((state.vitals.hp / state.vitals.maxHp) * 100) : null,
         mpPct: state.vitals?.maxMp ? Math.round((state.vitals.mp / state.vitals.maxMp) * 100) : null,
         adena: state.adena,
         partyId: state.party?.partyId || null,
         role: state.party?.role || state.stats?.role || 'dps',
-        lastReason: state.stats?.lastReason || null,
-        newbieAnchor: !!state.stats?.newbieAnchor,
         persona: personaForState(state)
     };
 }
@@ -118,16 +117,16 @@ function fallbackReply(state, availability, text) {
     if (activity === 'resting' || (hpPct !== null && hpPct < 35)) {
         return `I'm recovering for a bit, HP is around ${hpPct ?? 'low'}%.`;
     }
-    if (lower.includes('party') || lower.includes('пати') || lower.includes('invite')) {
+    if (lower.includes('party') || lower.includes('\u043f\u0430\u0442\u0438') || lower.includes('invite')) {
         if (availability?.available && persona?.primaryDrive === 'social') {
             return `I am open to a steady party. Invite me by name near ${ChatLocation.forState(state)}.`;
         }
         if (availability?.available && persona?.primaryDrive === 'wealth') {
             return `If it is a practical run, invite me by name near ${ChatLocation.forState(state)}.`;
         }
-        return `Invite me by name if you want, I'm near ${ChatLocation.forState(state)}.`;
+        return DialogueParty.reply(availability);
     }
-    if (lower.includes('where') || lower.includes('где')) {
+    if (lower.includes('where') || lower.includes('\u0433\u0434\u0435')) {
         return `${name} here. I'm ${activity} near ${ChatLocation.forState(state)}.`;
     }
 
@@ -145,7 +144,7 @@ function schema(shopAvailable = false) {
             action: {
                 type: 'string',
                 enum: ['say', 'none', 'come_to_player', 'request_player_join_party',
-                    ...(shopAvailable ? ['shop_offer', 'shop_accept', 'shop_decline', 'shop_status'] : [])]
+                    ...(shopAvailable ? ['shop_offer', 'shop_accept', 'shop_decline', 'shop_status'] : []), ...DialogueKnowledge.ACTIONS]
             },
             reply: {
                 type: 'string',
@@ -160,6 +159,11 @@ function schema(shopAvailable = false) {
                 minimum: 0,
                 maximum: 1
             },
+            partyIntent: DialogueParty.INTENT_SCHEMA,
+            topic: { type: 'string', enum: ['', ...DialogueKnowledge.TOPICS] },
+            query: { type: 'string' },
+            entityId: { type: 'integer', minimum: 0 },
+            page: { type: 'integer', minimum: 1, maximum: 1000 },
             ...(shopAvailable ? {
                 shopItemId: { type: 'integer', description: 'Exact listed item self id for shop_offer.' },
                 shopQuantity: { type: 'integer', description: 'Requested listed quantity for shop_offer.' },
@@ -173,17 +177,21 @@ function schema(shopAvailable = false) {
 
 function systemPrompt(shopAvailable = false) {
     return [
-        'You are replying as one Lineage 2 bot in a private chat while the bot is cold/off-screen.',
+        'You are a Lineage 2 character replying to a private message.',
         BotDialogueStyle,
-        'The state below is a persistent snapshot of the bot life, not a live actor. For claims about your game life, use only the provided state, persona, social memory, availability, conversation, and life events. This does not restrict ordinary conversation topics.',
+        DialogueKnowledge.GROUNDING_PROMPT,
+        DialogueParty.PROMPT,
+        'For claims about your game life, use only the provided state, persona, social memory, availability, conversation, and life events. This does not restrict ordinary conversation topics.',
         'The persona shapes tone and high-level preferences, never facts, safety, or available actions.',
         'Do not invent items, rewards, locations, levels, party membership, combat results, or live observations.',
         'Keep the reply short, grounded, and in character.',
+        'For a past raid/drop/trade/encounter, call recall_event first with a short keyword in query. Current state proves no past event. For drop/spoil sources use find_item_sources with the exact English item name in query.',
+        'Read missing facts with inspect_self (inventory, equipment, skills, party, goals, relationship, relationships, recent_events) or lookup_game (items, item, item_sources, npcs, npc, recipes). Leave query empty to read all equipment. Search English catalog names with query, then use entityId. Results come back before your next decision. Catalog spawns are not live sightings.',
         'Use action=say for ordinary conversation and action=none when no reply is needed.',
         'Use action=come_to_player only when the player explicitly asks this bot to come, arrive, teleport, or meet them here.',
         'Use action=request_player_join_party only when the player asks to join this bot existing autonomous party. The server, not you, decides whether the party accepts and transfers the whole roster.',
         'The server will validate availability and perform the arrival. Never claim that the bot arrived or joined a party before the server confirms the action.',
-        'A cold chat never activates the bot by itself unless the validated action is come_to_player or request_player_join_party.',
+        'Chat alone does not move you or form a party. Availability describes now; never promise acceptance of a later invite.',
         ...(shopAvailable ? [
             'The bot.shop payload is the current server-owned AFK shop. For a player price proposal about a listed item, use shop_offer with its exact selfId, quantity, and total Adena (47k means 47000). For agreement to an active shop negotiation use shop_accept; for rejection use shop_decline; for a request to inspect or update the shop without an active offer use shop_status.',
             'Never agree to a new price or claim that a shop changed with action=say. The server validates all shop actions and supplies the actual reply.'
@@ -195,40 +203,61 @@ async function requestLlmReply(payload, cfg, turn, state, playerSession) {
     const playerId = playerSession.actor.fetchId();
     const botId = Number(state.characterId || 0);
     const sessionId = `cold-bot:${botId}:player:${playerId}`;
-    const result = await OpenRouterGateway.request({
-        config: cfg,
-        circuitKey: `cold-chat:${botId}:${playerId}`,
-        circuitBreaker: false,
-        interactive: true,
-        timeoutMs: 0,
-        requestId: turn.turnId,
-        sessionId,
-        source: 'cold_chat',
-        botId,
-        playerId,
-        turnId: turn.turnId,
-        messages: [
-            { role: 'system', content: systemPrompt(Boolean(payload.shop)) },
-            { role: 'user', content: JSON.stringify(payload) }
-        ],
-        responseSchema: {
-            name: 'bot_remote_chat',
-            schema: schema(Boolean(payload.shop))
-        },
-        repairSchema: true
+    const actor = playerSession.actor;
+    const result = await DialogueRunner.run({
+        messages: DialogueProtocol.messages(systemPrompt(Boolean(payload.shop)), payload),
+        alive: () => playerSession.actor === actor,
+        isRead: action => DialogueKnowledge.ACTIONS.includes(action),
+        read: decision => DialogueKnowledge.execute(decision, { session: state, playerSession, playerMessage: payload.playerMessage }),
+        generate: async round => {
+            const responseSchema = { name: 'bot_remote_chat', schema: round.final ? {
+                type: 'object', properties: { action: { type: 'string', enum: ['say'] }, reply: { type: 'string', minLength: 1 },
+                    reason: { type: 'string' }, confidence: { type: 'number', minimum: 0, maximum: 1 },
+                    partyIntent: DialogueParty.INTENT_SCHEMA },
+                required: ['action', 'reply', 'reason', 'confidence'], additionalProperties: false
+            } : schema(Boolean(payload.shop)) };
+            if (!round.canRead) responseSchema.schema.properties.action.enum = responseSchema.schema.properties.action.enum
+                .filter(action => !DialogueKnowledge.ACTIONS.includes(action));
+            if (round.round > 0) responseSchema.schema.properties.action.enum = responseSchema.schema.properties.action.enum.filter(action => action !== 'none');
+            const effectiveSchema = OpenRouterGateway.responseSchemaForConfig(responseSchema, cfg);
+            const messages = DialogueProtocol.fitMessages(round.messages, effectiveSchema, round.maxPromptTokens);
+            if (!messages) return { ok: false, reason: 'dialogue_prompt_budget' };
+            const result = await OpenRouterGateway.request({
+                config: cfg,
+                circuitKey: `cold-chat:${botId}:${playerId}`,
+                circuitBreaker: false,
+                interactive: true,
+                timeoutMs: 0,
+                maxCompletionTokens: round.maxCompletionTokens,
+                maxTotalCompletionTokens: round.maxTotalCompletionTokens,
+                maxPromptTokens: round.maxPromptTokens,
+                maxTotalPromptTokens: round.maxTotalPromptTokens,
+                requestId: turn.turnId,
+                sessionId,
+                source: 'cold_chat',
+                botId,
+                playerId,
+                turnId: turn.turnId,
+                messages,
+                responseSchema,
+                repairSchema: true
+            });
+            return result.ok ? { ...result.data, usage: result.usage, accountedPromptTokens: result.accountedPromptTokens, llmTelemetry: result.telemetry,
+                promptEstimate: DialogueProtocol.requestSize(messages, effectiveSchema) } : result;
+        }
     });
-    if (!result.ok) {
+    if (result.ok === false) {
         return {
             providerFailure: true,
             providerOutcome: result.reason,
             usage: result.usage,
-            llmTelemetry: result.telemetry
+            llmTelemetry: result.telemetry,
         };
     }
     return {
-        data: result.data || null,
+        data: result,
         usage: result.usage,
-        llmTelemetry: result.telemetry
+        llmTelemetry: result.llmTelemetry
     };
 }
 
@@ -240,7 +269,7 @@ function validateLlmReply(result) {
     const BotChatText = invoke('GameServer/Bot/AI/BotChatText');
     const reply = BotChatText.normalize(parsed.reply)
         .slice(0, BotChatText.DEFAULT_LINE_LIMIT * BotChatText.DEFAULT_MAX_LINES);
-    if (!reply || Number(parsed.confidence || 0) < 0.35) return null;
+    if ((!reply && parsed.action !== 'none') || Number(parsed.confidence || 0) < 0.35) return null;
 
     return {
         ok: true,
@@ -248,6 +277,7 @@ function validateLlmReply(result) {
         action: parsed.action || 'say',
         reason: parsed.reason || 'llm',
         confidence: Number(parsed.confidence || 0),
+        partyIntent: parsed.partyIntent,
         shopItemId: parsed.shopItemId,
         shopQuantity: parsed.shopQuantity,
         shopTotalPrice: parsed.shopTotalPrice,
@@ -389,14 +419,6 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
         });
     }
     const cfg = config();
-    const availability = BotAvailability.evaluateState(playerSession, state);
-    const fallback = {
-        ok: true,
-        reply: fallbackReply(state, availability, text),
-        action: 'say',
-        reason: 'fallback',
-        isFallback: true
-    };
     const begin = BotConversationService.beginTurn({
         playerSession,
         botSession: state,
@@ -408,14 +430,20 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
     return Promise.all([
         begin,
         LifeEvents.recentForBot(state.characterId, 5)
-    ]).then(([turn, events]) => {
+    ]).then(async ([turn, events]) => {
         if (playerSession.actor !== actor) return actorChanged();
-        const memory = BotSocialMemory.getSnapshot(playerSession, state);
+        const memory = await BotSocialMemory.load(playerSession, state) || BotSocialMemory.getSnapshot(playerSession, state);
+        if (playerSession.actor !== actor) return actorChanged();
+        const self = await DialogueKnowledge.selfContext(state, text, turn.context);
+        if (playerSession.actor !== actor) return actorChanged();
+        const availability = BotAvailability.evaluateState(playerSession, state, { loadMemory: false });
+        const fallback = { ok: true, reply: fallbackReply(state, availability, text),
+            action: 'say', reason: 'fallback', isFallback: true };
         const payload = {
             event: 'cold_chat',
             playerMessage: String(text || '').slice(0, 240),
             player: playerSummary(playerSession),
-            bot: stateSummary(state),
+            bot: { ...stateSummary(state), ...self },
             social: {
                 relationship: BotSocialMemory.relationship(memory),
                 trust: memory.trust,
@@ -534,6 +562,14 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     }) : null,
                     stageMetadata,
                     () => {
+                        if (playerSession.actor !== actor) return actorChanged();
+                        if (['say', 'none'].includes(reply?.action) && DialogueParty.shouldCheck(text, reply)) {
+                            const hot = invoke('GameServer/Bot/BotManager').findSessionById(state.characterId);
+                            const latest = hot?.actor ? hot : invoke('GameServer/Bot/Population/BotLifeState').cachedState(state.characterId) || state;
+                            const current = latest.actor ? BotAvailability.evaluate(playerSession, latest, { loadMemory: false })
+                                : BotAvailability.evaluateState(playerSession, latest, { loadMemory: false });
+                            reply = DialogueParty.apply(reply, current, latest, text);
+                        }
                         const delivered = deliverReply(playerSession, state, reply?.reply, actor);
                         const deliveredReply = { ...reply, delivered };
                         return recordReply(
@@ -573,6 +609,7 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     return deliver(failed);
                 }
 
+                BotInferenceBudget.markStarted(reservation);
                 const providerResult = await requestLlmReply(payload, cfg, turn, state, playerSession);
                 const result = await LangfuseTracing.withObservation(
                     'bot.schema.validate',
@@ -598,7 +635,18 @@ function replyForStateNow(playerSession, state, text, channel = 'client_tell') {
                     };
                     return deliver(failed);
                 }
-                const reply = result || fallback;
+                let reply = result || fallback;
+                const partyCheck = DialogueParty.shouldCheck(text, reply);
+                const explicitArrival = reply.action === 'come_to_player' && DialogueParty.isArrivalRequest(text);
+                if (partyCheck && explicitArrival) {
+                    // Movement is separately authorized. Its receipt may
+                    // acknowledge coming, never admission to a future party.
+                    reply = { ...reply, reply: 'I am coming over.' };
+                } else if (partyCheck && reply.action !== 'request_player_join_party') {
+                    reply = DialogueParty.apply(reply, BotAvailability.evaluateState(playerSession,
+                        invoke('GameServer/Bot/Population/BotLifeState').cachedState(state.characterId) || state,
+                        { loadMemory: false }), state, text);
+                }
                 if (reply.action?.startsWith('shop_')) {
                     const intent = tradeChat.intentForAction(state, playerSession, reply.action, reply);
                     const actionResult = intent

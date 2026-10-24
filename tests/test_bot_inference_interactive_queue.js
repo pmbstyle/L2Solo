@@ -80,6 +80,19 @@ async function main() {
         BotInferenceBudget.settle(afterExpiry.reservation, { promptTokens: 20, completionTokens: 20 });
 
         BotInferenceBudget.reset();
+        const active = BotInferenceBudget.reserve(session(9440), { bypass: true, now: 1000 });
+        BotInferenceBudget.markStarted(active.reservation);
+        const behindActive = BotInferenceBudget.reserve(session(9441), { bypass: true, now: 1001 });
+        assert(behindActive.queued);
+        BotInferenceBudget.globalStatus(1000 + BotInferenceBudget.RESERVATION_TTL_MS + 1);
+        assert.strictEqual(active.reservation.expired, undefined, 'a live provider request cannot expire out of the concurrency count');
+        assert.strictEqual(BotInferenceBudget.globalStatus().inFlight, 1);
+        BotInferenceBudget.settle(active.reservation, { promptTokens: 200, completionTokens: 30 });
+        const afterActive = await behindActive.ready;
+        assert(afterActive.ok);
+        BotInferenceBudget.settle(afterActive.reservation);
+
+        BotInferenceBudget.reset();
         const blocker = BotInferenceBudget.reserve(session(9500), {
             event: 'state_change',
             estimatedPromptTokens: 20,

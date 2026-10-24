@@ -150,10 +150,10 @@ function partySpot(party) {
     return Spots.findById(party.spotId) || SpotProfiles.findById(party.spotId);
 }
 
-// A member restarted in town walks to the gatekeeper and returns to the party's
-// spot, beside the member who leads there when one does (a lone landing among
-// the spot's mobs is a fight without the party); a refused travel (retry
-// cooldown) idles, it never walks to the leader. A target held from before
+// A member returning from town or a player party uses the normal spot travel,
+// beside the member who leads there when one does (a lone landing among the
+// spot's mobs is a fight without the party); a refused travel (retry cooldown)
+// idles, it never walks to the leader. A target held from before
 // would read as a fight and cancel the travel (BotTownTravel.hasCombatThreat).
 function returnToSpot(session, bot, spot, party, now, destination = null) {
     if (session.currentTargetId) {
@@ -275,16 +275,29 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         || party.stats?.objective?.raidBoss === true;
     const spot = party.spotId && !raidObjective ? partySpot(party) : null;
     const present = s => !spot || Spots.containsLocation(spot, loc(s.actor));
-    // Away = outside the spot and in town or travelling back from it. A leader
-    // stepping over the spot cell's edge in a fight stays the leader: its held
-    // target and scan timer live on its session.
+    for (const member of members) {
+        const destination = member.backgroundPartyReturn;
+        if (destination && (destination.partyId !== party.partyId || destination.spotId !== spot?.id || present(member))) {
+            delete member.backgroundPartyReturn;
+        }
+    }
+    const returning = s => !!s.backgroundPartyReturn;
+    const returnPending = members.some(returning);
+    const radius = 1800;
+    // Partial arrivals split the roster across the map. Defend the members
+    // beside this actor before following an owner already at the farm spot.
+    const returnGroup = returnPending ? members.filter(s => Threats.distance(s.actor, bot) <= radius) : null;
+    const returnIncoming = returnGroup?.map(s => Awareness.npcThreateningActor(s)).find(Boolean);
+    // Returning player companions are away even in the field. An ordinary
+    // leader stepping over the cell edge in a fight keeps its target and scan.
     // The bot's own town test is read once per tick (the town return below needs it again).
     let ownTown;
     const inTown = s => s === session ? (ownTown ??= !!TownTransit.townAt(s.actor)) : !!TownTransit.townAt(s.actor);
-    const away = s => !!spot && !present(s) && (!!s.spotRelocation || inTown(s));
+    const away = s => !!spot && !present(s) && (returning(s) || !!s.spotRelocation || inTown(s));
     const leading = members.find(s => s.actor.fetchId() === party.leaderId);
     // The leader stays the owner unless away; then the first member at the spot, else the first not away.
-    const owner = leading && !away(leading) ? leading
+    const owner = returnIncoming ? returnGroup.find(s => s === leading) || returnGroup[0]
+        : leading && !away(leading) ? leading
         : members.find(present) || members.find(s => !away(s)) || leading || members[0];
     const Roster = require('../../Clan/ClanRaidRoster');
     if (Roster.markerFor(party) && !Roster.held(party)) {
@@ -317,6 +330,10 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const heldRaidPlan = owner.backgroundHuntTarget && RaidSafety.isProtectedRaidEntity(owner.backgroundHuntTarget)
         ? RaidSafety.botClanRaidCombatPlan(owner, owner.backgroundHuntTarget) : null;
     if (heldRaidPlan) RaidCombat.preserveControlledAdds(session, bot, heldRaidPlan);
+    if (session.spotRelocation && !session.spotRelocation.arrivalPending && SpotTravel.partyReturnInCombat(session)) {
+        Tactics.stop(session, bot);
+        SpotTravel.cancel(session, bot, 'combat_interrupt');
+    }
     if (!Restrictions.canUseBasicAction(bot)) return true;
     // Native cast completion owns the action slot, including support effects.
     // A silence that lands during party music must not leave a melee support
@@ -327,17 +344,16 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         bot.attack?.abortCast?.(session, bot);
     }
     if (bot.state.fetchCasts?.()) return true;
-    const radius = 1800;
     const near = members.filter(s => Threats.distance(s.actor, owner.actor) <= radius);
     // A member restarted in town goes back on its own threat only: the party's
     // fight at the spot is no target for a bot in town.
     const own = Awareness.npcThreateningActor(session);
-    if (!own && away(session) && inTown(session)) {
+    if (!own && away(session) && inTown(session) && !returning(session)) {
         Diagnostics.count('hot_party_town_return', 'start', 'all');
         returnToSpot(session, bot, spot, party, now, owner !== session && !away(owner) ? loc(owner.actor) : null);
         return true;
     }
-    const incoming = own || near.map(s => Awareness.npcThreateningActor(s)).find(Boolean);
+    const incoming = own || (returnPending ? returnIncoming : near.map(s => Awareness.npcThreateningActor(s)).find(Boolean));
     const legal = (npc) => {
         if (!Threats.alive(npc)) return false;
         // During an autonomous raid, do not let a nearby field monster replace
@@ -379,6 +395,19 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         session.lastDecision = { action: result.handled ? 'party_resurrect' : 'party_wait_resurrection',
             targetId: result.target?.fetchId?.() || result.targetId || waiting[0].actor.fetchId(),
             partyId: party.partyId, at: now };
+        return true;
+    }
+    if (!incoming && returnPending) {
+        if (returning(session) && !Revival.partyCombatInProgress(revivalAnchor)) {
+            Support.cancelSupportCast(session, bot);
+            returnToSpot(session, bot, spot, party, now, owner !== session && present(owner) ? loc(owner.actor) : null);
+        } else {
+            // Let the whole restored roster arrive before the next pull.
+            Tactics.stop(session, bot);
+            session.currentTargetId = undefined;
+            bot.unselect?.();
+            session.lastDecision = { action: 'party_wait_roster', partyId: party.partyId, at: now };
+        }
         return true;
     }
     if (!incoming && Number(session.pendingSupportCast?.expiresAt || 0) > now) {

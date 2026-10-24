@@ -170,12 +170,13 @@ const BotAvailability = {
 
         let reason = 'available';
         if (staticService) reason = 'merchant_duty';
+        else if (state.party?.partyId) reason = 'already_grouped';
         else if (result.clanmate) reason = 'available';
         else if (!options.forceFriend && result.relationshipReason) reason = result.relationshipReason;
         else if (!options.forceFriend && state.activity === 'traveling' && !traveller) reason = 'in_transit';
         else if (!options.forceFriend && state.activity === 'pk_hunting') reason = 'pk_encounter_only';
         else if (player.isDead && player.isDead()) reason = 'player_dead';
-        else if (state.activity === 'dead' || Number(state.vitals?.hp || 1) <= 0) reason = 'bot_dead';
+        else if (state.activity === 'dead' || Number(state.vitals?.hp ?? 1) <= 0) reason = 'bot_dead';
         else if (!options.forceFriend && (state.activity === 'merchant' || state.activity === 'crafting')) reason = 'merchant_duty';
         else if (refusal) reason = refusal;
         else if (!options.forceFriend && Math.abs(Number(state.level || 1) - player.fetchLevel()) > MAX_LEVEL_GAP) reason = 'level_gap_too_large';

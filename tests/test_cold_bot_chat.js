@@ -52,6 +52,7 @@ async function main() {
             enabled: true,
             apiKey: 'cold-chat-test-key',
             model: 'test/cold-chat',
+            strictSchema: false,
             maxConcurrentRequests: 1
         };
         BotConversationStore.resetMemory();
@@ -109,13 +110,24 @@ async function main() {
             'a delivered model reply must report success like the fallback does');
         assert.strictEqual(deliveredPackets.length, 2, 'cold replies should be delivered inside the traced stage');
         assert.strictEqual(requests.length, 2, 'every cold tell must reach the provider without a cooldown drop');
-        const secondPayload = JSON.parse(requests[1].messages[1].content);
         assert.deepStrictEqual(
-            secondPayload.conversation.recentTurns.map((turn) => turn.text),
+            requests[1].messages.slice(2).map(message => message.content),
             ['hello', 'reply-1', 'where are you?']
         );
         assert.strictEqual(requests[0].session_id, 'cold-bot:9102:player:9101');
         assert.strictEqual(requests[0].provider?.require_parameters, true);
+
+        state.inventory = { 167: { selfId: 167, name: 'Scalpel', amount: 1, equipped: true,
+            rank: 'd', slot: 7, kind: 'Weapon.Blunt' } };
+        await BotRemoteChat.replyForState(playerSession, state, 'Are you in a clan and what is your gear?');
+        const gearContext = JSON.parse(requests.at(-1).messages[1].content).bot;
+        assert.strictEqual(gearContext.clan.id, 0);
+        assert.strictEqual(gearContext.equipment.rows[0].name, 'Scalpel');
+        assert.strictEqual(gearContext.equipment.rows[0].grade, 'd');
+        assert(!requests.at(-1).messages[0].content.includes('inventory/skills may be unavailable'));
+        await BotRemoteChat.replyForState(playerSession, state, 'Is it D grade?');
+        assert.strictEqual(JSON.parse(requests.at(-1).messages[1].content).bot.equipment.rows[0].name, 'Scalpel',
+            'real cold requests must refresh authoritative gear on a grade follow-up');
 
         const originalFindOwnerProjection = AfkTrade.findOwnerProjection;
         const originalShopHandle = BotAfkTradeChat.handle;
@@ -133,8 +145,7 @@ async function main() {
                 requests.push(JSON.parse(init.body));
                 return response({ choices: [{ message: { content: JSON.stringify({
                     action: 'shop_status', reply: 'I changed it to 47000.',
-                    reason: 'inspect_listing', confidence: 0.95,
-                    shopItemId: null, shopQuantity: null, shopTotalPrice: null
+                    reason: 'inspect_listing', confidence: 0.95
                 }) } }] });
             });
             const shopState = { ...state, characterId: 9103, name: 'ColdShopBot' };
@@ -213,10 +224,10 @@ async function main() {
         assert.strictEqual(secondAdmission.delivered, true);
         assert.strictEqual(requests.length, beforeAdmissionRequests + 2, 'queued cold chat must reach OpenRouter after the slot is released');
         for (const stage of ['cold-bot.dialogue', 'bot.context.assemble', 'bot.reply.deliver']) {
-            assert.strictEqual(observations.filter((name) => name === stage).length, 6, `${stage} should be emitted for every cold reply`);
+            assert.strictEqual(observations.filter((name) => name === stage).length, 8, `${stage} should be emitted for every cold reply`);
         }
         for (const stage of ['openrouter.generation', 'bot.schema.validate']) {
-            assert.strictEqual(observations.filter((name) => name === stage).length, 6, `${stage} should be emitted for every admitted cold request`);
+            assert.strictEqual(observations.filter((name) => name === stage).length, 8, `${stage} should be emitted for every admitted cold request`);
         }
         assert.strictEqual(observations.filter((name) => name === 'bot.tool.come_to_player').length, 1, 'come_to_player should have one tool observation');
 

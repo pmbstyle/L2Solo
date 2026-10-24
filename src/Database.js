@@ -1883,6 +1883,7 @@ function applySchemaMigrations() {
     migrations.push([74, () => require('./GameServer/Clan/ClanRaidFailureMigration')(connection, now())]);
     // Reconcile worlds that already ran 74 with only part of the party history retained.
     migrations.push([75, () => require('./GameServer/Clan/ClanRaidFailureMigration')(connection, now())]);
+    migrations.push([76, () => require('./GameServer/Bot/AI/BotClanConversationStore').install(connection)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;

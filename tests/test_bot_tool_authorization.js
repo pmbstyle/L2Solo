@@ -57,6 +57,26 @@ function main() {
 
     const unknown = BotAgentTools.execute(session, decision('invented_tool', 'unknown-1'), [], null);
     assert.deepStrictEqual(unknown, { applied: false, reason: 'unknown_tool' });
+    const Travel = invoke('GameServer/Bot/AI/BotTownTravel');
+    const originalRequest = Travel.request;
+    try {
+        let requests = 0;
+        Travel.request = (target, bot, _ai, reason, settings) => {
+            requests++;
+            assert.strictEqual(target, session);
+            assert.strictEqual(bot, session.actor);
+            assert.strictEqual(reason, 'player_chat_restock');
+            assert.strictEqual(settings.announce, false);
+            target.plan = 'shopping';
+            return 'walk';
+        };
+        const restock = BotAgentTools.execute(session, decision('shop', 'restock-1'), [], { deferReply: true });
+        assert.strictEqual(requests, 1, 'restock must enter the native travel workflow');
+        assert.strictEqual(session.plan, 'shopping');
+        assert.strictEqual(restock.outcome, 'pending');
+        assert.strictEqual(restock.effect, 'restock_requested');
+        assert.strictEqual(restock.replyDelivered, false, 'the model acknowledges the actual receipt afterwards');
+    } finally { Travel.request = originalRequest; }
     console.log('Bot tool authorization checks passed');
 }
 

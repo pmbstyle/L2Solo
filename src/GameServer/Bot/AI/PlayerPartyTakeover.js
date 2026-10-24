@@ -265,12 +265,18 @@ async function restoreAutonomousParty({ partyId, playerId, companionSessions = [
         session.coldLifeState = state;
         session.hotBackgroundPartyId = state.phase === 'hot' ? party.partyId : null;
         session.plan = state.phase === 'hot' ? 'hunting' : session.plan;
+        session.backgroundPartyReturn = state.phase === 'hot' && party.spotId
+            ? { partyId: party.partyId, spotId: party.spotId }
+            : undefined;
         changedSessions.push(session);
+    });
+    refreshPartyMemberships(changedSessions, invoke);
+    changedSessions.forEach((session) => {
+        const state = statesById.get(actorId(session));
         if (state.phase === 'hot' && session.actor) {
             invoke('GameServer/Bot/BotAI').wakeup(session, { urgent: true });
         }
     });
-    refreshPartyMemberships(changedSessions, invoke);
     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotParty :: restored autonomous party %s members=%d source=%s',
         party.partyId, party.memberIds.length, source);
     return { ok: true, reason: 'autonomous_party_restored', party, states };

@@ -1,5 +1,6 @@
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
+const DialogueProtocol = require('./BotDialogueProtocol');
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 const REASONING_EFFORTS = new Set(['off', 'low', 'medium', 'high']);
 const COMPLETION_LIMIT_PARAMS = new Set(['max_tokens', 'max_completion_tokens']);
@@ -386,7 +387,8 @@ function combinedUsage(first, second) {
     const left = first || {};
     const right = second || {};
     const sum = (key) => Number(left[key] || 0) + Number(right[key] || 0);
-    const cost = Number.isFinite(Number(left.cost)) || Number.isFinite(Number(right.cost))
+    const knownCost = value => value?.cost != null && Number.isFinite(Number(value.cost));
+    const cost = (!first || knownCost(first)) && (!second || knownCost(second))
         ? Number(left.cost || 0) + Number(right.cost || 0)
         : null;
     return {
@@ -407,6 +409,7 @@ function repairedResult(initial, repaired, repairType = 'schema') {
     return {
         ...repaired,
         usage,
+        accountedPromptTokens: Number(initial?.accountedPromptTokens || 0) + Number(repaired?.accountedPromptTokens || 0),
         telemetry: {
             ...telemetry,
             usage,
@@ -420,6 +423,27 @@ function repairedResult(initial, repaired, repairType = 'schema') {
             initialUsage: initial?.usage || null
         }
     };
+}
+
+function repairRequest(spec, result) {
+    const next = { ...spec, messages: recoveryMessages(spec, result), config: repairConfig(spec),
+        schemaRepairAttempt: true, circuitBreaker: false };
+    if (Number.isFinite(spec.maxTotalCompletionTokens)) {
+        const remaining = spec.maxTotalCompletionTokens - Number(result?.usage?.completionTokens || 0);
+        if (remaining < 128) return null;
+        next.maxCompletionTokens = Math.min(remaining, Math.max(2048, Number(spec.maxCompletionTokens || 0) * 2));
+    }
+    if (Number.isFinite(spec.maxTotalPromptTokens)) {
+        const spent = result?.accountedPromptTokens ?? (result?.usage?.promptTokens || estimateRequestPrompt(spec));
+        next.maxTotalPromptTokens = Math.max(0, spec.maxTotalPromptTokens - spent);
+        const limit = Math.min(next.maxTotalPromptTokens, Number.isFinite(spec.maxPromptTokens) ? spec.maxPromptTokens : Infinity);
+        if (estimateRequestPrompt(next) > limit) return null;
+    }
+    return next;
+}
+
+function estimateRequestPrompt(spec) {
+    return DialogueProtocol.requestSize(spec.messages || [], responseSchemaForConfig(spec.responseSchema, config(spec.config || {})));
 }
 
 function complete(request, cfg, outcome, startedAt, extra = {}) {
@@ -438,6 +462,9 @@ function complete(request, cfg, outcome, startedAt, extra = {}) {
         reason: outcome,
         data: extra.data || null,
         usage: extra.usage || null,
+        // Keep estimates separate from provider usage; unknown usage still
+        // consumes admission budget, including every repair attempt.
+        accountedPromptTokens: Number(extra.usage?.promptTokens || request.promptEstimate || 0),
         telemetry: meta,
         status: extra.status || null
     };
@@ -475,7 +502,7 @@ function normalizeUsage(usage) {
         totalTokens: Number(usage.total_tokens || 0),
         cachedPromptTokens: Number(usage.prompt_tokens_details?.cached_tokens || 0),
         cacheWriteTokens: Number(usage.prompt_tokens_details?.cache_write_tokens || 0),
-        cost: Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null
+        cost: usage.cost != null && Number.isFinite(Number(usage.cost)) ? Number(usage.cost) : null
     };
 }
 
@@ -528,10 +555,6 @@ async function requestUntraced(spec = {}) {
     const fetcher = transport || global.fetch;
     if (typeof fetcher !== 'function') return complete(requestData, cfg, 'provider_error', startedAt);
 
-    const controller = new AbortController();
-    const timeout = cfg.timeoutMs > 0
-        ? setTimeout(() => controller.abort(), Math.max(1, cfg.timeoutMs))
-        : null;
     const body = {
         model: cfg.model,
         messages: Array.isArray(requestData.messages) ? requestData.messages : []
@@ -581,6 +604,17 @@ async function requestUntraced(spec = {}) {
         const provider = providerOptions(cfg, requestData.provider);
         if (provider) body.provider = provider;
     }
+
+    const promptEstimate = DialogueProtocol.requestSize(body.messages, effectiveResponseSchema);
+    const promptLimits = [spec.maxPromptTokens, spec.maxTotalPromptTokens].filter(Number.isFinite);
+    if (promptLimits.length && promptEstimate > Math.min(...promptLimits)) {
+        return complete(requestData, cfg, 'prompt_budget', startedAt);
+    }
+    requestData.promptEstimate = promptEstimate;
+    const controller = new AbortController();
+    const timeout = cfg.timeoutMs > 0
+        ? setTimeout(() => controller.abort(), Math.max(1, cfg.timeoutMs))
+        : null;
 
     try {
         const headers = {
@@ -698,23 +732,11 @@ async function request(spec = {}) {
         async (observation) => {
             let result = await requestUntraced(spec);
             if (shouldRecoverTruncation(spec, result)) {
-                const repaired = await requestUntraced({
-                    ...spec,
-                    messages: recoveryMessages(spec, result),
-                    config: repairConfig(spec),
-                    schemaRepairAttempt: true,
-                    circuitBreaker: false
-                });
-                result = repairedResult(result, repaired, 'truncation');
+                const next = repairRequest(spec, result);
+                if (next) result = repairedResult(result, await requestUntraced(next), 'truncation');
             } else if (shouldRepairSchema(spec, result)) {
-                const repaired = await requestUntraced({
-                    ...spec,
-                    messages: recoveryMessages(spec, result),
-                    config: repairConfig(spec),
-                    schemaRepairAttempt: true,
-                    circuitBreaker: false
-                });
-                result = repairedResult(result, repaired);
+                const next = repairRequest(spec, result);
+                if (next) result = repairedResult(result, await requestUntraced(next));
             }
             if (observation && result?.telemetry) {
                 const usage = result.usage || result.telemetry.usage || {};
@@ -751,7 +773,7 @@ async function request(spec = {}) {
                         reasoning: Number(usage.reasoningTokens || 0),
                         total: Number(usage.totalTokens || 0)
                     },
-                    costDetails: Number.isFinite(Number(usage.cost)) ? { total: Number(usage.cost) } : undefined,
+                    costDetails: usage.cost != null && Number.isFinite(Number(usage.cost)) ? { total: Number(usage.cost) } : undefined,
                     metadata: {
                         outcome: result.telemetry.outcome,
                         status: result.telemetry.status,
@@ -781,6 +803,7 @@ const OpenRouterGateway = {
     config,
     isConfigured,
     request,
+    responseSchemaForConfig,
 
     setTransport(nextTransport) {
         transport = typeof nextTransport === 'function' ? nextTransport : null;

@@ -40,6 +40,7 @@ async function main() {
     try {
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'level_up', summary: 'Reached level 20.', weight: 4 });
         await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'trade_completed', summary: 'Received healing potions from the player.', weight: 4 });
+        await BotEventJournal.record({ botId: 20, playerId: 10, eventType: 'llm_decision', summary: 'Model proposed an invented drop.', weight: 4 });
         const assembled = await BotContextAssembler.assemble({
             session: { actor: { fetchId: () => 20 } },
             status: { available: true },
@@ -56,8 +57,10 @@ async function main() {
             }
         });
         assert(assembled.bot?.name === 'BoundedBot', 'authoritative bot state should remain a canonical payload field');
-        assert(assembled.fragments.some((fragment) => fragment.id === 'recent_dialogue'));
+        assert.strictEqual(assembled.conversation.recentTurns.length, 2);
+        assert(!assembled.fragments.some(fragment => ['recent_dialogue', 'conversation_summary'].includes(fragment.id)), 'history must have one canonical representation');
         assert(assembled.fragments.some((fragment) => fragment.id === 'authoritative_events'));
+        assert(!JSON.stringify(assembled.fragments).includes('invented drop'), 'provider decisions are not authoritative world events');
         assert(assembled.telemetry.skillIntent, 'skill intent should include the skill fragment path');
         assert(assembled.estimatedTokens <= assembled.hardMaxTokens);
         assert(BotContextAssembler.estimateTokens(assembled.fragments) <= 1800);
@@ -68,6 +71,14 @@ async function main() {
             requestContext: { playerId: 10 }
         });
         assert.strictEqual(compactOptions.includeInventory, true, 'soulshots/bring must include inventory context');
+        for (const text of ['Do you have a favorite kind of music?', 'Give me a music recommendation']) {
+            await BotContextAssembler.assemble({ session: {}, status: { available: true }, text });
+            assert.strictEqual(compactOptions.includeInventory, false, 'ordinary speech must not request inventory just because it contains have/give');
+        }
+        const namedSkill = await BotContextAssembler.assemble({ session: { actor: {
+            skillset: { fetchSkills: () => [{ model: { name: 'Power Strike' } }] }
+        } }, status: { available: true }, text: 'Use Power Strike more often' });
+        assert(namedSkill.telemetry.skillIntent, 'learned skill names resolve without an ever-growing keyword list');
         const followup = await BotContextAssembler.assemble({
             session: { actor: { fetchId: () => 20 } },
             status: { available: true },
@@ -85,6 +96,14 @@ async function main() {
         assert.strictEqual(followup.telemetry.itemFollowup, true, 'pronoun follow-up should inherit recent equipment context');
         assert.strictEqual(compactOptions.includeEquipment, true);
         assert.strictEqual(compactOptions.includeInventory, true);
+        const pluralFollowup = await BotContextAssembler.assemble({ session: {}, status: { available: true },
+            text: 'Are they better?', requestContext: { conversation: { recentTurns: [{ role: 'player', text: 'Equip the Tarbar.' }] } } });
+        assert(pluralFollowup.telemetry.itemFollowup);
+        BotBrainContext.compactStatus = () => ({ name: 'ActualBot', inventory: { notable: Array.from({ length: 50 }, () => ({ id: 1, name: 'Long item '.repeat(100) })) } });
+        const large = await BotContextAssembler.assemble({ session: {}, status: { available: true }, text: 'inventory' });
+        const actual = BotContextAssembler.estimateTokens({ bot: large.bot, conversation: large.conversation, contextFragments: large.fragments, omitted: large.omitted });
+        assert(actual <= large.hardMaxTokens, 'the serialized data, not just a clamped counter, must fit');
+        assert.strictEqual(large.estimatedTokens, actual);
 
         compactOptions = null;
         const merchant = await BotContextAssembler.assemble({

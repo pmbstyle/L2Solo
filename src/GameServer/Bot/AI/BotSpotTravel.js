@@ -24,6 +24,16 @@ function active(session) {
     return !!session?.spotRelocation;
 }
 
+function partyReturnInCombat(session) {
+    const destination = session?.backgroundPartyReturn;
+    if (!destination || destination.partyId !== session.hotBackgroundPartyId
+        || destination.spotId !== session.spotRelocation?.spotId) return false;
+    // Damage invalidates the victim's projection; autonomous siblings have
+    // their own cached views. Cast completion needs the current party threat.
+    invoke('GameServer/Bot/AI/PartyAwareness').invalidateThreatProjection(session);
+    return invoke('GameServer/Bot/AI/PartyRevivalService').partyCombatInProgress(session);
+}
+
 function cancel(session, bot, reason = 'cancelled') {
     if (!session?.spotRelocation) return false;
     if (session.spotRelocation.arrivalPending) return false;
@@ -181,7 +191,7 @@ function startScroll(session, bot, spot, targetLoc = null, recoveryReason = null
             cancel(session, bot, 'cast_interrupted');
             return;
         }
-        if (BotTownTravel.hasCombatThreat(session, bot)) {
+        if (BotTownTravel.hasCombatThreat(session, bot) || partyReturnInCombat(session)) {
             cancel(session, bot, 'combat_interrupt');
             return;
         }
@@ -336,6 +346,7 @@ module.exports = {
     SOE_CAST_MS,
     TELEPORT_SETTLE_MS,
     active,
+    partyReturnInCombat,
     cancel,
     recoverOrDefer,
     start,

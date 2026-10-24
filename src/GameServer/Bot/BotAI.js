@@ -937,8 +937,8 @@ const BotAI = {
         return invoke('GameServer/Bot/BotManager').botSay(session, text);
     },
 
-    tell(session, targetSession, text) {
-        invoke('GameServer/Bot/BotManager').botTell(session, targetSession, text);
+    tell(session, targetSession, text, delivery = {}) {
+        invoke('GameServer/Bot/BotManager').botTell(session, targetSession, text, delivery);
     },
 
     trade(session, text) {

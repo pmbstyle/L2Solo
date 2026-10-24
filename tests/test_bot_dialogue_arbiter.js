@@ -121,6 +121,24 @@ async function main() {
 
         const fallbackReplies = [];
         BotManager.botTell = (_botSession, _playerSession, text) => fallbackReplies.push(text);
+        const oldActor = player.actor;
+        const queuedReply = BotConversationService.capturePair({ playerSession: player, botSession: bot,
+            turnId: 'arbiter-queued-identity', channel: 'client_tell', text: 'Delivered before character selection.' });
+        player.actor = actor(109, 'Replacement');
+        await BotConversationService.recordBotReply(queuedReply);
+        assert((await BotConversationStore.context(101, 201)).recentTurns.some(turn => turn.turnId === 'arbiter-queued-identity'));
+        assert(!(await BotConversationStore.context(109, 201)).recentTurns.some(turn => turn.turnId === 'arbiter-queued-identity'));
+        BotContextAssembler.assemble = async () => {
+            player.actor = actor(109, 'Replacement');
+            throw new Error('context failed after character switch');
+        };
+        player.actor = oldActor;
+        const switched = await BotDialogueArbiter.route({ playerSession: player, botSession: bot,
+            turnId: 'arbiter-switch', channel: 'client_tell', text: 'Old character question.' });
+        assert.strictEqual(switched.reason, 'actor_changed');
+        assert.deepStrictEqual(fallbackReplies, [], 'errors from the previous character cannot trigger a fallback to the replacement');
+        player.actor = oldActor;
+        BotContextAssembler.assemble = originalAssemble;
         BotBrain.maybeThink = () => false;
         const fallback = await BotDialogueArbiter.route({
             playerSession: player,

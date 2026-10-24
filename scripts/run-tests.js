@@ -16,6 +16,8 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_bot_dialogue_grounding.js',
+    'tests/test_bot_dialogue_party.js',
     'tests/test_bot_afk_buy_shop.js',
     'tests/test_native_board.js',
     'tests/test_c4_import_integration.js',
@@ -273,6 +275,8 @@ const tests = [
     'tests/test_hot_bot_queue_failure.js',
     'tests/test_bot_activity_journal.js',
     'tests/test_bot_context_assembler.js',
+    'tests/test_bot_dialogue_tools.js',
+    'tests/test_bot_clan_conversation_store.js',
     'tests/test_bot_conversation_summary.js',
     'tests/test_bot_tool_registry.js',
     'tests/test_bot_tool_authorization.js',

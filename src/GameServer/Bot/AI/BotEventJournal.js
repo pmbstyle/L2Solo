@@ -200,6 +200,26 @@ const BotEventJournal = {
     ensureSchema,
     record,
     recent,
+    async search({ botId, playerId = null, query = '', limit = 6 } = {}) {
+        const count = Math.max(1, Math.min(12, Math.floor(Number(limit) || 6)));
+        const needle = String(query || '').trim().slice(0, 100);
+        const eligible = event => !/^(?:llm_|ambient_mood)/.test(event.eventType);
+        if (databaseReady() && await ensureSchema()) {
+            try {
+                const escaped = needle.replace(/[\\%_]/g, value => '\\' + value);
+                const rows = await Database.execute([`SELECT id, playerId, botId, eventType, summary, weight, dedupeKey, count, createdAt, updatedAt, metaJson
+                    FROM bot_activity_journal WHERE botId = ? AND (playerId IS ? OR playerId IS NULL)
+                    AND eventType NOT GLOB 'llm_*' AND eventType NOT GLOB 'ambient_mood*'
+                    AND summary LIKE ? ESCAPE '\\' ORDER BY updatedAt DESC, id DESC LIMIT ?`,
+                [Number(botId), numberId(playerId), `%${escaped}%`, count]], 'bot-activity:search');
+                return rows.map(normalizeRow).filter(Boolean).reverse();
+            } catch (_) { /* The in-memory journal remains a bounded fallback. */ }
+        }
+        return memory.filter(event => event.botId === Number(botId) &&
+            (event.playerId === numberId(playerId) || event.playerId === null) && eligible(event) &&
+            event.summary.toLowerCase().includes(needle.toLowerCase()))
+            .sort((a, b) => a.updatedAt - b.updatedAt || a.id - b.id).slice(-count).map(copy);
+    },
     resetMemory() {
         memory.length = 0;
         memorySequence = 0;

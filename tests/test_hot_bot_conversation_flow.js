@@ -77,9 +77,6 @@ async function main() {
                 choices: [{ message: { content: JSON.stringify({
                     action: 'none',
                     reply: '',
-                    targetPlayerName: '',
-                    spotId: '',
-                    buffPolicyType: '',
                     reason: 'queued_test',
                     confidence: 0.9
                 }) } }]
@@ -143,7 +140,7 @@ async function main() {
         assert.strictEqual(requests.length, 3, 'all queued turns should be submitted after the first turn completes');
         const secondPayload = JSON.parse(requests[1].messages[1].content);
         assert.deepStrictEqual(
-            secondPayload.conversation.recentTurns.map((turn) => turn.text),
+            requests[1].messages.slice(2).map((turn) => turn.content),
             ['first', 'second']
         );
         for (const stage of ['hot-bot.dialogue', 'bot.context.assemble', 'openrouter.generation', 'bot.schema.validate', 'bot.tool.execute', 'bot.reply.deliver']) {
