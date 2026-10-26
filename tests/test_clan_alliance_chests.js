@@ -17,6 +17,7 @@ const mocks = {
     'GameServer/Social/CombatHelpMemory': { recordDefeat() {} },
     'GameServer/Effects/EffectRestrictions': { wakeOnDamage() {} },
     'GameServer/Npc/SocialAggro': { notifyClan() {} },
+    'GameServer/Npc/NpcHate': require('../src/GameServer/Npc/NpcHate'),
     'GameServer/World/RaidBossMinionManager': {},
     'GameServer/World/World': world,
     'GameServer/Bot/AI/BotMobCompetition': { record() {} },

@@ -1,5 +1,6 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const NpcHate = invoke('GameServer/Npc/NpcHate');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
@@ -399,7 +400,7 @@ function finalizeSkillResult(result, session, actor, target, skill, semantic) {
     if (Number(skill.fetchSelfId?.()) === 84 && actor && target !== actor
         && target?.fetchAttackable?.() === true && target.isDead?.() !== true
         && target.state?.fetchDead?.() !== true) {
-        if (typeof target.addDamageHate === 'function') target.addDamageHate(session, actor, 0, 1);
+        if (typeof target.addDamageHate === 'function') target.addDamageHate(session, actor, 0, NpcHate.ENGAGE_HATE);
         else target.enterCombatState?.(session, actor);
     }
     result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);

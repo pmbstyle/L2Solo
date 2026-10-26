@@ -14,6 +14,7 @@ const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
+const NpcHate = invoke('GameServer/Npc/NpcHate');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 
@@ -170,11 +171,7 @@ class Npc extends NpcModel {
         const damageValue = Math.max(0, Number(damage) || 0);
         const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
         entry.damage += damageValue;
-        entry.hate += aggroValue;
-
-        // L2Attackable.addDamageHate gives a newly registered actor one point
-        // of hate when the event itself carries zero aggro.
-        if (aggroValue === 0) entry.hate += 1;
+        entry.hate = NpcHate.add(entry.hate, aggroValue);
 
         const target = this.fetchMostHated();
         if (!target) return false;
@@ -191,22 +188,10 @@ class Npc extends NpcModel {
     }
 
     fetchMostHated() {
-        let mostHated = null;
-        let maxHate = 0;
-
         for (const [actorId, entry] of this.aggroList.entries()) {
-            if (!this.isValidAggroTarget(entry?.actor)) {
-                this.aggroList.delete(actorId);
-                continue;
-            }
-
-            if (entry.hate > maxHate) {
-                mostHated = entry.actor;
-                maxHate = entry.hate;
-            }
+            if (!this.isValidAggroTarget(entry?.actor)) this.aggroList.delete(actorId);
         }
-
-        return mostHated;
+        return NpcHate.mostHated(this.aggroList.values())?.actor || null;
     }
 
     fetchCombatTarget() {
@@ -295,7 +280,7 @@ class Npc extends NpcModel {
 
         if (!options.skipAggro) {
             const entry = this.ensureAggroEntry(actor);
-            if (entry && entry.hate <= 0) entry.hate = 1;
+            if (entry && entry.hate <= 0) entry.hate = NpcHate.ENGAGE_HATE;
         }
 
         const target = this.fetchMostHated() || actor;

@@ -312,6 +312,11 @@ function verifyAggroMutations() {
 }
 
 verifyAggroMutations();
+npc.clearAggroList();
+npc.addDamageHate(damageDealerSession, damageDealer, 300, 300);
+npc.addDamageHate(tankSession, tank, 300, 300);
+assert.strictEqual(npc.fetchMostHated(), damageDealer, 'a hate tie must keep the earliest entry');
+npc.abortCombatState(tankSession);
 verifyCombatRetarget()
     .then(() => console.log('NPC threat transfer checks passed'))
     .catch((error) => {
