@@ -221,8 +221,15 @@ async function run() {
     Supply.useRowSource(id => id === 9 ? clanRow : undefined, () => true);
     try {
         const T = Date.now(), native = { ...base, characterId: 990023, stats: { ...base.stats, clanId: 9 },
-            party: { partyId: 17, role: 'dd' } };
+            party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } };
         const held = Economy.forState(native, { timestamp: T });
+        // The worker keeps a held entry's graph nodes for a party member only
+        // (its party goal query serves them): the gate reads the string party
+        // id. This fixture loads EconomyContext on the main thread, which
+        // keeps every entry's nodes, so the gate is asserted directly.
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        assert.equal(Sections.partyIdOf(native), 'bgp_x_17', 'a party member keeps its graph nodes off the main thread');
+        assert.equal(Sections.partyIdOf(base), '', 'a solo bot keeps the plan only off the main thread');
         const published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
         const with_ = stats => ({ ...published, stats: { ...published.stats, ...stats } });
         const verdict = (state, deps = {}) => Economy.forState(state, { timestamp: T, rememberContext: false, ...deps }).plan;
@@ -230,9 +237,10 @@ async function run() {
         assert.equal(verdict(with_({ visitEvery: 7 })), held.plan, 'a new town rhythm keeps the decision');
         assert.equal(verdict(with_({ travel: { from: 'Giran', to: 'Dion', at: T } })), held.plan, 'a moved trip keeps the decision');
         assert.equal(verdict({ ...published, incomingPending: false }), held.plan, 'no delivery is no pending delivery');
+        assert.equal(verdict({ ...published, party: { ...published.party, leaderId: 18 } }), held.plan, 'a new party leader keeps the decision');
         const refusals = {
             clan: { ...published, stats: { ...published.stats, clanId: 0 } },
-            party: { ...published, party: { partyId: 18, role: 'dd' } },
+            party: { ...published, party: { partyId: 'bgp_x_18', role: 'dd', leaderId: 17 } },
             skill: with_({ coldCombat: { classId: 1, skillSource: 'database', skills: [{ selfId: 3, level: 1 }] } }),
             craft: with_({ dwarvenCraftLevel: 1 }),
             demand: with_({ clanMaterialDemand: { 1864: 10 } }),

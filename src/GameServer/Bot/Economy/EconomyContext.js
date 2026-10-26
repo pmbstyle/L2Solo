@@ -49,8 +49,8 @@ const TradeIntent = require('./TradeIntent');
 const PROOF_RAW_BYTES = 65536;
 // The cold worker holds one plan per bot (~1,700), apart from the planner's in-flight builds: a
 // 64-slot cache shrunk by them dropped a plan within ~2.5 s under a long cold queue, so every
-// same-key rebuild found nothing held (L133). A worker entry is the plan only (perf C1); the main
-// thread keeps the graph nodes too and stays at 64.
+// same-key rebuild found nothing held (L133). A worker entry is the plan only (perf C1), a party
+// member's with its graph nodes; the main thread keeps the graph nodes too and stays at 64.
 const RETAIN_LIMIT = isMainThread ? 64 : 2048;
 let routeAnchors = new WeakMap();
 let runtime = {};
@@ -1109,7 +1109,7 @@ function forState(state = {}, deps = {}) {
     if (diagnostic && handed) Diagnostics.count('context', 'held_verdict', 'reused');
     // A valid held build is served. A caller that needs the member's graph
     // nodes (a worker group solve) builds unless the held entry kept them
-    // (the main thread keeps them).
+    // (the main thread keeps them, the worker a party member's).
     if (eventVerdict.valid && !(deps.withNodes && !held.projection)) {
         if (deps.onSourceRead) for (const id of held.readIds) deps.onSourceRead(id);
         if (diagnostic) {
@@ -1415,7 +1415,9 @@ function forState(state = {}, deps = {}) {
     if (deps.rememberContext !== false) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= RETAIN_LIMIT) Diagnostics.count('context', 'eviction', 'capacity');
         // The main thread keeps the graph nodes as before (its group solve
-        // reads them on a hit); the worker keeps the plan only (perf C1).
+        // reads them on a hit); the worker keeps a party member's too (its
+        // party goal query reads them on a hit), a solo bot's plan only
+        // (perf C1).
         // Its own activity: the later reuse verdict reads the held build
         // with it.
         plan.eventProof = captureEventProof(state, deps, { plan });
@@ -1429,7 +1431,7 @@ function forState(state = {}, deps = {}) {
             readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat,
             activity: state.activity,
             sourceSections: retainedSourceMemo, sourceGround: retainedGround, mp: Number(state.vitals?.mp),
-            projection: isMainThread ? projection : null }, RETAIN_LIMIT);
+            projection: (isMainThread || Sections.partyIdOf(state)) ? projection : null }, RETAIN_LIMIT);
     }
     readIds = null;
     const built = view(state, plan, deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip, projection });
@@ -1615,8 +1617,9 @@ function view(state, plan, deps, built = {}) {
     }
     context.wallet = Funding.budget(state, deps.buyOrderEscrow);
     context.stockFor = stockReader(state, rootKey => plan.stockRoots.get(rootKey));
-    // A later view has the usefulness values only; a group solve that needs
-    // the members' nodes rebuilds them (forGroup).
+    // A later view of an entry without its nodes (a worker's solo bot) has
+    // the usefulness values only; a group solve that needs the members'
+    // nodes rebuilds them (forGroup).
     context.projection = built.projection || { values: plan.values };
     context.horizonHours = plan.horizonHours;
     Object.assign(context, valueReaders(state, network, plan.values, plan.persona, plan.knowledgeEnabled,
@@ -1716,8 +1719,9 @@ function forGroup(group, members, deps = {}) {
     const nodes = [], roots = [];
     // Each member keeps its actual wishes/effects. Namespaced dependencies
     // enter the group's one purse and one engine, never a second evaluator.
-    // A worker member's later view keeps only its usefulness values: the
-    // same call that made it builds again asking for the nodes (perf C1).
+    // A worker solo bot's later view (a formation candidate's) keeps only its
+    // usefulness values: the same call that made it builds again asking for
+    // the nodes (perf C1).
     const sources = contexts.map((context, i) => context.projection?.nodes ? context.projection
         : forState(selected[i], { ...deps, caller: 'groupContext', withNodes: true }).projection);
     for (let i = 0; i < contexts.length; i++) {

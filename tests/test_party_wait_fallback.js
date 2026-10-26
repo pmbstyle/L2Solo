@@ -175,8 +175,8 @@ async function commandChecks() {
     };
     LifeEvents.recordMany = () => Promise.resolve(null);
     GlobalChat.maybeAnnounce = () => null;
-    // The worker's plan is used as it is: a 'farm' plan has no drop source
-    // for main to re-check. The plan arrives with the party request the
+    // The worker's plan is used as it is, its drop source included (main
+    // picks no source again). The plan arrives with the party request the
     // worker built for it (main builds none), and the request's route names
     // the trip it started or the ground it fought on.
     const command = (state, plan, route) => {
@@ -191,13 +191,11 @@ async function commandChecks() {
             route
         });
     };
-    const farmPartyPlan = { ...partyPlan, strategy: 'farm' };
-    const farmSoloPlan = { ...soloPlan, strategy: 'farm' };
     const worked = { needed: false, spotId: currentSpot.id };
 
     // A waiter with a worker fight is relabelled to the plan's safe fallback.
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
-    let result = await command(routeState(11, {}), farmPartyPlan, worked);
+    let result = await command(routeState(11, {}), partyPlan, worked);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(applied.length, 1, 'the worker fight is applied');
     assert.strictEqual(applied[0].spotId, plannedFallback.id, 'a commanded waiter is placed on its safe fallback');
@@ -205,34 +203,35 @@ async function commandChecks() {
 
     // The planned fallback is unsafe: the plan-free level search decides.
     GearPlanner.safeFallbackForPlan = () => ({ spotId: unsafeFallback.id, npcId: 321 });
-    result = await command(routeState(12, {}), farmPartyPlan, worked);
+    result = await command(routeState(12, {}), partyPlan, worked);
     assert.strictEqual(applied[0].spotId, genericFallback.id, 'an unsafe planned fallback gives way to the level search');
 
     // A clan hunt asks for a party even with a solo-safe plan: the command waits.
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
-    result = await command(routeState(13, { clanPartyObjective: clanObjective }), farmSoloPlan, worked);
+    result = await command(routeState(13, { clanPartyObjective: clanObjective }), soloPlan, worked);
     assert.strictEqual(applied[0].spotId, plannedFallback.id, 'a clan-hunt request makes a solo-safe planner wait');
 
     // A resting waiter finishes its rest first (step 1.3 D3).
-    result = await command(routeState(14, {}, { activity: 'resting' }), farmPartyPlan, worked);
+    result = await command(routeState(14, {}, { activity: 'resting' }), partyPlan, worked);
     assert.strictEqual(applied[0].spotId, plannedFallback.id);
     assert.strictEqual(applied[0].activity, 'resting', 'D3: a found fallback does not skip the rest');
 
     // Not a waiter: main takes the spot the worker fought on and keeps the
     // worker fight; it runs no spot search of its own (step 1.3 U3).
     SpotProfiles.findForState = () => assert.fail('a command runs no second spot search');
-    result = await command(routeState(15, {}), farmSoloPlan, worked);
+    result = await command(routeState(15, {}), soloPlan, worked);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(applied.length, 1, 'U3: the worker fight on known ground is kept');
     assert.strictEqual(applied[0].spotId, currentSpot.id);
+    assert.deepStrictEqual(applied[0].stats.equipmentPlan, soloPlan, 'main applies the worker\'s drop plan as is');
     assert(reviewed.length && reviewed.every((id) => id === currentSpot.id),
         'the goal review sees the ground the worker fought on');
     // A trip the worker's step started (its request's route) names its destination.
-    result = await command(routeState(17, {}), farmSoloPlan, { needed: true, spotId: levelSpot.id });
+    result = await command(routeState(17, {}), soloPlan, { needed: true, spotId: levelSpot.id });
     assert.strictEqual(applied.length, 1);
     assert(reviewed.length && reviewed.every((id) => id === levelSpot.id), 'the goal review sees the trip\'s destination');
     // Without any spot in the worker's route the rest stays.
-    result = await command(routeState(16, {}), farmSoloPlan, { needed: false, spotId: null });
+    result = await command(routeState(16, {}), soloPlan, { needed: false, spotId: null });
     assert.strictEqual(result.reason, 'missing_spot_recovery', 'no spot anywhere: the bot rests and retries');
     assert.strictEqual(upserted[0].value.activity, 'resting');
     SpotProfiles.findForState = findForStateStub;

@@ -192,21 +192,7 @@ function joint(party, members, { timestamp = Date.now(), spots } = {}) {
     const goals = needs(members, party.stats.objective, party.stats.agreement);
     const Income = require('./PartyIncomeComparison');
     let review = {};
-    if (party.stats.materialFormation) {
-        const decisions = new Map();
-        const accepted = new Set(require('./PartyGoalPolicy').formingMembers(members, party.stats.objective,
-            { spots, timestamp, onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
-            .map(member => Number(member.characterId)));
-        review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => {
-            // Formation calls the economic comparison directly so the wire
-            // packet contains only the already validated economic fields.
-            const checked = decisions.get(Number(member.characterId));
-            const { probability, roll, goal, ...decision } = checked?.at === timestamp ? checked
-                : { ...Income.evaluate(), at: timestamp, soloSource: null, partySource: null };
-            return { characterId: Number(member.characterId), ...decision,
-                accept: checked?.at === timestamp && accepted.has(Number(member.characterId)) };
-        }) };
-    } else if (timestamp - Number(party.stats.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS) {
+    if (timestamp - Number(party.stats.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS) {
         const prepared = Income.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
         review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
             ...Income.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };

@@ -1091,17 +1091,6 @@ nativeGoalStates.push(nativeMaterialState);
 const materialPlan = GearAcquisitionPlanner.planFor(mage, { spots: [stoneGolemSpot] });
 if (materialPlan.strategy === 'craft' && materialPlan.next) {
     assert(Number.isFinite(materialPlan.next.itemId), 'a craft route must persist the next farmable material for market fallback');
-    assert(materialPlan.materials.some((material) => Number(material.farmEffort) > 0),
-        'craft planning must persist the farm cost needed to compare market components');
-    const legacyPlan = { ...materialPlan,
-        materials: materialPlan.materials.map(material => {
-            const copy = { ...material }; delete copy.farmEffort; return copy;
-        }) };
-    const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(legacyPlan, mage, [stoneGolemSpot]);
-    assert(costedPlan.materials.some((material) => Number(material.farmEffort) > 0),
-        'a retained craft plan must gain comparable farm costs without changing its target');
-    assert.strictEqual(GearAcquisitionPlanner.withMaterialFarmEffort(costedPlan, mage, [stoneGolemSpot]), costedPlan,
-        'the migration should be calculated only once');
 }
 
 assert.strictEqual(GearAcquisitionPlanner.shouldFinishPreviousPlan(

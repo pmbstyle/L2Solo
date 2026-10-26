@@ -65,6 +65,28 @@ async function run() {
     assert.equal((await persistedBag(firstId))[1835]?.amount, 1000, 'fixture stores the summary-only stack');
     await Seeder.ensureCraftServices();
     assert.deepEqual(await persistedBag(firstId), await physicalBag(firstId), 'the seed pass drops the summary-only stack');
+
+    // Another writer (a craft, a sale) moves the row while the pass reads the
+    // item rows: its vitals and stats stand; the next pass heals the bag.
+    const before = await Life.findByCharacterId(firstId);
+    await Life.upsertState({ ...before, inventory: { ...before.inventory, ...phantomShots } }, 'phantom_fixture');
+    const fetchItems = Database.fetchItems;
+    Database.fetchItems = async (characterId, ...rest) => {
+        if (Number(characterId) === firstId && rest[0] === 'generated_craft_service') {
+            Database.fetchItems = fetchItems;
+            const current = Life.cachedState(firstId);
+            await Life.upsertState({ ...current, vitals: { ...current.vitals, hp: 400 },
+                stats: { ...current.stats, frustration: 3 } }, 'competing_writer_fixture');
+        }
+        return fetchItems.call(Database, characterId, ...rest);
+    };
+    await Seeder.ensureCraftServices();
+    Database.fetchItems = fetchItems;
+    const [moved] = await Database.execute(['SELECT hp, statsJson FROM bot_life_state WHERE characterId = ?', [firstId]]);
+    assert.equal(Number(moved.hp), 400, 'the pass keeps the vitals another writer saved meanwhile');
+    assert.equal(JSON.parse(moved.statsJson).frustration, 3, 'the pass keeps the stats another writer saved meanwhile');
+    await Seeder.ensureCraftServices();
+    assert.deepEqual(await persistedBag(firstId), await physicalBag(firstId), 'the next pass drops the summary-only stack');
     console.log('PASS saved craft stations: 32 account identities refreshed, 3 appended services created');
 }
 

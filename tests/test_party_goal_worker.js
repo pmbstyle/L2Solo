@@ -10,7 +10,9 @@ const timestamp = Date.now();
 const epoch = 'party-goal-native';
 const members = [701, 702].map(characterId => ({ characterId, phase: 'cold', updatedAt: timestamp,
     level: 20, activity: 'resting', adena: 10000, inventory: {},
-    spotId: 'execution-ground', stats: { classId: 0 }, timing: { nextResolveAt: timestamp + 3600000 },
+    // Crafters (a learned Create Item level): their goal query asks the
+    // occupation planner with the query's own recipe knowledge.
+    spotId: 'execution-ground', stats: { classId: 0, dwarvenCraftLevel: 1 }, timing: { nextResolveAt: timestamp + 3600000 },
     simulation: { revision: 2 },
     vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }));
 const party = { partyId: 'goal-worker', memberIds: [701, 702], leaderId: 701,
@@ -91,19 +93,35 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(materialReply.payload.ok, true, materialReply.payload.reason);
     assert.equal(materialReply.payload.joint.memberGoals.filter(goal => goal.amount === 12).length, 2);
     assert(Protocol.validateEnvelope(materialReply, 'worker').ok, 'native material goal advice crosses the worker boundary');
-    post('party_goal_request', { ...request, members: materialMembers, party: { ...party, startedAt: timestamp,
-        stats: { objective: materialObjective, agreement: materialAgreement, materialFormation: true } },
-        replyBy: Date.now() + 5000 }, 'material-admission');
-    const admission = await wait(message => message.type === 'party_goal_result' && message.msgId === 'material-admission');
-    assert.equal(admission.payload.ok, true, admission.payload.reason);
-    assert.equal(admission.payload.joint.incomeReviews.length, 2);
-    assert(admission.payload.joint.incomeReviews.every(review => !review.accept), 'a missing camp forecast refuses unsafe formation in the worker');
-    assert(Protocol.validateEnvelope(admission, 'worker').ok, 'material admission uses the bounded existing review packet');
+    // The forming verdict of a roster before main builds its party: the accepted ids only.
+    const forming = (id, roster, requested) => post('party_goal_request', { ...request, members: roster,
+        party: { partyId: `forming-${id}`, leaderId: roster[0].characterId, memberIds: roster.map(member => member.characterId),
+            stats: { forming: { requested } } }, replyBy: Date.now() + 5000 }, id);
+    const verdict = async id => {
+        const reply = await wait(message => message.type === 'party_goal_result' && message.msgId === id);
+        assert.equal(reply.payload.ok, true, reply.payload.reason);
+        assert(Protocol.validateEnvelope(reply, 'worker').ok, 'a forming verdict crosses the worker boundary');
+        assert.equal(reply.payload.joint.memberGoals, undefined, 'a verdict builds no goals');
+        return reply.payload.joint;
+    };
+    forming('material-admission', materialMembers, materialObjective);
+    const admission = await verdict('material-admission');
+    assert.deepEqual(admission.formingAccepted, [], 'a missing camp forecast refuses unsafe formation in the worker');
+    assert.equal(admission.incomeReviews.length, 2);
     worker.postMessage({ queryProbe: 'canonical' });
     const prepared = await wait(message => message.probe === 'canonical');
     assert.equal(prepared.slots.filter(row => row.id > 0).length, 2);
     assert(prepared.slots.filter(row => row.id > 0).every(row => row.knownShotRecipes.length === 0),
         'current query knowledge replaces the worker\'s recipes row');
+    // A crafter at its station that requires the party joins without weighing income.
+    const required = { status: 'open', priority: 'required', spotId: 'execution-ground', requestedAt: timestamp };
+    const stationed = (member, at) => ({ ...member, updatedAt: timestamp + at,
+        stats: { ...member.stats, craftStationId: 1, partyRequest: required } });
+    forming('all-accept', [stationed(members[0], 2), stationed(members[1], 2)], required);
+    assert.deepEqual((await verdict('all-accept')).formingAccepted, [701, 702]);
+    // An adventurer without a forecast of the spot declines; the reply names the one who joins.
+    forming('decliner', [stationed(members[0], 3), { ...members[1], updatedAt: timestamp + 3 }], required);
+    assert.deepEqual((await verdict('decliner')).formingAccepted, [701]);
     const incomeSpot = { id: '-10_10', minLevel: 14, maxLevel: 14, avgLevel: 14, density: 20,
         tagsAuthoritative: true, tags: ['starter', 'normal_hp'], npcEntries: [], center: { locX: 0, locY: 0 } };
     post('catalog_page', { catalog: 'spots', rows: [incomeSpot], done: true }, 'income-spots');

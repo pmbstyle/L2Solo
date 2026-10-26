@@ -209,12 +209,17 @@ if (process.argv[2] === '--bootstrap') {
             db.exec('CREATE TABLE bot_life_state_simulation_owner_lease (sentinel TEXT NOT NULL)');
             db.prepare('INSERT INTO bot_life_state_simulation_owner_lease(sentinel) VALUES (?)').run('keep-me');
         }
+        insertBots(db);
+        db.close();
+    }
+
+    const insertBots = (db, rows = realisticRows) => {
         const insertAccount = db.prepare('INSERT INTO accounts(username, password) VALUES (?, ?)');
         const insertCharacter = db.prepare(`INSERT INTO characters(
             id, username, name, classId, race, level, maxHp, maxMp,
             sex, face, hair, hairColor, locX, locY, locZ
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        realisticRows.forEach((row) => {
+        rows.forEach((row) => {
             insertAccount.run(row.accountName, 'test-only');
             insertCharacter.run(
                 row.characterId, row.accountName, row.characterName, 1, 0, row.level, 500, 250,
@@ -226,13 +231,12 @@ if (process.argv[2] === '--bootstrap') {
             homeRegion, currentRegion, spotId, activity, phase, partyId,
             inventorySummary, statsJson, updatedAt
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        realisticRows.forEach((row) => insert.run(
+        rows.forEach((row) => insert.run(
             row.characterId, row.accountName, row.characterName, row.level, row.exp, row.sp, row.adena,
             row.homeRegion, row.currentRegion, row.spotId, row.activity, row.phase, row.partyId,
             row.inventorySummary, row.statsJson, row.updatedAt
         ));
-        db.close();
-    }
+    };
 
     function bootstrap(databasePath, expectedSuccess = true) {
         const result = spawnSync(process.execPath, [__filename, '--bootstrap', databasePath], {
@@ -273,8 +277,10 @@ if (process.argv[2] === '--bootstrap') {
             const partial = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").get(name);
             assert(partial?.sql?.includes("WHERE phase = 'cold'"), `${name} must stay a partial index on far bots`);
         });
-        ['bot_party_candidate_insert', 'bot_party_candidate_metadata', 'bot_party_candidate_ordinary'].forEach((name) => assert(
-            db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `v72 must create ${name} again`));
+        ['bot_party_candidate_insert', 'bot_party_candidate_metadata', 'bot_party_candidate_ordinary', 'bot_party_candidate_stats'].forEach((name) => assert(
+            db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `migrations must leave ${name}`));
+        ['bot_party_candidate_payload', 'bot_party_candidate_identity'].forEach((name) => assert(
+            !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `v74 must merge ${name} into the stats trigger`));
         const projectionColumns = db.prepare('PRAGMA table_xinfo(bot_life_state)').all();
         partyProjectionColumns.forEach((name) => {
             assert.strictEqual(projectionColumns.filter((column) => column.name === name).length, 1, `${name} must exist exactly once`);
@@ -335,12 +341,66 @@ if (process.argv[2] === '--bootstrap') {
         db.close();
     }
 
+    // The candidate row of bot 71001 (realisticRows[0]: a far bot hunting at its
+    // spot, no party, not a population account) follows each of its inputs:
+    // the stats keys it projects or judges eligibility by, and the life columns.
+    const assertCandidateFollowsLifeRow = (databasePath) => {
+        const db = open(databasePath);
+        const read = () => {
+            const row = db.prepare(`SELECT payloadJson, ordinaryEligible, joinAvailability, level
+                FROM bot_party_candidate_projection WHERE characterId = 71001`).get();
+            return { payload: JSON.parse(row.payloadJson), ordinary: Number(row.ordinaryEligible), join: Number(row.joinAvailability), level: Number(row.level) };
+        };
+        let stats = JSON.parse(realisticRows[0].statsJson);
+        // JSON.stringify drops a key set to undefined: the edit removes it.
+        const edit = (change, columns = {}) => {
+            stats = { ...stats, ...change };
+            const names = Object.keys(columns);
+            db.prepare(`UPDATE bot_life_state SET ${['statsJson', ...names].map((name) => `${name} = ?`).join(', ')} WHERE characterId = 71001`)
+                .run(JSON.stringify(stats), ...names.map((name) => columns[name]));
+        };
+        const expect = (payload, ordinary, join, level, message) => assert.deepStrictEqual(read(), { payload, ordinary, join, level }, message);
+        const request = { status: 'open', priority: 'required', spotId: 'death_pass_harpy' };
+        const plan = { status: 'active', next: { spotId: 'death_pass_harpy' } };
+        expect(['dps', null, null, null, null, null], 0, 0, 38, 'a bot of a named account is no ordinary candidate');
+        edit({ generatedCold: 1 });
+        expect(['dps', null, null, null, null, null], 1, 1, 38, 'a generated far bot at its spot can join');
+        edit({ role: 'tank', partyRequest: request });
+        expect(['tank', null, request, null, null, null], 1, 1, 38, 'the role and the party request reach the payload');
+        edit({ equipmentPlan: plan });
+        expect(['tank', null, request, null, plan, null], 1, 1, 38, 'the gear plan reaches the payload');
+        edit({ craftShop: { recipeId: 7 } });
+        expect(['tank', null, request, null, plan, null], 0, 0, 38, 'a craft shop keeper is no candidate');
+        edit({ craftShop: undefined, craftStationId: 3 });
+        expect(['tank', null, request, null, plan, null], 0, 0, 38, 'a bot at a craft station is no candidate');
+        edit({ craftStationId: undefined, playerPartyTakeover: { partyId: 'player-party' } });
+        expect(['tank', null, request, null, plan, null], 0, 0, 38, 'a bot taken over by the player party is no candidate');
+        edit({ playerPartyTakeover: undefined });
+        expect(['tank', null, request, null, plan, null], 1, 1, 38, 'the bot is a candidate again once every flag is gone');
+        edit({ deathCount: 3 });
+        expect(['tank', null, request, null, plan, null], 1, 1, 38, 'an unrelated stats key leaves the candidate as it was');
+        edit({ deathCount: 4 }, { phase: 'hot' });
+        expect(['tank', null, request, null, plan, null], 1, 0, 38, 'a bot near the player cannot join');
+        edit({ craftShop: { recipeId: 8 } }, { phase: 'cold' });
+        expect(['tank', null, request, null, plan, null], 0, 0, 38, 'a flag and the phase in one write: the flag wins');
+        edit({ craftShop: undefined }, { partyId: 'party-71001' });
+        expect(['tank', null, request, null, plan, null], 1, 0, 38, 'a bot in a party cannot join');
+        edit({}, { partyId: null, activity: 'selling' });
+        expect(['tank', null, request, null, plan, null], 1, 0, 38, 'a selling bot cannot join');
+        edit({ role: 'dps' }, { activity: 'party_wait', spotId: null });
+        expect(['dps', null, request, null, plan, null], 1, 0, 38, 'a bot without a spot cannot join');
+        edit({}, { spotId: 'death_pass_harpy', level: 39 });
+        expect(['dps', null, request, null, plan, null], 1, 1, 39, 'a waiting bot at its spot can join and its level follows');
+        db.close();
+    };
+
     const version9Path = path.join(outputDir, 'version-9.sqlite');
     seed(version9Path, [1, 2, 3, 4, 5, 6, 7, 8, 9]);
     bootstrap(version9Path);
     assertMigrated(version9Path);
     bootstrap(version9Path);
     assertMigrated(version9Path);
+    assertCandidateFollowsLifeRow(version9Path);
 
     const version7Path = path.join(outputDir, 'version-7.sqlite');
     seed(version7Path, [1, 2, 3, 4, 5, 6, 7]);
@@ -460,9 +520,45 @@ if (process.argv[2] === '--bootstrap') {
     ], 'v70 copies the versions into their columns and removes them and sex from the stats');
     versioned.close();
 
+    // v80: the build hint and the per-target fight lists leave the stats;
+    // an entry that is not an object stays as stored and boot still succeeds.
+    const slimPath = path.join(outputDir, 'version-16-slim-stats.sqlite');
+    seed(slimPath, Array.from({ length: 16 }, (_, index) => index + 1), { schema: currentSchema });
+    const slimStats = {
+        role: 'healer',
+        build: { role: 'healer', grade: 'c' },
+        targetCombat: {
+            lastDefeatedNpcIds: [20101],
+            populationTargets: {
+                5: 'abc',
+                6: { resolves: 2, lastDefeatedNpcIds: [20101, 20102], lastResolvedAt: 1812345678000 },
+                7: true,
+                8: { resolves: 1, threat: 0.30000000000000004 }
+            }
+        },
+        big: 1e21
+    };
+    const slimSeed = open(slimPath);
+    slimSeed.prepare('UPDATE bot_life_state SET statsJson = ? WHERE characterId = ?').run(JSON.stringify(slimStats), 71001);
+    slimSeed.close();
+    bootstrap(slimPath);
+    const slimmed = open(slimPath);
+    const slimRow = slimmed.prepare('SELECT statsJson FROM bot_life_state WHERE characterId = 71001').get().statsJson;
+    slimmed.close();
+    const expectedSlim = JSON.parse(JSON.stringify(slimStats));
+    delete expectedSlim.build;
+    delete expectedSlim.targetCombat.populationTargets[6].lastDefeatedNpcIds;
+    assert.strictEqual(slimRow, JSON.stringify(expectedSlim),
+        'v80 drops the build hint and the per-target lists and keeps every other value as stored');
+
     const freshPath = path.join(outputDir, 'fresh.sqlite');
     bootstrap(freshPath);
     const fresh = open(freshPath);
+    const partyTriggers = (db) => db.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'bot_party_candidate_%' ORDER BY name").all()
+        .map((row) => [row.name, row.sql.replace(/\s+/g, ' ')]);
+    const migrated = open(version9Path);
+    assert.deepStrictEqual(partyTriggers(fresh), partyTriggers(migrated), 'fresh and migrated worlds keep the same party candidate triggers');
+    migrated.close();
     const freshColumns = fresh.prepare('PRAGMA table_xinfo(bot_life_state)').all().map((column) => column.name);
     assert(freshColumns.includes('simulationRevision'), 'fresh bootstrap must include simulationRevision');
     loanColumns.forEach((name) => assert(!freshColumns.includes(name), `fresh bootstrap must not keep ${name}`));
@@ -475,7 +571,9 @@ if (process.argv[2] === '--bootstrap') {
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1);
     assert.strictEqual(Number(fresh.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 72').get().count), 1);
+    insertBots(fresh, realisticRows.slice(0, 1));
     fresh.close();
+    assertCandidateFollowsLifeRow(freshPath);
 
     // v72 on a world saved while a far bot was on loan: the loan columns,
     // the owner index and an owner-naming trigger are back as before v72.

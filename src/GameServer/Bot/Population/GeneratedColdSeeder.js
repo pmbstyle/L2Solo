@@ -9,7 +9,6 @@ const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
-const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -460,7 +459,6 @@ function stateFor(character, index, seedMeta = {}) {
             classId,
             race: Number(base.race),
             route: spot?.route || null,
-            build: GearSkillHints.forCharacter({ classId, level }, { role: base.role }),
             classProgressionLevel: level,
             classProgressionClassId: classId,
             generatedCold: true,
@@ -607,22 +605,54 @@ const GeneratedColdSeeder = {
                         || existingState?.activity !== 'crafting'
                         || existingState?.currentRegion !== 'Giran';
                     return CraftShopService.ensureRecipes(state.characterId, craftShop)
-                        // A cold crafter never resolves, so nothing else drops a
-                        // summary entry it holds no item row for: the seed pass
-                        // rebuilds its bag from the rows when the two disagree.
-                        // A hot one's bag belongs to its session.
-                        .then(() => (state.phase === 'cold' ? Database.fetchItems(state.characterId, 'generated_craft_service') : null))
-                        .then((items) => {
-                            const held = items ? LifeState.inventoryStateFromItems(state, items) : state;
-                            const needsBagRefresh = held !== state && !isDeepStrictEqual(
-                                LifeState.normalizeInventoryStackability(held.inventory),
-                                LifeState.normalizeInventoryStackability(state.inventory));
-                            if (!(shouldSeedState || needsStationRefresh || needsServiceProfile || needsBagRefresh)) return state;
-                            return LifeState.upsertState({
-                                ...held,
-                                loc: held.phase === 'cold' ? { ...craftShop.loc } : held.loc,
-                                stats: { ...(held.stats || {}), craftStationId: craftShop.stationId, craftShop }
-                            }, 'generated_craft_service');
+                        .then(() => {
+                            // A hot row belongs to its session (its hand-back
+                            // refreshes the stall, refreshCraftShop): the next
+                            // pass compares it again once it is cold.
+                            if (existingState && existingState.phase !== 'cold') return existingState;
+                            // A cold crafter's own steps (cold_manufacture) never
+                            // rebuild its bag from the rows, so nothing else drops a
+                            // summary entry it holds no item row for: the pass
+                            // rebuilds its bag and wallet from the rows when they disagree.
+                            return Database.fetchItems(state.characterId, 'generated_craft_service').then((items) => {
+                                // A new service: the whole seed row is the pass's own,
+                                // its bag the rows its creation granted (the starter shots).
+                                if (!existingState) {
+                                    const held = LifeState.inventoryStateFromItems(state, items);
+                                    return LifeState.upsertState({
+                                        ...held,
+                                        loc: { ...craftShop.loc },
+                                        stats: { ...(held.stats || {}), craftStationId: craftShop.stationId, craftShop }
+                                    }, 'generated_craft_service');
+                                }
+                                const held = LifeState.inventoryStateFromItems(existingState, items);
+                                const needsBagRefresh = !isDeepStrictEqual(
+                                    LifeState.normalizeInventoryStackability(held.inventory),
+                                    LifeState.normalizeInventoryStackability(existingState.inventory))
+                                    || held.adena !== existingState.adena;
+                                if (!(shouldSeedState || needsStationRefresh || needsServiceProfile || needsBagRefresh)) return existingState;
+                                // Only the pass's own fields, held on the copy it
+                                // compared: a craft, review or sale that moved the
+                                // row meanwhile keeps its vitals and stats (false).
+                                const profile = shouldSeedState || needsServiceProfile;
+                                return LifeState.writeHeldFields(existingState, {
+                                    stats: {
+                                        ...(profile ? seedState.stats : {}),
+                                        ...(needsStationRefresh ? { craftStationId: craftShop.stationId, craftShop } : {}),
+                                        ...(needsBagRefresh ? { equipment: held.stats.equipment } : {})
+                                    },
+                                    columns: {
+                                        ...(profile ? { level: state.level, exp: state.exp, sp: state.sp,
+                                            activity: state.activity, currentRegion: state.currentRegion } : {}),
+                                        ...(needsStationRefresh ? { locX: craftShop.loc.locX, locY: craftShop.loc.locY,
+                                            locZ: craftShop.loc.locZ } : {}),
+                                        ...(needsBagRefresh ? { adena: held.adena } : {})
+                                    },
+                                    inventory: needsBagRefresh ? held.inventory : null
+                                }, 'generated_craft_service').then((saved) => (saved && needsStationRefresh
+                                    ? Database.updateCharacterLocation(saved.characterId, craftShop.loc).then(() => saved)
+                                    : saved));
+                            });
                         })
                         // The station publishes its workshop to bots (E212);
                         // review writes only when its entries change.

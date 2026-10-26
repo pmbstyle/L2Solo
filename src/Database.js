@@ -1890,6 +1890,26 @@ function applySchemaMigrations() {
     migrations.push([78, () => connection.exec('DELETE FROM recommendation_hunts')]);
     migrations.push([79, () => require('./GameServer/Clan/ClanWarRepository').install(connection)]);
     migrations.push([80, () => require('./GameServer/Clan/ClanWarCombat').install(connection)]);
+    // A far bot's commit parses its stats once for the party candidate row, not twice.
+    migrations.push([81, () => PartyCandidateProjection.mergeStatsTriggers(connection)]);
+    // Two held copies nobody reads leave old rows (stateslim): the build hint
+    // (the observer computes it from class, level and role) and the last
+    // fight's NPC list kept per population target (only the bot's own
+    // top-level list is read, GearThreat). One pass: each row is rewritten
+    // (and its candidate-stats trigger fires) once. The per-target strip is a
+    // merge patch naming only object entries that hold a list, so any other
+    // entry (scalar, array, null) and every number's text stay as stored.
+    migrations.push([82, () => {
+        const listedTargets = `FROM json_each(statsJson, '$.targetCombat.populationTargets')
+                WHERE type = 'object' AND json_type(statsJson, fullkey || '.lastDefeatedNpcIds') IS NOT NULL`;
+        const hasTargetLists = `(json_type(statsJson, '$.targetCombat.populationTargets') = 'object'
+            AND EXISTS (SELECT 1 ${listedTargets}))`;
+        write(`UPDATE bot_life_state SET statsJson = CASE WHEN ${hasTargetLists}
+            THEN json_patch(json_remove(statsJson, '$.build'), json_object('targetCombat', json_object('populationTargets',
+                json((SELECT json_group_object(key, json('{"lastDefeatedNpcIds":null}')) ${listedTargets})))))
+            ELSE json_remove(statsJson, '$.build') END
+            WHERE json_valid(statsJson) AND (json_type(statsJson, '$.build') IS NOT NULL OR ${hasTargetLists})`);
+    }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
@@ -8624,13 +8644,17 @@ const Database = {
             if (clanCraft || workshop) {
                 const lifeState = invoke('GameServer/Bot/Population/BotLifeState');
                 for (const id of new Set([Number(crafterId), Number(customerId)])) {
-                    const inventory = id === Number(customerId) || workshop
+                    // A bag rebuilt from the item rows carries its Adena into the
+                    // wallet column; a clan crafter's JSON bag keeps the column.
+                    const fromItems = id === Number(customerId) || !!workshop;
+                    const inventory = fromItems
                         ? lifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]))
                         : JSON.parse(clanCrafter.inventorySummary || '{}');
                     write(`UPDATE bot_life_state SET inventorySummary = ?, simulationRevision = simulationRevision + 1,
                         statsJson = json_set(statsJson, '$.clanInventoryRevision', simulationRevision + 1),
+                        adena = CASE WHEN ? THEN ? ELSE adena END,
                         mp = CASE WHEN characterId = ? THEN ? ELSE mp END, updatedAt = ? WHERE characterId = ?`,
-                    [JSON.stringify(inventory), crafterId, crafterMp, now(), id]);
+                    [JSON.stringify(inventory), fromItems ? 1 : 0, Number(inventory['57']?.amount || 0), crafterId, crafterMp, now(), id]);
                 }
                 if (workshop) {
                     const production = { ...jsonObject(workshopCrafter.statsJson).production };

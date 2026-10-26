@@ -160,6 +160,10 @@ async function verifyAuthoredPhysicalCraft() {
         assert.strictEqual(held(afterItems, recipe.productId), recipe.productCount, 'exactly one recipe output');
         assert.strictEqual(held(afterItems, 57), held(before[0].items, 57) - entry.price);
         assert.strictEqual(held(stationItems, 57), held(before[1].items, 57) + entry.price);
+        const [stationRow] = await Database.execute(['SELECT adena FROM bot_life_state WHERE characterId=?', [crafter.characterId]]);
+        assert.strictEqual(stationRow.adena, held(stationItems, 57), 'the station\'s saved wallet holds the fee it earned');
+        assert.strictEqual(Life.cachedState(crafter.characterId).adena, held(stationItems, 57),
+            'the station\'s held wallet holds the fee it earned');
         assert.strictEqual(held(afterItems, 57) + held(stationItems, 57),
             held(before[0].items, 57) + held(before[1].items, 57), 'fee transfers conserve both physical wallets');
         assert.strictEqual(result.state.adena, held(afterItems, 57), 'returned wallet follows the committed physical debit');
@@ -231,6 +235,10 @@ async function verifyAuthoredPhysicalCraft() {
             assert.strictEqual(held(workshopAfter[0].items, recipe.productId), recipe.productCount);
             assert.strictEqual(held(workshopAfter[0].items, 57), 1000000 - selectedWorkshop.price);
             assert.strictEqual(held(workshopAfter[1].items, 57), 1000000 + selectedWorkshop.price);
+            assert.strictEqual(workshopAfter[1].life.adena, held(workshopAfter[1].items, 57),
+                'the workshop owner\'s saved wallet holds the fee it earned');
+            assert.strictEqual(workshopAfter[1].cache.adena, held(workshopAfter[1].items, 57),
+                'the workshop owner\'s held wallet holds the fee it earned');
             assert.strictEqual(held(workshopAfter[0].items, 57) + held(workshopAfter[1].items, 57), 2000000);
             assert.strictEqual(workshopResult.state.adena, held(workshopAfter[0].items, 57),
                 'paid workshop row publication cannot restore pre-exchange cash');
