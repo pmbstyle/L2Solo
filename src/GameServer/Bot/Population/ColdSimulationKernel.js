@@ -8,6 +8,10 @@ const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
+// Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
+// 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
+// queued step and command starts on its own turn: same work, no long task.
+const nextTurn = require('../../EventLoopTurn');
 // Step lead: a far step starts this much before its due so its commit lands
 // by the due (resolved as of the due, max(now, dueAt)). It follows the
 // measured start -> commit ack time as a one-sided average: it rises a
@@ -1294,7 +1298,7 @@ class ColdSimulationKernel {
                 if (!attempt) continue;
                 commandsSelected += 1;
                 DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
-                this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id, attempt));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveCommand(id, attempt));
             }
         }
         // Back on the heap unless the scan replaced or cancelled them.
@@ -1610,10 +1614,10 @@ class ColdSimulationKernel {
                 if (parties.has(partyId)) continue;
                 parties.add(partyId);
                 const source = this.capturePartyResolverSource(partyId);
-                this.resolveChain = this.resolveChain.then(() => this.resolvePartyStep(partyId, source));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolvePartyStep(partyId, source));
             } else {
                 const id = Number(candidate.characterId), source = this.captureResolverSource(id);
-                this.resolveChain = this.resolveChain.then(() => this.resolveStep(id, source));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveStep(id, source));
             }
         }
     }

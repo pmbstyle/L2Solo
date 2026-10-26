@@ -70,9 +70,7 @@ function recipeKnowledgeFor(state) {
         ? CraftWorkshopService.knowledgeFor(state.characterId) : {};
 }
 
-function yieldToLoop() {
-    return new Promise((resolve) => setImmediate(resolve));
-}
+const yieldToLoop = require('../../EventLoopTurn');
 
 function npcPlanningCatalogRows() {
     return ColdNpcPlanningCatalog.buildRows({
@@ -101,6 +99,8 @@ function heapSnapshotOptions() {
     return { execArgv: ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${HEAP_SNAPSHOT_DIR}`] };
 }
 
+const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0 });
+
 class ColdSimulationCoordinator {
     constructor(options = {}) {
         this.WorkerClass = options.WorkerClass || Worker;
@@ -116,6 +116,7 @@ class ColdSimulationCoordinator {
         this.ready = false;
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
+        this.busyWindow = emptyBusyWindow();
         this.lastWorkerMessage = null;
         this.terminateCause = null;
         this.lastWatchdogAt = 0;
@@ -423,6 +424,22 @@ class ColdSimulationCoordinator {
             return;
         }
         this.workerDiagnosticsSeq = delta.seq;
+    }
+
+    // The health line's worker numbers since its last line (PopulationStatus.goalText takes them):
+    // the busy share as summed active / idle ms, the busiest beat and the longest loop delay.
+    noteBusy(payload) {
+        const window = this.busyWindow;
+        window.activeMs += Number(payload.eluActiveMs) || 0;
+        window.idleMs += Number(payload.eluIdleMs) || 0;
+        window.maxElu = Math.max(window.maxElu, Number(payload.eventLoopUtilization) || 0);
+        window.lagMs = Math.max(window.lagMs, Number(payload.eventLoopLagMaxMs) || 0);
+    }
+
+    takeBusyWindow() {
+        const window = this.busyWindow;
+        this.busyWindow = emptyBusyWindow();
+        return window;
     }
 
     // With diagnostics off the payload is stored as sent; with them on the kept table stands in for the delta,
@@ -812,6 +829,7 @@ class ColdSimulationCoordinator {
             break;
         case 'heartbeat':
             this.lastHeartbeatAt = Date.now();
+            this.noteBusy(payload);
             this.storeWorkerSnapshot(payload, true);
             if (!this.stopping) Metrics.recordColdSafetyTotals(epoch, payload.safety);
             this.handleCompetitionForecast(payload.competition, worker, epoch);
@@ -1923,7 +1941,7 @@ class ColdSimulationCoordinator {
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
                         ...(state ? { state } : {}) });
                 }
-                await new Promise((resolve) => setImmediate(resolve));
+                await yieldToLoop();
             }
             if (!sourceCurrent()) return;
             // Each request answered once, in order.

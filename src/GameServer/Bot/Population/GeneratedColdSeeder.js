@@ -535,9 +535,7 @@ function sameRecipeEntries(left = [], right = []) {
     return leftIds.length === rightIds.length && leftIds.every((recipeId, index) => recipeId === rightIds[index]);
 }
 
-function eventLoopYield() {
-    return new Promise((resolve) => setImmediate(resolve));
-}
+const eventLoopYield = require('../../EventLoopTurn');
 
 function cooperativeEach(items, worker, options = {}) {
     const values = Array.isArray(items) ? items : [];
