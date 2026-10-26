@@ -6,6 +6,7 @@ const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const Npc = invoke('GameServer/Npc/Npc');
 const SkillModel = invoke('GameServer/Model/Skill');
 const World = invoke('GameServer/World/World');
+const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 
 function actor(id) {
     return {
@@ -219,29 +220,39 @@ finally {
     npc.abortCombatState(tankSession);
 }
 
-async function verifyCombatRetarget() {
-    const observedTargets = [];
-    const originalMeleeHit = npc.meleeHit;
-    const originalSelectCombatSkill = npc.selectCombatSkill;
-    const originalScheduleAction = npc.automation.scheduleAction;
-    const originalHasCombatLineOfSight = npc.hasCombatLineOfSight;
-    const originalIsTargetInAttackRange = npc.isTargetInAttackRange;
-    npc.meleeHit = (_session, _attacker, target) => observedTargets.push(target);
-    npc.selectCombatSkill = () => null;
-    npc.automation.scheduleAction = (_session, _npc, _target, _range, callback) => callback();
-    npc.hasCombatLineOfSight = () => true;
-    npc.isTargetInAttackRange = () => true;
+const waitFor = async (predicate, timeoutMs = 2500) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline && !predicate()) await new Promise((resolve) => setTimeout(resolve, 25));
+    return predicate();
+};
 
-    const waitFor = async (predicate, timeoutMs = 2500) => {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-            if (predicate()) return true;
-            await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-        return predicate();
+// The combat loop runs for real; only its swing, skill choice, range and
+// line of sight are fixed so the test reads whom the mob turns to.
+async function withCombatStubs(run, { meleeHit = () => {}, lineOfSight = true } = {}) {
+    const originals = {
+        meleeHit: npc.meleeHit, selectCombatSkill: npc.selectCombatSkill,
+        hasCombatLineOfSight: npc.hasCombatLineOfSight, isTargetInAttackRange: npc.isTargetInAttackRange
     };
-
+    const originalScheduleAction = npc.automation.scheduleAction;
+    Object.assign(npc, {
+        meleeHit, selectCombatSkill: () => null,
+        hasCombatLineOfSight: () => lineOfSight, isTargetInAttackRange: () => true
+    });
+    npc.automation.scheduleAction = (_session, _npc, _target, _range, callback) => callback();
     try {
+        npc.clearAggroList();
+        await run();
+    }
+    finally {
+        Object.assign(npc, originals);
+        npc.automation.scheduleAction = originalScheduleAction;
+        npc.abortCombatState(tankSession);
+    }
+}
+
+function verifyCombatRetarget() {
+    const observedTargets = [];
+    return withCombatStubs(async () => {
         assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 500, 500), true);
         assert.strictEqual(
             await waitFor(() => observedTargets.includes(damageDealer)),
@@ -256,15 +267,41 @@ async function verifyCombatRetarget() {
             true,
             'the first attacks after threat transfer must target the tank'
         );
-    }
-    finally {
-        npc.meleeHit = originalMeleeHit;
-        npc.selectCombatSkill = originalSelectCombatSkill;
-        npc.automation.scheduleAction = originalScheduleAction;
-        npc.hasCombatLineOfSight = originalHasCombatLineOfSight;
-        npc.isTargetInAttackRange = originalIsTargetInAttackRange;
-        npc.abortCombatState(tankSession);
-    }
+    }, { meleeHit: (_session, _attacker, target) => observedTargets.push(target) });
+}
+
+// A dropped chase forgets that actor (Lisvus forgets a hated actor that left its
+// known list, or one it could not hit): the mob turns to the next hated actor, or
+// leaves combat with no stale hate that would turn it away from its next attacker.
+const far = actor(2000120);
+far.fetchLocX = () => 5000;
+const farSession = session(far);
+
+function verifyOutOfReachForget() {
+    return withCombatStubs(async () => {
+        assert.strictEqual(npc.addDamageHate(farSession, far, 500, 500), true);
+        assert.strictEqual(await waitFor(() => !npc.state.fetchCombats()), true, 'a target out of reach must end the chase');
+        assert.strictEqual(npc.getHating(far), 0, 'a dropped chase must forget the actor out of reach');
+        assert.strictEqual(npc.fetchMostHated(), null, 'a mob that left combat must keep no stale hate');
+
+        npc.addDamageHate(farSession, far, 500, 500);
+        npc.addDamageHate(damageDealerSession, damageDealer, 100, 100);
+        assert.strictEqual(await waitFor(() => npc.fetchDestId() === damageDealer.fetchId()), true,
+            'a mob that forgot the actor out of reach must turn to the next hated actor');
+        assert.strictEqual(npc.getHating(far), 0, 'the actor out of reach must leave the hate table');
+        assert.strictEqual(npc.state.fetchCombats(), true, 'the mob must keep fighting the next hated actor');
+    });
+}
+
+function verifyNoPathForget() {
+    const originalRequest = PathfindingWorkerPool.request;
+    PathfindingWorkerPool.request = () => Promise.resolve(null);
+    return withCombatStubs(async () => {
+        assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 500, 500), true);
+        assert.strictEqual(await waitFor(() => !npc.state.fetchCombats(), 15000), true,
+            'a target with no path must end the chase after the path timeout');
+        assert.strictEqual(npc.getHating(damageDealer), 0, 'a chase with no path must forget its actor');
+    }, { lineOfSight: false }).finally(() => { PathfindingWorkerPool.request = originalRequest; });
 }
 
 function verifyAggroMutations() {
@@ -318,6 +355,8 @@ npc.addDamageHate(tankSession, tank, 300, 300);
 assert.strictEqual(npc.fetchMostHated(), damageDealer, 'a hate tie must keep the earliest entry');
 npc.abortCombatState(tankSession);
 verifyCombatRetarget()
+    .then(verifyOutOfReachForget)
+    .then(verifyNoPathForget)
     .then(() => console.log('NPC threat transfer checks passed'))
     .catch((error) => {
         console.error(error);
