@@ -1,5 +1,6 @@
 const Persona = invoke('GameServer/Bot/AI/BotPersona');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
+const ChatterItems = require('./BotChatterItems');
 
 const recent = new Map();
 
@@ -55,7 +56,7 @@ function line(key, source, values = {}, excluded = []) {
             return String(values[name] ?? '').replace(/\s+/g, ' ').trim();
         });
         return { style, template, text: complete ? text.slice(0, 120) : '' };
-    }).filter(entry => entry.text && !excluded.includes(entry.text));
+    }).filter(entry => entry.text && !excluded.includes(entry.text) && !ChatterItems.mentionsRoutineSupply(entry.text));
     const previous = recent.get(key) || [];
     const fresh = rendered.filter(entry => !previous.includes(entry.template));
     const chosen = pick(fresh.length ? fresh : rendered, entry => styleWeight(source, entry.style));

@@ -571,13 +571,14 @@ const voices = {
         ['warm', 'If anyone comes across {item}, I would appreciate a heads-up.'],
         ['reserved', 'Looking for {item}, if anyone sees one.']
     ],
+    // Non-gear purchases include supplies as well as crafting inputs.
     'clan.goal_material': [
-        ['social', 'Hey, I am after {item} for crafting. Anyone know a good seller?'],
-        ['thrifty', 'Shopping around for {item}. Trying to keep the crafting bill down.'],
-        ['driven', 'Need {item} to move my crafting along. Going to look for some.'],
+        ['social', 'Hey, I am looking to buy {item}. Anyone know a good seller?'],
+        ['thrifty', 'Shopping around for {item}. Trying to find a good price.'],
+        ['driven', 'Need {item}. Going to look for some.'],
         ['careful', 'Looking for {item}. Comparing prices before I buy.'],
-        ['warm', 'Could use a lead on {item} for crafting, if anyone has one.'],
-        ['reserved', 'Looking for {item} for a craft.']
+        ['warm', 'Could use a lead on where to buy {item}, if anyone knows.'],
+        ['reserved', 'Looking to buy {item}.']
     ],
     'clan.goal_level': [
         ['social', 'Working towards level {level}. Anyone else heading out to level?'],

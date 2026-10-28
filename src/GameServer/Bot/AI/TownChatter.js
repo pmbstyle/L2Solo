@@ -1,6 +1,7 @@
 const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const ChatterBudget = invoke('GameServer/Bot/AI/BotChatterBudget');
 const Reactions = invoke('GameServer/Bot/AI/BotChatReactions');
+const ChatterItems = require('./BotChatterItems');
 
 const DEFAULT_DEDUPE_MS = 30000;
 const MAX_RECENT_LINES = 8;
@@ -29,7 +30,7 @@ function stateFor(session) {
 function cleanTemplates(templates) {
     return (Array.isArray(templates) ? templates : [templates])
         .map((line) => String(line || '').replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
+        .filter(line => line && !ChatterItems.mentionsRoutineSupply(line));
 }
 
 function choose(session, key, templates) {

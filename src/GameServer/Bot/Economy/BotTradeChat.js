@@ -6,6 +6,7 @@ const AfkTradeChatSelection = invoke('GameServer/Bot/Economy/AfkTradeChatSelecti
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Diagnostics = require('./EconomyDiagnostics');
+const ChatterItems = require('../AI/BotChatterItems');
 
 const HISTORY_LIMIT = 2048;
 const AFK_RECHECK_MS = 30000;
@@ -40,6 +41,7 @@ function players() {
 }
 
 function label(item) {
+    if (ChatterItems.isRoutineSupply(item.selfId, item.name)) return '';
     const readable = name => name && !/[{}_]/.test(name) && !/^(?:Item|Material)\s+\d+$/i.test(name);
     const name = readable(item.name) ? item.name : ItemTemplateIndex.find(invoke('GameServer/DataCache').items, item.selfId)?.template?.name;
     if (!readable(name)) return '';
@@ -89,7 +91,7 @@ function ready(source, now = Date.now()) {
 }
 
 function deliver(source, text, now = Date.now()) {
-    if (!text || !ready(source, now)) return false;
+    if (!text || ChatterItems.mentionsRoutineSupply(text) || !ready(source, now)) return false;
     const audience = players();
     if (!audience.length) return false;
     const actor = source.actor || { fetchId: () => id(source), fetchName: () => source.name || 'Bot' };
