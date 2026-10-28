@@ -215,6 +215,8 @@ assert.strictEqual(EffectRestrictions.canMove(taunter), false, 'Vengeance should
 assert.strictEqual(C4SkillRules.resolve({ selfId: 368, level: 1 }).radius, 80, 'Vengeance should use the C4 default aura radius');
 
 const auraRequester = actor();
+let auraCast = null;
+auraRequester.attack.remoteHit = (_session, target, castSkill) => { auraCast = { target, skill: castSkill }; };
 auraRequester.skillset.fetchSkill = () => vengeance;
 auraRequester.isDead = () => false;
 auraRequester.isBlocked = () => false;
@@ -224,7 +226,9 @@ auraRequester.automation.fetchDestId = () => undefined;
 const vengeanceRequest = { selfId: 368 };
 skillRequest(session(auraRequester), auraRequester, vengeanceRequest);
 assert.strictEqual(vengeanceRequest.id, auraRequester.fetchId(), 'Vengeance should be caster-centered without a selected target');
-assert.strictEqual(auraRequester.storedSpell, vengeanceRequest, 'targetless Vengeance should reach the native cast queue');
+assert.strictEqual(auraCast.target, auraRequester, 'targetless Vengeance should immediately cast from its caster');
+assert.strictEqual(auraCast.skill, vengeance);
+assert.strictEqual(auraRequester.storedSpell, undefined, 'Vengeance must not wait for a position acknowledgement');
 
 const lonelyVengeanceCaster = actor();
 const lonelyOutcome = C4SkillEffects.execute(session(lonelyVengeanceCaster), lonelyVengeanceCaster, lonelyVengeanceCaster, vengeance, {

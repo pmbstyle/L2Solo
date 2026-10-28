@@ -129,10 +129,8 @@ class Attack {
             actor.state.setHits(false);
             // Auto-attacks and chase arrivals both return here. The target
             // may have moved since the initial attack request or last swing.
-            if (invoke('GameServer/Effects/EffectRestrictions').canMove(actor)) {
-                actor.automation.scheduleAction(session, actor, creature, attackRange,
-                    () => this.meleeHit(session, creature), { collisionAware: true, action: 'attack' });
-            }
+            actor.automation.scheduleAction(session, actor, creature, attackRange,
+                () => this.meleeHit(session, creature), { collisionAware: true, action: 'attack' });
             return;
         }
         if (rangedAttack && !invoke('GameServer/Actor/BowResources').consume(session, actor)) return;

@@ -20,6 +20,7 @@ function consume(session, data) {
     const allowed = ClanService.canInvite(session.actor, target);
 
     if (!allowed.ok) {
+        ClanInviteService.notifyRejection(session, allowed.code, target);
         session.dataSendToMe(ServerResponse.actionFailed());
         return;
     }

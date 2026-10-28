@@ -46,6 +46,7 @@ function effectsActor(overrides = {}) {
 
 const partyState = new State();
 const partySkill = skill(264, 'Song of Earth');
+let partyCast = null;
 const partyActor = {
     state: partyState,
     skillset: { fetchSkill: () => partySkill },
@@ -58,12 +59,15 @@ const partyActor = {
     canUseSkill: () => true,
     isDead: () => false,
     isBlocked: () => false,
-    automation: { fetchDestId: () => undefined, abortAll() {} }
+    automation: { fetchDestId: () => undefined, abortAll() {} },
+    attack: { remoteHit(_session, target, castSkill) { partyCast = { target, skill: castSkill }; } }
 };
 const request = { selfId: 264 };
 skillRequest({ actor: partyActor, dataSendToMeAndOthers() {} }, partyActor, request);
 assert.strictEqual(request.id, partyActor.fetchId(), 'TARGET_PARTY songs must be centered on the caster without a selected target');
-assert.strictEqual(partyActor.storedSpell, request, 'a targetless party song must reach the native cast queue');
+assert.strictEqual(partyCast.target, partyActor, 'a targetless party song must immediately cast from its caster');
+assert.strictEqual(partyCast.skill, partySkill);
+assert.strictEqual(partyActor.storedSpell, undefined, 'a party song must not wait for a position acknowledgement');
 
 const seedRequest = { selfId: 1286 };
 partyActor.skillset.fetchSkill = () => skill(1286, 'Seed of Water', 1, { spell: true, distance: 600, mp: 200 });

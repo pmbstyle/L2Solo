@@ -36,6 +36,7 @@ const C4Recipes = require('./GameServer/Items/C4RecipeItems');
 const TradeIntent = require('./GameServer/Bot/Economy/TradeIntent');
 const PurchaseFunding = require('./GameServer/Bot/Economy/PurchaseFunding');
 const ClanSocialPolicy = require('./GameServer/Clan/ClanSocialPolicy');
+const ClanRules = require('./GameServer/Clan/ClanRules');
 const ClanSocialEvidence = require('./GameServer/Clan/ClanSocialEvidence');
 const PkDropPolicy = require('./GameServer/PkDropPolicy');
 let nativeDiagnosticFacts = null;
@@ -1909,6 +1910,15 @@ function applySchemaMigrations() {
                 json((SELECT json_group_object(key, json('{"lastDefeatedNpcIds":null}')) ${listedTargets})))))
             ELSE json_remove(statsJson, '$.build') END
             WHERE json_valid(statsJson) AND (json_type(statsJson, '$.build') IS NOT NULL OR ${hasTargetLists})`);
+    }]);
+    migrations.push([83, () => {
+        // Early cooldown deployments occupied 81; repair its projection
+        // upgrade too when their old stats triggers are still installed.
+        if (connection.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'trigger'
+            AND name IN ('bot_party_candidate_payload', 'bot_party_candidate_identity')`).get()) {
+            PartyCandidateProjection.mergeStatsTriggers(connection);
+        }
+        require('./GameServer/Clan/ClanJoinPenaltyMigration')(connection, now());
     }]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
@@ -9351,7 +9361,7 @@ const Database = {
                 return { ok: false, reason: 'discipline_membership_changed' };
             }
             if (!life || jsonObject(life.statsJson).pvpEncounter) return { ok: false, reason: 'member_busy' };
-            const at = now(), banUntil = at + 7 * 86400000;
+            const at = now(), banUntil = at + ClanRules.JOIN_COOLDOWN_MS;
             d.stage = 'expelled'; d.stageAt = at; d.banUntil = banUntil;
             relation.discipline = d;
             snapshot.revision++;
@@ -10929,11 +10939,11 @@ const Database = {
             return { ok: true, clanId: clan, updated };
         }, 'clan-title:apply'));
     },
-    removeCharacterFromClan(id) {
+    removeCharacterFromClan(id, clanJoinExpiryTime = 0) {
         return withCharacterFlush(id, () => inTransaction(() => {
             const previousClanId = Number(one('SELECT clanId FROM characters WHERE id = ?', [id])?.clanId || 0);
             const result = write(`UPDATE characters SET clanId = 0, clanPrivileges = 0,
-                clanJoinExpiryTime = 0, clanCreateExpiryTime = 0, title = '' WHERE id = ?`, [id]);
+                clanJoinExpiryTime = ?, clanCreateExpiryTime = 0, title = '' WHERE id = ?`, [clanJoinExpiryTime, id]);
             return { ...result, previousClanId, nextClanId: 0, membershipRepair: ClanMembership.repairUnsafe([id]) };
         }, 'character:clan-remove')).then(publishClanMembership).then(ClanMembership.publish);
     },

@@ -199,6 +199,18 @@ if (process.argv[2] === '--bootstrap') {
                     );
             `);
         }
+        if (versions.includes(38)) {
+            // A fixture that records v38 must contain the social memory that
+            // later clan deadline migrations upgrade.
+            db.exec(`
+                CREATE TABLE clan_social_memory (
+                    clanId INTEGER PRIMARY KEY REFERENCES clans(id) ON DELETE CASCADE,
+                    snapshotJson TEXT NOT NULL,
+                    updatedAt INTEGER NOT NULL
+                );
+                CREATE INDEX clan_social_memory_updated ON clan_social_memory(updatedAt, clanId);
+            `);
+        }
         if (partial) {
             db.exec(`
                 ALTER TABLE bot_life_state ADD COLUMN simulationOwner TEXT NOT NULL DEFAULT 'legacy_main';
