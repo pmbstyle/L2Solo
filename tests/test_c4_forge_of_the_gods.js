@@ -4,28 +4,15 @@ require('../src/Global');
 
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 
 const mobIds = [1376, 1377, 1378, 1379, 1380, 1381, 1382, 1383, 1384, 1385, 1386, 1387, 1388, 1389, 1390, 1391, 1392, 1393, 1394, 1395, 1652, 1653, 1654, 1655, 1656, 1657];
 
 assertC4MonsterLocation({
     slug: 'c4_forge_of_the_gods',
     displayName: 'Forge of the Gods',
-    areaId: 'c4-forge-of-the-gods',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_forge_of_the_gods'],
-    spawnCounts: [
-        [1376, 12], [1377, 12], [1378, 12], [1379, 18], [1380, 18], [1381, 16],
-        [1382, 12], [1383, 10], [1384, 10], [1385, 16], [1386, 14], [1387, 14],
-        [1388, 13], [1389, 9], [1390, 9], [1391, 22], [1392, 27], [1393, 26],
-        [1394, 22], [1395, 33], [1652, 18], [1653, 22], [1654, 15], [1655, 21],
-        [1656, 9], [1657, 13]
-    ],
-    respawn: 110,
-    respawnByMob: { 1394: 90, 1395: 60 },
-    region: [25, 14],
-    maxHeightDelta: 6600,
     origin: [184000, -113000, -3500],
     sample: {
         id: 1376, name: 'Scarlet Stakato Walker', level: 78, hostile: true,
@@ -51,11 +38,6 @@ assertC4MonsterLocation({
     ]
 });
 
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_forge_of_the_gods',
-    displayName: 'Forge of the Gods',
-    box: { minX: 174668, maxX: 193733, minY: -121291, maxY: -105461, minZ: -6128, maxZ: -776 }
-});
 
 assert.deepStrictEqual(
     C4SkillRules.resolve({ selfId: 4601, level: 3, name: 'NPC Clan Buff - Acumen Focus' }).stats,

@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_necropolis_of_patriots',
-    areaId: 'c4-necropolis-of-patriots',
     displayName: 'Necropolis of Patriots',
     mobIds: [1153, 1154, 1155, 1177, 1178, 1179, 1198, 1199, 1200, 1221, 1222, 1223],
     importedNpcIds: [1153, 1154, 1155, 1177, 1178, 1198, 1199, 1221, 1222, 1223],
-    spawnCounts: [[1153, 16], [1154, 16], [1155, 16], [1177, 15], [1178, 16], [1179, 16],
-        [1198, 16], [1199, 16], [1200, 16], [1221, 14], [1222, 15], [1223, 16]],
-    respawn: 120,
-    region: [19, 20],
     origin: [-18000, 82000, -5168],
     sample: {
         id: 1153, name: 'Purgatory Serpent', level: 56, hostile: true,

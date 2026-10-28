@@ -6,7 +6,8 @@ const dragons = [
     { npc:7751, name:'Suzet', mob:270, prey:'Breka Orc Overlords', scale:3828, egg:3829 },
     { npc:7752, name:'Shamhai', mob:202, prey:'Dead Seekers', scale:3830, egg:3831 }
 ];
-const fairyMobs = [...Array.from({length:11}, (_,i)=>589+i),719];
+// 719 (Fairy Queen Timiniel) left out: neither Mobius nor Lisvus C4 has that monster (T43).
+const fairyMobs = Array.from({length:11}, (_,i)=>589+i);
 const link = (event,text) => `<a action="bypass -h quest 420 ${event}">${text}</a><br>`;
 const page = text => `<html><body>Little Wing:<br>${text}</body></html>`;
 const materials = deluxe => deluxe ? [[1870,10],[1871,10],[2131,1],[1873,5],[1875,1],[3820,20],[3819,1]] : [[1870,10],[1871,10],[2130,1],[1873,3],[3820,10],[3818,1]];

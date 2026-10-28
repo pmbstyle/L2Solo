@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_necropolis_of_worshipers',
-    areaId: 'c4-necropolis-of-worshipers',
     displayName: 'Necropolis of Worshipers',
     mobIds: [1147, 1148, 1149, 1174, 1175, 1176, 1195, 1196, 1197, 1217, 1218, 1219],
     importedNpcIds: [1148, 1217, 1218, 1219],
-    spawnCounts: [[1147, 11], [1148, 14], [1149, 14], [1174, 10], [1175, 9], [1176, 13],
-        [1195, 12], [1196, 9], [1197, 12], [1217, 13], [1218, 11], [1219, 13]],
-    respawn: 60,
-    region: [23, 23],
     origin: [116000, 179000, -5432],
     sample: {
         id: 1148, name: 'Catacomb Liviona', level: 44, hostile: true,

@@ -12,6 +12,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const RuntimeWorld = invoke('GameServer/World/World');
 const ActorGenerics = invoke(path.actor);
+const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 DataCache.init();
 
@@ -22,12 +23,25 @@ const world = {
 };
 const session = { dataSendToMeAndOthers() {}, dataSendToMe() {} };
 
+// One leader of the world's spawn row at one fixed point: its first one, or for a territory
+// row the middle of the spot cell of the territory's first corner. With a random point in
+// the territory (T48) the spot check below failed about 1 run in 4: the killed first leader
+// stays in the world (npcDied is stubbed) at its own point, its cell is indexed first and
+// found first, and when the respawned group stood in another cell (1369's territory crosses
+// x = 120000) that cell had no 1370; more rarely minions within 300 of a border split a group.
 function definitionFor(leaderId, period = undefined) {
-    const spawn = DataCache.npcSpawns.flatMap((area) => area.spawns)
-        .find((entry) => Number(entry.selfId) === leaderId && entry.coords?.length);
-    assert.ok(spawn, `group leader ${leaderId} has a spawn`);
+    const area = DataCache.npcSpawns.find((entry) => entry.spawns.some((row) => Number(row.selfId) === leaderId));
+    assert.ok(area, `group leader ${leaderId} has a spawn`);
+    const spawn = area.spawns.find((row) => Number(row.selfId) === leaderId);
     const npc = DataCache.npcs.find((entry) => entry.selfId === leaderId);
-    return { npc, spawn: { ...structuredClone(spawn), coords: [spawn.coords[0]], period }, bounds: [] };
+    const cellMiddle = (value) => (Math.floor(value / SPOT_CELL_SIZE) + 0.5) * SPOT_CELL_SIZE;
+    const point = spawn.coords?.length ? spawn.coords[0] : {
+        locX: cellMiddle(area.bounds[0].locX),
+        locY: cellMiddle(area.bounds[0].locY),
+        locZ: area.bounds[0].maxZ,
+        head: 0
+    };
+    return { npc, spawn: { ...structuredClone(spawn), coords: [point], total: 1, period }, bounds: [] };
 }
 
 function members(leader) {

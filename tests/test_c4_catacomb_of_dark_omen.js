@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_catacomb_of_dark_omen',
-    areaId: 'c4-catacomb-of-dark-omen',
     displayName: 'Catacomb of Dark Omen',
     mobIds: [1162, 1163, 1165, 1184, 1185, 1186, 1205, 1206, 1207, 1253, 1254, 1255],
     importedNpcIds: [1253, 1254, 1255],
-    spawnCounts: [[1162, 17], [1163, 14], [1165, 16], [1184, 17], [1185, 13], [1186, 16],
-        [1205, 17], [1206, 14], [1207, 16], [1253, 17], [1254, 14], [1255, 16]],
-    respawn: 120,
-    region: [19, 18],
     origin: [-14000, 18000, -4896],
     sample: {
         id: 1253, name: 'Crypt Preacher', level: 72, hostile: true,

@@ -26,9 +26,11 @@ function describe(economy) {
         [wish.key, wish.object?.itemId, wish.object?.slot, wish.funded, wish.price]) });
 }
 
+// T43 table: '7_20' now has potion demand, and this gear-only NPC lookup sells no potions,
+// so its unsupported survival stock outranks the gear wish; '-11_29' (the level-30 pick) has none.
 module.exports = function nativeGearEconomy({ characterId, timestamp = Date.now(),
     loc = { locX: 81100, locY: 148000, locZ: -3466 }, currentRegion = 'Giran',
-    spotId = '7_20', spots = [stock.spotFor(spotId)] } = {}) {
+    spotId = '-11_29', spots = [stock.spotFor(spotId)] } = {}) {
     const lookup = invoke('GameServer/Bot/Population/ColdNpcPlanningCatalog').createLookup(
         invoke('GameServer/Bot/Population/ColdSimulationCoordinator').npcPlanningCatalogRows());
     const kit = stock.kitFor(0, 30);

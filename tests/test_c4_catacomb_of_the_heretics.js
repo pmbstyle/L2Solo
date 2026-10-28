@@ -2,17 +2,10 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_catacomb_of_the_heretics',
-    areaId: 'c4-catacomb-of-the-heretics',
     displayName: 'Catacomb of the Heretics',
     mobIds: [1143, 1144, 1145, 1146, 1169, 1170, 1171, 1172,
         1190, 1191, 1192, 1193, 1236, 1237, 1238, 1239],
     importedNpcIds: [1143, 1236, 1237, 1238, 1239],
-    spawnCounts: [[1143, 15], [1144, 15], [1145, 16], [1146, 16],
-        [1169, 15], [1170, 15], [1171, 15], [1172, 16],
-        [1190, 15], [1191, 15], [1192, 15], [1193, 16],
-        [1236, 15], [1237, 15], [1238, 15], [1239, 15]],
-    respawn: 120,
-    region: [21, 22],
     origin: [49000, 149000, -5376],
     sample: {
         id: 1236, name: 'Barrow Sentinel', level: 30, hostile: false,

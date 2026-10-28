@@ -122,7 +122,8 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     // An adventurer without a forecast of the spot declines; the reply names the one who joins.
     forming('decliner', [stationed(members[0], 3), { ...members[1], updatedAt: timestamp + 3 }], required);
     assert.deepEqual((await verdict('decliner')).formingAccepted, [701]);
-    const incomeSpot = { id: '-10_10', minLevel: 14, maxLevel: 14, avgLevel: 14, density: 20,
+    // T43 table: '-10_10' is gone; '-5_10' is a level-14 spot with rows for every role.
+    const incomeSpot = { id: '-5_10', minLevel: 14, maxLevel: 14, avgLevel: 14, density: 20,
         tagsAuthoritative: true, tags: ['starter', 'normal_hp'], npcEntries: [], center: { locX: 0, locY: 0 } };
     post('catalog_page', { catalog: 'spots', rows: [incomeSpot], done: true }, 'income-spots');
     const incomeMembers = members.map(member => ({ ...member, spotId: incomeSpot.id, updatedAt: timestamp + 10 }));

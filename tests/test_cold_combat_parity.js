@@ -78,7 +78,7 @@ function fighter(id, classId, level, gear, extra = {}) {
     if (extra.shots) {
         const selfId = ShotStock.planForState(state).selfId;
         inventory[selfId] = { selfId, amount: extra.shots };
-        state.spotId = { 2: '28_10', 12: '31_7', 16: '9_35', 5: '18_7' }[classId];
+        state.spotId = { 2: '19_7', 12: '27_12', 16: '29_-3', 5: '21_-9' }[classId];
         assert(state.spotId, 'every shot fixture needs its verified native economic spot');
     }
     state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TS);
@@ -121,11 +121,13 @@ const bladedancer = fighter(1010, 34, 60, chain('Weapon.Dual'));
 const injuredBishop = fighter(1011, 16, 60, robe, { hpRatio: 0.5 });
 const injuredTyrant = fighter(1012, 48, 60, leather('Weapon.DualFist'), { potions: 20, hpRatio: 0.25 });
 // The same fighters holding the shot their weapon takes (S1).
+// Shot fighters stand at levels where their own hunt pays for shots on the Mobius table
+// (T43: B-grade Sorcerer 59, A-grade Bishop 70 and Paladin 72; at 60 their shots do not pay).
 const gladiatorShots = fighter(1013, 2, 60, chain('Weapon.Dual'), { potions: 5, shots: 5000 });
-const sorcererShots = fighter(1014, 12, 60, robeFull, { potions: 5, shots: 5000 });
-const bishopShots = fighter(1015, 16, 60, robe, { shots: 5000 });
-const injuredBishopShots = fighter(1016, 16, 60, robe, { hpRatio: 0.5, shots: 5000 });
-const paladinShots = fighter(1017, 5, 60, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
+const sorcererShots = fighter(1014, 12, 59, robeFull, { potions: 5, shots: 5000 });
+const bishopShots = fighter(1015, 16, 70, robe, { shots: 5000 });
+const injuredBishopShots = fighter(1016, 16, 70, robe, { hpRatio: 0.5, shots: 5000 });
+const paladinShots = fighter(1017, 5, 72, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
 
 // ---------- solo fights ----------
 function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400) {
@@ -181,8 +183,8 @@ const SOLO_GOLDEN = {
     'gladiator times out': { won: false, died: false, hp: 1579, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1306, botReadyAt: 216 },
     'paladin runs out of actions': { won: false, died: false, hp: 1398, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 534, botReadyAt: 1127 },
     'gladiator charges with soulshots': { won: true, died: false, hp: 1453, mp: 487, charges: 1, actions: 15, durationMs: 9165, skillUses: 8, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer with spiritshots': { won: true, died: false, hp: 979, mp: 2464, charges: 0, actions: 7, durationMs: 4516, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop with spiritshots': { won: true, died: false, hp: 1121, mp: 2542, charges: 0, actions: 14, durationMs: 11548, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
+    'sorcerer with spiritshots': { won: true, died: false, hp: 818, mp: 2371, charges: 0, actions: 10, durationMs: 6925, skillUses: 5, shotActions: 5, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bishop with spiritshots': { won: true, died: false, hp: 1459, mp: 2935, charges: 0, actions: 11, durationMs: 9094, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
 };
 const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer, spot: spotFor(241), pressure: {},
     targetNpcId: 241, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
@@ -240,9 +242,7 @@ const PARTY_GOLDEN = {
     'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1005, 1160, 2432, 2, 2, 0, 0, 0, 0],
             [1003, 1290, 2595, 1, 1, 0, 0, 0, 0]] },
-    'tank and healer with shots': { won: true, actions: 20, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1017, 1148, 774, 7, 3, 5, 1, 0, 0],
-            [1016, 1290, 2542, 6, 4, 4, 0, 0, 0]] }
+    'tank and healer with shots': { won: true, actions: 15, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1017, 1742, 975, 5, 3, 3, 1, 0, 0], [1016, 1549, 2935, 4, 4, 4, 0, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
     members.forEach(assertNativeHeldPolicy);

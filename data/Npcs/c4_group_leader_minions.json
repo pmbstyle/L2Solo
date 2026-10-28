@@ -1,5 +1,188 @@
 [
   {
+    "selfId": 936,
+    "template": {
+      "kind": "Monster",
+      "name": "Tanor Silenos",
+      "title": "",
+      "level": 40,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 273,
+      "pAtkRnd": 20,
+      "pDef": 201,
+      "mAtk": 131,
+      "mDef": 164,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1527,
+      "maxMp": 531,
+      "revHp": 3.56,
+      "revMp": 1.84,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 88,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.151875,
+      "sp": 222
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 937,
+    "template": {
+      "kind": "Monster",
+      "name": "Tanor Silenos Grunt",
+      "title": "",
+      "level": 42,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 311,
+      "pAtkRnd": 20,
+      "pDef": 215,
+      "mAtk": 152,
+      "mDef": 175,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1660,
+      "maxMp": 589,
+      "revHp": 4.35,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 158,
+      "shield": 18,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.549886621315,
+      "sp": 300
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 938,
+    "template": {
+      "kind": "Monster",
+      "name": "Tanor Silenos Scout",
+      "title": "",
+      "level": 44,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 354,
+      "pAtkRnd": 20,
+      "pDef": 230,
+      "mAtk": 176,
+      "mDef": 187,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 37,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1799,
+      "maxMp": 648,
+      "revHp": 4.35,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 13,
+      "size": 29
+    },
+    "equipment": {
+      "weapon": 5,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "silenos_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 2.550103305785,
+      "sp": 338
+    },
+    "traits": {
+      "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
     "selfId": 940,
     "template": {
       "kind": "Monster",
@@ -57,6 +240,128 @@
     },
     "traits": {
       "race": "humanoid",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 942,
+    "template": {
+      "kind": "Monster",
+      "name": "Nightmare Guide",
+      "title": "",
+      "level": 43,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 332,
+      "pAtkRnd": 30,
+      "pDef": 189,
+      "mAtk": 163,
+      "mDef": 181,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1728,
+      "maxMp": 618,
+      "revHp": 4.35,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.775013520822,
+      "sp": 222
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 943,
+    "template": {
+      "kind": "Monster",
+      "name": "Nightmare Keeper",
+      "title": "",
+      "level": 45,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 377,
+      "pAtkRnd": 30,
+      "pDef": 202,
+      "mAtk": 188,
+      "mDef": 193,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 66,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1870,
+      "maxMp": 677,
+      "revHp": 4.35,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 42
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 2.331358024691,
+      "sp": 328
+    },
+    "traits": {
+      "race": "beast",
       "undead": false
     }
   },
@@ -2135,6 +2440,67 @@
     }
   },
   {
+    "selfId": 1039,
+    "template": {
+      "kind": "Monster",
+      "name": "Snipe Cohort",
+      "title": "",
+      "level": 43,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 302,
+      "pAtkRnd": 30,
+      "pDef": 245,
+      "mAtk": 163,
+      "mDef": 181,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 33,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 1728,
+      "maxMp": 618,
+      "revHp": 17.38,
+      "revMp": 2.14,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 14,
+      "size": 14.5
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.644672796106,
+      "sp": 205
+    },
+    "traits": {
+      "race": "beast",
+      "undead": false
+    }
+  },
+  {
     "selfId": 1040,
     "template": {
       "kind": "Monster",
@@ -2315,6 +2681,67 @@
     "traits": {
       "race": "construct",
       "undead": false
+    }
+  },
+  {
+    "selfId": 1073,
+    "template": {
+      "kind": "Monster",
+      "name": "Guardian Warrior of Elmoreden",
+      "title": "",
+      "level": 64,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1135,
+      "pAtkRnd": 10,
+      "pDef": 371,
+      "mAtk": 589,
+      "mDef": 331,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 44,
+      "run": 191
+    },
+    "vitals": {
+      "maxHp": 3384,
+      "maxMp": 1285,
+      "revHp": 23.7,
+      "revMp": 2.78,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 10,
+      "size": 25
+    },
+    "equipment": {
+      "weapon": 84,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tower_ghost_clan",
+      "helpRadius": 400
+    },
+    "rewards": {
+      "exp": 1.71875,
+      "sp": 644
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
     }
   },
   {
@@ -3416,6 +3843,250 @@
     }
   },
   {
+    "selfId": 1433,
+    "template": {
+      "kind": "Monster",
+      "name": "Jamadar Beetle",
+      "title": "",
+      "level": 79,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1765,
+      "pAtkRnd": 30,
+      "pDef": 566,
+      "mAtk": 1107,
+      "mDef": 459,
+      "accur": 4.75,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 49,
+      "run": 192
+    },
+    "vitals": {
+      "maxHp": 4490,
+      "maxMp": 1821,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 20,
+      "size": 43.6
+    },
+    "equipment": {
+      "weapon": 0,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.888799871815,
+      "sp": 1306
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
+    "selfId": 1435,
+    "template": {
+      "kind": "Monster",
+      "name": "Guide of Offering",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 10,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 134,
+      "shield": 6721,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.8628125,
+      "sp": 1338
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1436,
+    "template": {
+      "kind": "Monster",
+      "name": "Leader of Offering",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 10,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 165
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 134,
+      "shield": 6721,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "",
+      "helpRadius": 0
+    },
+    "rewards": {
+      "exp": 1.93234375,
+      "sp": 1388
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1519,
+    "template": {
+      "kind": "Monster",
+      "name": "Frenzy Stakato Drone",
+      "title": "",
+      "level": 72,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1645,
+      "pAtkRnd": 5,
+      "pDef": 369,
+      "mAtk": 849,
+      "mDef": 399,
+      "accur": -3,
+      "atkSpd": 317,
+      "castSpd": 289,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 27,
+      "run": 214
+    },
+    "vitals": {
+      "maxHp": 4013,
+      "maxMp": 1565,
+      "revHp": 13.43,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 15,
+      "size": 39
+    },
+    "equipment": {
+      "weapon": 235,
+      "shield": 0,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "stakato_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.730709876543,
+      "sp": 912
+    },
+    "traits": {
+      "race": "insect",
+      "undead": false
+    }
+  },
+  {
     "selfId": 1542,
     "template": {
       "kind": "Monster",
@@ -3897,6 +4568,67 @@
     "rewards": {
       "exp": 2.190204081633,
       "sp": 1064
+    },
+    "traits": {
+      "race": "undead",
+      "undead": true
+    }
+  },
+  {
+    "selfId": 1823,
+    "template": {
+      "kind": "Monster",
+      "name": "Executor of Sacrificial Offerings",
+      "title": "",
+      "level": 80,
+      "hostile": false
+    },
+    "base": {
+      "str": 40,
+      "dex": 30,
+      "con": 43,
+      "int": 21,
+      "wit": 20,
+      "men": 10
+    },
+    "stats": {
+      "pAtk": 1814,
+      "pAtkRnd": 10,
+      "pDef": 576,
+      "mAtk": 1144,
+      "mDef": 468,
+      "accur": 0,
+      "atkSpd": 278,
+      "castSpd": 253,
+      "atkRadius": 40
+    },
+    "speed": {
+      "walk": 42,
+      "run": 209
+    },
+    "vitals": {
+      "maxHp": 4550,
+      "maxMp": 1859,
+      "revHp": 80.58,
+      "revMp": 3.09,
+      "corpseTime": 7000
+    },
+    "collision": {
+      "radius": 7,
+      "size": 30
+    },
+    "equipment": {
+      "weapon": 134,
+      "shield": 6721,
+      "reuseTime": 0
+    },
+    "clan": {
+      "clanName": "tomb_clan",
+      "helpRadius": 300
+    },
+    "rewards": {
+      "exp": 1.8815625,
+      "sp": 1351
     },
     "traits": {
       "race": "undead",

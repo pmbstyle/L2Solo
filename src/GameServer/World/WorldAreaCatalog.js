@@ -1,30 +1,47 @@
 const C4SevenSignsDungeonTeleports = invoke('GameServer/World/C4SevenSignsDungeonTeleports');
 
+// Seven Signs dungeons: the area id (bot spot ids carry it, so it never changes)
+// and the L2J_Mobius C4 spawn file of its monsters.
 const SEVEN_SIGNS_SPAWNS = Object.freeze({
-    'Necropolis of Sacrifice': require('../../../data/Npcs/Spawns/c4_necropolis_of_sacrifice.json')[0],
-    'Necropolis of Pilgrims': require('../../../data/Npcs/Spawns/c4_necropolis_of_pilgrims.json')[0],
-    'Necropolis of Worshipers': require('../../../data/Npcs/Spawns/c4_necropolis_of_worshipers.json')[0],
-    'Necropolis of Patriots': require('../../../data/Npcs/Spawns/c4_necropolis_of_patriots.json')[0],
-    'Necropolis of Ascetics': require('../../../data/Npcs/Spawns/c4_necropolis_of_ascetics.json')[0],
-    'Necropolis of Martyrs': require('../../../data/Npcs/Spawns/c4_necropolis_of_martyrs.json')[0],
-    'Necropolis of Saints': require('../../../data/Npcs/Spawns/c4_necropolis_of_saints.json')[0],
-    'Necropolis of the Disciples': require('../../../data/Npcs/Spawns/c4_necropolis_of_the_disciples.json')[0],
-    'Catacomb of the Heretics': require('../../../data/Npcs/Spawns/c4_catacomb_of_the_heretics.json')[0],
-    'Catacomb of the Branded': require('../../../data/Npcs/Spawns/c4_catacomb_of_the_branded.json')[0],
-    'Catacomb of the Apostate': require('../../../data/Npcs/Spawns/c4_catacomb_of_the_apostate.json')[0],
-    'Catacomb of the Witch': require('../../../data/Npcs/Spawns/c4_catacomb_of_the_witch.json')[0],
-    'Catacomb of Dark Omens': require('../../../data/Npcs/Spawns/c4_catacomb_of_dark_omen.json')[0],
-    'Catacomb of the Forbidden Path': require('../../../data/Npcs/Spawns/c4_catacomb_of_the_forbidden_path.json')[0]
+    'Necropolis of Sacrifice': { id: 'necropolis_of_sacrifice', file: 'Catacombs/NecropolisOfSacrifice' },
+    'Necropolis of Pilgrims': { id: 'necropolis_of_pilgrims', file: 'Catacombs/NecropolisOfThePilgrims' },
+    'Necropolis of Worshipers': { id: 'necropolis_of_worshipers', file: 'Catacombs/NecropolisOfWorship' },
+    'Necropolis of Patriots': { id: 'necropolis_of_patriots', file: 'Catacombs/NecropolisOfThePatriots' },
+    'Necropolis of Ascetics': { id: 'necropolis_of_ascetics', file: 'Catacombs/NecropolisOfDevotion' },
+    'Necropolis of Martyrs': { id: 'necropolis_of_martyrs', file: 'Catacombs/NecropolisOfMartyrdom' },
+    'Necropolis of Saints': { id: 'necropolis_of_saints', file: 'Catacombs/NecropolisOfTheSaints' },
+    'Necropolis of the Disciples': { id: 'necropolis_of_the_disciples', file: 'Catacombs/NecropolisOfTheDisciples' },
+    'Catacomb of the Heretics': { id: 'catacomb_of_the_heretics', file: 'Catacombs/CatacombOfTheHeretic' },
+    'Catacomb of the Branded': { id: 'catacomb_of_the_branded', file: 'Catacombs/CatacombOfTheBranded' },
+    'Catacomb of the Apostate': { id: 'catacomb_of_the_apostate', file: 'Catacombs/CatacombOfTheApostate' },
+    'Catacomb of the Witch': { id: 'catacomb_of_the_witch', file: 'Catacombs/CatacombOfTheWitch' },
+    'Catacomb of Dark Omens': { id: 'catacomb_of_dark_omen', file: 'Catacombs/CatacombOfDarkOmens' },
+    'Catacomb of the Forbidden Path': { id: 'catacomb_of_the_forbidden_path', file: 'Catacombs/CatacombOfTheForbiddenPath' }
 });
 
+// Territory corners and fixed points of each Seven Signs spawn file, each with its Z range.
+const SEVEN_SIGNS_POINTS = (() => {
+    const groups = require('../../../data/Npcs/Spawns/c4_mobius_monsters.json');
+    return Object.freeze(Object.fromEntries(Object.values(SEVEN_SIGNS_SPAWNS).map(({ file }) => {
+        const points = groups.filter((group) => group.selfId.startsWith(`mobius:${file}#`)).flatMap((group) => [
+            ...group.bounds.map((node) => ({ locX: node.locX, locY: node.locY, minZ: node.minZ, maxZ: node.maxZ })),
+            ...group.spawns.flatMap((spawn) => spawn.coords.map((point) => ({
+                locX: point.locX, locY: point.locY, minZ: point.locZ, maxZ: point.locZ
+            })))
+        ]);
+        if (points.length === 0) throw new Error(`No Mobius spawns for Seven Signs file ${file}`);
+        return [file, points];
+    })));
+})();
+
 function sevenSignsArea(dungeon) {
-    const spawnArea = SEVEN_SIGNS_SPAWNS[dungeon.name];
-    const points = spawnArea.spawns.flatMap((spawn) => spawn.coords || []);
+    const { id, file } = SEVEN_SIGNS_SPAWNS[dungeon.name];
+    const points = SEVEN_SIGNS_POINTS[file];
     const [locX, locY, locZ] = dungeon.outside.spawn;
     const isCatacomb = dungeon.name.startsWith('Catacomb');
     const margin = 300;
     return Object.freeze({
-        id: spawnArea.selfId.replace(/^c4-/, '').replace(/-/g, '_'),
+        id,
         name: dungeon.name,
         kind: 'dungeon',
         parentRegion: null,
@@ -35,8 +52,8 @@ function sevenSignsArea(dungeon) {
             maxX: Math.max(...points.map((point) => point.locX)) + margin,
             minY: Math.min(...points.map((point) => point.locY)) - margin,
             maxY: Math.max(...points.map((point) => point.locY)) + margin,
-            minZ: Math.min(...points.map((point) => point.locZ)) - 256,
-            maxZ: Math.max(...points.map((point) => point.locZ)) + 256
+            minZ: Math.min(...points.map((point) => point.minZ)) - 256,
+            maxZ: Math.max(...points.map((point) => point.maxZ)) + 256
         })]),
         // LevelingRoutes uses `catacomb` as the shared Seven Signs gameplay
         // category; keep `necropolis` as a more specific subtype.

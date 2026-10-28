@@ -157,12 +157,13 @@ try {
 
     // At40+ the physical worn weapon leaves class-build candidates available.
     // The actual accepted one-leaf decision determines which order stands.
-    const weapon = BotGear.planFor({ classId: 0, level: 40 }).items.find((item) => Number(item.slot) === 7);
-    const chest = BotGear.planFor({ classId: 0, level: 40 }).items.find((item) => Number(item.slot) === 10);
+    // T43 table: at 40 no stock pays and the bot's gear wishes have no leaf; at 46 its C shots give one.
+    const weapon = BotGear.planFor({ classId: 0, level: 46 }).items.find((item) => Number(item.slot) === 7);
+    const chest = BotGear.planFor({ classId: 0, level: 46 }).items.find((item) => Number(item.slot) === 10);
     const buildGoalBot = {
-        characterId: 7, phase: 'cold', activity: 'resting', level: 40, adena: 1000000, accountName: 'bot_pop_7',
+        characterId: 7, phase: 'cold', activity: 'resting', level: 46, adena: 1000000, accountName: 'bot_pop_7',
         vitals: { hp: 600, maxHp: 1000, mp: 300, maxMp: 500 }, party: {},
-        stats: { generatedCold: true, classId: 0, build: { grade: 'c', classId: 0, level: 40 },
+        stats: { generatedCold: true, classId: 0, build: { grade: 'c', classId: 0, level: 46 },
             equipment: [{ selfId: weapon.selfId, slot: 7, rank: 'c', name: weapon.name }] },
         inventory: { [weapon.selfId]: { selfId: weapon.selfId, amount: 1, equipped: true,
             equippedCount: 1, equippedSlots: [7], slot: 7 } }

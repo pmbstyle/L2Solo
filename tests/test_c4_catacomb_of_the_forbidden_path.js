@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_catacomb_of_the_forbidden_path',
-    areaId: 'c4-catacomb-of-the-forbidden-path',
     displayName: 'Catacomb of the Forbidden Path',
     mobIds: [1163, 1164, 1165, 1185, 1186, 1206, 1207, 1254, 1255],
     importedNpcIds: [],
-    spawnCounts: [[1163, 11], [1164, 9], [1165, 11], [1185, 15], [1186, 16],
-        [1206, 15], [1207, 16], [1254, 15], [1255, 16]],
-    respawn: 60,
-    region: [23, 20],
     origin: [118000, 85000, -6536],
     sample: {
         id: 1255, name: 'Tomb Preacher', level: 77, hostile: true,

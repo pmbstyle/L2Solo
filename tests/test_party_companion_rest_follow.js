@@ -2424,7 +2424,8 @@ try {
     zeroWalletErrandSession.followPlayerSession = errandLeaderSession;
     zeroWalletErrandSession.partyCompanion = true;
     zeroWalletErrandSession.plan = 'following';
-    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404, level: 40 });
+    // T43 table: C soulshots no longer pay at 40 (lower loot after the Mobius spawns); at 46 they do.
+    const errandBot = fakeActor(2000038, { locX: 83436, locY: 147904, locZ: -3404, level: 46 });
     const cWeapon = DataCache.items.find(row => row.etc?.rank === 'c' && row.template?.kind === 'Weapon.Sword');
     assert(cWeapon, 'the native C-grade sword catalog must exist');
     equippedErrandKit(errandBot, cWeapon.selfId);

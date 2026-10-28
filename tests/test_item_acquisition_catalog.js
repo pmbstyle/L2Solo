@@ -110,7 +110,7 @@ assert.equal(Catalog.revision(), version);
 const originals = [Data.items, Data.npcRewards];
 try {
     Data.items = [...Data.items, item(900001)];
-    Data.npcRewards = [...Data.npcRewards, { selfId: 1, rewards: [{ overall: 100, items: [{ selfId: 900001, chance: 100, max: 1 }] }] }];
+    Data.npcRewards = [...Data.npcRewards, { selfId: 558, rewards: [{ overall: 100, items: [{ selfId: 900001, chance: 100, max: 1 }] }] }];
     assert(Catalog.hasSource(900001), 'changed native references rebuild');
     assert.notEqual(Catalog.prepare(), native);
     assert(Catalog.revision() > version, 'source token invalidates consumers on replaced input');

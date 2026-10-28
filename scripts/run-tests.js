@@ -49,6 +49,7 @@ const tests = [
     'tests/test_c4_catacomb_quests.js',
     'tests/test_c4_declarative_quests.js',
     'tests/test_c4_middle_quests.js',
+    'tests/test_c4_mobius_spawns.js',
     'tests/test_c4_wishing_potion.js',
     'tests/test_c4_dimensional_rift_quest.js',
     'tests/test_c4_lizardmen_quest.js',

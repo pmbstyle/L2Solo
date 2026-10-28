@@ -6,11 +6,9 @@ const DataCache = invoke('GameServer/DataCache');
 const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_forest_of_the_dead.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -23,38 +21,14 @@ const mobIds = [
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-forest-of-the-dead');
 
 assert.strictEqual(npcs.length, 41, 'all 41 Lisvus Forest monster variants must be loaded');
 assert.strictEqual(rewards.length, 41, 'every Forest monster must have a reward template');
-assert.ok(spawnArea, 'Forest of the Dead spawn slice must be loaded');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnCoords.length, 572, 'the import must retain all 572 Lisvus L2Monster spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 240 && spawn.bias === 0));
-assert.deepStrictEqual(
-    Object.fromEntries(['always', 'day', 'night'].map((period) => [
-        period,
-        spawnArea.spawns.filter((spawn) => spawn.period === period).reduce((sum, spawn) => sum + spawn.coords.length, 0)
-    ])),
-    { always: 98, day: 227, night: 247 },
-    'default, day, and night populations must retain their exact source split'
-);
-assert.ok(!spawnArea.spawns.some((spawn) => [8386, 8387, 8388, 8389, 8522].includes(spawn.selfId)),
-    'Forest merchants and named non-monster NPCs must not leak into the monster slice');
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['21_16'],
-    'all source spawns must remain in the Forest geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[21, 16]], 'Forest of the Dead', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta <= 64),
-        'every Forest source coordinate must agree with the selected geodata layer within 64 Z');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Forest of the Dead monsters are spawned from Mobius');
 
 const corruptedKnight = npcs.find((npc) => npc.selfId === 1547);
 assert.deepStrictEqual(
@@ -79,15 +53,6 @@ assert.deepStrictEqual(
     'the representative template must retain exact Lisvus combat and reward values'
 );
 
-function periodCounts(npcId) {
-    return Object.fromEntries(spawnArea.spawns.filter((spawn) => spawn.selfId === npcId)
-        .map((spawn) => [spawn.period, spawn.coords.length]));
-}
-assert.deepStrictEqual(periodCounts(1547), { always: 8, day: 2 });
-assert.deepStrictEqual(periodCounts(1582), { always: 3, night: 14 });
-assert.deepStrictEqual(periodCounts(12789), { always: 48, day: 9 });
-assert.deepStrictEqual(periodCounts(1588), { always: 1 });
-assert.deepStrictEqual(periodCounts(1589), { night: 12 });
 assert.strictEqual(npcs.find((npc) => npc.selfId === 1588).template.name, 'Vampire Wizard');
 assert.strictEqual(npcs.find((npc) => npc.selfId === 1589).template.name, 'Vampire Wizard',
     'same-name day/night variants must remain distinct NPC templates');
