@@ -314,6 +314,13 @@ const DETOUR_REASONS = new Set(['level_replan', 'equipment_source_replan']);
 function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoom = null }) {
     if (!routable(state, null, [])) return null;
     const frame = frameFor(state, null, [], timestamp, hasRoom);
+    // The accepted occupation owns this round. A routine hunting replan
+    // must not turn a pending purchase/craft/sale into another field trip
+    // before the native economy executor gets to carry it out.
+    if (leaf?.activity && leaf.activity !== 'hunting' && !unsafeSoloGround(state, currentSpot, frame)) {
+        EconomyDiagnostics.count('route', 'trip', 'occupation');
+        return null;
+    }
     const wished = leafChoice(state, leaf, { spots, timestamp, frame });
     if (wished && !wished.full) {
         EconomyDiagnostics.count('route', 'trip', 'leaf');

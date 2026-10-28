@@ -45,6 +45,8 @@ function fixture(result = false) {
         }
     };
     const session = { actor: bot, plan: 'hunting', noTargetTicks: 5,
+        heldEconomy: { network: { activity: { activity: 'hunting', spotId: spot.id } },
+            stock: () => ({ itemId: 0, usePerHour: 0 }), statsPacket: {} },
         botStatus: { available: true, mode: 'hunting', level: 57, loc: start, blockers: ['no_targets_nearby'],
             nearby: { attackableNpcs: 5, eligibleAttackableNpcs: 5 } },
         spotRelocation: { method: 'walk', spotId: spot.id, destination: { ...destination },
@@ -130,8 +132,9 @@ try {
     const white = fixture(true);
     const red = fixture(true);
     red.bot.fetchKarma = () => 500;
-    assert.strictEqual(Decision.suggest(redStatus, white.session).spot?.id, farSpot.id, 'a white bot may pick a far spot');
-    assert.strictEqual(Decision.suggest(redStatus, red.session).action, 'search_locally', 'a bot with karma picks only spots it can walk to');
+    for (const f of [white, red]) f.session.heldEconomy.network.activity.spotId = farSpot.id;
+    assert.strictEqual(Decision.suggest(redStatus, white.session).spot?.id, farSpot.id, 'a white bot executes the selected far hunt');
+    assert.strictEqual(Decision.suggest(redStatus, red.session).spot?.id, farSpot.id, 'karma changes how the chosen hunt is reached, not the occupation');
 
     const realSuggest = Decision.suggest;
     const realSetTimeout = global.setTimeout;
@@ -164,8 +167,9 @@ try {
         held: Events.held, travel: TownTravel.request };
     const purchaseState = { characterId: 2002505, activity: 'hunting' };
     const purchaseEconomy = { network: { activity: { activity: 'shopping', itemId: 1835,
-        amount: 8, town: 'Giran', valueHours: 0.002 } } };
+        amount: 8, town: 'Giran', valueHours: 0.002, rootKey: 'stock:shots' } } };
     let purchaseChecks = 0, purchaseTrips = 0, allowed = false;
+    let expectedRequest = { selfId: 1835, amount: 8, town: 'Giran', valueHours: 0.002 };
     try {
         Events.held = () => purchaseEconomy;
         Economy.stateForActor = () => purchaseState;
@@ -173,7 +177,7 @@ try {
             purchaseChecks++;
             assert.strictEqual(state, purchaseState);
             assert.strictEqual(options.economy, purchaseEconomy, 'the hot guard reuses its existing decision');
-            assert.deepStrictEqual(request, { selfId: 1835, amount: 8, town: 'Giran', valueHours: 0.002 });
+            assert.deepStrictEqual(request, expectedRequest);
             return allowed;
         };
         TownTravel.request = () => { purchaseTrips++; return 'escape'; };
@@ -184,14 +188,64 @@ try {
         tick(denied);
         assert.strictEqual(purchaseChecks, 1);
         assert.strictEqual(purchaseTrips, 0, 'a tiny unprofitable purchase cannot initiate a visible town trip');
+        assert.strictEqual(denied.session.lastDecision.action, 'continue_occupation', 'a refused purchase waits for the planner instead of inventing a hunt');
+        assert.strictEqual(denied.session.spotRelocation, undefined);
+        assert.strictEqual(denied.bot.moves, 0);
         allowed = true;
         const accepted = fixture();
+        accepted.session.companionEquipmentRetryAt = Date.now() + 300000;
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
         accepted.bot.automation = { abortAll() {} };
         tick(accepted);
         assert.strictEqual(purchaseChecks, 2);
         assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
+        const unreachable = fixture();
+        unreachable.session.spotRelocation = undefined;
+        unreachable.session.companionEquipmentRetryAt = Date.now() + 300000;
+        unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
+        tick(unreachable);
+        assert.strictEqual(purchaseTrips, 1, 'a failed physical route is deferred even for stock instead of restarting each tick');
+        assert.strictEqual(unreachable.session.plan, 'hunting');
+        assert.strictEqual(unreachable.session.spotRelocation, undefined);
+        const checked = purchaseChecks;
+        purchaseState.inventory = { 1835: { amount: 20 } };
+        purchaseEconomy.network.activity.heldAtDecision = 12;
+        const completed = fixture();
+        completed.session.spotRelocation = undefined;
+        tick(completed);
+        assert.strictEqual(purchaseChecks, checked, 'a completed purchase waits for its next decision instead of ordering the same quantity again');
+        assert.strictEqual(purchaseTrips, 1);
+        purchaseState.inventory = {};
+        delete purchaseEconomy.network.activity.heldAtDecision;
+        purchaseEconomy.network.activity.rootKey = 'power:148:7';
+        purchaseEconomy.network.activity.r = 0.001;
+        expectedRequest = { ...expectedRequest, r: 0.001 };
+        const materialBuy = fixture();
+        materialBuy.session.spotRelocation = undefined;
+        tick(materialBuy);
+        assert.strictEqual(purchaseTrips, 2, 'a material purchase retains the accepted root funding ratio');
+        const crafting = fixture();
+        Events.held = () => ({ network: { activity: { activity: 'crafting', kind: 'craft', rootKey: 'stock:shots' } } });
+        tick(crafting);
+        assert.strictEqual(crafting.session.spotRelocation, undefined, 'a craft waiting for its worker details releases an old hunting route');
+        assert.strictEqual(crafting.bot.moves, 0, 'the hunt cannot steal the craft waiting window');
+        assert.strictEqual(crafting.session.lastDecision.activity, 'crafting');
+        const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
+        const oldTarget = Shopping.workshopTarget;
+        const personalCraft = { strategy: 'craft', recipeId: 99, status: 'ready_to_craft' };
+        const workshop = { workshop: true, town: 'Giran' };
+        try {
+            Shopping.workshopTarget = (_session, _bot, selected) => {
+                assert.strictEqual(selected, personalCraft, 'equipment crafting executes the worker\'s selected plan');
+                return workshop;
+            };
+            Events.held = () => ({ network: { activity: { activity: 'crafting', kind: 'craft', rootKey: 'power:148:7' } }, personalCraft });
+            const gearCraft = fixture();
+            tick(gearCraft);
+            assert.strictEqual(gearCraft.session.shoppingTarget, workshop, 'equipment crafting resumes at its workshop too');
+            assert.strictEqual(gearCraft.session.shoppingServicePhase, 'workshop');
+        } finally { Shopping.workshopTarget = oldTarget; }
     } finally {
         Market.canTravelForPurchase = savedPurchase.check;
         Economy.stateForActor = savedPurchase.state;

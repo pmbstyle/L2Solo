@@ -229,6 +229,24 @@ try {
     const selected = Material.selectMembers(members, { timestamp });
     assert.equal(selected.length, 3);
     assert.equal(Composition.roleCoverage(selected).healer, 1);
+    const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+    const materialNpc = Data.npcs.find(npc => npc.selfId === request.npcId);
+    assert(materialNpc, 'the material NPC exists in the native datapack');
+    const materialSpot = { id: request.spotId, npcEntries: [{ selfId: request.npcId, pull: 5 }] };
+    const weak = [{ level: 65, pAtk: 1, mAtk: 1, pDef: 1, maxHp: 1, atkSpd: 300, skills: [] }];
+    const strong = [{ ...weak[0], pAtk: 100000, pDef: 100000, maxHp: 1000000 }];
+    assert.equal(Material.canHunt(members, materialSpot, weak), false, 'support damage cannot admit a lethal material pull');
+    assert.equal(Material.canHunt(members, materialSpot, strong), true, 'a capable material roster remains eligible');
+    const findSpot = SpotProfiles.findById, stateProfiles = Match.stateProfiles;
+    try {
+        SpotProfiles.findById = () => materialSpot;
+        Match.stateProfiles = (_state, options) => {
+            assert.equal(options.capacityStates.length, 3, 'formation safety sees the complete proposed roster');
+            return weak;
+        };
+        assert.deepEqual(Material.selectMembers(members, { timestamp }), [], 'formation refuses an incapable material contract');
+    } finally { SpotProfiles.findById = findSpot; Match.stateProfiles = stateProfiles; }
     assert.equal(Material.selectMembers([coreA, coreB, { ...helper, stats: { ...helper.stats,
         partyRequest: { status: 'deferred', deferredUntil: Date.now() + 60000 } } }]).length, 2,
     'a helper on its native recruitment cooldown is not recruited without an explicit clock');

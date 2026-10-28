@@ -69,7 +69,7 @@ function fakeSession(state, data) {
 
 async function run() {
     Database.init();
-    for (let id = 1; id <= 25; id++) {
+    for (let id = 1; id <= 27; id++) {
         await Database.execute(['INSERT INTO accounts(username,password) VALUES (?,?)', [`bot_hot_${id}`, 'test']]);
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_hot_${id}`, `Hot${id}`]]);
@@ -344,6 +344,52 @@ async function run() {
     assert.equal(detached.stats.pveEncounter, null);
     assert.equal(detached.exp, beforeRelease.exp);
     assert.deepStrictEqual(detached.loc, beforeRelease.loc);
+
+    party = await createParty([26, 27], {
+        objective: { materialParty: true, reason: 'craft_material', status: 'open',
+            spotId: 'test', npcId: 10, itemId: 4097, targetId: 5726, amount: 12, requiredTotal: 12 }
+    });
+    for (const memberId of party.memberIds) {
+        const state = Life.cachedState(memberId);
+        await Life.upsertState({ ...state, stats: { ...state.stats, partyRequest: party.stats.objective,
+            equipmentPlan: { status: 'active', target: { selfId: 5726 } } } }, 'test_material_request');
+    }
+    spawnCount = 0;
+    assert((await Lifecycle.activate(party.partyId)).ok);
+    const unsafeGroup = Manager.sessions.slice();
+    const Material = require('../src/GameServer/Bot/Population/CraftMaterialParty');
+    replace(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseDecision', () => {});
+    replace(invoke('GameServer/Bot/Population/SpotProfiles'), 'findById', () => ({ id: 'test' }));
+    let capable = true;
+    replace(Material, 'canHunt', () => capable);
+    assert.equal((await Lifecycle.releaseUnsafeHunt(party.partyId)).reason, 'party_hunt_capable',
+        'an unsafe-scan hint cannot dissolve a capable roster');
+    capable = false;
+    const settleBeforeReview = Life.settleWrites;
+    Life.settleWrites = async ids => { await settleBeforeReview.call(Life, ids); unsafeGroup[1].pvpDefense = {}; };
+    assert.equal((await Lifecycle.releaseUnsafeHunt(party.partyId)).reason, 'party_member_changed');
+    assert.equal(Parties.find(party.partyId).status, 'hot', 'aggression during the wait aborts the whole release');
+    assert(unsafeGroup.every(s => s.hotBackgroundPartyId === party.partyId && !s.hotHuntReview));
+    Life.settleWrites = settleBeforeReview;
+    delete unsafeGroup[1].pvpDefense;
+    const actorsBeforeReview = unsafeGroup.map(s => s.actor);
+    const expBeforeReview = unsafeGroup.map(s => s.coldLifeState.exp);
+    unsafeGroup[0].actor.setHp(37); unsafeGroup[1].actor.setMp(23);
+    const released = await Lifecycle.releaseUnsafeHunt(party.partyId);
+    assert(released.ok, JSON.stringify(released));
+    assert.equal(released.released, 2);
+    assert.equal(Parties.find(party.partyId), null);
+    assert.equal((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [party.partyId]]))[0].status, 'dissolved');
+    assert.deepEqual(unsafeGroup.map(s => s.actor), actorsBeforeReview, 'native actors stay published in place');
+    assert(unsafeGroup.every(s => World.user.sessions.includes(s) && s.aiActive && !s.hotBackgroundPartyId && !s.hotHuntReview));
+    assert.deepEqual(unsafeGroup.map(s => Life.cachedState(s.actor.fetchId()).exp), expBeforeReview);
+    assert.equal(unsafeGroup[0].actor.fetchHp(), 37, 'membership publication cannot restore old cached HP');
+    assert.equal(unsafeGroup[1].actor.fetchMp(), 23, 'membership publication cannot restore old cached MP');
+    assert(unsafeGroup.every(s => Life.cachedState(s.actor.fetchId()).phase === 'hot'
+        && !Life.cachedState(s.actor.fetchId()).party.partyId));
+    assert(unsafeGroup.every(s => Life.cachedState(s.actor.fetchId()).stats.partyRequest?.status === 'deferred'));
+    const releasedRows = await Database.execute(['SELECT phase,partyId,hp,mp FROM bot_life_state WHERE characterId IN (26,27) ORDER BY characterId']);
+    assert(releasedRows.every(row => row.phase === 'hot' && !row.partyId));
 
     await Database.close(); Database.init();
     assert.strictEqual((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [recoveryPartyId]]))[0].status, 'active');

@@ -93,8 +93,10 @@ assert.deepStrictEqual([two.debug.pulls, two.debug.pullMobs], [1, 2]);
 assert.strictEqual(two.materialize.exp, one.materialize.exp * 2, 'each mob of the pull gives its exp');
 assert.strictEqual(two.materialize.items.length, one.materialize.items.length * 2, 'each mob rolls its drops');
 assert(two.debug.combatMs > one.debug.combatMs, 'two mobs take longer to kill');
-// Helpers come regardless (design 13.5): a pull above the hunter's margin still starts, it is not rested for.
-assert.deepStrictEqual([three.debug.pulls, three.debug.pullMobs], [1, 3]);
+// Helpers come with the target, so a voluntary pull above the hunter's
+// full-health margin must be refused before it starts.
+assert.deepStrictEqual([three.debug.pulls, three.debug.pullMobs], [0, 0]);
+assert.strictEqual(three.patch.stats.lastReason, 'no_safe_solo_target');
 assert.notStrictEqual(three.patch.stats.lastReason, 'solo_recovery_needed');
 
 // Area and aura skills hit every mob of the pull (F20, plan 3.3(в)): a nuker whose

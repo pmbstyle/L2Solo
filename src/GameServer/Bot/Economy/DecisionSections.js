@@ -134,7 +134,7 @@ function kitFact(view) {
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
-    return { kitHashes: CombatProfile.kitHash(CombatProfile.combatView(state)), craftLevel: state.craftLevel ?? stats.dwarvenCraftLevel,
+    return { kitHashes: CombatProfile.kitHash(CombatProfile.combatView(state)), craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0,
         craftStationId: stats.craftStationId ?? null, workshop: stats.workshop,
         soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
 }

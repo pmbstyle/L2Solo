@@ -117,8 +117,18 @@ async function purchaseForActor(actor, options = {}) {
     if (!session || session.actor !== actor || !actor.backpack) throw Error('npc_actor_changed');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     let state = options.state || Life.cachedState(actor.fetchId()) || session.coldLifeState;
-    if (options.statsPacket) {
-        session.coldLifeState = { ...state, stats: { ...state?.stats, ...options.statsPacket } };
+    if (!state || state.phase !== 'hot') throw Error('npc_actor_changed');
+    const town = !options.original && options.seller
+        ? invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(actor) : null;
+    if (!options.original && options.seller && town !== options.seller.town) throw Error('npc_seller_changed');
+    if (options.statsPacket || town) {
+        // The body's visit is the location proof for a native purchase.
+        // markHot normally preserves the background anchor, which can still
+        // name the field this bot left with its escape scroll.
+        session.coldLifeState = { ...state,
+            ...(town ? { currentRegion: town, loc: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
+                activity: session.plan === 'shopping' ? 'shopping' : state.activity } : {}),
+            stats: { ...state?.stats, ...options.statsPacket } };
         state = await Life.markHot(session, 'npc_purchase_review');
     }
     if (!state || state.phase !== 'hot' || session.actor !== actor) throw Error('npc_actor_changed');

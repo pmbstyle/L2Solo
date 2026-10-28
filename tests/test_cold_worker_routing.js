@@ -174,6 +174,17 @@ try {
     flipSearch();
     assert.strictEqual(tripTo({ activity: 'hunting', spotId: otherSpot.id }), otherSpot.id, 'the leaf trip goes first');
     assert.strictEqual(tripTo(), otherSpot.id, 'after a leaf trip the next trip start searches, not the old kept spot');
+    const allowSpot = invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState;
+    try {
+        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => true;
+        for (const activity of ['shopping', 'crafting', 'selling', 'improving']) {
+            assert.strictEqual(tripTo({ activity, itemId: 736, town: 'Oren' }), undefined,
+                `a ${activity} decision reaches its executor instead of starting a hunting detour`);
+        }
+        invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = () => false;
+        assert(tripTo({ activity: 'shopping', itemId: 736, town: 'Oren' }),
+            'an unsafe-ground evacuation still owns safety before an ordinary purchase');
+    } finally { invoke('GameServer/Bot/AI/LevelingRoutes').isSpotAllowedForState = allowSpot; }
     SpotProfiles.findForState = () => { throw Error('search failed'); };
     BotRoute.drop(record, 'test');
     assert.strictEqual(tripTo(), undefined, 'a failed search starts no trip');

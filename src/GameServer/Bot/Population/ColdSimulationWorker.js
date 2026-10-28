@@ -1592,11 +1592,14 @@ function startKernel(config = {}) {
                 // The card holds the plan: the route is read on the input state.
                 const route = routeTrip(state, standingSpot(state), leaf, timestamp);
                 const routedState = beginHuntingTrip(state, route, timestamp) || state;
+                const occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
+                    ? await occupationFor(routedState, timestamp, { economy: refreshed.economy }, 'action') : null;
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
                 return { statsPacket: stepStatsPacket(state, refreshed.economy, timestamp), economy: refreshed.economy,
-                    ...(refreshed.economyPlan ? { economyPlan: refreshed.economyPlan } : {}),
+                    ...(occupation?.economyPlan || refreshed.economyPlan
+                        ? { economyPlan: occupation?.economyPlan || refreshed.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
                     partyRequest: null, reusablePartyRequest: false, replanFailure: null,
@@ -1648,8 +1651,11 @@ function startKernel(config = {}) {
             };
             const route = routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp);
             const routedState = beginHuntingTrip(plannedState, route, timestamp) || plannedState;
-            const showcase = routedState.activity === 'shopping'
-                ? await occupationFor(routedState, timestamp, { economy }, 'showcase') : null;
+            const preparedOccupation = routedState.activity === 'shopping'
+                ? await occupationFor(routedState, timestamp, { economy }, 'showcase')
+                : routedState.activity === 'hunting' && economy.network.activity?.activity
+                    && economy.network.activity.activity !== 'hunting'
+                    ? await occupationFor(routedState, timestamp, { economy }, 'action') : null;
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };
             const heldDecision = nullReuse ? ColdEconomyDecision.compact({ data: refreshed.decision.data.slice(0),
                 updatedAt: Number(seen.updatedAt || 0), echo: ColdEconomyDecision.stateEcho(seen), flags: 0 }) : null;
@@ -1658,8 +1664,8 @@ function startKernel(config = {}) {
             rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
             return {
-                ...(showcase?.economyPlan || nullReuse && refreshed?.economyPlan
-                    ? { economyPlan: showcase?.economyPlan || refreshed.economyPlan } : {}),
+                ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
+                    ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
                 economy,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,

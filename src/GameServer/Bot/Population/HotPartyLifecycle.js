@@ -326,6 +326,77 @@ function discard(sessions) {
     }
 }
 
+// Release an incapable material roster in place. Its native actors, wallet,
+// HP and XP remain authoritative; only the fenced party membership changes.
+async function releaseUnsafeHunt(partyId) {
+    if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
+    const Material = require('./CraftMaterialParty');
+    const party = Parties.find(partyId);
+    if (party?.status !== 'hot' || !Material.isObjective(party.stats?.objective)
+        || party.stats?.warOperation || party.stats?.raidAdmission) return { ok: false, reason: 'not_material_hunt' };
+    const sessions = party.memberIds.map(memberId => World.registeredActorById(memberId)?.session);
+    const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
+    const ready = () => Parties.find(partyId)?.status === 'hot'
+        && Parties.find(partyId)?.revision === party.revision && sessions.every(s => s?.actor
+        && s.hotBackgroundPartyId === partyId && !s.partyCompanion && s.plan === 'hunting'
+        && Math.hypot(s.actor.fetchLocX() - sessions[0].actor.fetchLocX(), s.actor.fetchLocY() - sessions[0].actor.fetchLocY()) <= 700
+        && !s.actor.state.fetchDead?.() && !s.actor.state.fetchHits?.() && !s.actor.state.fetchCasts?.()
+        && !s.pendingSupportCast && !s.spotRelocation && !s.pvpDefense && !s.pvpEncounter
+        && !s.trade && !s.activeTrade && !s.activeNegotiation && !Awareness.npcThreateningActor(s));
+    if (!ready()) return { ok: false, reason: 'party_member_busy' };
+    pending.add(partyId);
+    sessions.forEach(s => { s.hotHuntReview = true; invoke('GameServer/Bot/AI/BotPvpTactics').stop(s, s.actor); });
+    try {
+        await Life.settleWrites(party.memberIds);
+        if (!ready()) return { ok: false, reason: 'party_member_changed' };
+        const states = members(party);
+        if (!states) return { ok: false, reason: 'party_membership_changed' };
+        const spot = invoke('GameServer/Bot/Population/SpotProfiles').findById(party.spotId);
+        const profiles = invoke('GameServer/Bot/AI/BotTargetMatchup').actorProfiles(sessions.map(s => s.actor));
+        const npcIds = [...new Set([party.stats.objective.npcId,
+            ...(party.stats.agreement?.materialNeeds || []).map(need => need.npcId)].map(Number).filter(Boolean))];
+        if (!spot || Material.canHunt(states, spot, profiles, npcIds)) return { ok: false, reason: 'party_hunt_capable' };
+        const timestamp = Date.now(), reason = 'party_material_route_unavailable';
+        const Rule = require('./BackgroundPartyLifecycle');
+        const releases = sessions.map(s => {
+            const state = states.find(row => row.characterId === id(s));
+            const live = Life.partySessionSnapshot(s, state, 'hot', reason);
+            const next = Rule.releaseMember(live, timestamp, reason, Material.departureRequest(party, live));
+            next.spotId = s.currentSpot?.id || next.spotId;
+            return Life.preparePartyReview(state, next);
+        });
+        const dissolved = Parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [], nextResolveAt: null,
+            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason, dissolvedAt: timestamp } });
+        if (!dissolved || releases.some(row => !row)) return { ok: false, reason: 'invalid_party_review' };
+        const result = await Database.commitBackgroundPartyMembership({ party: dissolved.row, members: releases,
+            review: true, expectedPhase: 'hot', expectedPartyRevision: party.revision, canCommitHot: ready,
+            event: { characterId: party.leaderId, eventType: 'party', createdAt: timestamp,
+                summary: 'Material party released an unsafe hunting contract', meta: { partyId, reason } } });
+        if (!result.ok) return result;
+        Parties.acceptRow(result.partyRow);
+        const saved = Life.acceptPartyAssignments(releases, result.lifeRows);
+        for (const s of sessions) {
+            s.coldLifeState = saved.find(state => state.characterId === id(s));
+            s.hotBackgroundPartyId = null;
+            s.backgroundHuntTarget = null;
+            s.backgroundSearchDestination = null;
+            s.currentTargetId = undefined;
+            s.actor.unselect?.();
+            s.lastDecision = { action: 'leave_unsafe_party', reason, at: timestamp };
+            require('../AI/DecisionEvents').raiseDecision(s, 'relations');
+        }
+        require('../../World/PartyMembershipPublication')(sessions, invoke);
+        invoke('GameServer/Bot/Population/PopulationMetrics').recordPartyDissolution();
+        return { ok: true, partyId, released: sessions.length };
+    } catch (error) {
+        utils.infoWarn('BotParty', 'unsafe hunt review %s: %s', partyId, error.message);
+        return { ok: false, reason: error.message };
+    } finally {
+        pending.delete(partyId);
+        sessions.forEach(s => { delete s.hotHuntReview; World.notifyUserStateChanged(s); });
+    }
+}
+
 function publish(sessions, states, party) {
     const Manager = invoke('GameServer/Bot/BotManager');
     const Response = invoke('GameServer/Network/Response');
@@ -657,6 +728,7 @@ module.exports = {
     RAID_FAILURE_RETREAT_MS,
     activate,
     cooldown,
+    releaseUnsafeHunt,
     pending,
     members,
     criticalRaidCasualty,

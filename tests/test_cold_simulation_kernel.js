@@ -332,6 +332,42 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(routeStates[0].activity, 'traveling', 'worker resolve must execute the route transition before combat');
     assert.strictEqual(routeStates[0].stats.travel.spotId, 'mid-level-field');
 
+    for (const initialActivity of ['hunting', 'crafting']) {
+        for (const activity of ['shopping', 'selling', 'crafting', 'improving']) {
+            let combats = 0;
+            const occupationPlan = { travel: 'stock:scrolls', sell: [], withdraw: [], buyAds: [] };
+            const occupation = recordingKernel({ now: () => 5000,
+                resolveSolo: input => { combats++; return resolver(input); },
+                planLifecycle: ({ state: current }) => ({ plannedState: { ...current, activity: 'hunting' },
+                    activityPick: { activity }, economyPlan: occupationPlan }),
+                projectResolve: (current, result, at, plan) => ({ state: { ...current, updatedAt: at }, economyPlan: plan.economyPlan }),
+                emit: () => {} });
+            occupation.upsert(standOn(occupation, { state: state(90001, { activity: initialActivity,
+                vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }) }, { id: 'occupation-field' }));
+            occupation.tick(); await occupation.resolveChain; occupation.flush(null, true);
+            assert.equal(combats, 0, `${initialActivity}: a selected ${activity} cannot run a farm fight first`);
+            if (initialActivity === 'hunting') {
+                const proposal = sentProposals.get(occupation).get(90001);
+                assert.deepStrictEqual(proposal.economyPlan, occupationPlan);
+                assert.equal(proposal.nextState.vitals.hp, 100, 'the purchase keeps its pre-fight HP');
+            } else {
+                const request = sentCommands.get(occupation).get(90001);
+                assert.equal(request.precomputedResult.debug.reason, 'selected_occupation');
+            }
+        }
+    }
+    for (const expired of [false, true]) {
+        let combats = 0;
+        const pending = recordingKernel({ now: () => 5000,
+            resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' } }),
+            projectResolve: current => current, emit: () => {} });
+        pending.upsert(standOn(pending, { state: state(90002, { stats: { pveEncounter: {
+            version: 1, key: 'held', hp: 100, slices: expired ? 20 : 1, at: 4000 } } }) }, { id: 'pending-field' }));
+        pending.tick(); await pending.resolveChain;
+        assert.equal(combats, Number(!expired), 'an ongoing fight keeps ownership; an expired record cannot block the occupation');
+    }
+
     assert.strictEqual(lifecycleKind(state(2, { activity: 'crafting' })), 'command');
     const clanDuty = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear' };
     for (const activity of ['shopping', 'crafting', 'merchant']) {
