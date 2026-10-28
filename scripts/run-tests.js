@@ -722,6 +722,7 @@ const tests = [
       'tests/test_clan_scheduler_admission.js',
       'tests/test_clan_crest_assets.js',
     'tests/test_clan_system.js',
+    'tests/test_clan_join_penalty.js',
     'tests/test_cp_stats.js',
     'tests/test_player_combat_stance.js',
     'tests/test_effect_restrictions.js',

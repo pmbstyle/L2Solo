@@ -115,6 +115,8 @@ async function run() {
     await DB.execute([`UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.pvpEncounter') WHERE characterId=2`, []]);
     const expelled = await DB.expelDisciplinedClanMember(10, 2, snapshot.revision);
     assert(expelled.ok, JSON.stringify(expelled));
+    assert.strictEqual(expelled.banUntil - JSON.parse(expelled.row.statsJson).clanDiscipline.expelledAt, 86400000,
+        'disciplinary expulsion uses one real day, independent of game rates');
     assert.strictEqual((await DB.execute(['SELECT clanId FROM characters WHERE id=2', []]))[0].clanId, 0);
     assert.strictEqual(JSON.parse(expelled.row.statsJson).clanId, 0);
     assert(expelled.memorySnapshots[0].relations.some(r => r.kind === 'clan' && r.targetId === 10), 'expelled bot remembers the clan');

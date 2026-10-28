@@ -149,6 +149,87 @@ function fakeActor(id, name, options = {}) {
         BotManager.botTell = originalBotTell;
     }
 
+    // Lisvus CheckClanJoinCondition sends CLAN_IS_FULL (233) to the inviter,
+    // both when inviting and when rechecking the accepted invitation.
+    {
+        const RequestAnswerJoinPledge = invoke('GameServer/Network/Request/RequestAnswerJoinPledge');
+        const fullClan = { ...clan };
+        const inviterSession = new PlayerSession(leader);
+        const playerSession = new PlayerSession(fakeActor(2000020, 'Candidate'));
+        const candidateBotSession = new BotSession(fakeActor(2000021, 'CandidateBot'));
+        const fullMessage = Buffer.alloc(16); // Native packet padding, no message arguments.
+        fullMessage[0] = 0x64;
+        fullMessage.writeInt32LE(233, 1);
+        let added = 0;
+        try {
+            World.user = { sessions: [inviterSession, playerSession, candidateBotSession] };
+            ClanService.findById = (id) => (Number(id) === Number(clan.id) ? fullClan : null);
+            ClanService.addMember = () => { added += 1; return Promise.resolve({ ok: false }); };
+
+            for (const [level, limit] of [[0, 10], [1, 15], [2, 20], [3, 30], [4, 40], [5, 40]]) {
+                fullClan.level = level;
+                fullClan.members = Array.from({ length: limit }, (_, index) => ({ id: 2000100 + index }));
+                for (const candidate of [playerSession, candidateBotSession]) {
+                    inviterSession.sent = [];
+                    await RequestJoinPledge.consume(inviterSession, { targetId: candidate.actor.fetchId() });
+                    assert.deepStrictEqual(inviterSession.sent, [fullMessage, ServerResponse.actionFailed()],
+                        `a full level ${level} clan should report CLAN_IS_FULL to the inviter`);
+                    assert.deepStrictEqual(candidate.sent, [], 'a full clan must not send an invitation');
+                    assert.ok(!candidate.pendingClanInvite, 'a rejected invitation must not become pending');
+                    assert.strictEqual(candidate.actor.fetchClanId(), 0, 'the candidate must remain clanless');
+                }
+            }
+
+            // There is room at request time, but another member joins before the answer.
+            fullClan.members.pop();
+            inviterSession.sent = [];
+            RequestJoinPledge.consume(inviterSession, { targetId: playerSession.actor.fetchId() });
+            assert.ok(playerSession.pendingClanInvite, 'the last free slot should allow an invitation');
+            assert.strictEqual(playerSession.sent[0][0], 0x32, 'the candidate should receive AskJoinPledge');
+            fullClan.members.push({ id: 2000200 });
+            playerSession.sent = [];
+            const result = await RequestAnswerJoinPledge.consume(playerSession, { answer: 1 });
+            assert.strictEqual(result.code, 'clan_full');
+            assert.deepStrictEqual(inviterSession.sent, [fullMessage], 'the inviter should learn why joining failed');
+            assert.deepStrictEqual(playerSession.sent, [ServerResponse.actionFailed()]);
+            assert.strictEqual(playerSession.pendingClanInvite, null, 'the rejected answer should consume the invitation');
+            assert.strictEqual(playerSession.actor.fetchClanId(), 0);
+            assert.strictEqual(added, 0, 'a full clan must never attempt to persist another member');
+
+            // A clanless target can still have a join penalty. Report its real
+            // remaining time before CLAN_IS_FULL instead of the stock five days.
+            playerSession.actor.setClanJoinExpiryTime(Date.now() + 86400000);
+            for (const stage of ['request', 'answer']) {
+                inviterSession.sent = [];
+                playerSession.sent = [];
+                if (stage === 'request') {
+                    const packet = Buffer.alloc(5);
+                    packet[0] = 0x24;
+                    packet.writeInt32LE(playerSession.actor.fetchId(), 1);
+                    RequestJoinPledge(inviterSession, packet);
+                } else {
+                    playerSession.pendingClanInvite = { requestorSession: inviterSession,
+                        invitedActor: playerSession.actor, clanId: fullClan.id };
+                    const rejected = await RequestAnswerJoinPledge.consume(playerSession, { answer: 1 });
+                    assert.strictEqual(rejected.code, 'target_join_cooldown');
+                }
+                const message = inviterSession.sent[0];
+                assert.strictEqual(message[0], 0x64);
+                assert.strictEqual(message.readInt32LE(1), 614, `${stage}: the leader should see the actual remaining penalty`);
+                assert.strictEqual(message.readInt32LE(5), 1, 'the native message requires one argument');
+                assert.strictEqual(message.readInt32LE(9), 0, 'the argument must be TYPE_TEXT');
+                assert.strictEqual(message.toString('ucs2', 13).split('\0')[0],
+                    'Candidate cannot join another clan yet. Penalty remaining: 24h 0m (real time).');
+                assert.strictEqual(playerSession.pendingClanInvite, null);
+                assert.strictEqual(added, 0);
+            }
+        } finally {
+            World.user = { sessions: originalWorldSessions || [] };
+            ClanService.findById = originalFindById;
+            ClanService.addMember = originalAddMember;
+        }
+    }
+
     // E255: the invite belongs to the invited character, not to the connection.
     // After Restart and another character, an answer must not join that character.
     {

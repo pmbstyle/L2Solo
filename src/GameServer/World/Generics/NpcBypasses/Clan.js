@@ -264,6 +264,7 @@ function errorText(code, details = {}) {
         level_too_low: 'You must be at least level 10 to create a clan.',
         already_in_clan: 'You are already in a clan.',
         create_cooldown: 'You must wait before creating another clan.',
+        join_cooldown: 'You cannot create a clan until your 24-hour real-time clan penalty expires.',
         name_exists: 'Clan name already exists.',
         no_privilege: 'You are not authorized.',
         not_enough_sp: 'You do not have enough SP.',

@@ -81,7 +81,8 @@ are not automatically expelled. Ordinary manual membership restrictions remain.
 
 Removal atomically changes character membership, life state and simulation
 roster, clears the old clan task, retains both sides' memory and records a
-seven-day join restriction. Live actor flags and clan packets are refreshed;
+24-hour real-time join restriction, shared with voluntary departure and manual
+expulsion. Live actor flags and clan packets are refreshed;
 worker snapshots receive the new revision. A membership version protects the
 result from stale cold stats. Existing background party membership is not
 automatically dissolved by a clan expulsion.
