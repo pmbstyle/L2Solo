@@ -9,11 +9,8 @@ const result = generateC4MonsterLocation({
     sourceLabels: ['aden08_mb2318_14', 'dion13_2122_04', 'innadrill05_2225_47', 'oren31_2217_01'],
     skippedMobIds: [575, 576],
     displayName: 'remaining high-level monsters',
-    areaId: 'c4-remaining-high-level-monsters',
     mobIds: [803, 941, 994, 1261, 1797],
     spawnRows: 102,
-    respawn: 94,
-    respawnByMob: { 941: 45, 994: 110, 1261: 41, 1797: 80 },
     skillRows: 31,
     dropRows: 71,
     missingItemIds: []

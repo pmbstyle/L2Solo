@@ -6,11 +6,8 @@ const result = generateC4MonsterLocation({
     sourceLabels: ['giran05_2421_01', 'giran05_2421_50', 'giran05_2421_53', 'giran05_2421_68', 'giran05_2421_75', 'giran05_2421_p50'],
     skippedMobIds: [620, 621],
     displayName: "Antharas' Lair",
-    areaId: 'c4-antharas-lair',
     mobIds: [1084, 1085, 1086, 1087, 1088, 1089, 1090],
     spawnRows: 219,
-    respawn: 300,
-    respawnByMob: { 1084: 250, 1090: 400 },
     skillRows: 53,
     dropRows: 121,
     missingItemIds: []

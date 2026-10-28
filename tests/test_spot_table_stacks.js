@@ -13,7 +13,8 @@ const simulation = {
     items: definitions,
     BotGear: { planFor: () => ({ items: [{ selfId: 1864, slot: 0 }] }) },
     Potions: { purchasePotionFor: () => null },
-    CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100 }) },
+    CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100 }),
+        skillRecordsFromTree: () => [], skillSnapshotsFromRecords: () => [] },
     HuntEfficiency: { lootValue: () => 0 },
     BR: { resolveSolo({ timestamp }) {
         resolves++;

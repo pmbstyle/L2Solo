@@ -25,15 +25,8 @@ const result = generateC4MonsterLocation({
     slug: 'c4_wall_of_argos',
     sourcePrefixes: ['godard26_2516_'],
     displayName: 'Wall of Argos',
-    areaId: 'c4-wall-of-argos',
     mobIds: [1294, 1295, 1296, 1297, 1298, 1299, 1300, 1301, 1302, 1303, 1304, 1305, 1306, 1307, 1308, 1309, 1310, 1311, 1312],
     spawnRows: 328,
-    respawn: 60,
-    respawnByMob: {
-        1294: 55, 1295: 55, 1296: 100, 1297: 65, 1300: 75, 1301: 100,
-        1304: 100, 1305: 75, 1306: 130, 1307: 100, 1308: 130, 1309: 130,
-        1310: 100, 1311: 100, 1312: 340
-    },
     skillRows: 143,
     dropRows: 266,
     missingItemIds: [],

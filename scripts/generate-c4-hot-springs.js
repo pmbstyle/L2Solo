@@ -8,22 +8,18 @@ const diseaseLevels = Array.from({ length: 10 }, (_, index) => ({
     itemId: 0,
     itemCount: 0
 }));
-
 const disease = (selfId, name) => ({
     selfId,
     template: { name, passive: false, spell: true, distance: 600 },
     time: { hitTime: 0, reuse: 0, buff: 600000 },
     levels: diseaseLevels
 });
-
 const result = generateC4MonsterLocation({
     slug: 'c4_hot_springs',
     sourcePrefixes: ['godard05_2414_'],
     displayName: 'Hot Springs',
-    areaId: 'c4-hot-springs',
     mobIds: [1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321, 1322, 1323],
     spawnRows: 171,
-    respawn: 70,
     skillRows: 119,
     dropRows: 129,
     missingItemIds: [7649, 7650, 7651, 7652, 7653],

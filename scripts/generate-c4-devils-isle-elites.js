@@ -5,10 +5,8 @@ const result = generateC4MonsterLocation({
     slug: 'c4_devils_isle_elites',
     sourceLabels: ['giran08_2124_058', 'giran08_2124_065', 'giran08_2124_074', 'giran08_2124_082', 'giran08_2124_091'],
     displayName: "Devil's Isle elites",
-    areaId: 'c4-devils-isle-elites',
     mobIds: [1625, 1628, 1631, 1634, 1637],
     spawnRows: 146,
-    respawn: 180,
     skillRows: 40,
     dropRows: 85,
     missingItemIds: []

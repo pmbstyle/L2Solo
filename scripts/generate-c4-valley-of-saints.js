@@ -146,21 +146,6 @@ const spawnRows = tuples('sql/spawnlist.sql').filter((row) =>
 if (spawnRows.length !== 381) throw new Error(`Expected 381 spawns, found ${spawnRows.length}`);
 if (spawnRows.some((row) => Number(row[2]) !== 1)) throw new Error('Unexpected Valley spawn count semantics');
 
-const spawnDefinitions = [...mobIds].map((npcId) => {
-    const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
-    if (!rows.length) throw new Error(`Missing Valley spawns for NPC ${npcId}`);
-    const respawns = [...new Set(rows.map((row) => Number(row[10])))];
-    if (respawns.length !== 1) throw new Error(`NPC ${npcId} has mixed respawns: ${respawns.join(', ')}`);
-    return {
-        selfId: npcId,
-        name: npcNameById.get(npcId),
-        coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1,
-        respawn: respawns[0],
-        bias: 0
-    };
-});
-const spawns = [{ selfId: 'c4-valley-of-saints', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIds.has(Number(row[0])));
 if (dropRows.length !== 262) throw new Error(`Expected 262 drops, found ${dropRows.length}`);
@@ -261,7 +246,6 @@ const skillTemplates = [
 if (skillTemplates.length !== 21) throw new Error(`Expected 21 skill templates, found ${skillTemplates.length}`);
 
 writeJson('data/Npcs/c4_valley_of_saints.json', npcs);
-writeJson('data/Npcs/Spawns/c4_valley_of_saints.json', spawns);
 writeJson('data/Npcs/Rewards/c4_valley_of_saints.json', rewards);
 writeJson('data/Items/Others/c4_valley_of_saints.json', missingItems);
 writeJson('data/Npcs/Skills/c4_valley_of_saints.json', skillRows);

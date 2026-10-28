@@ -7,11 +7,8 @@ const result = generateC4MonsterLocation({
     sourceLabels: ['aden26_2517_01', 'aden26_2517_05', 'aden26_2517_12', 'aden26_2517_p01'],
     skippedMobIds: [674],
     displayName: 'Devastated Castle outskirts',
-    areaId: 'c4-devastated-castle-outskirts',
     mobIds: [974, 1001, 1002, 1003, 1007, 1008, 1009, 1010],
     spawnRows: 261,
-    respawn: 75,
-    respawnByMob: { 974: 110 },
     skillRows: 44,
     dropRows: 128,
     missingItemIds: [5165]

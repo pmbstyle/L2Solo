@@ -11,10 +11,9 @@ const mpEruption = [13, 20, 27, 35, 45, 55, 65, 69, 73, 75, 77, 78];
 const eruptionPower = [37, 39, 41, 43, 45, 46, 48, 50, 51, 53, 54, 56];
 
 const result = generateC4MonsterLocation({
-    slug: 'c4_imperial_tomb', sourcePrefixes: ['godard14_2515_'], displayName: 'Imperial Tomb', areaId: 'c4-imperial-tomb',
+    slug: 'c4_imperial_tomb', sourcePrefixes: ['godard14_2515_'], displayName: 'Imperial Tomb',
     mobIds: [1396, 1397, 1398, 1399, 1400, 1401, 1402, 1403, 1404, 1405, 1406, 1407, 1408, 1410, 1411, 1412, 1413, 1414, 1415, 1416, 1417, 1418, 1420, 1421, 1424, 1425, 1426, 1427, 1428, 1429, 1430, 1431, 1432, 1434, 1798, 1799, 1800],
-    spawnRows: 332, respawn: 40,
-    respawnByMob: { 1396:60,1397:60,1398:30,1399:180,1400:45,1402:45,1403:90,1408:45,1410:60,1411:60,1412:80,1413:80,1414:45,1415:45,1418:45,1420:80,1421:80,1425:90,1426:30,1427:60,1428:60,1429:90,1430:90,1431:120,1434:720,1798:90,1799:90,1800:90 },
+    spawnRows: 332,
     skillRows: 339, dropRows: 520, missingItemIds: [],
     skillTemplates: [
         { selfId: 4233, template: { name: 'Vampiric Attack', passive: true, spell: false, distance: -1 }, time: { hitTime: 0, reuse: 0, buff: 0 }, levels: levels([0]) },
