@@ -219,6 +219,8 @@ const PARTY = [
     ['necromancer corpse servitor', [necromancer, bishop], 129, 16],
     ['tank and healer with shots', [paladinShots, injuredBishopShots], 5135, 11]
 ];
+// R2: without a tank the mob hits the most hated member (NpcHate), no longer a
+// member rolled per swing, so the tankless pins carry the top damage dealer's HP loss.
 const PARTY_GOLDEN = {
     'tank, charges, healer, songs, servitor': { won: true, actions: 25, skillUses: 18, musicUses: 5, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1008, 1340, 774, 4, 3, 0, 1, 0, 0],
@@ -227,17 +229,17 @@ const PARTY_GOLDEN = {
             [1006, 1392, 223, 5, 5, 0, 0, 5, 0],
             [1004, 1290, 2523, 1, 0, 0, 0, 0, 0]] },
     'casters and a dancer': { won: true, actions: 9, skillUses: 7, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1001, 1290, 2538, 2, 2, 0, 0, 0, 0],
+        members: [[1001, 1026, 2538, 2, 2, 0, 0, 0, 0],
             [1005, 1290, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1189, 2595, 1, 1, 0, 0, 0, 0],
-            [1010, 1227, 673, 2, 2, 0, 0, 2, 0]] },
+            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0],
+            [1010, 1324, 673, 2, 2, 0, 0, 2, 0]] },
     'injured with potions': { won: true, actions: 12, skillUses: 9, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
-        members: [[1012, 1326, 765, 5, 4, 0, 1, 0, 0],
-            [1002, 1665, 679, 3, 3, 0, 0, 0, 0],
+        members: [[1012, 1282, 765, 5, 4, 0, 1, 0, 0],
+            [1002, 1674, 679, 3, 3, 0, 0, 0, 0],
             [1009, 821, 1659, 2, 2, 0, 2, 0, 0]] },
     'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1005, 1290, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1165, 2595, 1, 1, 0, 0, 0, 0]] },
+        members: [[1005, 1160, 2432, 2, 2, 0, 0, 0, 0],
+            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0]] },
     'tank and healer with shots': { won: true, actions: 20, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
         members: [[1017, 1148, 774, 7, 3, 5, 1, 0, 0],
             [1016, 1290, 2542, 6, 4, 4, 0, 0, 0]] }

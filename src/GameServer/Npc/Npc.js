@@ -14,8 +14,11 @@ const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
+const NpcHate = invoke('GameServer/Npc/NpcHate');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
+// Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0 };
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
 // that request on every 100ms combat tick yields visible stop/start jitter.
@@ -48,6 +51,10 @@ function skillDistance(skill) {
 }
 
 class Npc extends NpcModel {
+    static hateStats() {
+        return { ...hateStats };
+    }
+
     constructor(id, data) {
         // Parent inheritance
         super(data);
@@ -170,11 +177,7 @@ class Npc extends NpcModel {
         const damageValue = Math.max(0, Number(damage) || 0);
         const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
         entry.damage += damageValue;
-        entry.hate += aggroValue;
-
-        // L2Attackable.addDamageHate gives a newly registered actor one point
-        // of hate when the event itself carries zero aggro.
-        if (aggroValue === 0) entry.hate += 1;
+        entry.hate = NpcHate.add(entry.hate, aggroValue);
 
         const target = this.fetchMostHated();
         if (!target) return false;
@@ -191,22 +194,10 @@ class Npc extends NpcModel {
     }
 
     fetchMostHated() {
-        let mostHated = null;
-        let maxHate = 0;
-
         for (const [actorId, entry] of this.aggroList.entries()) {
-            if (!this.isValidAggroTarget(entry?.actor)) {
-                this.aggroList.delete(actorId);
-                continue;
-            }
-
-            if (entry.hate > maxHate) {
-                mostHated = entry.actor;
-                maxHate = entry.hate;
-            }
+            if (!this.isValidAggroTarget(entry?.actor)) this.aggroList.delete(actorId);
         }
-
-        return mostHated;
+        return NpcHate.mostHated(this.aggroList.values())?.actor || null;
     }
 
     fetchCombatTarget() {
@@ -261,9 +252,14 @@ class Npc extends NpcModel {
         return this.retargetAfterAggroChange(session);
     }
 
-    removeAggroTarget(session, actor) {
+    // The mob turns to the next hated actor, or leaves combat when none is left.
+    // cause names a dropped chase for the npcHate status counter.
+    removeAggroTarget(session, actor, cause = null) {
         const actorId = Number(actor?.fetchId?.());
-        if (!actorId || !this.aggroList.delete(actorId)) return false;
+        if (!actorId) return false;
+        if (this.confusionTarget === actor) delete this.confusionTarget;
+        this.aggroList.delete(actorId);
+        if (cause) hateStats[cause] += 1;
         return this.retargetAfterAggroChange(session);
     }
 
@@ -295,7 +291,7 @@ class Npc extends NpcModel {
 
         if (!options.skipAggro) {
             const entry = this.ensureAggroEntry(actor);
-            if (entry && entry.hate <= 0) entry.hate = 1;
+            if (entry && entry.hate <= 0) entry.hate = NpcHate.ENGAGE_HATE;
         }
 
         const target = this.fetchMostHated() || actor;
@@ -351,6 +347,9 @@ class Npc extends NpcModel {
                     activeMoveCoords = null;
                     activePathWaypoints = [];
                     activePathTargetCoords = null;
+                    pathFailureStartedAt = 0;
+                    pathFailureCount = 0;
+                    nextPathRetryAt = 0;
                     this.automation.abortAll(this);
                 }
 
@@ -363,7 +362,9 @@ class Npc extends NpcModel {
                 }
 
                 if (new SpeckMath.Point(this.fetchLocX(), this.fetchLocY()).distance(new SpeckMath.Point(actor.fetchLocX(), actor.fetchLocY())) >= 1500) {
-                    this.abortCombatState(session, { preserveAggro: true }); // Actor is out of reach
+                    // Lisvus forgets a hated actor that left its known list (3000,
+                    // AttackableKnownList); this chase stops at 1500, so it forgets then.
+                    this.removeAggroTarget(session, actor, 'outOfReach');
                     return;
                 }
 
@@ -459,7 +460,9 @@ class Npc extends NpcModel {
                                         );
                                         nextPathRetryAt = Date.now() + retryDelay;
                                         if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                                            this.abortCombatState(session, { preserveAggro: true });
+                                            // Lisvus stops hating an actor it could not hit for
+                                            // its attack timeout (L2AttackableAI.thinkAttack).
+                                            this.removeAggroTarget(session, actor, 'noPath');
                                         }
                                         return;
                                     }
@@ -882,6 +885,7 @@ class Npc extends NpcModel {
             }
         }
         if (!preserveAggro) this.clearAggroList();
+        else if (this.aggroList.size > 0) hateStats.idleWithHate += 1;
         this.state.setCombatEnded();
         this.automation.abortAll(this);
 

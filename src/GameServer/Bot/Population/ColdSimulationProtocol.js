@@ -99,6 +99,15 @@ function validRaidAssessment(joint, sources) {
     return !a.ready || a.seconds > 0 && a.grossDps > a.regen && a.shotPlans?.length >= 6 && !!a.kits;
 }
 
+// A forming verdict (PartyGoalPolicy.formingVerdict): distinct accepted ids of the roster's
+// sources, a material roster's reviews; no goals.
+function validFormingVerdict(joint, sources) {
+    const ids = sources.map(source => source?.characterId), accepted = joint.formingAccepted;
+    return Object.keys(joint).every(key => ['formingAccepted', 'lastIncomeReviewAt', 'incomeReviews'].includes(key))
+        && accepted.length <= ids.length && new Set(accepted).size === accepted.length
+        && accepted.every(id => Number.isSafeInteger(id) && ids.includes(id));
+}
+
 function validPartyIncomeReviews(joint, sources) {
     if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return true;
     if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
@@ -225,10 +234,11 @@ function validateEnvelope(message, direction, options = {}) {
         if (typeof payload.ok !== 'boolean' || (payload.ok
             ? !Array.isArray(payload.sources) || payload.sources.length < 1 || payload.sources.length > 9
                 || !payload.joint || typeof payload.joint !== 'object' || Array.isArray(payload.joint)
-                || !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
-                || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
-                    'lastIncomeReviewAt', 'incomeReviews', 'raidAssessment'].includes(key))
-                || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources)
+                || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
+                    : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
+                    || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
+                        'lastIncomeReviewAt', 'incomeReviews', 'raidAssessment'].includes(key))
+                    || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
                 || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
     }

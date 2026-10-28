@@ -177,7 +177,8 @@ async function run() {
     try {
         Spots.findById = id => id === 'test' ? { id: 'test' } : originalFind.call(Spots, id);
         Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
-            sources: GoalCalculation.sources(selected), joint: GoalPolicy.joint(party, selected) });
+            sources: GoalCalculation.sources(selected), joint: party.stats.forming
+            ? GoalPolicy.formingVerdict(selected, party.stats.forming.requested) : GoalPolicy.joint(party, selected) });
         socialParty = await Population.formCompetitionParty([Life.cachedState(9), Life.cachedState(10)], { spotId: 'test', npcId: 10 });
         assert(socialParty?.partyId, 'real population formation must create a social party');
         assert.strictEqual(socialParty.stats.capacityPool, undefined);

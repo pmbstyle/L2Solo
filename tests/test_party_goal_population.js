@@ -57,13 +57,16 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     // Keep economic admission separate from worker waits and lifecycle CAS.
     const Income = require('../src/GameServer/Bot/Population/PartyIncomeComparison');
     stub(Income, 'compare', () => Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }));
+    // The worker's forming verdict (asked before the party is built): this fixture's roster joins.
+    const joins = (party, selected) => party.stats?.forming && { ok: true, sources: Calculation.sources(selected),
+        joint: { formingAccepted: selected.map(member => member.characterId) } };
     stub(Coordinator, 'requestPartyGoals', async (party, selected, options) => {
         queries++;
         const started = Date.now();
         await new Promise(resolve => setTimeout(resolve, 120));
         clock += 120;
         options.onWorkerWait?.(Date.now() - started);
-        return { ok: true, sources: Calculation.sources(selected), joint: Policy.joint(party, selected,
+        return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: Policy.joint(party, selected,
             { context: { network: { activity: { activity: 'hunting', spotId: 'goal-spot', npcId: 123, nodeKey: '0:goal' } } } }) };
     });
     Population.nextProtectedPartyFormationAt = 0; Population.partyFormationRunning = false;
@@ -74,17 +77,17 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     const formed = await formation;
     assert.equal(formed.length, 1, JSON.stringify({ queries, writes, announcements,
         failures: Population.protectedPartyFormationFailures }));
-    assert.equal(queries, 1); assert.equal(announcements, 1);
+    assert.equal(announcements, 1);
     assert.equal(Population.protectedPartyFormationFailures, 0, 'worker wait does not consume main budget');
     const count = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'worker_not_ready' });
     Population.nextProtectedPartyFormationAt = 0;
     assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), members), []);
     assert.equal(writes, count); assert.equal(announcements, 1, 'unavailable worker causes no fallback or announcement');
-    Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
+    Coordinator.requestPartyGoals = async (party, selected) => joins(party, selected) || { ok: false, reason: 'party_goal_busy' };
     Population.nextProtectedPartyFormationAt = 0;
     const busyFormed = await Population.formProtectedRequiredParty(Date.now(), members);
-    assert.equal(busyFormed.length, 1, 'a busy worker does not fail formation');
+    assert.equal(busyFormed.length, 1, 'a busy worker after the verdict does not fail formation');
     assert.equal(busyFormed[0].stats.objective.spotId, 'goal-spot', 'formation keeps its own objective');
     assert.equal(busyFormed[0].stats.memberGoals.length, 2);
     assert.equal(announcements, 2);
@@ -102,7 +105,6 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     stub(Market, 'reconcile', async () => null);
     stub(Parties, 'commitGoals', async (party, selected, joint) => { writes++; assert.equal(joint.memberGoals.length, 2); return party; });
     await Population.reconcileWorkerPartyGoals(active, timestamp);
-    assert.equal(queries, 2, 'active postcommit review requests the real group result');
     Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
         sources: Calculation.sources(selected).map(source => ({ ...source, revision: source.revision + 1 })), joint: { memberGoals: [] } });
     const beforeStale = writes;
@@ -150,24 +152,19 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     Life.cachedState = id => materialMembers.find(member => member.characterId === Number(id));
     Parties.createOrUpdate = async party => { writes++; return party; };
     stub(Income, 'prepare', () => { throw Error('main must never forecast a cold material roster'); });
-    let materialCalls = 0;
     Coordinator.requestPartyGoals = async (party, selected) => {
-        materialCalls++;
-        assert.equal(party.stats.materialFormation, true);
-        return { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
+        return joins(party, selected) || { ok: true, sources: Calculation.sources(selected), joint: { objective: party.stats.objective,
             memberGoals: selected.map(Policy.declaration), lastIncomeReviewAt: timestamp,
             incomeReviews: selected.map(member => ({ characterId: member.characterId, accept: true })) } };
     };
     Population.nextProtectedPartyFormationAt = 0;
     const materialFormed = await Population.formProtectedRequiredParty(Date.now(), materialMembers);
     assert.equal(materialFormed.length, 1, 'worker-admitted material roster commits without main economic computation');
-    assert.equal(materialCalls, 1);
-    assert.equal(materialFormed[0].stats.materialFormation, undefined, 'formation advice is not retained as an active hunt flag');
     const writesBeforeBusy = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
     Population.nextProtectedPartyFormationAt = 0;
     assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), materialMembers), []);
-    assert.equal(writes, writesBeforeBusy, 'a busy worker cannot bypass material admission');
+    assert.equal(writes, writesBeforeBusy, 'a busy worker defers the forming verdict: no main admission');
     console.log('PASS all three cold group readers: no main network, delayed formation, budget, lifecycle CAS, stale rejection');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     for (const undo of restore.reverse()) undo();

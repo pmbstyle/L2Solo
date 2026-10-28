@@ -33,8 +33,7 @@ let calls = 0;
 try {
     Object.assign(Planner, { combatReadiness: () => ({ hasWeapon: true }), replanContextFor: () => ({ routeCurrent: true }),
         clanGoalPlanLocked: () => false, planFor: () => { calls++; return fresh; },
-        shouldFinishPreviousPlan: () => false, finalizePlan: (_state, _previous, raw) => raw,
-        withMaterialFarmEffort: plan => plan });
+        shouldFinishPreviousPlan: () => false, finalizePlan: (_state, _previous, raw) => raw });
     for (let id = 1; id <= 50; id++) {
         const base = { characterId: id, level: 30, adena: 1000, phase: 'cold', activity: 'hunting',
             stats: { classId: 0 }, inventory: {}, loc: { locX: 0, locY: 0 }, timing: {} };

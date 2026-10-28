@@ -224,8 +224,7 @@ const coldState = {
         coldCombat: {
             base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25, pAtk: 3, mAtk: 6, pDef: 10, mDef: 5 },
             equipment: { pAtk: 20, mAtk: 30, pDef: 40, mDef: 10, atkSpd: 379 }
-        },
-        build: { classId: 15, classFamily: 'bishop', grade: 'd', armor: 'robe', weapon: 'staff' }
+        }
     },
     updatedAt: 1
 };
@@ -235,6 +234,7 @@ assert.strictEqual(coldDetail.classId, 15, 'cold bot detail must preserve class 
 assert.strictEqual(coldDetail.className, 'Cleric', 'cold bot detail must expose the profession name');
 assert.strictEqual(coldDetail.raceName, 'Human', 'cold bot detail must derive race from its current profession');
 assert.strictEqual(coldDetail.build.className, 'Cleric', 'build metadata must use the same authoritative profession name');
+assert.strictEqual(coldDetail.build.role, 'healer', 'a cold bot with no held build hint still shows the build of its class, level and role');
 assert.strictEqual(coldDetail.equipment.equipped[0].slot, 'weapon', 'cold outfit slots must be human-readable');
 assert.strictEqual(coldDetail.combat.pDef, authoritativeCombat.pDef, 'cold bot detail must use authoritative combat formulas');
 assert.strictEqual(coldDetail.combat.atkSpd, authoritativeCombat.atkSpd, 'cold bot detail must not add base and equipment attack speed');

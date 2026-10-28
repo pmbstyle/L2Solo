@@ -369,8 +369,13 @@ async function craft(state, random = Math.random) {
     // the committed cash afterwards: refreshInventory preserves virtual income
     // with Math.max and cannot reconcile a paid fee from an older balance.
     if (cashReceipt != null) state = { ...state, adena: committedAdena };
+    // The station's copy read before the exchange: its wallet takes the fee
+    // the exchange credited (crafterAdena, null when no fee was paid).
+    const crafterCash = result?.crafterAdena;
     if (!station.clan && !station.workshop) await LifeState.upsertState({
         ...crafterState,
+        ...(crafterCash ? { adena: crafterCash.amount, inventory: { ...(crafterState.inventory || {}),
+            57: { ...(crafterState.inventory?.[57] || {}), selfId: 57, name: 'Adena', amount: crafterCash.amount } } } : {}),
         vitals: { ...(crafterState.vitals || {}), mp: stationService ? crafterMp : crafterMp - Number(recipe.mpCost || 0) }
     }, 'cold_manufacture');
     const craftReturn = state.stats?.craftReturn;

@@ -1,4 +1,5 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
+const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ItemTemplateIndex = require('../GameServer/Item/ItemTemplateIndex');
 const http = require('http');
 const fs = require('fs');
@@ -1933,7 +1934,9 @@ function compactColdDetail(state, leaderState = null) {
             leaderId: Number(state.party.leaderId || stats.leaderId || 0) || null,
             leader: coldPartyLeader(state, leaderState)
         } : null,
-        build: compactBuild(stats.build),
+        // The build hint follows from class, level and role alone: computed
+        // for the inspected bot, never held in its state.
+        build: compactBuild(GearSkillHints.forCharacter({ classId, level: state.level }, { role: stats.role || null })),
         equipment: compactColdEquipment(state),
         combat: effectiveColdCombat(state),
         adena: Number(state.adena || 0),

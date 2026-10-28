@@ -2735,22 +2735,6 @@ function missingMaterials(recipe, inventory) {
     }));
 }
 
-function withMaterialFarmEffort(plan, state, spots, options = {}) {
-    if (plan?.status !== 'active' || plan.strategy !== 'craft'
-        || !(plan.materials || []).some((material) => !Object.hasOwn(material, 'farmEffort'))) return plan;
-    const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
-    const planningOptions = { ...options, sourceCache: options.sourceCache || new Map() };
-    return { ...plan, materials: plan.materials.map((material) => {
-        if (Object.hasOwn(material, 'farmEffort')) return material;
-        const missing = Math.max(0, Number(material.missing || 0));
-        const source = missing > 0
-            ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds,
-                missing, new Set(), planningOptions)
-            : null;
-        return { ...material, farmEffort: Number.isFinite(source?.effort) ? source.effort : null };
-    }) };
-}
-
 function combinationMetadata(recipe) {
     if (!C4DualSwordCombinations.isCombination(recipe)) return null;
     return {
@@ -2992,8 +2976,7 @@ function rawPlanFor(state = {}, options = {}) {
         market: buy ? marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }) : null,
         materials: materialPlans.map(({ source, ...material }) => ({
             ...material,
-            sourceSpotId: source?.spotId || null,
-            farmEffort: Number.isFinite(source?.effort) ? source.effort : null
+            sourceSpotId: source?.spotId || null
         })),
         next: next ? { spotId: next.spotId, npcId: next.npcId, npcName: next.npcName, kind: next.kind,
             sourceKind: next.sourceKind || next.kind, raidBoss: next.raidBoss === true,
@@ -3068,7 +3051,7 @@ function readinessScoped(fn) {
     };
 }
 
-module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, withMaterialFarmEffort, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
+module.exports = { equipmentCandidate, equipmentItemBetter, RATE_MODEL_VERSION, DIRECT_FAILURE_RESOLVE_LIMIT, PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT, gradeForLevel, isCraftService, roleFor, itemScore, isRealCatalogItem, suitable, considerable, isSlotUpgrade, combatReadiness, progressionPriceCap, operationalAdenaReserve, equippedSlotsFor, equipInventoryUpgrades, preferredTarget, preferredDropTarget, preferredNoGradeTarget, marketOfferForTarget, marketPlanForTarget, fundedMarketPlanForTarget, marketRecoveryPlanForTarget, staticNpcUpgradePlan, staticNpcKitAdequate, npcWeaponBridgePlan, npcEquipmentBridgePlan, equipmentBridgeReason, itemDropChance, itemDropYield, sourceIndexFor, partyNeedForSource, partyNeedReasonForSource, soloSafeForSource, sourceEffort, sourceWithinVoluntaryHuntBand, bestSourceForState, bestSourceForPlan, safeFallbackForPlan, retargetPlanSource, replacementPlanFor, sourceForItem, farmSourceForMaterial, missingMaterials, directPlanFailure, partyRouteFailure, abandonAcquisition, replanContextFor, levelingRecoveryFor, rateProfileSignature, withinExpectedKillLimit, isBotEligibleSourceNpcId, isPlanSourceEligible, isPlanSourceViableForState, isClanOwnedPlan, equipmentTargetFulfilled, clanGoalPlanLocked, finalizePlan, planFor, shouldFinishPreviousPlan, scoreSpot, sameObjective };
 
 // One decision outside this module (a wish review) that judges a bot against
 // many sources shares its readiness the same way.
@@ -3087,6 +3070,6 @@ module.exports.sourceGround = sourceGround;
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',
     'staticNpcKitAdequate', 'npcWeaponBridgePlan', 'npcEquipmentBridgePlan', 'sourceEffort', 'bestSourceForState',
     'bestSourceForPlan', 'safeFallbackForPlan', 'retargetPlanSource', 'replacementPlanFor', 'sourceForItem',
-    'farmSourceForMaterial', 'withMaterialFarmEffort', 'planFor']) {
+    'farmSourceForMaterial', 'planFor']) {
     module.exports[name] = readinessScoped(module.exports[name]);
 }

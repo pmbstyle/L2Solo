@@ -33,7 +33,6 @@ try {
     Planner.npcEquipmentBridgePlan = () => null;
     Planner.bestSourceForPlan = () => null;
     Planner.replacementPlanFor = () => null;
-    Planner.withMaterialFarmEffort = row => row;
     Planner.planFor = (_state, options) => {
         choices++;
         if (options.failure) {

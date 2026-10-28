@@ -922,6 +922,7 @@ BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId
 ClanSupplyPolicy.useRowSource(id => tables.rows('clan_supplies').get(id), () => tables.ready('clan_supplies'));
 PersonalWarehouseIndex.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 let eventLoopDelay = null;
+const LAG_RESOLUTION_MS = 20;
 
 // The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -1203,20 +1204,28 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
         const joint = await Calculation.calculate(payload.party, members, async (member, timestamp) => {
             const at = members.indexOf(member);
-            // Recipe authority belongs to this main query, not the worker's
-            // 'recipes' table. Public workshop entries remain the fallback.
+            // Main's recipe book feeds only a refusal's ask (askWorkshop); the
+            // build and its verdict read the worker's recipes mirror.
             const options = { buyOrderEscrow: payload.escrows[at], recipeKnowledge: payload.recipeKnowledge?.[at] || {} };
             const routeRows = await occupationFor(member, timestamp, options, 'wish');
             if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
-            const workshop = await askWorkshop(member, timestamp, routeRows, 'party_goal', options);
+            // The lifecycle's order: the held build's verdict on this state
+            // (main's escrow in it) keeps its workshop, else the planner is
+            // asked. A valid verdict serves the held build when its entry kept
+            // the graph nodes (a party member's); a formation candidate's
+            // entry kept none, so it is built (withNodes). Never remembered:
+            // a query's own snapshot must not displace the bot's held build (L133).
+            // A bot that is no service crafter is not asked: the planner
+            // answers it with no workshop (its occupation branch), and the
+            // feasibility mask that answer carries is not read by the goal.
+            const deps = { timestamp, spots: planningSpots, board: boardReady(), routeRows,
+                buyOrderEscrow: options.buyOrderEscrow, rememberContext: false, caller: 'workerPartyGoal' };
+            const verdict = {};
+            const workshop = EconomyContext.heldWorkshop(member, deps, verdict)
+                || (CraftEligibility.isServiceCrafter(member)
+                    ? await askWorkshop(member, timestamp, deps.routeRows, 'party_goal', options) : noWorkshop());
             if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
-            return invoke('GameServer/Bot/Economy/EconomyContext').forState(member, {
-                timestamp, spots: planningSpots, board: boardReady(),
-                workshop, routeRows,
-                // Never held: its occupation card moves the key off the bot's own plan and the
-                // worker entry keeps no graph nodes for withNodes, so it would only displace it (L133).
-                rememberContext: false,
-                buyOrderEscrow: options.buyOrderEscrow, caller: 'workerPartyGoal', withNodes: true });
+            return EconomyContext.forState(member, { ...deps, workshop, eventVerdict: verdict, withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
             && partyMembersAvailable(members), { spots: planningSpots });
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
@@ -1316,10 +1325,10 @@ function startKernel(config = {}) {
     // major-GC observer and two clock reads per heartbeat.
     heapTelemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
     previousElu = performance.eventLoopUtilization();
-    if (Config.developerDiagnostics) {
-        eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
-        eventLoopDelay.enable();
-    }
+    // The longest loop delay per heartbeat is the health line's spike number (workerLag): always on,
+    // a native histogram on a LAG_RESOLUTION_MS timer.
+    eventLoopDelay = monitorEventLoopDelay({ resolution: LAG_RESOLUTION_MS });
+    eventLoopDelay.enable();
     Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
     if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
         if (shuttingDown) return false;
@@ -1806,7 +1815,7 @@ function startKernel(config = {}) {
                         pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
                         revenge: { evaluated: large, intents: large, at: frame.at, active: 128, sampledActors: 128, overflow: false } },
                     tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
-                    eventLoopUtilization: 1, eventLoopLagP95Ms: large,
+                    eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
                     eventLoopLagMaxMs: large
                 }, 'x'.repeat(160));
                 return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, report.recent);
@@ -1816,6 +1825,11 @@ function startKernel(config = {}) {
     }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
+        // Read and reset first: the beat's own work (the review, the send) counts in the next beat; a
+        // sample counts the whole timer interval, so the resolution comes off (0 = no delay).
+        const lagMaxMs = Math.max(0, eventLoopDelay.max / 1e6 - LAG_RESOLUTION_MS) || 0;
+        const lagP95Ms = Config.developerDiagnostics ? Number(eventLoopDelay.percentile(95) / 1e6) || 0 : 0;
+        eventLoopDelay.reset();
         if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
             const started = Config.developerDiagnostics ? performance.now() : 0;
             competitionCandidates.reviewBatch(Date.now());
@@ -1828,7 +1842,10 @@ function startKernel(config = {}) {
             ...kernel.heartbeatSnapshot(),
             ...heapTelemetry.snapshot(),
             geodata: GeodataEngine.storageStats(),
-            eventLoopUtilization: elu.utilization,
+            // The beat's busy share and its active / idle ms: main sums the ms into the health line's
+            // busy share over its own window (a beat delayed by a long task lasts longer).
+            eventLoopUtilization: elu.utilization, eluActiveMs: elu.active, eluIdleMs: elu.idle,
+            eventLoopLagMaxMs: lagMaxMs,
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
@@ -1838,8 +1855,7 @@ function startKernel(config = {}) {
             caches: { spotValue: SpotValueTable.cacheStats(), kitProfiles: ColdCombatProfile.kitStoreSize() },
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
-            eventLoopLagP95Ms: Number(eventLoopDelay.percentile(95) / 1e6) || 0,
-            eventLoopLagMaxMs: Number(eventLoopDelay.max / 1e6) || 0
+            eventLoopLagP95Ms: lagP95Ms
             } : {})
         };
         try {
@@ -1853,7 +1869,6 @@ function startKernel(config = {}) {
             // owned here for the next existing heartbeat, including backpressure.
             if (Config.developerDiagnostics && competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
         }
-        eventLoopDelay?.reset();
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
     flushTimer.unref?.();
