@@ -229,28 +229,6 @@ function mailleRewards() {
     });
 }
 
-function mailleSpawns() {
-    const names = new Map();
-    for (const t of mailleTemplates()) names.set(t.selfId, t.template.name);
-    // respawn_delay 32 is the stored Lisvus default; the repo spawn files use
-    // 60 for ordinary monsters, matching data/Npcs/Spawns/c4_*.json.
-    const byNpc = new Map([...names.keys()].map(id => [id, []]));
-    for (const row of tuples('sql/spawnlist.sql')) {
-        if (!byNpc.has(Number(row[3]))) continue;
-        byNpc.get(Number(row[3])).push({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] });
-    }
-    const total = [...byNpc.values()].reduce((n, rows) => n + rows.length, 0);
-    // 228 grep hits include 2 rows whose location string contains '922'/'926';
-    // only these 226 have npc_templateid 922-926.
-    if (total !== 226) throw new Error(`Expected 226 Maille spawn rows, found ${total}`);
-    return [{
-        selfId: 'c4-maille-lizardmen', bounds: [],
-        spawns: [...byNpc.entries()].map(([selfId, coords]) => ({
-            selfId, name: names.get(selfId), coords, total: 1, respawn: 60, bias: 0
-        }))
-    }];
-}
-
 function main() {
     const revision = execFileSync('git', ['-C', path.dirname(vendor), 'rev-parse', 'HEAD'],
         { encoding: 'utf8' }).trim();
@@ -261,14 +239,12 @@ function main() {
         ['data/Items/Others/c4_quest_298_380_items.json', questItems()],
         ['data/Items/Others/c4_quest_334_items.json', wishingBooks()],
         ['data/Npcs/c4_maille_lizardmen.json', mailleTemplates()],
-        ['data/Npcs/Spawns/c4_maille_lizardmen.json', mailleSpawns()],
         ['data/Npcs/Rewards/c4_maille_lizardmen.json', mailleRewards()]
     ]) {
         fs.writeFileSync(path.join(root, relative), `${JSON.stringify(value, null, 2)}\n`);
-        const rows = Array.isArray(value) ? (value[0]?.spawns?.length ? value[0].spawns.reduce((n, s) => n + s.coords.length, 0) : value.length) : 0;
-        console.log(relative, Array.isArray(value) ? value.length : 0, 'entries', rows !== (Array.isArray(value) ? value.length : 0) ? `(${rows} rows)` : '');
+        console.log(relative, Array.isArray(value) ? value.length : 0, 'entries');
     }
 }
 
 if (require.main === module) main();
-module.exports = { questItems, wishingBooks, mailleTemplates, mailleSpawns, mailleRewards };
+module.exports = { questItems, wishingBooks, mailleTemplates, mailleRewards };

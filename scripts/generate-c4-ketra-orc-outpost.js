@@ -28,14 +28,11 @@ const result = generateC4MonsterLocation({
         'godard12_2415_12'
     ],
     displayName: 'Ketra Orc Outpost',
-    areaId: 'c4-ketra-orc-outpost',
     mobIds: [
         1324, 1325, 1326, 1327, 1328, 1329, 1330, 1331, 1332, 1333, 1334,
         1335, 1336, 1337, 1338, 1339, 1340, 1341, 1342, 1343, 1345, 1347
     ],
     spawnRows: 761,
-    respawn: 120,
-    respawnByMob: { 1343: 100, 1345: 100, 1347: 100 },
     skillRows: 162,
     dropRows: 312,
     missingItemIds: [5167, 5533, 5545, 6672, 6689, 6693, 7668, 7669, 7670, 7671],

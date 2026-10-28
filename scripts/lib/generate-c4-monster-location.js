@@ -172,17 +172,94 @@ function npcTemplate(row, race, itemsById) {
     };
 }
 
+const raceBySkill = new Map([
+    [4290, 'undead'], [4291, 'construct'], [4292, 'beast'], [4293, 'animal'],
+    [4294, 'plant'], [4295, 'humanoid'], [4296, 'spirit'], [4297, 'divine'],
+    [4298, 'demonic'], [4299, 'dragon'], [4300, 'giant'], [4301, 'insect'], [4302, 'fairy']
+]);
+
+function jsonRows(directory, excluded) {
+    return fs.readdirSync(path.join(root, directory))
+        .filter((name) => name.endsWith('.json') && name !== excluded)
+        .flatMap((name) => require(path.join(root, directory, name)))
+        .filter((row) => row && typeof row === 'object');
+}
+
+// Templates, rewards, skill rows and missing drop items of Lisvus monsters (npc.sql,
+// npcskills.sql, droplist.sql) for the data/Npcs/<slug>.json slice. types: the npc.sql
+// types allowed. skipUnknownWeapons: a drop of a weapon this server has no template for
+// is left out and named in skippedDrops (else it throws). unknownSkillIds: skills of the
+// rows that no loaded skill or NPC skill template defines (the caller names them).
+function lisvusMonsters(ids, { slug, types = ['L2Monster'], skipUnknownWeapons = false, npcRowsById = null }) {
+    assertLisvusRevision();
+    const filename = `${slug}.json`;
+    const sortedIds = [...ids].sort((a, b) => a - b);
+    const idSet = new Set(sortedIds);
+    const npcRows = npcRowsById || new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
+    const skillRows = tuples('sql/npcskills.sql').filter((row) => idSet.has(Number(row[0])))
+        .map((row) => ({ npcId: Number(row[0]), skillId: Number(row[1]), level: Number(row[2]) }));
+    const raceByNpc = new Map();
+    skillRows.forEach((row) => {
+        if (raceBySkill.has(row.skillId)) raceByNpc.set(row.npcId, raceBySkill.get(row.skillId));
+    });
+    const existingItemsById = new Map(loadedItems(filename).map((item) => [Number(item.selfId), item]));
+    const sourceItemsById = vendorItems();
+    const npcs = sortedIds.map((id) => {
+        const row = npcRows.get(id);
+        const race = raceByNpc.get(id);
+        if (!row || !types.includes(row[11]) || !race) throw new Error(`Invalid source NPC ${id}: type=${row?.[11]} race=${race}`);
+        return npcTemplate(row, race, existingItemsById);
+    });
+
+    const skippedDrops = [];
+    const dropRows = tuples('sql/droplist.sql').filter((row) => idSet.has(Number(row[0]))).filter((row) => {
+        const itemId = Number(row[1]);
+        const unknownWeapon = skipUnknownWeapons && !existingItemsById.has(itemId) && sourceItemsById.get(itemId)?.type === 'Weapon';
+        if (unknownWeapon) skippedDrops.push(`${row[0]}:${itemId}`);
+        return !unknownWeapon;
+    });
+    function itemName(itemId) {
+        const name = existingItemsById.get(itemId)?.template?.name ?? sourceItemsById.get(itemId)?.name;
+        if (!name) throw new Error(`Missing item template ${itemId}`);
+        return name;
+    }
+    const rewards = sortedIds.map((id) => ({
+        selfId: id,
+        template: { name: npcRows.get(id)[2] },
+        ...rewardGroups(dropRows.filter((row) => Number(row[0]) === id), itemName)
+    }));
+    const missingSources = [...new Set(dropRows.map((row) => Number(row[1])))]
+        .filter((id) => !existingItemsById.has(id))
+        .sort((a, b) => a - b)
+        .map((id) => sourceItemsById.get(id));
+    if (missingSources.some((source) => !source)) throw new Error('Missing a required Lisvus item template');
+    if (missingSources.some((source) => source.type === 'Weapon')) {
+        throw new Error(`Unsupported weapon dependencies: ${missingSources.filter((source) => source.type === 'Weapon').map((source) => source.id).join(', ')}`);
+    }
+
+    const knownSkillIds = new Set([
+        ...jsonRows('data/Skills/Active'),
+        ...jsonRows('data/Skills/Passive'),
+        ...require(path.join(root, 'data/Npcs/Skills/active.json')),
+        ...fs.readdirSync(path.join(root, 'data/Npcs/Skills'))
+            .filter((name) => name.endsWith('_templates.json') && name !== `${slug}_templates.json`)
+            .flatMap((name) => require(path.join(root, 'data/Npcs/Skills', name)))
+    ].map((skill) => Number(skill.selfId)));
+    const unknownSkillIds = [...new Set(skillRows.map((row) => row.skillId))]
+        .filter((id) => !knownSkillIds.has(id))
+        .sort((a, b) => a - b);
+
+    return { npcs, rewards, skillRows, dropRows, items: missingSources.map(itemTemplate), skippedDrops, unknownSkillIds };
+}
+
 function generateC4MonsterLocation(config) {
     assertLisvusRevision();
 
     const filename = `${config.slug}.json`;
     const mobIds = [...config.mobIds].sort((a, b) => a - b);
     const mobIdSet = new Set(mobIds);
-    const respawnByMob = new Map(Object.entries(config.respawnByMob || {})
-        .map(([npcId, respawn]) => [Number(npcId), Number(respawn)]));
     const reusedMobIdSet = new Set(config.reusedMobIds || []);
     const newMobIds = mobIds.filter((id) => !reusedMobIdSet.has(id));
-    const newMobIdSet = new Set(newMobIds);
     const npcRowsById = new Map(tuples('sql/npc.sql').map((row) => [Number(row[0]), row]));
     const sourceLabels = config.sourceLabels || (config.sourceLabel ? [config.sourceLabel] : []);
     const sourceLabelSet = new Set(sourceLabels);
@@ -204,11 +281,6 @@ function generateC4MonsterLocation(config) {
     if (spawnRows.some((row) => !mobIdSet.has(Number(row[3])))) {
         throw new Error(`${config.displayName} contains an unexpected source monster`);
     }
-    if (spawnRows.some((row) => Number(row[2]) !== 1
-        || Number(row[10]) !== (respawnByMob.get(Number(row[3])) ?? config.respawn)
-        || Number(row[12]) !== (config.sourcePeriod || 0))) {
-        throw new Error(`Unexpected ${config.displayName} count, respawn, or period semantics`);
-    }
     assertExact([...new Set(spawnRows.map((row) => Number(row[3])))].sort((a, b) => a - b), mobIds, 'monster ids');
 
     const existingNpcIds = new Set(fs.readdirSync(path.join(root, 'data', 'Npcs'))
@@ -220,80 +292,16 @@ function generateC4MonsterLocation(config) {
         throw new Error(`Reused monster templates are not loaded: ${missingReusedIds.join(', ')}`);
     }
 
-    const skillRows = tuples('sql/npcskills.sql')
-        .filter((row) => newMobIdSet.has(Number(row[0])))
-        .map((row) => ({ npcId: Number(row[0]), skillId: Number(row[1]), level: Number(row[2]) }));
+    const { npcs, rewards, skillRows, dropRows, items: missingItems } = lisvusMonsters(newMobIds, { slug: config.slug, npcRowsById });
     if (skillRows.length !== config.skillRows) {
         throw new Error(`Expected ${config.skillRows} NPC skill rows, found ${skillRows.length}`);
     }
-    const raceBySkill = new Map([
-        [4290, 'undead'], [4291, 'construct'], [4292, 'beast'], [4293, 'animal'],
-        [4294, 'plant'], [4295, 'humanoid'], [4296, 'spirit'], [4297, 'divine'],
-        [4298, 'demonic'], [4299, 'dragon'], [4300, 'giant'], [4301, 'insect'], [4302, 'fairy']
-    ]);
-    const raceByNpc = new Map();
-    skillRows.forEach((row) => {
-        const race = raceBySkill.get(row.skillId);
-        if (race) raceByNpc.set(row.npcId, race);
-    });
-
-    const existingItems = loadedItems(filename);
-    const existingItemsById = new Map(existingItems.map((item) => [Number(item.selfId), item]));
-    const sourceItemsById = vendorItems();
-    const npcs = newMobIds.map((id) => npcRowsById.get(id)).map((row) => {
-        const race = raceByNpc.get(row[0]);
-        if (row[11] !== 'L2Monster' || !race) throw new Error(`Invalid source NPC ${row[0]}: type=${row[11]} race=${race}`);
-        return npcTemplate(row, race, existingItemsById);
-    });
-
-    const npcNameById = new Map(mobIds.map((id) => [id, npcRowsById.get(id)[2]]));
-    const spawnDefinitions = mobIds.map((npcId) => {
-        const definition = {
-            selfId: npcId,
-            name: npcNameById.get(npcId),
-            coords: spawnRows.filter((row) => Number(row[3]) === npcId)
-                .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-            total: 1,
-            respawn: respawnByMob.get(npcId) ?? config.respawn,
-            bias: 0
-        };
-        if (config.period) definition.period = config.period;
-        return definition;
-    });
-    const spawns = [{ selfId: config.areaId, bounds: [], spawns: spawnDefinitions }];
-
-    const dropRows = tuples('sql/droplist.sql').filter((row) => newMobIdSet.has(Number(row[0])));
     if (dropRows.length !== config.dropRows) {
         throw new Error(`Expected ${config.dropRows} monster drops, found ${dropRows.length}`);
     }
-    function sourceItemName(itemId) {
-        const existing = existingItemsById.get(itemId);
-        if (existing) return existing.template.name;
-        const source = sourceItemsById.get(itemId);
-        if (!source) throw new Error(`Missing item template ${itemId}`);
-        return source.name;
-    }
-
-    const rewards = newMobIds.map((mobId) => ({
-        selfId: mobId,
-        template: { name: npcNameById.get(mobId) },
-        ...rewardGroups(dropRows.filter((row) => Number(row[0]) === mobId), sourceItemName)
-    }));
-
-    const requiredItemIds = new Set(dropRows.map((row) => Number(row[1])));
-    const missingSourceItems = [...requiredItemIds]
-        .filter((id) => !existingItemsById.has(id))
-        .sort((a, b) => a - b)
-        .map((id) => sourceItemsById.get(id));
-    if (missingSourceItems.some((source) => !source)) throw new Error('Missing a required Lisvus item template');
-    if (missingSourceItems.some((source) => source.type === 'Weapon')) {
-        throw new Error(`Unsupported weapon dependencies: ${missingSourceItems.filter((source) => source.type === 'Weapon').map((source) => source.id).join(', ')}`);
-    }
-    const missingItems = missingSourceItems.map(itemTemplate);
     assertExact(missingItems.map((item) => item.selfId), config.missingItemIds, 'item dependencies');
 
     writeJson(`data/Npcs/${filename}`, npcs);
-    writeJson(`data/Npcs/Spawns/${filename}`, spawns);
     writeJson(`data/Npcs/Rewards/${filename}`, rewards);
     writeJson(`data/Npcs/Skills/${filename}`, skillRows);
     if (config.skillTemplates) {
@@ -321,3 +329,4 @@ module.exports.tuples = tuples;
 module.exports.rewardGroups = rewardGroups;
 module.exports.writeJson = writeJson;
 module.exports.npcTemplate = npcTemplate;
+module.exports.lisvusMonsters = lisvusMonsters;

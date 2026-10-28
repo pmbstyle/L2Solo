@@ -334,4 +334,29 @@ const outsideOpenBoundary = TownNpcApproach.planOpen({}, openBoundaryBot, target
 assert.strictEqual(outsideOpenBoundary.ready, false,
     'open-air interaction must still reject bots just outside the nearby radius');
 
+// One rule for talking to an NPC (T49 review): an NPC seen only across a low counter is in reach for the hot
+// improvement check and the clan hall managers too, not only for plan().
+{
+    const npc = { ...botAt(72, 0, 0), fetchSelfId: () => 7097, fetchHead: () => 32768 };
+    GeodataEngine.hasGeo = () => true;
+    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? 24 : 0, nswe: 0 });
+    GeodataEngine.checkVirtualObstacles = () => false;
+    const clientSight = InteractionGeometry.canSee;
+    InteractionGeometry.canSee = () => true;
+    assert(TownNpcApproach.canInteract({ locX: 0, locY: 0, locZ: 0 }, TownNpcApproach.npcTarget(npc)),
+        'an NPC behind a low counter can be talked to');
+    assert(invoke('GameServer/ClanHall/Services').near(botAt(0, 0, 0), npc),
+        'a clan hall manager behind a low counter is near');
+    InteractionGeometry.canSee = clientSight;
+    Object.assign(GeodataEngine, originalGeo);
+}
+
+verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran luxury exchange counter', () => {
+    const galladucci = TownNpcApproach.npcTarget({ ...botAt(79599, 145522, -3494), fetchSelfId: () => 7097, fetchHead: () => 0 });
+    // The point plan() walks to (pointsFor): the bot can talk from there under the client geometry.
+    const interaction = TownNpcApproach.pointsFor(galladucci).interaction;
+    assert(TownNpcApproach.canInteract(interaction, galladucci), 'Galladucci is in reach from his interaction point');
+});
+
 console.log('Town NPC front-side approach checks passed');

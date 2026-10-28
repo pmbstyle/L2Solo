@@ -14,9 +14,9 @@ const C4RecipeItems = require(path.join(root, 'src', 'GameServer', 'Items', 'C4R
 const rewardsPath = path.join(root, 'data', 'Npcs', 'Rewards', 'rewards.json');
 const enchantArmorA = 730;
 // Every Lisvus row of those items on these monsters, present before or added here.
-const expectedRecipeRows = 109;
+const expectedRecipeRows = 111;
 const expectedEnchantRows = 2;
-const expectedMonsters = 53;
+const expectedMonsters = 54;
 
 generateC4MonsterLocation.assertLisvusRevision();
 const sourceItems = generateC4MonsterLocation.vendorItems();

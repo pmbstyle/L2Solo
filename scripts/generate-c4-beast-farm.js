@@ -13,10 +13,8 @@ const result = generateC4MonsterLocation({
     sourceLabel: 'NPC_C4',
     skippedMobIds: [...swampOfScreamsIds, 5198, 12170, 12789, ...fenrilPackIds],
     displayName: 'Beast Farm',
-    areaId: 'c4-beast-farm',
     mobIds: [1443, 1444, 1445, 1446, 1447, 1448, 1449, 1450],
     spawnRows: 59,
-    respawn: 60,
     skillRows: 17,
     dropRows: 119,
     missingItemIds: []

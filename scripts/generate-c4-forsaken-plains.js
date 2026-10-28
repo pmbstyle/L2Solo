@@ -6,11 +6,8 @@ const result = generateC4MonsterLocation({
     sourceLabels: ['aden22_2519_01', 'aden22_2519_09', 'aden22_2519_11', 'Forsaken Plains'],
     skippedMobIds: [679, 680],
     displayName: 'Forsaken Plains',
-    areaId: 'c4-forsaken-plains',
     mobIds: [1017, 1018, 1019, 1020, 1021, 1022, 1258, 5316],
     spawnRows: 116,
-    respawn: 27,
-    respawnByMob: { 5316: 21600 },
     skillRows: 23,
     dropRows: 88,
     missingItemIds: [4915, 4921]

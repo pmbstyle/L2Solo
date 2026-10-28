@@ -3,6 +3,7 @@ const support = require('../../../data/ClanHalls/support.json');
 const Effects = invoke('GameServer/Effects/EffectStore');
 // What a bot lacks and whether it needs the hall: shared with the cold worker.
 const VisitNeed = require('./VisitNeed');
+const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const { REFRESH_MS, skillFor, available, point, effectFor, missing, recovery } = VisitNeed;
 const castReadyAt = new WeakMap();
 let cachedSpawns,
@@ -25,10 +26,7 @@ function near(actor, npc) {
     if (!actor || !npc) return false;
     const a = point(actor),
         b = point(npc);
-    return (
-        Math.hypot(a.locX - b.locX, a.locY - b.locY, a.locZ - b.locZ) <= 250 &&
-        invoke('GameServer/Bot/AI/TownNpcApproach').hasLineOfSight(a, b)
-    );
+    return Math.hypot(a.locX - b.locX, a.locY - b.locY, a.locZ - b.locZ) <= 250 && Approach.canInteract(a, Approach.npcTarget(npc));
 }
 function authorized(actor, npc, hall, timestamp = Date.now()) {
     return (

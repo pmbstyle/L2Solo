@@ -157,15 +157,6 @@ const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
 });
 
 const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
-const spawnDefinitions = mobIds.map((npcId) => {
-    const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
-    return {
-        selfId: npcId, name: npcNameById.get(npcId),
-        coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1, respawn: 120, bias: 0
-    };
-});
-const spawns = [{ selfId: 'c4-elmore-northeast-coast', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
 if (dropRows.length !== 83) throw new Error(`Expected 83 drops, found ${dropRows.length}`);
@@ -221,7 +212,6 @@ if (JSON.stringify(missingItems.map((item) => item.selfId)) !== JSON.stringify(e
 }
 
 writeJson('data/Npcs/c4_elmore_northeast_coast.json', npcs);
-writeJson('data/Npcs/Spawns/c4_elmore_northeast_coast.json', spawns);
 writeJson('data/Npcs/Rewards/c4_elmore_northeast_coast.json', rewards);
 writeJson('data/Items/Others/c4_elmore_northeast_coast.json', missingItems);
 writeJson('data/Npcs/Skills/c4_elmore_northeast_coast.json', skillRows);

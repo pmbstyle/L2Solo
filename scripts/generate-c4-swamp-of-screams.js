@@ -164,19 +164,6 @@ if (spawnRows.some((row) => Number(row[2]) !== 1 || row[1] !== 'NPC_C4')) {
     throw new Error('Unexpected Swamp of Screams spawn count/location semantics');
 }
 
-const spawnDefinitions = [...mobIds].map((npcId) => {
-    const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
-    if (!rows.length) throw new Error(`Missing Swamp of Screams spawns for NPC ${npcId}`);
-    return {
-        selfId: npcId,
-        name: npcNameById.get(npcId),
-        coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1,
-        respawn: rows[0][10],
-        bias: 0
-    };
-});
-const spawns = [{ selfId: 'c4-swamp-of-screams', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIds.has(Number(row[0])));
 if (dropRows.length !== 158) throw new Error(`Expected 158 drops, found ${dropRows.length}`);
@@ -310,7 +297,6 @@ const skillTemplates = [
 ];
 
 writeJson('data/Npcs/c4_swamp_of_screams.json', npcs);
-writeJson('data/Npcs/Spawns/c4_swamp_of_screams.json', spawns);
 writeJson('data/Npcs/Rewards/c4_swamp_of_screams.json', rewards);
 writeJson('data/Items/Others/c4_swamp_of_screams.json', missingItems);
 writeJson('data/Npcs/Skills/c4_swamp_of_screams.json', skillRows);

@@ -4,14 +4,11 @@ const result = generateC4MonsterLocation({
     slug: 'c4_varka_silenos_stronghold',
     sourcePrefixes: ['godard28_2316_'],
     displayName: 'Varka Silenos Stronghold',
-    areaId: 'c4-varka-silenos-stronghold',
     mobIds: [
         1350, 1351, 1352, 1353, 1354, 1355, 1356, 1357, 1358, 1359, 1360,
         1361, 1362, 1363, 1364, 1365, 1366, 1367, 1368, 1369, 1371, 1373
     ],
     spawnRows: 564,
-    respawn: 109,
-    respawnByMob: { 1369: 103, 1371: 103, 1373: 103 },
     skillRows: 166,
     dropRows: 297,
     missingItemIds: [],
