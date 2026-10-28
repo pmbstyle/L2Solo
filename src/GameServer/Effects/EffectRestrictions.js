@@ -67,9 +67,16 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
     if (!(impairments.disabled || impairments.rooted || confused)) return;
 
     // stopMovement below sends the authoritative StopMove packet.
+    const attackApproach = actor.automation?.playerAttackApproach;
     actor.automation?.abortAll?.(actor, { notifyClient: false });
     if (impairments.rooted && !impairments.disabled && !confused) {
         stopMovement(session, actor);
+        // Root stops travel, but an attack that became reachable during
+        // the approach must still execute its original permission checks.
+        if (attackApproach && canAttack(actor) && !actor.state?.fetchHits?.() && !actor.state?.fetchCasts?.()) {
+            actor.automation.scheduleAction(session, actor, attackApproach.dst,
+                attackApproach.radius, attackApproach.callback, attackApproach.options);
+        }
         return;
     }
     actor.attack?.clearTimers?.();

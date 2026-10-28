@@ -9,18 +9,41 @@ function canAttackNpc(npc, data = {}) {
 function attackExec(session, actor, data) {
     const attackRange = AttackRange.fetchNormalAttackRange(actor, data);
 
+    function canStartAttack() {
+        if (actor.isDead?.()) return false;
+        const restrictions = invoke('GameServer/Effects/EffectRestrictions');
+        if (!restrictions.canAttack(actor)) {
+            restrictions.reject(session);
+            return false;
+        }
+        if (actor.isBlocked?.()) {
+            invoke(path.actor).queueRequest(session, actor, 'attack', data);
+            return false;
+        }
+        return true;
+    }
+
+    function scheduleAttack(target, callback) {
+        // A cast or swing may start while target lookup or travel is pending.
+        // Queue the original request, including its PvP permission flags.
+        if (!canStartAttack()) return;
+        actor.automation.scheduleAction(session, actor, target, attackRange, () => {
+            if (canStartAttack()) callback();
+        }, { collisionAware: true, action: 'attack' });
+    }
+
     World.fetchNpc(data.id).then((npc) => {
-        actor.automation.scheduleAction(session, actor, npc, attackRange, () => {
+        scheduleAttack(npc, () => {
             if (canAttackNpc(npc, data)) {
                 actor.attack.meleeHit(session, npc);
             }
             else {
                 World.npcTalk(session, npc);
             }
-        }, { collisionAware: true, action: 'attack' });
+        });
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
-            actor.automation.scheduleAction(session, actor, user, attackRange, () => {
+            scheduleAttack(user, () => {
                 if (data.ctrl || user.fetchPvpFlag?.() > 0 || user.fetchKarma?.() > 0) {
                     if (!ArenaCombatRules.canInteract(actor, user)) return;
                     if (utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY()) || utils.isInPeaceZone(user.fetchLocX(), user.fetchLocY())) {
@@ -38,7 +61,7 @@ function attackExec(session, actor, data) {
                         BotMerchant.talk(session, user);
                     }
                 }
-            }, { collisionAware: true, action: 'attack' });
+            });
         }).catch((err) => {
             utils.infoWarn('GameServer', 'Attack -> ' + err);
         })
