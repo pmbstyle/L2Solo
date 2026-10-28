@@ -4,7 +4,8 @@
 // spawns exist. Populate its ordinary input from actual native definitions
 // of the given monsters, then let the native index/profile builders make
 // the test's catalogue.
-module.exports = (npcIds = [414]) => {
+// T43 spawns: the default is Ol Mahum Sergeant (210, level 29); the former 414 has no coordinate spawn.
+module.exports = (npcIds = [210]) => {
     const Data = invoke('GameServer/DataCache');
     const World = invoke('GameServer/World/World');
     const Service = invoke('GameServer/Bot/AI/SpotService');

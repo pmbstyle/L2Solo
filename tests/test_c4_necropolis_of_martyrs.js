@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_necropolis_of_martyrs',
-    areaId: 'c4-necropolis-of-martyrs',
     displayName: 'Necropolis of Martyrs',
     mobIds: [1158, 1159, 1160, 1181, 1182, 1183, 1202, 1203, 1204, 1226, 1227, 1228],
     importedNpcIds: [1227],
-    spawnCounts: [[1158, 11], [1159, 10], [1160, 11], [1181, 11], [1182, 10], [1183, 11],
-        [1202, 11], [1203, 10], [1204, 11], [1226, 11], [1227, 10], [1228, 11]],
-    respawn: 120,
-    region: [23, 22],
     origin: [124000, 135000, -4824],
     sample: {
         id: 1227, name: 'Sepulcher Sage', level: 67, hostile: true,

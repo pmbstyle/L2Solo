@@ -55,7 +55,8 @@ const spot = (id, extra = {}) => ({ id, avgLevel: 35, minLevel: 34, maxLevel: 36
     tagsAuthoritative: true, tags: [], npcEntries: [], ...extra });
 const build = (bot, spots) => Economy.basics(bot, { timestamp: at, spots });
 const leafSpot = basics => basics.hunt.progressSpotId || basics.bestSpotId;
-const listed = [...new Set([tableBest, ...ranked.slice(0, 6).map(row => row.spotId)])];
+// T43 table: the top seven, so a fitting spot with more exp than the first fitting earner is listed.
+const listed = [...new Set([tableBest, ...ranked.slice(0, 7).map(row => row.spotId)])];
 const unfit = new Set([tableBest, tableIncome]);
 // The two table picks made unfit in one way, the other listed spots plain.
 const catalogWith = extra => listed.map(id => spot(id, unfit.has(id) ? extra : {}));

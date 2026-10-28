@@ -951,6 +951,7 @@ const RULES = {
     4389: { skillType: PASSIVE, trait: 'passive', target: 'self', statsByLevel: { confusionVuln: [0.85, 0.7, 0.5, 0.3, 0.1, 0] } },
     4381: { skillType: DUMMY, trait: 'broadcast', target: 'self', ssBoost: 0 },
     4233: { skillType: PASSIVE, trait: 'passive', target: 'self', stats: { absorbDam: 15 } },
+    4340: { skillType: EFFECT, trait: 'buff', effect: 'ultimate_buff_2', effectType: 'buff', target: 'self', baseLandRate: 100, magicLevel: 60, levelDepend: 1, aggroPoints: 100, stats: { pAtkMul: 5 } },
     4341: { skillType: EFFECT, trait: 'buff', effect: 'ultimate_buff_3', effectType: 'buff', target: 'self', baseLandRate: 100, magicLevel: 60, levelDepend: 1, aggroPoints: 100, stats: { pDefMul: 5 } },
     4560: { skillType: DAMAGE, trait: 'fire', target: 'enemy', ssBoost: 1, castRange: 150, effectRange: 650 },
     4565: { skillType: DAMAGE, trait: 'fire', target: 'enemy', sourceTarget: 'area', radius: 205, ssBoost: 1, castRange: 500, effectRange: 1000 },

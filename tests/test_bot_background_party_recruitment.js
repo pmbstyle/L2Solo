@@ -66,7 +66,8 @@ async function run() {
     assert(Database.isReady());
     // A unit world with one available authored ordinary camp. Its actual NPC
     // mix and center are borrowed from canonical data, never invented combat.
-    const NATIVE_SPOT = '-1_10';
+    // T43 table: '0_13' (level 18, NPCs 44/36 as the gone level-19 '-1_10', plus 466).
+    const NATIVE_SPOT = '0_13';
     const source = require('../data/Bots/spot-reward-npcs.json').rows.find(row => row[0] === NATIVE_SPOT);
     const cell = require('../data/Bots/spot-table.json').spots.find(row => row[0] === NATIVE_SPOT);
     assert(source && cell);

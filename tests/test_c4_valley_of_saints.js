@@ -5,11 +5,9 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_valley_of_saints.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -20,29 +18,14 @@ const mobIds = [
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-valley-of-saints');
 
 assert.strictEqual(npcs.length, 21, 'all Lisvus Valley of Saints monster variants must be loaded');
 assert.strictEqual(rewards.length, 21, 'every Valley monster must have a reward template, including empty quest rewards');
-assert.ok(spawnArea, 'Valley of Saints spawn slice must be loaded');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 21, 'spawn definitions must cover every ambient and permanent quest monster');
-assert.strictEqual(spawnCoords.length, 381, 'the import must retain all 381 Lisvus L2Monster spawn rows');
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['22_15'],
-    'all source spawns must remain in the original Valley geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[22, 15]], 'Valley of Saints', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 333,
-        'at least 333 source coordinates must agree with the selected geodata layer within 128 Z');
-    assert.ok(Math.max(...heightDeltas) <= 3800,
-        'multi-level Valley coordinates must stay within the audited source/geodata maximum delta');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Valley of Saints monsters are spawned from Mobius');
 
 const eye = npcs.find((npc) => npc.selfId === 1520);
 assert.deepStrictEqual(
@@ -68,15 +51,11 @@ assert.deepStrictEqual(
 
 const guardian = npcs.find((npc) => npc.selfId === 5214);
 const guardianReward = rewards.find((reward) => reward.selfId === 5214);
-const guardianSpawn = spawnArea.spawns.find((spawn) => spawn.selfId === 5214);
 assert.strictEqual(guardian.template.title, 'Quest Monster');
 assert.deepStrictEqual(guardian.rewards, { exp: 0, sp: 0 });
 assert.deepStrictEqual({ rewards: guardianReward.rewards, spoils: guardianReward.spoils }, { rewards: [], spoils: [] });
-assert.deepStrictEqual({ count: guardianSpawn.coords.length, respawn: guardianSpawn.respawn }, { count: 10, respawn: 360 });
 assert.strictEqual(npcs.find((npc) => npc.selfId === 5317).clan.clanName, '',
     'SQL NULL faction must become an empty clan, not the literal string NULL');
-assert.ok(spawnArea.spawns.filter((spawn) => spawn.selfId >= 5214).every((spawn) => spawn.respawn === 360),
-    'permanent quest monsters must retain their six-minute source respawn');
 
 const sourceDropRows = rewards.reduce((count, reward) => count
     + reward.rewards.reduce((sum, group) => sum + group.items.length, 0)

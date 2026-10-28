@@ -19,6 +19,8 @@ async function run() {
         ? value + offset : Array.isArray(value) ? value.map(shift)
             : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, shift(child)])) : value;
     const state = shift(fixture.state), boardRows = structuredClone(fixture.boardRows);
+    // T43 table: shots now pay for this level-53 archer; it holds its shot stock, so the gear source decides.
+    state.inventory[1463] = { selfId: 1463, name: 'Soulshot: D-grade', amount: 1000, stackable: true };
     const crystalSupply = await native(state, { timestamp, boardRows, nativeRoutes: true });
     const crystalLeaf = Decision.compact(crystalSupply.decision).activity;
     assert.equal(crystalLeaf.sourceType, 'npc', 'a small crystal lot must not replace the reliable full equipment supply');

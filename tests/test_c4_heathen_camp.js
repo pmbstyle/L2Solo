@@ -1,22 +1,15 @@
 require('../src/Global');
 
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 
 const mobIds = [1438, 1439, 1440, 1441, 1442];
 
 assertC4MonsterLocation({
     slug: 'c4_heathen_camp',
     displayName: 'Heathen Camp',
-    areaId: 'c4-heathen-camp',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_heathen_camp'],
-    spawnCounts: [[1438, 12], [1439, 12], [1440, 12], [1441, 12], [1442, 12]],
-    respawn: 37,
-    period: 'night',
-    region: [23, 16],
-    maxHeightDelta: 112,
     origin: [102000, -60500, -2600],
     sample: {
         id: 1438, name: 'Heathen Warrior', level: 65, hostile: true,
@@ -32,8 +25,3 @@ assertC4MonsterLocation({
     }
 });
 
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_heathen_camp',
-    displayName: 'Heathen Camp',
-    box: { minX: 98868, maxX: 105806, minY: -61713, maxY: -59263, minZ: -2816, maxZ: -2288 }
-});

@@ -76,8 +76,10 @@ function checkSpendingActions() {
     assert(landing.actions > 0 && landing.shotActions === landing.actions, 'every landed normal attack spends a soulshot');
     const caster = fightAlone(withSkills([windStrike], { ...wand, classId: 10, vitals: { mp: 100000, maxMp: 100000 } }),
         { evasion: 1000 });
-    const healer = fightAlone(withSkills([heal], { ...wand, classId: 15, vitals: { hp: 100, mp: 100000, maxMp: 100000 } }),
-        { evasion: 1000, pAtk: 1 });
+    // T43 table: a level-12 healer's owned spiritshots no longer pay on its spot; a level-24 Cleric's do.
+    const healerState = withSkills([heal], { ...wand, classId: 15, vitals: { hp: 100, mp: 100000, maxMp: 100000 } });
+    healerState.level = healerState.stats.classProgressionLevel = 24;
+    const healer = fightAlone(healerState, { evasion: 1000, pAtk: 1 });
     // A physical skill spends its soulshot at use, even when it misses.
     const skill = fightAlone(withSkills([powerStrike], { vitals: { mp: 100000, maxMp: 100000 } }), { evasion: 1000 });
     assert(skill.skillUses > 0 && skill.shotActions === skill.skillUses, 'a physical skill spends a shot hit or miss');

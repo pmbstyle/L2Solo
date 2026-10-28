@@ -24,7 +24,10 @@ const fixture = require('./fixtures/luxury_purchase_states.json');
     const tables = [{ name: 'board', rows: fixture.boardRows }, { name: 'personas', rows: fixture.personaRows }]
         .map(table => ({ ...table, from: null, to: 0, full: true, removed: [], last: true }));
     for (const saved of fixture.states) {
-        const state = shift(saved), before = JSON.stringify(state);
+        const state = shift(saved);
+        // T43 table: C spiritshots now pay for 2006424; it holds its shot stock, so the crystal roots decide.
+        if (state.characterId === 2006424) state.inventory[2511] = { ...state.inventory[2511], amount: 300 };
+        const before = JSON.stringify(state);
         const secondRoot = state.characterId === 2007229, count = secondRoot ? 260 : 370;
         const seller = 2007106, side = state.characterId < seller ? 0 : 1;
         const request = { token: `luxury-crystal-${state.characterId}`,

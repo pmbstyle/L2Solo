@@ -75,8 +75,10 @@ try {
     assert.ok(fireAndX2.items.some((npc) => npc.id === 81), 'Ant Overseer must match its passive fire weakness and x2 HP');
     const halfHp = service.listNpcs({ hpMultiplier: '0.5', limit: 100 });
     // 44 before the high-grade C4 slices added 11 half-HP group leaders,
-    // 55 before the group leaders' minions added 21 half-HP minions.
-    assert.strictEqual(halfHp.total, 76);
+    // 55 before the group leaders' minions added 21 half-HP minions,
+    // 76 before the Mobius spawns brought 16 more with their Lisvus templates (T43),
+    // 92 before the Mobius minion rows brought 3 more half-HP minions (T48).
+    assert.strictEqual(halfHp.total, 95);
     assert.ok(halfHp.items.every((npc) => npc.hpMultiplier === 0.5));
     assert.strictEqual(service.listNpcs({ q: 'Marsh Stalker', weakness: 'fire' }).total, 0,
         'an active fire-weakness debuff must not be treated as the caster weakness');
@@ -148,7 +150,9 @@ try {
 
     const gremlinX1 = service.npcDetail(1);
     assert.strictEqual(gremlinX1.drops[1].items[0].chancePercent, 6.99759273);
-    assert.ok(gremlinX1.spawns.flatMap((spawn) => spawn.mapPoints).length > 0);
+    // Gremlin has no C4 spawn (Mobius places none, T43); a spawned mob shows its points.
+    assert.deepStrictEqual(gremlinX1.spawns, []);
+    assert.ok(service.npcDetail(558).spawns.flatMap((spawn) => spawn.mapPoints).length > 0);
 
     useRate('x50');
     const gremlinX50 = service.npcDetail(1);

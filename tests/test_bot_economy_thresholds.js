@@ -51,14 +51,15 @@ const reserveStates = [{ level: 1, adena: 0 }, { level: 10, adena: 0 }, { level:
 for (const state of reserveStates) reserveInputs(state);
 assert.strictEqual(Funding.budget(reserveStates[3]), 100001, 'adena carried only in the inventory counts too');
 
-const weapon = Data.items.find(row => row.etc?.rank === 'd' && Number(row.etc?.slot) === 7 && Number(row.etc?.soulshot) > 0);
-assert(weapon, 'authored D weapon with a nonzero soulshot charge');
+// T43 table: no consumable pays for a D-grade Warrior at 20-39; a C-grade Gladiator at 46 buys its soulshots.
+const weapon = Data.items.find(row => row.etc?.rank === 'c' && Number(row.etc?.slot) === 7 && Number(row.etc?.soulshot) > 0);
+assert(weapon, 'authored C weapon with a nonzero soulshot charge');
 const kitState = { characterId: 9104, name: 'ReserveInputs', phase: 'cold', activity: 'hunting',
-    level: 30, exp: Number(Data.experience[29]), adena: 100000, updatedAt: NOW, currentRegion: 'Giran',
+    level: 46, exp: Number(Data.experience[45]), adena: 100000, updatedAt: NOW, currentRegion: 'Giran',
     loc: { locX: 83396, locY: 147904, locZ: -3400 }, timing: {},
     vitals: { hp: 1000, maxHp: 1000, mp: 500, maxMp: 500 },
     inventory: { [weapon.selfId]: { selfId: weapon.selfId, amount: 1, equipped: true, equippedCount: 1, slot: 7, enchant: 0 } },
-    stats: { classId: 1, classProgressionClassId: 1, classProgressionLevel: 30 } };
+    stats: { classId: 2, classProgressionClassId: 2, classProgressionLevel: 46 } };
 const emptyKit = reserveInputs(kitState);
 assert(emptyKit.stocks.some(row => row.perHour > 0), 'the native table must exercise an actual consumable deficit');
 const partialKit = { ...kitState, inventory: { ...kitState.inventory, 736: { selfId: 736, amount: 1 },

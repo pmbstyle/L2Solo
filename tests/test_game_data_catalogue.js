@@ -81,7 +81,7 @@ try {
     const expected = DataCache.npcRewards.filter(reward => (reward.rewards || [])
         .some(group => (group.items || []).some(item => Number(item.selfId) === 1864)));
     const raw = c.sourcesForItem(1864, { kind: 'drops' });
-    assert.equal(expected.length, 156);
+    assert.equal(expected.length, 176); // 156 before the Mobius spawns' Lisvus templates (T43), 175 before T48's minions
     assert.deepEqual(raw.map(row => row.reward), expected, 'all declared drop rewards, in source order');
     assert.equal(c.sourcesForItem(1864, { kind: 'drop', spots: B }), raw, 'raw sources ignore selected spots');
     assert.equal(c.sourceIndexFor(A), plannerMap, 'raw reverse does not replace selected index');

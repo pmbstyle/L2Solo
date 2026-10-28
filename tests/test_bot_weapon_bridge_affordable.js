@@ -20,8 +20,8 @@ const WEAPON_SLOTS = new Set([7, 14]);
 const byId = (selfId) => Data.items.find((item) => Number(item.selfId) === Number(selfId));
 const rank = (selfId) => String(byId(selfId)?.etc?.rank || '');
 // Level-30 archer still carrying the dagger of its former class.
-const archer = (adena) => ({
-    characterId: 9400001, level: 30, adena, stats: { classId: 37, role: 'archer' },
+const archer = (adena, level = 30) => ({
+    characterId: 9400001, level, adena, stats: { classId: 37, role: 'archer' },
     inventory: {
         223: { selfId: 223, amount: 1, equipped: true, equippedSlots: [7], slot: 7 },
         57: { selfId: 57, amount: adena }
@@ -76,9 +76,10 @@ assert(Number(armourBridge.market.price) <= armour.adena, 'the weapon it buys fi
 // The bridge keeps no level reserve: the level term (250 per level) is a
 // consumables cushion for a bot that earns, and an unarmed bot earns nothing
 // (live test 2026-10-03: 104 bots at 30+ saving for a 1,766 weapon with ~1,000
-// adena and no income). With 2,300 adena the cheapest usable weapon is funded.
-const nearlyBroke = archer(2300);
-assert(Gear.operationalAdenaReserve(nearlyBroke) > nearlyBroke.adena, 'fixture: the ordinary reserve (7,500 at level 30) exceeds the wallet');
+// adena and no income). With 1,500 adena the cheapest usable weapon is funded.
+// T43 table: no shot reserve at 30 (shots do not pay there); at 51 the ordinary reserve holds a shot hour.
+const nearlyBroke = archer(1500, 51);
+assert(Gear.operationalAdenaReserve(nearlyBroke) > nearlyBroke.adena, 'fixture: the ordinary reserve (2,503 at level 51) exceeds the wallet');
 const cheapBridge = Gear.npcWeaponBridgePlan(nearlyBroke);
 assert.strictEqual(cheapBridge?.weaponBridge, true);
 // ARCH-NOTE: FX-E3 #12 gives a missing usable weapon the whole wallet; no minimum reserve.

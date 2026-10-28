@@ -4,12 +4,10 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const skillBindings = require('../data/Npcs/Skills/c4_garden_of_beasts.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -17,30 +15,14 @@ const mobIds = Array.from({ length: 20 }, (_, index) => 1274 + index);
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-garden-of-beasts');
 
 assert.strictEqual(npcs.length, 20, 'all twenty Lisvus Garden of Beasts variants must be loaded');
 assert.strictEqual(rewards.length, 20, 'all twenty Lisvus reward templates must be loaded');
-assert.ok(spawnArea, 'Garden of Beasts spawn slice must be loaded');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 20, 'spawn definitions should cover every Garden monster variant');
-assert.strictEqual(spawnCoords.length, 265, 'the imported slice must retain all 265 Lisvus spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 40 && spawn.bias === 0));
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))].sort(),
-    ['23_16', '24_16'],
-    'source spawns must stay in their two original geodata regions'
-);
-
-verifyGeodataWhenAvailable(GeodataEngine, [[23, 16], [24, 16]], 'Garden of Beasts', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 262,
-        'at least 262 source spawns must agree with geodata within 128 Z');
-    assert.ok(Math.max(...heightDeltas) <= 570 + 16, 'the source/geodata Z delta must stay within the audited maximum plus one raster cell');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Garden of Beasts monsters are spawned from Mobius');
 
 const kookaburra = npcs.find((npc) => npc.selfId === 1274);
 assert.deepStrictEqual(

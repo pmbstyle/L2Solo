@@ -4,11 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_elmore_northeast_coast.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -16,36 +14,14 @@ const mobIds = [1124, 1125, 1126, 1127, 1128, 1129, 1130];
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-elmore-northeast-coast');
 
 assert.strictEqual(npcs.length, 7, 'all seven Lisvus northeast coast monster variants must be loaded');
 assert.strictEqual(rewards.length, 7, 'every northeast coast monster must have a reward template');
-assert.ok(spawnArea, 'Elmore northeast coast spawn slice must be loaded');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 7, 'spawn definitions must cover every source variant');
-assert.strictEqual(spawnCoords.length, 283, 'the import must retain all 283 Lisvus spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 120 && spawn.bias === 0));
-assert.deepStrictEqual(
-    spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]),
-    [[1124, 43], [1125, 44], [1126, 39], [1127, 44], [1128, 39], [1129, 32], [1130, 42]],
-    'every source family must retain its exact local population'
-);
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))].sort(),
-    ['24_11', '25_11', '25_12'],
-    'source spawns must stay in their three northeast coast geodata regions'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[24, 11], [25, 11], [25, 12]], 'Elmore northeast coast', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 279,
-        'at least 279 source coordinates must agree with geodata within 128 Z');
-    assert.strictEqual(Math.max(...heightDeltas), 747,
-        'coastal cliff coordinates must stay within the audited source/geodata maximum delta');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Elmore northeast coast monsters are spawned from Mobius');
 
 const bat = npcs.find((npc) => npc.selfId === 1124);
 assert.deepStrictEqual(

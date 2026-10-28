@@ -4,12 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
-const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_necropolis_of_sacrifice.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -17,36 +14,14 @@ const mobIds = [1139, 1140, 1141, 1142, 1166, 1167, 1168, 1169, 1187, 1188, 1189
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-necropolis-of-sacrifice');
 
 assert.strictEqual(npcs.length, 16, 'all sixteen Lisvus Necropolis of Sacrifice monsters must be loaded');
 assert.strictEqual(rewards.length, 16, 'every Necropolis of Sacrifice monster must have rewards');
-assert.ok(spawnArea, 'the Necropolis of Sacrifice spawn slice must be loaded');
-assert.ok(baseSpawns.every((area) => area.spawns.every((spawn) => !mobIdSet.has(Number(spawn.selfId)))),
-    'the additive import must remain limited to monster families absent from the old datapack');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 16, 'spawn definitions must cover every source monster family');
-assert.strictEqual(spawnCoords.length, 256, 'the import must retain all 256 Lisvus spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 120 && spawn.bias === 0));
-assert.deepStrictEqual(
-    spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]),
-    [[1139, 16], [1140, 16], [1141, 18], [1142, 18], [1166, 15], [1167, 15], [1168, 16], [1169, 18],
-        [1187, 15], [1188, 15], [1189, 16], [1190, 18], [1208, 15], [1209, 15], [1210, 15], [1211, 15]],
-    'every family must retain its exact local population'
-);
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['18_24'],
-    'the underground source rows must stay in the Necropolis geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[18, 24]], 'Necropolis of Sacrifice', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta <= 64), 'every source coordinate must agree with geodata within 64 Z');
-}, { preload: false });
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Necropolis of Sacrifice monsters are spawned from Mobius');
 
 const bat = npcs.find((npc) => npc.selfId === 1139);
 assert.deepStrictEqual(

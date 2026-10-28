@@ -109,40 +109,44 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
     const savedCatalogue = SpotService.spots;
     SpotService.spots = profiles;
     try {
-        const shopping = {
-            ...state, activity: 'shopping', currentRegion: 'Giran', adena: 100000,
+        // No class in the stats: no matchup profile refuses a spot, so the
+        // search has other spots to offer (the naked mage survives none).
+        const shopper = { ...state, activity: 'shopping', currentRegion: 'Giran', adena: 100000,
             inventory: { 57: { selfId: 57, amount: 100000 }, 736: { selfId: 736, amount: 3 } },
-            loc: { locX: 83400, locY: 147943, locZ: -3400 },
-            // No class in the stats: no matchup profile refuses a spot, so the
-            // search has other spots to offer (the naked mage survives none).
-            stats: { role: 'nuker', deaths: 0, townVisit: { town: 'Giran', completed: true },
-                marketReturn: { spotId: first.id, regionName: first.name, loc: { ...first.center } } }
-        };
+            loc: { locX: 83400, locY: 147943, locZ: -3400 }, stats: { role: 'nuker', deaths: 0 } };
+        // Home is a spot the shopper may hunt but would not pick first: returning there
+        // proves the saved spot is kept, not searched again.
+        const head = Spots.findForState({ ...shopper, activity: 'hunting' }, { timestamp: at });
+        const homeSpot = head && Spots.findForState({ ...shopper, activity: 'hunting' },
+            { timestamp: at, excludedSpotIds: new Set([String(head.id)]) });
+        assert(homeSpot && homeSpot.id !== head.id, 'fixture: the classless shopper has two spots of the list');
+        const shopping = { ...shopper, stats: { ...shopper.stats, townVisit: { town: 'Giran', completed: true },
+            marketReturn: { spotId: homeSpot.id, regionName: homeSpot.name, loc: { ...homeSpot.center } } } };
         const home = GoalExecutor.finishMarketVisit(shopping, at);
         assert.equal(home?.stats.travel.reason, 'return_after_market', 'fixture: the visit ends in a return trip');
-        assert.equal(home.stats.travel.spotId, first.id, 'a saved spot with room: the bot returns home');
+        assert.equal(home.stats.travel.spotId, homeSpot.id, 'a saved spot with room: the bot returns home');
 
-        for (let i = 0; i < Routes.roomForSpot(first); i++) {
+        for (let i = 0; i < Routes.roomForSpot(homeSpot); i++) {
             LifeState.acceptLifecycleRow({ characterId: 990950 + i, accountName: `bot_${990950 + i}`,
-                characterName: `Home${i}`, level: 29, phase: 'cold', activity: 'hunting', spotId: first.id,
+                characterName: `Home${i}`, level: 29, phase: 'cold', activity: 'hunting', spotId: homeSpot.id,
                 statsJson: '{}', inventorySummary: '{}' });
         }
         const elsewhere = GoalExecutor.finishMarketVisit(shopping, at);
         assert.equal(elsewhere?.stats.travel.reason, 'return_after_market', 'a full saved spot: still a return trip');
-        assert(Index.spotById(profiles, elsewhere.stats.travel.spotId) && elsewhere.stats.travel.spotId !== first.id,
+        assert(Index.spotById(profiles, elsewhere.stats.travel.spotId) && elsewhere.stats.travel.spotId !== homeSpot.id,
             'a full saved spot: the return goes to another spot of the catalogue');
 
         // No other spot to offer: the bot still goes home, the room is read
         // again at arrival.
-        Spots.cache = [first];
+        Spots.cache = [homeSpot];
         // The remembered region name differs from the spot's, so the trip shows
         // which of the two the destination was read from.
         const forgetful = { ...shopping, stats: { ...shopping.stats,
             marketReturn: { ...shopping.stats.marketReturn, regionName: 'Remembered ground' } } };
         const alone = GoalExecutor.finishMarketVisit(forgetful, at);
         assert.equal(alone?.stats.travel.reason, 'return_after_market', 'a full saved spot alone: still a return trip');
-        assert.equal(alone.stats.travel.spotId, first.id, 'a full saved spot and no other spot fits: the bot goes home');
-        assert.equal(alone.stats.travel.regionName, first.name, 'the saved spot itself is the destination');
+        assert.equal(alone.stats.travel.spotId, homeSpot.id, 'a full saved spot and no other spot fits: the bot goes home');
+        assert.equal(alone.stats.travel.regionName, homeSpot.name, 'the saved spot itself is the destination');
     } finally { SpotService.spots = savedCatalogue; }
 }
 

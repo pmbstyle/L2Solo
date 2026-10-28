@@ -90,6 +90,15 @@ assert(raw.rows.flat().every((row) => row === null || row.length === raw.rowFiel
 assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.huntableRows, 'header counts the huntable rows');
 assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
 assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
+// The reader applies the C4 exp level-gap penalty; the measured curves must not carry it too
+// (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap).
+raw.roles.forEach((role) => {
+    const ref = raw.gaps.indexOf(raw.header.inputs.refGap), far = raw.gaps.indexOf(12);
+    const ratios = Object.values(raw.curves[role]).map((curve) => curve.exp)
+        .filter((exp) => exp && exp[far] != null && exp[ref] > 0).map((exp) => exp[far] / exp[ref]).sort((a, b) => a - b);
+    const median = ratios[Math.floor(ratios.length / 2)];
+    assert(median > 0.8, `${role}: exp per kill at gap 12 keeps the reference level's exp (median ${median})`);
+});
 
 // A few spots of the committed table (rate x1). Bearded Keltir fields (level 2): every role hunts it;
 // a dps kills more with shots, more at a higher level, and never more than the spot allows.
